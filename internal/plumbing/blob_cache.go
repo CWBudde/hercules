@@ -6,13 +6,13 @@ import (
 	"io"
 	"io/ioutil"
 
-	"github.com/cyraxred/hercules/internal"
-	"github.com/cyraxred/hercules/internal/core"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/utils/merkletrie"
+	"github.com/meko-christian/hercules/internal"
+	"github.com/meko-christian/hercules/internal/core"
 	"github.com/pkg/errors"
 )
 
@@ -126,7 +126,8 @@ func (blobCache *BlobCache) ListConfigurationOptions() []core.ConfigurationOptio
 			"Override this if you want to ensure that your repository is integral.",
 		Flag:    "fail-on-missing-submodules",
 		Type:    core.BoolConfigurationOption,
-		Default: false}}
+		Default: false,
+	}}
 	return options[:]
 }
 
@@ -193,8 +194,7 @@ func (blobCache *BlobCache) Consume(deps map[string]interface{}) (map[string]int
 				}
 			}
 		case merkletrie.Delete:
-			cache[change.From.TreeEntry.Hash], exists =
-				blobCache.cache[change.From.TreeEntry.Hash]
+			cache[change.From.TreeEntry.Hash], exists = blobCache.cache[change.From.TreeEntry.Hash]
 			if !exists {
 				cache[change.From.TreeEntry.Hash] = &CachedBlob{}
 				blob, err = blobCache.getBlob(&change.From, commit.File)
@@ -233,8 +233,7 @@ func (blobCache *BlobCache) Consume(deps map[string]interface{}) (map[string]int
 					blobCache.l.Errorf("file to %s: %v\n", change.To.Name, err)
 				}
 			}
-			cache[change.From.TreeEntry.Hash], exists =
-				blobCache.cache[change.From.TreeEntry.Hash]
+			cache[change.From.TreeEntry.Hash], exists = blobCache.cache[change.From.TreeEntry.Hash]
 			if !exists {
 				cache[change.From.TreeEntry.Hash] = &CachedBlob{}
 				blob, err = blobCache.getBlob(&change.From, commit.File)
@@ -283,15 +282,15 @@ type FileGetter func(path string) (*object.File, error)
 
 // Returns the blob which corresponds to the specified ChangeEntry.
 func (blobCache *BlobCache) getBlob(entry *object.ChangeEntry, fileGetter FileGetter) (
-	*object.Blob, error) {
+	*object.Blob, error,
+) {
 	blob, err := blobCache.repository.BlobObject(entry.TreeEntry.Hash)
-
 	if err != nil {
 		if err.Error() != plumbing.ErrObjectNotFound.Error() {
 			blobCache.l.Errorf("getBlob(%s)\n", entry.TreeEntry.Hash.String())
 			return nil, err
 		}
-		if entry.TreeEntry.Mode != 0160000 {
+		if entry.TreeEntry.Mode != 0o160000 {
 			// this is not a submodule
 			return nil, err
 		} else if !blobCache.FailOnMissingSubmodules {

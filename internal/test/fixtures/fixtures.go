@@ -1,8 +1,8 @@
 package fixtures
 
 import (
-	"github.com/cyraxred/hercules/internal/plumbing"
-	"github.com/cyraxred/hercules/internal/test"
+	"github.com/meko-christian/hercules/internal/plumbing"
+	"github.com/meko-christian/hercules/internal/test"
 )
 
 // FileDiff initializes a new plumbing.FileDiff item for testing.

@@ -1,16 +1,16 @@
 package imports
 
 import (
-	"github.com/cyraxred/hercules/internal/core"
-	"github.com/cyraxred/hercules/internal/plumbing"
+	"runtime"
+	"sync"
+
 	"github.com/go-git/go-git/v5"
 	gitplumbing "github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/utils/merkletrie"
+	"github.com/meko-christian/hercules/internal/core"
+	"github.com/meko-christian/hercules/internal/plumbing"
 	"github.com/src-d/imports"
-	"runtime"
-	"sync"
-
 	_ "github.com/src-d/imports/languages/all" // register the supported languages
 )
 
@@ -59,17 +59,20 @@ func (ex *Extractor) Requires() []string {
 
 // ListConfigurationOptions returns the list of changeable public properties of this PipelineItem.
 func (ex *Extractor) ListConfigurationOptions() []core.ConfigurationOption {
-	return []core.ConfigurationOption{{
-		Name:        ConfigImportsGoroutines,
-		Description: "Specifies the number of goroutines to run in parallel for the imports extraction.",
-		Flag:        "import-goroutines",
-		Type:        core.IntConfigurationOption,
-		Default:     runtime.NumCPU()}, {
-		Name:        ConfigMaxFileSize,
-		Description: "Specifies the file size threshold. Files that exceed it are ignored.",
-		Flag:        "import-max-file-size",
-		Type:        core.IntConfigurationOption,
-		Default:     DefaultMaxFileSize},
+	return []core.ConfigurationOption{
+		{
+			Name:        ConfigImportsGoroutines,
+			Description: "Specifies the number of goroutines to run in parallel for the imports extraction.",
+			Flag:        "import-goroutines",
+			Type:        core.IntConfigurationOption,
+			Default:     runtime.NumCPU(),
+		}, {
+			Name:        ConfigMaxFileSize,
+			Description: "Specifies the file size threshold. Files that exceed it are ignored.",
+			Flag:        "import-max-file-size",
+			Type:        core.IntConfigurationOption,
+			Default:     DefaultMaxFileSize,
+		},
 	}
 }
 

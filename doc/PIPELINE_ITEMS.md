@@ -1,5 +1,4 @@
-Pipeline items
-==============
+# Pipeline items
 
 ### PipelineItem lifecycle
 

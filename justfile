@@ -20,11 +20,23 @@ default: hercules
 
 # Build the hercules binary
 hercules: vendor pb-go pb-python plugin-template
-    go build -tags "{{tags}}" -ldflags "-X github.com/cyraxred/hercules.BinaryGitHash=`git rev-parse HEAD`" github.com/cyraxred/hercules/cmd/hercules
+    go build -tags "{{tags}}" -ldflags "-X github.com/meko-christian/hercules.BinaryGitHash=`git rev-parse HEAD`" github.com/meko-christian/hercules/cmd/hercules
 
 # Run all tests
 test: hercules
-    go test github.com/cyraxred/hercules
+    go test github.com/meko-christian/hercules
+
+# Format code using treefmt
+fmt:
+    treefmt --allow-missing-formatter
+
+# Run linter
+lint:
+    golangci-lint run --config ./.golangci.toml --timeout 2m
+
+# Run linter with fix
+lint-fix:
+    golangci-lint run --config ./.golangci.toml --timeout 2m --fix
 
 # Install protoc-gen-gogo if not present
 protoc-gen-gogo:

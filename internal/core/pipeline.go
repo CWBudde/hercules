@@ -13,12 +13,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cyraxred/hercules/internal/pb"
-	"github.com/cyraxred/hercules/internal/toposort"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/storer"
+	"github.com/meko-christian/hercules/internal/pb"
+	"github.com/meko-christian/hercules/internal/toposort"
 	"github.com/pkg/errors"
 )
 
@@ -626,7 +626,7 @@ func (pipeline *Pipeline) resolve(dumpPath string, priorityFn DependencyPriority
 		// fmt.Fprint(os.Stderr, graphCopy.DebugDump())
 		plan := graph.Serialize(pipelinePlan)
 		if dumpPath != "-" {
-			_ = ioutil.WriteFile(dumpPath, []byte(plan), 0666)
+			_ = ioutil.WriteFile(dumpPath, []byte(plan), 0o666)
 			absPath, _ := filepath.Abs(dumpPath)
 			pipeline.l.Infof("Wrote the DAG to %s\n", absPath)
 		} else {
@@ -764,7 +764,8 @@ func (pipeline *Pipeline) Initialize(facts map[string]interface{}) error {
 type DependencyPriorityFunc = func(items []PipelineItem) PipelineItem
 
 func (pipeline *Pipeline) InitializeExt(facts map[string]interface{},
-	priorityFn DependencyPriorityFunc, preparePlan bool) error {
+	priorityFn DependencyPriorityFunc, preparePlan bool,
+) error {
 	cleanReturn := false
 	defer func() {
 		if !cleanReturn {
@@ -1065,7 +1066,8 @@ func (pipeline *Pipeline) runPlan(plan []runAction, commitCount int, mergeHashCo
 }
 
 func (pipeline *Pipeline) resolveAlternatives(graph *toposort.Graph, nodes []string, itemMap map[string]PipelineItem,
-	priorityFn DependencyPriorityFunc, excludes map[string]struct{}) {
+	priorityFn DependencyPriorityFunc, excludes map[string]struct{},
+) {
 	dataKeys := make(map[string][]string, len(nodes))
 	for _, node := range nodes {
 		childList := strings.Builder{}

@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cyraxred/hercules/internal/core"
-	"github.com/cyraxred/hercules/internal/test"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/meko-christian/hercules/internal/core"
+	"github.com/meko-christian/hercules/internal/test"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -119,10 +119,12 @@ func TestTicksSinceStartConsume(t *testing.T) {
 		"cce947b98a050c6d356bc6ba95030254914027b1")})
 	assert.Equal(t, tss.commits[1], []plumbing.Hash{
 		plumbing.NewHash("fc9ceecb6dabcb2aab60e8619d972e8d8208a7df"),
-		plumbing.NewHash("a3ee37f91f0d705ec9c41ae88426f0ae44b2fbc3")})
+		plumbing.NewHash("a3ee37f91f0d705ec9c41ae88426f0ae44b2fbc3"),
+	})
 	assert.Equal(t, tss.commits[2], []plumbing.Hash{
 		plumbing.NewHash("a8b665a65d7aced63f5ba2ff6d9b71dac227f8cf"),
-		plumbing.NewHash("186ff0d7e4983637bb3762a24d6d0a658e7f4712")})
+		plumbing.NewHash("186ff0d7e4983637bb3762a24d6d0a658e7f4712"),
+	})
 }
 
 func TestTicksSinceStartConsumeWithTickSize(t *testing.T) {
@@ -167,7 +169,8 @@ func TestTicksSinceStartConsumeWithTickSize(t *testing.T) {
 		tss.commits[0])
 	assert.Equal(t, []plumbing.Hash{
 		plumbing.NewHash("fc9ceecb6dabcb2aab60e8619d972e8d8208a7df"),
-		plumbing.NewHash("a3ee37f91f0d705ec9c41ae88426f0ae44b2fbc3")},
+		plumbing.NewHash("a3ee37f91f0d705ec9c41ae88426f0ae44b2fbc3"),
+	},
 		tss.commits[24])
 }
 

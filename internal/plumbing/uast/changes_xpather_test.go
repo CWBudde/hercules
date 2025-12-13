@@ -8,10 +8,10 @@ import (
 	"sort"
 	"testing"
 
-	uast_test "github.com/cyraxred/hercules/internal/plumbing/uast/test"
-	"github.com/cyraxred/hercules/internal/test"
+	uast_test "github.com/meko-christian/hercules/internal/plumbing/uast/test"
+	"github.com/meko-christian/hercules/internal/test"
 	"github.com/stretchr/testify/assert"
-	"gopkg.in/bblfsh/client-go.v3"
+	bblfsh "gopkg.in/bblfsh/client-go.v3"
 	"gopkg.in/bblfsh/sdk.v2/uast/nodes"
 )
 

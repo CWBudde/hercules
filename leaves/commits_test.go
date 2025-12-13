@@ -5,15 +5,15 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/cyraxred/hercules/internal/core"
-	"github.com/cyraxred/hercules/internal/pb"
-	items "github.com/cyraxred/hercules/internal/plumbing"
-	"github.com/cyraxred/hercules/internal/plumbing/identity"
-	"github.com/cyraxred/hercules/internal/test"
-	"github.com/cyraxred/hercules/internal/test/fixtures"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/gogo/protobuf/proto"
+	"github.com/meko-christian/hercules/internal/core"
+	"github.com/meko-christian/hercules/internal/pb"
+	items "github.com/meko-christian/hercules/internal/plumbing"
+	"github.com/meko-christian/hercules/internal/plumbing/identity"
+	"github.com/meko-christian/hercules/internal/test"
+	"github.com/meko-christian/hercules/internal/test/fixtures"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -87,7 +87,7 @@ func TestCommitsConsume(t *testing.T) {
 		Tree: treeFrom,
 		TreeEntry: object.TreeEntry{
 			Name: "analyser.go",
-			Mode: 0100644,
+			Mode: 0o100644,
 			Hash: plumbing.NewHash("dc248ba2b22048cc730c571a748e8ffcf7085ab9"),
 		},
 	}, To: object.ChangeEntry{
@@ -95,29 +95,31 @@ func TestCommitsConsume(t *testing.T) {
 		Tree: treeTo,
 		TreeEntry: object.TreeEntry{
 			Name: "analyser.go",
-			Mode: 0100644,
+			Mode: 0o100644,
 			Hash: plumbing.NewHash("baa64828831d174f40140e4b3cfa77d1e917a2c1"),
 		},
 	}}
-	changes[1] = &object.Change{From: object.ChangeEntry{}, To: object.ChangeEntry{
-		Name: "cmd/hercules/main.go",
-		Tree: treeTo,
-		TreeEntry: object.TreeEntry{
+	changes[1] = &object.Change{
+		From: object.ChangeEntry{}, To: object.ChangeEntry{
 			Name: "cmd/hercules/main.go",
-			Mode: 0100644,
-			Hash: plumbing.NewHash("c29112dbd697ad9b401333b80c18a63951bc18d9"),
+			Tree: treeTo,
+			TreeEntry: object.TreeEntry{
+				Name: "cmd/hercules/main.go",
+				Mode: 0o100644,
+				Hash: plumbing.NewHash("c29112dbd697ad9b401333b80c18a63951bc18d9"),
+			},
 		},
-	},
 	}
-	changes[2] = &object.Change{From: object.ChangeEntry{}, To: object.ChangeEntry{
-		Name: ".travis.yml",
-		Tree: treeTo,
-		TreeEntry: object.TreeEntry{
+	changes[2] = &object.Change{
+		From: object.ChangeEntry{}, To: object.ChangeEntry{
 			Name: ".travis.yml",
-			Mode: 0100644,
-			Hash: plumbing.NewHash("291286b4ac41952cbd1389fda66420ec03c1a9fe"),
+			Tree: treeTo,
+			TreeEntry: object.TreeEntry{
+				Name: ".travis.yml",
+				Mode: 0o100644,
+				Hash: plumbing.NewHash("291286b4ac41952cbd1389fda66420ec03c1a9fe"),
+			},
 		},
-	},
 	}
 	deps[items.DependencyTreeChanges] = changes
 	fd := fixtures.FileDiff()
@@ -260,11 +262,13 @@ func TestCommitsSerialize(t *testing.T) {
 	assert.Equal(t, msg.Commits[0].Files[0], &pb.CommitFile{
 		Name:     ".travis.yml",
 		Stats:    &pb.LineStats{Added: 12, Removed: 0, Changed: 0},
-		Language: "Yaml"})
+		Language: "Yaml",
+	})
 	assert.Equal(t, msg.Commits[0].Files[1], &pb.CommitFile{
 		Name:     "analyser.go",
 		Stats:    &pb.LineStats{Added: 628, Removed: 9, Changed: 67},
-		Language: "Go"})
+		Language: "Go",
+	})
 	assert.Equal(t, msg.Commits[1].Hash, "c29112dbd697ad9b401333b80c18a63951bc18d9")
 	assert.Equal(t, msg.Commits[1].WhenUnixTime, int64(1481563999))
 	assert.Equal(t, msg.Commits[1].Author, int32(1))
@@ -272,5 +276,6 @@ func TestCommitsSerialize(t *testing.T) {
 	assert.Equal(t, msg.Commits[1].Files[0], &pb.CommitFile{
 		Name:     "cmd/hercules/main.go",
 		Stats:    &pb.LineStats{Added: 1, Removed: 0, Changed: 0},
-		Language: "Go"})
+		Language: "Go",
+	})
 }

@@ -2,10 +2,11 @@ package burndown
 
 import (
 	"fmt"
-	"github.com/cyraxred/hercules/internal/core"
-	"github.com/stretchr/testify/assert"
 	"testing"
 	"time"
+
+	"github.com/meko-christian/hercules/internal/core"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestBurndownAddMatrix(t *testing.T) {

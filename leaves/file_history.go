@@ -6,15 +6,15 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/cyraxred/hercules/internal/core"
-	"github.com/cyraxred/hercules/internal/pb"
-	items "github.com/cyraxred/hercules/internal/plumbing"
-	"github.com/cyraxred/hercules/internal/plumbing/identity"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/utils/merkletrie"
 	"github.com/gogo/protobuf/proto"
+	"github.com/meko-christian/hercules/internal/core"
+	"github.com/meko-christian/hercules/internal/pb"
+	items "github.com/meko-christian/hercules/internal/plumbing"
+	"github.com/meko-christian/hercules/internal/plumbing/identity"
 )
 
 // FileHistoryAnalysis contains the intermediate state which is mutated by Consume(). It should implement

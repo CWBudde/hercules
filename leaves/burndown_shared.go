@@ -1,11 +1,12 @@
 package leaves
 
 import (
-	"github.com/cyraxred/hercules/internal/burndown"
-	"github.com/cyraxred/hercules/internal/core"
 	"io"
 	"sort"
 	"time"
+
+	"github.com/meko-christian/hercules/internal/burndown"
+	"github.com/meko-christian/hercules/internal/core"
 )
 
 const (
@@ -25,31 +26,36 @@ const (
 	authorSelf = core.AuthorMissing + 1
 )
 
-var BurndownSharedOptions = [...]core.ConfigurationOption{{
-	Name:        ConfigBurndownGranularity,
-	Description: "How many time ticks there are in a single band.",
-	Flag:        "granularity",
-	Type:        core.IntConfigurationOption,
-	Shared:      true,
-	Default:     DefaultBurndownGranularity}, {
-	Name:        ConfigBurndownSampling,
-	Description: "How frequently to record the state in time ticks.",
-	Flag:        "sampling",
-	Type:        core.IntConfigurationOption,
-	Shared:      true,
-	Default:     DefaultBurndownGranularity}, {
-	Name:        ConfigBurndownTrackFiles,
-	Description: "Record detailed statistics per each file.",
-	Flag:        "burndown-files",
-	Type:        core.BoolConfigurationOption,
-	Shared:      true,
-	Default:     false}, {
-	Name:        ConfigBurndownTrackPeople,
-	Description: "Record detailed statistics per each developer.",
-	Flag:        "burndown-people",
-	Type:        core.BoolConfigurationOption,
-	Shared:      true,
-	Default:     false},
+var BurndownSharedOptions = [...]core.ConfigurationOption{
+	{
+		Name:        ConfigBurndownGranularity,
+		Description: "How many time ticks there are in a single band.",
+		Flag:        "granularity",
+		Type:        core.IntConfigurationOption,
+		Shared:      true,
+		Default:     DefaultBurndownGranularity,
+	}, {
+		Name:        ConfigBurndownSampling,
+		Description: "How frequently to record the state in time ticks.",
+		Flag:        "sampling",
+		Type:        core.IntConfigurationOption,
+		Shared:      true,
+		Default:     DefaultBurndownGranularity,
+	}, {
+		Name:        ConfigBurndownTrackFiles,
+		Description: "Record detailed statistics per each file.",
+		Flag:        "burndown-files",
+		Type:        core.BoolConfigurationOption,
+		Shared:      true,
+		Default:     false,
+	}, {
+		Name:        ConfigBurndownTrackPeople,
+		Description: "Record detailed statistics per each developer.",
+		Flag:        "burndown-people",
+		Type:        core.BoolConfigurationOption,
+		Shared:      true,
+		Default:     false,
+	},
 }
 
 // BurndownResult carries the result of running BurndownAnalysis - it is returned by

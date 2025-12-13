@@ -2,15 +2,15 @@ package leaves
 
 import (
 	"bytes"
-	"github.com/cyraxred/hercules/internal/core"
-	"github.com/cyraxred/hercules/internal/plumbing"
-	"github.com/cyraxred/hercules/internal/plumbing/identity"
-	"github.com/cyraxred/hercules/internal/plumbing/imports"
-	"github.com/cyraxred/hercules/internal/test"
 	"testing"
 	"time"
 
 	gitplumbing "github.com/go-git/go-git/v5/plumbing"
+	"github.com/meko-christian/hercules/internal/core"
+	"github.com/meko-christian/hercules/internal/plumbing"
+	"github.com/meko-christian/hercules/internal/plumbing/identity"
+	"github.com/meko-christian/hercules/internal/plumbing/imports"
+	"github.com/meko-christian/hercules/internal/test"
 	imports2 "github.com/src-d/imports"
 	"github.com/stretchr/testify/assert"
 )
@@ -72,10 +72,8 @@ func TestImportsPerDeveloperConsumeFinalize(t *testing.T) {
 	deps[identity.DependencyAuthor] = 0
 	deps[plumbing.DependencyTick] = 1
 	imps := map[gitplumbing.Hash]imports2.File{}
-	imps[gitplumbing.NewHash("291286b4ac41952cbd1389fda66420ec03c1a9fe")] =
-		imports2.File{Lang: "Go", Path: "test.go", Imports: []string{"sys"}}
-	imps[gitplumbing.NewHash("c29112dbd697ad9b401333b80c18a63951bc18d9")] =
-		imports2.File{Lang: "Python", Path: "test.py", Imports: []string{"sys"}}
+	imps[gitplumbing.NewHash("291286b4ac41952cbd1389fda66420ec03c1a9fe")] = imports2.File{Lang: "Go", Path: "test.go", Imports: []string{"sys"}}
+	imps[gitplumbing.NewHash("c29112dbd697ad9b401333b80c18a63951bc18d9")] = imports2.File{Lang: "Python", Path: "test.py", Imports: []string{"sys"}}
 	deps[imports.DependencyImports] = imps
 	ipd := fixtureImportsPerDev()
 	ipd.reversedPeopleDict = []string{"1", "2"}

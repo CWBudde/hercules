@@ -6,16 +6,16 @@ import (
 	"io"
 	"unicode/utf8"
 
-	"github.com/cyraxred/hercules/internal/core"
-	"github.com/cyraxred/hercules/internal/levenshtein"
-	"github.com/cyraxred/hercules/internal/pb"
-	items "github.com/cyraxred/hercules/internal/plumbing"
-	uast_items "github.com/cyraxred/hercules/internal/plumbing/uast"
-	"github.com/cyraxred/hercules/internal/yaml"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/gogo/protobuf/proto"
+	"github.com/meko-christian/hercules/internal/core"
+	"github.com/meko-christian/hercules/internal/levenshtein"
+	"github.com/meko-christian/hercules/internal/pb"
+	items "github.com/meko-christian/hercules/internal/plumbing"
+	uast_items "github.com/meko-christian/hercules/internal/plumbing/uast"
+	"github.com/meko-christian/hercules/internal/yaml"
 	"github.com/sergi/go-diff/diffmatchpatch"
 	"gopkg.in/bblfsh/sdk.v2/uast"
 	"gopkg.in/bblfsh/sdk.v2/uast/nodes"
@@ -83,18 +83,21 @@ func (tdb *TyposDatasetBuilder) Provides() []string {
 // entities are Provides() upstream.
 func (tdb *TyposDatasetBuilder) Requires() []string {
 	return []string{
-		uast_items.DependencyUastChanges, items.DependencyFileDiff, items.DependencyBlobCache}
+		uast_items.DependencyUastChanges, items.DependencyFileDiff, items.DependencyBlobCache,
+	}
 }
 
 // ListConfigurationOptions returns the list of changeable public properties of this PipelineItem.
 func (tdb *TyposDatasetBuilder) ListConfigurationOptions() []core.ConfigurationOption {
-	options := [...]core.ConfigurationOption{{
-		Name: ConfigTyposDatasetMaximumAllowedDistance,
-		Description: "Maximum Levenshtein distance between two identifiers to consider them " +
-			"a typo-fix pair.",
-		Flag:    "typos-max-distance",
-		Type:    core.IntConfigurationOption,
-		Default: DefaultMaximumAllowedTypoDistance},
+	options := [...]core.ConfigurationOption{
+		{
+			Name: ConfigTyposDatasetMaximumAllowedDistance,
+			Description: "Maximum Levenshtein distance between two identifiers to consider them " +
+				"a typo-fix pair.",
+			Flag:    "typos-max-distance",
+			Type:    core.IntConfigurationOption,
+			Default: DefaultMaximumAllowedTypoDistance,
+		},
 	}
 	return options[:]
 }

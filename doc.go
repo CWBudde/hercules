@@ -16,35 +16,35 @@ include:
 
 The typical API usage is to initialize the Pipeline class:
 
-  import "github.com/go-git/go-git/v5"
+	import "github.com/go-git/go-git/v5"
 
-  var repository *git.Repository
-  // ...initialize repository...
-  pipeline := hercules.NewPipeline(repository)
+	var repository *git.Repository
+	// ...initialize repository...
+	pipeline := hercules.NewPipeline(repository)
 
 Then add the required analysis:
 
-  ba := pipeline.DeployItem(&hercules.BurndownAnalysis{}).(hercules.LeafPipelineItem)
+	ba := pipeline.DeployItem(&hercules.BurndownAnalysis{}).(hercules.LeafPipelineItem)
 
 This call will add all the needed intermediate pipeline items. Then link and execute the analysis tree:
 
-  pipeline.Initialize(nil)
-  result, err := pipeline.Run(pipeline.Commits(false))
+	pipeline.Initialize(nil)
+	result, err := pipeline.Run(pipeline.Commits(false))
 
 Finally extract the result:
 
-  result := result[ba].(hercules.BurndownResult)
+	result := result[ba].(hercules.BurndownResult)
 
 The actual usage example is cmd/hercules/root.go - the command line tool's code.
 
 You can provide additional options via `facts` on initialization. For example,
 to provide your own logger, enable people-tracking, and set a custom tick size:
 
-  pipe.Initialize(map[string]interface{}{
-    hercules.ConfigLogger:            zap.NewExample().Sugar(),
-    hercules.ConfigTickSize:          12,
-    leaves.ConfigBurndownTrackPeople: true,
-  })
+	pipe.Initialize(map[string]interface{}{
+	  hercules.ConfigLogger:            zap.NewExample().Sugar(),
+	  hercules.ConfigTickSize:          12,
+	  leaves.ConfigBurndownTrackPeople: true,
+	})
 
 Hercules depends heavily on https://github.com/src-d/go-git and leverages the
 diff algorithm through https://github.com/sergi/go-diff.

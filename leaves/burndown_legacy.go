@@ -3,9 +3,6 @@ package leaves
 import (
 	"errors"
 	"fmt"
-	"github.com/cyraxred/hercules/internal/burndown"
-	"github.com/cyraxred/hercules/internal/join"
-	"github.com/cyraxred/hercules/internal/linehistory"
 	"io"
 	"io/ioutil"
 	"log"
@@ -18,17 +15,20 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/cyraxred/hercules/internal/core"
-	"github.com/cyraxred/hercules/internal/pb"
-	items "github.com/cyraxred/hercules/internal/plumbing"
-	"github.com/cyraxred/hercules/internal/plumbing/identity"
-	"github.com/cyraxred/hercules/internal/rbtree"
-	"github.com/cyraxred/hercules/internal/yaml"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/utils/merkletrie"
 	"github.com/gogo/protobuf/proto"
+	"github.com/meko-christian/hercules/internal/burndown"
+	"github.com/meko-christian/hercules/internal/core"
+	"github.com/meko-christian/hercules/internal/join"
+	"github.com/meko-christian/hercules/internal/linehistory"
+	"github.com/meko-christian/hercules/internal/pb"
+	items "github.com/meko-christian/hercules/internal/plumbing"
+	"github.com/meko-christian/hercules/internal/plumbing/identity"
+	"github.com/meko-christian/hercules/internal/rbtree"
+	"github.com/meko-christian/hercules/internal/yaml"
 	"github.com/sergi/go-diff/diffmatchpatch"
 )
 
@@ -132,7 +132,8 @@ const (
 )
 
 // DenseHistory is the matrix [number of samples][number of bands] -> number of lines.
-//                                    y                  x
+//
+//	y                  x
 type DenseHistory = burndown.DenseHistory
 
 // Name of this PipelineItem. Uniquely identifies the type, used for mapping keys, etc.
@@ -153,35 +154,41 @@ func (analyser *LegacyBurndownAnalysis) Provides() []string {
 func (analyser *LegacyBurndownAnalysis) Requires() []string {
 	return []string{
 		items.DependencyFileDiff, items.DependencyTreeChanges, items.DependencyBlobCache,
-		items.DependencyTick, identity.DependencyAuthor}
+		items.DependencyTick, identity.DependencyAuthor,
+	}
 }
 
 // ListConfigurationOptions returns the list of changeable public properties of this PipelineItem.
 func (analyser *LegacyBurndownAnalysis) ListConfigurationOptions() []core.ConfigurationOption {
-	options := [...]core.ConfigurationOption{{
-		Name: ConfigLegacyBurndownHibernationThreshold,
-		Description: "The minimum size for the allocated memory in each branch to be compressed." +
-			"0 disables this optimization. Lower values trade CPU time more. Sane examples: Nx1000.",
-		Flag:    "legacy-burndown-hibernation-threshold",
-		Type:    core.IntConfigurationOption,
-		Default: 0}, {
-		Name: ConfigLegacyBurndownHibernationToDisk,
-		Description: "Save hibernated RBTree allocators to disk rather than keep it in memory; " +
-			"requires --legacy-burndown-hibernation-threshold to be greater than zero.",
-		Flag:    "legacy-burndown-hibernation-disk",
-		Type:    core.BoolConfigurationOption,
-		Default: false}, {
-		Name: ConfigLegacyBurndownHibernationDirectory,
-		Description: "Temporary directory where to save the hibernated RBTree allocators; " +
-			"requires --legacy-burndown-hibernation-disk.",
-		Flag:    "legacy-burndown-hibernation-dir",
-		Type:    core.PathConfigurationOption,
-		Default: ""}, {
-		Name:        ConfigLegacyBurndownDebug,
-		Description: "Validate the trees at each step.",
-		Flag:        "legacy-burndown-debug",
-		Type:        core.BoolConfigurationOption,
-		Default:     false},
+	options := [...]core.ConfigurationOption{
+		{
+			Name: ConfigLegacyBurndownHibernationThreshold,
+			Description: "The minimum size for the allocated memory in each branch to be compressed." +
+				"0 disables this optimization. Lower values trade CPU time more. Sane examples: Nx1000.",
+			Flag:    "legacy-burndown-hibernation-threshold",
+			Type:    core.IntConfigurationOption,
+			Default: 0,
+		}, {
+			Name: ConfigLegacyBurndownHibernationToDisk,
+			Description: "Save hibernated RBTree allocators to disk rather than keep it in memory; " +
+				"requires --legacy-burndown-hibernation-threshold to be greater than zero.",
+			Flag:    "legacy-burndown-hibernation-disk",
+			Type:    core.BoolConfigurationOption,
+			Default: false,
+		}, {
+			Name: ConfigLegacyBurndownHibernationDirectory,
+			Description: "Temporary directory where to save the hibernated RBTree allocators; " +
+				"requires --legacy-burndown-hibernation-disk.",
+			Flag:    "legacy-burndown-hibernation-dir",
+			Type:    core.PathConfigurationOption,
+			Default: "",
+		}, {
+			Name:        ConfigLegacyBurndownDebug,
+			Description: "Validate the trees at each step.",
+			Flag:        "legacy-burndown-debug",
+			Type:        core.BoolConfigurationOption,
+			Default:     false,
+		},
 	}
 	return append(BurndownSharedOptions[:], options[:]...)
 }
@@ -574,7 +581,8 @@ func (analyser *LegacyBurndownAnalysis) Deserialize(pbmessage []byte) (interface
 
 // MergeResults combines two BurndownResult-s together.
 func (analyser *LegacyBurndownAnalysis) MergeResults(
-	r1, r2 interface{}, c1, c2 *core.CommonAnalysisResult) interface{} {
+	r1, r2 interface{}, c1, c2 *core.CommonAnalysisResult,
+) interface{} {
 	bar1 := r1.(BurndownResult)
 	bar2 := r2.(BurndownResult)
 	if bar1.tickSize != bar2.tickSize {
@@ -598,7 +606,7 @@ func (analyser *LegacyBurndownAnalysis) MergeResults(
 	people, merged.reversedPeopleDict = join.PeopleIdentities(
 		bar1.reversedPeopleDict, bar2.reversedPeopleDict)
 	var wg sync.WaitGroup
-	var sem = make(chan int, 5) // with large files not limiting number of GoRoutines eats 200G of RAM on large merges
+	sem := make(chan int, 5) // with large files not limiting number of GoRoutines eats 200G of RAM on large merges
 	if len(bar1.GlobalHistory) > 0 || len(bar2.GlobalHistory) > 0 {
 		wg.Add(1)
 		sem <- 1
@@ -703,8 +711,8 @@ func roundTime(t time.Time, d time.Duration, dir bool) int {
 // least of (sampling1, sampling2) and (granularity1, granularity2).
 func (analyser *LegacyBurndownAnalysis) mergeMatrices(
 	m1, m2 DenseHistory, granularity1, sampling1, granularity2, sampling2 int, tickSize time.Duration,
-	c1, c2 *core.CommonAnalysisResult) DenseHistory {
-
+	c1, c2 *core.CommonAnalysisResult,
+) DenseHistory {
 	//	defer print("mergeMatrices exit\n\n\n")
 	//	print("mergeMatrices enter\n\n\n")
 
@@ -783,7 +791,6 @@ func (analyser *LegacyBurndownAnalysis) mergeMatrices(
 // Columns: *at least* len(matrix[...]) * granularity + offset
 // `matrix` can be sparse, so that the last columns which are equal to 0 are truncated.
 func addBurndownMatrix(matrix DenseHistory, granularity, sampling int, accPerTick [][]float32, offset int) {
-
 	//	defer print("addBurndownMatrix exit\n")
 	//	print("addBurndownMatrix enter\n")
 
@@ -971,7 +978,6 @@ func addBurndownMatrix(matrix DenseHistory, granularity, sampling int, accPerTic
 	runtime.ReadMemStats(&a)
 
 	//	print("addBurndownMatrix Deallocated: ", (m.Alloc-a.Alloc)/1024/1024, "\n")
-
 }
 
 func (analyser *LegacyBurndownAnalysis) serializeText(result *BurndownResult, writer io.Writer) {
@@ -1125,8 +1131,8 @@ func (analyser *LegacyBurndownAnalysis) updateGlobal(_ *linehistory.File, curren
 
 // updateFile is bound to the specific `history` in the closure.
 func (analyser *LegacyBurndownAnalysis) updateFile(
-	history sparseHistory, currentTime, previousTime, delta int) {
-
+	history sparseHistory, currentTime, previousTime, delta int,
+) {
 	_, curTick := analyser.unpackPersonWithTick(currentTime)
 	_, prevTick := analyser.unpackPersonWithTick(previousTime)
 
@@ -1175,8 +1181,8 @@ func (analyser *LegacyBurndownAnalysis) updateChurnMatrix(_ *linehistory.File, c
 }
 
 func (analyser *LegacyBurndownAnalysis) newFile(
-	_ plumbing.Hash, name string, author int, tick int, size int) (*linehistory.File, error) {
-
+	_ plumbing.Hash, name string, author int, tick int, size int,
+) (*linehistory.File, error) {
 	updaters := make([]linehistory.Updater, 1)
 	updaters[0] = analyser.updateGlobal
 	if analyser.TrackFiles {
@@ -1200,7 +1206,8 @@ func (analyser *LegacyBurndownAnalysis) newFile(
 }
 
 func (analyser *LegacyBurndownAnalysis) handleInsertion(
-	change *object.Change, author int, cache map[plumbing.Hash]*items.CachedBlob) error {
+	change *object.Change, author int, cache map[plumbing.Hash]*items.CachedBlob,
+) error {
 	blob := cache[change.To.TreeEntry.Hash]
 	lines, err := blob.CountLines()
 	if err != nil {
@@ -1227,8 +1234,8 @@ func (analyser *LegacyBurndownAnalysis) handleInsertion(
 }
 
 func (analyser *LegacyBurndownAnalysis) handleDeletion(
-	change *object.Change, author int, cache map[plumbing.Hash]*items.CachedBlob) error {
-
+	change *object.Change, author int, cache map[plumbing.Hash]*items.CachedBlob,
+) error {
 	var name string
 	if change.To.TreeEntry.Hash != plumbing.ZeroHash {
 		// became binary
@@ -1278,8 +1285,8 @@ func (analyser *LegacyBurndownAnalysis) handleDeletion(
 
 func (analyser *LegacyBurndownAnalysis) handleModification(
 	change *object.Change, author int, cache map[plumbing.Hash]*items.CachedBlob,
-	diffs map[string]items.FileDiffData) error {
-
+	diffs map[string]items.FileDiffData,
+) error {
 	if analyser.tick == linehistory.TreeMergeMark {
 		analyser.mergedFiles[change.To.Name] = true
 	}
@@ -1462,8 +1469,8 @@ func (analyser *LegacyBurndownAnalysis) handleRename(from, to string) error {
 }
 
 func (analyser *LegacyBurndownAnalysis) groupSparseHistory(
-	history sparseHistory, lastTick int) (DenseHistory, int) {
-
+	history sparseHistory, lastTick int,
+) (DenseHistory, int) {
 	if len(history) == 0 {
 		panic("empty history")
 	}

@@ -4,15 +4,15 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/cyraxred/hercules/internal/core"
-	"github.com/cyraxred/hercules/internal/pb"
-	items "github.com/cyraxred/hercules/internal/plumbing"
-	"github.com/cyraxred/hercules/internal/plumbing/identity"
-	"github.com/cyraxred/hercules/internal/yaml"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/gogo/protobuf/proto"
+	"github.com/meko-christian/hercules/internal/core"
+	"github.com/meko-christian/hercules/internal/pb"
+	items "github.com/meko-christian/hercules/internal/plumbing"
+	"github.com/meko-christian/hercules/internal/plumbing/identity"
+	"github.com/meko-christian/hercules/internal/yaml"
 )
 
 // CommitsAnalysis extracts statistics for each commit
@@ -68,7 +68,8 @@ func (ca *CommitsAnalysis) Provides() []string {
 // entities are Provides() upstream.
 func (ca *CommitsAnalysis) Requires() []string {
 	return []string{
-		identity.DependencyAuthor, items.DependencyLanguages, items.DependencyLineStats}
+		identity.DependencyAuthor, items.DependencyLanguages, items.DependencyLineStats,
+	}
 }
 
 // ListConfigurationOptions returns the list of changeable public properties of this PipelineItem.

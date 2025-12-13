@@ -8,9 +8,9 @@ import (
 	"reflect"
 	"sort"
 
-	"github.com/cyraxred/hercules/internal/toposort"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/meko-christian/hercules/internal/toposort"
 )
 
 // OneShotMergeProcessor provides the convenience method to consume merges only once.
@@ -38,8 +38,7 @@ func (proc *OneShotMergeProcessor) ShouldConsumeCommit(deps map[string]interface
 }
 
 // NoopMerger provides an empty Merge() method suitable for PipelineItem.
-type NoopMerger struct {
-}
+type NoopMerger struct{}
 
 // Merge does nothing.
 func (*NoopMerger) Merge([]PipelineItem) {
@@ -231,8 +230,8 @@ func getCommitParents(commit *object.Commit) []plumbing.Hash {
 
 // buildDag generates the raw commit DAG and the commit hash map.
 func buildDag(commits []*object.Commit) (
-	map[string]*object.Commit, map[plumbing.Hash][]*object.Commit) {
-
+	map[string]*object.Commit, map[plumbing.Hash][]*object.Commit,
+) {
 	hashes := map[string]*object.Commit{}
 	for _, commit := range commits {
 		hashes[commit.Hash.String()] = commit
@@ -261,8 +260,8 @@ func buildDag(commits []*object.Commit) (
 // but the part which grows from the root.
 func leaveRootComponent(
 	hashes map[string]*object.Commit,
-	dag map[plumbing.Hash][]*object.Commit) {
-
+	dag map[plumbing.Hash][]*object.Commit,
+) {
 	visited := map[plumbing.Hash]bool{}
 	var sets [][]plumbing.Hash
 	for key := range dag {
@@ -377,8 +376,8 @@ func buildParents(dag map[plumbing.Hash][]*object.Commit) map[plumbing.Hash]map[
 func mergeDag(
 	hashes map[string]*object.Commit,
 	dag map[plumbing.Hash][]*object.Commit) (
-	mergedDag, mergedSeq map[plumbing.Hash][]*object.Commit) {
-
+	mergedDag, mergedSeq map[plumbing.Hash][]*object.Commit,
+) {
 	parents := buildParents(dag)
 	mergedDag = map[plumbing.Hash][]*object.Commit{}
 	mergedSeq = map[plumbing.Hash][]*object.Commit{}
@@ -422,8 +421,8 @@ func mergeDag(
 // collapseFastForwards removes the fast forward merges.
 func collapseFastForwards(
 	orderNodes orderer, hashes map[string]*object.Commit,
-	mergedDag, dag, mergedSeq map[plumbing.Hash][]*object.Commit) {
-
+	mergedDag, dag, mergedSeq map[plumbing.Hash][]*object.Commit,
+) {
 	parents := buildParents(mergedDag)
 	processed := map[plumbing.Hash]bool{}
 	for _, strkey := range orderNodes(false, true) {
@@ -549,8 +548,8 @@ func collapseFastForwards(
 // generatePlan creates the list of actions from the commit DAG.
 func generatePlan(
 	orderNodes orderer, hashes map[string]*object.Commit,
-	mergedDag, dag, mergedSeq map[plumbing.Hash][]*object.Commit) []runAction {
-
+	mergedDag, dag, mergedSeq map[plumbing.Hash][]*object.Commit,
+) []runAction {
 	parents := buildParents(dag)
 	var plan []runAction
 	branches := map[plumbing.Hash]int{}

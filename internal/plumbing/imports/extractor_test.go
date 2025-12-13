@@ -1,14 +1,14 @@
 package imports
 
 import (
-	"github.com/go-git/go-git/v5/plumbing/object"
 	"runtime"
 	"testing"
 
-	"github.com/cyraxred/hercules/internal/core"
-	"github.com/cyraxred/hercules/internal/plumbing"
-	"github.com/cyraxred/hercules/internal/test"
 	gitplumbing "github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/meko-christian/hercules/internal/core"
+	"github.com/meko-christian/hercules/internal/plumbing"
+	"github.com/meko-christian/hercules/internal/test"
 	"github.com/src-d/imports"
 	"github.com/stretchr/testify/assert"
 )
@@ -72,7 +72,7 @@ func TestExtractorConsumeModification(t *testing.T) {
 		Tree: treeFrom,
 		TreeEntry: object.TreeEntry{
 			Name: "labours.py",
-			Mode: 0100644,
+			Mode: 0o100644,
 			Hash: gitplumbing.NewHash("1cacfc1bf0f048eb2f31973750983ae5d8de647a"),
 		},
 	}, To: object.ChangeEntry{
@@ -80,7 +80,7 @@ func TestExtractorConsumeModification(t *testing.T) {
 		Tree: treeTo,
 		TreeEntry: object.TreeEntry{
 			Name: "labours.py",
-			Mode: 0100644,
+			Mode: 0o100644,
 			Hash: gitplumbing.NewHash("c872b8d2291a5224e2c9f6edd7f46039b96b4742"),
 		},
 	}}
@@ -102,6 +102,8 @@ func TestExtractorConsumeModification(t *testing.T) {
 	file := ex[gitplumbing.NewHash("c872b8d2291a5224e2c9f6edd7f46039b96b4742")]
 	assert.Equal(t, "labours.py", file.Path)
 	assert.Equal(t, "Python", file.Lang)
-	assert.Equal(t, []string{"argparse", "datetime", "matplotlib", "matplotlib.pyplot", "numpy",
-		"pandas", "sys", "warnings"}, file.Imports)
+	assert.Equal(t, []string{
+		"argparse", "datetime", "matplotlib", "matplotlib.pyplot", "numpy",
+		"pandas", "sys", "warnings",
+	}, file.Imports)
 }

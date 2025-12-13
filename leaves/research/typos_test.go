@@ -6,14 +6,14 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/cyraxred/hercules/internal/core"
-	"github.com/cyraxred/hercules/internal/pb"
-	items "github.com/cyraxred/hercules/internal/plumbing"
-	uast_items "github.com/cyraxred/hercules/internal/plumbing/uast"
-	"github.com/cyraxred/hercules/internal/test"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/gogo/protobuf/proto"
+	"github.com/meko-christian/hercules/internal/core"
+	"github.com/meko-christian/hercules/internal/pb"
+	items "github.com/meko-christian/hercules/internal/plumbing"
+	uast_items "github.com/meko-christian/hercules/internal/plumbing/uast"
+	"github.com/meko-christian/hercules/internal/test"
 	"github.com/stretchr/testify/assert"
 	"gopkg.in/bblfsh/client-go.v3/tools"
 	"gopkg.in/bblfsh/sdk.v2/uast"
@@ -25,7 +25,8 @@ func TestTyposDatasetMeta(t *testing.T) {
 	assert.Equal(t, tdb.Name(), "TyposDataset")
 	assert.Len(t, tdb.Provides(), 0)
 	required := [...]string{
-		uast_items.DependencyUastChanges, items.DependencyFileDiff, items.DependencyBlobCache}
+		uast_items.DependencyUastChanges, items.DependencyFileDiff, items.DependencyBlobCache,
+	}
 	for _, name := range required {
 		assert.Contains(t, tdb.Requires(), name)
 	}
@@ -94,7 +95,7 @@ func bakeTyposDeps(t *testing.T) map[string]interface{} {
 		Tree: treeFrom,
 		TreeEntry: object.TreeEntry{
 			Name: "file_test.go",
-			Mode: 0100644,
+			Mode: 0o100644,
 			Hash: plumbing.NewHash("75bb0a09fc01db55d7322f0fae523453edba7846"),
 		},
 	}, To: object.ChangeEntry{
@@ -102,19 +103,20 @@ func bakeTyposDeps(t *testing.T) map[string]interface{} {
 		Tree: treeTo,
 		TreeEntry: object.TreeEntry{
 			Name: "file_test.go",
-			Mode: 0100644,
+			Mode: 0o100644,
 			Hash: plumbing.NewHash("75bb0a09fc01db55d7322f0fae523453edba7846"),
 		},
 	}}
-	changes[1] = &object.Change{From: object.ChangeEntry{}, To: object.ChangeEntry{
-		Name: "blob_cache_test.go",
-		Tree: treeTo,
-		TreeEntry: object.TreeEntry{
+	changes[1] = &object.Change{
+		From: object.ChangeEntry{}, To: object.ChangeEntry{
 			Name: "blob_cache_test.go",
-			Mode: 0100644,
-			Hash: plumbing.NewHash("b9a12fd144274c99c7c9a0a32a0268f8b36d2f2c"),
+			Tree: treeTo,
+			TreeEntry: object.TreeEntry{
+				Name: "blob_cache_test.go",
+				Mode: 0o100644,
+				Hash: plumbing.NewHash("b9a12fd144274c99c7c9a0a32a0268f8b36d2f2c"),
+			},
 		},
-	},
 	}
 	deps[items.DependencyTreeChanges] = changes
 	deps[core.DependencyCommit], _ = test.Repository.CommitObject(plumbing.NewHash(

@@ -4,11 +4,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cyraxred/hercules/internal/core"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/utils/merkletrie"
+	"github.com/meko-christian/hercules/internal/core"
 	"github.com/sergi/go-diff/diffmatchpatch"
 )
 
@@ -75,19 +75,22 @@ func (diff *FileDiff) ListConfigurationOptions() []core.ConfigurationOption {
 			Description: "Do not apply additional heuristics to improve diffs.",
 			Flag:        "no-diff-cleanup",
 			Type:        core.BoolConfigurationOption,
-			Default:     false},
+			Default:     false,
+		},
 		{
 			Name:        ConfigFileWhitespaceIgnore,
 			Description: "Ignore whitespace when computing diffs.",
 			Flag:        "no-diff-whitespace",
 			Type:        core.BoolConfigurationOption,
-			Default:     false},
+			Default:     false,
+		},
 		{
 			Name:        ConfigFileDiffTimeout,
 			Description: "Maximum time in milliseconds a single diff calculation may elapse.",
 			Flag:        "diff-timeout",
 			Type:        core.IntConfigurationOption,
-			Default:     1000},
+			Default:     1000,
+		},
 	}
 
 	return options[:]

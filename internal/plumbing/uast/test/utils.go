@@ -3,9 +3,9 @@ package test
 import (
 	"io/ioutil"
 
-	core_test "github.com/cyraxred/hercules/internal/test"
 	"github.com/go-git/go-git/v5/plumbing"
-	"gopkg.in/bblfsh/client-go.v3"
+	core_test "github.com/meko-christian/hercules/internal/test"
+	bblfsh "gopkg.in/bblfsh/client-go.v3"
 	"gopkg.in/bblfsh/sdk.v2/uast/nodes"
 )
 

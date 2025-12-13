@@ -10,9 +10,8 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/meko-christian/hercules/internal/core"
 	"github.com/src-d/enry/v2"
-
-	"github.com/cyraxred/hercules/internal/core"
 )
 
 // TreeDiff generates the list of changes for a commit. A change can be either one or two blobs
@@ -90,37 +89,36 @@ func (*TreeDiff) Features() []string {
 
 // ListConfigurationOptions returns the list of changeable public properties of this PipelineItem.
 func (treediff *TreeDiff) ListConfigurationOptions() []core.ConfigurationOption {
-	options := [...]core.ConfigurationOption{{
-		Name: ConfigTreeDiffEnableBlacklist,
-		Description: "Skip blacklisted directories and vendored files (according to " +
-			"src-d/enry.IsVendor).",
-		Flag:    "skip-blacklist",
-		Type:    core.BoolConfigurationOption,
-		Default: false}, {
-
-		Name: ConfigTreeDiffBlacklistedPrefixes,
-		Description: "List of blacklisted path prefixes (e.g. directories or specific files). " +
-			"Values are in the UNIX format (\"path/to/x\"). Values should *not* start with \"/\". " +
-			"Separated with commas \",\".",
-		Flag:    "blacklisted-prefixes",
-		Type:    core.StringsConfigurationOption,
-		Default: defaultBlacklistedPrefixes}, {
-
-		Name: ConfigTreeDiffLanguages,
-		Description: fmt.Sprintf(
-			"List of programming languages to analyze. Separated by comma \",\". "+
-				"The names are the keys in https://github.com/github/linguist/blob/master/lib/linguist/languages.yml "+
-				"\"%s\" is the special name which disables this filter and lets all the files through.",
-			allLanguages),
-		Flag:    "languages",
-		Type:    core.StringsConfigurationOption,
-		Default: []string{allLanguages}}, {
-
-		Name:        ConfigTreeDiffFilterRegexp,
-		Description: "Whitelist regexp to determine which files to analyze.",
-		Flag:        "whitelist",
-		Type:        core.StringConfigurationOption,
-		Default:     ""},
+	options := [...]core.ConfigurationOption{
+		{
+			Name: ConfigTreeDiffEnableBlacklist,
+			Description: "Skip blacklisted directories and vendored files (according to " +
+				"src-d/enry.IsVendor).",
+			Flag:    "skip-blacklist",
+			Type:    core.BoolConfigurationOption,
+			Default: false,
+		}, {
+			Name: ConfigTreeDiffBlacklistedPrefixes,
+			Description: "List of blacklisted path prefixes (e.g. directories or specific files). " +
+				"Values are in the UNIX format (\"path/to/x\"). Values should *not* start with \"/\". " +
+				"Separated with commas \",\".",
+			Flag:    "blacklisted-prefixes",
+			Type:    core.StringsConfigurationOption,
+			Default: defaultBlacklistedPrefixes}, {
+			Name: ConfigTreeDiffLanguages,
+			Description: fmt.Sprintf(
+				"List of programming languages to analyze. Separated by comma \",\". "+
+					"The names are the keys in https://github.com/github/linguist/blob/master/lib/linguist/languages.yml "+
+					"\"%s\" is the special name which disables this filter and lets all the files through.",
+				allLanguages),
+			Flag:    "languages",
+			Type:    core.StringsConfigurationOption,
+			Default: []string{allLanguages}}, {
+			Name:        ConfigTreeDiffFilterRegexp,
+			Description: "Whitelist regexp to determine which files to analyze.",
+			Flag:        "whitelist",
+			Type:        core.StringConfigurationOption,
+			Default:     ""},
 	}
 	return options[:]
 }
@@ -216,7 +214,9 @@ func (treediff *TreeDiff) Consume(deps map[string]interface{}) (map[string]inter
 				}
 				diffs = append(diffs, &object.Change{
 					To: object.ChangeEntry{Name: file.Name, Tree: tree, TreeEntry: object.TreeEntry{
-						Name: file.Name, Mode: file.Mode, Hash: file.Hash}}})
+						Name: file.Name, Mode: file.Mode, Hash: file.Hash,
+					}},
+				})
 			}
 			return nil
 		}()

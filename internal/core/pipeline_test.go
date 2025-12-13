@@ -10,11 +10,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cyraxred/hercules/internal/pb"
-	"github.com/cyraxred/hercules/internal/test"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/meko-christian/hercules/internal/pb"
+	"github.com/meko-christian/hercules/internal/test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -604,7 +604,8 @@ C 1 af9ddc0db70f09f3f27b4b98e415592a7485171c
 func TestCommonAnalysisResultCopy(t *testing.T) {
 	c1 := CommonAnalysisResult{
 		BeginTime: 1513620635, EndTime: 1513720635, CommitsNumber: 1, RunTime: 100,
-		RunTimePerItem: map[string]float64{"one": 1, "two": 2}}
+		RunTimePerItem: map[string]float64{"one": 1, "two": 2},
+	}
 	c2 := c1.Copy()
 	assert.Equal(t, c1, c2)
 	c2.RunTimePerItem["one"] = 100500
@@ -614,12 +615,14 @@ func TestCommonAnalysisResultCopy(t *testing.T) {
 func TestCommonAnalysisResultMerge(t *testing.T) {
 	c1 := CommonAnalysisResult{
 		BeginTime: 1513620635, EndTime: 1513720635, CommitsNumber: 1, RunTime: 100,
-		RunTimePerItem: map[string]float64{"one": 1, "two": 2}}
+		RunTimePerItem: map[string]float64{"one": 1, "two": 2},
+	}
 	assert.Equal(t, c1.BeginTimeAsTime().Unix(), int64(1513620635))
 	assert.Equal(t, c1.EndTimeAsTime().Unix(), int64(1513720635))
 	c2 := CommonAnalysisResult{
 		BeginTime: 1513620535, EndTime: 1513730635, CommitsNumber: 2, RunTime: 200,
-		RunTimePerItem: map[string]float64{"two": 4, "three": 8}}
+		RunTimePerItem: map[string]float64{"two": 4, "three": 8},
+	}
 	c1.Merge(&c2)
 	assert.Equal(t, c1.BeginTime, int64(1513620535))
 	assert.Equal(t, c1.EndTime, int64(1513730635))
@@ -631,7 +634,8 @@ func TestCommonAnalysisResultMerge(t *testing.T) {
 func TestCommonAnalysisResultMetadata(t *testing.T) {
 	c1 := &CommonAnalysisResult{
 		BeginTime: 1513620635, EndTime: 1513720635, CommitsNumber: 1, RunTime: 100 * 1e6,
-		RunTimePerItem: map[string]float64{"one": 1, "two": 2}}
+		RunTimePerItem: map[string]float64{"one": 1, "two": 2},
+	}
 	meta := &pb.Metadata{}
 	c1 = MetadataToCommonAnalysisResult(c1.FillMetadata(meta))
 	assert.Equal(t, c1.BeginTimeAsTime().Unix(), int64(1513620635))

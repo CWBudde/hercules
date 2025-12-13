@@ -3,10 +3,10 @@ package plumbing
 import (
 	"testing"
 
-	"github.com/cyraxred/hercules/internal/core"
-	"github.com/cyraxred/hercules/internal/test"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/meko-christian/hercules/internal/core"
+	"github.com/meko-christian/hercules/internal/test"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -50,48 +50,50 @@ func TestLanguagesDetectionConsume(t *testing.T) {
 		"96c6ece9b2f3c7c51b83516400d278dea5605100"))
 	treeTo, _ := test.Repository.TreeObject(plumbing.NewHash(
 		"251f2094d7b523d5bcc60e663b6cf38151bf8844"))
-	changes[0] = &object.Change{From: object.ChangeEntry{
-		Name: "analyser.go",
-		Tree: treeFrom,
-		TreeEntry: object.TreeEntry{
+	changes[0] = &object.Change{
+		From: object.ChangeEntry{
 			Name: "analyser.go",
-			Mode: 0100644,
-			Hash: plumbing.NewHash("baa64828831d174f40140e4b3cfa77d1e917a2c1"),
-		},
-	}, To: object.ChangeEntry{},
+			Tree: treeFrom,
+			TreeEntry: object.TreeEntry{
+				Name: "analyser.go",
+				Mode: 0o100644,
+				Hash: plumbing.NewHash("baa64828831d174f40140e4b3cfa77d1e917a2c1"),
+			},
+		}, To: object.ChangeEntry{},
 	}
-	changes[1] = &object.Change{From: object.ChangeEntry{}, To: object.ChangeEntry{
-		Name: "burndown.bin",
-		Tree: treeTo,
-		TreeEntry: object.TreeEntry{
+	changes[1] = &object.Change{
+		From: object.ChangeEntry{}, To: object.ChangeEntry{
 			Name: "burndown.bin",
-			Mode: 0100644,
-			Hash: plumbing.NewHash("29c9fafd6a2fae8cd20298c3f60115bc31a4c0f2"),
+			Tree: treeTo,
+			TreeEntry: object.TreeEntry{
+				Name: "burndown.bin",
+				Mode: 0o100644,
+				Hash: plumbing.NewHash("29c9fafd6a2fae8cd20298c3f60115bc31a4c0f2"),
+			},
 		},
-	},
 	}
-	changes[2] = &object.Change{From: object.ChangeEntry{
-		Name: "cmd/hercules/main.go",
-		Tree: treeFrom,
-		TreeEntry: object.TreeEntry{
+	changes[2] = &object.Change{
+		From: object.ChangeEntry{
 			Name: "cmd/hercules/main.go",
-			Mode: 0100644,
-			Hash: plumbing.NewHash("c29112dbd697ad9b401333b80c18a63951bc18d9"),
+			Tree: treeFrom,
+			TreeEntry: object.TreeEntry{
+				Name: "cmd/hercules/main.go",
+				Mode: 0o100644,
+				Hash: plumbing.NewHash("c29112dbd697ad9b401333b80c18a63951bc18d9"),
+			},
+		}, To: object.ChangeEntry{
+			Name: "cmd/hercules/main2.go",
+			Tree: treeTo,
+			TreeEntry: object.TreeEntry{
+				Name: "cmd/hercules/main.go",
+				Mode: 0o100644,
+				Hash: plumbing.NewHash("f7d918ec500e2f925ecde79b51cc007bac27de72"),
+			},
 		},
-	}, To: object.ChangeEntry{
-		Name: "cmd/hercules/main2.go",
-		Tree: treeTo,
-		TreeEntry: object.TreeEntry{
-			Name: "cmd/hercules/main.go",
-			Mode: 0100644,
-			Hash: plumbing.NewHash("f7d918ec500e2f925ecde79b51cc007bac27de72"),
-		},
-	},
 	}
 	cache := map[plumbing.Hash]*CachedBlob{}
 	AddHash(t, cache, "baa64828831d174f40140e4b3cfa77d1e917a2c1")
-	cache[plumbing.NewHash("29c9fafd6a2fae8cd20298c3f60115bc31a4c0f2")] =
-		&CachedBlob{Data: make([]byte, 1000)}
+	cache[plumbing.NewHash("29c9fafd6a2fae8cd20298c3f60115bc31a4c0f2")] = &CachedBlob{Data: make([]byte, 1000)}
 	AddHash(t, cache, "c29112dbd697ad9b401333b80c18a63951bc18d9")
 	AddHash(t, cache, "f7d918ec500e2f925ecde79b51cc007bac27de72")
 

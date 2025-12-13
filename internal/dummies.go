@@ -8,8 +8,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-type dummyIO struct {
-}
+type dummyIO struct{}
 
 func (dummyIO) Read(p []byte) (int, error) {
 	return 0, io.EOF

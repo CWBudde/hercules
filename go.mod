@@ -1,11 +1,11 @@
-module github.com/cyraxred/hercules
+module github.com/meko-christian/hercules
 
 go 1.18
 
 require (
 	github.com/Jeffail/tunny v0.0.0-20180304204616-59cfa8fcb19f
 	github.com/Masterminds/sprig v0.0.0-20180725212158-77bb58b7f5e1
-	github.com/cyraxred/go-billy-siva v0.5.1
+	github.com/meko-christian/go-billy-siva v0.5.1
 	github.com/fatih/camelcase v1.0.0
 	github.com/go-git/go-billy/v5 v5.4.0
 	github.com/go-git/go-git/v5 v5.5.2

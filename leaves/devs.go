@@ -3,21 +3,21 @@ package leaves
 import (
 	"errors"
 	"fmt"
-	"github.com/cyraxred/hercules/internal/join"
 	"io"
 	"sort"
 	"strings"
 	"time"
 
-	"github.com/cyraxred/hercules/internal/core"
-	"github.com/cyraxred/hercules/internal/pb"
-	items "github.com/cyraxred/hercules/internal/plumbing"
-	"github.com/cyraxred/hercules/internal/plumbing/identity"
-	"github.com/cyraxred/hercules/internal/yaml"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/gogo/protobuf/proto"
+	"github.com/meko-christian/hercules/internal/core"
+	"github.com/meko-christian/hercules/internal/join"
+	"github.com/meko-christian/hercules/internal/pb"
+	items "github.com/meko-christian/hercules/internal/plumbing"
+	"github.com/meko-christian/hercules/internal/plumbing/identity"
+	"github.com/meko-christian/hercules/internal/yaml"
 )
 
 // DevsAnalysis calculates the number of commits through time per developer.
@@ -84,7 +84,8 @@ func (devs *DevsAnalysis) Provides() []string {
 func (devs *DevsAnalysis) Requires() []string {
 	return []string{
 		identity.DependencyAuthor, items.DependencyTreeChanges, items.DependencyTick,
-		items.DependencyLanguages, items.DependencyLineStats}
+		items.DependencyLanguages, items.DependencyLineStats,
+	}
 }
 
 // ListConfigurationOptions returns the list of changeable public properties of this PipelineItem.
@@ -94,7 +95,8 @@ func (devs *DevsAnalysis) ListConfigurationOptions() []core.ConfigurationOption 
 		Description: "Take into account empty commits such as trivial merges.",
 		Flag:        "empty-commits",
 		Type:        core.BoolConfigurationOption,
-		Default:     false}}
+		Default:     false,
+	}}
 	return options[:]
 }
 

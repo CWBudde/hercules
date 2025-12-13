@@ -1,9 +1,10 @@
 package toposort
 
 import (
-	"github.com/stretchr/testify/assert"
 	"sort"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func index(s []string, v string) int {
@@ -26,7 +27,6 @@ func TestToposortDuplicatedNode(t *testing.T) {
 	if graph.AddNode("a") {
 		t.Error("not raising duplicated node error")
 	}
-
 }
 
 func TestToposortRemoveNotExistEdge(t *testing.T) {

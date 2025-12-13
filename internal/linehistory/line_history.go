@@ -10,14 +10,14 @@ import (
 	"sync/atomic"
 	"unicode/utf8"
 
-	"github.com/cyraxred/hercules/internal/core"
-	items "github.com/cyraxred/hercules/internal/plumbing"
-	"github.com/cyraxred/hercules/internal/plumbing/identity"
-	"github.com/cyraxred/hercules/internal/rbtree"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/utils/merkletrie"
+	"github.com/meko-christian/hercules/internal/core"
+	items "github.com/meko-christian/hercules/internal/plumbing"
+	"github.com/meko-christian/hercules/internal/plumbing/identity"
+	"github.com/meko-christian/hercules/internal/rbtree"
 	"github.com/sergi/go-diff/diffmatchpatch"
 )
 
@@ -172,7 +172,8 @@ func (analyser *LineHistoryAnalyser) Provides() []string {
 func (analyser *LineHistoryAnalyser) Requires() []string {
 	return []string{
 		items.DependencyFileDiff, items.DependencyTreeChanges, items.DependencyBlobCache,
-		items.DependencyTick, identity.DependencyAuthor}
+		items.DependencyTick, identity.DependencyAuthor,
+	}
 }
 
 func (*LineHistoryAnalyser) Features() []string {
@@ -181,28 +182,33 @@ func (*LineHistoryAnalyser) Features() []string {
 
 // ListConfigurationOptions returns the list of changeable public properties of this PipelineItem.
 func (analyser *LineHistoryAnalyser) ListConfigurationOptions() []core.ConfigurationOption {
-	options := [...]core.ConfigurationOption{{
-		Name: ConfigLinesHibernationThreshold,
-		Description: "The minimum size for the allocated memory in each branch to be compressed." +
-			"0 disables this optimization. Lower values trade CPU time more. Sane examples: Nx1000.",
-		Flag:    "lines-hibernation-threshold",
-		Type:    core.IntConfigurationOption,
-		Default: 0}, {
-		Name:        ConfigLinesHibernationToDisk,
-		Description: "Save hibernated RBTree allocators to disk rather than keep it in memory.",
-		Flag:        "lines-hibernation-disk",
-		Type:        core.BoolConfigurationOption,
-		Default:     false}, {
-		Name:        ConfigLinesHibernationDirectory,
-		Description: "Temporary directory where to save the hibernated RBTree allocators.",
-		Flag:        "lines-hibernation-dir",
-		Type:        core.PathConfigurationOption,
-		Default:     ""}, {
-		Name:        ConfigLinesDebug,
-		Description: "Validate the trees at each step.",
-		Flag:        "lines-debug",
-		Type:        core.BoolConfigurationOption,
-		Default:     false},
+	options := [...]core.ConfigurationOption{
+		{
+			Name: ConfigLinesHibernationThreshold,
+			Description: "The minimum size for the allocated memory in each branch to be compressed." +
+				"0 disables this optimization. Lower values trade CPU time more. Sane examples: Nx1000.",
+			Flag:    "lines-hibernation-threshold",
+			Type:    core.IntConfigurationOption,
+			Default: 0,
+		}, {
+			Name:        ConfigLinesHibernationToDisk,
+			Description: "Save hibernated RBTree allocators to disk rather than keep it in memory.",
+			Flag:        "lines-hibernation-disk",
+			Type:        core.BoolConfigurationOption,
+			Default:     false,
+		}, {
+			Name:        ConfigLinesHibernationDirectory,
+			Description: "Temporary directory where to save the hibernated RBTree allocators.",
+			Flag:        "lines-hibernation-dir",
+			Type:        core.PathConfigurationOption,
+			Default:     "",
+		}, {
+			Name:        ConfigLinesDebug,
+			Description: "Validate the trees at each step.",
+			Flag:        "lines-debug",
+			Type:        core.BoolConfigurationOption,
+			Default:     false,
+		},
 	}
 	return options[:]
 }
@@ -380,7 +386,7 @@ func (analyser *LineHistoryAnalyser) Fork(n int) []core.PipelineItem {
 func (analyser *LineHistoryAnalyser) Merge(items []core.PipelineItem) {
 	analyser.onNewTick()
 
-	//clones := make([]*LineHistoryAnalyser, len(items))
+	// clones := make([]*LineHistoryAnalyser, len(items))
 	for _, item := range items {
 		clone := item.(*LineHistoryAnalyser)
 
@@ -443,7 +449,6 @@ func (analyser *LineHistoryAnalyser) Boot() error {
 // This hack is needed to simplify the values storage inside File-s. We can compare
 // different values together and they are compared as ticks for the same author.
 func packPersonWithTick(author core.AuthorId, tick core.TickNumber) int {
-
 	if author > core.AuthorMissing {
 		log.Fatalf("person > AuthorMissing %d \n%s", author, string(debug.Stack()))
 	}
@@ -507,8 +512,8 @@ func (analyser *LineHistoryAnalyser) updateChangeList(f *File, currentTime, prev
 }
 
 func (analyser *LineHistoryAnalyser) newFile(
-	_ plumbing.Hash, name string, author core.AuthorId, tick core.TickNumber, size int) (*File, error) {
-
+	_ plumbing.Hash, name string, author core.AuthorId, tick core.TickNumber, size int,
+) (*File, error) {
 	analyser.forgetFileName(name)
 
 	fileId := analyser.fileIdCounter.next()
@@ -529,7 +534,8 @@ func (analyser *LineHistoryAnalyser) forgetFileName(name string) *File {
 }
 
 func (analyser *LineHistoryAnalyser) handleInsertion(
-	change *object.Change, author core.AuthorId, cache map[plumbing.Hash]*items.CachedBlob) error {
+	change *object.Change, author core.AuthorId, cache map[plumbing.Hash]*items.CachedBlob,
+) error {
 	blob := cache[change.To.TreeEntry.Hash]
 
 	name := change.To.Name
@@ -551,8 +557,8 @@ func (analyser *LineHistoryAnalyser) handleInsertion(
 }
 
 func (analyser *LineHistoryAnalyser) handleDeletion(
-	change *object.Change, author core.AuthorId, cache map[plumbing.Hash]*items.CachedBlob) error {
-
+	change *object.Change, author core.AuthorId, cache map[plumbing.Hash]*items.CachedBlob,
+) error {
 	var name string
 	if change.To.TreeEntry.Hash != plumbing.ZeroHash {
 		// became binary
@@ -582,8 +588,8 @@ func (analyser *LineHistoryAnalyser) handleDeletion(
 
 func (analyser *LineHistoryAnalyser) handleModification(
 	change *object.Change, author core.AuthorId, cache map[plumbing.Hash]*items.CachedBlob,
-	diffs map[string]items.FileDiffData) error {
-
+	diffs map[string]items.FileDiffData,
+) error {
 	file, exists := analyser.files[change.From.Name]
 	if !exists {
 		// this indeed may happen

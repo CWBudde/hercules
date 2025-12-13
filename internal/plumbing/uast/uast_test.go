@@ -11,13 +11,13 @@ import (
 	"path"
 	"testing"
 
-	"github.com/cyraxred/hercules/internal/core"
-	"github.com/cyraxred/hercules/internal/pb"
-	items "github.com/cyraxred/hercules/internal/plumbing"
-	"github.com/cyraxred/hercules/internal/test"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/gogo/protobuf/proto"
+	"github.com/meko-christian/hercules/internal/core"
+	"github.com/meko-christian/hercules/internal/pb"
+	items "github.com/meko-christian/hercules/internal/plumbing"
+	"github.com/meko-christian/hercules/internal/test"
 	"github.com/stretchr/testify/assert"
 	"gopkg.in/bblfsh/sdk.v2/uast"
 	"gopkg.in/bblfsh/sdk.v2/uast/nodes"
@@ -110,53 +110,57 @@ func TestUASTExtractorConsume(t *testing.T) {
 		"96c6ece9b2f3c7c51b83516400d278dea5605100"))
 	treeTo, _ := test.Repository.TreeObject(plumbing.NewHash(
 		"251f2094d7b523d5bcc60e663b6cf38151bf8844"))
-	changes[0] = &object.Change{From: object.ChangeEntry{
-		Name: "analyser.go",
-		Tree: treeFrom,
-		TreeEntry: object.TreeEntry{
+	changes[0] = &object.Change{
+		From: object.ChangeEntry{
 			Name: "analyser.go",
-			Mode: 0100644,
-			Hash: plumbing.NewHash("baa64828831d174f40140e4b3cfa77d1e917a2c1"),
-		},
-	}, To: object.ChangeEntry{},
+			Tree: treeFrom,
+			TreeEntry: object.TreeEntry{
+				Name: "analyser.go",
+				Mode: 0o100644,
+				Hash: plumbing.NewHash("baa64828831d174f40140e4b3cfa77d1e917a2c1"),
+			},
+		}, To: object.ChangeEntry{},
 	}
-	changes[1] = &object.Change{From: object.ChangeEntry{
-		Name: "cmd/hercules/main.go",
-		Tree: treeFrom,
-		TreeEntry: object.TreeEntry{
+	changes[1] = &object.Change{
+		From: object.ChangeEntry{
 			Name: "cmd/hercules/main.go",
-			Mode: 0100644,
-			Hash: plumbing.NewHash("c29112dbd697ad9b401333b80c18a63951bc18d9"),
-		},
-	}, To: object.ChangeEntry{
-		Name: "cmd/hercules/main.go",
-		Tree: treeTo,
-		TreeEntry: object.TreeEntry{
+			Tree: treeFrom,
+			TreeEntry: object.TreeEntry{
+				Name: "cmd/hercules/main.go",
+				Mode: 0o100644,
+				Hash: plumbing.NewHash("c29112dbd697ad9b401333b80c18a63951bc18d9"),
+			},
+		}, To: object.ChangeEntry{
 			Name: "cmd/hercules/main.go",
-			Mode: 0100644,
-			Hash: plumbing.NewHash("f7d918ec500e2f925ecde79b51cc007bac27de72"),
+			Tree: treeTo,
+			TreeEntry: object.TreeEntry{
+				Name: "cmd/hercules/main.go",
+				Mode: 0o100644,
+				Hash: plumbing.NewHash("f7d918ec500e2f925ecde79b51cc007bac27de72"),
+			},
 		},
-	},
 	}
-	changes[2] = &object.Change{From: object.ChangeEntry{}, To: object.ChangeEntry{
-		Name: "linux.png",
-		Tree: treeTo,
-		TreeEntry: object.TreeEntry{
+	changes[2] = &object.Change{
+		From: object.ChangeEntry{}, To: object.ChangeEntry{
 			Name: "linux.png",
-			Mode: 0100644,
-			Hash: plumbing.NewHash("81f2b6d1fa5357f90e9dead150cd515720897545"),
+			Tree: treeTo,
+			TreeEntry: object.TreeEntry{
+				Name: "linux.png",
+				Mode: 0o100644,
+				Hash: plumbing.NewHash("81f2b6d1fa5357f90e9dead150cd515720897545"),
+			},
 		},
-	},
 	}
-	changes[3] = &object.Change{From: object.ChangeEntry{}, To: object.ChangeEntry{
-		Name: "README.md",
-		Tree: treeTo,
-		TreeEntry: object.TreeEntry{
+	changes[3] = &object.Change{
+		From: object.ChangeEntry{}, To: object.ChangeEntry{
 			Name: "README.md",
-			Mode: 0100644,
-			Hash: plumbing.NewHash("5248c86995f6d60eb57730da18b5e020a4341863"),
+			Tree: treeTo,
+			TreeEntry: object.TreeEntry{
+				Name: "README.md",
+				Mode: 0o100644,
+				Hash: plumbing.NewHash("5248c86995f6d60eb57730da18b5e020a4341863"),
+			},
 		},
-	},
 	}
 	cache := map[plumbing.Hash]*items.CachedBlob{}
 	for _, hash := range []string{
@@ -188,15 +192,16 @@ func TestUASTExtractorConsume(t *testing.T) {
 	exr.FailOnErrors = false
 
 	hash := plumbing.NewHash("5d78f57d732aed825764347ec6f3ab74d50d0619")
-	changes[1] = &object.Change{From: object.ChangeEntry{}, To: object.ChangeEntry{
-		Name: "labours.py",
-		Tree: treeTo,
-		TreeEntry: object.TreeEntry{
+	changes[1] = &object.Change{
+		From: object.ChangeEntry{}, To: object.ChangeEntry{
 			Name: "labours.py",
-			Mode: 0100644,
-			Hash: hash,
+			Tree: treeTo,
+			TreeEntry: object.TreeEntry{
+				Name: "labours.py",
+				Mode: 0o100644,
+				Hash: hash,
+			},
 		},
-	},
 	}
 	deps[items.DependencyTreeChanges] = changes[:2]
 
@@ -297,7 +302,7 @@ func TestUASTChangesConsume(t *testing.T) {
 		Tree: treeFrom,
 		TreeEntry: object.TreeEntry{
 			Name: "analyser.go",
-			Mode: 0100644,
+			Mode: 0o100644,
 			Hash: plumbing.NewHash("dc248ba2b22048cc730c571a748e8ffcf7085ab9"),
 		},
 	}, To: object.ChangeEntry{
@@ -305,29 +310,31 @@ func TestUASTChangesConsume(t *testing.T) {
 		Tree: treeTo,
 		TreeEntry: object.TreeEntry{
 			Name: "analyser.go",
-			Mode: 0100644,
+			Mode: 0o100644,
 			Hash: plumbing.NewHash("baa64828831d174f40140e4b3cfa77d1e917a2c1"),
 		},
 	}}
-	changes[1] = &object.Change{From: object.ChangeEntry{}, To: object.ChangeEntry{
-		Name: "cmd/hercules/main.go",
-		Tree: treeTo,
-		TreeEntry: object.TreeEntry{
+	changes[1] = &object.Change{
+		From: object.ChangeEntry{}, To: object.ChangeEntry{
 			Name: "cmd/hercules/main.go",
-			Mode: 0100644,
-			Hash: plumbing.NewHash("c29112dbd697ad9b401333b80c18a63951bc18d9"),
+			Tree: treeTo,
+			TreeEntry: object.TreeEntry{
+				Name: "cmd/hercules/main.go",
+				Mode: 0o100644,
+				Hash: plumbing.NewHash("c29112dbd697ad9b401333b80c18a63951bc18d9"),
+			},
 		},
-	},
 	}
-	changes[2] = &object.Change{To: object.ChangeEntry{}, From: object.ChangeEntry{
-		Name: ".travis.yml",
-		Tree: treeTo,
-		TreeEntry: object.TreeEntry{
+	changes[2] = &object.Change{
+		To: object.ChangeEntry{}, From: object.ChangeEntry{
 			Name: ".travis.yml",
-			Mode: 0100644,
-			Hash: plumbing.NewHash("291286b4ac41952cbd1389fda66420ec03c1a9fe"),
+			Tree: treeTo,
+			TreeEntry: object.TreeEntry{
+				Name: ".travis.yml",
+				Mode: 0o100644,
+				Hash: plumbing.NewHash("291286b4ac41952cbd1389fda66420ec03c1a9fe"),
+			},
 		},
-	},
 	}
 	deps := map[string]interface{}{}
 	deps[DependencyUasts] = uasts
@@ -423,13 +430,14 @@ func TestUASTChangesSaverPayload(t *testing.T) {
 		"a1eb2ea76eb7f9bfbde9b243861474421000eb96"))
 	treeTo, _ := test.Repository.TreeObject(plumbing.NewHash(
 		"994eac1cd07235bb9815e547a75c84265dea00f5"))
-	changes[0] = Change{Before: nodes.Object{}, After: nodes.Object{},
+	changes[0] = Change{
+		Before: nodes.Object{}, After: nodes.Object{},
 		Change: &object.Change{From: object.ChangeEntry{
 			Name: "analyser.go",
 			Tree: treeFrom,
 			TreeEntry: object.TreeEntry{
 				Name: "analyser.go",
-				Mode: 0100644,
+				Mode: 0o100644,
 				Hash: plumbing.NewHash("dc248ba2b22048cc730c571a748e8ffcf7085ab9"),
 			},
 		}, To: object.ChangeEntry{
@@ -437,10 +445,11 @@ func TestUASTChangesSaverPayload(t *testing.T) {
 			Tree: treeTo,
 			TreeEntry: object.TreeEntry{
 				Name: "analyser.go",
-				Mode: 0100644,
+				Mode: 0o100644,
 				Hash: plumbing.NewHash("334cde09da4afcb74f8d2b3e6fd6cce61228b485"),
 			},
-		}}}
+		}},
+	}
 	chs.Consume(deps)
 	res := chs.Finalize()
 	tmpdir, err := ioutil.TempDir("", "hercules-test-")
@@ -497,13 +506,14 @@ func TestUASTChangesSaverConsumeMerge(t *testing.T) {
 		"a1eb2ea76eb7f9bfbde9b243861474421000eb96"))
 	treeTo, _ := test.Repository.TreeObject(plumbing.NewHash(
 		"994eac1cd07235bb9815e547a75c84265dea00f5"))
-	changes[0] = Change{Before: nodes.Object{}, After: nodes.Object{},
+	changes[0] = Change{
+		Before: nodes.Object{}, After: nodes.Object{},
 		Change: &object.Change{From: object.ChangeEntry{
 			Name: "analyser.go",
 			Tree: treeFrom,
 			TreeEntry: object.TreeEntry{
 				Name: "analyser.go",
-				Mode: 0100644,
+				Mode: 0o100644,
 				Hash: plumbing.NewHash("dc248ba2b22048cc730c571a748e8ffcf7085ab9"),
 			},
 		}, To: object.ChangeEntry{
@@ -511,10 +521,11 @@ func TestUASTChangesSaverConsumeMerge(t *testing.T) {
 			Tree: treeTo,
 			TreeEntry: object.TreeEntry{
 				Name: "analyser.go",
-				Mode: 0100644,
+				Mode: 0o100644,
 				Hash: plumbing.NewHash("334cde09da4afcb74f8d2b3e6fd6cce61228b485"),
 			},
-		}}}
+		}},
+	}
 	deps[core.DependencyCommit], _ = test.Repository.CommitObject(
 		plumbing.NewHash("cce947b98a050c6d356bc6ba95030254914027b1"))
 	chs.Consume(deps)

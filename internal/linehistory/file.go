@@ -2,12 +2,12 @@ package linehistory
 
 import (
 	"fmt"
-	"github.com/cyraxred/hercules/internal/core"
 	"log"
 	"math"
 
-	"github.com/cyraxred/hercules/internal"
-	"github.com/cyraxred/hercules/internal/rbtree"
+	"github.com/meko-christian/hercules/internal"
+	"github.com/meko-christian/hercules/internal/core"
+	"github.com/meko-christian/hercules/internal/rbtree"
 )
 
 // Updater is the function which is called back on File.Update().

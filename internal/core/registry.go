@@ -173,6 +173,7 @@ func wrapPathValue(val pflag.Value) pflag.Value {
 func (s *pathValue) Set(val string) error {
 	return s.origin.Set(val)
 }
+
 func (s *pathValue) Type() string {
 	if pathFlagTypeMasquerade {
 		return "path"
@@ -219,8 +220,8 @@ func (acf *arrayFeatureFlags) Type() string {
 // runnable analysis (LeafPipelineItem) choices. E.g. if "BurndownAnalysis" was activated
 // through "-burndown" cmdline argument, this mapping would contain ["BurndownAnalysis"] = *true.
 func (registry *PipelineItemRegistry) AddFlags(flagSet *pflag.FlagSet) (
-	flags map[string]interface{}, deployed map[string]*bool, activations map[string][]string) {
-
+	flags map[string]interface{}, deployed map[string]*bool, activations map[string][]string,
+) {
 	flags = map[string]interface{}{}
 	deployed = map[string]*bool{}
 	activations = map[string][]string{}

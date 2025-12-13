@@ -3,11 +3,11 @@ package plumbing
 import (
 	"testing"
 
-	"github.com/cyraxred/hercules/internal"
-	"github.com/cyraxred/hercules/internal/core"
-	"github.com/cyraxred/hercules/internal/test"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/meko-christian/hercules/internal"
+	"github.com/meko-christian/hercules/internal/core"
+	"github.com/meko-christian/hercules/internal/test"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -75,7 +75,7 @@ func TestBlobCacheConsumeModification(t *testing.T) {
 		Tree: treeFrom,
 		TreeEntry: object.TreeEntry{
 			Name: "labours.py",
-			Mode: 0100644,
+			Mode: 0o100644,
 			Hash: plumbing.NewHash("1cacfc1bf0f048eb2f31973750983ae5d8de647a"),
 		},
 	}, To: object.ChangeEntry{
@@ -83,7 +83,7 @@ func TestBlobCacheConsumeModification(t *testing.T) {
 		Tree: treeTo,
 		TreeEntry: object.TreeEntry{
 			Name: "labours.py",
-			Mode: 0100644,
+			Mode: 0o100644,
 			Hash: plumbing.NewHash("c872b8d2291a5224e2c9f6edd7f46039b96b4742"),
 		},
 	}}
@@ -113,25 +113,27 @@ func TestBlobCacheConsumeInsertionDeletion(t *testing.T) {
 		"96c6ece9b2f3c7c51b83516400d278dea5605100"))
 	treeTo, _ := test.Repository.TreeObject(plumbing.NewHash(
 		"251f2094d7b523d5bcc60e663b6cf38151bf8844"))
-	changes[0] = &object.Change{From: object.ChangeEntry{
-		Name: "analyser.go",
-		Tree: treeFrom,
-		TreeEntry: object.TreeEntry{
+	changes[0] = &object.Change{
+		From: object.ChangeEntry{
 			Name: "analyser.go",
-			Mode: 0100644,
-			Hash: plumbing.NewHash("baa64828831d174f40140e4b3cfa77d1e917a2c1"),
-		},
-	}, To: object.ChangeEntry{},
+			Tree: treeFrom,
+			TreeEntry: object.TreeEntry{
+				Name: "analyser.go",
+				Mode: 0o100644,
+				Hash: plumbing.NewHash("baa64828831d174f40140e4b3cfa77d1e917a2c1"),
+			},
+		}, To: object.ChangeEntry{},
 	}
-	changes[1] = &object.Change{From: object.ChangeEntry{}, To: object.ChangeEntry{
-		Name: "pipeline.go",
-		Tree: treeTo,
-		TreeEntry: object.TreeEntry{
+	changes[1] = &object.Change{
+		From: object.ChangeEntry{}, To: object.ChangeEntry{
 			Name: "pipeline.go",
-			Mode: 0100644,
-			Hash: plumbing.NewHash("db99e1890f581ad69e1527fe8302978c661eb473"),
+			Tree: treeTo,
+			TreeEntry: object.TreeEntry{
+				Name: "pipeline.go",
+				Mode: 0o100644,
+				Hash: plumbing.NewHash("db99e1890f581ad69e1527fe8302978c661eb473"),
+			},
 		},
-	},
 	}
 	deps := map[string]interface{}{}
 	deps[core.DependencyCommit] = commit
@@ -212,12 +214,14 @@ func TestBlobCacheConsumeBadHashes(t *testing.T) {
 	// Deleting a missing blob is fine
 	assert.NotNil(t, result)
 	assert.Nil(t, err)
-	changes[0] = &object.Change{From: object.ChangeEntry{},
+	changes[0] = &object.Change{
+		From: object.ChangeEntry{},
 		To: object.ChangeEntry{
 			Name:      "labours.py",
 			Tree:      treeTo,
 			TreeEntry: object.TreeEntry{},
-		}}
+		},
+	}
 	result, err = fixtureBlobCache().Consume(deps)
 	assert.Nil(t, result)
 	assert.NotNil(t, err)
@@ -236,7 +240,7 @@ func TestBlobCacheConsumeInvalidHash(t *testing.T) {
 		Tree: treeFrom,
 		TreeEntry: object.TreeEntry{
 			Name: "labours.py",
-			Mode: 0100644,
+			Mode: 0o100644,
 			Hash: plumbing.NewHash("ffffffffffffffffffffffffffffffffffffffff"),
 		},
 	}, To: object.ChangeEntry{
@@ -261,7 +265,7 @@ func TestBlobCacheGetBlob(t *testing.T) {
 		Tree: treeFrom,
 		TreeEntry: object.TreeEntry{
 			Name: "labours.py",
-			Mode: 0100644,
+			Mode: 0o100644,
 			Hash: plumbing.NewHash("80fe25955b8e725feee25c08ea5759d74f8b670d"),
 		},
 	}
@@ -293,15 +297,16 @@ func TestBlobCacheDeleteInvalidBlob(t *testing.T) {
 	changes := make(object.Changes, 1)
 	treeFrom, _ := test.Repository.TreeObject(plumbing.NewHash(
 		"96c6ece9b2f3c7c51b83516400d278dea5605100"))
-	changes[0] = &object.Change{From: object.ChangeEntry{
-		Name: "analyser.go",
-		Tree: treeFrom,
-		TreeEntry: object.TreeEntry{
+	changes[0] = &object.Change{
+		From: object.ChangeEntry{
 			Name: "analyser.go",
-			Mode: 0100644,
-			Hash: plumbing.NewHash("ffffffffffffffffffffffffffffffffffffffff"),
-		},
-	}, To: object.ChangeEntry{},
+			Tree: treeFrom,
+			TreeEntry: object.TreeEntry{
+				Name: "analyser.go",
+				Mode: 0o100644,
+				Hash: plumbing.NewHash("ffffffffffffffffffffffffffffffffffffffff"),
+			},
+		}, To: object.ChangeEntry{},
 	}
 	deps := map[string]interface{}{}
 	deps[core.DependencyCommit] = commit
@@ -324,15 +329,16 @@ func TestBlobCacheInsertInvalidBlob(t *testing.T) {
 	changes := make(object.Changes, 1)
 	treeTo, _ := test.Repository.TreeObject(plumbing.NewHash(
 		"251f2094d7b523d5bcc60e663b6cf38151bf8844"))
-	changes[0] = &object.Change{From: object.ChangeEntry{}, To: object.ChangeEntry{
-		Name: "pipeline.go",
-		Tree: treeTo,
-		TreeEntry: object.TreeEntry{
+	changes[0] = &object.Change{
+		From: object.ChangeEntry{}, To: object.ChangeEntry{
 			Name: "pipeline.go",
-			Mode: 0100644,
-			Hash: plumbing.NewHash("ffffffffffffffffffffffffffffffffffffffff"),
+			Tree: treeTo,
+			TreeEntry: object.TreeEntry{
+				Name: "pipeline.go",
+				Mode: 0o100644,
+				Hash: plumbing.NewHash("ffffffffffffffffffffffffffffffffffffffff"),
+			},
 		},
-	},
 	}
 	deps := map[string]interface{}{}
 	deps[core.DependencyCommit] = commit
@@ -352,7 +358,7 @@ func TestBlobCacheGetBlobIgnoreMissing(t *testing.T) {
 		Tree: treeFrom,
 		TreeEntry: object.TreeEntry{
 			Name: core.DependencyCommit,
-			Mode: 0160000,
+			Mode: 0o160000,
 			Hash: plumbing.NewHash("ffffffffffffffffffffffffffffffffffffffff"),
 		},
 	}
@@ -382,7 +388,7 @@ func TestBlobCacheGetBlobGitModulesErrors(t *testing.T) {
 		Name: "labours.py",
 		TreeEntry: object.TreeEntry{
 			Name: "labours.py",
-			Mode: 0160000,
+			Mode: 0o160000,
 			Hash: plumbing.NewHash("ffffffffffffffffffffffffffffffffffffffff"),
 		},
 	}
@@ -425,7 +431,7 @@ func TestBlobCacheFork(t *testing.T) {
 		Tree: treeTo,
 		TreeEntry: object.TreeEntry{
 			Name: "pipeline.go",
-			Mode: 0100644,
+			Mode: 0o100644,
 			Hash: hash,
 		},
 	}}

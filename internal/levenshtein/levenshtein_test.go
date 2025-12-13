@@ -28,7 +28,6 @@ var distanceTests = []struct {
 }
 
 func TestDistance(t *testing.T) {
-
 	lev := &Context{}
 
 	for index, distanceTest := range distanceTests {

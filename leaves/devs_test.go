@@ -5,15 +5,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cyraxred/hercules/internal/core"
-	"github.com/cyraxred/hercules/internal/pb"
-	items "github.com/cyraxred/hercules/internal/plumbing"
-	"github.com/cyraxred/hercules/internal/plumbing/identity"
-	"github.com/cyraxred/hercules/internal/test"
-	"github.com/cyraxred/hercules/internal/test/fixtures"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/gogo/protobuf/proto"
+	"github.com/meko-christian/hercules/internal/core"
+	"github.com/meko-christian/hercules/internal/pb"
+	items "github.com/meko-christian/hercules/internal/plumbing"
+	"github.com/meko-christian/hercules/internal/plumbing/identity"
+	"github.com/meko-christian/hercules/internal/test"
+	"github.com/meko-christian/hercules/internal/test/fixtures"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -111,7 +111,7 @@ func TestDevsConsumeFinalize(t *testing.T) {
 		Tree: treeFrom,
 		TreeEntry: object.TreeEntry{
 			Name: "analyser.go",
-			Mode: 0100644,
+			Mode: 0o100644,
 			Hash: plumbing.NewHash("dc248ba2b22048cc730c571a748e8ffcf7085ab9"),
 		},
 	}, To: object.ChangeEntry{
@@ -119,29 +119,31 @@ func TestDevsConsumeFinalize(t *testing.T) {
 		Tree: treeTo,
 		TreeEntry: object.TreeEntry{
 			Name: "analyser.go",
-			Mode: 0100644,
+			Mode: 0o100644,
 			Hash: plumbing.NewHash("baa64828831d174f40140e4b3cfa77d1e917a2c1"),
 		},
 	}}
-	changes[1] = &object.Change{From: object.ChangeEntry{}, To: object.ChangeEntry{
-		Name: "cmd/hercules/main.go",
-		Tree: treeTo,
-		TreeEntry: object.TreeEntry{
+	changes[1] = &object.Change{
+		From: object.ChangeEntry{}, To: object.ChangeEntry{
 			Name: "cmd/hercules/main.go",
-			Mode: 0100644,
-			Hash: plumbing.NewHash("c29112dbd697ad9b401333b80c18a63951bc18d9"),
+			Tree: treeTo,
+			TreeEntry: object.TreeEntry{
+				Name: "cmd/hercules/main.go",
+				Mode: 0o100644,
+				Hash: plumbing.NewHash("c29112dbd697ad9b401333b80c18a63951bc18d9"),
+			},
 		},
-	},
 	}
-	changes[2] = &object.Change{From: object.ChangeEntry{}, To: object.ChangeEntry{
-		Name: ".travis.yml",
-		Tree: treeTo,
-		TreeEntry: object.TreeEntry{
+	changes[2] = &object.Change{
+		From: object.ChangeEntry{}, To: object.ChangeEntry{
 			Name: ".travis.yml",
-			Mode: 0100644,
-			Hash: plumbing.NewHash("291286b4ac41952cbd1389fda66420ec03c1a9fe"),
+			Tree: treeTo,
+			TreeEntry: object.TreeEntry{
+				Name: ".travis.yml",
+				Mode: 0o100644,
+				Hash: plumbing.NewHash("291286b4ac41952cbd1389fda66420ec03c1a9fe"),
+			},
 		},
-	},
 	}
 	deps[items.DependencyTreeChanges] = changes
 	fd := fixtures.FileDiff()
@@ -277,7 +279,8 @@ func TestDevsSerialize(t *testing.T) {
 	devs.ticks[10] = map[int]*DevTick{}
 	devs.ticks[10][0] = &DevTick{11, ls(21, 31, 41), map[string]items.LineStats{"": ls(12, 13, 14)}}
 	devs.ticks[10][core.AuthorMissing] = &DevTick{
-		100, ls(200, 300, 400), map[string]items.LineStats{"Go": ls(32, 33, 34)}}
+		100, ls(200, 300, 400), map[string]items.LineStats{"Go": ls(32, 33, 34)},
+	}
 	res := devs.Finalize().(DevsResult)
 	buffer := &bytes.Buffer{}
 	err := devs.Serialize(res, false, buffer)
@@ -306,17 +309,21 @@ func TestDevsSerialize(t *testing.T) {
 	assert.Len(t, msg.Ticks[1].Devs, 2)
 	assert.Equal(t, msg.Ticks[1].Devs[0], &pb.DevTick{
 		Commits: 10, Stats: &pb.LineStats{Added: 20, Removed: 30, Changed: 40},
-		Languages: map[string]*pb.LineStats{"Go": {Added: 2, Removed: 3, Changed: 4}}})
+		Languages: map[string]*pb.LineStats{"Go": {Added: 2, Removed: 3, Changed: 4}},
+	})
 	assert.Equal(t, msg.Ticks[1].Devs[1], &pb.DevTick{
 		Commits: 1, Stats: &pb.LineStats{Added: 2, Removed: 3, Changed: 4},
-		Languages: map[string]*pb.LineStats{"Go": {Added: 25, Removed: 35, Changed: 45}}})
+		Languages: map[string]*pb.LineStats{"Go": {Added: 25, Removed: 35, Changed: 45}},
+	})
 	assert.Len(t, msg.Ticks[10].Devs, 2)
 	assert.Equal(t, msg.Ticks[10].Devs[0], &pb.DevTick{
 		Commits: 11, Stats: &pb.LineStats{Added: 21, Removed: 31, Changed: 41},
-		Languages: map[string]*pb.LineStats{"": {Added: 12, Removed: 13, Changed: 14}}})
+		Languages: map[string]*pb.LineStats{"": {Added: 12, Removed: 13, Changed: 14}},
+	})
 	assert.Equal(t, msg.Ticks[10].Devs[-1], &pb.DevTick{
 		Commits: 100, Stats: &pb.LineStats{Added: 200, Removed: 300, Changed: 400},
-		Languages: map[string]*pb.LineStats{"Go": {Added: 32, Removed: 33, Changed: 34}}})
+		Languages: map[string]*pb.LineStats{"Go": {Added: 32, Removed: 33, Changed: 34}},
+	})
 }
 
 func TestDevsDeserialize(t *testing.T) {
@@ -327,7 +334,8 @@ func TestDevsDeserialize(t *testing.T) {
 	devs.ticks[10] = map[int]*DevTick{}
 	devs.ticks[10][0] = &DevTick{11, ls(21, 31, 41), map[string]items.LineStats{"Go": ls(32, 33, 34)}}
 	devs.ticks[10][core.AuthorMissing] = &DevTick{
-		100, ls(200, 300, 400), map[string]items.LineStats{"Go": ls(42, 43, 44)}}
+		100, ls(200, 300, 400), map[string]items.LineStats{"Go": ls(42, 43, 44)},
+	}
 	res := devs.Finalize().(DevsResult)
 	buffer := &bytes.Buffer{}
 	err := devs.Serialize(res, true, buffer)
@@ -352,7 +360,8 @@ func TestDevsMergeResults(t *testing.T) {
 	r1.Ticks[10] = map[int]*DevTick{}
 	r1.Ticks[10][0] = &DevTick{11, ls(21, 31, 41), nil}
 	r1.Ticks[10][core.AuthorMissing] = &DevTick{
-		100, ls(200, 300, 400), map[string]items.LineStats{"Go": ls(32, 33, 34)}}
+		100, ls(200, 300, 400), map[string]items.LineStats{"Go": ls(32, 33, 34)},
+	}
 	r1.Ticks[11] = map[int]*DevTick{}
 	r1.Ticks[11][1] = &DevTick{10, ls(20, 30, 40), map[string]items.LineStats{"Go": ls(42, 43, 44)}}
 	r2 := DevsResult{
@@ -366,11 +375,13 @@ func TestDevsMergeResults(t *testing.T) {
 	r2.Ticks[2] = map[int]*DevTick{}
 	r2.Ticks[2][0] = &DevTick{11, ls(21, 31, 41), map[string]items.LineStats{"Go": ls(32, 33, 34)}}
 	r2.Ticks[2][core.AuthorMissing] = &DevTick{
-		100, ls(200, 300, 400), map[string]items.LineStats{"Go": ls(42, 43, 44)}}
+		100, ls(200, 300, 400), map[string]items.LineStats{"Go": ls(42, 43, 44)},
+	}
 	r2.Ticks[10] = map[int]*DevTick{}
 	r2.Ticks[10][0] = &DevTick{11, ls(21, 31, 41), map[string]items.LineStats{"Go": ls(52, 53, 54)}}
 	r2.Ticks[10][core.AuthorMissing] = &DevTick{
-		100, ls(200, 300, 400), map[string]items.LineStats{"Go": ls(62, 63, 64)}}
+		100, ls(200, 300, 400), map[string]items.LineStats{"Go": ls(62, 63, 64)},
+	}
 
 	devs := fixtureDevs()
 	c1 := core.CommonAnalysisResult{BeginTime: 1556224895}
@@ -381,7 +392,8 @@ func TestDevsMergeResults(t *testing.T) {
 	assert.Equal(t, rm.reversedPeopleDict, peoplerm[:])
 	assert.Len(t, rm.Ticks, 4)
 	assert.Equal(t, rm.Ticks[11], map[int]*DevTick{
-		1: {10, ls(20, 30, 40), map[string]items.LineStats{"Go": ls(42, 43, 44)}}})
+		1: {10, ls(20, 30, 40), map[string]items.LineStats{"Go": ls(42, 43, 44)}},
+	})
 	assert.Equal(t, rm.Ticks[2], map[int]*DevTick{
 		core.AuthorMissing: {100, ls(200, 300, 400), map[string]items.LineStats{"Go": ls(42, 43, 44)}},
 		2:                  {11, ls(21, 31, 41), map[string]items.LineStats{"Go": ls(32, 33, 34)}},
@@ -395,7 +407,8 @@ func TestDevsMergeResults(t *testing.T) {
 		0: {11, ls(21, 31, 41), map[string]items.LineStats{}},
 		2: {11, ls(21, 31, 41), map[string]items.LineStats{"Go": ls(52, 53, 54)}},
 		core.AuthorMissing: {
-			100 * 2, ls(200*2, 300*2, 400*2), map[string]items.LineStats{"Go": ls(94, 96, 98)}},
+			100 * 2, ls(200*2, 300*2, 400*2), map[string]items.LineStats{"Go": ls(94, 96, 98)},
+		},
 	})
 
 	c2 := core.CommonAnalysisResult{BeginTime: 1556224895 + 24*3600}

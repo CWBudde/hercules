@@ -2,21 +2,21 @@ package leaves
 
 import (
 	"fmt"
-	"github.com/cyraxred/hercules/internal/join"
-	"github.com/cyraxred/hercules/internal/linehistory"
 	"io"
 	"sort"
 	"sync"
 	"time"
 
-	"github.com/cyraxred/hercules/internal/burndown"
-	"github.com/cyraxred/hercules/internal/core"
-	"github.com/cyraxred/hercules/internal/pb"
-	items "github.com/cyraxred/hercules/internal/plumbing"
-	"github.com/cyraxred/hercules/internal/plumbing/identity"
-	"github.com/cyraxred/hercules/internal/yaml"
 	"github.com/go-git/go-git/v5"
 	"github.com/gogo/protobuf/proto"
+	"github.com/meko-christian/hercules/internal/burndown"
+	"github.com/meko-christian/hercules/internal/core"
+	"github.com/meko-christian/hercules/internal/join"
+	"github.com/meko-christian/hercules/internal/linehistory"
+	"github.com/meko-christian/hercules/internal/pb"
+	items "github.com/meko-christian/hercules/internal/plumbing"
+	"github.com/meko-christian/hercules/internal/plumbing/identity"
+	"github.com/meko-christian/hercules/internal/yaml"
 )
 
 // BurndownAnalysis allows to gather the line burndown statistics for a Git repository.
@@ -192,7 +192,6 @@ func (analyser *BurndownAnalysis) Merge([]core.PipelineItem) {
 // This function returns the mapping with analysis results. The keys must be the same as
 // in Provides(). If there was an error, nil is returned.
 func (analyser *BurndownAnalysis) Consume(deps map[string]interface{}) (map[string]interface{}, error) {
-
 	changes := deps[linehistory.DependencyLineHistory].(core.LineHistoryChanges)
 	if analyser.primaryResolver == nil {
 		analyser.primaryResolver = changes.Resolver
@@ -234,7 +233,6 @@ func (analyser *BurndownAnalysis) updateGlobal(change core.LineHistoryChange) {
 
 // updateFile is bound to the specific `history` in the closure.
 func (analyser *BurndownAnalysis) updateFile(change core.LineHistoryChange) {
-
 	history := analyser.fileHistories[change.FileId]
 	if history == nil {
 		// can be not nil if the file was created in a future branch
@@ -438,7 +436,8 @@ func (analyser *BurndownAnalysis) Deserialize(message []byte) (interface{}, erro
 
 // MergeResults combines two BurndownResult-s together.
 func (analyser *BurndownAnalysis) MergeResults(
-	r1, r2 interface{}, c1, c2 *core.CommonAnalysisResult) interface{} {
+	r1, r2 interface{}, c1, c2 *core.CommonAnalysisResult,
+) interface{} {
 	bar1 := r1.(BurndownResult)
 	bar2 := r2.(BurndownResult)
 	if bar1.tickSize != bar2.tickSize {
@@ -462,7 +461,7 @@ func (analyser *BurndownAnalysis) MergeResults(
 	people, merged.reversedPeopleDict = join.PeopleIdentities(
 		bar1.reversedPeopleDict, bar2.reversedPeopleDict)
 	var wg sync.WaitGroup
-	var sem = make(chan int, 5) // with large files not limiting number of GoRoutines eats 200G of RAM on large merges
+	sem := make(chan int, 5) // with large files not limiting number of GoRoutines eats 200G of RAM on large merges
 	if len(bar1.GlobalHistory) > 0 || len(bar2.GlobalHistory) > 0 {
 		wg.Add(1)
 		sem <- 1
@@ -649,8 +648,8 @@ func (analyser *BurndownAnalysis) serializeBinary(result *BurndownResult, writer
 }
 
 func (analyser *BurndownAnalysis) groupSparseHistory(
-	history sparseHistory, lastTick int) (burndown.DenseHistory, int) {
-
+	history sparseHistory, lastTick int,
+) (burndown.DenseHistory, int) {
 	if len(history) == 0 {
 		panic("empty history")
 	}

@@ -1,5 +1,4 @@
-Hercules plugins
-================
+# Hercules plugins
 
 ### Prerequisites
 
@@ -22,9 +21,9 @@ hercules generate-plugin -n MyPluginName -o my_plugin
 
 This command creates:
 
-* `my_plugin/my_plugin_name.go` with the plugin source code. Refer to the docs about [LeafPipelineItem]().
-* `my_plugin/my_plugin_name.proto` which defines the Protocol Buffers scheme of the result
-* `my_plugin/my_plugin_name.pb.go` is generated from `my_plugin/my_plugin_name.proto`
+- `my_plugin/my_plugin_name.go` with the plugin source code. Refer to the docs about [LeafPipelineItem]().
+- `my_plugin/my_plugin_name.proto` which defines the Protocol Buffers scheme of the result
+- `my_plugin/my_plugin_name.pb.go` is generated from `my_plugin/my_plugin_name.proto`
 
 Compilation:
 
@@ -48,4 +47,5 @@ and implements [code churn](https://blog.gitprime.com/why-code-churn-matters/) a
 It uses many Hercules features and supports YAML and protobuf output formats.
 
 ![go-git global churn](doc/churn_global.png)
+
 <p align="center">Generated with <code>hercules --plugin churn_analysis.so --churn https://github.com/src-d/go-git | python3 plot_churn.py --tick-days 14 -</code></p>

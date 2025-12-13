@@ -5,14 +5,14 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/cyraxred/hercules"
-	"github.com/cyraxred/hercules/internal"
-	"github.com/cyraxred/hercules/internal/core"
-	items "github.com/cyraxred/hercules/internal/plumbing"
-	"github.com/cyraxred/hercules/internal/test"
-	"github.com/cyraxred/hercules/internal/test/fixtures"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/meko-christian/hercules"
+	"github.com/meko-christian/hercules/internal"
+	"github.com/meko-christian/hercules/internal/core"
+	items "github.com/meko-christian/hercules/internal/plumbing"
+	"github.com/meko-christian/hercules/internal/test"
+	"github.com/meko-christian/hercules/internal/test/fixtures"
 	"github.com/sergi/go-diff/diffmatchpatch"
 	"github.com/stretchr/testify/assert"
 )
@@ -71,7 +71,7 @@ func TestFileDiffConsume(t *testing.T) {
 		Tree: treeFrom,
 		TreeEntry: object.TreeEntry{
 			Name: "analyser.go",
-			Mode: 0100644,
+			Mode: 0o100644,
 			Hash: plumbing.NewHash("dc248ba2b22048cc730c571a748e8ffcf7085ab9"),
 		},
 	}, To: object.ChangeEntry{
@@ -79,29 +79,31 @@ func TestFileDiffConsume(t *testing.T) {
 		Tree: treeTo,
 		TreeEntry: object.TreeEntry{
 			Name: "analyser.go",
-			Mode: 0100644,
+			Mode: 0o100644,
 			Hash: plumbing.NewHash("334cde09da4afcb74f8d2b3e6fd6cce61228b485"),
 		},
 	}}
-	changes[1] = &object.Change{From: object.ChangeEntry{}, To: object.ChangeEntry{
-		Name: ".travis.yml",
-		Tree: treeTo,
-		TreeEntry: object.TreeEntry{
+	changes[1] = &object.Change{
+		From: object.ChangeEntry{}, To: object.ChangeEntry{
 			Name: ".travis.yml",
-			Mode: 0100644,
-			Hash: plumbing.NewHash("291286b4ac41952cbd1389fda66420ec03c1a9fe"),
+			Tree: treeTo,
+			TreeEntry: object.TreeEntry{
+				Name: ".travis.yml",
+				Mode: 0o100644,
+				Hash: plumbing.NewHash("291286b4ac41952cbd1389fda66420ec03c1a9fe"),
+			},
 		},
-	},
 	}
-	changes[2] = &object.Change{From: object.ChangeEntry{
-		Name: "rbtree.go",
-		Tree: treeFrom,
-		TreeEntry: object.TreeEntry{
+	changes[2] = &object.Change{
+		From: object.ChangeEntry{
 			Name: "rbtree.go",
-			Mode: 0100644,
-			Hash: plumbing.NewHash("14c3fa5a1cca103032f10379467a3a2f210e5f94"),
-		},
-	}, To: object.ChangeEntry{},
+			Tree: treeFrom,
+			TreeEntry: object.TreeEntry{
+				Name: "rbtree.go",
+				Mode: 0o100644,
+				Hash: plumbing.NewHash("14c3fa5a1cca103032f10379467a3a2f210e5f94"),
+			},
+		}, To: object.ChangeEntry{},
 	}
 	deps[items.DependencyTreeChanges] = changes
 	res, err := fd.Consume(deps)
@@ -146,7 +148,7 @@ func TestFileDiffConsumeInvalidBlob(t *testing.T) {
 		Tree: treeFrom,
 		TreeEntry: object.TreeEntry{
 			Name: "analyser.go",
-			Mode: 0100644,
+			Mode: 0o100644,
 			Hash: plumbing.NewHash("ffffffffffffffffffffffffffffffffffffffff"),
 		},
 	}, To: object.ChangeEntry{
@@ -154,7 +156,7 @@ func TestFileDiffConsumeInvalidBlob(t *testing.T) {
 		Tree: treeTo,
 		TreeEntry: object.TreeEntry{
 			Name: "analyser.go",
-			Mode: 0100644,
+			Mode: 0o100644,
 			Hash: plumbing.NewHash("334cde09da4afcb74f8d2b3e6fd6cce61228b485"),
 		},
 	}}
@@ -167,7 +169,7 @@ func TestFileDiffConsumeInvalidBlob(t *testing.T) {
 		Tree: treeFrom,
 		TreeEntry: object.TreeEntry{
 			Name: "analyser.go",
-			Mode: 0100644,
+			Mode: 0o100644,
 			Hash: plumbing.NewHash("dc248ba2b22048cc730c571a748e8ffcf7085ab9"),
 		},
 	}, To: object.ChangeEntry{
@@ -175,7 +177,7 @@ func TestFileDiffConsumeInvalidBlob(t *testing.T) {
 		Tree: treeTo,
 		TreeEntry: object.TreeEntry{
 			Name: "analyser.go",
-			Mode: 0100644,
+			Mode: 0o100644,
 			Hash: plumbing.NewHash("ffffffffffffffffffffffffffffffffffffffff"),
 		},
 	}}
@@ -255,7 +257,7 @@ func TestFileDiffDarkMagic(t *testing.T) {
 		Tree: treeFrom,
 		TreeEntry: object.TreeEntry{
 			Name: "test.java",
-			Mode: 0100644,
+			Mode: 0o100644,
 			Hash: plumbing.NewHash("448eb3f312849b0ca766063d06b09481c987b309"),
 		},
 	}, To: object.ChangeEntry{
@@ -263,7 +265,7 @@ func TestFileDiffDarkMagic(t *testing.T) {
 		Tree: treeTo,
 		TreeEntry: object.TreeEntry{
 			Name: "test.java",
-			Mode: 0100644,
+			Mode: 0o100644,
 			Hash: plumbing.NewHash("3312c92f3e8bdfbbdb30bccb6acd1b85bc338dfc"),
 		},
 	}}
@@ -297,7 +299,7 @@ func TestFileDiffWhitespaceDarkMagic(t *testing.T) {
 		Tree: treeFrom,
 		TreeEntry: object.TreeEntry{
 			Name: "test.java",
-			Mode: 0100644,
+			Mode: 0o100644,
 			Hash: plumbing.NewHash("448eb3f312849b0ca766063d06b09481c987b309"),
 		},
 	}, To: object.ChangeEntry{
@@ -305,7 +307,7 @@ func TestFileDiffWhitespaceDarkMagic(t *testing.T) {
 		Tree: treeTo,
 		TreeEntry: object.TreeEntry{
 			Name: "test.java",
-			Mode: 0100644,
+			Mode: 0o100644,
 			Hash: plumbing.NewHash("3312c92f3e8bdfbbdb30bccb6acd1b85bc338dfc"),
 		},
 	}}

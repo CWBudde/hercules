@@ -2,16 +2,17 @@ package leaves
 
 import (
 	"fmt"
-	"github.com/cyraxred/hercules/internal/core"
-	"github.com/cyraxred/hercules/internal/linehistory"
-	"github.com/cyraxred/hercules/internal/plumbing/identity"
-	"github.com/cyraxred/hercules/internal/yaml"
-	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/object"
 	"io"
 	"os"
 	"sort"
+
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/meko-christian/hercules/internal/core"
+	"github.com/meko-christian/hercules/internal/linehistory"
+	"github.com/meko-christian/hercules/internal/plumbing/identity"
+	"github.com/meko-christian/hercules/internal/yaml"
 )
 
 type LineDumperCommit struct {
@@ -61,12 +62,14 @@ const ConfigLineDumperAuthorDict = "LineDumper.AuthorDict"
 
 // ListConfigurationOptions returns the list of changeable public properties of this PipelineItem.
 func (analyser *LineDumper) ListConfigurationOptions() []core.ConfigurationOption {
-	return []core.ConfigurationOption{{
-		Name:        ConfigLineDumperAuthorDict,
-		Description: "Path to the output file with authors.",
-		Flag:        "author-dict-out",
-		Type:        core.PathConfigurationOption,
-		Default:     ""},
+	return []core.ConfigurationOption{
+		{
+			Name:        ConfigLineDumperAuthorDict,
+			Description: "Path to the output file with authors.",
+			Flag:        "author-dict-out",
+			Type:        core.PathConfigurationOption,
+			Default:     "",
+		},
 	}
 }
 

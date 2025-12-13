@@ -24,7 +24,6 @@ type JoinedIndex struct {
 // 2. Corresponding index in the first array - `rd1`. -1 means that it does not exist.
 // 3. Corresponding index in the second array - `rd2`. -1 means that it does not exist.
 func LiteralIdentities(rd1, rd2 []string) (map[string]JoinedIndex, []string) {
-
 	people := map[string]JoinedIndex{}
 	for i, pid := range rd1 {
 		people[pid] = JoinedIndex{len(people), i, -1}
@@ -55,7 +54,6 @@ type identityPair struct {
 // 2. Corresponding index in the first array - `rd1`. -1 means that it does not exist.
 // 3. Corresponding index in the second array - `rd2`. -1 means that it does not exist.
 func PeopleIdentities(rd1, rd2 []string) (map[string]JoinedIndex, []string) {
-
 	vocabulary := map[string]identityPair{}
 	vertices1 := make([][]string, len(rd1))
 	for i, s := range rd1 {

@@ -6,13 +6,13 @@ import (
 	"sort"
 	"unicode/utf8"
 
-	"github.com/cyraxred/hercules/internal/core"
-	"github.com/cyraxred/hercules/internal/pb"
-	items "github.com/cyraxred/hercules/internal/plumbing"
-	uast_items "github.com/cyraxred/hercules/internal/plumbing/uast"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/gogo/protobuf/proto"
+	"github.com/meko-christian/hercules/internal/core"
+	"github.com/meko-christian/hercules/internal/pb"
+	items "github.com/meko-christian/hercules/internal/plumbing"
+	uast_items "github.com/meko-christian/hercules/internal/plumbing/uast"
 	"github.com/sergi/go-diff/diffmatchpatch"
 	"gopkg.in/bblfsh/client-go.v3/tools"
 	"gopkg.in/bblfsh/sdk.v2/uast"
@@ -97,19 +97,22 @@ func (shotness *ShotnessAnalysis) Requires() []string {
 
 // ListConfigurationOptions returns the list of changeable public properties of this PipelineItem.
 func (shotness *ShotnessAnalysis) ListConfigurationOptions() []core.ConfigurationOption {
-	opts := [...]core.ConfigurationOption{{
-		Name: ConfigShotnessXpathStruct,
-		Description: "Semantic UAST XPath query to use for filtering the nodes. " +
-			"Refer to https://docs.sourced.tech/babelfish/using-babelfish/uast-querying",
-		Flag:    "shotness-xpath-struct",
-		Type:    core.StringConfigurationOption,
-		Default: DefaultShotnessXpathStruct}, {
-		Name: ConfigShotnessXpathName,
-		Description: "Semantic UAST XPath query to determine the names of the filtered nodes. " +
-			"Refer to https://docs.sourced.tech/babelfish/using-babelfish/uast-querying",
-		Flag:    "shotness-xpath-name",
-		Type:    core.StringConfigurationOption,
-		Default: DefaultShotnessXpathName},
+	opts := [...]core.ConfigurationOption{
+		{
+			Name: ConfigShotnessXpathStruct,
+			Description: "Semantic UAST XPath query to use for filtering the nodes. " +
+				"Refer to https://docs.sourced.tech/babelfish/using-babelfish/uast-querying",
+			Flag:    "shotness-xpath-struct",
+			Type:    core.StringConfigurationOption,
+			Default: DefaultShotnessXpathStruct,
+		}, {
+			Name: ConfigShotnessXpathName,
+			Description: "Semantic UAST XPath query to determine the names of the filtered nodes. " +
+				"Refer to https://docs.sourced.tech/babelfish/using-babelfish/uast-querying",
+			Flag:    "shotness-xpath-name",
+			Type:    core.StringConfigurationOption,
+			Default: DefaultShotnessXpathName,
+		},
 	}
 	return opts[:]
 }
@@ -193,7 +196,8 @@ func (shotness *ShotnessAnalysis) Consume(deps map[string]interface{}) (map[stri
 		}
 		if count == 0 {
 			shotness.nodes[key] = &nodeShotness{
-				Summary: nodeSummary, Count: 1, Couples: map[string]int{}}
+				Summary: nodeSummary, Count: 1, Couples: map[string]int{},
+			}
 			fmap := shotness.files[nodeSummary.File]
 			if fmap == nil {
 				fmap = map[string]*nodeShotness{}

@@ -11,13 +11,13 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/cyraxred/hercules/internal/core"
-	"github.com/cyraxred/hercules/internal/pb"
-	items "github.com/cyraxred/hercules/internal/plumbing"
-	uast_items "github.com/cyraxred/hercules/internal/plumbing/uast"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/gogo/protobuf/proto"
+	"github.com/meko-christian/hercules/internal/core"
+	"github.com/meko-christian/hercules/internal/pb"
+	items "github.com/meko-christian/hercules/internal/plumbing"
+	uast_items "github.com/meko-christian/hercules/internal/plumbing/uast"
 	"gopkg.in/bblfsh/sdk.v2/uast"
 	"gopkg.in/bblfsh/sdk.v2/uast/nodes"
 	progress "gopkg.in/cheggaaa/pb.v1"
@@ -87,18 +87,21 @@ func (sent *CommentSentimentAnalysis) Requires() []string {
 
 // ListConfigurationOptions returns the list of changeable public properties of this PipelineItem.
 func (sent *CommentSentimentAnalysis) ListConfigurationOptions() []core.ConfigurationOption {
-	options := [...]core.ConfigurationOption{{
-		Name:        ConfigCommentSentimentMinLength,
-		Description: "Minimum length of the comment to be analyzed.",
-		Flag:        "min-comment-len",
-		Type:        core.IntConfigurationOption,
-		Default:     DefaultCommentSentimentCommentMinLength}, {
-		Name: ConfigCommentSentimentGap,
-		Description: "Sentiment value threshold, values between 0.5 - X/2 and 0.5 + x/2 will not be " +
-			"considered. Must be >= 0 and < 1. The purpose is to exclude neutral comments.",
-		Flag:    "sentiment-gap",
-		Type:    core.FloatConfigurationOption,
-		Default: DefaultCommentSentimentGap},
+	options := [...]core.ConfigurationOption{
+		{
+			Name:        ConfigCommentSentimentMinLength,
+			Description: "Minimum length of the comment to be analyzed.",
+			Flag:        "min-comment-len",
+			Type:        core.IntConfigurationOption,
+			Default:     DefaultCommentSentimentCommentMinLength,
+		}, {
+			Name: ConfigCommentSentimentGap,
+			Description: "Sentiment value threshold, values between 0.5 - X/2 and 0.5 + x/2 will not be " +
+				"considered. Must be >= 0 and < 1. The purpose is to exclude neutral comments.",
+			Flag:    "sentiment-gap",
+			Type:    core.FloatConfigurationOption,
+			Default: DefaultCommentSentimentGap,
+		},
 	}
 	return options[:]
 }
@@ -279,7 +282,8 @@ func (sent *CommentSentimentAnalysis) serializeText(result *CommentSentimentResu
 }
 
 func (sent *CommentSentimentAnalysis) serializeBinary(
-	result *CommentSentimentResult, writer io.Writer) error {
+	result *CommentSentimentResult, writer io.Writer,
+) error {
 	message := pb.CommentSentimentResults{
 		SentimentByTick: map[int32]*pb.Sentiment{},
 	}

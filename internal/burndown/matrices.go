@@ -1,17 +1,18 @@
 package burndown
 
 import (
-	"github.com/cyraxred/hercules/internal/core"
-	"github.com/cyraxred/hercules/internal/plumbing"
 	"log"
 	"math"
 	"runtime"
 	"time"
+
+	"github.com/meko-christian/hercules/internal/core"
+	"github.com/meko-christian/hercules/internal/plumbing"
 )
 
 // DenseHistory is the matrix [number of samples][number of bands] -> number of lines.
 //                                    y                  x
-type DenseHistory = [][]int64
+type DenseHistory [][]int64
 
 // AddBurndownMatrix explodes `matrix` so that it is daily sampled and has daily bands, shift by `offset` ticks
 // and add to the accumulator. `daily` size is square and is guaranteed to fit `matrix` by
@@ -20,7 +21,6 @@ type DenseHistory = [][]int64
 // Columns: *at least* len(matrix[...]) * granularity + offset
 // `matrix` can be sparse, so that the last columns which are equal to 0 are truncated.
 func AddBurndownMatrix(matrix DenseHistory, granularity, sampling int, accPerTick [][]float32, offset int) {
-
 	//	defer print("AddBurndownMatrix exit\n")
 	//	print("AddBurndownMatrix enter\n")
 
@@ -208,7 +208,6 @@ func AddBurndownMatrix(matrix DenseHistory, granularity, sampling int, accPerTic
 	runtime.ReadMemStats(&a)
 
 	//	print("AddBurndownMatrix Deallocated: ", (m.Alloc-a.Alloc)/1024/1024, "\n")
-
 }
 
 func roundTime(t time.Time, d time.Duration, dir bool) int {
@@ -227,8 +226,8 @@ func roundTime(t time.Time, d time.Duration, dir bool) int {
 // least of (sampling1, sampling2) and (granularity1, granularity2).
 func MergeBurndownMatrices(
 	m1, m2 DenseHistory, granularity1, sampling1, granularity2, sampling2 int, tickSize time.Duration,
-	c1, c2 *core.CommonAnalysisResult) DenseHistory {
-
+	c1, c2 *core.CommonAnalysisResult,
+) DenseHistory {
 	//	defer print("MergeBurndownMatrices exit\n\n\n")
 	//	print("MergeBurndownMatrices enter\n\n\n")
 

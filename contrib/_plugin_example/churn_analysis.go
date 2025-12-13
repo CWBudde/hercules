@@ -7,12 +7,12 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/cyraxred/hercules"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/utils/merkletrie"
 	"github.com/gogo/protobuf/proto"
+	"github.com/meko-christian/hercules"
 	"github.com/sergi/go-diff/diffmatchpatch"
 )
 
@@ -78,18 +78,21 @@ func (churn *ChurnAnalysis) Requires() []string {
 		hercules.DependencyTreeChanges,
 		hercules.DependencyBlobCache,
 		hercules.DependencyTick,
-		hercules.DependencyAuthor}
+		hercules.DependencyAuthor,
+	}
 }
 
 // ListConfigurationOptions tells the engine which parameters can be changed through the command
 // line.
 func (churn *ChurnAnalysis) ListConfigurationOptions() []hercules.ConfigurationOption {
-	opts := [...]hercules.ConfigurationOption{{
-		Name:        ConfigChurnTrackPeople,
-		Description: "Record detailed statistics per each developer.",
-		Flag:        "churn-people",
-		Type:        hercules.BoolConfigurationOption,
-		Default:     false},
+	opts := [...]hercules.ConfigurationOption{
+		{
+			Name:        ConfigChurnTrackPeople,
+			Description: "Record detailed statistics per each developer.",
+			Flag:        "churn-people",
+			Type:        hercules.BoolConfigurationOption,
+			Default:     false,
+		},
 	}
 	return opts[:]
 }

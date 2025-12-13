@@ -7,9 +7,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/cyraxred/hercules/internal/core"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/meko-christian/hercules/internal/core"
 	"github.com/pkg/errors"
 )
 
@@ -141,23 +141,27 @@ func (detector *PeopleDetector) Features() []string {
 
 // ListConfigurationOptions returns the list of changeable public properties of this PipelineItem.
 func (detector *PeopleDetector) ListConfigurationOptions() []core.ConfigurationOption {
-	return []core.ConfigurationOption{{
-		Name:        ConfigIdentityDetectorPeopleDictPath,
-		Description: "Path to the file with developer -> name|email associations.",
-		Flag:        "people-dict",
-		Type:        core.PathConfigurationOption,
-		Default:     ""}, {
-		Name: ConfigIdentityDetectorExactSignatures,
-		Description: "Disable separate name/email matching. This will lead to considerbly more " +
-			"identities and should not be normally used.",
-		Flag:    "exact-signatures",
-		Type:    core.BoolConfigurationOption,
-		Default: false}, {
-		Name:        ConfigIdentityDetectorAnonymity,
-		Description: "Replaces identity info with sequential number.",
-		Flag:        "people-anonymity",
-		Type:        core.BoolConfigurationOption,
-		Default:     false},
+	return []core.ConfigurationOption{
+		{
+			Name:        ConfigIdentityDetectorPeopleDictPath,
+			Description: "Path to the file with developer -> name|email associations.",
+			Flag:        "people-dict",
+			Type:        core.PathConfigurationOption,
+			Default:     "",
+		}, {
+			Name: ConfigIdentityDetectorExactSignatures,
+			Description: "Disable separate name/email matching. This will lead to considerbly more " +
+				"identities and should not be normally used.",
+			Flag:    "exact-signatures",
+			Type:    core.BoolConfigurationOption,
+			Default: false,
+		}, {
+			Name:        ConfigIdentityDetectorAnonymity,
+			Description: "Replaces identity info with sequential number.",
+			Flag:        "people-anonymity",
+			Type:        core.BoolConfigurationOption,
+			Default:     false,
+		},
 	}
 }
 

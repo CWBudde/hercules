@@ -14,14 +14,14 @@ import (
 	"time"
 
 	"github.com/Jeffail/tunny"
-	"github.com/cyraxred/hercules/internal/core"
-	"github.com/cyraxred/hercules/internal/pb"
-	items "github.com/cyraxred/hercules/internal/plumbing"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/utils/merkletrie"
 	"github.com/gogo/protobuf/proto"
+	"github.com/meko-christian/hercules/internal/core"
+	"github.com/meko-christian/hercules/internal/pb"
+	items "github.com/meko-christian/hercules/internal/plumbing"
 	bblfsh "gopkg.in/bblfsh/client-go.v3"
 	"gopkg.in/bblfsh/sdk.v2/uast/nodes"
 	"gopkg.in/bblfsh/sdk.v2/uast/nodes/nodesproto"
@@ -125,32 +125,38 @@ func (exr *Extractor) Features() []string {
 
 // ListConfigurationOptions returns the list of changeable public properties of this PipelineItem.
 func (exr *Extractor) ListConfigurationOptions() []core.ConfigurationOption {
-	options := [...]core.ConfigurationOption{{
-		Name:        ConfigUASTEndpoint,
-		Description: "How many days there are in a single band.",
-		Flag:        "bblfsh",
-		Type:        core.StringConfigurationOption,
-		Default:     DefaultBabelfishEndpoint}, {
-		Name:        ConfigUASTTimeout,
-		Description: "Babelfish's server timeout in seconds.",
-		Flag:        "bblfsh-timeout",
-		Type:        core.IntConfigurationOption,
-		Default:     DefaultBabelfishTimeout}, {
-		Name:        ConfigUASTPoolSize,
-		Description: "Number of goroutines to extract UASTs.",
-		Flag:        "bblfsh-pool-size",
-		Type:        core.IntConfigurationOption,
-		Default:     DefaultBabelfishWorkers}, {
-		Name:        ConfigUASTFailOnErrors,
-		Description: "Panic if there is a UAST extraction error.",
-		Flag:        "bblfsh-fail-on-error",
-		Type:        core.BoolConfigurationOption,
-		Default:     false}, {
-		Name:        ConfigUASTIgnoreMissingDrivers,
-		Description: "Do not warn about missing drivers for the specified languages.",
-		Flag:        "bblfsh-ignored-drivers",
-		Type:        core.StringsConfigurationOption,
-		Default:     DefaultIgnoredMissingDrivers},
+	options := [...]core.ConfigurationOption{
+		{
+			Name:        ConfigUASTEndpoint,
+			Description: "How many days there are in a single band.",
+			Flag:        "bblfsh",
+			Type:        core.StringConfigurationOption,
+			Default:     DefaultBabelfishEndpoint,
+		}, {
+			Name:        ConfigUASTTimeout,
+			Description: "Babelfish's server timeout in seconds.",
+			Flag:        "bblfsh-timeout",
+			Type:        core.IntConfigurationOption,
+			Default:     DefaultBabelfishTimeout,
+		}, {
+			Name:        ConfigUASTPoolSize,
+			Description: "Number of goroutines to extract UASTs.",
+			Flag:        "bblfsh-pool-size",
+			Type:        core.IntConfigurationOption,
+			Default:     DefaultBabelfishWorkers,
+		}, {
+			Name:        ConfigUASTFailOnErrors,
+			Description: "Panic if there is a UAST extraction error.",
+			Flag:        "bblfsh-fail-on-error",
+			Type:        core.BoolConfigurationOption,
+			Default:     false,
+		}, {
+			Name:        ConfigUASTIgnoreMissingDrivers,
+			Description: "Do not warn about missing drivers for the specified languages.",
+			Flag:        "bblfsh-ignored-drivers",
+			Type:        core.StringsConfigurationOption,
+			Default:     DefaultIgnoredMissingDrivers,
+		},
 	}
 	return options[:]
 }
@@ -313,7 +319,8 @@ func (exr *Extractor) Fork(n int) []core.PipelineItem {
 }
 
 func (exr *Extractor) extractUAST(
-	client *bblfsh.Client, name string, data []byte) (nodes.Node, error) {
+	client *bblfsh.Client, name string, data []byte,
+) (nodes.Node, error) {
 	ctx, cancel := exr.Context()
 	if cancel != nil {
 		defer cancel()
@@ -508,12 +515,14 @@ func (saver *ChangesSaver) Requires() []string {
 
 // ListConfigurationOptions returns the list of changeable public properties of this PipelineItem.
 func (saver *ChangesSaver) ListConfigurationOptions() []core.ConfigurationOption {
-	options := [...]core.ConfigurationOption{{
-		Name:        ConfigUASTChangesSaverOutputPath,
-		Description: "The target directory where to store the changed UAST files.",
-		Flag:        "changed-uast-dir",
-		Type:        core.PathConfigurationOption,
-		Default:     "."},
+	options := [...]core.ConfigurationOption{
+		{
+			Name:        ConfigUASTChangesSaverOutputPath,
+			Description: "The target directory where to store the changed UAST files.",
+			Flag:        "changed-uast-dir",
+			Type:        core.PathConfigurationOption,
+			Default:     ".",
+		},
 	}
 	return options[:]
 }
@@ -615,7 +624,7 @@ func (saver *ChangesSaver) dumpFiles(result [][]Change) []*pb.UASTChange {
 			s, _ := (&object.File{Blob: *blob}).Contents()
 			record.SrcBefore = path.Join(saver.OutputPath, fmt.Sprintf(
 				"%d_%d_before_%s.src", i, j, change.Change.From.TreeEntry.Hash.String()))
-			err := ioutil.WriteFile(record.SrcBefore, []byte(s), 0666)
+			err := ioutil.WriteFile(record.SrcBefore, []byte(s), 0o666)
 			if err != nil {
 				panic(err)
 			}
@@ -626,7 +635,7 @@ func (saver *ChangesSaver) dumpFiles(result [][]Change) []*pb.UASTChange {
 			s, _ = (&object.File{Blob: *blob}).Contents()
 			record.SrcAfter = path.Join(saver.OutputPath, fmt.Sprintf(
 				"%d_%d_after_%s.src", i, j, change.Change.To.TreeEntry.Hash.String()))
-			err = ioutil.WriteFile(record.SrcAfter, []byte(s), 0666)
+			err = ioutil.WriteFile(record.SrcAfter, []byte(s), 0o666)
 			if err != nil {
 				panic(err)
 			}

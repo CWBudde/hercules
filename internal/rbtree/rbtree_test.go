@@ -75,7 +75,6 @@ func TestDelete(t *testing.T) {
 	testAssert(t, boolInsert(tree, 10), "ins")
 	testAssert(t, !tree.DeleteWithKey(9), "del")
 	testAssert(t, tree.Len() == 1, "dellen")
-
 }
 
 func iterToString(i Iterator) string {
@@ -198,9 +197,7 @@ func (o *oracle) Delete(key int) bool {
 	return false
 }
 
-//
 // Test iterator
-//
 type oracleIterator struct {
 	o     *oracle
 	index int
@@ -344,9 +341,11 @@ func TestCloneShallow(t *testing.T) {
 	alloc3 := alloc1.Clone()
 	clone = tree.CloneShallow(alloc3)
 	assert.Equal(t, alloc3.storage, []node{
-		{}, {},
+		{},
+		{},
 		{right: 3, color: black, item: Item{7, 7}},
-		{parent: 2, color: red, item: Item{10, 10}}})
+		{parent: 2, color: red, item: Item{10, 10}},
+	})
 	assert.Equal(t, clone.minNode, uint32(2))
 	assert.Equal(t, clone.maxNode, uint32(3))
 	assert.Equal(t, alloc3.Size(), 4)
@@ -373,7 +372,8 @@ func TestCloneDeep(t *testing.T) {
 	assert.Equal(t, alloc2.storage, []node{
 		{},
 		{right: 2, color: black, item: Item{7, 7}},
-		{parent: 1, color: red, item: Item{10, 10}}})
+		{parent: 1, color: red, item: Item{10, 10}},
+	})
 	assert.Equal(t, clone.minNode, uint32(1))
 	assert.Equal(t, clone.maxNode, uint32(2))
 	assert.Equal(t, alloc2.Size(), 3)
@@ -692,11 +692,11 @@ func TestAllocatorSerializeDeserialize(t *testing.T) {
 		}, alloc.storage[i], i)
 	}
 
-	//alloc.Hibernate()
-	//assert.Nil(t, os.Truncate(name, 100))
-	//assert.NotNil(t, alloc.Deserialize(name))
-	//assert.Nil(t, os.Truncate(name, 4))
-	//assert.NotNil(t, alloc.Deserialize(name))
-	//assert.Nil(t, os.Truncate(name, 0))
-	//assert.NotNil(t, alloc.Deserialize(name))
+	// alloc.Hibernate()
+	// assert.Nil(t, os.Truncate(name, 100))
+	// assert.NotNil(t, alloc.Deserialize(name))
+	// assert.Nil(t, os.Truncate(name, 4))
+	// assert.NotNil(t, alloc.Deserialize(name))
+	// assert.Nil(t, os.Truncate(name, 0))
+	// assert.NotNil(t, alloc.Deserialize(name))
 }

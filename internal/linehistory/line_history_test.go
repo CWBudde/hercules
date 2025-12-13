@@ -1,15 +1,16 @@
 package linehistory
 
 import (
-	"github.com/cyraxred/hercules/internal/core"
-	items "github.com/cyraxred/hercules/internal/plumbing"
-	"github.com/cyraxred/hercules/internal/plumbing/identity"
-	"github.com/cyraxred/hercules/internal/test"
-	"github.com/cyraxred/hercules/internal/test/fixtures"
+	"testing"
+
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/meko-christian/hercules/internal/core"
+	items "github.com/meko-christian/hercules/internal/plumbing"
+	"github.com/meko-christian/hercules/internal/plumbing/identity"
+	"github.com/meko-christian/hercules/internal/test"
+	"github.com/meko-christian/hercules/internal/test/fixtures"
 	"github.com/stretchr/testify/assert"
-	"testing"
 )
 
 func AddHash(t *testing.T, cache map[plumbing.Hash]*items.CachedBlob, hash string) {
@@ -29,7 +30,8 @@ func TestLinesMeta(t *testing.T) {
 	assert.Equal(t, bd.Provides()[0], DependencyLineHistory)
 	required := [...]string{
 		items.DependencyFileDiff, items.DependencyTreeChanges, items.DependencyBlobCache,
-		items.DependencyTick, identity.DependencyAuthor}
+		items.DependencyTick, identity.DependencyAuthor,
+	}
 	assert.Len(t, bd.Requires(), len(required))
 	for _, name := range required {
 		assert.Contains(t, bd.Requires(), name)
@@ -104,7 +106,7 @@ func TestLinesConsume(t *testing.T) {
 		Tree: treeFrom,
 		TreeEntry: object.TreeEntry{
 			Name: "analyser.go",
-			Mode: 0100644,
+			Mode: 0o100644,
 			Hash: plumbing.NewHash("dc248ba2b22048cc730c571a748e8ffcf7085ab9"),
 		},
 	}, To: object.ChangeEntry{
@@ -112,29 +114,31 @@ func TestLinesConsume(t *testing.T) {
 		Tree: treeTo,
 		TreeEntry: object.TreeEntry{
 			Name: "analyser.go",
-			Mode: 0100644,
+			Mode: 0o100644,
 			Hash: plumbing.NewHash("baa64828831d174f40140e4b3cfa77d1e917a2c1"),
 		},
 	}}
-	changes[1] = &object.Change{From: object.ChangeEntry{}, To: object.ChangeEntry{
-		Name: "cmd/hercules/main.go",
-		Tree: treeTo,
-		TreeEntry: object.TreeEntry{
+	changes[1] = &object.Change{
+		From: object.ChangeEntry{}, To: object.ChangeEntry{
 			Name: "cmd/hercules/main.go",
-			Mode: 0100644,
-			Hash: plumbing.NewHash("c29112dbd697ad9b401333b80c18a63951bc18d9"),
+			Tree: treeTo,
+			TreeEntry: object.TreeEntry{
+				Name: "cmd/hercules/main.go",
+				Mode: 0o100644,
+				Hash: plumbing.NewHash("c29112dbd697ad9b401333b80c18a63951bc18d9"),
+			},
 		},
-	},
 	}
-	changes[2] = &object.Change{From: object.ChangeEntry{}, To: object.ChangeEntry{
-		Name: ".travis.yml",
-		Tree: treeTo,
-		TreeEntry: object.TreeEntry{
+	changes[2] = &object.Change{
+		From: object.ChangeEntry{}, To: object.ChangeEntry{
 			Name: ".travis.yml",
-			Mode: 0100644,
-			Hash: plumbing.NewHash("291286b4ac41952cbd1389fda66420ec03c1a9fe"),
+			Tree: treeTo,
+			TreeEntry: object.TreeEntry{
+				Name: ".travis.yml",
+				Mode: 0o100644,
+				Hash: plumbing.NewHash("291286b4ac41952cbd1389fda66420ec03c1a9fe"),
+			},
 		},
-	},
 	}
 	deps[items.DependencyTreeChanges] = changes
 	fd := fixtures.FileDiff()
@@ -206,51 +210,54 @@ func TestLinesConsume(t *testing.T) {
 	treeTo, _ = test.Repository.TreeObject(plumbing.NewHash(
 		"251f2094d7b523d5bcc60e663b6cf38151bf8844"))
 	changes = make(object.Changes, 3)
-	changes[0] = &object.Change{From: object.ChangeEntry{
-		Name: "analyser.go",
-		Tree: treeFrom,
-		TreeEntry: object.TreeEntry{
+	changes[0] = &object.Change{
+		From: object.ChangeEntry{
 			Name: "analyser.go",
-			Mode: 0100644,
-			Hash: plumbing.NewHash("baa64828831d174f40140e4b3cfa77d1e917a2c1"),
-		},
-	}, To: object.ChangeEntry{
-		Name: "burndown.go",
-		Tree: treeTo,
-		TreeEntry: object.TreeEntry{
+			Tree: treeFrom,
+			TreeEntry: object.TreeEntry{
+				Name: "analyser.go",
+				Mode: 0o100644,
+				Hash: plumbing.NewHash("baa64828831d174f40140e4b3cfa77d1e917a2c1"),
+			},
+		}, To: object.ChangeEntry{
 			Name: "burndown.go",
-			Mode: 0100644,
-			Hash: plumbing.NewHash("29c9fafd6a2fae8cd20298c3f60115bc31a4c0f2"),
+			Tree: treeTo,
+			TreeEntry: object.TreeEntry{
+				Name: "burndown.go",
+				Mode: 0o100644,
+				Hash: plumbing.NewHash("29c9fafd6a2fae8cd20298c3f60115bc31a4c0f2"),
+			},
 		},
-	},
 	}
-	changes[1] = &object.Change{From: object.ChangeEntry{
-		Name: "cmd/hercules/main.go",
-		Tree: treeFrom,
-		TreeEntry: object.TreeEntry{
+	changes[1] = &object.Change{
+		From: object.ChangeEntry{
 			Name: "cmd/hercules/main.go",
-			Mode: 0100644,
-			Hash: plumbing.NewHash("c29112dbd697ad9b401333b80c18a63951bc18d9"),
-		},
-	}, To: object.ChangeEntry{
-		Name: "cmd/hercules/main.go",
-		Tree: treeTo,
-		TreeEntry: object.TreeEntry{
+			Tree: treeFrom,
+			TreeEntry: object.TreeEntry{
+				Name: "cmd/hercules/main.go",
+				Mode: 0o100644,
+				Hash: plumbing.NewHash("c29112dbd697ad9b401333b80c18a63951bc18d9"),
+			},
+		}, To: object.ChangeEntry{
 			Name: "cmd/hercules/main.go",
-			Mode: 0100644,
-			Hash: plumbing.NewHash("f7d918ec500e2f925ecde79b51cc007bac27de72"),
+			Tree: treeTo,
+			TreeEntry: object.TreeEntry{
+				Name: "cmd/hercules/main.go",
+				Mode: 0o100644,
+				Hash: plumbing.NewHash("f7d918ec500e2f925ecde79b51cc007bac27de72"),
+			},
 		},
-	},
 	}
-	changes[2] = &object.Change{From: object.ChangeEntry{
-		Name: ".travis.yml",
-		Tree: treeTo,
-		TreeEntry: object.TreeEntry{
+	changes[2] = &object.Change{
+		From: object.ChangeEntry{
 			Name: ".travis.yml",
-			Mode: 0100644,
-			Hash: plumbing.NewHash("291286b4ac41952cbd1389fda66420ec03c1a9fe"),
-		},
-	}, To: object.ChangeEntry{},
+			Tree: treeTo,
+			TreeEntry: object.TreeEntry{
+				Name: ".travis.yml",
+				Mode: 0o100644,
+				Hash: plumbing.NewHash("291286b4ac41952cbd1389fda66420ec03c1a9fe"),
+			},
+		}, To: object.ChangeEntry{},
 	}
 	deps[items.DependencyTreeChanges] = changes
 	fd = fixtures.FileDiff()
@@ -336,7 +343,7 @@ func bakeBurndownForSerialization(t *testing.T, firstAuthor, secondAuthor int) *
 		Tree: treeFrom,
 		TreeEntry: object.TreeEntry{
 			Name: "analyser.go",
-			Mode: 0100644,
+			Mode: 0o100644,
 			Hash: plumbing.NewHash("dc248ba2b22048cc730c571a748e8ffcf7085ab9"),
 		},
 	}, To: object.ChangeEntry{
@@ -344,29 +351,31 @@ func bakeBurndownForSerialization(t *testing.T, firstAuthor, secondAuthor int) *
 		Tree: treeTo,
 		TreeEntry: object.TreeEntry{
 			Name: "analyser.go",
-			Mode: 0100644,
+			Mode: 0o100644,
 			Hash: plumbing.NewHash("baa64828831d174f40140e4b3cfa77d1e917a2c1"),
 		},
 	}}
-	changes[1] = &object.Change{From: object.ChangeEntry{}, To: object.ChangeEntry{
-		Name: "cmd/hercules/main.go",
-		Tree: treeTo,
-		TreeEntry: object.TreeEntry{
+	changes[1] = &object.Change{
+		From: object.ChangeEntry{}, To: object.ChangeEntry{
 			Name: "cmd/hercules/main.go",
-			Mode: 0100644,
-			Hash: plumbing.NewHash("c29112dbd697ad9b401333b80c18a63951bc18d9"),
+			Tree: treeTo,
+			TreeEntry: object.TreeEntry{
+				Name: "cmd/hercules/main.go",
+				Mode: 0o100644,
+				Hash: plumbing.NewHash("c29112dbd697ad9b401333b80c18a63951bc18d9"),
+			},
 		},
-	},
 	}
-	changes[2] = &object.Change{From: object.ChangeEntry{}, To: object.ChangeEntry{
-		Name: ".travis.yml",
-		Tree: treeTo,
-		TreeEntry: object.TreeEntry{
+	changes[2] = &object.Change{
+		From: object.ChangeEntry{}, To: object.ChangeEntry{
 			Name: ".travis.yml",
-			Mode: 0100644,
-			Hash: plumbing.NewHash("291286b4ac41952cbd1389fda66420ec03c1a9fe"),
+			Tree: treeTo,
+			TreeEntry: object.TreeEntry{
+				Name: ".travis.yml",
+				Mode: 0o100644,
+				Hash: plumbing.NewHash("291286b4ac41952cbd1389fda66420ec03c1a9fe"),
+			},
 		},
-	},
 	}
 	deps[items.DependencyTreeChanges] = changes
 	deps[core.DependencyCommit], _ = test.Repository.CommitObject(plumbing.NewHash(
@@ -392,51 +401,54 @@ func bakeBurndownForSerialization(t *testing.T, firstAuthor, secondAuthor int) *
 		"96c6ece9b2f3c7c51b83516400d278dea5605100"))
 	treeTo, _ = test.Repository.TreeObject(plumbing.NewHash(
 		"251f2094d7b523d5bcc60e663b6cf38151bf8844"))
-	changes[0] = &object.Change{From: object.ChangeEntry{
-		Name: "analyser.go",
-		Tree: treeFrom,
-		TreeEntry: object.TreeEntry{
+	changes[0] = &object.Change{
+		From: object.ChangeEntry{
 			Name: "analyser.go",
-			Mode: 0100644,
-			Hash: plumbing.NewHash("baa64828831d174f40140e4b3cfa77d1e917a2c1"),
-		},
-	}, To: object.ChangeEntry{
-		Name: "burndown.go",
-		Tree: treeTo,
-		TreeEntry: object.TreeEntry{
+			Tree: treeFrom,
+			TreeEntry: object.TreeEntry{
+				Name: "analyser.go",
+				Mode: 0o100644,
+				Hash: plumbing.NewHash("baa64828831d174f40140e4b3cfa77d1e917a2c1"),
+			},
+		}, To: object.ChangeEntry{
 			Name: "burndown.go",
-			Mode: 0100644,
-			Hash: plumbing.NewHash("29c9fafd6a2fae8cd20298c3f60115bc31a4c0f2"),
+			Tree: treeTo,
+			TreeEntry: object.TreeEntry{
+				Name: "burndown.go",
+				Mode: 0o100644,
+				Hash: plumbing.NewHash("29c9fafd6a2fae8cd20298c3f60115bc31a4c0f2"),
+			},
 		},
-	},
 	}
-	changes[1] = &object.Change{From: object.ChangeEntry{
-		Name: "cmd/hercules/main.go",
-		Tree: treeFrom,
-		TreeEntry: object.TreeEntry{
+	changes[1] = &object.Change{
+		From: object.ChangeEntry{
 			Name: "cmd/hercules/main.go",
-			Mode: 0100644,
-			Hash: plumbing.NewHash("c29112dbd697ad9b401333b80c18a63951bc18d9"),
-		},
-	}, To: object.ChangeEntry{
-		Name: "cmd/hercules/main.go",
-		Tree: treeTo,
-		TreeEntry: object.TreeEntry{
+			Tree: treeFrom,
+			TreeEntry: object.TreeEntry{
+				Name: "cmd/hercules/main.go",
+				Mode: 0o100644,
+				Hash: plumbing.NewHash("c29112dbd697ad9b401333b80c18a63951bc18d9"),
+			},
+		}, To: object.ChangeEntry{
 			Name: "cmd/hercules/main.go",
-			Mode: 0100644,
-			Hash: plumbing.NewHash("f7d918ec500e2f925ecde79b51cc007bac27de72"),
+			Tree: treeTo,
+			TreeEntry: object.TreeEntry{
+				Name: "cmd/hercules/main.go",
+				Mode: 0o100644,
+				Hash: plumbing.NewHash("f7d918ec500e2f925ecde79b51cc007bac27de72"),
+			},
 		},
-	},
 	}
-	changes[2] = &object.Change{From: object.ChangeEntry{
-		Name: ".travis.yml",
-		Tree: treeTo,
-		TreeEntry: object.TreeEntry{
+	changes[2] = &object.Change{
+		From: object.ChangeEntry{
 			Name: ".travis.yml",
-			Mode: 0100644,
-			Hash: plumbing.NewHash("291286b4ac41952cbd1389fda66420ec03c1a9fe"),
-		},
-	}, To: object.ChangeEntry{},
+			Tree: treeTo,
+			TreeEntry: object.TreeEntry{
+				Name: ".travis.yml",
+				Mode: 0o100644,
+				Hash: plumbing.NewHash("291286b4ac41952cbd1389fda66420ec03c1a9fe"),
+			},
+		}, To: object.ChangeEntry{},
 	}
 	deps[items.DependencyTreeChanges] = changes
 	fd = fixtures.FileDiff()

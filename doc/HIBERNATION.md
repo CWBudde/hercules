@@ -4,7 +4,7 @@ Hercules supports signalling pipeline items when they are not going to be needed
 n the future and when they are going to be used after that period.
 Pipeline items which support hibernation are expected to compress and decompress their data
 corresponding to the described signals.
-This mechanism is called *hibernation*. It can be used in the cases when there many parallel
+This mechanism is called _hibernation_. It can be used in the cases when there many parallel
 branches and the free operating memory runs too small.
 Hibernation is a special analysis mode and is disabled by default. It can be enabled with
 
@@ -17,7 +17,7 @@ The distance is measured in the number of commits, forks, merges. etc. in the li
 Usually 10 is a good default; the bigger N, the less hibernation operations,
 the faster the analysis but the bigger memory pressure.
 
-There is also `--hibernate-disk` flag which maintains 
+There is also `--hibernate-disk` flag which maintains
 
 ## Burndown
 

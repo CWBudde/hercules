@@ -2,19 +2,19 @@ package leaves
 
 import (
 	"fmt"
-	"github.com/cyraxred/hercules/internal/join"
 	"io"
 	"sort"
 
-	"github.com/cyraxred/hercules/internal/core"
-	"github.com/cyraxred/hercules/internal/pb"
-	items "github.com/cyraxred/hercules/internal/plumbing"
-	"github.com/cyraxred/hercules/internal/plumbing/identity"
-	"github.com/cyraxred/hercules/internal/yaml"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/utils/merkletrie"
 	"github.com/gogo/protobuf/proto"
+	"github.com/meko-christian/hercules/internal/core"
+	"github.com/meko-christian/hercules/internal/join"
+	"github.com/meko-christian/hercules/internal/pb"
+	items "github.com/meko-christian/hercules/internal/plumbing"
+	"github.com/meko-christian/hercules/internal/plumbing/identity"
+	"github.com/meko-christian/hercules/internal/yaml"
 )
 
 // CouplesAnalysis calculates the number of common commits for files and authors.
@@ -353,7 +353,8 @@ func (couples *CouplesAnalysis) MergeResults(r1, r2 interface{}, c1, c2 *core.Co
 	merged.PeopleFiles = make([][]int, len(merged.reversedPeopleDict))
 	peopleFilesDicts := make([]map[int]bool, len(merged.reversedPeopleDict))
 	addPeopleFiles := func(peopleFiles [][]int, reversedPeopleDict []string,
-		reversedFilesDict []string) {
+		reversedFilesDict []string,
+	) {
 		for pi, fs := range peopleFiles {
 			idx := people[reversedPeopleDict[pi]].Final
 			m := peopleFilesDicts[idx]
@@ -486,7 +487,8 @@ func (couples *CouplesAnalysis) serializeText(result *CouplesResult, writer io.W
 }
 
 func sortByNumberOfFiles(
-	peopleFiles [][]int, peopleDict []string, filesDict []string) authorFilesList {
+	peopleFiles [][]int, peopleDict []string, filesDict []string,
+) authorFilesList {
 	var pfl authorFilesList
 	for peopleIdx, files := range peopleFiles {
 		if peopleIdx < len(peopleDict) {
@@ -511,9 +513,11 @@ type authorFilesList []authorFiles
 func (s authorFilesList) Len() int {
 	return len(s)
 }
+
 func (s authorFilesList) Swap(i, j int) {
 	s[i], s[j] = s[j], s[i]
 }
+
 func (s authorFilesList) Less(i, j int) bool {
 	return len(s[i].Files) < len(s[j].Files)
 }
@@ -572,8 +576,8 @@ func (couples *CouplesAnalysis) currentFiles() map[string]bool {
 
 // propagateRenames applies `renames` over the files from `lastCommit`.
 func (couples *CouplesAnalysis) propagateRenames(files map[string]bool) (
-	map[string]map[string]int, []map[string]int) {
-
+	map[string]map[string]int, []map[string]int,
+) {
 	renames := *couples.renames
 	reducedFiles := map[string]map[string]int{}
 	for file := range files {

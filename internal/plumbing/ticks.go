@@ -3,10 +3,10 @@ package plumbing
 import (
 	"time"
 
-	"github.com/cyraxred/hercules/internal/core"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/meko-christian/hercules/internal/core"
 )
 
 // TicksSinceStart provides relative tick information for every commit.
@@ -66,12 +66,14 @@ func (*TicksSinceStart) Features() []string {
 
 // ListConfigurationOptions returns the list of changeable public properties of this PipelineItem.
 func (ticks *TicksSinceStart) ListConfigurationOptions() []core.ConfigurationOption {
-	return []core.ConfigurationOption{{
-		Name:        ConfigTicksSinceStartTickSize,
-		Description: "How long each 'tick' represents in hours.",
-		Flag:        "tick-size",
-		Type:        core.IntConfigurationOption,
-		Default:     DefaultTicksSinceStartTickSize},
+	return []core.ConfigurationOption{
+		{
+			Name:        ConfigTicksSinceStartTickSize,
+			Description: "How long each 'tick' represents in hours.",
+			Flag:        "tick-size",
+			Type:        core.IntConfigurationOption,
+			Default:     DefaultTicksSinceStartTickSize,
+		},
 	}
 }
 

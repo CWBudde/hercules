@@ -21,56 +21,54 @@
   <a href="#license">License</a>
 </p>
 
---------
+---
 
+# Table of Contents
 
-Table of Contents
-=================
-
-  * [Overview](#overview)
-  * [Installation](#installation)
-     * [Build from source](#build-from-source)
-     * [GitHub Action](#github-action)
-  * [Contributions](#contributions)
-  * [License](#license)
-  * [Usage](#usage)
-    * [Caching](#caching)
-    * [GitHub Action](#github-action-1)
-    * [Docker image](#docker-image)
-    * [Built-in analyses](#built-in-analyses)
-      * [Project burndown](#project-burndown)
-      * [Files](#files)
-      * [People](#people)
-      * [Churn matrix](#overwrites-matrix)
-      * [Code ownership](#code-ownership)
-      * [Couples](#couples)
-      * [Structural hotness](#structural-hotness)
-      * [Aligned commit series](#aligned-commit-series)
-      * [Added vs changed lines through time](#added-vs-changed-lines-through-time)
-      * [Efforts through time](#efforts-through-time)
-      * [Sentiment (positive and negative comments)](#sentiment-positive-and-negative-comments)
-      * [Everything in a single pass](#everything-in-a-single-pass)
-    * [Plugins](#plugins)
-    * [Merging](#merging)
-    * [Bad unicode errors](#bad-unicode-errors)
-    * [Plotting](#plotting)
-    * [Custom plotting backend](#custom-plotting-backend)
-    * [Caveats](#caveats)
-    * [Burndown Out-Of-Memory](#burndown-out-of-memory)
-  * [Roadmap](#roadmap)
+- [Overview](#overview)
+- [Installation](#installation)
+  - [Build from source](#build-from-source)
+  - [GitHub Action](#github-action)
+- [Contributions](#contributions)
+- [License](#license)
+- [Usage](#usage)
+  - [Caching](#caching)
+  - [GitHub Action](#github-action-1)
+  - [Docker image](#docker-image)
+  - [Built-in analyses](#built-in-analyses)
+    - [Project burndown](#project-burndown)
+    - [Files](#files)
+    - [People](#people)
+    - [Churn matrix](#overwrites-matrix)
+    - [Code ownership](#code-ownership)
+    - [Couples](#couples)
+    - [Structural hotness](#structural-hotness)
+    - [Aligned commit series](#aligned-commit-series)
+    - [Added vs changed lines through time](#added-vs-changed-lines-through-time)
+    - [Efforts through time](#efforts-through-time)
+    - [Sentiment (positive and negative comments)](#sentiment-positive-and-negative-comments)
+    - [Everything in a single pass](#everything-in-a-single-pass)
+  - [Plugins](#plugins)
+  - [Merging](#merging)
+  - [Bad unicode errors](#bad-unicode-errors)
+  - [Plotting](#plotting)
+  - [Custom plotting backend](#custom-plotting-backend)
+  - [Caveats](#caveats)
+  - [Burndown Out-Of-Memory](#burndown-out-of-memory)
+- [Roadmap](#roadmap)
 
 ## Overview
 
 Hercules is an amazingly fast and highly customizable Git repository analysis engine written in Go. Batteries are included.
 Powered by [go-git](https://github.com/go-git/go-git).
 
-*Notice (November 2020): the main author is back from the limbo and is gradually resuming the development. See the [roadmap](#roadmap).*
+_Notice (November 2020): the main author is back from the limbo and is gradually resuming the development. See the [roadmap](#roadmap)._
 
 There are two command-line tools: `hercules` and `labours`. The first is a program
 written in Go which takes a Git repository and executes a Directed Acyclic Graph (DAG) of [analysis tasks](doc/PIPELINE_ITEMS.md) over the full commit history.
 The second is a Python script which shows some predefined plots over the collected data. These two tools are normally used together through
 a pipe. It is possible to write custom analyses using the plugin system. It is also possible
-to merge several analysis results together - relevant for organizations. 
+to merge several analysis results together - relevant for organizations.
 The analyzed commit history includes branches, merges, etc.
 
 Hercules has been successfully used for several internal projects at [source{d}](https://sourced.tech).
@@ -79,9 +77,11 @@ a [presentation](http://vmarkovtsev.github.io/gowayfest-2018-minsk/). Please [co
 by testing, fixing bugs, adding [new analyses](https://github.com/src-d/hercules/issues?q=is%3Aissue+is%3Aopen+label%3Anew-analysis), or coding swagger!
 
 ![Hercules DAG of Burndown analysis](doc/dag.png)
+
 <p align="center">The DAG of burndown and couples analyses with UAST diff refining. Generated with <code>hercules --burndown --burndown-people --couples --feature=uast --dry-run --dump-dag doc/dag.dot https://github.com/src-d/hercules</code></p>
 
 ![git/git image](doc/linux.png)
+
 <p align="center">torvalds/linux line burndown (granularity 30, sampling 30, resampled by year). Generated with <code>hercules --burndown --first-parent --pb https://github.com/torvalds/linux | labours -f pb -m burndown-project</code> in 1h 40min.</p>
 
 ## Installation
@@ -98,7 +98,9 @@ pip3 install labours
 Numpy and Scipy can be installed on Windows using http://www.lfd.uci.edu/~gohlke/pythonlibs/
 
 ### Build from source
+
 You are going to need Go (>= v1.11), [`protoc`](https://github.com/google/protobuf/releases), and [`just`](https://github.com/casey/just).
+
 ```
 git clone https://github.com/src-d/hercules && cd hercules
 just
@@ -116,6 +118,7 @@ Please refer to the [sample workflow](.github/workflows/main.yml) which demonstr
 ...are welcome! See [CONTRIBUTING](CONTRIBUTING.md) and [code of conduct](CODE_OF_CONDUCT.md).
 
 ## License
+
 [Apache 2.0](LICENSE.md)
 
 ## Usage
@@ -186,7 +189,7 @@ Exactly the same what [git-of-theseus](https://github.com/erikbern/git-of-theseu
 does but much faster. Blaming is performed efficiently and incrementally using a custom RB tree tracking
 algorithm, and only the last modification date is recorded while running the analysis.
 
-All burndown analyses depend on the values of *granularity* and *sampling*.
+All burndown analyses depend on the values of _granularity_ and _sampling_.
 Granularity is the number of days each band in the stack consists of. Sampling
 is the frequency with which the burnout state is snapshotted. The smaller the
 value, the more smooth is the plot but the more work is done.
@@ -220,13 +223,14 @@ discovered by the following algorithm:
 0. We start from the root commit towards the HEAD. Emails and names are converted to lower case.
 1. If we process an unknown email and name, record them as a new developer.
 2. If we process a known email but unknown name, match to the developer with the matching email,
-and add the unknown name to the list of that developer's names.
+   and add the unknown name to the list of that developer's names.
 3. If we process an unknown email but known name, match to the developer with the matching name,
-and add the unknown email to the list of that developer's emails.
+   and add the unknown email to the list of that developer's emails.
 
 If `--people-dict` is specified, it should point to a text file with the custom identities. The
 format is: every line is a single developer, it contains all the matching emails and names separated
 by `|`. The case is ignored. Example file contents:
+
 ```
 Linus Torvalds|torvalds@linux-foundation.org
 Vadim Markovtsev|vadim@sourced.tech|another@one.com
@@ -238,6 +242,7 @@ will be used if it exists in the latest commit.
 #### Overwrites matrix
 
 ![Wireshark top 20 overwrites matrix](doc/wireshark_overwrites_matrix.png)
+
 <p align="center">Wireshark top 20 devs - overwrites matrix</p>
 
 ```
@@ -253,15 +258,16 @@ The format is the matrix with N rows and (N+2) columns, where N is the number of
 
 1. First column is the number of lines the developer wrote.
 2. Second column is how many lines were written by the developer and deleted by unidentified developers
-(if `--people-dict` is not specified, it is always 0).
+   (if `--people-dict` is not specified, it is always 0).
 3. The rest of the columns show how many lines were written by the developer and deleted by identified
-developers.
+   developers.
 
 The sequence of developers is stored in `people_sequence` YAML node.
 
 #### Code ownership
 
 ![Ember.js top 20 code ownership](doc/emberjs_people.png)
+
 <p align="center">Ember.js top 20 devs - code ownership</p>
 
 ```
@@ -275,6 +281,7 @@ how many lines are alive at the sampled moments in time for each identified deve
 #### Couples
 
 ![Linux kernel file couples](doc/tfprojcouples.png)
+
 <p align="center">torvalds/linux files' coupling in Tensorflow Projector</p>
 
 ```
@@ -322,11 +329,13 @@ labours -m shotness
 Couples analysis automatically loads "shotness" data if available.
 
 ![Jinja2 functions grouped by structural hotness](doc/jinja.png)
+
 <p align="center"><code>hercules --shotness --pb https://github.com/pallets/jinja | labours -m couples -f pb</code></p>
 
 #### Aligned commit series
 
 ![tensorflow/tensorflow](doc/devs_tensorflow.png)
+
 <p align="center">tensorflow/tensorflow aligned commit series of top 50 developers by commit number.</p>
 
 ```
@@ -339,16 +348,16 @@ We plot the resulting commit time series using a few tricks to show the temporal
 two adjacent commit series should look similar after normalization.
 
 1. We compute the distance matrix of the commit series. Our distance metric is
-[Dynamic Time Warping](https://en.wikipedia.org/wiki/Dynamic_time_warping).
-We use [FastDTW](https://cs.fit.edu/~pkc/papers/tdm04.pdf) algorithm which has linear complexity
-proportional to the length of time series. Thus the overall complexity of computing the matrix is quadratic.
+   [Dynamic Time Warping](https://en.wikipedia.org/wiki/Dynamic_time_warping).
+   We use [FastDTW](https://cs.fit.edu/~pkc/papers/tdm04.pdf) algorithm which has linear complexity
+   proportional to the length of time series. Thus the overall complexity of computing the matrix is quadratic.
 2. We compile the linear list of commit series with
-[Seriation](http://nicolas.kruchten.com/content/2018/02/seriation/) technique.
-Particularly, we solve the [Travelling Salesman Problem](https://en.wikipedia.org/wiki/Travelling_salesman_problem) which is NP-complete.
-However, given the typical number of developers which is less than 1,000, there is a good chance that
-the solution does not take much time. We use [Google or-tools](https://developers.google.com/optimization/routing/tsp) solver.
+   [Seriation](http://nicolas.kruchten.com/content/2018/02/seriation/) technique.
+   Particularly, we solve the [Travelling Salesman Problem](https://en.wikipedia.org/wiki/Travelling_salesman_problem) which is NP-complete.
+   However, given the typical number of developers which is less than 1,000, there is a good chance that
+   the solution does not take much time. We use [Google or-tools](https://developers.google.com/optimization/routing/tsp) solver.
 3. We find 1-dimensional clusters in the resulting path with [HDBSCAN](https://hdbscan.readthedocs.io/en/latest/how_hdbscan_works.html)
-algorithm and assign colors accordingly.
+   algorithm and assign colors accordingly.
 4. Time series are smoothed by convolving with the [Slepian window](https://en.wikipedia.org/wiki/Window_function#DPSS_or_Slepian_window).
 
 This plot allows to discover how the development team evolved through time. It also shows "commit flashmobs"
@@ -362,6 +371,7 @@ insights from the `tensorflow/tensorflow` plot above:
 #### Added vs changed lines through time
 
 ![tensorflow/tensorflow](doc/add_vs_changed.png)
+
 <p align="center">tensorflow/tensorflow added and changed lines through time.</p>
 
 ```
@@ -375,6 +385,7 @@ labours -m old-vs-new -o <name>
 #### Efforts through time
 
 ![kubernetes/kubernetes](doc/k8s_efforts.png)
+
 <p align="center">kubernetes/kubernetes efforts through time.</p>
 
 ```
@@ -391,6 +402,7 @@ with owning lines.
 #### Sentiment (positive and negative comments)
 
 ![Django sentiment](doc/sentiment.png)
+
 <p align="center">It can be clearly seen that Django comments were positive/optimistic in the beginning, but later became negative/pessimistic.<br><code>hercules --sentiment --pb https://github.com/django/django | labours -m sentiment -f pb</code></p>
 
 We extract new and changed comments from source code on every commit, apply [BiDiSentiment](https://github.com/vmarkovtsev/bidisentiment)
@@ -477,13 +489,14 @@ contain `"type"` which reflects the plot kind.
 ### Caveats
 
 1. Processing all the commits may fail in some rare cases. If you get an error similar to https://github.com/src-d/hercules/issues/106
-please report there and specify `--first-parent` as a workaround.
+   please report there and specify `--first-parent` as a workaround.
 1. Burndown collection may fail with an Out-Of-Memory error. See the next session for the workarounds.
 1. Parsing YAML in Python is slow when the number of internal objects is big. `hercules`' output
-for the Linux kernel in "couples" mode is 1.5 GB and takes more than an hour / 180GB RAM to be
-parsed. However, most of the repositories are parsed within a minute. Try using Protocol Buffers
-instead (`hercules --pb` and `labours -f pb`).
+   for the Linux kernel in "couples" mode is 1.5 GB and takes more than an hour / 180GB RAM to be
+   parsed. However, most of the repositories are parsed within a minute. Try using Protocol Buffers
+   instead (`hercules --pb` and `labours -f pb`).
 1. To speed up yaml parsing
+
    ```
    # Debian, Ubuntu
    apt install libyaml-dev
@@ -508,9 +521,8 @@ fail with an OOM. You should try the following:
 
 ## Roadmap
 
-* [ ] Switch from `src-d/go-git` to `go-git/go-git`. Upgrade the codebase to be compatible with the latest Go version.
-* [ ] Update the docs regarding the copyrights and such.
-* [ ] Fix the reported bugs.
-* [ ] Remove the dependency on Babelfish for parsing the code. It is abandoned and a better alternative should be found.
-* [ ] Remove the ad-hoc analyses added while source{d} was agonizing.
-
+- [ ] Switch from `src-d/go-git` to `go-git/go-git`. Upgrade the codebase to be compatible with the latest Go version.
+- [ ] Update the docs regarding the copyrights and such.
+- [ ] Fix the reported bugs.
+- [ ] Remove the dependency on Babelfish for parsing the code. It is abandoned and a better alternative should be found.
+- [ ] Remove the ad-hoc analyses added while source{d} was agonizing.

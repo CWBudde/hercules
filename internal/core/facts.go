@@ -4,9 +4,11 @@ import (
 	"math"
 )
 
-type FileId int32
-type AuthorId int32
-type TickNumber int32
+type (
+	FileId     int32
+	AuthorId   int32
+	TickNumber int32
+)
 
 const (
 	FactIdentityResolver    = "Identity.Resolver"

@@ -1,7 +1,7 @@
 # Contributing Guidelines
 
 Hercules project is [Apache licensed](LICENSE.md) and accepts
-contributions via GitHub pull requests.  This document outlines some of the
+contributions via GitHub pull requests. This document outlines some of the
 conventions on development workflow, commit message formatting, contact points,
 and other resources to make it easier to get your contribution accepted.
 
@@ -17,18 +17,16 @@ the following line: `Signed-off-by: John Doe <john.doe@example.com>`, using your
 
 This can be done easily using the [`-s`](https://github.com/git/git/blob/b2c150d3aa82f6583b9aadfecc5f8fa1c74aca09/Documentation/git-commit.txt#L154-L161) flag on the `git commit`.
 
-
 ## Support Channels
 
 The official support channels, for both users and contributors, are:
 
-- GitHub [issues](https://github.com/src-d/hercules/issues)*
+- GitHub [issues](https://github.com/src-d/hercules/issues)\*
 - Slack: #machine-learning room in the [source{d} Slack](https://join.slack.com/t/sourced-community/shared_invite/enQtMjc4Njk5MzEyNzM2LTFjNzY4NjEwZGEwMzRiNTM4MzRlMzQ4MmIzZjkwZmZlM2NjODUxZmJjNDI1OTcxNDAyMmZlNmFjODZlNTg0YWM)
 
-*Before opening a new issue or submitting a new pull request, it's helpful to
+\*Before opening a new issue or submitting a new pull request, it's helpful to
 search the project - it's likely that another user has already reported the
 issue you're facing, or it's a known issue that we're already aware of.
-
 
 ## How to Contribute
 
@@ -42,7 +40,6 @@ In order for a PR to be accepted it needs to pass a list of requirements:
 - If the PR is a bug fix, it has to include a new unit test that fails before the patch is merged.
 - If the PR is a new feature, it has to come with a suite of unit tests, that tests the new functionality.
 - In any case, all the PRs have to pass the personal evaluation of at least one of the [maintainers](MAINTAINERS.md).
-
 
 ### Format of the commit message
 

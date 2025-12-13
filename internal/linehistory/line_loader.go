@@ -3,17 +3,18 @@ package linehistory
 import (
 	"bufio"
 	"fmt"
-	"github.com/cyraxred/hercules/internal/core"
-	items "github.com/cyraxred/hercules/internal/plumbing"
-	"github.com/cyraxred/hercules/internal/plumbing/identity"
-	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/object"
-	"gopkg.in/yaml.v2"
 	"os"
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/meko-christian/hercules/internal/core"
+	items "github.com/meko-christian/hercules/internal/plumbing"
+	"github.com/meko-christian/hercules/internal/plumbing/identity"
+	"gopkg.in/yaml.v2"
 )
 
 // LineHistoryLoader allows to gather per-line history and statistics for a Git repository.
@@ -165,12 +166,14 @@ func (*LineHistoryLoader) Features() []string {
 
 // ListConfigurationOptions returns the list of changeable public properties of this PipelineItem.
 func (analyser *LineHistoryLoader) ListConfigurationOptions() []core.ConfigurationOption {
-	return []core.ConfigurationOption{{
-		Name:        ConfigLinesLoadFrom,
-		Description: "Temporary directory where to save the hibernated RBTree allocators.",
-		Flag:        "history-line-load",
-		Type:        core.PathConfigurationOption,
-		Default:     ""},
+	return []core.ConfigurationOption{
+		{
+			Name:        ConfigLinesLoadFrom,
+			Description: "Temporary directory where to save the hibernated RBTree allocators.",
+			Flag:        "history-line-load",
+			Type:        core.PathConfigurationOption,
+			Default:     "",
+		},
 	}
 }
 
@@ -210,7 +213,6 @@ func (analyser *LineHistoryLoader) Initialize(*git.Repository) error {
 }
 
 func (analyser *LineHistoryLoader) Consume(map[string]interface{}) (map[string]interface{}, error) {
-
 	var commit commitInfo
 	if analyser.nextCommit < len(analyser.commits) {
 		commit = analyser.commits[analyser.nextCommit]

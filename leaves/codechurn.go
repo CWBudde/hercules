@@ -2,15 +2,15 @@ package leaves
 
 import (
 	"fmt"
-	"github.com/cyraxred/hercules/internal/linehistory"
 	"io"
 	"math"
 	"time"
 
-	"github.com/cyraxred/hercules/internal/core"
-	items "github.com/cyraxred/hercules/internal/plumbing"
-	"github.com/cyraxred/hercules/internal/plumbing/identity"
 	"github.com/go-git/go-git/v5"
+	"github.com/meko-christian/hercules/internal/core"
+	"github.com/meko-christian/hercules/internal/linehistory"
+	items "github.com/meko-christian/hercules/internal/plumbing"
+	"github.com/meko-christian/hercules/internal/plumbing/identity"
 )
 
 // CodeChurnAnalysis allows to gather the code churn statistics for a Git repository.
@@ -177,7 +177,6 @@ func (analyser *CodeChurnAnalysis) Fork(n int) []core.PipelineItem {
 // This function returns the mapping with analysis results. The keys must be the same as
 // in Provides(). If there was an error, nil is returned.
 func (analyser *CodeChurnAnalysis) Consume(deps map[string]interface{}) (map[string]interface{}, error) {
-
 	changes := deps[linehistory.DependencyLineHistory].(core.LineHistoryChanges)
 	analyser.fileResolver = changes.Resolver
 	peopleCount := analyser.peopleResolver.MaxCount()
@@ -290,7 +289,6 @@ func (analyser *CodeChurnAnalysis) updateAuthor(change core.LineHistoryChange) {
 
 // Finalize returns the result of the analysis. Further calls to Consume() are not expected.
 func (analyser *CodeChurnAnalysis) Finalize() interface{} {
-
 	println()
 	for pId, person := range analyser.codeChurns {
 		inserted := int32(0)
@@ -299,8 +297,8 @@ func (analyser *CodeChurnAnalysis) Finalize() interface{} {
 
 		for _, entry := range person.files {
 			inserted += entry.insertedLines
-			//deletedBySelf += entry.deletedBySelf
-			//deletedByOthers += entry.deletedByOthers
+			// deletedBySelf += entry.deletedBySelf
+			// deletedByOthers += entry.deletedByOthers
 		}
 
 		name := analyser.peopleResolver.FriendlyNameOf(core.AuthorId(pId))
@@ -325,7 +323,8 @@ func (analyser *CodeChurnAnalysis) Deserialize(message []byte) (interface{}, err
 
 // MergeResults combines two BurndownResult-s together.
 func (analyser *CodeChurnAnalysis) MergeResults(
-	r1, r2 interface{}, c1, c2 *core.CommonAnalysisResult) interface{} {
+	r1, r2 interface{}, c1, c2 *core.CommonAnalysisResult,
+) interface{} {
 	return nil
 }
 
@@ -335,8 +334,8 @@ func (analyser *CodeChurnAnalysis) memoryLoss(x float64) float64 {
 }
 
 func (analyser *CodeChurnAnalysis) calculateAwareness(entry churnFileEntry, change core.LineHistoryChange,
-	lastTouch core.TickNumber, delta churnLines) (awareness, memorability float64) {
-
+	lastTouch core.TickNumber, delta churnLines,
+) (awareness, memorability float64) {
 	const awarenessLowCut = 0.5
 	const memorabilityMin = 0.5
 

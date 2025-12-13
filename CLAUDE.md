@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `just test` - Run all Go tests
 - `just clean` - Clean build artifacts
 - `just help` - List all available recipes
-- `go test github.com/cyraxred/hercules` - Run Go tests directly
+- `go test github.com/meko-christian/hercules` - Run Go tests directly
 - `pip3 install -e ./python` - Install the Python labours package for plotting/visualization
 
 ## Project Architecture
@@ -21,20 +21,23 @@ Hercules is a Git repository analysis engine with two main components:
 ### Core Architecture Components
 
 **Pipeline System** (`internal/core/pipeline.go`):
+
 - Central execution engine that orchestrates analysis through a Directed Acyclic Graph (DAG)
 - Pipeline items implement the `PipelineItem` interface with dependency management
 - Supports branching/merging for Git history analysis
 - Items can be forked and merged to handle repository branches
 
 **Analysis Items** (`leaves/`):
+
 - `burndown.go` - Line burndown analysis (core feature)
 - `couples.go` - File/developer coupling analysis
-- `devs.go` - Developer activity and contribution analysis  
+- `devs.go` - Developer activity and contribution analysis
 - `commits.go` - Basic commit statistics
 - `file_history.go` - Per-file change tracking
 - `shotness.go` - Structural hotness analysis (requires Babelfish)
 
 **Plumbing Components** (`internal/plumbing/`):
+
 - Low-level analysis building blocks (diff processing, identity resolution, etc.)
 - Provide dependencies for leaf analysis items
 

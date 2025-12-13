@@ -8,10 +8,10 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/cyraxred/hercules/internal/core"
-	"github.com/cyraxred/hercules/internal/plumbing"
-	"github.com/cyraxred/hercules/internal/test"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/meko-christian/hercules/internal/core"
+	"github.com/meko-christian/hercules/internal/plumbing"
+	"github.com/meko-christian/hercules/internal/test"
 	"github.com/sergi/go-diff/diffmatchpatch"
 	"github.com/stretchr/testify/assert"
 	"gopkg.in/bblfsh/sdk.v2/uast/nodes"
@@ -92,7 +92,8 @@ func TestFileDiffRefinerConsume(t *testing.T) {
 	uastChanges[0] = Change{
 		Change: &object.Change{
 			From: object.ChangeEntry{Name: fileName},
-			To:   object.ChangeEntry{Name: fileName}},
+			To:   object.ChangeEntry{Name: fileName},
+		},
 		Before: loadUast(t, "uast1.pb"), After: loadUast(t, "uast2.pb"),
 	}
 	fd := fixtureFileDiffRefiner()
@@ -135,7 +136,8 @@ func TestFileDiffRefinerConsumeNoUast(t *testing.T) {
 	uastChanges[0] = Change{
 		Change: &object.Change{
 			From: object.ChangeEntry{Name: fileName},
-			To:   object.ChangeEntry{Name: fileName}},
+			To:   object.ChangeEntry{Name: fileName},
+		},
 		Before: loadUast(t, "uast1.pb"), After: nil,
 	}
 	fd := fixtureFileDiffRefiner()
@@ -152,7 +154,8 @@ func TestFileDiffRefinerConsumeNoUast(t *testing.T) {
 	uastChanges[0] = Change{
 		Change: &object.Change{
 			From: object.ChangeEntry{Name: fileName},
-			To:   object.ChangeEntry{Name: fileName}},
+			To:   object.ChangeEntry{Name: fileName},
+		},
 		Before: loadUast(t, "uast1.pb"), After: loadUast(t, "uast2.pb"),
 	}
 	iresult, err = fd.Consume(state)

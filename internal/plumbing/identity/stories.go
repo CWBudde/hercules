@@ -4,14 +4,14 @@ import (
 	"bufio"
 	"encoding/hex"
 	"fmt"
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/object"
 	"os"
 	"strings"
 	"time"
 
-	"github.com/cyraxred/hercules/internal/core"
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/meko-christian/hercules/internal/core"
 	"github.com/pkg/errors"
 )
 
@@ -110,12 +110,14 @@ func (detector *StoryDetector) Requires() []string {
 
 // ListConfigurationOptions returns the list of changeable public properties of this PipelineItem.
 func (detector *StoryDetector) ListConfigurationOptions() []core.ConfigurationOption {
-	options := [...]core.ConfigurationOption{{
-		Name:        ConfigStoryDetectorMergeDictPath,
-		Description: "Path to the file with developer -> name|email associations.",
-		Flag:        "story-dict",
-		Type:        core.PathConfigurationOption,
-		Default:     ""},
+	options := [...]core.ConfigurationOption{
+		{
+			Name:        ConfigStoryDetectorMergeDictPath,
+			Description: "Path to the file with developer -> name|email associations.",
+			Flag:        "story-dict",
+			Type:        core.PathConfigurationOption,
+			Default:     "",
+		},
 	}
 	return options[:]
 }

@@ -8,13 +8,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cyraxred/hercules/internal/core"
-	"github.com/cyraxred/hercules/internal/pb"
-	items "github.com/cyraxred/hercules/internal/plumbing"
-	uast_items "github.com/cyraxred/hercules/internal/plumbing/uast"
-	"github.com/cyraxred/hercules/internal/test"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/gogo/protobuf/proto"
+	"github.com/meko-christian/hercules/internal/core"
+	"github.com/meko-christian/hercules/internal/pb"
+	items "github.com/meko-christian/hercules/internal/plumbing"
+	uast_items "github.com/meko-christian/hercules/internal/plumbing/uast"
+	"github.com/meko-christian/hercules/internal/test"
 	"github.com/sergi/go-diff/diffmatchpatch"
 	"github.com/stretchr/testify/assert"
 	"gopkg.in/bblfsh/sdk.v2/uast"
@@ -125,7 +125,8 @@ func bakeShotness(t *testing.T, eraseEndPosition bool) (*ShotnessAnalysis, Shotn
 	uastChanges[0] = uast_items.Change{
 		Change: &object.Change{
 			From: object.ChangeEntry{},
-			To:   object.ChangeEntry{Name: fileName}},
+			To:   object.ChangeEntry{Name: fileName},
+		},
 		Before: nil, After: myLoadUast("uast1.pb"),
 	}
 	iresult, err := sh.Consume(state)
@@ -134,7 +135,8 @@ func bakeShotness(t *testing.T, eraseEndPosition bool) (*ShotnessAnalysis, Shotn
 	uastChanges[0] = uast_items.Change{
 		Change: &object.Change{
 			From: object.ChangeEntry{Name: fileName},
-			To:   object.ChangeEntry{Name: fileName}},
+			To:   object.ChangeEntry{Name: fileName},
+		},
 		Before: myLoadUast("uast1.pb"), After: myLoadUast("uast2.pb"),
 	}
 	iresult, err = sh.Consume(state)
@@ -168,7 +170,8 @@ func TestShotnessConsume(t *testing.T) {
 	uastChanges[0] = uast_items.Change{
 		Change: &object.Change{
 			From: object.ChangeEntry{},
-			To:   object.ChangeEntry{Name: fileName}},
+			To:   object.ChangeEntry{Name: fileName},
+		},
 		Before: nil, After: loadUast(t, "uast1.pb"),
 	}
 	iresult, err := sh.Consume(state)
@@ -177,7 +180,8 @@ func TestShotnessConsume(t *testing.T) {
 	uastChanges[0] = uast_items.Change{
 		Change: &object.Change{
 			From: object.ChangeEntry{Name: fileName},
-			To:   object.ChangeEntry{Name: newfileName}},
+			To:   object.ChangeEntry{Name: newfileName},
+		},
 		Before: loadUast(t, "uast1.pb"), After: loadUast(t, "uast2.pb"),
 	}
 	fileDiffs[newfileName] = fileDiffs[fileName]
@@ -214,11 +218,13 @@ func TestShotnessConsume(t *testing.T) {
 	assert.Equal(t, result.Nodes[15].String(),
 		"uast:FunctionGroup_testUnpackEntryFromStream_"+newfileName)
 	assert.Equal(t, result.Counters[15], map[int]int{
-		8: 1, 0: 1, 5: 1, 6: 1, 11: 1, 1: 1, 13: 1, 17: 1, 3: 1, 15: 1, 9: 1, 4: 1, 7: 1, 16: 1, 2: 1, 12: 1, 10: 1})
+		8: 1, 0: 1, 5: 1, 6: 1, 11: 1, 1: 1, 13: 1, 17: 1, 3: 1, 15: 1, 9: 1, 4: 1, 7: 1, 16: 1, 2: 1, 12: 1, 10: 1,
+	})
 	uastChanges[0] = uast_items.Change{
 		Change: &object.Change{
 			From: object.ChangeEntry{Name: newfileName},
-			To:   object.ChangeEntry{}},
+			To:   object.ChangeEntry{},
+		},
 		Before: loadUast(t, "uast2.pb"), After: nil,
 	}
 	iresult, err = sh.Consume(state)

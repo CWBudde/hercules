@@ -5,8 +5,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/cyraxred/hercules/internal/test"
 	"github.com/go-git/go-git/v5"
+	"github.com/meko-christian/hercules/internal/test"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"

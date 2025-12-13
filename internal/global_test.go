@@ -6,10 +6,10 @@ import (
 	"path"
 	"testing"
 
-	"github.com/cyraxred/hercules/internal/core"
-	"github.com/cyraxred/hercules/internal/plumbing/uast"
-	"github.com/cyraxred/hercules/internal/test"
-	"github.com/cyraxred/hercules/leaves"
+	"github.com/meko-christian/hercules/internal/core"
+	"github.com/meko-christian/hercules/internal/plumbing/uast"
+	"github.com/meko-christian/hercules/internal/test"
+	"github.com/meko-christian/hercules/leaves"
 	"github.com/stretchr/testify/assert"
 )
 

@@ -9,13 +9,13 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/cyraxred/hercules/internal"
-	"github.com/cyraxred/hercules/internal/core"
-	"github.com/cyraxred/hercules/internal/levenshtein"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/utils/merkletrie"
+	"github.com/meko-christian/hercules/internal"
+	"github.com/meko-christian/hercules/internal/core"
+	"github.com/meko-christian/hercules/internal/levenshtein"
 	"github.com/sergi/go-diff/diffmatchpatch"
 )
 
@@ -91,18 +91,21 @@ func (ra *RenameAnalysis) Requires() []string {
 
 // ListConfigurationOptions returns the list of changeable public properties of this PipelineItem.
 func (ra *RenameAnalysis) ListConfigurationOptions() []core.ConfigurationOption {
-	options := [...]core.ConfigurationOption{{
-		Name:        ConfigRenameAnalysisSimilarityThreshold,
-		Description: "The threshold on the similarity index used to detect renames.",
-		Flag:        "M",
-		Type:        core.IntConfigurationOption,
-		Default:     RenameAnalysisDefaultThreshold}, {
-		Name: ConfigRenameAnalysisTimeout,
-		Description: "The maximum time (milliseconds) allowed to spend computing " +
-			"renames in a single commit. 0 sets the default.",
-		Flag:    "renames-timeout",
-		Type:    core.IntConfigurationOption,
-		Default: RenameAnalysisDefaultTimeout},
+	options := [...]core.ConfigurationOption{
+		{
+			Name:        ConfigRenameAnalysisSimilarityThreshold,
+			Description: "The threshold on the similarity index used to detect renames.",
+			Flag:        "M",
+			Type:        core.IntConfigurationOption,
+			Default:     RenameAnalysisDefaultThreshold,
+		}, {
+			Name: ConfigRenameAnalysisTimeout,
+			Description: "The maximum time (milliseconds) allowed to spend computing " +
+				"renames in a single commit. 0 sets the default.",
+			Flag:    "renames-timeout",
+			Type:    core.IntConfigurationOption,
+			Default: RenameAnalysisDefaultTimeout,
+		},
 	}
 	return options[:]
 }
@@ -297,7 +300,8 @@ func (ra *RenameAnalysis) Consume(deps map[string]interface{}) (map[string]inter
 						matchesA,
 						&object.Change{
 							From: deletedBlobsA[d].change.From,
-							To:   addedBlobsA[a].change.To})
+							To:   addedBlobsA[a].change.To,
+						})
 					break
 				}
 			}
@@ -355,7 +359,8 @@ func (ra *RenameAnalysis) Consume(deps map[string]interface{}) (map[string]inter
 						matchesB,
 						&object.Change{
 							From: deletedBlobsB[d].change.From,
-							To:   addedBlobsB[a].change.To})
+							To:   addedBlobsB[a].change.To,
+						})
 					break
 				}
 			}

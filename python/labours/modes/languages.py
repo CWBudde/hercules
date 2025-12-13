@@ -58,7 +58,7 @@ def _plot_languages_chart(
         for dev, stats in devs.items():
             for lang, vals in stats.Languages.items():
                 if lang:  # Skip empty language names
-                    total_langs[lang] += vals.sum()
+                    total_langs[lang] += sum(vals)
 
     # Sort by total lines and get top languages
     sorted_langs = sorted(total_langs.items(), key=lambda x: -x[1])
@@ -96,10 +96,10 @@ def _plot_languages_chart(
         for dev, stats in devs.items():
             for lang, vals in stats.Languages.items():
                 if lang in top_languages:
-                    day_langs[lang] += vals.sum()
+                    day_langs[lang] += sum(vals)
                 elif lang:  # "Other" category
                     if "Other" in language_list:
-                        day_langs["Other"] += vals.sum()
+                        day_langs["Other"] += sum(vals)
 
         # Fill matrix row
         for lang_idx, lang in enumerate(language_list):

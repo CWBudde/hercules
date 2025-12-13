@@ -211,6 +211,56 @@ func (ta *TemporalActivityAnalysis) Serialize(result interface{}, binary bool, w
 	return nil
 }
 
+// Deserialize loads the result from Protocol Buffers blob.
+func (ta *TemporalActivityAnalysis) Deserialize(pbmessage []byte) (interface{}, error) {
+	message := pb.TemporalActivityResults{}
+	err := proto.Unmarshal(pbmessage, &message)
+	if err != nil {
+		return nil, err
+	}
+
+	activities := map[int]*DeveloperTemporalActivity{}
+	for devID, pbActivity := range message.Activities {
+		// Handle AuthorMissing special case
+		dev := int(devID)
+		if devID == -1 {
+			dev = core.AuthorMissing
+		}
+
+		// Create native DeveloperTemporalActivity struct
+		activity := &DeveloperTemporalActivity{}
+
+		// Copy weekdays (7 elements)
+		for i := 0; i < 7 && i < len(pbActivity.Weekdays); i++ {
+			activity.Weekdays[i] = int(pbActivity.Weekdays[i])
+		}
+
+		// Copy hours (24 elements)
+		for i := 0; i < 24 && i < len(pbActivity.Hours); i++ {
+			activity.Hours[i] = int(pbActivity.Hours[i])
+		}
+
+		// Copy months (12 elements)
+		for i := 0; i < 12 && i < len(pbActivity.Months); i++ {
+			activity.Months[i] = int(pbActivity.Months[i])
+		}
+
+		// Copy weeks (53 elements)
+		for i := 0; i < 53 && i < len(pbActivity.Weeks); i++ {
+			activity.Weeks[i] = int(pbActivity.Weeks[i])
+		}
+
+		activities[dev] = activity
+	}
+
+	result := TemporalActivityResult{
+		Activities:         activities,
+		reversedPeopleDict: message.DevIndex,
+		Mode:               message.Mode,
+	}
+	return result, nil
+}
+
 func (ta *TemporalActivityAnalysis) serializeText(result *TemporalActivityResult, writer io.Writer) {
 	fmt.Fprintln(writer, "  temporal_activity:")
 	fmt.Fprintf(writer, "    mode: %s\n", result.Mode)

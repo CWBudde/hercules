@@ -429,3 +429,153 @@ func TestTemporalActivityFork(t *testing.T) {
 	assert.Equal(t, ta1.Mode, ta2.Mode)
 	assert.Equal(t, ta1.Mode, ta3.Mode)
 }
+
+func TestTemporalActivityDeserialize(t *testing.T) {
+	ta := TemporalActivityAnalysis{}
+	ta.reversedPeopleDict = []string{"Alice", "Bob"}
+	ta.Mode = "commits"
+
+	// Create test data with multiple developers
+	result := TemporalActivityResult{
+		Mode:               "commits",
+		reversedPeopleDict: []string{"Alice", "Bob"},
+		Activities: map[int]*DeveloperTemporalActivity{
+			0: {
+				Weekdays: [7]int{1, 2, 3, 4, 5, 6, 7},
+				Hours:    [24]int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24},
+				Months:   [12]int{10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120},
+				Weeks:    [53]int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53},
+			},
+			1: {
+				Weekdays: [7]int{10, 20, 30, 40, 50, 60, 70},
+				Hours:    [24]int{100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123},
+				Months:   [12]int{5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60},
+				Weeks:    [53]int{2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 38, 40, 42, 44, 46, 48, 50, 52, 54, 56, 58, 60, 62, 64, 66, 68, 70, 72, 74, 76, 78, 80, 82, 84, 86, 88, 90, 92, 94, 96, 98, 100, 102, 104, 106},
+			},
+			core.AuthorMissing: {
+				Weekdays: [7]int{0, 1, 0, 1, 0, 1, 0},
+				Hours:    [24]int{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+				Months:   [12]int{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
+				Weeks:    [53]int{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5},
+			},
+		},
+	}
+
+	// Serialize to binary
+	buffer := &bytes.Buffer{}
+	err := ta.Serialize(result, true, buffer)
+	assert.Nil(t, err)
+	assert.Greater(t, buffer.Len(), 0)
+
+	// Deserialize
+	rawResult2, err := ta.Deserialize(buffer.Bytes())
+	assert.Nil(t, err)
+	result2 := rawResult2.(TemporalActivityResult)
+
+	// Compare results
+	assert.Equal(t, result.Mode, result2.Mode)
+	assert.Equal(t, result.reversedPeopleDict, result2.reversedPeopleDict)
+	assert.Len(t, result2.Activities, 3)
+
+	// Verify developer 0
+	assert.Equal(t, result.Activities[0], result2.Activities[0])
+
+	// Verify developer 1
+	assert.Equal(t, result.Activities[1], result2.Activities[1])
+
+	// Verify AuthorMissing
+	assert.Equal(t, result.Activities[core.AuthorMissing], result2.Activities[core.AuthorMissing])
+}
+
+func TestTemporalActivityMergeResults(t *testing.T) {
+	ta := TemporalActivityAnalysis{}
+
+	// Create first result
+	r1 := TemporalActivityResult{
+		Mode:               "commits",
+		reversedPeopleDict: []string{"Alice", "Bob"},
+		Activities: map[int]*DeveloperTemporalActivity{
+			0: {
+				Weekdays: [7]int{1, 2, 3, 4, 5, 6, 7},
+				Hours:    [24]int{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+				Months:   [12]int{5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+				Weeks:    [53]int{0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+			},
+			1: {
+				Weekdays: [7]int{10, 20, 30, 40, 50, 60, 70},
+				Hours:    [24]int{100, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+				Months:   [12]int{0, 0, 0, 0, 0, 10, 0, 0, 0, 0, 0, 0},
+				Weeks:    [53]int{0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+			},
+		},
+	}
+
+	// Create second result
+	r2 := TemporalActivityResult{
+		Mode:               "commits",
+		reversedPeopleDict: []string{"Alice", "Bob"},
+		Activities: map[int]*DeveloperTemporalActivity{
+			0: {
+				Weekdays: [7]int{2, 3, 4, 5, 6, 7, 8},
+				Hours:    [24]int{0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+				Months:   [12]int{3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+				Weeks:    [53]int{0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+			},
+			2: {
+				Weekdays: [7]int{1, 1, 1, 1, 1, 1, 1},
+				Hours:    [24]int{1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+				Months:   [12]int{1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+				Weeks:    [53]int{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+			},
+		},
+	}
+
+	c1 := &core.CommonAnalysisResult{}
+	c2 := &core.CommonAnalysisResult{}
+
+	// Merge results
+	merged := ta.MergeResults(r1, r2, c1, c2).(TemporalActivityResult)
+
+	// Verify mode
+	assert.Equal(t, "commits", merged.Mode)
+
+	// Verify all developers are present
+	assert.Len(t, merged.Activities, 3)
+
+	// Verify developer 0 (should be sum of both)
+	assert.Equal(t, [7]int{3, 5, 7, 9, 11, 13, 15}, merged.Activities[0].Weekdays)
+	assert.Equal(t, [24]int{1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, merged.Activities[0].Hours)
+	assert.Equal(t, [12]int{8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, merged.Activities[0].Months)
+	assert.Equal(t, 3, merged.Activities[0].Weeks[1])
+
+	// Verify developer 1 (only in r1)
+	assert.Equal(t, r1.Activities[1], merged.Activities[1])
+
+	// Verify developer 2 (only in r2)
+	assert.Equal(t, r2.Activities[2], merged.Activities[2])
+}
+
+func TestTemporalActivityMergeResultsMismatchedModes(t *testing.T) {
+	ta := TemporalActivityAnalysis{}
+
+	r1 := TemporalActivityResult{
+		Mode:               "commits",
+		reversedPeopleDict: []string{"Alice"},
+		Activities:         map[int]*DeveloperTemporalActivity{},
+	}
+
+	r2 := TemporalActivityResult{
+		Mode:               "lines",
+		reversedPeopleDict: []string{"Alice"},
+		Activities:         map[int]*DeveloperTemporalActivity{},
+	}
+
+	c1 := &core.CommonAnalysisResult{}
+	c2 := &core.CommonAnalysisResult{}
+
+	// Should return error for mismatched modes
+	result := ta.MergeResults(r1, r2, c1, c2)
+	assert.IsType(t, assert.AnError, result)
+	err := result.(error)
+	assert.Contains(t, err.Error(), "mismatching modes")
+}

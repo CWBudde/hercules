@@ -333,3 +333,70 @@ func (ta *TemporalActivityAnalysis) serializeBinary(result *TemporalActivityResu
 func init() {
 	core.Registry.Register(&TemporalActivityAnalysis{})
 }
+
+// MergeResults combines two TemporalActivityResult-s together.
+func (ta *TemporalActivityAnalysis) MergeResults(
+	r1, r2 interface{}, c1, c2 *core.CommonAnalysisResult,
+) interface{} {
+	tar1 := r1.(TemporalActivityResult)
+	tar2 := r2.(TemporalActivityResult)
+	
+	if tar1.Mode != tar2.Mode {
+		return fmt.Errorf("mismatching modes (r1: %s, r2: %s)", tar1.Mode, tar2.Mode)
+	}
+	
+	merged := TemporalActivityResult{
+		Activities:         make(map[int]*DeveloperTemporalActivity),
+		reversedPeopleDict: tar1.reversedPeopleDict, // Use first dict, should be same
+		Mode:               tar1.Mode,
+	}
+	
+	// Merge activities from both results
+	allDevs := make(map[int]bool)
+	for dev := range tar1.Activities {
+		allDevs[dev] = true
+	}
+	for dev := range tar2.Activities {
+		allDevs[dev] = true
+	}
+	
+	for dev := range allDevs {
+		mergedActivity := &DeveloperTemporalActivity{}
+		
+		// Add activities from r1
+		if activity1, exists := tar1.Activities[dev]; exists {
+			for i := range mergedActivity.Weekdays {
+				mergedActivity.Weekdays[i] += activity1.Weekdays[i]
+			}
+			for i := range mergedActivity.Hours {
+				mergedActivity.Hours[i] += activity1.Hours[i]
+			}
+			for i := range mergedActivity.Months {
+				mergedActivity.Months[i] += activity1.Months[i]
+			}
+			for i := range mergedActivity.Weeks {
+				mergedActivity.Weeks[i] += activity1.Weeks[i]
+			}
+		}
+		
+		// Add activities from r2
+		if activity2, exists := tar2.Activities[dev]; exists {
+			for i := range mergedActivity.Weekdays {
+				mergedActivity.Weekdays[i] += activity2.Weekdays[i]
+			}
+			for i := range mergedActivity.Hours {
+				mergedActivity.Hours[i] += activity2.Hours[i]
+			}
+			for i := range mergedActivity.Months {
+				mergedActivity.Months[i] += activity2.Months[i]
+			}
+			for i := range mergedActivity.Weeks {
+				mergedActivity.Weeks[i] += activity2.Weeks[i]
+			}
+		}
+		
+		merged.Activities[dev] = mergedActivity
+	}
+	
+	return merged
+}

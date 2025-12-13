@@ -33,10 +33,13 @@ env:
 before_install:
   - wget -O protoc.zip https://github.com/google/protobuf/releases/download/v$PROTOC_VERSION/protoc-$PROTOC_VERSION-linux-x86_64.zip
   - unzip -d ~/.local protoc.zip && rm protoc.zip
+  - wget -qO - 'https://proget.makedeb.org/debian-feeds/prebuilt-mpr.pub' | gpg --dearmor | sudo tee /usr/share/keyrings/prebuilt-mpr-archive-keyring.gpg 1> /dev/null
+  - echo "deb [arch=all,$(dpkg --print-architecture) signed-by=/usr/share/keyrings/prebuilt-mpr-archive-keyring.gpg] https://proget.makedeb.org prebuilt-mpr $(lsb_release -cs)" | sudo tee /etc/apt/sources.list.d/prebuilt-mpr.list
+  - sudo apt update && sudo apt install just
   - go get -v golang.org/x/lint/golint
   - (wget -O - https://bootstrap.pypa.io/get-pip.py || wget -O - https://raw.githubusercontent.com/pypa/get-pip/master/get-pip.py) | sudo python3 - pip==18.1
   - export PATH=~/usr/bin:.:$PATH
-  - make --version
+  - just --version
   - pip3 --version
   - sudo pip3 install cython
   - sudo pip3 install tensorflow flake8 ./python
@@ -49,7 +52,7 @@ before_install:
 install:
   - git clean -xfd
   - go env
-  - travis_retry make TAGS=tensorflow
+  - travis_retry TAGS=tensorflow just
 script:
   - set -e
   - export GO111MODULE=on
@@ -63,9 +66,9 @@ script:
   - hercules --burndown --couples --devs --quiet --pb https://github.com/src-d/hercules > 1.pb
   - cp 1.pb 2.pb
   - hercules combine 1.pb 2.pb > 12.pb
-  - (hercules generate-plugin -n MyPlug -o myplug && cd myplug && GOFLAGS="-tags=tensorflow" make)
+  - (hercules generate-plugin -n MyPlug -o myplug && cd myplug && GOFLAGS="-tags=tensorflow" just)
   - hercules --plugin myplug/my_plug.so --help | grep my-plug
-  - (cd contrib/_plugin_example && GOBIN=../.. make)
+  - (cd contrib/_plugin_example && GOBIN=../.. just)
   - hercules --burndown --burndown-files --burndown-people --couples --devs --quiet https://github.com/src-d/hercules | labours -m all -o out --backend Agg --disable-projector
   - hercules --burndown --burndown-files --burndown-people --couples --devs --quiet --pb https://github.com/src-d/hercules | labours -f pb -m all -o out --backend Agg --disable-projector
   - # hercules --sentiment --quiet --languages Python https://github.com/src-d/hercules > /dev/null
@@ -90,12 +93,13 @@ jobs:
       before_install:
         - wget -O protoc.zip https://github.com/google/protobuf/releases/download/v$PROTOC_VERSION/protoc-$PROTOC_VERSION-osx-x86_64.zip
         - unzip -d ~/.local protoc.zip && rm protoc.zip
+        - brew install just
         - export PATH=.:$PATH
       after_success:
         - gzip -S .darwin_amd64.gz hercules
       script: skip
       install:
-        - travis_retry make
+        - travis_retry just
       deploy:
         provider: releases
         api_key:
@@ -110,6 +114,9 @@ jobs:
       before_install:
         - wget -O protoc.zip https://github.com/google/protobuf/releases/download/v$PROTOC_VERSION/protoc-$PROTOC_VERSION-linux-x86_64.zip
         - unzip -d ~/.local protoc.zip && rm protoc.zip
+        - wget -qO - 'https://proget.makedeb.org/debian-feeds/prebuilt-mpr.pub' | gpg --dearmor | sudo tee /usr/share/keyrings/prebuilt-mpr-archive-keyring.gpg 1> /dev/null
+        - echo "deb [arch=all,$(dpkg --print-architecture) signed-by=/usr/share/keyrings/prebuilt-mpr-archive-keyring.gpg] https://proget.makedeb.org prebuilt-mpr $(lsb_release -cs)" | sudo tee /etc/apt/sources.list.d/prebuilt-mpr.list
+        - sudo apt update && sudo apt install just
         - export PATH=.:$PATH
         - (wget -O - https://bootstrap.pypa.io/get-pip.py || wget -O - https://raw.githubusercontent.com/pypa/get-pip/master/get-pip.py) | sudo python3 - pip==18.1
         - sudo pip3 install twine pyopenssl
@@ -117,7 +124,7 @@ jobs:
         - test v$(python3 python/setup.py --version) == $TRAVIS_TAG
       install:
         - set -e
-        - travis_retry make
+        - travis_retry just
         - cd python
         - python3 setup.py bdist_wheel
         - cp dist/*py3-none-any* ..

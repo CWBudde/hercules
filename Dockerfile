@@ -3,12 +3,16 @@ ENV PROTOBUF_VERSION 21.12
 ENV ARCH linux-x86_64
 COPY . /root/src
 RUN apt-get update && \
-    apt-get install -y unzip make && \
+    apt-get install -y unzip wget && \
     curl -SLo protoc.zip https://github.com/google/protobuf/releases/download/v$PROTOBUF_VERSION/protoc-$PROTOBUF_VERSION-$ARCH.zip && \
     unzip -d /usr/local protoc.zip && \
     rm protoc.zip && \
+    wget -qO - 'https://proget.makedeb.org/debian-feeds/prebuilt-mpr.pub' | gpg --dearmor | tee /usr/share/keyrings/prebuilt-mpr-archive-keyring.gpg 1> /dev/null && \
+    echo "deb [signed-by=/usr/share/keyrings/prebuilt-mpr-archive-keyring.gpg] https://proget.makedeb.org prebuilt-mpr bullseye" | tee /etc/apt/sources.list.d/prebuilt-mpr.list && \
+    apt-get update && \
+    apt-get install -y just && \
     cd /root/src && \
-    make
+    just
 
 FROM ubuntu:18.04
 COPY --from=builder /root/src/hercules /usr/local/bin

@@ -1,47 +1,100 @@
-vendor
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+
+# Go workspace file
+go.work
+
+# Dependency directories
+vendor/
+
+# IDE files
+.vscode/
+.idea/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.swp
+*.bak
+
+# Environment files
+.env
+
+# Python (since there's Python code)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Specific to this project
+hercules
+labours-go
+protoc-gen-gogo
 cmd/hercules/plugin_template_source.go
 contrib/_plugin_example/churn_analysis.pb.go
 pb/pb.pb.go
 pb/pb_pb2.py
 coverage.txt
-protoc-gen-gogo
-hercules
 python/dist
 python/build
+*.tsv
+*.tsv.gz
+*.json
+/.run/
 
-**/*.egg-info
-**/__pycache__
-**/.DS_Store
-.idea
-
-# Compiled Object files, Static and Dynamic libs (Shared Objects)
-*.o
-*.a
-*.so
-
-# Folders
-_obj
-_test
-
-# Architecture specific extensions/prefixes
-*.[568vq]
-[568vq].out
-
+# CGO
 *.cgo1.go
 *.cgo2.c
 _cgo_defun.c
 _cgo_gotypes.go
 _cgo_export.*
-
 _testmain.go
 
-*.exe
-*.test
+# Folders
+_obj
+_test
+
+# Architecture specific
+*.[568vq]
+[568vq].out
+
+# Profiling
 *.prof
-
-*.tsv
-*.tsv.gz
-*.json
-
-**/__pycache__
-/.run/

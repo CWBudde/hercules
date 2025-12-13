@@ -1,0 +1,20 @@
+# Plugin example build recipes
+
+export GO111MODULE := "on"
+
+# Default recipe - build the plugin
+default: churn_analysis.so
+
+# Build the plugin shared object
+churn_analysis.so: churn_analysis.go churn_analysis.pb.go
+    go build -buildmode=plugin churn_analysis.go churn_analysis.pb.go
+
+# Generate protobuf Go code
+churn_analysis.pb.go: churn_analysis.proto
+    #!/usr/bin/env bash
+    set -euo pipefail
+    PATH="${PATH}:${GOBIN:-}" protoc --gogo_out=. --proto_path=. churn_analysis.proto
+
+# Clean build artifacts
+clean:
+    rm -f churn_analysis.so churn_analysis.pb.go

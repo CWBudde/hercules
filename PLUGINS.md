@@ -30,8 +30,10 @@ Compilation:
 
 ```
 cd my_plugin
-make
+just
 ```
+
+Note: If your plugin doesn't have a `justfile`, you can create one or use `go build` directly.
 
 ### Using a plugin
 

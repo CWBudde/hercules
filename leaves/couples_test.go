@@ -2,6 +2,7 @@ package leaves
 
 import (
 	"bytes"
+	"fmt"
 	"io/ioutil"
 	"path"
 	"strings"
@@ -309,7 +310,7 @@ func TestCouplesConsumeManyFiles(t *testing.T) {
 	for i := 0; i < len(changes); i++ {
 		changes[i] = &object.Change{
 			From: object.ChangeEntry{},
-			To:   object.ChangeEntry{Name: string(rune(i))},
+			To:   object.ChangeEntry{Name: fmt.Sprintf("%d", i)},
 		}
 	}
 	deps[plumbing.DependencyTreeChanges] = changes

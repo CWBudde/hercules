@@ -98,10 +98,10 @@ pip3 install labours
 Numpy and Scipy can be installed on Windows using http://www.lfd.uci.edu/~gohlke/pythonlibs/
 
 ### Build from source
-You are going to need Go (>= v1.11) and [`protoc`](https://github.com/google/protobuf/releases).
+You are going to need Go (>= v1.11), [`protoc`](https://github.com/google/protobuf/releases), and [`just`](https://github.com/casey/just).
 ```
 git clone https://github.com/src-d/hercules && cd hercules
-make
+just
 pip3 install -e ./python
 ```
 
@@ -404,7 +404,7 @@ general purpose and the code comments have different nature, so there is no magi
 Hercules must be built with "tensorflow" tag - it is not by default:
 
 ```
-make TAGS=tensorflow
+TAGS=tensorflow just
 ```
 
 Such a build requires [`libtensorflow`](https://www.tensorflow.org/install/install_go).

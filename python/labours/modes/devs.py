@@ -22,7 +22,7 @@ def show_devs(
     max_people: int = 50,
 ) -> None:
     from scipy.signal import convolve
-    from old_slepian import old_slepian
+    from labours.modes.old_slepian import old_slepian
 
     if len(people) > max_people:
         print("Picking top %s developers by commit count" % max_people)
@@ -143,7 +143,7 @@ def show_devs(
         )
         axes[-1].xaxis.set_major_formatter(matplotlib.dates.DateFormatter("%Y-%m"))
     for tick in axes[-1].xaxis.get_major_ticks():
-        tick.label.set_fontsize(args.font_size)
+        tick.label1.set_fontsize(args.font_size)
     axes[-1].spines["left"].set_visible(False)
     axes[-1].spines["right"].set_visible(False)
     axes[-1].spines["top"].set_visible(False)
@@ -249,7 +249,7 @@ def show_devs_efforts(
     max_people: int,
 ) -> None:
     from scipy.signal import convolve
-    from old_slepian import old_slepian
+    from labours.modes.old_slepian import old_slepian
 
     start_date = datetime.fromtimestamp(start_date)
     start_date = datetime(start_date.year, start_date.month, start_date.day)

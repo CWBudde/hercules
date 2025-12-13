@@ -157,11 +157,12 @@ def fit_kaplan_meier(matrix: numpy.ndarray) -> 'KaplanMeierFitter':
 
 
 def print_survival_function(kmf: 'KaplanMeierFitter', sampling: int) -> None:
+    pandas = import_pandas()
     sf = kmf.survival_function_
     sf.index = [timedelta(days=d) for d in sf.index * sampling]
     sf.columns = ["Ratio of survived lines"]
     try:
-        print(sf[len(sf) // 6 :: len(sf) // 6].append(sf.tail(1)))
+        print(pandas.concat([sf[len(sf) // 6 :: len(sf) // 6], sf.tail(1)]))
     except ValueError:
         pass
 
@@ -328,7 +329,7 @@ def load_burndown(
         )
         daily[(last - start).days :] = 0
         # Resample the bands
-        aliases = {"year": "A", "month": "M", "day": "D"}
+        aliases = {"year": "YE", "month": "ME", "day": "D"}
         resample = aliases.get(resample, resample)
         periods = 0
         date_granularity_sampling = [start]
@@ -338,12 +339,12 @@ def load_burndown(
                 start, periods=periods, freq=resample
             )
         if date_granularity_sampling[0] > finish:
-            if resample == "A":
+            if resample in ("A", "YE"):
                 print("too loose resampling - by year, trying by month")
                 return load_burndown(
                     header, name, matrix, "month", report_survival=False
                 )
-            elif resample == "M":
+            elif resample in ("M", "ME"):
                 print("too loose resampling - by month, trying by day")
                 return load_burndown(
                     header, name, matrix, "day", report_survival=False
@@ -369,9 +370,9 @@ def load_burndown(
                     break
             matrix[i, j:] = daily[istart:ifinish, (sdt - start).days :].sum(axis=0)
         # Hardcode some cases to improve labels' readability
-        if resample in ("year", "A"):
+        if resample in ("year", "A", "YE"):
             labels = [dt.year for dt in date_granularity_sampling]
-        elif resample in ("month", "M"):
+        elif resample in ("month", "M", "ME"):
             labels = [dt.strftime("%Y %B") for dt in date_granularity_sampling]
         else:
             labels = [dt.date() for dt in date_granularity_sampling]

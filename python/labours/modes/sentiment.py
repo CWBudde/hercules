@@ -8,7 +8,7 @@ from labours.utils import parse_date
 
 def show_sentiment_stats(args, name, resample, start_date, data):
     from scipy.signal import convolve
-    from old_slepian import old_slepian
+    from labours.modes.old_slepian import old_slepian
 
     matplotlib, pyplot = import_pyplot(args.backend, args.style)
 

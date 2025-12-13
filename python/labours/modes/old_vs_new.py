@@ -18,7 +18,7 @@ def show_old_vs_new(
     days: Dict[int, Dict[int, DevDay]],
 ) -> None:
     from scipy.signal import convolve
-    from old_slepian import old_slepian
+    from labours.modes.old_slepian import old_slepian
 
     start_date = datetime.fromtimestamp(start_date)
     start_date = datetime(start_date.year, start_date.month, start_date.day)
@@ -44,7 +44,7 @@ def show_old_vs_new(
     for tick in chain(
         pyplot.gca().xaxis.get_major_ticks(), pyplot.gca().yaxis.get_major_ticks()
     ):
-        tick.label.set_fontsize(args.font_size)
+        tick.label1.set_fontsize(args.font_size)
     if args.mode == "all" and args.output:
         output = get_plot_path(args.output, "old_vs_new")
     else:

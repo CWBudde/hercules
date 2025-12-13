@@ -18,8 +18,14 @@ def train_embeddings(
     tmpdir: None,
     shard_size: int = IDEAL_SHARD_SIZE,
 ) -> Tuple[List[Tuple[str, numpy.int64]], List[numpy.ndarray]]:
-    import tensorflow as tf
-    from labours._vendor import swivel
+    try:
+        import tensorflow as tf
+        from labours._vendor import swivel
+    except ImportError as e:
+        raise ImportError(
+            "TensorFlow is required for training embeddings. "
+            "Install it with: uv pip install tensorflow"
+        ) from e
 
     assert matrix.shape[0] == matrix.shape[1]
     assert len(index) <= matrix.shape[0]

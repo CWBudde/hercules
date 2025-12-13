@@ -87,23 +87,26 @@ def _plot_languages_chart(
 
     # Initialize matrix to store cumulative lines per language per day
     matrix = numpy.zeros((len(sorted_days), len(language_list)), dtype=int)
+    cumulative_langs = defaultdict(int)
 
     for day_idx, day in enumerate(sorted_days):
         devs = days[day]
-        day_langs = defaultdict(int)
 
         # Aggregate all developers for this day
         for dev, stats in devs.items():
             for lang, vals in stats.Languages.items():
+                # vals is [added, removed, changed]
+                # For cumulative count: added - removed
+                delta = vals[0] - vals[1]
                 if lang in top_languages:
-                    day_langs[lang] += sum(vals)
+                    cumulative_langs[lang] += delta
                 elif lang:  # "Other" category
                     if "Other" in language_list:
-                        day_langs["Other"] += sum(vals)
+                        cumulative_langs["Other"] += delta
 
-        # Fill matrix row
+        # Fill matrix row with cumulative values
         for lang_idx, lang in enumerate(language_list):
-            matrix[day_idx, lang_idx] = day_langs.get(lang, 0)
+            matrix[day_idx, lang_idx] = max(0, cumulative_langs.get(lang, 0))
 
     # Create date range
     start_datetime = datetime.fromtimestamp(start_date)

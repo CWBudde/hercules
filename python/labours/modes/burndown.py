@@ -33,7 +33,7 @@ def plot_burndown(
         data = locals().copy()
         del data["args"]
         data["type"] = "burndown"
-        if args.mode == "project" and target == "project":
+        if args.mode == "burndown-project" and target == "project":
             output = args.output
         else:
             if target == "project":

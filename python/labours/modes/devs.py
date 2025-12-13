@@ -50,14 +50,19 @@ def show_devs(
     size = (end_date - start_date).days + 1
     plot_x = [start_date + timedelta(days=i) for i in range(size)]
     resolution = 64
-    window = old_slepian(size // resolution, 0.5)
+    window_size = max(1, size // resolution)  # Ensure window size is at least 1
+    window = old_slepian(window_size, 0.5)
     final = numpy.zeros((len(devseries), size), dtype=numpy.float32)
     for i, s in enumerate(devseries.values()):
         arr = numpy.array(s).transpose()
         full_history = numpy.zeros(size, dtype=numpy.float32)
         mask = arr[0] < size
-        full_history[arr[0][mask]] = arr[1][mask]
-        final[route_map[i]] = convolve(full_history, window, "same")
+        full_history[arr[0][mask].astype(int)] = arr[1][mask]
+        # Only convolve if we have data
+        if len(window) > 0 and len(full_history) > 0:
+            final[route_map[i]] = convolve(full_history, window, "same")
+        else:
+            final[route_map[i]] = full_history
 
     matplotlib, pyplot = import_pyplot(args.backend, args.style)
     pyplot.rcParams["figure.figsize"] = (32, 16)
@@ -158,10 +163,38 @@ def show_devs(
     deploy_plot(title, output, args.background)
 
 
+def _greedy_nearest_neighbor_order(dists: numpy.ndarray) -> List[int]:
+    """
+    Simple greedy nearest-neighbor ordering as fallback when seriate is not available.
+    This is not optimal but provides a reasonable ordering without external dependencies.
+    """
+    n = len(dists)
+    if n == 0:
+        return []
+
+    # Start with the first element
+    route = [0]
+    remaining = set(range(1, n))
+
+    while remaining:
+        current = route[-1]
+        # Find nearest unvisited neighbor
+        nearest = min(remaining, key=lambda x: dists[current, x])
+        route.append(nearest)
+        remaining.remove(nearest)
+
+    return route
+
+
 def order_commits(
     chosen_people: Set[str], days: Dict[int, Dict[int, DevDay]], people: List[str]
 ) -> Tuple[numpy.ndarray, defaultdict, defaultdict, List[int]]:
-    from seriate import seriate
+    try:
+        from seriate import seriate
+        use_seriate = True
+    except ImportError:
+        print("⚠️  seriate not available - using simple ordering instead of optimal TSP ordering")
+        use_seriate = False
 
     try:
         from fastdtw import fastdtw
@@ -214,7 +247,11 @@ def order_commits(
                 dists[x, y] = dists[y, x] = dist
                 pb.update()
     print("Ordering the series")
-    route = seriate(dists)
+    if use_seriate:
+        route = seriate(dists)
+    else:
+        # Fallback: use simple nearest-neighbor greedy ordering
+        route = _greedy_nearest_neighbor_order(dists)
     return dists, devseries, devstats, route
 
 

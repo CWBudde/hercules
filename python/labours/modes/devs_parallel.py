@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Tuple
 import numpy
 from scipy.sparse.csr import csr_matrix
 
-from labours.modes.devs import hdbscan_cluster_routed_series, order_commits
+from labours.modes.devs import hdbscan_cluster_routed_series, order_commits, _greedy_nearest_neighbor_order
 from labours.objects import DevDay, ParallelDevData
 from labours.plotting import deploy_plot, import_pyplot
 
@@ -16,7 +16,12 @@ def load_devs_parallel(
     devs: Tuple[List[str], Dict[int, Dict[int, DevDay]]],
     max_people: int,
 ):
-    from seriate import seriate
+    try:
+        from seriate import seriate
+        use_seriate = True
+    except ImportError:
+        print("⚠️  seriate not available - using simple ordering instead of optimal TSP ordering")
+        use_seriate = False
 
     try:
         from hdbscan import HDBSCAN
@@ -74,9 +79,16 @@ def load_devs_parallel(
         v.ownership = owned[k][-1].sum()
 
     print("calculating - couples")
-    embeddings = numpy.genfromtxt(fname="couples_people_data.tsv", delimiter="\t")[
-        [people.index(k) for k in chosen]
-    ]
+    try:
+        embeddings = numpy.genfromtxt(fname="couples_people_data.tsv", delimiter="\t")[
+            [people.index(k) for k in chosen]
+        ]
+    except FileNotFoundError:
+        print(
+            "⚠️  couples_people_data.tsv not found. "
+            "Run 'couples-people' mode first to generate embeddings."
+        )
+        sys.exit(1)
     embeddings /= numpy.linalg.norm(embeddings, axis=1)[:, None]
     cos = embeddings.dot(embeddings.T)
     cos[cos > 1] = 1  # tiny precision faults
@@ -85,7 +97,10 @@ def load_devs_parallel(
     for k, v in result.items():
         v.couples_cluster = clusters[chosen.index(k)]
 
-    couples_order = seriate(dists)
+    if use_seriate:
+        couples_order = seriate(dists)
+    else:
+        couples_order = _greedy_nearest_neighbor_order(dists)
     roll_options = []
     for i in range(len(couples_order)):
         loss = 0

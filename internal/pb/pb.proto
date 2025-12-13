@@ -201,6 +201,26 @@ message ImportsPerDeveloperResults {
     int64 tick_size = 3;
 }
 
+message DeveloperTemporalActivity {
+    // Sunday=0 to Saturday=6 (length 7)
+    repeated int32 weekdays = 1;
+    // 0-23 (length 24)
+    repeated int32 hours = 2;
+    // January=0 to December=11 (length 12)
+    repeated int32 months = 3;
+    // ISO week 1-53 stored at indices 0-52 (length 53)
+    repeated int32 weeks = 4;
+}
+
+message TemporalActivityResults {
+    // developer index -> temporal activity
+    map<int32, DeveloperTemporalActivity> activities = 1;
+    // developer identities, the indexes correspond to activities' keys
+    repeated string dev_index = 2;
+    // "commits" or "lines"
+    string mode = 3;
+}
+
 message AnalysisResults {
     Metadata header = 1;
     // the mapped values are dynamic messages which require the second parsing pass.

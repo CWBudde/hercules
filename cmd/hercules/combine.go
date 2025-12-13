@@ -11,8 +11,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/cyraxred/hercules"
-	"github.com/cyraxred/hercules/internal/pb"
+	"github.com/meko-christian/hercules"
+	"github.com/meko-christian/hercules/internal/pb"
 	"github.com/gogo/protobuf/proto"
 	"github.com/spf13/cobra"
 	progress "gopkg.in/cheggaaa/pb.v1"

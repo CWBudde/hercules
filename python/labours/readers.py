@@ -195,6 +195,16 @@ class YamlReader(Reader):
         }
         return people, days
 
+    def get_temporal_activity(self):
+        temporal_data = self.data["TemporalActivity"]["temporal_activity"]
+        activities = {
+            int(dev_id): activity
+            for dev_id, activity in temporal_data["activities"].items()
+        }
+        people = temporal_data["people"]
+        mode = temporal_data["mode"]
+        return activities, people, mode
+
     def _parse_burndown_matrix(self, matrix):
         return numpy.array(
             [numpy.fromstring(line, dtype=int, sep=" ") for line in matrix.split("\n")]
@@ -337,6 +347,21 @@ class ProtobufReader(Reader):
         }
         return people, days
 
+    def get_temporal_activity(self):
+        temporal = self.contents["TemporalActivity"]
+        activities = {
+            dev_id: {
+                "weekdays": list(activity.weekdays),
+                "hours": list(activity.hours),
+                "months": list(activity.months),
+                "weeks": list(activity.weeks),
+            }
+            for dev_id, activity in temporal.activities.items()
+        }
+        people = list(temporal.dev_index)
+        mode = temporal.mode
+        return activities, people, mode
+
     def _parse_burndown_matrix(self, matrix):
         dense = numpy.zeros(
             (matrix.number_of_rows, matrix.number_of_columns), dtype=int
@@ -361,6 +386,7 @@ PB_MESSAGES = {
     "Couples": "labours.pb_pb2.CouplesAnalysisResults",
     "Shotness": "labours.pb_pb2.ShotnessAnalysisResults",
     "Devs": "labours.pb_pb2.DevsAnalysisResults",
+    "TemporalActivity": "labours.pb_pb2.TemporalActivityResults",
 }
 
 

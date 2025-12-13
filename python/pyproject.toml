@@ -41,8 +41,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Note: seriate is incompatible with Python 3.12+ due to ortools dependency constraints
+# A fallback greedy ordering algorithm is used when seriate is not available
 seriate = [
-    "seriate>=1.1.2",
+    "seriate>=1.1.2; python_version < '3.12'",
 ]
 
 [project.urls]

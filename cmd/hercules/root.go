@@ -3,7 +3,7 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"github.com/cyraxred/hercules/internal/core"
+	"github.com/meko-christian/hercules/internal/core"
 	"io"
 	"io/ioutil"
 	"log"
@@ -21,9 +21,9 @@ import (
 	"unicode"
 
 	"github.com/Masterminds/sprig"
-	"github.com/cyraxred/go-billy-siva"
-	"github.com/cyraxred/hercules"
-	"github.com/cyraxred/hercules/internal/pb"
+	"github.com/meko-christian/go-billy-siva"
+	"github.com/meko-christian/hercules"
+	"github.com/meko-christian/hercules/internal/pb"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5"

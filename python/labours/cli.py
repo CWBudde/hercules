@@ -19,6 +19,7 @@ from labours.modes.overwrites import load_overwrites_matrix, plot_overwrites_mat
 from labours.modes.ownership import load_ownership, plot_ownership
 from labours.modes.sentiment import show_sentiment_stats
 from labours.modes.shotness import show_shotness_stats
+from labours.modes.temporal_activity import show_temporal_activity
 from labours.readers import read_input
 from labours.utils import import_pandas
 
@@ -96,6 +97,7 @@ def parse_args() -> Namespace:
             "couples-shotness",
             "shotness",
             "sentiment",
+            "temporal-activity",
             "devs",
             "devs-efforts",
             "old-vs-new",
@@ -335,6 +337,19 @@ def main() -> None:
             args, reader.get_name(), args.resample, reader.get_header()[0], data
         )
 
+    def temporal_activity():
+        temporal_warning = (
+            "Temporal activity stats were not collected. "
+            "Re-run hercules with --temporal-activity."
+        )
+        try:
+            data = reader.get_temporal_activity()
+        except (KeyError, AttributeError):
+            print(temporal_warning)
+            return
+        activities, people, mode = data
+        show_temporal_activity(args, reader.get_name(), activities, people, mode)
+
     def devs():
         try:
             data = reader.get_devs()
@@ -414,6 +429,7 @@ def main() -> None:
         "couples-shotness": couples_shotness,
         "shotness": shotness,
         "sentiment": sentiment,
+        "temporal-activity": temporal_activity,
         "devs": devs,
         "devs-efforts": devs_efforts,
         "old-vs-new": old_vs_new,

@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/cyraxred/hercules/internal/core"
+	"github.com/meko-christian/hercules/internal/core"
 	"io/ioutil"
 	"os"
 	"path/filepath"

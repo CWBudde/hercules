@@ -10,8 +10,8 @@ import (
 	"github.com/meko-christian/hercules/internal/plumbing"
 )
 
-// DenseHistory is the matrix [number of samples][number of bands] -> number of lines.
-//                                    y                  x
+// DenseHistory is a 2D matrix with dimensions [number of samples][number of bands] -> number of lines.
+// Rows represent time samples (y-axis), columns represent age bands (x-axis).
 type DenseHistory [][]int64
 
 // AddBurndownMatrix explodes `matrix` so that it is daily sampled and has daily bands, shift by `offset` ticks

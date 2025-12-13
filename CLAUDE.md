@@ -6,10 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - `just` or `just hercules` - Build the hercules binary
 - `just test` - Run all Go tests
+- `just install-labours` - Install the Python labours package for plotting/visualization using uv
 - `just clean` - Clean build artifacts
 - `just help` - List all available recipes
 - `go test github.com/meko-christian/hercules` - Run Go tests directly
-- `pip3 install -e ./python` - Install the Python labours package for plotting/visualization
 
 ## Project Architecture
 

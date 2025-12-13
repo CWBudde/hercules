@@ -26,6 +26,19 @@ hercules: vendor pb-go pb-python plugin-template
 test: hercules
     go test github.com/meko-christian/hercules
 
+# Run unit tests (alias for test)
+test-unit: test
+
+# Install Python labours package using uv
+install-labours:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if ! command -v uv &> /dev/null; then
+        echo "Error: uv is not installed. Install it with: curl -LsSf https://astral.sh/uv/install.sh | sh"
+        exit 1
+    fi
+    cd python && uv pip install -e .
+
 # Format code using treefmt
 fmt:
     treefmt --allow-missing-formatter
@@ -37,6 +50,56 @@ lint:
 # Run linter with fix
 lint-fix:
     golangci-lint run --config ./.golangci.toml --timeout 2m --fix
+
+# Check if code is formatted (error if changes needed)
+check-formatted:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    treefmt --allow-missing-formatter
+    if ! git diff --exit-code; then
+        echo "Error: Code is not formatted. Run 'just fmt' to format."
+        exit 1
+    fi
+
+# Check if go.mod is tidy
+check-tidy:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    go mod tidy
+    if ! git diff --exit-code go.mod go.sum; then
+        echo "Error: go.mod is not tidy. Run 'go mod tidy' to fix."
+        exit 1
+    fi
+
+# Install development dependencies (formatters and linters)
+setup-deps:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "Installing development dependencies..."
+
+    # Install treefmt (required for formatting)
+    command -v treefmt >/dev/null 2>&1 || { echo "Installing treefmt..."; curl -fsSL https://github.com/numtide/treefmt/releases/download/v2.1.1/treefmt_2.1.1_linux_amd64.tar.gz | sudo tar -C /usr/local/bin -xz treefmt; }
+
+    # Install prettier (Node.js formatter)
+    command -v prettier >/dev/null 2>&1 || { echo "Installing prettier..."; npm install -g prettier || echo "Prettier installation failed - npm not found. Please install Node.js/npm manually."; }
+
+    # Install gofumpt (Go formatter)
+    command -v gofumpt >/dev/null 2>&1 || { echo "Installing gofumpt..."; go install mvdan.cc/gofumpt@latest; }
+
+    # Install gci (Go import formatter)
+    command -v gci >/dev/null 2>&1 || { echo "Installing gci..."; go install github.com/daixiang0/gci@latest; }
+
+    # Install shfmt (Shell formatter)
+    command -v shfmt >/dev/null 2>&1 || { echo "Installing shfmt..."; go install mvdan.cc/sh/v3/cmd/shfmt@latest; }
+
+    # Install golangci-lint (Go linter)
+    command -v golangci-lint >/dev/null 2>&1 || { echo "Installing golangci-lint..."; curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.61.0; }
+
+    # Note: shellcheck requires manual installation on most systems
+    command -v shellcheck >/dev/null 2>&1 || echo "WARNING: shellcheck not found. Please install manually: apt-get install shellcheck (Ubuntu/Debian) or brew install shellcheck (macOS)"
+
+    echo "Development dependencies installation complete!"
+    echo "Note: Ensure $(go env GOPATH)/bin is in your PATH for Go-based tools"
 
 # Install protoc-gen-gogo if not present
 protoc-gen-gogo:

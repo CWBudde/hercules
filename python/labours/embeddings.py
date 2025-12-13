@@ -190,8 +190,8 @@ def write_embeddings(
     {
       "tensorName": "%s %s coupling",
       "tensorShape": [%s, %s],
-      "tensorPath": "http://0.0.0.0:8000/%s",
-      "metadataPath": "http://0.0.0.0:8000/%s"
+      "tensorPath": "http://localhost:8000/%s",
+      "metadataPath": "http://localhost:8000/%s"
     }
   ]
 }
@@ -201,7 +201,7 @@ def write_embeddings(
     print("Wrote %s" % jsonf)
     if run_server and not web_server.running:
         web_server.start()
-    url = "http://projector.tensorflow.org/?config=http://0.0.0.0:8000/" + jsonf
+    url = "http://projector.tensorflow.org/?config=http://localhost:8000/" + jsonf
     print(url)
     if run_server:
         if shutil.which("xdg-open") is not None:

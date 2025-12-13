@@ -24,7 +24,8 @@ def apply_plot_style(figure, axes, legend, background, font_size, axes_size):
     for side in ("bottom", "top", "left", "right"):
         axes.spines[side].set_color(foreground)
     for axis in (axes.xaxis, axes.yaxis):
-        axis.label.update(dict(fontsize=font_size, color=foreground))
+        axis.label.set_fontsize(font_size)
+        axis.label.set_color(foreground)
     for axis in ("x", "y"):
         getattr(axes, axis + "axis").get_offset_text().set_size(font_size)
         axes.tick_params(axis=axis, colors=foreground, labelsize=font_size)

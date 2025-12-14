@@ -80,6 +80,10 @@ type BurndownResult struct {
 	// The rest of the elements are equal the number of line removals by the corresponding
 	// authors in reversedPeopleDict: 2 -> 0, 3 -> 1, etc.
 	PeopleMatrix burndown.DenseHistory
+	// [number of repositories][number of samples][number of bands]
+	// Per-repository burndown histories, similar to PeopleHistories but for repositories.
+	// This is populated during combine operations or for single-repo analyses.
+	RepositoryHistories []burndown.DenseHistory
 
 	// The following members are private.
 
@@ -87,6 +91,11 @@ type BurndownResult struct {
 	// Pipeline.Initialize(facts map[string]interface{}). Thus it can be obtained via
 	// facts[FactIdentityDetectorReversedPeopleDict].
 	reversedPeopleDict []string
+	// ReversedRepositoryDict contains repository names in the same order as RepositoryHistories.
+	// For single-repo analyses, this contains one element with the repository name.
+	// For combined analyses, it contains all repository names.
+	// This field is exported to allow initialization during combine operations.
+	ReversedRepositoryDict []string
 	// TickSize references TicksSinceStart.TickSize
 	tickSize time.Duration
 	// sampling and granularity are copied from BurndownAnalysis and stored for service purposes

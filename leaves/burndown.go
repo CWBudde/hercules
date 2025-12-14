@@ -38,6 +38,9 @@ type BurndownAnalysis struct {
 
 	// Repository points to the analysed Git repository struct from go-git.
 	repository *git.Repository
+	// repositoryName is the name/path of the repository from metadata.
+	// Used to track individual repository contributions during merge operations.
+	repositoryName string
 	// globalHistory is the daily deltas of daily line counts.
 	// E.g. tick 0: tick 0 +50 lines
 	//      tick 10: tick 0 -10 lines; tick 10 +20 lines
@@ -331,7 +334,7 @@ func (analyser *BurndownAnalysis) Finalize() interface{} {
 		}
 	}
 
-	return BurndownResult{
+	result := BurndownResult{
 		GlobalHistory:      globalHistory,
 		FileHistories:      fileHistories,
 		FileOwnership:      fileOwnership,
@@ -342,6 +345,15 @@ func (analyser *BurndownAnalysis) Finalize() interface{} {
 		sampling:           analyser.Sampling,
 		granularity:        analyser.Granularity,
 	}
+
+	// Initialize repository tracking for single-repo analysis
+	// The repository name will be set later during serialization or combine
+	if analyser.repositoryName != "" {
+		result.ReversedRepositoryDict = []string{analyser.repositoryName}
+		result.RepositoryHistories = []burndown.DenseHistory{globalHistory}
+	}
+
+	return result
 }
 
 func (analyser *BurndownAnalysis) collectFileOwnership(fileOwnership map[string]map[int]int) {
@@ -431,6 +443,16 @@ func (analyser *BurndownAnalysis) Deserialize(message []byte) (interface{}, erro
 			result.PeopleMatrix[i][msg.PeopleInteraction.Indices[j]] = msg.PeopleInteraction.Data[j]
 		}
 	}
+
+	// Deserialize repository data
+	result.ReversedRepositoryDict = msg.RepositorySequence
+	if len(msg.Repositories) > 0 {
+		result.RepositoryHistories = make([]burndown.DenseHistory, len(msg.Repositories))
+		for i, mat := range msg.Repositories {
+			result.RepositoryHistories[i] = convertCSR(mat)
+		}
+	}
+
 	return result, nil
 }
 
@@ -546,6 +568,38 @@ func (analyser *BurndownAnalysis) MergeResults(
 			}
 		}()
 	}
+
+	// Merge repository histories
+	var repositories map[string]join.JoinedIndex
+	repositories, merged.ReversedRepositoryDict = join.RepositoryIdentities(
+		bar1.ReversedRepositoryDict, bar2.ReversedRepositoryDict)
+	if len(merged.ReversedRepositoryDict) > 0 {
+		merged.RepositoryHistories = make([]burndown.DenseHistory, len(merged.ReversedRepositoryDict))
+		for i, key := range merged.ReversedRepositoryDict {
+			ptrs := repositories[key]
+			wg.Add(1)
+			sem <- 1
+			go func(i int) {
+				defer wg.Done()
+				defer func() { <-sem }()
+				var m1, m2 burndown.DenseHistory
+				if ptrs.First >= 0 {
+					m1 = bar1.RepositoryHistories[ptrs.First]
+				}
+				if ptrs.Second >= 0 {
+					m2 = bar2.RepositoryHistories[ptrs.Second]
+				}
+				merged.RepositoryHistories[i] = burndown.MergeBurndownMatrices(
+					m1, m2,
+					bar1.granularity, bar1.sampling,
+					bar2.granularity, bar2.sampling,
+					bar1.tickSize,
+					c1, c2,
+				)
+			}(i)
+		}
+	}
+
 	wg.Wait()
 	return merged
 }
@@ -600,6 +654,17 @@ func (analyser *BurndownAnalysis) serializeText(result *BurndownResult, writer i
 		_, _ = fmt.Fprintln(writer, "  people_interaction: |-")
 		yaml.PrintMatrix(writer, result.PeopleMatrix, 4, "", false)
 	}
+
+	if len(result.RepositoryHistories) > 0 {
+		_, _ = fmt.Fprintln(writer, "  repository_sequence:")
+		for key := range result.RepositoryHistories {
+			_, _ = fmt.Fprintln(writer, "    - "+yaml.SafeString(result.ReversedRepositoryDict[key]))
+		}
+		_, _ = fmt.Fprintln(writer, "  repositories:")
+		for key, val := range result.RepositoryHistories {
+			yaml.PrintMatrix(writer, val, 4, result.ReversedRepositoryDict[key], true)
+		}
+	}
 }
 
 func (analyser *BurndownAnalysis) serializeBinary(result *BurndownResult, writer io.Writer) error {
@@ -639,6 +704,18 @@ func (analyser *BurndownAnalysis) serializeBinary(result *BurndownResult, writer
 	if result.PeopleMatrix != nil {
 		message.PeopleInteraction = pb.DenseToCompressedSparseRowMatrix(result.PeopleMatrix)
 	}
+
+	if len(result.RepositoryHistories) > 0 {
+		message.RepositorySequence = result.ReversedRepositoryDict
+		message.Repositories = make([]*pb.BurndownSparseMatrix, len(result.RepositoryHistories))
+		for i, history := range result.RepositoryHistories {
+			if len(history) > 0 {
+				message.Repositories[i] = pb.ToBurndownSparseMatrix(
+					history, result.ReversedRepositoryDict[i])
+			}
+		}
+	}
+
 	serialized, err := proto.Marshal(&message)
 	if err != nil {
 		return err

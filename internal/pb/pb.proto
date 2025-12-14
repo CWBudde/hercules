@@ -55,6 +55,10 @@ message BurndownAnalysisResults {
     repeated FilesOwnership files_ownership = 7;
     // how long each tick is, as an int64 nanosecond count (Go's time.Duration)
     int64 tick_size = 8;
+    // List of repository names in the same order as `repositories`
+    repeated string repository_sequence = 9;
+    // Per-repository burndown matrices (included when combining multiple repositories)
+    repeated BurndownSparseMatrix repositories = 10;
 }
 
 message CompressedSparseRowMatrix {

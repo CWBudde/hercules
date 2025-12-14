@@ -188,3 +188,14 @@ func PeopleIdentities(rd1, rd2 []string) (map[string]JoinedIndex, []string) {
 	}
 	return mergedIndex, mergedStrings
 }
+
+// RepositoryIdentities joins two repository name lists together, excluding duplicates.
+// Repository names are treated as literal strings (unlike PeopleIdentities which handles complex identities).
+// This is essentially an alias for LiteralIdentities but provides clearer semantics for repository merging.
+// The returned mapping's keys are the unique repository names in `repos1 ∪ repos2`, and the values are:
+// 1. Index after merging.
+// 2. Corresponding index in the first array - `repos1`. -1 means that it does not exist.
+// 3. Corresponding index in the second array - `repos2`. -1 means that it does not exist.
+func RepositoryIdentities(repos1, repos2 []string) (map[string]JoinedIndex, []string) {
+	return LiteralIdentities(repos1, repos2)
+}

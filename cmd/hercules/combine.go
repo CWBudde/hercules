@@ -12,7 +12,9 @@ import (
 	"strings"
 
 	"github.com/meko-christian/hercules"
+	"github.com/meko-christian/hercules/internal/burndown"
 	"github.com/meko-christian/hercules/internal/pb"
+	"github.com/meko-christian/hercules/leaves"
 	"github.com/gogo/protobuf/proto"
 	"github.com/spf13/cobra"
 	progress "gopkg.in/cheggaaa/pb.v1"
@@ -69,8 +71,17 @@ var combineCmd = &cobra.Command{
 		//		debug.SetGCPercent(20)
 		for _, fileName = range files {
 			bar.Increment()
-			anotherResults, anotherMetadata, errs := loadMessage(fileName, &repos)
+			anotherResults, anotherMetadata, repoName, errs := loadMessage(fileName, &repos)
 			if anotherMetadata != nil {
+				// Initialize repository tracking for the first file or if not already set
+				if burndownResult, ok := anotherResults["Burndown"].(leaves.BurndownResult); ok {
+					if len(burndownResult.RepositoryHistories) == 0 && len(burndownResult.GlobalHistory) > 0 {
+						// This result doesn't have repository tracking yet, initialize it
+						burndownResult.ReversedRepositoryDict = []string{repoName}
+						burndownResult.RepositoryHistories = []burndown.DenseHistory{burndownResult.GlobalHistory}
+						anotherResults["Burndown"] = burndownResult
+					}
+				}
 				mergeErrs := mergeResults(mergedResults, mergedMetadata, anotherResults, anotherMetadata, only)
 				for _, err := range mergeErrs {
 					errs = append(errs, err.Error())
@@ -113,33 +124,34 @@ var combineCmd = &cobra.Command{
 }
 
 func loadMessage(fileName string, repos *[]string) (
-	map[string]interface{}, *hercules.CommonAnalysisResult, []string) {
+	map[string]interface{}, *hercules.CommonAnalysisResult, string, []string) {
 	var errs []string
 	fi, err := os.Stat(fileName)
 	if err != nil {
 		errs = append(errs, "Cannot access "+fileName+": "+err.Error())
-		return nil, nil, errs
+		return nil, nil, "", errs
 	}
 	if fi.Size() == 0 {
 		errs = append(errs, "Cannot parse "+fileName+": file size is 0")
-		return nil, nil, errs
+		return nil, nil, "", errs
 	}
 	buffer, err := ioutil.ReadFile(fileName)
 	if err != nil {
 		errs = append(errs, "Cannot read "+fileName+": "+err.Error())
-		return nil, nil, errs
+		return nil, nil, "", errs
 	}
 	message := pb.AnalysisResults{}
 	err = proto.Unmarshal(buffer, &message)
 	if err != nil {
 		errs = append(errs, "Cannot parse "+fileName+": "+err.Error())
-		return nil, nil, errs
+		return nil, nil, "", errs
 	}
 	if message.Header == nil {
 		errs = append(errs, "Cannot parse "+fileName+": corrupted header")
-		return nil, nil, errs
+		return nil, nil, "", errs
 	}
-	*repos = append(*repos, message.Header.Repository)
+	repoName := message.Header.Repository
+	*repos = append(*repos, repoName)
 	results := map[string]interface{}{}
 	for key, val := range message.Contents {
 		summoned := hercules.Registry.Summon(key)
@@ -159,7 +171,7 @@ func loadMessage(fileName string, repos *[]string) (
 		}
 		results[key] = msg
 	}
-	return results, hercules.MetadataToCommonAnalysisResult(message.Header), errs
+	return results, hercules.MetadataToCommonAnalysisResult(message.Header), repoName, errs
 }
 
 func printErrors(allErrors map[string][]string) {

@@ -73,18 +73,21 @@ The `--temporal-activity` analysis tracks when developers work by extracting tem
 ### Usage
 
 **Basic analysis (commits):**
+
 ```bash
 hercules --temporal-activity /path/to/repo > temporal.yml
 labours -m temporal-activity temporal.yml
 ```
 
 **Lines mode:**
+
 ```bash
 hercules --temporal-activity --temporal-mode=lines /path/to/repo > temporal.yml
 labours -m temporal-activity temporal.yml
 ```
 
 **Combined with other analyses:**
+
 ```bash
 hercules --burndown --devs --temporal-activity /path/to/repo > analysis.yml
 labours -m all analysis.yml
@@ -95,12 +98,14 @@ labours -m all analysis.yml
 The analysis produces five visualizations showing activity distribution:
 
 **Stacked Bar Charts:**
+
 - **Weekdays** (Sunday-Saturday): Identifies work patterns across the week
 - **Hours** (0-23): Shows when developers are most active during the day
 - **Months** (January-December): Reveals seasonal patterns
 - **ISO Weeks** (1-53): Tracks activity across the calendar year
 
 **Heatmap:**
+
 - **Weekday × Hour Matrix**: 2D heatmap showing activity intensity across all combinations of weekdays and hours, revealing detailed temporal patterns and identifying when developers are most productive
 
 ### Modes

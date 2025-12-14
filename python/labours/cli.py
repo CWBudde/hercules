@@ -90,6 +90,7 @@ def parse_args() -> Namespace:
             "burndown-project",
             "burndown-file",
             "burndown-person",
+            "burndown-repository",
             "overwrites-matrix",
             "ownership",
             "couples-files",
@@ -244,6 +245,19 @@ def main() -> None:
             )
         except KeyError:
             print("people: " + burndown_people_warning)
+
+    def repositories_burndown():
+        try:
+            full_header = header + reader.get_burndown_parameters()
+        except KeyError:
+            print(burndown_warning)
+            return
+        try:
+            plot_many_burndown(
+                args, "repository", full_header, reader.get_repositories_burndown()
+            )
+        except (KeyError, AttributeError):
+            print("repositories: burndown data not available or repositories not tracked")
 
     def overwrites_matrix():
         try:
@@ -436,6 +450,7 @@ def main() -> None:
         "burndown-project": project_burndown,
         "burndown-file": files_burndown,
         "burndown-person": people_burndown,
+        "burndown-repository": repositories_burndown,
         "overwrites-matrix": overwrites_matrix,
         "ownership": ownership_burndown,
         "couples-files": couples_files,

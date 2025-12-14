@@ -126,6 +126,21 @@ class YamlReader(Reader):
             },
         )
 
+    def get_repositories_burndown(self):
+        """Get per-repository burndown matrices from YAML."""
+        bd = self.data.get("Burndown", {})
+        if "repositories" not in bd:
+            return []
+        return [
+            (p[0], self._parse_burndown_matrix(p[1]).T)
+            for p in bd["repositories"].items()
+        ]
+
+    def get_repository_names(self):
+        """Get repository names from YAML."""
+        bd = self.data.get("Burndown", {})
+        return bd.get("repository_sequence", [])
+
     def get_people_interaction(self):
         return (
             self.data["Burndown"]["people_sequence"].copy(),
@@ -287,6 +302,20 @@ class ProtobufReader(Reader):
             [i.name for i in burndown.people],
             self._parse_sparse_matrix(burndown.people_interaction).toarray(),
         )
+
+    def get_repositories_burndown(self) -> List[Tuple[str, numpy.ndarray]]:
+        """Get per-repository burndown matrices."""
+        burndown = self.contents["Burndown"]
+        if not hasattr(burndown, 'repositories') or not burndown.repositories:
+            return []
+        return [self._parse_burndown_matrix(i) for i in burndown.repositories]
+
+    def get_repository_names(self) -> List[str]:
+        """Get list of repository names."""
+        burndown = self.contents["Burndown"]
+        if hasattr(burndown, 'repository_sequence'):
+            return list(burndown.repository_sequence)
+        return []
 
     def get_files_coocc(self) -> Tuple[List[str], 'csr_matrix']:
         node = self.contents["Couples"].file_couples

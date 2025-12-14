@@ -172,10 +172,10 @@ func TestTemporalActivityMultipleCommits(t *testing.T) {
 		author int
 		time   time.Time
 	}{
-		{0, time.Date(2023, time.January, 2, 10, 0, 0, 0, time.UTC)},  // Monday 10am
-		{0, time.Date(2023, time.January, 2, 15, 0, 0, 0, time.UTC)},  // Monday 3pm
-		{0, time.Date(2023, time.January, 3, 10, 0, 0, 0, time.UTC)},  // Tuesday 10am
-		{1, time.Date(2023, time.January, 4, 14, 0, 0, 0, time.UTC)},  // Wednesday 2pm (different dev)
+		{0, time.Date(2023, time.January, 2, 10, 0, 0, 0, time.UTC)}, // Monday 10am
+		{0, time.Date(2023, time.January, 2, 15, 0, 0, 0, time.UTC)}, // Monday 3pm
+		{0, time.Date(2023, time.January, 3, 10, 0, 0, 0, time.UTC)}, // Tuesday 10am
+		{1, time.Date(2023, time.January, 4, 14, 0, 0, 0, time.UTC)}, // Wednesday 2pm (different dev)
 	}
 
 	for _, c := range commits {
@@ -213,13 +213,13 @@ func TestTemporalActivityWeekdayBoundaries(t *testing.T) {
 
 	// Test all 7 weekdays
 	weekdays := []time.Time{
-		time.Date(2023, time.January, 1, 12, 0, 0, 0, time.UTC),  // Sunday
-		time.Date(2023, time.January, 2, 12, 0, 0, 0, time.UTC),  // Monday
-		time.Date(2023, time.January, 3, 12, 0, 0, 0, time.UTC),  // Tuesday
-		time.Date(2023, time.January, 4, 12, 0, 0, 0, time.UTC),  // Wednesday
-		time.Date(2023, time.January, 5, 12, 0, 0, 0, time.UTC),  // Thursday
-		time.Date(2023, time.January, 6, 12, 0, 0, 0, time.UTC),  // Friday
-		time.Date(2023, time.January, 7, 12, 0, 0, 0, time.UTC),  // Saturday
+		time.Date(2023, time.January, 1, 12, 0, 0, 0, time.UTC), // Sunday
+		time.Date(2023, time.January, 2, 12, 0, 0, 0, time.UTC), // Monday
+		time.Date(2023, time.January, 3, 12, 0, 0, 0, time.UTC), // Tuesday
+		time.Date(2023, time.January, 4, 12, 0, 0, 0, time.UTC), // Wednesday
+		time.Date(2023, time.January, 5, 12, 0, 0, 0, time.UTC), // Thursday
+		time.Date(2023, time.January, 6, 12, 0, 0, 0, time.UTC), // Friday
+		time.Date(2023, time.January, 7, 12, 0, 0, 0, time.UTC), // Saturday
 	}
 
 	for _, commitTime := range weekdays {
@@ -330,11 +330,11 @@ func TestTemporalActivityISOWeekEdgeCases(t *testing.T) {
 
 	// Verify weeks (week N stored at index N-1)
 	activity := ta.activities[0]
-	assert.Equal(t, 1, activity.Weeks[1])  // Week 2 stored at index 1
+	assert.Equal(t, 1, activity.Weeks[1]) // Week 2 stored at index 1
 	// Verify week 53 is stored correctly
 	_, week53 := testCases[1].ISOWeek()
 	assert.Equal(t, 53, week53)
-	assert.Equal(t, 1, activity.Weeks[52])  // Week 53 stored at index 52
+	assert.Equal(t, 1, activity.Weeks[52]) // Week 53 stored at index 52
 }
 
 func TestTemporalActivityFinalize(t *testing.T) {

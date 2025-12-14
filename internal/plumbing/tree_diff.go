@@ -104,7 +104,8 @@ func (treediff *TreeDiff) ListConfigurationOptions() []core.ConfigurationOption 
 				"Separated with commas \",\".",
 			Flag:    "blacklisted-prefixes",
 			Type:    core.StringsConfigurationOption,
-			Default: defaultBlacklistedPrefixes}, {
+			Default: defaultBlacklistedPrefixes,
+		}, {
 			Name: ConfigTreeDiffLanguages,
 			Description: fmt.Sprintf(
 				"List of programming languages to analyze. Separated by comma \",\". "+
@@ -113,12 +114,14 @@ func (treediff *TreeDiff) ListConfigurationOptions() []core.ConfigurationOption 
 				allLanguages),
 			Flag:    "languages",
 			Type:    core.StringsConfigurationOption,
-			Default: []string{allLanguages}}, {
+			Default: []string{allLanguages},
+		}, {
 			Name:        ConfigTreeDiffFilterRegexp,
 			Description: "Whitelist regexp to determine which files to analyze.",
 			Flag:        "whitelist",
 			Type:        core.StringConfigurationOption,
-			Default:     ""},
+			Default:     "",
+		},
 	}
 	return options[:]
 }

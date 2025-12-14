@@ -48,58 +48,44 @@ def _resample_language_data(
     resample: str,
 ) -> tuple:
     """
-    Resample daily language data using the same algorithm as burndown.py.
-    This ensures consistent time bucketing across all chart types.
+    Resample daily language data to coarser time periods.
+    For cumulative data, takes the last value at each period boundary.
     """
     pandas = import_pandas()
 
-    # Handle resample aliases (matching burndown.py exactly)
+    # Handle resample aliases (matching burndown.py)
     aliases = {"year": "YE", "month": "ME", "day": "D", "week": "W"}
-    resample_freq = aliases.get(resample, resample)
+    freq = aliases.get(resample, resample)
 
-    # Calculate finish date (similar to burndown's finish variable)
-    finish = end_datetime
-    start = start_datetime
+    # Generate period boundaries from start to end
+    periods = pandas.date_range(start_datetime, end_datetime, freq=freq)
 
-    # Create resampling periods (matching burndown.py logic at lines 343-349)
-    periods = 0
-    date_granularity_sampling = [start]
-    while date_granularity_sampling[-1] < finish:
-        periods += 1
-        date_granularity_sampling = pandas.date_range(
-            start, periods=periods, freq=resample_freq
-        )
+    # Handle edge case: if no periods generated, create at least one
+    if len(periods) == 0:
+        periods = pandas.date_range(start_datetime, periods=1, freq=freq)
 
-    # Check if resampling is too coarse (matching burndown.py lines 350-362)
-    if len(date_granularity_sampling) > 0 and date_granularity_sampling[0] > finish:
-        if resample_freq in ("A", "YE"):
+    # Check if resampling is too coarse (first period already past end date)
+    if len(periods) > 0 and periods[0] > end_datetime:
+        if freq in ("A", "YE"):
             print("too loose resampling - by year, trying by month")
             return _resample_language_data(daily_matrix, start_datetime, end_datetime, "month")
-        elif resample_freq in ("M", "ME"):
+        elif freq in ("M", "ME"):
             print("too loose resampling - by month, trying by week")
-            return _resample_language_data(daily_matrix, start_datetime, end_datetime, "W")
+            return _resample_language_data(daily_matrix, start_datetime, end_datetime, "week")
         else:
             raise ValueError(f"Too loose resampling: {resample}. Try finer.")
 
-    # Aggregate values within each resampling period
-    # This properly handles cumulative data and prevents cut-off issues
-    resampled_matrix = numpy.zeros((len(date_granularity_sampling), daily_matrix.shape[1]), dtype=numpy.float32)
+    # For cumulative data, take the last daily value at each period boundary
+    resampled_matrix = numpy.zeros((len(periods), daily_matrix.shape[1]), dtype=numpy.float32)
 
-    for i, gdt in enumerate(date_granularity_sampling):
-        # Calculate day indices for this period (matching burndown.py lines 374-375)
-        istart = (date_granularity_sampling[i - 1] - start).days if i > 0 else 0
-        ifinish = min((gdt - start).days, daily_matrix.shape[0])
+    for i, period_end in enumerate(periods):
+        # Calculate day index for this period boundary
+        day_idx = (period_end - start_datetime).days
+        # Clamp to valid range
+        day_idx = max(0, min(day_idx, daily_matrix.shape[0] - 1))
+        resampled_matrix[i] = daily_matrix[day_idx]
 
-        # Take the last value in the period for cumulative data
-        # Use min() to ensure we don't go out of bounds
-        if ifinish > istart and istart < daily_matrix.shape[0]:
-            # Take last value in this period (ifinish - 1 is the last valid index)
-            resampled_matrix[i] = daily_matrix[ifinish - 1]
-        elif istart < daily_matrix.shape[0]:
-            # Period extends beyond data, use the last available value
-            resampled_matrix[i] = daily_matrix[-1]
-
-    return resampled_matrix, date_granularity_sampling
+    return resampled_matrix, periods
 
 
 def _plot_languages_chart(
@@ -112,6 +98,15 @@ def _plot_languages_chart(
 ) -> None:
     """Generate a temporal burndown chart showing language evolution over time."""
     pandas = import_pandas()
+
+    # Convert timestamps to datetime
+    start_datetime = datetime.fromtimestamp(start_date)
+    end_datetime = datetime.fromtimestamp(end_date)
+    total_days = (end_datetime - start_datetime).days + 1
+
+    if total_days <= 0:
+        print("No temporal data to plot")
+        return
 
     # First, determine top languages overall to limit the number of series
     total_langs = defaultdict(int)
@@ -135,43 +130,43 @@ def _plot_languages_chart(
         print("No language data to plot")
         return
 
-    # Create time series data - aggregate language lines per day
-    sorted_days = sorted(days.keys())
-    if not sorted_days:
-        print("No temporal data to plot")
-        return
-
-    # Build a matrix: rows = days, columns = languages
+    # Build language list for matrix columns
     language_list = sorted(top_languages)
     if len(sorted_langs) > top_n:
         language_list.append("Other")
 
-    # Initialize matrix to store cumulative lines per language per day
-    matrix = numpy.zeros((len(sorted_days), len(language_list)), dtype=int)
+    # Build complete daily matrix: rows = all days from start to end, columns = languages
+    # This ensures continuous time series with no gaps
+    matrix = numpy.zeros((total_days, len(language_list)), dtype=numpy.int64)
     cumulative_langs = defaultdict(int)
 
-    for day_idx, day in enumerate(sorted_days):
-        devs = days[day]
+    # Process days in chronological order (days keys are tick offsets from start)
+    for day_tick in sorted(days.keys()):
+        # day_tick is the offset in days from start_date
+        if day_tick < 0 or day_tick >= total_days:
+            continue
 
-        # Aggregate all developers for this day
-        for dev, stats in devs.items():
+        # Accumulate language stats for this day
+        for dev, stats in days[day_tick].items():
             for lang, vals in stats.Languages.items():
                 # vals is [added, removed, changed]
-                # For cumulative count: added - removed
-                delta = vals[0] - vals[1]
+                delta = vals[0] - vals[1]  # added - removed
                 if lang in top_languages:
                     cumulative_langs[lang] += delta
                 elif lang:  # "Other" category
                     if "Other" in language_list:
                         cumulative_langs["Other"] += delta
 
-        # Fill matrix row with cumulative values
+        # Store cumulative snapshot at this day
         for lang_idx, lang in enumerate(language_list):
-            matrix[day_idx, lang_idx] = max(0, cumulative_langs.get(lang, 0))
+            matrix[day_tick, lang_idx] = max(0, cumulative_langs.get(lang, 0))
 
-    # Create initial date range (daily)
-    start_datetime = datetime.fromtimestamp(start_date)
-    end_datetime = datetime.fromtimestamp(end_date)
+    # Forward-fill: propagate values through days without commits
+    # This ensures continuous stacked areas without gaps
+    for day_idx in range(1, total_days):
+        for lang_idx in range(len(language_list)):
+            if matrix[day_idx, lang_idx] == 0 and matrix[day_idx - 1, lang_idx] > 0:
+                matrix[day_idx, lang_idx] = matrix[day_idx - 1, lang_idx]
 
     # Apply resampling if specified (matching burndown.py)
     resample = args.resample
@@ -181,10 +176,10 @@ def _plot_languages_chart(
             matrix, start_datetime, end_datetime, resample
         )
     else:
-        # No resampling - use daily data
+        # No resampling - use complete daily date range
         date_range = pandas.date_range(
             start=start_datetime,
-            periods=len(sorted_days),
+            periods=total_days,
             freq='D'
         )
 

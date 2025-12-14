@@ -15,7 +15,7 @@ import (
 	"github.com/meko-christian/hercules/internal/yaml"
 )
 
-// TemporalActivityAnalysis calculates commit or line change activity across temporal dimensions.
+// TemporalActivityAnalysis calculates both commit and line change activity across temporal dimensions.
 // It tracks when developers work by extracting weekday, hour, month, and ISO week from commits.
 // This complements DevsAnalysis which tracks activity over project lifetime.
 //
@@ -25,14 +25,11 @@ import (
 //   - Detect work pattern changes over time
 //   - Assess work-life balance indicators
 //
-// The analysis can count either commits (--temporal-mode=commits) or
-// lines changed (--temporal-mode=lines).
+// The analysis tracks both commit counts and line changes simultaneously,
+// providing richer insights into developer activity patterns.
 type TemporalActivityAnalysis struct {
 	core.NoopMerger
 	core.OneShotMergeProcessor
-
-	// Mode determines what to count: "commits" or "lines"
-	Mode string
 
 	// activities maps developer index to their temporal activity
 	activities map[int]*DeveloperTemporalActivity
@@ -42,12 +39,18 @@ type TemporalActivityAnalysis struct {
 	l core.Logger
 }
 
+// TemporalDimension stores both commit counts and line change counts for a temporal dimension.
+type TemporalDimension struct {
+	Commits []int // Number of commits
+	Lines   []int // Number of lines changed (added + removed)
+}
+
 // DeveloperTemporalActivity stores activity counts across temporal dimensions for one developer.
 type DeveloperTemporalActivity struct {
-	Weekdays [7]int  // Sunday=0 to Saturday=6
-	Hours    [24]int // 0-23
-	Months   [12]int // January=0 to December=11
-	Weeks    [53]int // ISO week 1-53 stored at index 0-52 (week N stored at index N-1)
+	Weekdays TemporalDimension // Sunday=0 to Saturday=6 (length 7)
+	Hours    TemporalDimension // 0-23 (length 24)
+	Months   TemporalDimension // January=0 to December=11 (length 12)
+	Weeks    TemporalDimension // ISO week 1-53 stored at index 0-52 (week N stored at index N-1, length 53)
 }
 
 // TemporalActivityResult is returned by TemporalActivityAnalysis.Finalize().
@@ -56,14 +59,8 @@ type TemporalActivityResult struct {
 	Activities map[int]*DeveloperTemporalActivity
 	// reversedPeopleDict references IdentityDetector.ReversedPeopleDict
 	reversedPeopleDict []string
-	// Mode is "commits" or "lines"
-	Mode string
 }
 
-const (
-	// ConfigTemporalActivityMode is the name of the option to set TemporalActivityAnalysis.Mode.
-	ConfigTemporalActivityMode = "TemporalActivity.Mode"
-)
 
 // Name of this PipelineItem. Uniquely identifies the type, used for mapping keys, etc.
 func (ta *TemporalActivityAnalysis) Name() string {
@@ -85,26 +82,13 @@ func (ta *TemporalActivityAnalysis) Requires() []string {
 
 // ListConfigurationOptions returns the list of changeable public properties of this PipelineItem.
 func (ta *TemporalActivityAnalysis) ListConfigurationOptions() []core.ConfigurationOption {
-	options := [...]core.ConfigurationOption{{
-		Name:        ConfigTemporalActivityMode,
-		Description: "Count commits or lines changed (commits|lines).",
-		Flag:        "temporal-mode",
-		Type:        core.StringConfigurationOption,
-		Default:     "commits",
-	}}
-	return options[:]
+	return []core.ConfigurationOption{}
 }
 
 // Configure sets the properties previously published by ListConfigurationOptions().
 func (ta *TemporalActivityAnalysis) Configure(facts map[string]interface{}) error {
 	if l, exists := facts[core.ConfigLogger].(core.Logger); exists {
 		ta.l = l
-	}
-	if val, exists := facts[ConfigTemporalActivityMode].(string); exists {
-		if val != "commits" && val != "lines" {
-			return fmt.Errorf("invalid temporal mode: %s (must be 'commits' or 'lines')", val)
-		}
-		ta.Mode = val
 	}
 	if val, exists := facts[identity.FactIdentityDetectorReversedPeopleDict].([]string); exists {
 		ta.reversedPeopleDict = val
@@ -124,7 +108,15 @@ func (ta *TemporalActivityAnalysis) Flag() string {
 
 // Description returns the text which explains what the analysis is doing.
 func (ta *TemporalActivityAnalysis) Description() string {
-	return "Calculates commit or line change activity by weekday, hour, month, and ISO week."
+	return "Calculates commit and line change activity by weekday, hour, month, and ISO week."
+}
+
+// newTemporalDimension creates a new TemporalDimension with the specified size.
+func newTemporalDimension(size int) TemporalDimension {
+	return TemporalDimension{
+		Commits: make([]int, size),
+		Lines:   make([]int, size),
+	}
 }
 
 // Initialize resets the temporary caches and prepares this PipelineItem for a series of Consume()
@@ -133,9 +125,6 @@ func (ta *TemporalActivityAnalysis) Initialize(repository *git.Repository) error
 	ta.l = core.NewLogger()
 	ta.activities = map[int]*DeveloperTemporalActivity{}
 	ta.OneShotMergeProcessor.Initialize()
-	if ta.Mode == "" {
-		ta.Mode = "commits"
-	}
 	return nil
 }
 
@@ -158,29 +147,37 @@ func (ta *TemporalActivityAnalysis) Consume(deps map[string]interface{}) (map[st
 	// Get or create activity tracker for this developer
 	activity := ta.activities[author]
 	if activity == nil {
-		activity = &DeveloperTemporalActivity{}
+		activity = &DeveloperTemporalActivity{
+			Weekdays: newTemporalDimension(7),
+			Hours:    newTemporalDimension(24),
+			Months:   newTemporalDimension(12),
+			Weeks:    newTemporalDimension(53),
+		}
 		ta.activities[author] = activity
 	}
 
-	// Calculate value to add
-	value := 1 // Default for commits mode
-	if ta.Mode == "lines" {
-		lineStats := deps[items.DependencyLineStats].(map[object.ChangeEntry]items.LineStats)
-		totalLines := 0
-		for _, stats := range lineStats {
-			totalLines += stats.Added + stats.Removed
-		}
-		value = totalLines
+	// Calculate line changes
+	lineStats := deps[items.DependencyLineStats].(map[object.ChangeEntry]items.LineStats)
+	totalLines := 0
+	for _, stats := range lineStats {
+		totalLines += stats.Added + stats.Removed
 	}
 
-	// Update temporal counters
-	activity.Weekdays[weekday] += value
-	activity.Hours[hour] += value
-	activity.Months[month] += value
+	// Update temporal counters with both commits and lines
+	activity.Weekdays.Commits[weekday] += 1
+	activity.Weekdays.Lines[weekday] += totalLines
+
+	activity.Hours.Commits[hour] += 1
+	activity.Hours.Lines[hour] += totalLines
+
+	activity.Months.Commits[month] += 1
+	activity.Months.Lines[month] += totalLines
+
 	// Handle ISO week: week can be 1-53, store at index week-1 (0-based indexing)
 	// Week 1 → index 0, Week 2 → index 1, ..., Week 53 → index 52
 	if week >= 1 && week <= 53 {
-		activity.Weeks[week-1] += value
+		activity.Weeks.Commits[week-1] += 1
+		activity.Weeks.Lines[week-1] += totalLines
 	}
 
 	return nil, nil
@@ -191,7 +188,6 @@ func (ta *TemporalActivityAnalysis) Finalize() interface{} {
 	return TemporalActivityResult{
 		Activities:         ta.activities,
 		reversedPeopleDict: ta.reversedPeopleDict,
-		Mode:               ta.Mode,
 	}
 }
 
@@ -228,26 +224,51 @@ func (ta *TemporalActivityAnalysis) Deserialize(pbmessage []byte) (interface{}, 
 		}
 
 		// Create native DeveloperTemporalActivity struct
-		activity := &DeveloperTemporalActivity{}
-
-		// Copy weekdays (7 elements)
-		for i := 0; i < 7 && i < len(pbActivity.Weekdays); i++ {
-			activity.Weekdays[i] = int(pbActivity.Weekdays[i])
+		activity := &DeveloperTemporalActivity{
+			Weekdays: newTemporalDimension(7),
+			Hours:    newTemporalDimension(24),
+			Months:   newTemporalDimension(12),
+			Weeks:    newTemporalDimension(53),
 		}
 
-		// Copy hours (24 elements)
-		for i := 0; i < 24 && i < len(pbActivity.Hours); i++ {
-			activity.Hours[i] = int(pbActivity.Hours[i])
+		// Copy weekdays
+		if pbActivity.Weekdays != nil {
+			for i := 0; i < 7 && i < len(pbActivity.Weekdays.Commits); i++ {
+				activity.Weekdays.Commits[i] = int(pbActivity.Weekdays.Commits[i])
+			}
+			for i := 0; i < 7 && i < len(pbActivity.Weekdays.Lines); i++ {
+				activity.Weekdays.Lines[i] = int(pbActivity.Weekdays.Lines[i])
+			}
 		}
 
-		// Copy months (12 elements)
-		for i := 0; i < 12 && i < len(pbActivity.Months); i++ {
-			activity.Months[i] = int(pbActivity.Months[i])
+		// Copy hours
+		if pbActivity.Hours != nil {
+			for i := 0; i < 24 && i < len(pbActivity.Hours.Commits); i++ {
+				activity.Hours.Commits[i] = int(pbActivity.Hours.Commits[i])
+			}
+			for i := 0; i < 24 && i < len(pbActivity.Hours.Lines); i++ {
+				activity.Hours.Lines[i] = int(pbActivity.Hours.Lines[i])
+			}
 		}
 
-		// Copy weeks (53 elements)
-		for i := 0; i < 53 && i < len(pbActivity.Weeks); i++ {
-			activity.Weeks[i] = int(pbActivity.Weeks[i])
+		// Copy months
+		if pbActivity.Months != nil {
+			for i := 0; i < 12 && i < len(pbActivity.Months.Commits); i++ {
+				activity.Months.Commits[i] = int(pbActivity.Months.Commits[i])
+			}
+			for i := 0; i < 12 && i < len(pbActivity.Months.Lines); i++ {
+				activity.Months.Lines[i] = int(pbActivity.Months.Lines[i])
+			}
+		}
+
+		// Copy weeks
+		if pbActivity.Weeks != nil {
+			for i := 0; i < 53 && i < len(pbActivity.Weeks.Commits); i++ {
+				activity.Weeks.Commits[i] = int(pbActivity.Weeks.Commits[i])
+			}
+			for i := 0; i < 53 && i < len(pbActivity.Weeks.Lines); i++ {
+				activity.Weeks.Lines[i] = int(pbActivity.Weeks.Lines[i])
+			}
 		}
 
 		activities[dev] = activity
@@ -256,14 +277,12 @@ func (ta *TemporalActivityAnalysis) Deserialize(pbmessage []byte) (interface{}, 
 	result := TemporalActivityResult{
 		Activities:         activities,
 		reversedPeopleDict: message.DevIndex,
-		Mode:               message.Mode,
 	}
 	return result, nil
 }
 
 func (ta *TemporalActivityAnalysis) serializeText(result *TemporalActivityResult, writer io.Writer) {
 	fmt.Fprintln(writer, "  temporal_activity:")
-	fmt.Fprintf(writer, "    mode: %s\n", result.Mode)
 	fmt.Fprintln(writer, "    activities:")
 
 	// Sort developers for consistent output
@@ -283,8 +302,16 @@ func (ta *TemporalActivityAnalysis) serializeText(result *TemporalActivityResult
 		fmt.Fprintf(writer, "      %d:\n", devID)
 
 		// Weekdays
-		fmt.Fprintf(writer, "        weekdays: [")
-		for i, count := range activity.Weekdays {
+		fmt.Fprintf(writer, "        weekdays_commits: [")
+		for i, count := range activity.Weekdays.Commits {
+			if i > 0 {
+				fmt.Fprint(writer, ", ")
+			}
+			fmt.Fprintf(writer, "%d", count)
+		}
+		fmt.Fprintln(writer, "]")
+		fmt.Fprintf(writer, "        weekdays_lines: [")
+		for i, count := range activity.Weekdays.Lines {
 			if i > 0 {
 				fmt.Fprint(writer, ", ")
 			}
@@ -293,8 +320,16 @@ func (ta *TemporalActivityAnalysis) serializeText(result *TemporalActivityResult
 		fmt.Fprintln(writer, "]")
 
 		// Hours
-		fmt.Fprintf(writer, "        hours: [")
-		for i, count := range activity.Hours {
+		fmt.Fprintf(writer, "        hours_commits: [")
+		for i, count := range activity.Hours.Commits {
+			if i > 0 {
+				fmt.Fprint(writer, ", ")
+			}
+			fmt.Fprintf(writer, "%d", count)
+		}
+		fmt.Fprintln(writer, "]")
+		fmt.Fprintf(writer, "        hours_lines: [")
+		for i, count := range activity.Hours.Lines {
 			if i > 0 {
 				fmt.Fprint(writer, ", ")
 			}
@@ -303,8 +338,16 @@ func (ta *TemporalActivityAnalysis) serializeText(result *TemporalActivityResult
 		fmt.Fprintln(writer, "]")
 
 		// Months
-		fmt.Fprintf(writer, "        months: [")
-		for i, count := range activity.Months {
+		fmt.Fprintf(writer, "        months_commits: [")
+		for i, count := range activity.Months.Commits {
+			if i > 0 {
+				fmt.Fprint(writer, ", ")
+			}
+			fmt.Fprintf(writer, "%d", count)
+		}
+		fmt.Fprintln(writer, "]")
+		fmt.Fprintf(writer, "        months_lines: [")
+		for i, count := range activity.Months.Lines {
 			if i > 0 {
 				fmt.Fprint(writer, ", ")
 			}
@@ -313,8 +356,16 @@ func (ta *TemporalActivityAnalysis) serializeText(result *TemporalActivityResult
 		fmt.Fprintln(writer, "]")
 
 		// Weeks
-		fmt.Fprintf(writer, "        weeks: [")
-		for i, count := range activity.Weeks {
+		fmt.Fprintf(writer, "        weeks_commits: [")
+		for i, count := range activity.Weeks.Commits {
+			if i > 0 {
+				fmt.Fprint(writer, ", ")
+			}
+			fmt.Fprintf(writer, "%d", count)
+		}
+		fmt.Fprintln(writer, "]")
+		fmt.Fprintf(writer, "        weeks_lines: [")
+		for i, count := range activity.Weeks.Lines {
 			if i > 0 {
 				fmt.Fprint(writer, ", ")
 			}
@@ -333,7 +384,6 @@ func (ta *TemporalActivityAnalysis) serializeText(result *TemporalActivityResult
 func (ta *TemporalActivityAnalysis) serializeBinary(result *TemporalActivityResult, writer io.Writer) error {
 	message := pb.TemporalActivityResults{}
 	message.DevIndex = result.reversedPeopleDict
-	message.Mode = result.Mode
 	message.Activities = make(map[int32]*pb.DeveloperTemporalActivity)
 
 	for dev, activity := range result.Activities {
@@ -343,30 +393,54 @@ func (ta *TemporalActivityAnalysis) serializeBinary(result *TemporalActivityResu
 		}
 
 		pbActivity := &pb.DeveloperTemporalActivity{
-			Weekdays: make([]int32, 7),
-			Hours:    make([]int32, 24),
-			Months:   make([]int32, 12),
-			Weeks:    make([]int32, 53),
+			Weekdays: &pb.TemporalDimension{
+				Commits: make([]int32, len(activity.Weekdays.Commits)),
+				Lines:   make([]int32, len(activity.Weekdays.Lines)),
+			},
+			Hours: &pb.TemporalDimension{
+				Commits: make([]int32, len(activity.Hours.Commits)),
+				Lines:   make([]int32, len(activity.Hours.Lines)),
+			},
+			Months: &pb.TemporalDimension{
+				Commits: make([]int32, len(activity.Months.Commits)),
+				Lines:   make([]int32, len(activity.Months.Lines)),
+			},
+			Weeks: &pb.TemporalDimension{
+				Commits: make([]int32, len(activity.Weeks.Commits)),
+				Lines:   make([]int32, len(activity.Weeks.Lines)),
+			},
 		}
 
 		// Copy weekdays
-		for i, count := range activity.Weekdays {
-			pbActivity.Weekdays[i] = int32(count)
+		for i, count := range activity.Weekdays.Commits {
+			pbActivity.Weekdays.Commits[i] = int32(count)
+		}
+		for i, count := range activity.Weekdays.Lines {
+			pbActivity.Weekdays.Lines[i] = int32(count)
 		}
 
 		// Copy hours
-		for i, count := range activity.Hours {
-			pbActivity.Hours[i] = int32(count)
+		for i, count := range activity.Hours.Commits {
+			pbActivity.Hours.Commits[i] = int32(count)
+		}
+		for i, count := range activity.Hours.Lines {
+			pbActivity.Hours.Lines[i] = int32(count)
 		}
 
 		// Copy months
-		for i, count := range activity.Months {
-			pbActivity.Months[i] = int32(count)
+		for i, count := range activity.Months.Commits {
+			pbActivity.Months.Commits[i] = int32(count)
+		}
+		for i, count := range activity.Months.Lines {
+			pbActivity.Months.Lines[i] = int32(count)
 		}
 
 		// Copy weeks
-		for i, count := range activity.Weeks {
-			pbActivity.Weeks[i] = int32(count)
+		for i, count := range activity.Weeks.Commits {
+			pbActivity.Weeks.Commits[i] = int32(count)
+		}
+		for i, count := range activity.Weeks.Lines {
+			pbActivity.Weeks.Lines[i] = int32(count)
 		}
 
 		message.Activities[devID] = pbActivity
@@ -391,14 +465,9 @@ func (ta *TemporalActivityAnalysis) MergeResults(
 	tar1 := r1.(TemporalActivityResult)
 	tar2 := r2.(TemporalActivityResult)
 
-	if tar1.Mode != tar2.Mode {
-		return fmt.Errorf("mismatching modes (r1: %s, r2: %s)", tar1.Mode, tar2.Mode)
-	}
-
 	merged := TemporalActivityResult{
 		Activities:         make(map[int]*DeveloperTemporalActivity),
 		reversedPeopleDict: tar1.reversedPeopleDict, // Use first dict, should be same
-		Mode:               tar1.Mode,
 	}
 
 	// Merge activities from both results
@@ -411,37 +480,50 @@ func (ta *TemporalActivityAnalysis) MergeResults(
 	}
 
 	for dev := range allDevs {
-		mergedActivity := &DeveloperTemporalActivity{}
+		mergedActivity := &DeveloperTemporalActivity{
+			Weekdays: newTemporalDimension(7),
+			Hours:    newTemporalDimension(24),
+			Months:   newTemporalDimension(12),
+			Weeks:    newTemporalDimension(53),
+		}
 
 		// Add activities from r1
 		if activity1, exists := tar1.Activities[dev]; exists {
-			for i := range mergedActivity.Weekdays {
-				mergedActivity.Weekdays[i] += activity1.Weekdays[i]
+			for i := range mergedActivity.Weekdays.Commits {
+				mergedActivity.Weekdays.Commits[i] += activity1.Weekdays.Commits[i]
+				mergedActivity.Weekdays.Lines[i] += activity1.Weekdays.Lines[i]
 			}
-			for i := range mergedActivity.Hours {
-				mergedActivity.Hours[i] += activity1.Hours[i]
+			for i := range mergedActivity.Hours.Commits {
+				mergedActivity.Hours.Commits[i] += activity1.Hours.Commits[i]
+				mergedActivity.Hours.Lines[i] += activity1.Hours.Lines[i]
 			}
-			for i := range mergedActivity.Months {
-				mergedActivity.Months[i] += activity1.Months[i]
+			for i := range mergedActivity.Months.Commits {
+				mergedActivity.Months.Commits[i] += activity1.Months.Commits[i]
+				mergedActivity.Months.Lines[i] += activity1.Months.Lines[i]
 			}
-			for i := range mergedActivity.Weeks {
-				mergedActivity.Weeks[i] += activity1.Weeks[i]
+			for i := range mergedActivity.Weeks.Commits {
+				mergedActivity.Weeks.Commits[i] += activity1.Weeks.Commits[i]
+				mergedActivity.Weeks.Lines[i] += activity1.Weeks.Lines[i]
 			}
 		}
 
 		// Add activities from r2
 		if activity2, exists := tar2.Activities[dev]; exists {
-			for i := range mergedActivity.Weekdays {
-				mergedActivity.Weekdays[i] += activity2.Weekdays[i]
+			for i := range mergedActivity.Weekdays.Commits {
+				mergedActivity.Weekdays.Commits[i] += activity2.Weekdays.Commits[i]
+				mergedActivity.Weekdays.Lines[i] += activity2.Weekdays.Lines[i]
 			}
-			for i := range mergedActivity.Hours {
-				mergedActivity.Hours[i] += activity2.Hours[i]
+			for i := range mergedActivity.Hours.Commits {
+				mergedActivity.Hours.Commits[i] += activity2.Hours.Commits[i]
+				mergedActivity.Hours.Lines[i] += activity2.Hours.Lines[i]
 			}
-			for i := range mergedActivity.Months {
-				mergedActivity.Months[i] += activity2.Months[i]
+			for i := range mergedActivity.Months.Commits {
+				mergedActivity.Months.Commits[i] += activity2.Months.Commits[i]
+				mergedActivity.Months.Lines[i] += activity2.Months.Lines[i]
 			}
-			for i := range mergedActivity.Weeks {
-				mergedActivity.Weeks[i] += activity2.Weeks[i]
+			for i := range mergedActivity.Weeks.Commits {
+				mergedActivity.Weeks.Commits[i] += activity2.Weeks.Commits[i]
+				mergedActivity.Weeks.Lines[i] += activity2.Weeks.Lines[i]
 			}
 		}
 

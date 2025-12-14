@@ -205,15 +205,22 @@ message ImportsPerDeveloperResults {
     int64 tick_size = 3;
 }
 
+message TemporalDimension {
+    // Count of commits for this dimension
+    repeated int32 commits = 1;
+    // Count of lines changed (added + removed) for this dimension
+    repeated int32 lines = 2;
+}
+
 message DeveloperTemporalActivity {
     // Sunday=0 to Saturday=6 (length 7)
-    repeated int32 weekdays = 1;
+    TemporalDimension weekdays = 1;
     // 0-23 (length 24)
-    repeated int32 hours = 2;
+    TemporalDimension hours = 2;
     // January=0 to December=11 (length 12)
-    repeated int32 months = 3;
+    TemporalDimension months = 3;
     // ISO week 1-53 stored at indices 0-52 (length 53)
-    repeated int32 weeks = 4;
+    TemporalDimension weeks = 4;
 }
 
 message TemporalActivityResults {
@@ -221,8 +228,6 @@ message TemporalActivityResults {
     map<int32, DeveloperTemporalActivity> activities = 1;
     // developer identities, the indexes correspond to activities' keys
     repeated string dev_index = 2;
-    // "commits" or "lines"
-    string mode = 3;
 }
 
 message AnalysisResults {

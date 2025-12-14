@@ -68,21 +68,14 @@ The pipeline automatically handles Git branching/merging by forking and merging 
 
 ## Temporal Activity Analysis
 
-The `--temporal-activity` analysis tracks when developers work by extracting temporal patterns from commit timestamps.
+The `--temporal-activity` analysis tracks when developers work by extracting temporal patterns from commit timestamps. It simultaneously collects both commit counts and line changes, providing comprehensive insights into developer activity.
 
 ### Usage
 
-**Basic analysis (commits):**
+**Basic analysis:**
 
 ```bash
 hercules --temporal-activity /path/to/repo > temporal.yml
-labours -m temporal-activity temporal.yml
-```
-
-**Lines mode:**
-
-```bash
-hercules --temporal-activity --temporal-mode=lines /path/to/repo > temporal.yml
 labours -m temporal-activity temporal.yml
 ```
 
@@ -95,23 +88,27 @@ labours -m all analysis.yml
 
 ### Output
 
-The analysis produces five visualizations showing activity distribution:
+The analysis produces visualizations for both commits and lines changed across multiple temporal dimensions:
 
-**Stacked Bar Charts:**
+**Stacked Bar Charts (for both commits and lines):**
 
 - **Weekdays** (Sunday-Saturday): Identifies work patterns across the week
 - **Hours** (0-23): Shows when developers are most active during the day
 - **Months** (January-December): Reveals seasonal patterns
 - **ISO Weeks** (1-53): Tracks activity across the calendar year
 
-**Heatmap:**
+**Heatmaps (for both commits and lines):**
 
 - **Weekday × Hour Matrix**: 2D heatmap showing activity intensity across all combinations of weekdays and hours, revealing detailed temporal patterns and identifying when developers are most productive
 
-### Modes
+Each dimension generates two visualizations:
+- One for commit frequency
+- One for lines changed (additions + deletions)
 
-- `--temporal-mode=commits` (default): Counts number of commits
-- `--temporal-mode=lines`: Counts total lines changed (additions + deletions)
+This dual-mode output allows you to compare activity patterns between commit count and code volume, revealing insights like:
+- Are small frequent commits or large infrequent commits more common?
+- Do certain time periods see more refactoring vs. new features?
+- How does commit size vary by time of day or day of week?
 
 ### Use Cases
 
@@ -119,3 +116,4 @@ The analysis produces five visualizations showing activity distribution:
 - Detecting work-life balance indicators
 - Identifying peak productivity periods
 - Analyzing distributed team coordination
+- Comparing commit frequency vs. code volume patterns

@@ -44,35 +44,62 @@ def show_languages(
 def _resample_language_data(
     daily_matrix: numpy.ndarray,
     start_datetime: datetime,
+    end_datetime: datetime,
     resample: str,
 ) -> tuple:
-    """Resample daily language data using pandas resampling for smooth visualization."""
+    """
+    Resample daily language data using the same algorithm as burndown.py.
+    This ensures consistent time bucketing across all chart types.
+    """
     pandas = import_pandas()
 
-    # Handle resample aliases (matching burndown.py)
+    # Handle resample aliases (matching burndown.py exactly)
     aliases = {"year": "YE", "month": "ME", "day": "D", "week": "W"}
     resample_freq = aliases.get(resample, resample)
 
-    # Create daily date range for the original data
-    daily_dates = pandas.date_range(
-        start=start_datetime,
-        periods=daily_matrix.shape[0],
-        freq='D'
-    )
+    # Calculate finish date (similar to burndown's finish variable)
+    finish = end_datetime
+    start = start_datetime
 
-    # Create DataFrame with one column per language
-    df = pandas.DataFrame(daily_matrix, index=daily_dates)
+    # Create resampling periods (matching burndown.py logic at lines 343-349)
+    periods = 0
+    date_granularity_sampling = [start]
+    while date_granularity_sampling[-1] < finish:
+        periods += 1
+        date_granularity_sampling = pandas.date_range(
+            start, periods=periods, freq=resample_freq
+        )
 
-    # Resample: take mean within each period for smoother transitions
-    # This averages the values within each resampling bucket (e.g., each month)
-    resampled_df = df.resample(resample_freq).mean()
+    # Check if resampling is too coarse (matching burndown.py lines 350-362)
+    if len(date_granularity_sampling) > 0 and date_granularity_sampling[0] > finish:
+        if resample_freq in ("A", "YE"):
+            print("too loose resampling - by year, trying by month")
+            return _resample_language_data(daily_matrix, start_datetime, end_datetime, "month")
+        elif resample_freq in ("M", "ME"):
+            print("too loose resampling - by month, trying by week")
+            return _resample_language_data(daily_matrix, start_datetime, end_datetime, "W")
+        else:
+            raise ValueError(f"Too loose resampling: {resample}. Try finer.")
 
-    # Forward fill to handle any missing values
-    resampled_df = resampled_df.ffill()
-    resampled_df = resampled_df.fillna(0)  # Fill any remaining NaN with 0
+    # Aggregate values within each resampling period
+    # This properly handles cumulative data and prevents cut-off issues
+    resampled_matrix = numpy.zeros((len(date_granularity_sampling), daily_matrix.shape[1]), dtype=numpy.float32)
 
-    # Return the resampled matrix and date index
-    return resampled_df.values, resampled_df.index
+    for i, gdt in enumerate(date_granularity_sampling):
+        # Calculate day indices for this period (matching burndown.py lines 374-375)
+        istart = (date_granularity_sampling[i - 1] - start).days if i > 0 else 0
+        ifinish = min((gdt - start).days, daily_matrix.shape[0])
+
+        # Take the last value in the period for cumulative data
+        # Use min() to ensure we don't go out of bounds
+        if ifinish > istart and istart < daily_matrix.shape[0]:
+            # Take last value in this period (ifinish - 1 is the last valid index)
+            resampled_matrix[i] = daily_matrix[ifinish - 1]
+        elif istart < daily_matrix.shape[0]:
+            # Period extends beyond data, use the last available value
+            resampled_matrix[i] = daily_matrix[-1]
+
+    return resampled_matrix, date_granularity_sampling
 
 
 def _plot_languages_chart(
@@ -147,11 +174,11 @@ def _plot_languages_chart(
     end_datetime = datetime.fromtimestamp(end_date)
 
     # Apply resampling if specified (matching burndown.py)
-    resample = getattr(args, 'resample', 'month')
+    resample = args.resample
     if resample not in ("no", "raw"):
         # Resample for smoother visualization
         matrix, date_range = _resample_language_data(
-            matrix, start_datetime, resample
+            matrix, start_datetime, end_datetime, resample
         )
     else:
         # No resampling - use daily data
@@ -180,9 +207,10 @@ def _plot_languages_chart(
         pyplot.gcf(), pyplot.gca(), legend, args.background, args.font_size, args.size
     )
 
-    # Set date formatting - apply similar logic to burndown
+    # Set date formatting - matching burndown.py exactly (lines 66-75)
     locator = pyplot.gca().xaxis.get_major_locator()
-    if resample not in ("no", "raw") and "M" not in resample:
+    # set the optimal xticks locator
+    if "M" not in resample:
         pyplot.gca().xaxis.set_major_locator(matplotlib.dates.YearLocator())
     locs = pyplot.gca().get_xticks().tolist()
     if len(locs) >= 16:

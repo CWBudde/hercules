@@ -396,8 +396,8 @@ def main() -> None:
         except (KeyError, AttributeError):
             print(temporal_warning)
             return
-        activities, people, mode = data
-        show_temporal_activity(args, reader.get_name(), activities, people, mode)
+        activities, people = data
+        show_temporal_activity(args, reader.get_name(), activities, people)
 
     def devs():
         try:

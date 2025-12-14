@@ -217,8 +217,8 @@ class YamlReader(Reader):
             for dev_id, activity in temporal_data["activities"].items()
         }
         people = temporal_data["people"]
-        mode = temporal_data["mode"]
-        return activities, people, mode
+        # New format doesn't have mode, returns both commits and lines
+        return activities, people
 
     def _parse_burndown_matrix(self, matrix):
         return numpy.array(
@@ -380,16 +380,20 @@ class ProtobufReader(Reader):
         temporal = self.contents["TemporalActivity"]
         activities = {
             dev_id: {
-                "weekdays": list(activity.weekdays),
-                "hours": list(activity.hours),
-                "months": list(activity.months),
-                "weeks": list(activity.weeks),
+                "weekdays_commits": list(activity.weekdays.commits),
+                "weekdays_lines": list(activity.weekdays.lines),
+                "hours_commits": list(activity.hours.commits),
+                "hours_lines": list(activity.hours.lines),
+                "months_commits": list(activity.months.commits),
+                "months_lines": list(activity.months.lines),
+                "weeks_commits": list(activity.weeks.commits),
+                "weeks_lines": list(activity.weeks.lines),
             }
             for dev_id, activity in temporal.activities.items()
         }
         people = list(temporal.dev_index)
-        mode = temporal.mode
-        return activities, people, mode
+        # New format doesn't have mode, returns both commits and lines
+        return activities, people
 
     def _parse_burndown_matrix(self, matrix):
         dense = numpy.zeros(

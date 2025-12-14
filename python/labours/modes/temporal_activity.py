@@ -18,20 +18,18 @@ def show_temporal_activity(
     name: str,
     activities: Dict[int, Dict[str, List[int]]],
     people: List[str],
-    mode: str,
 ) -> None:
     """Generate stacked bar charts for temporal activity dimensions.
 
     Args:
         args: Command line arguments
         name: Repository name
-        activities: Map of developer index to activity data
+        activities: Map of developer index to activity data (contains both commits and lines)
         people: List of developer names
-        mode: "commits" or "lines"
     """
     matplotlib, pyplot = import_pyplot(args.backend, args.style)
 
-    # Generate charts for each dimension
+    # Generate charts for each dimension and mode (commits and lines)
     dimensions = [
         ("weekdays", WEEKDAY_LABELS, "Weekday"),
         ("hours", [f"{h:02d}:00" for h in range(24)], "Hour of Day"),
@@ -39,30 +37,33 @@ def show_temporal_activity(
         ("weeks", [f"W{w+1}" for w in range(53)], "ISO Week"),
     ]
 
-    for dim_name, labels, title_suffix in dimensions:
-        _create_temporal_chart(
+    modes = ["commits", "lines"]
+
+    for mode in modes:
+        for dim_name, labels, title_suffix in dimensions:
+            _create_temporal_chart(
+                args,
+                name,
+                activities,
+                people,
+                mode,
+                dim_name,
+                labels,
+                title_suffix,
+                matplotlib,
+                pyplot
+            )
+
+        # Generate weekday × hour heatmap for this mode
+        _create_weekday_hour_heatmap(
             args,
             name,
             activities,
             people,
             mode,
-            dim_name,
-            labels,
-            title_suffix,
             matplotlib,
             pyplot
         )
-
-    # Generate weekday × hour heatmap
-    _create_weekday_hour_heatmap(
-        args,
-        name,
-        activities,
-        people,
-        mode,
-        matplotlib,
-        pyplot
-    )
 
 
 def _create_temporal_chart(
@@ -79,7 +80,10 @@ def _create_temporal_chart(
 ) -> None:
     """Create a single stacked bar chart for one temporal dimension."""
 
-    # Extract data for this dimension
+    # Extract data for this dimension and mode
+    # The key format is now: "weekdays_commits", "weekdays_lines", etc.
+    data_key = f"{dimension}_{mode}"
+
     devs = sorted(activities.keys())
     num_devs = len(devs)
     num_bins = len(labels)
@@ -94,8 +98,8 @@ def _create_temporal_chart(
 
     for i, dev in enumerate(devs):
         activity = activities[dev]
-        if dimension in activity:
-            values = activity[dimension]
+        if data_key in activity:
+            values = activity[data_key]
             # Handle the case where values might be shorter than expected
             for j, val in enumerate(values):
                 if j < num_bins:
@@ -174,20 +178,20 @@ def _create_temporal_chart(
     # Apply plot style
     apply_plot_style(fig, ax, legend, args.background, args.font_size, args.size or "16,10")
 
-    # Determine output path
+    # Determine output path (include mode in filename)
     if args.mode == "all" and args.output:
-        output = get_plot_path(args.output, f"temporal_{dimension}")
+        output = get_plot_path(args.output, f"temporal_{dimension}_{mode}")
     else:
         if args.output:
-            # Insert dimension before extension
+            # Insert dimension and mode before extension
             import os
             base, ext = os.path.splitext(args.output)
-            output = f"{base}_{dimension}{ext}"
+            output = f"{base}_{dimension}_{mode}{ext}"
         else:
             output = None
 
     # Save plot
-    deploy_plot(f"{name} - {title_suffix}", output, args.background)
+    deploy_plot(f"{name} - {title_suffix} ({mode})", output, args.background)
     pyplot.close(fig)
 
 
@@ -205,11 +209,15 @@ def _create_weekday_hour_heatmap(
     # Build 2D matrix: rows = weekdays (7), cols = hours (24)
     heatmap_data = np.zeros((7, 24), dtype=np.int32)
 
+    # Data keys based on mode
+    weekdays_key = f"weekdays_{mode}"
+    hours_key = f"hours_{mode}"
+
     # Aggregate activity across all developers
     for dev, activity in activities.items():
-        if "weekdays" in activity and "hours" in activity:
-            weekday_data = activity["weekdays"]
-            hour_data = activity["hours"]
+        if weekdays_key in activity and hours_key in activity:
+            weekday_data = activity[weekdays_key]
+            hour_data = activity[hours_key]
 
             # For heatmap, we need to reconstruct weekday×hour from the marginal distributions
             # Since we only have marginals, we'll approximate by distributing proportionally
@@ -280,17 +288,17 @@ def _create_weekday_hour_heatmap(
     # Apply plot style
     apply_plot_style(fig, ax, None, args.background, args.font_size, args.size or "16,10")
 
-    # Determine output path
+    # Determine output path (include mode in filename)
     if args.mode == "all" and args.output:
-        output = get_plot_path(args.output, "temporal_heatmap")
+        output = get_plot_path(args.output, f"temporal_heatmap_{mode}")
     else:
         if args.output:
             import os
             base, ext = os.path.splitext(args.output)
-            output = f"{base}_heatmap{ext}"
+            output = f"{base}_heatmap_{mode}{ext}"
         else:
             output = None
 
     # Save plot
-    deploy_plot(f"{name} - Weekday×Hour Heatmap", output, args.background)
+    deploy_plot(f"{name} - Weekday×Hour Heatmap ({mode})", output, args.background)
     pyplot.close(fig)

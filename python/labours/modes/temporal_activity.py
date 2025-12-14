@@ -150,12 +150,25 @@ def _create_temporal_chart(
             ax.tick_params(axis='x', rotation=45)
 
     # Add legend if there are multiple developers
-    if num_devs > 1 and num_devs <= 10:
-        legend = ax.legend(loc='upper right', fontsize=args.font_size * 0.8)
-    elif num_devs > 10:
-        # Too many developers, skip legend
-        legend = None
+    # Get thresholds from args (with defaults if not present for backward compatibility)
+    legend_threshold = getattr(args, 'temporal_legend_threshold', 32)
+    single_col_threshold = getattr(args, 'temporal_legend_single_col_threshold', 10)
+
+    if num_devs > 1:
+        if legend_threshold == 0 or num_devs < legend_threshold:
+            # Determine number of columns based on developer count
+            if num_devs <= single_col_threshold:
+                ncol = 1
+            elif num_devs < single_col_threshold * 2:
+                ncol = 2
+            else:
+                ncol = 3
+            legend = ax.legend(loc='upper right', fontsize=args.font_size * 0.8, ncol=ncol)
+        else:
+            # Too many developers, skip legend
+            legend = None
     else:
+        # Single developer, no legend needed
         legend = None
 
     # Apply plot style

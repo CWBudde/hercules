@@ -147,6 +147,20 @@ def parse_args() -> Namespace:
         "appearance in the history. The default is sorting by the number of "
         "commits.",
     )
+    parser.add_argument(
+        "--temporal-legend-threshold",
+        default=32,
+        type=int,
+        help="Maximum number of developers to show legend for in temporal activity charts. "
+        "Default is 32. Use 0 for no limit.",
+    )
+    parser.add_argument(
+        "--temporal-legend-single-col-threshold",
+        default=10,
+        type=int,
+        help="Maximum number of developers for single-column legend in temporal activity. "
+        "Default is 10. Above this, multi-column layout is used.",
+    )
     args = parser.parse_args()
     return args
 

@@ -41,6 +41,40 @@ def show_languages(
         _plot_languages_chart(args, devlangs, people, days, start_date, end_date)
 
 
+def _resample_language_data(
+    daily_matrix: numpy.ndarray,
+    start_datetime: datetime,
+    resample: str,
+) -> tuple:
+    """Resample daily language data using pandas resampling for smooth visualization."""
+    pandas = import_pandas()
+
+    # Handle resample aliases (matching burndown.py)
+    aliases = {"year": "YE", "month": "ME", "day": "D", "week": "W"}
+    resample_freq = aliases.get(resample, resample)
+
+    # Create daily date range for the original data
+    daily_dates = pandas.date_range(
+        start=start_datetime,
+        periods=daily_matrix.shape[0],
+        freq='D'
+    )
+
+    # Create DataFrame with one column per language
+    df = pandas.DataFrame(daily_matrix, index=daily_dates)
+
+    # Resample: take mean within each period for smoother transitions
+    # This averages the values within each resampling bucket (e.g., each month)
+    resampled_df = df.resample(resample_freq).mean()
+
+    # Forward fill to handle any missing values
+    resampled_df = resampled_df.fillna(method='ffill')
+    resampled_df = resampled_df.fillna(0)  # Fill any remaining NaN with 0
+
+    # Return the resampled matrix and date index
+    return resampled_df.values, resampled_df.index
+
+
 def _plot_languages_chart(
     args: Namespace,
     devlangs: List,
@@ -80,7 +114,7 @@ def _plot_languages_chart(
         print("No temporal data to plot")
         return
 
-    # Build a matrix: rows = languages, columns = days
+    # Build a matrix: rows = days, columns = languages
     language_list = sorted(top_languages)
     if len(sorted_langs) > top_n:
         language_list.append("Other")
@@ -108,13 +142,24 @@ def _plot_languages_chart(
         for lang_idx, lang in enumerate(language_list):
             matrix[day_idx, lang_idx] = max(0, cumulative_langs.get(lang, 0))
 
-    # Create date range
+    # Create initial date range (daily)
     start_datetime = datetime.fromtimestamp(start_date)
-    date_range = pandas.date_range(
-        start=start_datetime,
-        periods=len(sorted_days),
-        freq='D'
-    )
+    end_datetime = datetime.fromtimestamp(end_date)
+
+    # Apply resampling if specified (matching burndown.py)
+    resample = getattr(args, 'resample', 'month')
+    if resample not in ("no", "raw"):
+        # Resample for smoother visualization
+        matrix, date_range = _resample_language_data(
+            matrix, start_datetime, resample
+        )
+    else:
+        # No resampling - use daily data
+        date_range = pandas.date_range(
+            start=start_datetime,
+            periods=len(sorted_days),
+            freq='D'
+        )
 
     # Create the plot
     matplotlib, pyplot = import_pyplot(args.backend, args.style)
@@ -123,7 +168,6 @@ def _plot_languages_chart(
     matrix_transposed = matrix.T
 
     # Create stacked area chart
-    pyplot.figure(figsize=(14, 8))
     pyplot.stackplot(date_range, matrix_transposed, labels=language_list, alpha=0.8)
 
     # Customize the plot
@@ -136,7 +180,17 @@ def _plot_languages_chart(
         pyplot.gcf(), pyplot.gca(), legend, args.background, args.font_size, args.size
     )
 
-    # Set date formatting
+    # Set date formatting - apply similar logic to burndown
+    locator = pyplot.gca().xaxis.get_major_locator()
+    if resample not in ("no", "raw") and "M" not in resample:
+        pyplot.gca().xaxis.set_major_locator(matplotlib.dates.YearLocator())
+    locs = pyplot.gca().get_xticks().tolist()
+    if len(locs) >= 16:
+        pyplot.gca().xaxis.set_major_locator(matplotlib.dates.YearLocator())
+        locs = pyplot.gca().get_xticks().tolist()
+        if len(locs) >= 16:
+            pyplot.gca().xaxis.set_major_locator(locator)
+
     pyplot.gcf().autofmt_xdate()
 
     # Set title

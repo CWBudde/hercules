@@ -4,12 +4,18 @@ from pathlib import Path
 
 def import_pyplot(backend, style):
     import matplotlib
+    from cycler import cycler
 
     if backend:
         matplotlib.use(backend)
     from matplotlib import pyplot
 
     pyplot.style.use(style)
+
+    # Override the color cycle with tab20 colormap for better color variety (20 distinct colors)
+    tab20_colors = pyplot.cm.tab20.colors
+    pyplot.rcParams['axes.prop_cycle'] = cycler(color=tab20_colors)
+
     print("matplotlib: backend is", matplotlib.get_backend())
     return matplotlib, pyplot
 

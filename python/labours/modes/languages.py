@@ -68,7 +68,7 @@ def _resample_language_data(
     resampled_df = df.resample(resample_freq).mean()
 
     # Forward fill to handle any missing values
-    resampled_df = resampled_df.fillna(method='ffill')
+    resampled_df = resampled_df.ffill()
     resampled_df = resampled_df.fillna(0)  # Fill any remaining NaN with 0
 
     # Return the resampled matrix and date index

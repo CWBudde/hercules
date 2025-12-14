@@ -101,7 +101,11 @@ def plot_burndown(
     )
     output = args.output
     if output:
-        if args.mode == "project" and target == "project":
+        # For single-chart modes (project, repositories-combined), use output path directly
+        # For burndown-repos-combined, we want a single file, not a folder
+        if args.mode == "burndown-project" and target == "project":
+            output = args.output
+        elif args.mode == "burndown-repos-combined" and target == "repositories-combined":
             output = args.output
         else:
             if target == "project":
@@ -116,8 +120,13 @@ def plot_many_burndown(args: Namespace, target: str, header, parts):
     stdout = io.StringIO()
     for name, matrix in tqdm.tqdm(parts):
         with contextlib.redirect_stdout(stdout):
+            # For repositories, use just the basename instead of full path
+            display_name = name
+            if target == "repository" and "/" in name:
+                import os
+                display_name = os.path.basename(name.rstrip("/"))
             plot_burndown(
-                args, target, *load_burndown(header, name, matrix, args.resample)
+                args, target, *load_burndown(header, display_name, matrix, args.resample)
             )
     sys.stdout.write(stdout.getvalue())
 
@@ -394,3 +403,58 @@ def load_burndown(
             freq="%dD" % sampling,
         )
     return name, matrix, date_range_sampling, labels, granularity, sampling, resample
+
+
+def load_repositories_burndown(
+    header: Tuple[int, int, int, int, float],
+    repositories: List[Tuple[str, numpy.ndarray]],
+    resample: str,
+) -> Tuple[str, numpy.ndarray, 'DatetimeIndex', List[str], int, int, str]:
+    """
+    Combine multiple repository burndown matrices into a single matrix where each
+    repository becomes a "band" (similar to how time bands work in regular burndown).
+
+    Args:
+        header: Tuple of (start, last, sampling, granularity, tick)
+        repositories: List of (repo_name, matrix) tuples
+        resample: Resampling frequency string
+
+    Returns:
+        Tuple suitable for plot_burndown: (name, matrix, date_range, labels, granularity, sampling, resample)
+    """
+    pandas = import_pandas()
+
+    if not repositories:
+        raise ValueError("No repository data available")
+
+    start, last, sampling, granularity, tick = header
+    repo_names = [name for name, _ in repositories]
+
+    # All repositories should have the same time dimension
+    num_samples = repositories[0][1].shape[1]
+
+    # Create combined matrix: [num_repos, num_samples]
+    # Each row is a repository's total contribution over time
+    combined = numpy.zeros((len(repositories), num_samples), dtype=numpy.int64)
+
+    for i, (name, matrix) in enumerate(repositories):
+        # Sum across all bands (rows) to get total lines for this repo at each time point
+        combined[i, :] = matrix.sum(axis=0)
+
+    # Create time range for x-axis
+    start_dt = floor_datetime(datetime.fromtimestamp(start), tick)
+    date_range_sampling = pandas.date_range(
+        start_dt + timedelta(seconds=sampling * tick),
+        periods=num_samples,
+        freq="%dD" % sampling,
+    )
+
+    return (
+        "combined repositories",
+        combined,
+        date_range_sampling,
+        repo_names,
+        granularity,
+        sampling,
+        resample,
+    )

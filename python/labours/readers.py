@@ -392,8 +392,26 @@ class ProtobufReader(Reader):
             for dev_id, activity in temporal.activities.items()
         }
         people = list(temporal.dev_index)
-        # New format doesn't have mode, returns both commits and lines
-        return activities, people
+
+        # Parse per-tick data for date range filtering
+        ticks = {}
+        if hasattr(temporal, 'ticks') and temporal.ticks:
+            for tick_id, tick_devs in temporal.ticks.items():
+                ticks[tick_id] = {
+                    dev_id: {
+                        "commits": tick.commits,
+                        "lines": tick.lines,
+                        "weekday": tick.weekday,
+                        "hour": tick.hour,
+                        "month": tick.month,
+                        "week": tick.week,
+                    }
+                    for dev_id, tick in tick_devs.devs.items()
+                }
+
+        tick_size = temporal.tick_size if hasattr(temporal, 'tick_size') else 0
+
+        return activities, people, ticks, tick_size
 
     def _parse_burndown_matrix(self, matrix):
         dense = numpy.zeros(

@@ -1,16 +1,21 @@
 """Temporal activity visualization for hercules analysis."""
 
 from argparse import Namespace
-from typing import Dict, List
+from datetime import datetime
+from typing import Dict, List, Optional
 
 import numpy as np
 
 from labours.plotting import apply_plot_style, deploy_plot, get_plot_path, import_pyplot
+from labours.utils import parse_date
 
 
 WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
                 "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+# Nanoseconds per day (Go's time.Duration is in nanoseconds)
+NANOSECONDS_PER_DAY = 24 * 60 * 60 * 1_000_000_000
 
 
 def show_temporal_activity(
@@ -18,6 +23,10 @@ def show_temporal_activity(
     name: str,
     activities: Dict[int, Dict[str, List[int]]],
     people: List[str],
+    ticks: Optional[Dict[int, Dict[int, Dict]]] = None,
+    tick_size: int = 0,
+    header_start_date: int = 0,
+    header_end_date: int = 0,
 ) -> None:
     """Generate stacked bar charts for temporal activity dimensions.
 
@@ -26,8 +35,30 @@ def show_temporal_activity(
         name: Repository name
         activities: Map of developer index to activity data (contains both commits and lines)
         people: List of developer names
+        ticks: Per-tick data for date range filtering (tick_id -> dev_id -> activity)
+        tick_size: Duration of each tick in nanoseconds
+        header_start_date: Unix timestamp of first commit in repo
+        header_end_date: Unix timestamp of last commit in repo
     """
     matplotlib, pyplot = import_pyplot(args.backend, args.style)
+
+    # Determine if we need to filter by date range
+    use_filtered_data = False
+    if ticks and tick_size > 0 and header_start_date > 0:
+        # Parse user-provided date filters
+        repo_start = datetime.fromtimestamp(header_start_date)
+        repo_end = datetime.fromtimestamp(header_end_date)
+
+        filter_start = parse_date(args.start_date, repo_start)
+        filter_end = parse_date(args.end_date, repo_end)
+
+        # Check if filtering is needed (user dates differ from repo dates)
+        if filter_start > repo_start or filter_end < repo_end:
+            use_filtered_data = True
+            activities = _filter_activities_by_date_range(
+                ticks, tick_size, header_start_date, people, filter_start, filter_end
+            )
+            print(f"Filtering temporal activity to {filter_start.date()} - {filter_end.date()}")
 
     # Generate charts for each dimension and mode (commits and lines)
     dimensions = [
@@ -64,6 +95,77 @@ def show_temporal_activity(
             matplotlib,
             pyplot
         )
+
+
+def _filter_activities_by_date_range(
+    ticks: Dict[int, Dict[int, Dict]],
+    tick_size: int,
+    header_start_date: int,
+    people: List[str],
+    filter_start: datetime,
+    filter_end: datetime,
+) -> Dict[int, Dict[str, List[int]]]:
+    """Filter temporal activity data by date range using per-tick data.
+
+    Args:
+        ticks: Per-tick data (tick_id -> dev_id -> activity dict)
+        tick_size: Duration of each tick in nanoseconds
+        header_start_date: Unix timestamp of first commit
+        people: List of developer names
+        filter_start: Start date for filtering
+        filter_end: End date for filtering
+
+    Returns:
+        Filtered activities dict in same format as input activities
+    """
+    # Convert tick_size to days (tick_size is in nanoseconds)
+    tick_days = tick_size / NANOSECONDS_PER_DAY if tick_size > 0 else 1
+
+    # Calculate tick range to include
+    repo_start = datetime.fromtimestamp(header_start_date)
+    start_tick = int((filter_start - repo_start).days / tick_days)
+    end_tick = int((filter_end - repo_start).days / tick_days)
+
+    # Aggregate filtered tick data
+    filtered_activities: Dict[int, Dict[str, List[int]]] = {}
+
+    for tick_id, tick_devs in ticks.items():
+        # Skip ticks outside date range
+        if tick_id < start_tick or tick_id > end_tick:
+            continue
+
+        for dev_id, tick_data in tick_devs.items():
+            if dev_id not in filtered_activities:
+                filtered_activities[dev_id] = {
+                    "weekdays_commits": [0] * 7,
+                    "weekdays_lines": [0] * 7,
+                    "hours_commits": [0] * 24,
+                    "hours_lines": [0] * 24,
+                    "months_commits": [0] * 12,
+                    "months_lines": [0] * 12,
+                    "weeks_commits": [0] * 53,
+                    "weeks_lines": [0] * 53,
+                }
+
+            activity = filtered_activities[dev_id]
+            commits = tick_data.get("commits", 0)
+            lines = tick_data.get("lines", 0)
+            weekday = tick_data.get("weekday", 0)
+            hour = tick_data.get("hour", 0)
+            month = tick_data.get("month", 0)
+            week = tick_data.get("week", 0)
+
+            # Accumulate counts
+            activity["weekdays_commits"][weekday] += commits
+            activity["weekdays_lines"][weekday] += lines
+            activity["hours_commits"][hour] += commits
+            activity["hours_lines"][hour] += lines
+            activity["months_commits"][month] += commits
+            activity["months_lines"][month] += lines
+            activity["weeks_commits"][week] += commits
+            activity["weeks_lines"][week] += lines
+
+    return filtered_activities
 
 
 def _create_temporal_chart(

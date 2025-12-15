@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"time"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -27,14 +28,21 @@ import (
 //
 // The analysis tracks both commit counts and line changes simultaneously,
 // providing richer insights into developer activity patterns.
+//
+// Data is stored both as aggregated totals (for backward compatibility) and
+// as per-tick data (allowing date range filtering in post-processing).
 type TemporalActivityAnalysis struct {
 	core.NoopMerger
 	core.OneShotMergeProcessor
 
-	// activities maps developer index to their temporal activity
+	// activities maps developer index to their temporal activity (aggregated totals)
 	activities map[int]*DeveloperTemporalActivity
+	// ticks maps tick index to developer index to temporal activity for that tick
+	ticks map[int]map[int]*TemporalActivityTick
 	// reversedPeopleDict references IdentityDetector.ReversedPeopleDict
 	reversedPeopleDict []string
+	// tickSize references TicksSinceStart.TickSize
+	tickSize time.Duration
 
 	l core.Logger
 }
@@ -53,12 +61,26 @@ type DeveloperTemporalActivity struct {
 	Weeks    TemporalDimension // ISO week 1-53 stored at index 0-52 (week N stored at index N-1, length 53)
 }
 
+// TemporalActivityTick stores temporal activity for a single tick (day).
+type TemporalActivityTick struct {
+	Commits int // Number of commits in this tick
+	Lines   int // Number of lines changed in this tick
+	Weekday int // Day of week (0-6, Sunday=0)
+	Hour    int // Hour of day (0-23) - hour of first/primary commit
+	Month   int // Month (0-11, January=0)
+	Week    int // ISO week (0-52, week 1-53 stored as 0-52)
+}
+
 // TemporalActivityResult is returned by TemporalActivityAnalysis.Finalize().
 type TemporalActivityResult struct {
-	// Activities maps developer index to temporal activity
+	// Activities maps developer index to temporal activity (aggregated totals)
 	Activities map[int]*DeveloperTemporalActivity
+	// Ticks maps tick index to developer index to temporal activity for that tick
+	Ticks map[int]map[int]*TemporalActivityTick
 	// reversedPeopleDict references IdentityDetector.ReversedPeopleDict
 	reversedPeopleDict []string
+	// tickSize is the duration of each tick
+	tickSize time.Duration
 }
 
 
@@ -77,6 +99,7 @@ func (ta *TemporalActivityAnalysis) Requires() []string {
 	return []string{
 		identity.DependencyAuthor,
 		items.DependencyLineStats,
+		items.DependencyTick,
 	}
 }
 
@@ -92,6 +115,9 @@ func (ta *TemporalActivityAnalysis) Configure(facts map[string]interface{}) erro
 	}
 	if val, exists := facts[identity.FactIdentityDetectorReversedPeopleDict].([]string); exists {
 		ta.reversedPeopleDict = val
+	}
+	if val, exists := facts[items.FactTickSize].(time.Duration); exists {
+		ta.tickSize = val
 	}
 	return nil
 }
@@ -124,6 +150,7 @@ func newTemporalDimension(size int) TemporalDimension {
 func (ta *TemporalActivityAnalysis) Initialize(repository *git.Repository) error {
 	ta.l = core.NewLogger()
 	ta.activities = map[int]*DeveloperTemporalActivity{}
+	ta.ticks = map[int]map[int]*TemporalActivityTick{}
 	ta.OneShotMergeProcessor.Initialize()
 	return nil
 }
@@ -136,6 +163,7 @@ func (ta *TemporalActivityAnalysis) Consume(deps map[string]interface{}) (map[st
 
 	commit := deps[core.DependencyCommit].(*object.Commit)
 	author := deps[identity.DependencyAuthor].(int)
+	tick := deps[items.DependencyTick].(int)
 
 	// Extract temporal components from commit timestamp
 	commitTime := commit.Author.When
@@ -144,7 +172,15 @@ func (ta *TemporalActivityAnalysis) Consume(deps map[string]interface{}) (map[st
 	month := int(commitTime.Month()) - 1 // January=0, ..., December=11
 	_, week := commitTime.ISOWeek()      // ISO week number 1-53
 
-	// Get or create activity tracker for this developer
+	// Normalize week to 0-based index (week 1-53 -> index 0-52)
+	weekIndex := week - 1
+	if weekIndex < 0 {
+		weekIndex = 0
+	} else if weekIndex > 52 {
+		weekIndex = 52
+	}
+
+	// Get or create activity tracker for this developer (aggregated totals)
 	activity := ta.activities[author]
 	if activity == nil {
 		activity = &DeveloperTemporalActivity{
@@ -163,7 +199,7 @@ func (ta *TemporalActivityAnalysis) Consume(deps map[string]interface{}) (map[st
 		totalLines += stats.Added + stats.Removed
 	}
 
-	// Update temporal counters with both commits and lines
+	// Update aggregated temporal counters with both commits and lines
 	activity.Weekdays.Commits[weekday] += 1
 	activity.Weekdays.Lines[weekday] += totalLines
 
@@ -173,12 +209,28 @@ func (ta *TemporalActivityAnalysis) Consume(deps map[string]interface{}) (map[st
 	activity.Months.Commits[month] += 1
 	activity.Months.Lines[month] += totalLines
 
-	// Handle ISO week: week can be 1-53, store at index week-1 (0-based indexing)
-	// Week 1 → index 0, Week 2 → index 1, ..., Week 53 → index 52
-	if week >= 1 && week <= 53 {
-		activity.Weeks.Commits[week-1] += 1
-		activity.Weeks.Lines[week-1] += totalLines
+	activity.Weeks.Commits[weekIndex] += 1
+	activity.Weeks.Lines[weekIndex] += totalLines
+
+	// Store per-tick data for date range filtering
+	tickDevs := ta.ticks[tick]
+	if tickDevs == nil {
+		tickDevs = map[int]*TemporalActivityTick{}
+		ta.ticks[tick] = tickDevs
 	}
+
+	tickActivity := tickDevs[author]
+	if tickActivity == nil {
+		tickActivity = &TemporalActivityTick{
+			Weekday: weekday,
+			Hour:    hour,
+			Month:   month,
+			Week:    weekIndex,
+		}
+		tickDevs[author] = tickActivity
+	}
+	tickActivity.Commits += 1
+	tickActivity.Lines += totalLines
 
 	return nil, nil
 }
@@ -187,7 +239,9 @@ func (ta *TemporalActivityAnalysis) Consume(deps map[string]interface{}) (map[st
 func (ta *TemporalActivityAnalysis) Finalize() interface{} {
 	return TemporalActivityResult{
 		Activities:         ta.activities,
+		Ticks:              ta.ticks,
 		reversedPeopleDict: ta.reversedPeopleDict,
+		tickSize:           ta.tickSize,
 	}
 }
 
@@ -274,9 +328,32 @@ func (ta *TemporalActivityAnalysis) Deserialize(pbmessage []byte) (interface{}, 
 		activities[dev] = activity
 	}
 
+	// Deserialize ticks
+	ticks := map[int]map[int]*TemporalActivityTick{}
+	for tickID, pbTickDevs := range message.Ticks {
+		tickDevs := map[int]*TemporalActivityTick{}
+		for devID, pbTick := range pbTickDevs.Devs {
+			dev := int(devID)
+			if devID == -1 {
+				dev = core.AuthorMissing
+			}
+			tickDevs[dev] = &TemporalActivityTick{
+				Commits: int(pbTick.Commits),
+				Lines:   int(pbTick.Lines),
+				Weekday: int(pbTick.Weekday),
+				Hour:    int(pbTick.Hour),
+				Month:   int(pbTick.Month),
+				Week:    int(pbTick.Week),
+			}
+		}
+		ticks[int(tickID)] = tickDevs
+	}
+
 	result := TemporalActivityResult{
 		Activities:         activities,
+		Ticks:              ticks,
 		reversedPeopleDict: message.DevIndex,
+		tickSize:           time.Duration(message.TickSize),
 	}
 	return result, nil
 }
@@ -446,6 +523,30 @@ func (ta *TemporalActivityAnalysis) serializeBinary(result *TemporalActivityResu
 		message.Activities[devID] = pbActivity
 	}
 
+	// Serialize ticks
+	message.Ticks = make(map[int32]*pb.TemporalActivityTickDevs)
+	message.TickSize = int64(result.tickSize)
+	for tick, tickDevs := range result.Ticks {
+		pbTickDevs := &pb.TemporalActivityTickDevs{
+			Devs: make(map[int32]*pb.TemporalActivityTick),
+		}
+		for dev, tickActivity := range tickDevs {
+			devID := int32(dev)
+			if dev == core.AuthorMissing {
+				devID = -1
+			}
+			pbTickDevs.Devs[devID] = &pb.TemporalActivityTick{
+				Commits: int32(tickActivity.Commits),
+				Lines:   int32(tickActivity.Lines),
+				Weekday: int32(tickActivity.Weekday),
+				Hour:    int32(tickActivity.Hour),
+				Month:   int32(tickActivity.Month),
+				Week:    int32(tickActivity.Week),
+			}
+		}
+		message.Ticks[int32(tick)] = pbTickDevs
+	}
+
 	serialized, err := proto.Marshal(&message)
 	if err != nil {
 		return err
@@ -467,7 +568,9 @@ func (ta *TemporalActivityAnalysis) MergeResults(
 
 	merged := TemporalActivityResult{
 		Activities:         make(map[int]*DeveloperTemporalActivity),
+		Ticks:              make(map[int]map[int]*TemporalActivityTick),
 		reversedPeopleDict: tar1.reversedPeopleDict, // Use first dict, should be same
+		tickSize:           tar1.tickSize,
 	}
 
 	// Merge activities from both results
@@ -528,6 +631,41 @@ func (ta *TemporalActivityAnalysis) MergeResults(
 		}
 
 		merged.Activities[dev] = mergedActivity
+	}
+
+	// Merge ticks from both results
+	for tick, tickDevs := range tar1.Ticks {
+		merged.Ticks[tick] = make(map[int]*TemporalActivityTick)
+		for dev, tickActivity := range tickDevs {
+			merged.Ticks[tick][dev] = &TemporalActivityTick{
+				Commits: tickActivity.Commits,
+				Lines:   tickActivity.Lines,
+				Weekday: tickActivity.Weekday,
+				Hour:    tickActivity.Hour,
+				Month:   tickActivity.Month,
+				Week:    tickActivity.Week,
+			}
+		}
+	}
+	for tick, tickDevs := range tar2.Ticks {
+		if merged.Ticks[tick] == nil {
+			merged.Ticks[tick] = make(map[int]*TemporalActivityTick)
+		}
+		for dev, tickActivity := range tickDevs {
+			if existing, exists := merged.Ticks[tick][dev]; exists {
+				existing.Commits += tickActivity.Commits
+				existing.Lines += tickActivity.Lines
+			} else {
+				merged.Ticks[tick][dev] = &TemporalActivityTick{
+					Commits: tickActivity.Commits,
+					Lines:   tickActivity.Lines,
+					Weekday: tickActivity.Weekday,
+					Hour:    tickActivity.Hour,
+					Month:   tickActivity.Month,
+					Week:    tickActivity.Week,
+				}
+			}
+		}
 	}
 
 	return merged

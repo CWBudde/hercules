@@ -396,8 +396,19 @@ def main() -> None:
         except (KeyError, AttributeError):
             print(temporal_warning)
             return
-        activities, people = data
-        show_temporal_activity(args, reader.get_name(), activities, people)
+
+        # Handle both old format (2 values) and new format (4 values)
+        if len(data) == 2:
+            activities, people = data
+            ticks, tick_size = {}, 0
+        else:
+            activities, people, ticks, tick_size = data
+
+        start_date, end_date = reader.get_header()
+        show_temporal_activity(
+            args, reader.get_name(), activities, people,
+            ticks, tick_size, start_date, end_date
+        )
 
     def devs():
         try:

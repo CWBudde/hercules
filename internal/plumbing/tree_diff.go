@@ -294,7 +294,7 @@ func (treediff *TreeDiff) checkLanguage(name string, blobHash plumbing.Hash) (bo
 	if n < len(buffer) {
 		buffer = buffer[:n]
 	}
-	lang := strings.ToLower(enry.GetLanguage(path.Base(name), buffer))
+	lang := strings.ToLower(normalizeLanguage(name, enry.GetLanguage(path.Base(name), buffer)))
 	return treediff.Languages[lang], nil
 }
 

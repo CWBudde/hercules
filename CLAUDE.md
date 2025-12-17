@@ -102,10 +102,12 @@ The analysis produces visualizations for both commits and lines changed across m
 - **Weekday × Hour Matrix**: 2D heatmap showing activity intensity across all combinations of weekdays and hours, revealing detailed temporal patterns and identifying when developers are most productive
 
 Each dimension generates two visualizations:
+
 - One for commit frequency
 - One for lines changed (additions + deletions)
 
 This dual-mode output allows you to compare activity patterns between commit count and code volume, revealing insights like:
+
 - Are small frequent commits or large infrequent commits more common?
 - Do certain time periods see more refactoring vs. new features?
 - How does commit size vary by time of day or day of week?

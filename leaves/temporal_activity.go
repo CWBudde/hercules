@@ -83,7 +83,6 @@ type TemporalActivityResult struct {
 	tickSize time.Duration
 }
 
-
 // Name of this PipelineItem. Uniquely identifies the type, used for mapping keys, etc.
 func (ta *TemporalActivityAnalysis) Name() string {
 	return "TemporalActivity"

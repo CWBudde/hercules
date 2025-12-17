@@ -92,6 +92,20 @@ func (lsc *LinesStatsCalculator) Consume(deps map[string]interface{}) (map[strin
 		if err != nil {
 			return nil, err
 		}
+		// Skip binary files completely; they do not contribute line counts.
+		switch action {
+		case merkletrie.Modify:
+			if _, err := cache[change.From.TreeEntry.Hash].CountLines(); err == ErrorBinary {
+				continue
+			} else if err != nil {
+				return nil, err
+			}
+			if _, err := cache[change.To.TreeEntry.Hash].CountLines(); err == ErrorBinary {
+				continue
+			} else if err != nil {
+				return nil, err
+			}
+		}
 		switch action {
 		case merkletrie.Insert:
 			blob := cache[change.To.TreeEntry.Hash]

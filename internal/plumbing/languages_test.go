@@ -110,3 +110,15 @@ func TestLanguagesDetectionConsume(t *testing.T) {
 	assert.True(t, exists)
 	assert.Equal(t, "", lang)
 }
+
+func TestLanguagesDetectionTypeScriptAliases(t *testing.T) {
+	ls := &LanguagesDetection{}
+	lang := ls.detectLanguage("component.tsx", &CachedBlob{Data: []byte("import React from 'react';\n")})
+	assert.Equal(t, "TypeScript", lang)
+}
+
+func TestLanguagesDetectionGherkinLowercase(t *testing.T) {
+	ls := &LanguagesDetection{}
+	lang := ls.detectLanguage("login.feature", &CachedBlob{Data: []byte("Feature: Login\n  Scenario: User logs in\n")})
+	assert.Equal(t, "gherkin", lang)
+}

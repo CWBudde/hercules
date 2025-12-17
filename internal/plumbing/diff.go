@@ -153,6 +153,19 @@ func (diff *FileDiff) Consume(deps map[string]interface{}) (map[string]interface
 		case merkletrie.Modify:
 			blobFrom := cache[change.From.TreeEntry.Hash]
 			blobTo := cache[change.To.TreeEntry.Hash]
+
+			// Skip binary files; diffmatchpatch treats them as text and would produce noisy line counts.
+			if _, err := blobFrom.CountLines(); err == ErrorBinary {
+				continue
+			} else if err != nil {
+				return nil, err
+			}
+			if _, err := blobTo.CountLines(); err == ErrorBinary {
+				continue
+			} else if err != nil {
+				return nil, err
+			}
+
 			// we are not validating UTF-8 here because for example
 			// git/git 4f7770c87ce3c302e1639a7737a6d2531fe4b160 fetch-pack.c is invalid UTF-8
 			strFrom, strTo := string(blobFrom.Data), string(blobTo.Data)

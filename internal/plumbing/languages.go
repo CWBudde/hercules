@@ -2,6 +2,7 @@ package plumbing
 
 import (
 	"path"
+	"strings"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -109,7 +110,24 @@ func (langs *LanguagesDetection) detectLanguage(name string, blob *CachedBlob) s
 		return ""
 	}
 	lang := enry.GetLanguage(path.Base(name), blob.Data)
-	return lang
+	return normalizeLanguage(name, lang)
+}
+
+func normalizeLanguage(name string, lang string) string {
+	filename := strings.ToLower(name)
+	switch {
+	case strings.HasSuffix(filename, ".ts"), strings.HasSuffix(filename, ".tsx"):
+		return "TypeScript"
+	}
+
+	switch strings.ToLower(lang) {
+	case "tsx":
+		return "TypeScript"
+	case "gherkin":
+		return "gherkin"
+	default:
+		return lang
+	}
 }
 
 func init() {

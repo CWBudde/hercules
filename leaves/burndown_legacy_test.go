@@ -13,6 +13,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/gogo/protobuf/proto"
+	"github.com/meko-christian/hercules/internal/burndown"
 	"github.com/meko-christian/hercules/internal/core"
 	"github.com/meko-christian/hercules/internal/linehistory"
 	"github.com/meko-christian/hercules/internal/pb"
@@ -1096,8 +1097,8 @@ func TestLegacyBurndownMergeGlobalHistory(t *testing.T) {
 	people1 := [...]string{"one", "two"}
 	res1 := BurndownResult{
 		GlobalHistory:      [][]int64{},
-		FileHistories:      map[string][][]int64{},
-		PeopleHistories:    [][][]int64{},
+		FileHistories:      map[string]burndown.DenseHistory{},
+		PeopleHistories:    []burndown.DenseHistory{},
 		PeopleMatrix:       [][]int64{},
 		reversedPeopleDict: people1[:],
 		sampling:           15,
@@ -1145,7 +1146,7 @@ func TestLegacyBurndownMergeGlobalHistory(t *testing.T) {
 	people2 := [...]string{"two", "three"}
 	res2 := BurndownResult{
 		GlobalHistory:      nil,
-		FileHistories:      map[string][][]int64{},
+		FileHistories:      map[string]burndown.DenseHistory{},
 		PeopleHistories:    nil,
 		PeopleMatrix:       nil,
 		tickSize:           24 * time.Hour,
@@ -1261,7 +1262,7 @@ func TestLegacyBurndownMergeGlobalHistory_withDifferentTickSizes(t *testing.T) {
 func TestLegacyBurndownMergeNils(t *testing.T) {
 	res1 := BurndownResult{
 		GlobalHistory:      nil,
-		FileHistories:      map[string][][]int64{},
+		FileHistories:      map[string]burndown.DenseHistory{},
 		PeopleHistories:    nil,
 		PeopleMatrix:       nil,
 		tickSize:           24 * time.Hour,
@@ -1561,8 +1562,8 @@ func TestLegacyBurndownMergePeopleHistories(t *testing.T) {
 	}
 	res1 := BurndownResult{
 		GlobalHistory:      h1,
-		FileHistories:      map[string][][]int64{},
-		PeopleHistories:    [][][]int64{h1, h1},
+		FileHistories:      map[string]burndown.DenseHistory{},
+		PeopleHistories:    []burndown.DenseHistory{h1, h1},
 		PeopleMatrix:       nil,
 		tickSize:           24 * time.Hour,
 		reversedPeopleDict: []string{"one", "three"},
@@ -1578,7 +1579,7 @@ func TestLegacyBurndownMergePeopleHistories(t *testing.T) {
 	res2 := BurndownResult{
 		GlobalHistory:      h2,
 		FileHistories:      nil,
-		PeopleHistories:    [][][]int64{h2, h2},
+		PeopleHistories:    []burndown.DenseHistory{h2, h2},
 		PeopleMatrix:       nil,
 		tickSize:           24 * time.Hour,
 		reversedPeopleDict: []string{"one", "two"},

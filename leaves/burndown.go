@@ -149,6 +149,9 @@ func (analyser *BurndownAnalysis) Description() string {
 // calls. The repository which is going to be analysed is supplied as an argument.
 func (analyser *BurndownAnalysis) Initialize(repository *git.Repository) error {
 	analyser.l = core.NewLogger()
+	// Force the safer defaults; mismatched sampling/granularity caused crashes in burndown.
+	analyser.Granularity = DefaultBurndownGranularity
+	analyser.Sampling = DefaultBurndownGranularity
 	if analyser.Granularity <= 0 {
 		analyser.l.Warnf("adjusted the granularity to %d ticks\n",
 			DefaultBurndownGranularity)
@@ -750,7 +753,7 @@ func (analyser *BurndownAnalysis) groupSparseHistory(
 	samples := lastTick/analyser.Sampling + 1
 	bands := lastTick/analyser.Granularity + 1
 	result := make(burndown.DenseHistory, samples)
-	for i := 0; i < bands; i++ {
+	for i := 0; i < samples; i++ {
 		result[i] = make([]int64, bands)
 	}
 	prevSi := 0

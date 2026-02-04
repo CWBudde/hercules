@@ -17,17 +17,14 @@ func TestTemporalActivityMeta(t *testing.T) {
 	ta := TemporalActivityAnalysis{}
 	assert.Equal(t, ta.Name(), "TemporalActivity")
 	assert.Len(t, ta.Provides(), 0)
-	required := [...]string{identity.DependencyAuthor, items.DependencyLineStats}
+	required := [...]string{identity.DependencyAuthor, items.DependencyLineStats, items.DependencyTick}
 	for _, name := range required {
 		assert.Contains(t, ta.Requires(), name)
 	}
 	opts := ta.ListConfigurationOptions()
-	assert.Len(t, opts, 1)
-	assert.Equal(t, opts[0].Name, ConfigTemporalActivityMode)
-	assert.Equal(t, opts[0].Flag, "temporal-mode")
-	assert.Equal(t, opts[0].Default, "commits")
+	assert.Len(t, opts, 0)
 	assert.Equal(t, ta.Flag(), "temporal-activity")
-	assert.Equal(t, ta.Description(), "Calculates commit or line change activity by weekday, hour, month, and ISO week.")
+	assert.Equal(t, ta.Description(), "Calculates commit and line change activity by weekday, hour, month, and ISO week.")
 }
 
 func TestTemporalActivityRegistration(t *testing.T) {
@@ -49,86 +46,35 @@ func TestTemporalActivityConfigure(t *testing.T) {
 	ta := TemporalActivityAnalysis{}
 	facts := map[string]interface{}{}
 	facts[identity.FactIdentityDetectorReversedPeopleDict] = []string{"Alice", "Bob"}
-	facts[ConfigTemporalActivityMode] = "lines"
+	facts[items.FactTickSize] = 24 * time.Hour
 	logger := core.NewLogger()
 	facts[core.ConfigLogger] = logger
 
 	assert.Nil(t, ta.Configure(facts))
 	assert.Equal(t, ta.reversedPeopleDict, []string{"Alice", "Bob"})
-	assert.Equal(t, ta.Mode, "lines")
+	assert.Equal(t, 24*time.Hour, ta.tickSize)
 	assert.Equal(t, logger, ta.l)
-}
-
-func TestTemporalActivityConfigureInvalidMode(t *testing.T) {
-	ta := TemporalActivityAnalysis{}
-	facts := map[string]interface{}{}
-	facts[ConfigTemporalActivityMode] = "invalid"
-
-	err := ta.Configure(facts)
-	assert.NotNil(t, err)
-	assert.Contains(t, err.Error(), "invalid temporal mode")
 }
 
 func TestTemporalActivityInitialize(t *testing.T) {
 	ta := TemporalActivityAnalysis{}
 	assert.Nil(t, ta.Initialize(test.Repository))
 	assert.NotNil(t, ta.activities)
-	assert.Equal(t, "commits", ta.Mode)
+	assert.NotNil(t, ta.ticks)
 }
 
-func TestTemporalActivityConsumeCommitsMode(t *testing.T) {
+func TestTemporalActivityConsume(t *testing.T) {
 	ta := TemporalActivityAnalysis{}
-	ta.Mode = "commits"
 	assert.Nil(t, ta.Initialize(test.Repository))
 
 	deps := map[string]interface{}{}
 	deps[core.DependencyIsMerge] = false
 	deps[identity.DependencyAuthor] = 0
+	deps[items.DependencyTick] = 0
 
 	// Create a commit with known timestamp
 	// Tuesday, 2023-01-03 14:30:00 UTC
 	commitTime := time.Date(2023, time.January, 3, 14, 30, 0, 0, time.UTC)
-	commit := &object.Commit{
-		Author: object.Signature{
-			When: commitTime,
-		},
-	}
-	deps[core.DependencyCommit] = commit
-
-	// Add empty line stats for commits mode
-	deps[items.DependencyLineStats] = map[object.ChangeEntry]items.LineStats{}
-
-	result, err := ta.Consume(deps)
-	assert.Nil(t, err)
-	assert.Nil(t, result)
-
-	// Verify activity was recorded
-	assert.Len(t, ta.activities, 1)
-	activity := ta.activities[0]
-	assert.NotNil(t, activity)
-
-	// Tuesday is weekday 2
-	assert.Equal(t, 1, activity.Weekdays[2])
-	// Hour 14 (2pm)
-	assert.Equal(t, 1, activity.Hours[14])
-	// January is month 0
-	assert.Equal(t, 1, activity.Months[0])
-	// Week 1 of 2023 (stored at index 0 because of week-1 indexing)
-	_, week := commitTime.ISOWeek()
-	assert.Equal(t, 1, activity.Weeks[week-1])
-}
-
-func TestTemporalActivityConsumeLinesMode(t *testing.T) {
-	ta := TemporalActivityAnalysis{}
-	ta.Mode = "lines"
-	assert.Nil(t, ta.Initialize(test.Repository))
-
-	deps := map[string]interface{}{}
-	deps[core.DependencyIsMerge] = false
-	deps[identity.DependencyAuthor] = 1
-
-	// Friday, 2023-06-16 09:00:00 UTC
-	commitTime := time.Date(2023, time.June, 16, 9, 0, 0, 0, time.UTC)
 	commit := &object.Commit{
 		Author: object.Signature{
 			When: commitTime,
@@ -146,46 +92,64 @@ func TestTemporalActivityConsumeLinesMode(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Nil(t, result)
 
-	// Verify activity was recorded with line counts
+	// Verify activity was recorded
 	assert.Len(t, ta.activities, 1)
-	activity := ta.activities[1]
+	activity := ta.activities[0]
 	assert.NotNil(t, activity)
 
-	// Friday is weekday 5
-	assert.Equal(t, 70, activity.Weekdays[5])
-	// Hour 9 (9am)
-	assert.Equal(t, 70, activity.Hours[9])
-	// June is month 5
-	assert.Equal(t, 70, activity.Months[5])
-	// Week 24 of 2023 (stored at index week-1)
+	// Tuesday is weekday 2
+	assert.Equal(t, 1, activity.Weekdays.Commits[2])
+	assert.Equal(t, 70, activity.Weekdays.Lines[2])
+	// Hour 14 (2pm)
+	assert.Equal(t, 1, activity.Hours.Commits[14])
+	assert.Equal(t, 70, activity.Hours.Lines[14])
+	// January is month 0
+	assert.Equal(t, 1, activity.Months.Commits[0])
+	assert.Equal(t, 70, activity.Months.Lines[0])
+	// Week 1 of 2023 (stored at index 0 because of week-1 indexing)
 	_, week := commitTime.ISOWeek()
-	assert.Equal(t, 70, activity.Weeks[week-1])
+	assert.Equal(t, 1, activity.Weeks.Commits[week-1])
+	assert.Equal(t, 70, activity.Weeks.Lines[week-1])
+
+	// Verify tick data was recorded
+	assert.Len(t, ta.ticks, 1)
+	assert.NotNil(t, ta.ticks[0])
+	assert.NotNil(t, ta.ticks[0][0])
+	tickData := ta.ticks[0][0]
+	assert.Equal(t, 1, tickData.Commits)
+	assert.Equal(t, 70, tickData.Lines)
+	assert.Equal(t, 2, tickData.Weekday)
+	assert.Equal(t, 14, tickData.Hour)
 }
 
 func TestTemporalActivityMultipleCommits(t *testing.T) {
 	ta := TemporalActivityAnalysis{}
-	ta.Mode = "commits"
 	assert.Nil(t, ta.Initialize(test.Repository))
 
 	// Simulate multiple commits from same developer on different days/times
 	commits := []struct {
 		author int
 		time   time.Time
+		tick   int
+		lines  int
 	}{
-		{0, time.Date(2023, time.January, 2, 10, 0, 0, 0, time.UTC)}, // Monday 10am
-		{0, time.Date(2023, time.January, 2, 15, 0, 0, 0, time.UTC)}, // Monday 3pm
-		{0, time.Date(2023, time.January, 3, 10, 0, 0, 0, time.UTC)}, // Tuesday 10am
-		{1, time.Date(2023, time.January, 4, 14, 0, 0, 0, time.UTC)}, // Wednesday 2pm (different dev)
+		{0, time.Date(2023, time.January, 2, 10, 0, 0, 0, time.UTC), 0, 10}, // Monday 10am
+		{0, time.Date(2023, time.January, 2, 15, 0, 0, 0, time.UTC), 0, 20}, // Monday 3pm (same tick)
+		{0, time.Date(2023, time.January, 3, 10, 0, 0, 0, time.UTC), 1, 30}, // Tuesday 10am
+		{1, time.Date(2023, time.January, 4, 14, 0, 0, 0, time.UTC), 2, 40}, // Wednesday 2pm (different dev)
 	}
 
 	for _, c := range commits {
 		deps := map[string]interface{}{}
 		deps[core.DependencyIsMerge] = false
 		deps[identity.DependencyAuthor] = c.author
+		deps[items.DependencyTick] = c.tick
 		deps[core.DependencyCommit] = &object.Commit{
 			Author: object.Signature{When: c.time},
 		}
-		deps[items.DependencyLineStats] = map[object.ChangeEntry]items.LineStats{}
+		deps[items.DependencyLineStats] = map[object.ChangeEntry]items.LineStats{
+			{}: {Added: c.lines, Removed: 0},
+		}
 
 		result, err := ta.Consume(deps)
 		assert.Nil(t, err)
@@ -195,20 +159,24 @@ func TestTemporalActivityMultipleCommits(t *testing.T) {
 	// Verify dev 0 has 3 commits
 	assert.Len(t, ta.activities, 2)
 	dev0 := ta.activities[0]
-	assert.Equal(t, 2, dev0.Weekdays[1]) // Monday
-	assert.Equal(t, 1, dev0.Weekdays[2]) // Tuesday
-	assert.Equal(t, 2, dev0.Hours[10])   // 10am
-	assert.Equal(t, 1, dev0.Hours[15])   // 3pm
+	assert.Equal(t, 2, dev0.Weekdays.Commits[1]) // Monday
+	assert.Equal(t, 1, dev0.Weekdays.Commits[2]) // Tuesday
+	assert.Equal(t, 2, dev0.Hours.Commits[10])   // 10am
+	assert.Equal(t, 1, dev0.Hours.Commits[15])   // 3pm
+
+	// Verify line counts
+	assert.Equal(t, 30, dev0.Weekdays.Lines[1]) // Monday: 10 + 20
+	assert.Equal(t, 30, dev0.Weekdays.Lines[2]) // Tuesday: 30
 
 	// Verify dev 1 has 1 commit
 	dev1 := ta.activities[1]
-	assert.Equal(t, 1, dev1.Weekdays[3]) // Wednesday
-	assert.Equal(t, 1, dev1.Hours[14])   // 2pm
+	assert.Equal(t, 1, dev1.Weekdays.Commits[3]) // Wednesday
+	assert.Equal(t, 1, dev1.Hours.Commits[14])   // 2pm
+	assert.Equal(t, 40, dev1.Weekdays.Lines[3])  // Wednesday: 40
 }
 
 func TestTemporalActivityWeekdayBoundaries(t *testing.T) {
 	ta := TemporalActivityAnalysis{}
-	ta.Mode = "commits"
 	assert.Nil(t, ta.Initialize(test.Repository))
 
 	// Test all 7 weekdays
@@ -222,10 +190,11 @@ func TestTemporalActivityWeekdayBoundaries(t *testing.T) {
 		time.Date(2023, time.January, 7, 12, 0, 0, 0, time.UTC), // Saturday
 	}
 
-	for _, commitTime := range weekdays {
+	for i, commitTime := range weekdays {
 		deps := map[string]interface{}{}
 		deps[core.DependencyIsMerge] = false
 		deps[identity.DependencyAuthor] = 0
+		deps[items.DependencyTick] = i
 		deps[core.DependencyCommit] = &object.Commit{
 			Author: object.Signature{When: commitTime},
 		}
@@ -239,22 +208,22 @@ func TestTemporalActivityWeekdayBoundaries(t *testing.T) {
 	// Verify all weekdays have 1 commit
 	activity := ta.activities[0]
 	for i := 0; i < 7; i++ {
-		assert.Equal(t, 1, activity.Weekdays[i], "Weekday %d should have 1 commit", i)
+		assert.Equal(t, 1, activity.Weekdays.Commits[i], "Weekday %d should have 1 commit", i)
 	}
 }
 
 func TestTemporalActivityHourBoundaries(t *testing.T) {
 	ta := TemporalActivityAnalysis{}
-	ta.Mode = "commits"
 	assert.Nil(t, ta.Initialize(test.Repository))
 
 	// Test boundary hours: 0 (midnight) and 23 (11pm)
 	hours := []int{0, 1, 12, 22, 23}
-	for _, hour := range hours {
+	for i, hour := range hours {
 		commitTime := time.Date(2023, time.January, 1, hour, 0, 0, 0, time.UTC)
 		deps := map[string]interface{}{}
 		deps[core.DependencyIsMerge] = false
 		deps[identity.DependencyAuthor] = 0
+		deps[items.DependencyTick] = i
 		deps[core.DependencyCommit] = &object.Commit{
 			Author: object.Signature{When: commitTime},
 		}
@@ -267,24 +236,25 @@ func TestTemporalActivityHourBoundaries(t *testing.T) {
 
 	// Verify hours
 	activity := ta.activities[0]
-	assert.Equal(t, 1, activity.Hours[0])
-	assert.Equal(t, 1, activity.Hours[1])
-	assert.Equal(t, 1, activity.Hours[12])
-	assert.Equal(t, 1, activity.Hours[22])
-	assert.Equal(t, 1, activity.Hours[23])
+	assert.Equal(t, 1, activity.Hours.Commits[0])
+	assert.Equal(t, 1, activity.Hours.Commits[1])
+	assert.Equal(t, 1, activity.Hours.Commits[12])
+	assert.Equal(t, 1, activity.Hours.Commits[22])
+	assert.Equal(t, 1, activity.Hours.Commits[23])
 }
 
 func TestTemporalActivityMonthBoundaries(t *testing.T) {
 	ta := TemporalActivityAnalysis{}
-	ta.Mode = "commits"
 	assert.Nil(t, ta.Initialize(test.Repository))
 
 	// Test all 12 months
+	tick := 0
 	for month := time.January; month <= time.December; month++ {
 		commitTime := time.Date(2023, month, 15, 12, 0, 0, 0, time.UTC)
 		deps := map[string]interface{}{}
 		deps[core.DependencyIsMerge] = false
 		deps[identity.DependencyAuthor] = 0
+		deps[items.DependencyTick] = tick
 		deps[core.DependencyCommit] = &object.Commit{
 			Author: object.Signature{When: commitTime},
 		}
@@ -293,18 +263,18 @@ func TestTemporalActivityMonthBoundaries(t *testing.T) {
 		result, err := ta.Consume(deps)
 		assert.Nil(t, err)
 		assert.Nil(t, result)
+		tick++
 	}
 
 	// Verify all months have 1 commit
 	activity := ta.activities[0]
 	for i := 0; i < 12; i++ {
-		assert.Equal(t, 1, activity.Months[i], "Month %d should have 1 commit", i)
+		assert.Equal(t, 1, activity.Months.Commits[i], "Month %d should have 1 commit", i)
 	}
 }
 
 func TestTemporalActivityISOWeekEdgeCases(t *testing.T) {
 	ta := TemporalActivityAnalysis{}
-	ta.Mode = "commits"
 	assert.Nil(t, ta.Initialize(test.Repository))
 
 	// Test week 1 and week 53 (leap week year)
@@ -314,10 +284,11 @@ func TestTemporalActivityISOWeekEdgeCases(t *testing.T) {
 		time.Date(2020, time.December, 28, 12, 0, 0, 0, time.UTC), // Week 53
 	}
 
-	for _, commitTime := range testCases {
+	for i, commitTime := range testCases {
 		deps := map[string]interface{}{}
 		deps[core.DependencyIsMerge] = false
 		deps[identity.DependencyAuthor] = 0
+		deps[items.DependencyTick] = i
 		deps[core.DependencyCommit] = &object.Commit{
 			Author: object.Signature{When: commitTime},
 		}
@@ -330,30 +301,33 @@ func TestTemporalActivityISOWeekEdgeCases(t *testing.T) {
 
 	// Verify weeks (week N stored at index N-1)
 	activity := ta.activities[0]
-	assert.Equal(t, 1, activity.Weeks[1]) // Week 2 stored at index 1
+	assert.Equal(t, 1, activity.Weeks.Commits[1]) // Week 2 stored at index 1
 	// Verify week 53 is stored correctly
 	_, week53 := testCases[1].ISOWeek()
 	assert.Equal(t, 53, week53)
-	assert.Equal(t, 1, activity.Weeks[52]) // Week 53 stored at index 52
+	assert.Equal(t, 1, activity.Weeks.Commits[52]) // Week 53 stored at index 52
 }
 
 func TestTemporalActivityFinalize(t *testing.T) {
 	ta := TemporalActivityAnalysis{}
-	ta.Mode = "commits"
 	ta.reversedPeopleDict = []string{"Alice", "Bob"}
+	ta.tickSize = 24 * time.Hour
 	assert.Nil(t, ta.Initialize(test.Repository))
 
 	// Add some activity
 	ta.activities[0] = &DeveloperTemporalActivity{
-		Weekdays: [7]int{1, 2, 3, 4, 5, 6, 7},
-		Hours:    [24]int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24},
+		Weekdays: newTemporalDimension(7),
+		Hours:    newTemporalDimension(24),
+		Months:   newTemporalDimension(12),
+		Weeks:    newTemporalDimension(53),
 	}
+	ta.activities[0].Weekdays.Commits = []int{1, 2, 3, 4, 5, 6, 7}
+	ta.activities[0].Weekdays.Lines = []int{10, 20, 30, 40, 50, 60, 70}
 
 	result := ta.Finalize()
 	assert.NotNil(t, result)
 
 	tr := result.(TemporalActivityResult)
-	assert.Equal(t, "commits", tr.Mode)
 	assert.Equal(t, []string{"Alice", "Bob"}, tr.reversedPeopleDict)
 	assert.Len(t, tr.Activities, 1)
 	assert.Equal(t, ta.activities[0], tr.Activities[0])
@@ -364,16 +338,29 @@ func TestTemporalActivitySerializeText(t *testing.T) {
 	ta.reversedPeopleDict = []string{"Alice", "Bob"}
 
 	result := TemporalActivityResult{
-		Mode:               "commits",
 		reversedPeopleDict: []string{"Alice", "Bob"},
+		tickSize:           24 * time.Hour,
 		Activities: map[int]*DeveloperTemporalActivity{
 			0: {
-				Weekdays: [7]int{1, 2, 0, 0, 0, 0, 0},
-				Hours:    [24]int{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-				Months:   [12]int{5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-				Weeks:    [53]int{0, 1, 0}, // Rest are zeros
+				Weekdays: TemporalDimension{
+					Commits: []int{1, 2, 0, 0, 0, 0, 0},
+					Lines:   []int{10, 20, 0, 0, 0, 0, 0},
+				},
+				Hours: TemporalDimension{
+					Commits: make([]int, 24),
+					Lines:   make([]int, 24),
+				},
+				Months: TemporalDimension{
+					Commits: make([]int, 12),
+					Lines:   make([]int, 12),
+				},
+				Weeks: TemporalDimension{
+					Commits: make([]int, 53),
+					Lines:   make([]int, 53),
+				},
 			},
 		},
+		Ticks: map[int]map[int]*TemporalActivityTick{},
 	}
 
 	var buf bytes.Buffer
@@ -382,13 +369,16 @@ func TestTemporalActivitySerializeText(t *testing.T) {
 
 	output := buf.String()
 	assert.Contains(t, output, "temporal_activity:")
-	assert.Contains(t, output, "mode: commits")
 	assert.Contains(t, output, "activities:")
 	assert.Contains(t, output, "0:")
-	assert.Contains(t, output, "weekdays:")
-	assert.Contains(t, output, "hours:")
-	assert.Contains(t, output, "months:")
-	assert.Contains(t, output, "weeks:")
+	assert.Contains(t, output, "weekdays_commits:")
+	assert.Contains(t, output, "weekdays_lines:")
+	assert.Contains(t, output, "hours_commits:")
+	assert.Contains(t, output, "hours_lines:")
+	assert.Contains(t, output, "months_commits:")
+	assert.Contains(t, output, "months_lines:")
+	assert.Contains(t, output, "weeks_commits:")
+	assert.Contains(t, output, "weeks_lines:")
 	assert.Contains(t, output, "people:")
 	assert.Contains(t, output, "Alice")
 	assert.Contains(t, output, "Bob")
@@ -398,14 +388,29 @@ func TestTemporalActivitySerializeBinary(t *testing.T) {
 	ta := TemporalActivityAnalysis{}
 	ta.reversedPeopleDict = []string{"Alice"}
 	result := TemporalActivityResult{
-		Mode:               "commits",
 		reversedPeopleDict: []string{"Alice"},
+		tickSize:           24 * time.Hour,
 		Activities: map[int]*DeveloperTemporalActivity{
 			0: {
-				Weekdays: [7]int{1, 2, 0, 0, 0, 0, 0},
-				Hours:    [24]int{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+				Weekdays: TemporalDimension{
+					Commits: []int{1, 2, 0, 0, 0, 0, 0},
+					Lines:   []int{10, 20, 0, 0, 0, 0, 0},
+				},
+				Hours: TemporalDimension{
+					Commits: make([]int, 24),
+					Lines:   make([]int, 24),
+				},
+				Months: TemporalDimension{
+					Commits: make([]int, 12),
+					Lines:   make([]int, 12),
+				},
+				Weeks: TemporalDimension{
+					Commits: make([]int, 53),
+					Lines:   make([]int, 53),
+				},
 			},
 		},
+		Ticks: map[int]map[int]*TemporalActivityTick{},
 	}
 
 	var buf bytes.Buffer
@@ -415,9 +420,11 @@ func TestTemporalActivitySerializeBinary(t *testing.T) {
 }
 
 func TestTemporalActivityFork(t *testing.T) {
-	ta1 := TemporalActivityAnalysis{Mode: "commits"}
+	ta1 := TemporalActivityAnalysis{}
 	ta1.activities = map[int]*DeveloperTemporalActivity{
-		0: {},
+		0: {
+			Weekdays: newTemporalDimension(7),
+		},
 	}
 
 	forks := ta1.Fork(2)
@@ -426,37 +433,59 @@ func TestTemporalActivityFork(t *testing.T) {
 	// Verify they are the same instance (ForkSamePipelineItem)
 	ta2 := forks[0].(*TemporalActivityAnalysis)
 	ta3 := forks[1].(*TemporalActivityAnalysis)
-	assert.Equal(t, ta1.Mode, ta2.Mode)
-	assert.Equal(t, ta1.Mode, ta3.Mode)
+	assert.Equal(t, ta1.activities, ta2.activities)
+	assert.Equal(t, ta1.activities, ta3.activities)
 }
 
 func TestTemporalActivityDeserialize(t *testing.T) {
 	ta := TemporalActivityAnalysis{}
 	ta.reversedPeopleDict = []string{"Alice", "Bob"}
-	ta.Mode = "commits"
 
 	// Create test data with multiple developers
 	result := TemporalActivityResult{
-		Mode:               "commits",
 		reversedPeopleDict: []string{"Alice", "Bob"},
+		tickSize:           24 * time.Hour,
 		Activities: map[int]*DeveloperTemporalActivity{
 			0: {
-				Weekdays: [7]int{1, 2, 3, 4, 5, 6, 7},
-				Hours:    [24]int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24},
-				Months:   [12]int{10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120},
-				Weeks:    [53]int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53},
+				Weekdays: TemporalDimension{
+					Commits: []int{1, 2, 3, 4, 5, 6, 7},
+					Lines:   []int{10, 20, 30, 40, 50, 60, 70},
+				},
+				Hours: TemporalDimension{
+					Commits: []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24},
+					Lines:   []int{10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160, 170, 180, 190, 200, 210, 220, 230, 240},
+				},
+				Months: TemporalDimension{
+					Commits: []int{10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120},
+					Lines:   []int{100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100, 1200},
+				},
+				Weeks: TemporalDimension{
+					Commits: make([]int, 53),
+					Lines:   make([]int, 53),
+				},
 			},
 			1: {
-				Weekdays: [7]int{10, 20, 30, 40, 50, 60, 70},
-				Hours:    [24]int{100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123},
-				Months:   [12]int{5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60},
-				Weeks:    [53]int{2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 38, 40, 42, 44, 46, 48, 50, 52, 54, 56, 58, 60, 62, 64, 66, 68, 70, 72, 74, 76, 78, 80, 82, 84, 86, 88, 90, 92, 94, 96, 98, 100, 102, 104, 106},
+				Weekdays: TemporalDimension{
+					Commits: []int{10, 20, 30, 40, 50, 60, 70},
+					Lines:   []int{100, 200, 300, 400, 500, 600, 700},
+				},
+				Hours: TemporalDimension{
+					Commits: make([]int, 24),
+					Lines:   make([]int, 24),
+				},
+				Months: TemporalDimension{
+					Commits: make([]int, 12),
+					Lines:   make([]int, 12),
+				},
+				Weeks: TemporalDimension{
+					Commits: make([]int, 53),
+					Lines:   make([]int, 53),
+				},
 			},
-			core.AuthorMissing: {
-				Weekdays: [7]int{0, 1, 0, 1, 0, 1, 0},
-				Hours:    [24]int{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-				Months:   [12]int{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
-				Weeks:    [53]int{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5},
+		},
+		Ticks: map[int]map[int]*TemporalActivityTick{
+			0: {
+				0: {Commits: 1, Lines: 10, Weekday: 1, Hour: 10, Month: 0, Week: 0},
 			},
 		},
 	}
@@ -473,18 +502,23 @@ func TestTemporalActivityDeserialize(t *testing.T) {
 	result2 := rawResult2.(TemporalActivityResult)
 
 	// Compare results
-	assert.Equal(t, result.Mode, result2.Mode)
 	assert.Equal(t, result.reversedPeopleDict, result2.reversedPeopleDict)
-	assert.Len(t, result2.Activities, 3)
+	assert.Len(t, result2.Activities, 2)
 
-	// Verify developer 0
-	assert.Equal(t, result.Activities[0], result2.Activities[0])
+	// Verify developer 0 weekdays
+	assert.Equal(t, result.Activities[0].Weekdays.Commits, result2.Activities[0].Weekdays.Commits)
+	assert.Equal(t, result.Activities[0].Weekdays.Lines, result2.Activities[0].Weekdays.Lines)
 
-	// Verify developer 1
-	assert.Equal(t, result.Activities[1], result2.Activities[1])
+	// Verify developer 1 weekdays
+	assert.Equal(t, result.Activities[1].Weekdays.Commits, result2.Activities[1].Weekdays.Commits)
+	assert.Equal(t, result.Activities[1].Weekdays.Lines, result2.Activities[1].Weekdays.Lines)
 
-	// Verify AuthorMissing
-	assert.Equal(t, result.Activities[core.AuthorMissing], result2.Activities[core.AuthorMissing])
+	// Verify ticks
+	assert.Len(t, result2.Ticks, 1)
+	assert.NotNil(t, result2.Ticks[0])
+	assert.NotNil(t, result2.Ticks[0][0])
+	assert.Equal(t, 1, result2.Ticks[0][0].Commits)
+	assert.Equal(t, 10, result2.Ticks[0][0].Lines)
 }
 
 func TestTemporalActivityMergeResults(t *testing.T) {
@@ -492,42 +526,92 @@ func TestTemporalActivityMergeResults(t *testing.T) {
 
 	// Create first result
 	r1 := TemporalActivityResult{
-		Mode:               "commits",
 		reversedPeopleDict: []string{"Alice", "Bob"},
+		tickSize:           24 * time.Hour,
 		Activities: map[int]*DeveloperTemporalActivity{
 			0: {
-				Weekdays: [7]int{1, 2, 3, 4, 5, 6, 7},
-				Hours:    [24]int{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-				Months:   [12]int{5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-				Weeks:    [53]int{0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+				Weekdays: TemporalDimension{
+					Commits: []int{1, 2, 3, 4, 5, 6, 7},
+					Lines:   []int{10, 20, 30, 40, 50, 60, 70},
+				},
+				Hours: TemporalDimension{
+					Commits: make([]int, 24),
+					Lines:   make([]int, 24),
+				},
+				Months: TemporalDimension{
+					Commits: make([]int, 12),
+					Lines:   make([]int, 12),
+				},
+				Weeks: TemporalDimension{
+					Commits: make([]int, 53),
+					Lines:   make([]int, 53),
+				},
 			},
 			1: {
-				Weekdays: [7]int{10, 20, 30, 40, 50, 60, 70},
-				Hours:    [24]int{100, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-				Months:   [12]int{0, 0, 0, 0, 0, 10, 0, 0, 0, 0, 0, 0},
-				Weeks:    [53]int{0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+				Weekdays: TemporalDimension{
+					Commits: []int{10, 20, 30, 40, 50, 60, 70},
+					Lines:   []int{100, 200, 300, 400, 500, 600, 700},
+				},
+				Hours: TemporalDimension{
+					Commits: make([]int, 24),
+					Lines:   make([]int, 24),
+				},
+				Months: TemporalDimension{
+					Commits: make([]int, 12),
+					Lines:   make([]int, 12),
+				},
+				Weeks: TemporalDimension{
+					Commits: make([]int, 53),
+					Lines:   make([]int, 53),
+				},
 			},
 		},
+		Ticks: map[int]map[int]*TemporalActivityTick{},
 	}
 
 	// Create second result
 	r2 := TemporalActivityResult{
-		Mode:               "commits",
 		reversedPeopleDict: []string{"Alice", "Bob"},
+		tickSize:           24 * time.Hour,
 		Activities: map[int]*DeveloperTemporalActivity{
 			0: {
-				Weekdays: [7]int{2, 3, 4, 5, 6, 7, 8},
-				Hours:    [24]int{0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-				Months:   [12]int{3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-				Weeks:    [53]int{0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+				Weekdays: TemporalDimension{
+					Commits: []int{2, 3, 4, 5, 6, 7, 8},
+					Lines:   []int{20, 30, 40, 50, 60, 70, 80},
+				},
+				Hours: TemporalDimension{
+					Commits: make([]int, 24),
+					Lines:   make([]int, 24),
+				},
+				Months: TemporalDimension{
+					Commits: make([]int, 12),
+					Lines:   make([]int, 12),
+				},
+				Weeks: TemporalDimension{
+					Commits: make([]int, 53),
+					Lines:   make([]int, 53),
+				},
 			},
 			2: {
-				Weekdays: [7]int{1, 1, 1, 1, 1, 1, 1},
-				Hours:    [24]int{1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-				Months:   [12]int{1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-				Weeks:    [53]int{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+				Weekdays: TemporalDimension{
+					Commits: []int{1, 1, 1, 1, 1, 1, 1},
+					Lines:   []int{5, 5, 5, 5, 5, 5, 5},
+				},
+				Hours: TemporalDimension{
+					Commits: make([]int, 24),
+					Lines:   make([]int, 24),
+				},
+				Months: TemporalDimension{
+					Commits: make([]int, 12),
+					Lines:   make([]int, 12),
+				},
+				Weeks: TemporalDimension{
+					Commits: make([]int, 53),
+					Lines:   make([]int, 53),
+				},
 			},
 		},
+		Ticks: map[int]map[int]*TemporalActivityTick{},
 	}
 
 	c1 := &core.CommonAnalysisResult{}
@@ -536,46 +620,18 @@ func TestTemporalActivityMergeResults(t *testing.T) {
 	// Merge results
 	merged := ta.MergeResults(r1, r2, c1, c2).(TemporalActivityResult)
 
-	// Verify mode
-	assert.Equal(t, "commits", merged.Mode)
-
 	// Verify all developers are present
 	assert.Len(t, merged.Activities, 3)
 
 	// Verify developer 0 (should be sum of both)
-	assert.Equal(t, [7]int{3, 5, 7, 9, 11, 13, 15}, merged.Activities[0].Weekdays)
-	assert.Equal(t, [24]int{1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, merged.Activities[0].Hours)
-	assert.Equal(t, [12]int{8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, merged.Activities[0].Months)
-	assert.Equal(t, 3, merged.Activities[0].Weeks[1])
+	assert.Equal(t, []int{3, 5, 7, 9, 11, 13, 15}, merged.Activities[0].Weekdays.Commits)
+	assert.Equal(t, []int{30, 50, 70, 90, 110, 130, 150}, merged.Activities[0].Weekdays.Lines)
 
 	// Verify developer 1 (only in r1)
-	assert.Equal(t, r1.Activities[1], merged.Activities[1])
+	assert.Equal(t, r1.Activities[1].Weekdays.Commits, merged.Activities[1].Weekdays.Commits)
+	assert.Equal(t, r1.Activities[1].Weekdays.Lines, merged.Activities[1].Weekdays.Lines)
 
 	// Verify developer 2 (only in r2)
-	assert.Equal(t, r2.Activities[2], merged.Activities[2])
-}
-
-func TestTemporalActivityMergeResultsMismatchedModes(t *testing.T) {
-	ta := TemporalActivityAnalysis{}
-
-	r1 := TemporalActivityResult{
-		Mode:               "commits",
-		reversedPeopleDict: []string{"Alice"},
-		Activities:         map[int]*DeveloperTemporalActivity{},
-	}
-
-	r2 := TemporalActivityResult{
-		Mode:               "lines",
-		reversedPeopleDict: []string{"Alice"},
-		Activities:         map[int]*DeveloperTemporalActivity{},
-	}
-
-	c1 := &core.CommonAnalysisResult{}
-	c2 := &core.CommonAnalysisResult{}
-
-	// Should return error for mismatched modes
-	result := ta.MergeResults(r1, r2, c1, c2)
-	assert.IsType(t, assert.AnError, result)
-	err := result.(error)
-	assert.Contains(t, err.Error(), "mismatching modes")
+	assert.Equal(t, r2.Activities[2].Weekdays.Commits, merged.Activities[2].Weekdays.Commits)
+	assert.Equal(t, r2.Activities[2].Weekdays.Lines, merged.Activities[2].Weekdays.Lines)
 }

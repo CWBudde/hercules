@@ -125,7 +125,10 @@ func (history *FileHistoryAnalysis) Consume(deps map[string]interface{}) (map[st
 		case merkletrie.Delete:
 			fh.Hashes = append(fh.Hashes, commit)
 		case merkletrie.Modify:
-			hashes := history.files[change.From.Name].Hashes
+			var hashes []plumbing.Hash
+			if fromFile := history.files[change.From.Name]; fromFile != nil {
+				hashes = fromFile.Hashes
+			}
 			if change.From.Name != change.To.Name {
 				delete(history.files, change.From.Name)
 			}

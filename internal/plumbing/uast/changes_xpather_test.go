@@ -4,7 +4,6 @@
 package uast
 
 import (
-	"log"
 	"sort"
 	"testing"
 
@@ -18,7 +17,7 @@ import (
 func TestChangesXPatherExtractChanged(t *testing.T) {
 	client, err := bblfsh.NewClient("0.0.0.0:9432")
 	if err != nil {
-		log.Panicf("Failed to connect to the Babelfish server at 0.0.0.0:9432: %v", err)
+		t.Skipf("Babelfish server not available at 0.0.0.0:9432: %v", err)
 	}
 	hash1 := "a98a6940eb4cfb1eb635c3232485a75c4b63fff3"
 	hash2 := "42457dc695fa73ec9621b47832d5711f6325410d"

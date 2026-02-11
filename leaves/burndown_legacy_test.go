@@ -1328,7 +1328,7 @@ func TestLegacyBurndownMergeNils(t *testing.T) {
 	res2.reversedPeopleDict = people2[:]
 	merged = bd.MergeResults(res1, res2, &c1, &c2).(BurndownResult)
 	// calculated in a spreadsheet
-	mgh := [][]int64{
+	mgh := burndown.DenseHistory{
 		{514, 0, 0, 0},
 		{808, 506, 0, 0},
 		{674, 889, 177, 0},
@@ -1596,7 +1596,7 @@ func TestLegacyBurndownMergePeopleHistories(t *testing.T) {
 		tickSize: 24 * time.Hour,
 	}
 	merged := bd.MergeResults(res1, res2, &c1, &c2).(BurndownResult)
-	mh := [][]int64{
+	mh := burndown.DenseHistory{
 		{560, 0, 0, 0},
 		{851, 572, 0, 0},
 		{704, 995, 217, 0},
@@ -1604,23 +1604,23 @@ func TestLegacyBurndownMergePeopleHistories(t *testing.T) {
 		{575, 709, 685, 178},
 	}
 	assert.Equal(t, merged.reversedPeopleDict, []string{"one", "three", "two"})
-	assert.Equal(t, merged.PeopleHistories[0], mh)
-	mh = [][]int64{
+	assert.Equal(t, mh, merged.PeopleHistories[0])
+	mh = burndown.DenseHistory{
 		{46, 0, 0, 0},
 		{43, 66, 0, 0},
 		{30, 106, 39, 0},
 		{28, 46, 75, 0},
 		{28, 46, 75, 0},
 	}
-	assert.Equal(t, merged.PeopleHistories[1], mh)
-	mh = [][]int64{
+	assert.Equal(t, mh, merged.PeopleHistories[1])
+	mh = burndown.DenseHistory{
 		{514, 0, 0, 0},
 		{808, 506, 0, 0},
 		{674, 889, 177, 0},
 		{576, 720, 595, 0},
 		{547, 663, 610, 178},
 	}
-	assert.Equal(t, merged.PeopleHistories[2], mh)
+	assert.Equal(t, mh, merged.PeopleHistories[2])
 	assert.Nil(t, merged.PeopleMatrix)
 	assert.Nil(t, bd.serializeBinary(&merged, ioutil.Discard))
 }

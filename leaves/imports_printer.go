@@ -189,9 +189,13 @@ func (ipd *ImportsPerDeveloper) serializeText(result *ImportsPerDeveloperResult,
 
 func (ipd *ImportsPerDeveloper) serializeBinary(result *ImportsPerDeveloperResult, writer io.Writer) error {
 	message := pb.ImportsPerDeveloperResults{
-		Imports:     make([]*pb.ImportsPerDeveloper, len(result.Imports)),
+		Imports:     make([]*pb.ImportsPerDeveloper, len(result.reversedPeopleDict)),
 		AuthorIndex: result.reversedPeopleDict,
 		TickSize:    int64(result.tickSize),
+	}
+	// Initialize all entries to avoid nil elements in the repeated protobuf field
+	for i := range message.Imports {
+		message.Imports[i] = &pb.ImportsPerDeveloper{Languages: map[string]*pb.ImportsPerLanguage{}}
 	}
 	for key, dev := range result.Imports {
 		pbdev := &pb.ImportsPerDeveloper{Languages: map[string]*pb.ImportsPerLanguage{}}

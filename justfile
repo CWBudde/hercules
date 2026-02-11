@@ -39,6 +39,95 @@ install-labours:
     fi
     cd python && uv pip install -e .
 
+# Start Babelfish server for UAST analysis tests
+setup-babelfish:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    # Check if Docker is installed
+    if ! command -v docker &> /dev/null; then
+        echo "Error: Docker is not installed. Please install Docker first."
+        echo "Visit: https://docs.docker.com/get-docker/"
+        exit 1
+    fi
+
+    # Check if Docker daemon is running
+    if ! docker info &> /dev/null; then
+        echo "Error: Docker daemon is not running. Please start Docker."
+        exit 1
+    fi
+
+    # Check if container exists (running or stopped)
+    if docker ps -a | grep -q bblfshd; then
+        echo "Babelfish container already exists."
+        # Check if it's running
+        if docker ps | grep -q bblfshd; then
+            echo "✓ Babelfish is already running on port 9432"
+        else
+            echo "Starting existing container..."
+            docker start bblfshd
+            sleep 2
+            echo "✓ Babelfish started on port 9432"
+        fi
+    else
+        echo "Creating new Babelfish container..."
+        docker run -d --name bblfshd --privileged -p 9432:9432 bblfsh/bblfshd
+        echo "✓ Babelfish container started on port 9432"
+
+        # Wait a moment for the server to be ready
+        echo "Waiting for server to be ready..."
+        sleep 3
+    fi
+
+    # Install language drivers
+    echo "Installing language drivers..."
+    docker exec bblfshd bblfshctl driver install go bblfsh/go-driver:latest || echo "Go driver already installed"
+    docker exec bblfshd bblfshctl driver install python bblfsh/python-driver:latest || echo "Python driver already installed"
+
+    echo ""
+    echo "✓ Babelfish setup complete!"
+    echo "  Server running at: 0.0.0.0:9432"
+    echo "  Run 'just test' to run full test suite including UAST tests"
+    echo "  Run 'just stop-babelfish' to stop the server"
+
+# Check Babelfish server status
+babelfish-status:
+    #!/usr/bin/env bash
+    if docker ps | grep -q bblfshd; then
+        echo "✓ Babelfish is running"
+        docker exec bblfshd bblfshctl driver list
+    elif docker ps -a | grep -q bblfshd; then
+        echo "✗ Babelfish container exists but is not running"
+        echo "  Run 'just setup-babelfish' to start it"
+    else
+        echo "✗ Babelfish is not set up"
+        echo "  Run 'just setup-babelfish' to install and start it"
+    fi
+
+# Stop Babelfish server
+stop-babelfish:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if docker ps | grep -q bblfshd; then
+        echo "Stopping Babelfish..."
+        docker stop bblfshd
+        echo "✓ Babelfish stopped"
+    else
+        echo "Babelfish is not running"
+    fi
+
+# Remove Babelfish container completely
+remove-babelfish:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if docker ps -a | grep -q bblfshd; then
+        echo "Removing Babelfish container..."
+        docker rm -f bblfshd
+        echo "✓ Babelfish container removed"
+    else
+        echo "Babelfish container does not exist"
+    fi
+
 # Format code using treefmt
 fmt:
     treefmt --allow-missing-formatter

@@ -23,11 +23,11 @@ import (
 	"gopkg.in/bblfsh/sdk.v2/uast/nodes"
 )
 
-func fixtureUASTExtractor() *Extractor {
+func fixtureUASTExtractor(t *testing.T) *Extractor {
 	exr := Extractor{Endpoint: "0.0.0.0:9432"}
 	err := exr.Initialize(test.Repository)
 	if err != nil {
-		panic(err)
+		t.Skipf("Babelfish server not available at 0.0.0.0:9432: %v", err)
 	}
 	return &exr
 }
@@ -43,7 +43,7 @@ func AddHash(t *testing.T, cache map[plumbing.Hash]*items.CachedBlob, hash strin
 }
 
 func TestUASTExtractorMeta(t *testing.T) {
-	exr := fixtureUASTExtractor()
+	exr := fixtureUASTExtractor(t)
 	defer exr.Dispose()
 	assert.Equal(t, exr.Name(), "UAST")
 	assert.Equal(t, len(exr.Provides()), 1)
@@ -69,7 +69,7 @@ func TestUASTExtractorMeta(t *testing.T) {
 }
 
 func TestUASTExtractorConfiguration(t *testing.T) {
-	exr := fixtureUASTExtractor()
+	exr := fixtureUASTExtractor(t)
 	defer exr.Dispose()
 	facts := map[string]interface{}{}
 	assert.Nil(t, exr.Configure(facts))
@@ -102,7 +102,7 @@ func TestUASTExtractorNoBabelfish(t *testing.T) {
 }
 
 func TestUASTExtractorConsume(t *testing.T) {
-	exr := fixtureUASTExtractor()
+	exr := fixtureUASTExtractor(t)
 	defer exr.Dispose()
 	changes := make(object.Changes, 4)
 	// 2b1ed978194a94edeabbca6de7ff3b5771d4d665
@@ -224,7 +224,7 @@ func TestUASTExtractorConsume(t *testing.T) {
 }
 
 func TestUASTExtractorFork(t *testing.T) {
-	exr1 := fixtureUASTExtractor()
+	exr1 := fixtureUASTExtractor(t)
 	defer exr1.Dispose()
 	clones := exr1.Fork(1)
 	assert.Len(t, clones, 1)

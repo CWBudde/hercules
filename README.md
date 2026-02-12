@@ -48,6 +48,7 @@
     - [Efforts through time](#efforts-through-time)
     - [Sentiment (positive and negative comments)](#sentiment-positive-and-negative-comments)
     - [Bus factor](#bus-factor)
+    - [Ownership concentration](#ownership-concentration)
     - [Everything in a single pass](#everything-in-a-single-pass)
   - [Plugins](#plugins)
   - [Merging](#merging)
@@ -442,6 +443,27 @@ The analysis produces three visualizations:
    (critical/low/moderate/healthy), alongside a pie chart of top code owners.
 3. **Subsystems** - a horizontal bar chart breaking down bus factor by top-level directory,
    making it easy to spot which parts of the codebase are most at risk.
+
+#### Ownership concentration
+
+```
+hercules --ownership-concentration [--people-dict=/path/to/identities]
+labours -m ownership-concentration
+```
+
+The [Gini coefficient](https://en.wikipedia.org/wiki/Gini_coefficient) and
+[Herfindahl-Hirschman Index](https://en.wikipedia.org/wiki/Herfindahl%E2%80%93Hirschman_index)
+quantify how concentrated or distributed code ownership is. Gini=0 means perfectly equal
+ownership, Gini=1 means one person owns everything. HHI ranges from 1/n (equal) to 1.0
+(single author). Both metrics are tracked over time using the same line ownership data as
+the bus factor analysis.
+
+The analysis produces two visualizations:
+
+1. **Timeline** - a dual-axis step chart showing Gini and HHI evolving over the project's
+   lifetime, with reference lines for moderate and high concentration.
+2. **Subsystems** - a grouped horizontal bar chart comparing Gini and HHI by top-level
+   directory.
 
 #### Everything in a single pass
 

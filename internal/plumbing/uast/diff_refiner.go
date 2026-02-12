@@ -122,7 +122,15 @@ func (ref *FileDiffRefiner) Consume(deps map[string]interface{}) (map[string]int
 			if obj, ok := node.(nodes.Object); ok {
 				pos := uast.PositionsOf(obj)
 				if pos.Start() != nil && pos.End() != nil {
-					for l := pos.Start().Line; l <= pos.End().Line; l++ {
+					startLine := pos.Start().Line
+					endLine := pos.End().Line
+					if startLine < 1 {
+						startLine = 1
+					}
+					if endLine > uint32(len(line2node)) {
+						endLine = uint32(len(line2node))
+					}
+					for l := startLine; l <= endLine; l++ {
 						line2node[l-1] = append(line2node[l-1], node) // line starts with 1
 					}
 				}
@@ -190,6 +198,12 @@ func VisitEachNode(root nodes.Node, payload func(nodes.Node)) {
 
 func countNodesInInterval(occupiedMap [][]nodes.Node, start, end int) int {
 	inodes := map[nodes.Comparable]bool{}
+	if start < 0 {
+		start = 0
+	}
+	if end > len(occupiedMap) {
+		end = len(occupiedMap)
+	}
 	for i := start; i < end; i++ {
 		for _, node := range occupiedMap[i] {
 			inodes[nodes.UniqueKey(node)] = true

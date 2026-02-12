@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"os"
 	"time"
 
 	"github.com/go-git/go-git/v5"
@@ -289,7 +290,7 @@ func (analyser *CodeChurnAnalysis) updateAuthor(change core.LineHistoryChange) {
 
 // Finalize returns the result of the analysis. Further calls to Consume() are not expected.
 func (analyser *CodeChurnAnalysis) Finalize() interface{} {
-	println()
+	fmt.Fprintln(os.Stderr)
 	for pId, person := range analyser.codeChurns {
 		inserted := int32(0)
 		deletedBySelf := int32(0)
@@ -297,15 +298,13 @@ func (analyser *CodeChurnAnalysis) Finalize() interface{} {
 
 		for _, entry := range person.files {
 			inserted += entry.insertedLines
-			// deletedBySelf += entry.deletedBySelf
-			// deletedByOthers += entry.deletedByOthers
 		}
 
 		name := analyser.peopleResolver.FriendlyNameOf(core.AuthorId(pId))
-		fmt.Printf("%s (%d):\t\t%d\t%d\t%d = %d\n", name, pId, inserted, deletedBySelf, deletedByOthers,
+		fmt.Fprintf(os.Stderr, "%s (%d):\t\t%d\t%d\t%d = %d\n", name, pId, inserted, deletedBySelf, deletedByOthers,
 			inserted+deletedBySelf+deletedByOthers)
 	}
-	println()
+	fmt.Fprintln(os.Stderr)
 
 	return nil
 }

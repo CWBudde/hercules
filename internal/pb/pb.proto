@@ -250,6 +250,29 @@ message TemporalActivityResults {
     int64 tick_size = 4;
 }
 
+// Per-tick ownership snapshot for bus factor computation
+message BusFactorTickSnapshot {
+    // bus factor value at this tick (smallest k where top-k owners cover >= threshold)
+    int32 bus_factor = 1;
+    // total alive lines at this tick
+    int64 total_lines = 2;
+    // per-author alive line counts at this tick, keyed by author index
+    map<int32, int64> author_lines = 3;
+}
+
+message BusFactorAnalysisResults {
+    // bus factor value per tick (index = tick number)
+    map<int32, BusFactorTickSnapshot> snapshots = 1;
+    // bus factor per directory/subsystem prefix
+    map<string, int32> subsystem_bus_factor = 2;
+    // developer identities
+    repeated string dev_index = 3;
+    // how long each tick is, as an int64 nanosecond count (Go's time.Duration)
+    int64 tick_size = 4;
+    // threshold used (e.g. 0.8 for 80%)
+    float threshold = 5;
+}
+
 message AnalysisResults {
     Metadata header = 1;
     // the mapped values are dynamic messages which require the second parsing pass.

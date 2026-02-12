@@ -220,6 +220,23 @@ class YamlReader(Reader):
         # New format doesn't have mode, returns both commits and lines
         return activities, people
 
+    def get_bus_factor(self):
+        bf_data = self.data["BusFactor"]["bus_factor"]
+        snapshots = {}
+        for tick, snap in bf_data.get("per_tick", {}).items():
+            snapshots[int(tick)] = {
+                "bus_factor": snap["bus_factor"],
+                "total_lines": snap["total_lines"],
+            }
+        people = bf_data.get("people", [])
+        subsystem_bf = {
+            str(k): int(v)
+            for k, v in bf_data.get("per_subsystem", {}).items()
+        }
+        threshold = float(bf_data.get("threshold", 0.8))
+        tick_size = int(bf_data.get("tick_size", 0))
+        return snapshots, people, subsystem_bf, threshold, tick_size
+
     def _parse_burndown_matrix(self, matrix):
         return numpy.array(
             [numpy.fromstring(line, dtype=int, sep=" ") for line in matrix.split("\n")]
@@ -413,6 +430,22 @@ class ProtobufReader(Reader):
 
         return activities, people, ticks, tick_size
 
+    def get_bus_factor(self):
+        bf = self.contents["BusFactor"]
+        snapshots = {}
+        for tick, snap in bf.snapshots.items():
+            author_lines = {int(k): int(v) for k, v in snap.author_lines.items()}
+            snapshots[int(tick)] = {
+                "bus_factor": int(snap.bus_factor),
+                "total_lines": int(snap.total_lines),
+                "author_lines": author_lines,
+            }
+        people = list(bf.dev_index)
+        subsystem_bf = {str(k): int(v) for k, v in bf.subsystem_bus_factor.items()}
+        threshold = float(bf.threshold)
+        tick_size = int(bf.tick_size)
+        return snapshots, people, subsystem_bf, threshold, tick_size
+
     def _parse_burndown_matrix(self, matrix):
         dense = numpy.zeros(
             (matrix.number_of_rows, matrix.number_of_columns), dtype=int
@@ -438,6 +471,7 @@ PB_MESSAGES = {
     "Shotness": "labours.pb_pb2.ShotnessAnalysisResults",
     "Devs": "labours.pb_pb2.DevsAnalysisResults",
     "TemporalActivity": "labours.pb_pb2.TemporalActivityResults",
+    "BusFactor": "labours.pb_pb2.BusFactorAnalysisResults",
 }
 
 

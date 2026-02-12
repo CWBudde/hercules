@@ -19,6 +19,7 @@ from labours.modes.overwrites import load_overwrites_matrix, plot_overwrites_mat
 from labours.modes.ownership import load_ownership, plot_ownership
 from labours.modes.sentiment import show_sentiment_stats
 from labours.modes.shotness import show_shotness_stats
+from labours.modes.bus_factor import show_bus_factor
 from labours.modes.temporal_activity import show_temporal_activity
 from labours.readers import read_input
 from labours.utils import import_pandas
@@ -106,6 +107,7 @@ def parse_args() -> Namespace:
             "run-times",
             "languages",
             "devs-parallel",
+            "bus-factor",
             "all",
         ],
         help="What to plot. Can be repeated, e.g. " "-m burndown-project -m run-times",
@@ -454,6 +456,24 @@ def main() -> None:
             return
         show_languages(args, reader.get_name(), *reader.get_header(), *data)
 
+    def bus_factor():
+        bus_factor_warning = (
+            "Bus factor stats were not collected. "
+            "Re-run hercules with --bus-factor."
+        )
+        try:
+            data = reader.get_bus_factor()
+        except (KeyError, AttributeError):
+            print(bus_factor_warning)
+            return
+
+        snapshots, people, subsystem_bf, threshold, tick_size = data
+        start_date, end_date = reader.get_header()
+        show_bus_factor(
+            args, reader.get_name(), snapshots, people,
+            subsystem_bf, threshold, tick_size, start_date
+        )
+
     def devs_parallel():
         try:
             ownership = reader.get_ownership_burndown()
@@ -497,6 +517,7 @@ def main() -> None:
         "old-vs-new": old_vs_new,
         "languages": languages,
         "devs-parallel": devs_parallel,
+        "bus-factor": bus_factor,
     }
 
     if "all" in args.modes:

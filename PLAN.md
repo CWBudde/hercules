@@ -265,15 +265,277 @@ go test ./internal/linehistory
 - [ ] **Output format compatibility maintained**
 - [ ] **Performance within 10% of original**
 
+### Phase 6: New Analysis Features (from "Dig the Diff" presentation)
+
+These feature ideas were collected from the "Fehlende Metriken" and "Priorisierte
+Verbesserungen" sections of the presentation analysis. Each feature is a new
+`core.LeafPipelineItem` registered via `core.Registry.Register()` in `init()`.
+Reference implementation pattern: `leaves/temporal_activity.go`.
+
+#### 6.1 Bus-Factor@80% (Repo & per Subsystem)
+
+Compute the smallest k such that the top-k owners cover ≥ 80% of living lines.
+Ownership data is already tracked by `BurndownAnalysis` with `--burndown-people`;
+this feature post-processes that data into an aggregate KPI.
+
+- [x] **Go analysis** (`leaves/bus_factor.go`)
+  - Implement `core.LeafPipelineItem` with `Flag() = "bus-factor"`
+  - Require `identity.DependencyAuthor` and `linehistory.DependencyLineHistory`
+  - In `Consume()`: accumulate per-file, per-author alive-line counts
+  - In `Finalize()`: sort authors by ownership share, find smallest k where
+    `Sum(Top-k) ≥ threshold` (default 80%, configurable via `--bus-factor-threshold`)
+  - Emit per-tick time series (bus-factor over project lifetime)
+  - Optional: per-directory/subsystem granularity using file path prefixes
+- [x] **Protobuf schema** — add `BusFactorResults` message to `internal/pb/pb.proto`
+  - Fields: `repeated int32 bus_factor_per_tick`, `map<string, int32> bus_factor_per_subsystem`
+- [x] **YAML serialization** in `Serialize()`
+- [x] **Python visualization** (`python/labours/modes/bus_factor.py`)
+  - Gauge chart (current value) + time series plot
+  - Register as labours mode `-m bus-factor`
+- [x] **Tests** — table-driven tests in `leaves/bus_factor_test.go`
+- [ ] **Effort**: Low — ownership data already available, pure aggregation
+
+#### 6.2 Ownership Concentration Index (Gini / HHI)
+
+Quantify how concentrated or distributed code ownership is, tracked over time.
+Complementary to Bus-Factor: Gini=0 means perfectly equal, Gini=1 means one person
+owns everything.
+
+- [ ] **Go analysis** (`leaves/ownership_concentration.go`)
+  - Implement `core.LeafPipelineItem` with `Flag() = "ownership-concentration"`
+  - Require same dependencies as Bus-Factor (6.1)
+  - In `Finalize()`: compute Gini coefficient and/or HHI per tick
+    - Gini: `1 - 2 * integral(Lorenz curve)`
+    - HHI: `Sum(share_i²)` for all authors with share > 0
+  - Configurable via `--concentration-metric gini|hhi|both`
+- [ ] **Protobuf schema** — add `OwnershipConcentrationResults` message
+- [ ] **Python visualization** — time series of Gini/HHI with change-point markers
+- [ ] **Tests**
+- [ ] **Effort**: Low–Medium — same data sources as 6.1, math is straightforward
+
+#### 6.3 Knowledge Diffusion
+
+Track unique editors per file over time to identify single-contributor risk areas
+and knowledge silos.
+
+- [ ] **Go analysis** (`leaves/knowledge_diffusion.go`)
+  - Implement `core.LeafPipelineItem` with `Flag() = "knowledge-diffusion"`
+  - Require `identity.DependencyAuthor`, `items.DependencyTreeChanges`,
+    `items.DependencyTick`
+  - In `Consume()`: for each changed file, record the set of unique authors
+  - In `Finalize()`: per file emit `unique_editors_count`, `unique_editors_over_time`,
+    `last_N_months_editors`; aggregate as distribution (histogram of files by editor count)
+- [ ] **Protobuf schema** — add `KnowledgeDiffusionResults` message
+- [ ] **Python visualization**
+  - Lorenz curve of editor distribution across files
+  - Heatmap: files × time with editor count
+  - Top-N "knowledge silos" (files with fewest unique editors relative to churn)
+- [ ] **Tests**
+- [ ] **Effort**: Medium — needs per-file author tracking, moderate state
+
+#### 6.4 Onboarding Ramp
+
+Measure how quickly new contributors ramp up: time-to-first-change,
+breadth-of-files in first N days, convergence to stable contribution patterns.
+
+- [ ] **Go analysis** (`leaves/onboarding.go`)
+  - Implement `core.LeafPipelineItem` with `Flag() = "onboarding"`
+  - Require `identity.DependencyAuthor`, `items.DependencyTick`,
+    `items.DependencyLineStats`, `items.DependencyTreeChanges`
+  - In `Consume()`: track per author: first commit tick, cumulative commits,
+    cumulative files touched, cumulative lines changed; bucket into configurable
+    windows (default: 7/30/90 days from first commit)
+  - In `Finalize()`: per author emit onboarding metrics; compute cohort averages
+    (group by join quarter)
+  - Configurable: `--onboarding-window 30` (days), `--onboarding-meaningful-threshold 10`
+    (min lines to count as "meaningful change")
+- [ ] **Protobuf schema** — add `OnboardingResults` message
+- [ ] **Python visualization**
+  - Cohort heatmap: rows = join month, columns = days since first commit, cells = cumulative activity
+  - Per-author ramp curves (overlay or small multiples)
+- [ ] **Tests**
+- [ ] **Effort**: Medium — new per-author temporal tracking, cohort aggregation logic
+
+#### 6.5 Hotspot Risk Score
+
+Combined per-file risk metric: `log(size) × churn × coupling_degree × ownership_concentration`.
+Requires data from multiple existing analyses; best implemented as a post-processing
+step that consumes finalized results from Burndown, Couples, and Ownership.
+
+- [ ] **Go analysis** (`leaves/hotspot_risk.go`)
+  - Implement `core.LeafPipelineItem` with `Flag() = "hotspot-risk"`
+  - Require `items.DependencyLineStats`, `items.DependencyTreeChanges`,
+    `identity.DependencyAuthor`, `items.DependencyTick`
+  - In `Consume()`: per file track: current size (lines), change count (churn),
+    set of co-changed files (coupling degree), set of authors (ownership concentration)
+  - In `Finalize()`: compute composite score per file, rank, emit top-N
+  - Configurable: `--hotspot-risk-top 20` (how many files to report),
+    `--hotspot-risk-window 90` (days for churn window),
+    weights for each factor via `--hotspot-risk-weights`
+- [ ] **Protobuf schema** — add `HotspotRiskResults` message
+- [ ] **Python visualization**
+  - Bubble chart: x=churn, y=coupling, size=file size, color=concentration
+  - Ranked table of top-N risky files with breakdown of each factor
+- [ ] **Tests**
+- [ ] **Effort**: Medium–High — combines multiple data streams, needs careful normalization
+
+#### 6.6 Refactoring Proxy (Move/Rename Rate)
+
+Track the proportion of commits dominated by file renames/moves to distinguish
+refactoring phases from feature work. Rename detection already exists in
+`internal/plumbing/renames.go`.
+
+- [ ] **Go analysis** (`leaves/refactoring_proxy.go`)
+  - Implement `core.LeafPipelineItem` with `Flag() = "refactoring-proxy"`
+  - Require `items.DependencyTreeChanges`, `items.DependencyTick`
+  - Use existing `TreeDiff` output which already detects renames via go-git's
+    `DiffTree` (similarity-based rename detection)
+  - In `Consume()`: per commit, count renames/moves vs. total changes;
+    classify commits as "refactoring-heavy" if rename ratio > threshold
+  - In `Finalize()`: time series of rename rate, event markers for spikes
+  - Configurable: `--refactoring-threshold 0.5` (rename ratio to classify as refactoring)
+- [ ] **Protobuf schema** — add `RefactoringProxyResults` message
+- [ ] **Python visualization**
+  - Time series of rename rate overlaid with "Added vs Changed" for correlation
+  - Event markers on burndown chart for major refactoring phases
+- [ ] **Tests**
+- [ ] **Effort**: Medium — rename detection exists, but interpretation logic is new
+
+#### 6.7 Code Review Metrics (requires external API — deferred)
+
+Cycle time, review latency, rework-after-review. These metrics are **not available
+from Git alone** and require GitHub/GitLab API integration. Deferred until a
+platform integration layer exists.
+
+- [ ] **Design**: define API abstraction (`internal/platform/`) for GitHub/GitLab
+  - Interface: `ListPullRequests()`, `GetReviews()`, `GetComments()`
+- [ ] **Go analysis** (`leaves/code_review.go`)
+  - Correlate PR merge commits with review metadata
+  - Compute: time-to-first-review, review-to-merge latency, rework commits after approval
+- [ ] **Protobuf schema** — add `CodeReviewResults` message
+- [ ] **Python visualization** — cycle time distribution, review latency trends
+- [ ] **Effort**: High — new external dependency, API rate limiting, auth handling
+- [ ] **Status**: Deferred — design only until platform layer is available
+
+### Phase 7: Tool & UX Improvements (from "Dig the Diff" analysis)
+
+#### 7.1 Metrics Contract: Stable Output Schemas
+
+Currently, JSON plot format is unspecified and depends on the Python implementation.
+YAML output structure is implicit in each analysis's `Serialize()` method.
+For automation, teaching, and third-party tooling, stable documented schemas are needed.
+
+- [ ] **Document existing schemas** — extract current YAML/PB structure from each
+  `Serialize()` implementation in `leaves/*.go` and write as reference docs
+- [ ] **Freeze PB schema** — version `internal/pb/pb.proto` with semantic versioning;
+  add `reserved` fields for removed items
+- [ ] **JSON export mode** — add `--json` flag to `hercules` CLI that emits structured
+  JSON directly (bypassing labours), with a documented JSON Schema per analysis
+- [ ] **Schema validation** — add CI check that PB schema changes are backwards-compatible
+- [ ] **Priority**: High | **Effort**: Medium
+
+#### 7.2 Large-Repo Scaling Presets
+
+The README documents several workarounds for large repos (disk backend, blacklisting,
+language filter, hibernation, `--first-parent`) but users must discover and combine
+them manually.
+
+- [ ] **Implement `--preset` flag** in `cmd/hercules/root.go`
+  - `--preset large-repo`: sets `--first-parent`, `--hibernation-distance 10`,
+    `--burndown-hibernation-threshold 100`, `--burndown-hibernation-disk`,
+    enables language filter for common generated files
+  - `--preset quick`: disables couples/shotness, uses `--first-parent`,
+    coarse granularity
+  - Presets are overridable: explicit flags take precedence
+- [ ] **Document scaling guide** — table of repo size thresholds (commits, files, branches)
+  with recommended preset and expected memory/time
+- [ ] **Priority**: High | **Effort**: Low
+
+#### 7.3 One-Command Report Generation
+
+The current workflow requires piping `hercules` into `labours` with format flags
+and mode selection. For first-time users and teaching, a single command that
+produces a complete report would lower the barrier significantly.
+
+- [ ] **Implement `hercules report` subcommand** in `cmd/hercules/`
+  - Runs all enabled analyses, invokes labours internally, produces output directory
+  - `hercules report --all -o ./report/ <repo>` generates all charts + summary
+  - Output: directory with PNGs/SVGs + an `index.html` that embeds all charts
+- [ ] **Alternative: `just report` recipe** in Justfile as a simpler first step
+  - Shell script that chains hercules + labours with sensible defaults
+  - Less integration effort, immediately usable
+- [ ] **Priority**: Medium | **Effort**: Medium (subcommand) or Low (just recipe)
+
+#### 7.4 Dependency Modernization
+
+Babelfish (required for Shotness/UAST parsing) is abandoned. Tensorflow (required
+for Couples embeddings and Sentiment) is heavy and complicates builds.
+
+- [ ] **Replace Babelfish** for Shotness analysis
+  - Evaluate tree-sitter as alternative AST parser (wide language support, active community)
+  - Implement `internal/plumbing/uast_treesitter.go` behind same interface
+  - Keep Babelfish as fallback via build tag `babelfish`
+- [ ] **Modularize Tensorflow**
+  - Couples embeddings: evaluate pure-Go alternatives (e.g., Gorgonia, or custom
+    Swivel implementation without TF)
+  - Sentiment: already behind `tensorflow` build tag — document this more prominently
+  - Goal: `go build` without any tags produces a fully functional binary
+    (couples without embeddings, no sentiment)
+- [ ] **Priority**: Medium | **Effort**: High
+
+#### 7.5 Improved Identity Resolution
+
+Identity is the foundation for People Burndown, Ownership, Overwrites, and
+Onboarding metrics. Current matching (`internal/plumbing/identity/people.go`)
+uses name/email opportunistic matching + `.mailmap`. Misattributions silently
+corrupt multiple downstream metrics.
+
+- [ ] **Additional heuristics**
+  - GitHub username resolution via commit trailers (`Co-authored-by:`)
+  - Levenshtein/Jaro-Winkler fuzzy matching for name variations
+  - Configurable confidence threshold for automatic merges
+- [ ] **Identity audit report** (`--identity-audit`)
+  - Output: list of all detected identities, merge decisions with confidence,
+    ambiguous cases flagged for manual review
+  - Format: table or JSON for programmatic consumption
+- [ ] **Interactive identity editor** — generate `people-dict` template from
+  auto-detected identities for manual refinement
+- [ ] **Priority**: Medium | **Effort**: Medium
+
+#### 7.6 Sentiment: Mark as Experimental
+
+Sentiment analysis uses a general-purpose BiDiSentiment model on code comments,
+which the README itself warns about ("don't expect too much"). Making this
+limitation visible in the tool prevents misinterpretation.
+
+- [ ] **CLI output** — prefix Sentiment results with `[EXPERIMENTAL]` marker
+- [ ] **`--help` text** — add caveat to `--sentiment` flag description
+- [ ] **Labours plot** — add subtitle "Experimental — general-purpose model, not
+  validated for code comments" to sentiment charts
+- [ ] **Priority**: Low | **Effort**: Low
+
 ## Timeline Estimate
 
-- **Phase 1**: 1-2 days (Core infrastructure)
-- **Phase 2**: 2-3 days (Analysis validation)
+- **Phase 1**: 1-2 days (Core infrastructure) ✅
+- **Phase 2**: 2-3 days (Analysis validation) ✅
 - **Phase 3**: 1-2 days (Integration testing)
 - **Phase 4**: 1 day (Comparison testing)
 - **Phase 5**: 1 day (Documentation)
-
-**Total**: 6-9 days for complete validation and completion
+- **Phase 6**: New analysis features (per feature, see effort estimates above)
+  - 6.1 Bus-Factor: 1-2 days
+  - 6.2 Ownership Concentration: 1-2 days
+  - 6.3 Knowledge Diffusion: 2-3 days
+  - 6.4 Onboarding Ramp: 3-4 days
+  - 6.5 Hotspot Risk Score: 4-5 days
+  - 6.6 Refactoring Proxy: 2-3 days
+  - 6.7 Code Review Metrics: deferred
+- **Phase 7**: Tool & UX improvements
+  - 7.1 Metrics Contract: 3-4 days
+  - 7.2 Scaling Presets: 1 day
+  - 7.3 Report Generation: 1-2 days (just recipe) or 3-4 days (subcommand)
+  - 7.4 Dependency Modernization: 5+ days
+  - 7.5 Identity Resolution: 3-4 days
+  - 7.6 Sentiment Labeling: < 1 day
 
 ## Progress Summary
 

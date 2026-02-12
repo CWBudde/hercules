@@ -62,7 +62,10 @@ def deploy_plot(title: str, output: str, background: str, tight: bool = True) ->
     import matplotlib.pyplot as pyplot
 
     if not output:
-        pyplot.gcf().canvas.set_window_title(title)
+        try:
+            pyplot.gcf().canvas.manager.set_window_title(title)
+        except AttributeError:
+            pyplot.gcf().canvas.setWindowTitle(title)
         pyplot.show()
     else:
         po = Path(output)

@@ -273,6 +273,31 @@ message BusFactorAnalysisResults {
     float threshold = 5;
 }
 
+// Per-tick ownership concentration snapshot
+message OwnershipConcentrationTickSnapshot {
+    // Gini coefficient (0 = perfectly equal, 1 = one person owns everything)
+    double gini = 1;
+    // Herfindahl-Hirschman Index (1/n = perfectly equal, 1.0 = single author)
+    double hhi = 2;
+    // total alive lines at this tick
+    int64 total_lines = 3;
+    // per-author alive line counts at this tick, keyed by author index
+    map<int32, int64> author_lines = 4;
+}
+
+message OwnershipConcentrationResults {
+    // concentration metrics per tick (index = tick number)
+    map<int32, OwnershipConcentrationTickSnapshot> snapshots = 1;
+    // per-directory/subsystem Gini coefficient at final tick
+    map<string, double> subsystem_gini = 2;
+    // per-directory/subsystem HHI at final tick
+    map<string, double> subsystem_hhi = 5;
+    // developer identities
+    repeated string dev_index = 3;
+    // how long each tick is, as an int64 nanosecond count (Go's time.Duration)
+    int64 tick_size = 4;
+}
+
 message AnalysisResults {
     Metadata header = 1;
     // the mapped values are dynamic messages which require the second parsing pass.

@@ -237,6 +237,27 @@ class YamlReader(Reader):
         tick_size = int(bf_data.get("tick_size", 0))
         return snapshots, people, subsystem_bf, threshold, tick_size
 
+    def get_ownership_concentration(self):
+        oc_data = self.data["OwnershipConcentration"]["ownership_concentration"]
+        snapshots = {}
+        for tick, snap in oc_data.get("per_tick", {}).items():
+            snapshots[int(tick)] = {
+                "gini": float(snap["gini"]),
+                "hhi": float(snap["hhi"]),
+                "total_lines": int(snap["total_lines"]),
+            }
+        people = oc_data.get("people", [])
+        subsystem_gini = {
+            str(k): float(v["gini"])
+            for k, v in oc_data.get("per_subsystem", {}).items()
+        }
+        subsystem_hhi = {
+            str(k): float(v["hhi"])
+            for k, v in oc_data.get("per_subsystem", {}).items()
+        }
+        tick_size = int(oc_data.get("tick_size", 0))
+        return snapshots, people, subsystem_gini, subsystem_hhi, tick_size
+
     def _parse_burndown_matrix(self, matrix):
         return numpy.array(
             [numpy.fromstring(line, dtype=int, sep=" ") for line in matrix.split("\n")]
@@ -446,6 +467,21 @@ class ProtobufReader(Reader):
         tick_size = int(bf.tick_size)
         return snapshots, people, subsystem_bf, threshold, tick_size
 
+    def get_ownership_concentration(self):
+        oc = self.contents["OwnershipConcentration"]
+        snapshots = {}
+        for tick, snap in oc.snapshots.items():
+            snapshots[int(tick)] = {
+                "gini": float(snap.gini),
+                "hhi": float(snap.hhi),
+                "total_lines": int(snap.total_lines),
+            }
+        people = list(oc.dev_index)
+        subsystem_gini = {str(k): float(v) for k, v in oc.subsystem_gini.items()}
+        subsystem_hhi = {str(k): float(v) for k, v in oc.subsystem_hhi.items()}
+        tick_size = int(oc.tick_size)
+        return snapshots, people, subsystem_gini, subsystem_hhi, tick_size
+
     def _parse_burndown_matrix(self, matrix):
         dense = numpy.zeros(
             (matrix.number_of_rows, matrix.number_of_columns), dtype=int
@@ -472,6 +508,7 @@ PB_MESSAGES = {
     "Devs": "labours.pb_pb2.DevsAnalysisResults",
     "TemporalActivity": "labours.pb_pb2.TemporalActivityResults",
     "BusFactor": "labours.pb_pb2.BusFactorAnalysisResults",
+    "OwnershipConcentration": "labours.pb_pb2.OwnershipConcentrationResults",
 }
 
 

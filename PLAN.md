@@ -293,7 +293,6 @@ this feature post-processes that data into an aggregate KPI.
   - Gauge chart (current value) + time series plot
   - Register as labours mode `-m bus-factor`
 - [x] **Tests** — table-driven tests in `leaves/bus_factor_test.go`
-- [ ] **Effort**: Low — ownership data already available, pure aggregation
 
 #### 6.2 Ownership Concentration Index (Gini / HHI)
 
@@ -301,16 +300,16 @@ Quantify how concentrated or distributed code ownership is, tracked over time.
 Complementary to Bus-Factor: Gini=0 means perfectly equal, Gini=1 means one person
 owns everything.
 
-- [ ] **Go analysis** (`leaves/ownership_concentration.go`)
+- [x] **Go analysis** (`leaves/ownership_concentration.go`)
   - Implement `core.LeafPipelineItem` with `Flag() = "ownership-concentration"`
   - Require same dependencies as Bus-Factor (6.1)
   - In `Finalize()`: compute Gini coefficient and/or HHI per tick
     - Gini: `1 - 2 * integral(Lorenz curve)`
     - HHI: `Sum(share_i²)` for all authors with share > 0
   - Configurable via `--concentration-metric gini|hhi|both`
-- [ ] **Protobuf schema** — add `OwnershipConcentrationResults` message
-- [ ] **Python visualization** — time series of Gini/HHI with change-point markers
-- [ ] **Tests**
+- [x] **Protobuf schema** — add `OwnershipConcentrationResults` message
+- [x] **Python visualization** — time series of Gini/HHI with change-point markers
+- [x] **Tests**
 - [ ] **Effort**: Low–Medium — same data sources as 6.1, math is straightforward
 
 #### 6.3 Knowledge Diffusion

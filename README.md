@@ -47,6 +47,7 @@
     - [Added vs changed lines through time](#added-vs-changed-lines-through-time)
     - [Efforts through time](#efforts-through-time)
     - [Sentiment (positive and negative comments)](#sentiment-positive-and-negative-comments)
+    - [Bus factor](#bus-factor)
     - [Everything in a single pass](#everything-in-a-single-pass)
   - [Plugins](#plugins)
   - [Merging](#merging)
@@ -420,6 +421,27 @@ TAGS=tensorflow just
 ```
 
 Such a build requires [`libtensorflow`](https://www.tensorflow.org/install/install_go).
+
+#### Bus factor
+
+```
+hercules --bus-factor [--bus-factor-threshold=0.8] [--people-dict=/path/to/identities]
+labours -m bus-factor
+```
+
+The [bus factor](https://en.wikipedia.org/wiki/Bus_factor) is the minimum number of developers whose
+departure would leave the project without sufficient knowledge to maintain it. Hercules computes this
+over time by finding the smallest set of developers who collectively own at least 80% (configurable
+via `--bus-factor-threshold`) of the living code lines.
+
+The analysis produces three visualizations:
+
+1. **Timeline** - a step chart showing how the bus factor evolves over the project's lifetime, with
+   a danger zone highlight at BF=1.
+2. **Gauge** - a summary of the current bus factor value color-coded by risk level
+   (critical/low/moderate/healthy), alongside a pie chart of top code owners.
+3. **Subsystems** - a horizontal bar chart breaking down bus factor by top-level directory,
+   making it easy to spot which parts of the codebase are most at risk.
 
 #### Everything in a single pass
 

@@ -425,11 +425,11 @@ YAML output structure is implicit in each analysis's `Serialize()` method.
 For automation, teaching, and third-party tooling, stable documented schemas are needed.
 
 - [ ] **Document existing schemas** — extract current YAML/PB structure from each
-  `Serialize()` implementation in `leaves/*.go` and write as reference docs
+      `Serialize()` implementation in `leaves/*.go` and write as reference docs
 - [ ] **Freeze PB schema** — version `internal/pb/pb.proto` with semantic versioning;
-  add `reserved` fields for removed items
+      add `reserved` fields for removed items
 - [ ] **JSON export mode** — add `--json` flag to `hercules` CLI that emits structured
-  JSON directly (bypassing labours), with a documented JSON Schema per analysis
+      JSON directly (bypassing labours), with a documented JSON Schema per analysis
 - [ ] **Schema validation** — add CI check that PB schema changes are backwards-compatible
 - [ ] **Priority**: High | **Effort**: Medium
 
@@ -447,7 +447,7 @@ them manually.
     coarse granularity
   - Presets are overridable: explicit flags take precedence
 - [ ] **Document scaling guide** — table of repo size thresholds (commits, files, branches)
-  with recommended preset and expected memory/time
+      with recommended preset and expected memory/time
 - [ ] **Priority**: High | **Effort**: Low
 
 #### 7.3 One-Command Report Generation
@@ -498,7 +498,7 @@ corrupt multiple downstream metrics.
     ambiguous cases flagged for manual review
   - Format: table or JSON for programmatic consumption
 - [ ] **Interactive identity editor** — generate `people-dict` template from
-  auto-detected identities for manual refinement
+      auto-detected identities for manual refinement
 - [ ] **Priority**: Medium | **Effort**: Medium
 
 #### 7.6 Sentiment: Mark as Experimental
@@ -510,7 +510,7 @@ limitation visible in the tool prevents misinterpretation.
 - [ ] **CLI output** — prefix Sentiment results with `[EXPERIMENTAL]` marker
 - [ ] **`--help` text** — add caveat to `--sentiment` flag description
 - [ ] **Labours plot** — add subtitle "Experimental — general-purpose model, not
-  validated for code comments" to sentiment charts
+      validated for code comments" to sentiment charts
 - [ ] **Priority**: Low | **Effort**: Low
 
 ## Timeline Estimate

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"github.com/meko-christian/hercules/internal/core"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -12,6 +11,7 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/storage/filesystem"
+	"github.com/meko-christian/hercules/internal/core"
 	"github.com/stretchr/testify/assert"
 )
 

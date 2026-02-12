@@ -569,7 +569,7 @@ LineDumper:
 
 	tmpDir := t.TempDir()
 	tmpFile := filepath.Join(tmpDir, "history.yml")
-	err := os.WriteFile(tmpFile, []byte(yamlData), 0644)
+	err := os.WriteFile(tmpFile, []byte(yamlData), 0o644)
 	require.NoError(t, err)
 
 	loader := &LineHistoryLoader{}
@@ -602,7 +602,7 @@ LineDumper:
 
 	tmpDir := t.TempDir()
 	tmpFile := filepath.Join(tmpDir, "history.yml")
-	err := os.WriteFile(tmpFile, []byte(yamlData), 0644)
+	err := os.WriteFile(tmpFile, []byte(yamlData), 0o644)
 	require.NoError(t, err)
 
 	loader := &LineHistoryLoader{}
@@ -655,12 +655,9 @@ func (l *testLogger) Criticalf(format string, args ...interface{}) {
 	l.lastMessage = format
 }
 
-func (l *testLogger) Debug(...interface{})              {}
-func (l *testLogger) Debugf(string, ...interface{})     {}
-func (l *testLogger) Info(...interface{})               {}
-func (l *testLogger) Infof(string, ...interface{})      {}
-func (l *testLogger) Warning(...interface{})            {}
-func (l *testLogger) Warningf(string, ...interface{})   {}
-func (l *testLogger) Error(...interface{})              {}
-func (l *testLogger) Errorf(string, ...interface{})     {}
-func (l *testLogger) SetLevel(int)                      {}
+func (l *testLogger) Info(...interface{})           {}
+func (l *testLogger) Infof(string, ...interface{})  {}
+func (l *testLogger) Warn(...interface{})           {}
+func (l *testLogger) Warnf(string, ...interface{})  {}
+func (l *testLogger) Error(...interface{})          {}
+func (l *testLogger) Errorf(string, ...interface{}) {}

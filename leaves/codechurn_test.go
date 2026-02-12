@@ -239,7 +239,7 @@ func TestCodeChurnConsumeDeleteByOther(t *testing.T) {
 	// Alice's owned lines should have decreased
 	entry := cc.codeChurns[0].files[core.FileId(0)]
 	assert.Equal(t, int32(10), entry.insertedLines) // inserted stays the same
-	assert.Equal(t, int32(7), entry.ownedLines)      // 10 - 3
+	assert.Equal(t, int32(7), entry.ownedLines)     // 10 - 3
 }
 
 func TestCodeChurnConsumeDeleteBySelf(t *testing.T) {

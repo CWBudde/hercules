@@ -11,11 +11,11 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/gogo/protobuf/proto"
 	"github.com/meko-christian/hercules"
 	"github.com/meko-christian/hercules/internal/burndown"
 	"github.com/meko-christian/hercules/internal/pb"
 	"github.com/meko-christian/hercules/leaves"
-	"github.com/gogo/protobuf/proto"
 	"github.com/spf13/cobra"
 	progress "gopkg.in/cheggaaa/pb.v1"
 )
@@ -88,7 +88,7 @@ var combineCmd = &cobra.Command{
 				}
 			}
 			allErrors[fileName] = errs
-			//debug.FreeOSMemory()
+			// debug.FreeOSMemory()
 		}
 		bar.Finish()
 		os.Stderr.WriteString("\033[2K\r")
@@ -124,7 +124,8 @@ var combineCmd = &cobra.Command{
 }
 
 func loadMessage(fileName string, repos *[]string) (
-	map[string]interface{}, *hercules.CommonAnalysisResult, string, []string) {
+	map[string]interface{}, *hercules.CommonAnalysisResult, string, []string,
+) {
 	var errs []string
 	fi, err := os.Stat(fileName)
 	if err != nil {
@@ -200,7 +201,8 @@ func mergeResults(mergedResults map[string]interface{},
 	mergedCommons *hercules.CommonAnalysisResult,
 	anotherResults map[string]interface{},
 	anotherCommons *hercules.CommonAnalysisResult,
-	only string) []error {
+	only string,
+) []error {
 	var errors []error
 	for key, val := range anotherResults {
 		if only != "" && key != only {
@@ -241,5 +243,4 @@ func init() {
 	combineCmd.Flags().String("only", "", "Consider only the specified analysis. "+
 		"Empty means all available. Choices: "+getOptionsString()+".")
 	combineCmd.Flags().Bool("profile", false, "Collect the profile to hercules.pprof.")
-
 }

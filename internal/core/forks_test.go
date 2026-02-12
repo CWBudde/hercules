@@ -656,7 +656,7 @@ func TestTracebackMerges(t *testing.T) {
 		}
 
 		tracebackMerges(plan)
-		assert.Nil(t, plan[0].NextMerge)            // before emerge: cleared
+		assert.Nil(t, plan[0].NextMerge)                // before emerge: cleared
 		assert.Equal(t, mergeCommit, plan[2].NextMerge) // after emerge: set
 	})
 

@@ -13,6 +13,7 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/meko-christian/hercules/internal/pb"
 	"github.com/meko-christian/hercules/internal/test"
 	"github.com/stretchr/testify/assert"
@@ -928,4 +929,320 @@ func TestPipelineRunHibernation(t *testing.T) {
 	item.RaiseBootError = true
 	_, err = pipeline.Run(commits)
 	assert.Error(t, err)
+}
+
+// configUpstreamFailItem is a minimal PipelineItem whose ConfigureUpstream always fails.
+type configUpstreamFailItem struct {
+	NoopMerger
+}
+
+func (item *configUpstreamFailItem) Name() string                                   { return "UpstreamFail" }
+func (item *configUpstreamFailItem) Provides() []string                             { return []string{"upstreamfail"} }
+func (item *configUpstreamFailItem) Requires() []string                             { return []string{} }
+func (item *configUpstreamFailItem) ListConfigurationOptions() []ConfigurationOption { return nil }
+func (item *configUpstreamFailItem) Configure(facts map[string]interface{}) error    { return nil }
+func (item *configUpstreamFailItem) ConfigureUpstream(facts map[string]interface{}) error {
+	return errors.New("upstream config error")
+}
+func (item *configUpstreamFailItem) Initialize(repository *git.Repository) error { return nil }
+func (item *configUpstreamFailItem) Consume(deps map[string]interface{}) (map[string]interface{}, error) {
+	return map[string]interface{}{"upstreamfail": true}, nil
+}
+func (item *configUpstreamFailItem) Fork(n int) []PipelineItem {
+	return ForkSamePipelineItem(item, n)
+}
+
+func TestConfigurationOptionFormatDefaultStrings(t *testing.T) {
+	opt := ConfigurationOption{Type: StringsConfigurationOption, Default: []string{"a", "b", "c"}}
+	assert.Equal(t, "\"a,b,c\"", opt.FormatDefault())
+
+	opt = ConfigurationOption{Type: PathConfigurationOption, Default: "/usr/bin"}
+	assert.Equal(t, "/usr/bin", opt.FormatDefault())
+}
+
+func TestGetSensibleRemote(t *testing.T) {
+	remote := GetSensibleRemote(test.Repository)
+	assert.NotEmpty(t, remote)
+	assert.NotEqual(t, "<no remote>", remote)
+}
+
+func TestCommonAnalysisResultMergePanic(t *testing.T) {
+	t.Run("car EndTime is zero", func(t *testing.T) {
+		assert.Panics(t, func() {
+			c1 := CommonAnalysisResult{BeginTime: 100, EndTime: 0, RunTimePerItem: map[string]float64{}}
+			c2 := CommonAnalysisResult{BeginTime: 100, EndTime: 200, RunTimePerItem: map[string]float64{}}
+			c1.Merge(&c2)
+		})
+	})
+	t.Run("other BeginTime is zero", func(t *testing.T) {
+		assert.Panics(t, func() {
+			c1 := CommonAnalysisResult{BeginTime: 100, EndTime: 200, RunTimePerItem: map[string]float64{}}
+			c2 := CommonAnalysisResult{BeginTime: 0, EndTime: 300, RunTimePerItem: map[string]float64{}}
+			c1.Merge(&c2)
+		})
+	})
+}
+
+func TestCommonAnalysisResultMergeNoTimeChange(t *testing.T) {
+	c1 := CommonAnalysisResult{
+		BeginTime: 100, EndTime: 500, CommitsNumber: 1, RunTime: 100,
+		RunTimePerItem: map[string]float64{},
+	}
+	c2 := CommonAnalysisResult{
+		BeginTime: 200, EndTime: 400, CommitsNumber: 2, RunTime: 200,
+		RunTimePerItem: map[string]float64{},
+	}
+	c1.Merge(&c2)
+	assert.Equal(t, int64(100), c1.BeginTime)
+	assert.Equal(t, int64(500), c1.EndTime)
+	assert.Equal(t, 3, c1.CommitsNumber)
+}
+
+func TestPipelineDeployItemOnce(t *testing.T) {
+	pipeline := NewPipeline(test.Repository)
+	item1 := &testPipelineItem{}
+	pipeline.AddItem(item1)
+
+	// DeployItemOnce with same Name() should return existing item
+	item2 := &testPipelineItem{}
+	result := pipeline.DeployItemOnce(item2)
+	assert.Same(t, item1, result)
+	assert.Equal(t, 1, pipeline.Len())
+}
+
+func TestPipelineDeployItemOnceNew(t *testing.T) {
+	// DeployItemOnce with a new item (not yet in pipeline) should add it
+	pipeline := NewPipeline(test.Repository)
+	item := &testPipelineItem{}
+	result := pipeline.DeployItemOnce(item)
+	assert.Same(t, item, result)
+	assert.Equal(t, 1, pipeline.Len())
+}
+
+func TestPipelineRunPreparedPlanNil(t *testing.T) {
+	pipeline := NewPipeline(test.Repository)
+	pipeline.AddItem(&testPipelineItem{})
+	pipeline.Initialize(map[string]interface{}{})
+
+	result, err := pipeline.RunPreparedPlan()
+	assert.Nil(t, result)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "not prepared")
+}
+
+func TestPipelineRunPreparedPlanValid(t *testing.T) {
+	pipeline := NewPipeline(test.Repository)
+	item := &testPipelineItem{}
+	pipeline.AddItem(item)
+
+	commits := make([]*object.Commit, 1)
+	commits[0], _ = test.Repository.CommitObject(plumbing.NewHash(
+		"af9ddc0db70f09f3f27b4b98e415592a7485171c"))
+
+	err := pipeline.InitializeExt(map[string]interface{}{
+		ConfigPipelineCommits: commits,
+	}, func(items []PipelineItem) PipelineItem { return items[0] }, true)
+	require.NoError(t, err)
+
+	result, err := pipeline.RunPreparedPlan()
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+	assert.Len(t, result, 2)
+
+	// Second call should fail (preparedRun was consumed)
+	result2, err2 := pipeline.RunPreparedPlan()
+	assert.Nil(t, result2)
+	assert.Error(t, err2)
+}
+
+func TestPipelineNegativeHibernationDistance(t *testing.T) {
+	pipeline := NewPipeline(test.Repository)
+	pipeline.AddItem(&testPipelineItem{})
+	err := pipeline.Initialize(map[string]interface{}{
+		ConfigPipelineHibernationDistance: -1,
+	})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "hibernation-distance")
+}
+
+func TestPipelineHibernationDistanceFromFact(t *testing.T) {
+	pipeline := NewPipeline(test.Repository)
+	pipeline.AddItem(&testPipelineItem{})
+	err := pipeline.Initialize(map[string]interface{}{
+		ConfigPipelineHibernationDistance: 5,
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, 5, pipeline.HibernationDistance)
+}
+
+func TestPipelinePrintActionsFromFact(t *testing.T) {
+	pipeline := NewPipeline(test.Repository)
+	pipeline.AddItem(&testPipelineItem{})
+	pipeline.Initialize(map[string]interface{}{
+		ConfigPipelinePrintActions: true,
+	})
+	assert.True(t, pipeline.PrintActions)
+}
+
+func TestPipelineUnsatisfiedDependency(t *testing.T) {
+	pipeline := NewPipeline(test.Repository)
+	item := &dependingTestPipelineItem{} // requires "test" but nothing provides it
+	pipeline.AddItem(item)
+	err := pipeline.Initialize(map[string]interface{}{})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "unsatisfied")
+}
+
+func TestPipelineDAGDumpToFile(t *testing.T) {
+	pipeline := NewPipeline(test.Repository)
+	pipeline.AddItem(&testPipelineItem{})
+
+	tmpFile, err := ioutil.TempFile("", "hercules-dag-test-")
+	require.NoError(t, err)
+	tmpFile.Close()
+	defer os.Remove(tmpFile.Name())
+
+	err = pipeline.Initialize(map[string]interface{}{
+		ConfigPipelineDAGPath: tmpFile.Name(),
+	})
+	assert.NoError(t, err)
+
+	content, err := ioutil.ReadFile(tmpFile.Name())
+	assert.NoError(t, err)
+	assert.NotEmpty(t, content)
+}
+
+func TestPipelineDAGDumpToStderr(t *testing.T) {
+	pipeline := NewPipeline(test.Repository)
+	pipeline.AddItem(&testPipelineItem{})
+
+	oldStderr := os.Stderr
+	r, w, _ := os.Pipe()
+	os.Stderr = w
+
+	err := pipeline.Initialize(map[string]interface{}{
+		ConfigPipelineDAGPath: "-",
+	})
+
+	w.Close()
+	os.Stderr = oldStderr
+
+	var buf bytes.Buffer
+	io.Copy(&buf, r)
+	r.Close()
+
+	assert.NoError(t, err)
+	assert.NotEmpty(t, buf.String())
+}
+
+func TestPipelineConfigureUpstreamError(t *testing.T) {
+	pipeline := NewPipeline(test.Repository)
+	pipeline.AddItem(&configUpstreamFailItem{})
+	err := pipeline.Initialize(map[string]interface{}{})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "configure upstream")
+}
+
+func TestPipelineInitializeMergeTracksNotAllowed(t *testing.T) {
+	pipeline := NewPipeline(test.Repository)
+	pipeline.SetFeature(FeatureMergeTracks)
+	pipeline.AddItem(&testPipelineItem{})
+	err := pipeline.Initialize(map[string]interface{}{})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "merge tracks")
+}
+
+func TestPipelineInitializeExtNoCommits(t *testing.T) {
+	pipeline := NewPipeline(test.Repository)
+	pipeline.AddItem(&testPipelineItem{})
+	err := pipeline.InitializeExt(map[string]interface{}{},
+		func(items []PipelineItem) PipelineItem { return items[0] }, true)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "commits are not available")
+}
+
+func TestPipelineInitializeDryRunSkipsConfigure(t *testing.T) {
+	pipeline := NewPipeline(test.Repository)
+	item := &testPipelineItem{ConfigureRaises: true}
+	pipeline.AddItem(item)
+	// DryRun via fact should skip Configure (which would fail)
+	err := pipeline.Initialize(map[string]interface{}{
+		ConfigPipelineDryRun: true,
+	})
+	assert.NoError(t, err)
+	assert.True(t, pipeline.DryRun)
+}
+
+// circularDepItem creates a circular dependency by requiring and providing the same key.
+type circularDepItem struct {
+	NoopMerger
+}
+
+func (item *circularDepItem) Name() string                                   { return "Circular" }
+func (item *circularDepItem) Provides() []string                             { return []string{"circular"} }
+func (item *circularDepItem) Requires() []string                             { return []string{"circular"} }
+func (item *circularDepItem) ListConfigurationOptions() []ConfigurationOption { return nil }
+func (item *circularDepItem) Configure(facts map[string]interface{}) error    { return nil }
+func (item *circularDepItem) ConfigureUpstream(facts map[string]interface{}) error {
+	return nil
+}
+func (item *circularDepItem) Initialize(repository *git.Repository) error { return nil }
+func (item *circularDepItem) Consume(deps map[string]interface{}) (map[string]interface{}, error) {
+	return map[string]interface{}{"circular": true}, nil
+}
+func (item *circularDepItem) Fork(n int) []PipelineItem {
+	return ForkSamePipelineItem(item, n)
+}
+
+func TestPipelineResolveCircularDependency(t *testing.T) {
+	pipeline := NewPipeline(test.Repository)
+	pipeline.AddItem(&circularDepItem{})
+	err := pipeline.Initialize(map[string]interface{}{})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "topological sort")
+}
+
+func TestGetSensibleRemoteNoRemote(t *testing.T) {
+	repo, err := git.Init(memory.NewStorage(), nil)
+	require.NoError(t, err)
+	remote := GetSensibleRemote(repo)
+	assert.Equal(t, "<no remote>", remote)
+}
+
+func TestPipelineInitializeWithCommitsFact(t *testing.T) {
+	pipeline := NewPipeline(test.Repository)
+	item := &testPipelineItem{}
+	pipeline.AddItem(item)
+
+	commits := make([]*object.Commit, 1)
+	commits[0], _ = test.Repository.CommitObject(plumbing.NewHash(
+		"af9ddc0db70f09f3f27b4b98e415592a7485171c"))
+
+	// Pass commits directly via fact to skip Commits() call
+	err := pipeline.Initialize(map[string]interface{}{
+		ConfigPipelineCommits: commits,
+	})
+	assert.NoError(t, err)
+	assert.True(t, item.Initialized)
+}
+
+func TestPipelineInitializeExtMergeTracksWithPreparePlan(t *testing.T) {
+	pipeline := NewPipeline(test.Repository)
+	pipeline.SetFeature(FeatureMergeTracks)
+	item := &testPipelineItem{}
+	pipeline.AddItem(item)
+
+	commits := make([]*object.Commit, 1)
+	commits[0], _ = test.Repository.CommitObject(plumbing.NewHash(
+		"af9ddc0db70f09f3f27b4b98e415592a7485171c"))
+
+	// merge tracks with preparePlan=true should work
+	err := pipeline.InitializeExt(map[string]interface{}{
+		ConfigPipelineCommits: commits,
+	}, func(items []PipelineItem) PipelineItem { return items[0] }, true)
+	assert.NoError(t, err)
+
+	result, err := pipeline.RunPreparedPlan()
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
 }

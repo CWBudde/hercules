@@ -285,7 +285,7 @@ func TestBusFactorMergeResults(t *testing.T) {
 
 	r2 := BusFactorResult{
 		Snapshots: map[int]*BusFactorSnapshot{
-			5: {BusFactor: 3, TotalLines: 300, AuthorLines: map[int]int64{0: 150, 1: 100, 2: 50}},
+			5:  {BusFactor: 3, TotalLines: 300, AuthorLines: map[int]int64{0: 150, 1: 100, 2: 50}},
 			10: {BusFactor: 1, TotalLines: 50, AuthorLines: map[int]int64{2: 50}},
 		},
 		SubsystemBusFactor: map[string]int{"src": 2, "docs": 1},

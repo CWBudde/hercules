@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"github.com/meko-christian/hercules/internal/core"
 	"io"
 	"io/ioutil"
 	"log"
@@ -21,9 +20,6 @@ import (
 	"unicode"
 
 	"github.com/Masterminds/sprig"
-	"github.com/meko-christian/go-billy-siva"
-	"github.com/meko-christian/hercules"
-	"github.com/meko-christian/hercules/internal/pb"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5"
@@ -34,6 +30,10 @@ import (
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/gogo/protobuf/proto"
+	"github.com/meko-christian/go-billy-siva"
+	"github.com/meko-christian/hercules"
+	"github.com/meko-christian/hercules/internal/core"
+	"github.com/meko-christian/hercules/internal/pb"
 	"github.com/mitchellh/go-homedir"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -296,7 +296,7 @@ targets can be added using the --plugin system.`,
 			cmdlineFacts[hercules.ConfigPipelineCommits] = commits
 		}
 
-		var priorityFn = func(items []core.PipelineItem) core.PipelineItem {
+		priorityFn := func(items []core.PipelineItem) core.PipelineItem {
 			if len(items) == 0 {
 				return nil
 			}
@@ -429,7 +429,8 @@ func (v *flagSorter) weightFlagsOf(item core.PipelineItem, flagSet *pflag.FlagSe
 
 func printResults(
 	uri string, deployed []hercules.LeafPipelineItem,
-	results map[hercules.LeafPipelineItem]interface{}) {
+	results map[hercules.LeafPipelineItem]interface{},
+) {
 	commonResult := results[nil].(*hercules.CommonAnalysisResult)
 
 	fmt.Println("hercules:")
@@ -452,8 +453,8 @@ func printResults(
 
 func protobufResults(
 	uri string, deployed []hercules.LeafPipelineItem,
-	results map[hercules.LeafPipelineItem]interface{}) {
-
+	results map[hercules.LeafPipelineItem]interface{},
+) {
 	header := pb.Metadata{
 		Version:    2,
 		Hash:       hercules.BinaryGitHash,
@@ -494,7 +495,7 @@ func rpad(s string, padding int) string {
 
 // tmpl was adapted from cobra/cobra.go
 func tmpl(w io.Writer, text string, data interface{}) error {
-	var templateFuncs = template.FuncMap{
+	templateFuncs := template.FuncMap{
 		"trim":                    strings.TrimSpace,
 		"trimRightSpace":          trimRightSpace,
 		"trimTrailingWhitespaces": trimRightSpace,
@@ -614,9 +615,11 @@ var versionCmd = &cobra.Command{
 	},
 }
 
-var cmdlineFacts map[string]interface{}
-var cmdlineDeployed map[string]*bool
-var activationByFlags map[string][]string
+var (
+	cmdlineFacts      map[string]interface{}
+	cmdlineDeployed   map[string]*bool
+	activationByFlags map[string][]string
+)
 
 func init() {
 	loadPlugins()

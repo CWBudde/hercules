@@ -65,7 +65,8 @@ var generatePluginCmd = &cobra.Command{
 		dict := map[string]string{
 			"name": name, "varname": varname, "flag": flag, "package": pkg,
 			"output": outputPath, "shlib": shlib, "proto": protoBuf, "protogo": pbGo,
-			"outdir": outputDir}
+			"outdir": outputDir,
+		}
 		err = gen.Execute(outFile, dict)
 		if err != nil {
 			panic(err)
@@ -79,7 +80,7 @@ var generatePluginCmd = &cobra.Command{
 	  // reference: https://developers.google.com/protocol-buffers/docs/proto3
 	  // example: pb/pb.proto https://github.com/src-d/hercules/blob/master/pb/pb.proto
 	}
-	`, pkg, name)), 0666)
+	`, pkg, name)), 0o666)
 		// generate the pb Go file
 		protoc, err := exec.LookPath("protoc")
 		cmdargs := [...]string{
@@ -99,7 +100,8 @@ var generatePluginCmd = &cobra.Command{
 			panic("protoc was not found at " + env[len(env)-1])
 		}
 		protocmd := exec.Cmd{
-			Path: protoc, Args: cmdargs[:], Env: env, Stdout: os.Stdout, Stderr: os.Stderr}
+			Path: protoc, Args: cmdargs[:], Env: env, Stdout: os.Stdout, Stderr: os.Stderr,
+		}
 		err = protocmd.Run()
 		if err != nil {
 			panic(err)
@@ -124,7 +126,7 @@ all: {{.shlib}}
 			mkrelative("protogo")
 			mkrelative("proto")
 			gen.Execute(buffer, dict)
-			ioutil.WriteFile(makefile, buffer.Bytes(), 0666)
+			ioutil.WriteFile(makefile, buffer.Bytes(), 0o666)
 		}
 	},
 }

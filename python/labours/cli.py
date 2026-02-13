@@ -21,6 +21,7 @@ from labours.modes.sentiment import show_sentiment_stats
 from labours.modes.shotness import show_shotness_stats
 from labours.modes.bus_factor import show_bus_factor
 from labours.modes.ownership_concentration import show_ownership_concentration
+from labours.modes.knowledge_diffusion import show_knowledge_diffusion
 from labours.modes.temporal_activity import show_temporal_activity
 from labours.readers import read_input
 from labours.utils import import_pandas
@@ -110,6 +111,7 @@ def parse_args() -> Namespace:
             "devs-parallel",
             "bus-factor",
             "ownership-concentration",
+            "knowledge-diffusion",
             "all",
         ],
         help="What to plot. Can be repeated, e.g. " "-m burndown-project -m run-times",
@@ -494,6 +496,24 @@ def main() -> None:
             subsystem_gini, subsystem_hhi, tick_size, start_date
         )
 
+    def knowledge_diffusion():
+        kd_warning = (
+            "Knowledge diffusion stats were not collected. "
+            "Re-run hercules with --knowledge-diffusion."
+        )
+        try:
+            data = reader.get_knowledge_diffusion()
+        except (KeyError, AttributeError):
+            print(kd_warning)
+            return
+
+        files, distribution, people, window_months, tick_size = data
+        start_date, end_date = reader.get_header()
+        show_knowledge_diffusion(
+            args, reader.get_name(), files, distribution, people,
+            window_months, tick_size, start_date
+        )
+
     def devs_parallel():
         try:
             ownership = reader.get_ownership_burndown()
@@ -539,6 +559,7 @@ def main() -> None:
         "devs-parallel": devs_parallel,
         "bus-factor": bus_factor,
         "ownership-concentration": ownership_concentration,
+        "knowledge-diffusion": knowledge_diffusion,
     }
 
     if "all" in args.modes:

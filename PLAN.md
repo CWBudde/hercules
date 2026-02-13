@@ -317,19 +317,19 @@ owns everything.
 Track unique editors per file over time to identify single-contributor risk areas
 and knowledge silos.
 
-- [ ] **Go analysis** (`leaves/knowledge_diffusion.go`)
+- [x] **Go analysis** (`leaves/knowledge_diffusion.go`)
   - Implement `core.LeafPipelineItem` with `Flag() = "knowledge-diffusion"`
   - Require `identity.DependencyAuthor`, `items.DependencyTreeChanges`,
     `items.DependencyTick`
   - In `Consume()`: for each changed file, record the set of unique authors
   - In `Finalize()`: per file emit `unique_editors_count`, `unique_editors_over_time`,
     `last_N_months_editors`; aggregate as distribution (histogram of files by editor count)
-- [ ] **Protobuf schema** — add `KnowledgeDiffusionResults` message
+- [x] **Protobuf schema** — add `KnowledgeDiffusionResults` message
 - [ ] **Python visualization**
   - Lorenz curve of editor distribution across files
   - Heatmap: files × time with editor count
   - Top-N "knowledge silos" (files with fewest unique editors relative to churn)
-- [ ] **Tests**
+- [x] **Tests**
 - [ ] **Effort**: Medium — needs per-file author tracking, moderate state
 
 #### 6.4 Onboarding Ramp

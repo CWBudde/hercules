@@ -258,6 +258,28 @@ class YamlReader(Reader):
         tick_size = int(oc_data.get("tick_size", 0))
         return snapshots, people, subsystem_gini, subsystem_hhi, tick_size
 
+    def get_knowledge_diffusion(self):
+        kd_data = self.data["KnowledgeDiffusion"]["knowledge_diffusion"]
+        files = {}
+        for file_name, file_data in kd_data.get("files", {}).items():
+            editors_over_time = {
+                int(k): int(v)
+                for k, v in file_data.get("editors_over_time", {}).items()
+            }
+            files[str(file_name)] = {
+                "unique_editors": int(file_data["unique_editors"]),
+                "recent_editors": int(file_data["recent_editors"]),
+                "editors_over_time": editors_over_time,
+            }
+        distribution = {
+            int(k): int(v)
+            for k, v in kd_data.get("distribution", {}).items()
+        }
+        people = kd_data.get("people", [])
+        window_months = int(kd_data.get("window_months", 6))
+        tick_size = int(kd_data.get("tick_size", 0))
+        return files, distribution, people, window_months, tick_size
+
     def _parse_burndown_matrix(self, matrix):
         return numpy.array(
             [numpy.fromstring(line, dtype=int, sep=" ") for line in matrix.split("\n")]
@@ -482,6 +504,27 @@ class ProtobufReader(Reader):
         tick_size = int(oc.tick_size)
         return snapshots, people, subsystem_gini, subsystem_hhi, tick_size
 
+    def get_knowledge_diffusion(self):
+        kd = self.contents["KnowledgeDiffusion"]
+        files = {}
+        for file_name, file_data in kd.files.items():
+            editors_over_time = {
+                int(k): int(v)
+                for k, v in file_data.unique_editors_over_time.items()
+            }
+            files[str(file_name)] = {
+                "unique_editors": int(file_data.unique_editors_count),
+                "recent_editors": int(file_data.recent_editors_count),
+                "editors_over_time": editors_over_time,
+            }
+        distribution = {
+            int(k): int(v) for k, v in kd.distribution.items()
+        }
+        people = list(kd.dev_index)
+        window_months = int(kd.window_months)
+        tick_size = int(kd.tick_size)
+        return files, distribution, people, window_months, tick_size
+
     def _parse_burndown_matrix(self, matrix):
         dense = numpy.zeros(
             (matrix.number_of_rows, matrix.number_of_columns), dtype=int
@@ -509,6 +552,7 @@ PB_MESSAGES = {
     "TemporalActivity": "labours.pb_pb2.TemporalActivityResults",
     "BusFactor": "labours.pb_pb2.BusFactorAnalysisResults",
     "OwnershipConcentration": "labours.pb_pb2.OwnershipConcentrationResults",
+    "KnowledgeDiffusion": "labours.pb_pb2.KnowledgeDiffusionResults",
 }
 
 

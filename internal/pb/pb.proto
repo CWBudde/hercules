@@ -298,6 +298,31 @@ message OwnershipConcentrationResults {
     int64 tick_size = 4;
 }
 
+// Per-file knowledge diffusion data
+message KnowledgeDiffusionFileData {
+    // total unique editors who ever touched this file
+    int32 unique_editors_count = 1;
+    // tick -> cumulative unique editor count at that tick
+    map<int32, int32> unique_editors_over_time = 2;
+    // editors active within the recent window
+    int32 recent_editors_count = 3;
+    // author indices who touched this file
+    repeated int32 authors = 4;
+}
+
+message KnowledgeDiffusionResults {
+    // per-file diffusion data
+    map<string, KnowledgeDiffusionFileData> files = 1;
+    // histogram: editor_count -> number_of_files
+    map<int32, int32> distribution = 2;
+    // sliding window size in months for "recent" editors
+    int32 window_months = 3;
+    // developer identities
+    repeated string dev_index = 4;
+    // how long each tick is, as an int64 nanosecond count (Go's time.Duration)
+    int64 tick_size = 5;
+}
+
 message AnalysisResults {
     Metadata header = 1;
     // the mapped values are dynamic messages which require the second parsing pass.

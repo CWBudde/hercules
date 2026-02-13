@@ -323,6 +323,88 @@ message KnowledgeDiffusionResults {
     int64 tick_size = 5;
 }
 
+// Snapshot of onboarding metrics at a specific milestone
+message OnboardingSnapshot {
+    int32 days_since_join = 1;
+
+    // All commits
+    int32 total_commits = 2;
+    int32 total_files = 3;
+    int32 total_lines = 4;
+
+    // Meaningful commits only (>= threshold)
+    int32 meaningful_commits = 5;
+    int32 meaningful_files = 6;
+    int32 meaningful_lines = 7;
+}
+
+// Per-author onboarding progression data
+message AuthorOnboardingData {
+    int32 first_commit_tick = 1;
+    string join_cohort = 2;  // "YYYY-MM" format
+
+    // Snapshots at configured window milestones (keyed by days)
+    map<int32, OnboardingSnapshot> snapshots = 3;
+}
+
+// Aggregated cohort statistics
+message CohortStats {
+    string cohort = 1;  // "YYYY-MM"
+    int32 author_count = 2;
+
+    // Average snapshots across cohort (keyed by days)
+    map<int32, OnboardingSnapshot> average_snapshots = 3;
+}
+
+// Top-level onboarding analysis results
+message OnboardingResults {
+    // Per-author detailed data (keyed by author index)
+    map<int32, AuthorOnboardingData> authors = 1;
+
+    // Cohort aggregates (keyed by "YYYY-MM")
+    map<string, CohortStats> cohorts = 2;
+
+    // Configuration used
+    repeated int32 window_days = 3;
+    int32 meaningful_threshold = 4;
+
+    // Developer identities
+    repeated string dev_index = 5;
+
+    // Tick size as nanosecond count
+    int64 tick_size = 6;
+}
+
+message FileRisk {
+    // file path
+    string path = 1;
+    // composite risk score
+    double risk_score = 2;
+    // current file size in lines
+    int32 size = 3;
+    // number of changes within time window
+    int32 churn = 4;
+    // number of files coupled to this file
+    int32 coupling_degree = 5;
+    // Gini coefficient for ownership concentration
+    double ownership_gini = 6;
+    // normalized size factor [0,1]
+    double size_normalized = 7;
+    // normalized churn factor [0,1]
+    double churn_normalized = 8;
+    // normalized coupling factor [0,1]
+    double coupling_normalized = 9;
+    // normalized ownership factor [0,1]
+    double ownership_normalized = 10;
+}
+
+message HotspotRiskResults {
+    // time window in days used for churn calculation
+    int32 window_days = 1;
+    // top-N risky files sorted by risk score descending
+    repeated FileRisk files = 2;
+}
+
 message AnalysisResults {
     Metadata header = 1;
     // the mapped values are dynamic messages which require the second parsing pass.

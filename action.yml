@@ -1,22 +1,88 @@
 name: "Hercules Insights"
-description: "Run various Git history analyses with src-d/hercules"
-author: "source{d}"
+description: "Run various Git history analyses with MeKo-Christian/hercules"
+author: "MeKo-Christian"
+
 inputs:
   args:
     description: "hercules command line arguments"
     required: false
-    default: "--burndown --burndown-people --devs --couples"
+    default: "--burndown --burndown-people --devs --couples --temporal-activity"
+  output:
+    description: "Output file for analysis results"
+    required: false
+    default: "analysis.yml"
+  generate-charts:
+    description: "Generate visualization charts using labours"
+    required: false
+    default: "true"
+  labours-mode:
+    description: "Labours visualization mode (all, burndown, couples, temporal-activity, etc.)"
+    required: false
+    default: "all"
+
+outputs:
+  analysis-file:
+    description: "Path to the generated analysis YAML file"
+    value: ${{ steps.analyze.outputs.file }}
+  charts-archive:
+    description: "Path to the tar archive containing charts"
+    value: "hercules_charts.tar"
+
 runs:
-  using: "docker"
-  image: "docker://srcd/hercules:latest"
-  args:
-    - "/bin/bash"
-    - "-c"
-    - "hercules ${{ inputs.args }} --pb . | labours -m all -f pb --disable-projector -o hercules_charts
-      && cd hercules_charts
-      && tar -cf ../hercules_charts.tar * ../hercules_charts_*
-      && cd ..
-      && rm -r hercules_charts"
+  using: "composite"
+  steps:
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: "1.21"
+
+    - name: Install Just
+      uses: extractions/setup-just@v2
+
+    - name: Build Hercules
+      shell: bash
+      run: just hercules
+
+    - name: Run Analysis
+      id: analyze
+      shell: bash
+      run: |
+        ./hercules ${{ inputs.args }} . > ${{ inputs.output }}
+        echo "file=${{ inputs.output }}" >> $GITHUB_OUTPUT
+
+    - name: Install Python and uv
+      if: inputs.generate-charts == 'true'
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+
+    - name: Install uv
+      if: inputs.generate-charts == 'true'
+      shell: bash
+      run: curl -LsSf https://astral.sh/uv/install.sh | sh
+
+    - name: Install Labours
+      if: inputs.generate-charts == 'true'
+      shell: bash
+      run: just install-labours
+
+    - name: Generate Charts
+      if: inputs.generate-charts == 'true'
+      shell: bash
+      run: |
+        uv run labours -m ${{ inputs.labours-mode }} ${{ inputs.output }}
+        tar -cf hercules_charts.tar *.png *.svg 2>/dev/null || tar -cf hercules_charts.tar *.png 2>/dev/null || echo "No charts generated"
+
+    - name: Summary
+      shell: bash
+      run: |
+        echo "### Hercules Analysis Complete :chart_with_upwards_trend:" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Analysis file**: \`${{ inputs.output }}\`" >> $GITHUB_STEP_SUMMARY
+        if [ -f hercules_charts.tar ]; then
+          echo "**Charts archive**: \`hercules_charts.tar\`" >> $GITHUB_STEP_SUMMARY
+        fi
+
 branding:
-  color: purple
-  icon: bar-chart-2
+  color: blue
+  icon: activity

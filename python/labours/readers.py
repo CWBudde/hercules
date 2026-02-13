@@ -258,6 +258,25 @@ class YamlReader(Reader):
         tick_size = int(oc_data.get("tick_size", 0))
         return snapshots, people, subsystem_gini, subsystem_hhi, tick_size
 
+    def get_hotspot_risk(self):
+        hr_data = self.data["HotspotRisk"]
+        files = []
+        for file_entry in hr_data.get("files", []):
+            files.append({
+                "path": str(file_entry["path"]),
+                "risk_score": float(file_entry["risk_score"]),
+                "size": int(file_entry["size"]),
+                "churn": int(file_entry["churn"]),
+                "coupling_degree": int(file_entry["coupling_degree"]),
+                "ownership_gini": float(file_entry["ownership_gini"]),
+                "size_normalized": float(file_entry["normalized"]["size"]),
+                "churn_normalized": float(file_entry["normalized"]["churn"]),
+                "coupling_normalized": float(file_entry["normalized"]["coupling"]),
+                "ownership_normalized": float(file_entry["normalized"]["ownership"]),
+            })
+        window_days = int(hr_data.get("window_days", 90))
+        return files, window_days
+
     def get_knowledge_diffusion(self):
         kd_data = self.data["KnowledgeDiffusion"]["knowledge_diffusion"]
         files = {}
@@ -503,6 +522,25 @@ class ProtobufReader(Reader):
         subsystem_hhi = {str(k): float(v) for k, v in oc.subsystem_hhi.items()}
         tick_size = int(oc.tick_size)
         return snapshots, people, subsystem_gini, subsystem_hhi, tick_size
+
+    def get_hotspot_risk(self):
+        hr = self.contents["HotspotRisk"]
+        files = []
+        for file_entry in hr.files:
+            files.append({
+                "path": str(file_entry.path),
+                "risk_score": float(file_entry.risk_score),
+                "size": int(file_entry.size_),
+                "churn": int(file_entry.churn),
+                "coupling_degree": int(file_entry.coupling_degree),
+                "ownership_gini": float(file_entry.ownership_gini),
+                "size_normalized": float(file_entry.size_normalized),
+                "churn_normalized": float(file_entry.churn_normalized),
+                "coupling_normalized": float(file_entry.coupling_normalized),
+                "ownership_normalized": float(file_entry.ownership_normalized),
+            })
+        window_days = int(hr.window_days)
+        return files, window_days
 
     def get_knowledge_diffusion(self):
         kd = self.contents["KnowledgeDiffusion"]

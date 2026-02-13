@@ -22,6 +22,7 @@ from labours.modes.shotness import show_shotness_stats
 from labours.modes.bus_factor import show_bus_factor
 from labours.modes.ownership_concentration import show_ownership_concentration
 from labours.modes.knowledge_diffusion import show_knowledge_diffusion
+from labours.modes.hotspot_risk import show_hotspot_risk
 from labours.modes.temporal_activity import show_temporal_activity
 from labours.readers import read_input
 from labours.utils import import_pandas
@@ -112,6 +113,7 @@ def parse_args() -> Namespace:
             "bus-factor",
             "ownership-concentration",
             "knowledge-diffusion",
+            "hotspot-risk",
             "all",
         ],
         help="What to plot. Can be repeated, e.g. " "-m burndown-project -m run-times",
@@ -537,6 +539,19 @@ def main() -> None:
             load_devs_parallel(ownership, couples, devs, args.max_people),
         )
 
+    def hotspot_risk():
+        hr_warning = (
+            "Hotspot risk scores were not collected. "
+            "Re-run hercules with --hotspot-risk."
+        )
+        try:
+            files, window_days = reader.get_hotspot_risk()
+        except (KeyError, AttributeError):
+            print(hr_warning)
+            return
+
+        show_hotspot_risk(args, reader.get_name(), files, window_days)
+
     modes = {
         "run-times": run_times,
         "burndown-project": project_burndown,
@@ -560,6 +575,7 @@ def main() -> None:
         "bus-factor": bus_factor,
         "ownership-concentration": ownership_concentration,
         "knowledge-diffusion": knowledge_diffusion,
+        "hotspot-risk": hotspot_risk,
     }
 
     if "all" in args.modes:

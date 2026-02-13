@@ -338,6 +338,17 @@ message OnboardingSnapshot {
     int32 meaningful_lines = 7;
 }
 
+// Average snapshot of onboarding metrics (for cohort aggregates)
+message OnboardingAverageSnapshot {
+    int32 days_since_join = 1;
+    double avg_total_commits = 2;
+    double avg_total_files = 3;
+    double avg_total_lines = 4;
+    double avg_meaningful_commits = 5;
+    double avg_meaningful_files = 6;
+    double avg_meaningful_lines = 7;
+}
+
 // Per-author onboarding progression data
 message AuthorOnboardingData {
     int32 first_commit_tick = 1;
@@ -353,7 +364,7 @@ message CohortStats {
     int32 author_count = 2;
 
     // Average snapshots across cohort (keyed by days)
-    map<int32, OnboardingSnapshot> average_snapshots = 3;
+    map<int32, OnboardingAverageSnapshot> average_snapshots = 3;
 }
 
 // Top-level onboarding analysis results
@@ -373,36 +384,6 @@ message OnboardingResults {
 
     // Tick size as nanosecond count
     int64 tick_size = 6;
-}
-
-message FileRisk {
-    // file path
-    string path = 1;
-    // composite risk score
-    double risk_score = 2;
-    // current file size in lines
-    int32 size = 3;
-    // number of changes within time window
-    int32 churn = 4;
-    // number of files coupled to this file
-    int32 coupling_degree = 5;
-    // Gini coefficient for ownership concentration
-    double ownership_gini = 6;
-    // normalized size factor [0,1]
-    double size_normalized = 7;
-    // normalized churn factor [0,1]
-    double churn_normalized = 8;
-    // normalized coupling factor [0,1]
-    double coupling_normalized = 9;
-    // normalized ownership factor [0,1]
-    double ownership_normalized = 10;
-}
-
-message HotspotRiskResults {
-    // time window in days used for churn calculation
-    int32 window_days = 1;
-    // top-N risky files sorted by risk score descending
-    repeated FileRisk files = 2;
 }
 
 message AnalysisResults {

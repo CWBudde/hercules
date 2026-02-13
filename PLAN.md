@@ -325,10 +325,10 @@ and knowledge silos.
   - In `Finalize()`: per file emit `unique_editors_count`, `unique_editors_over_time`,
     `last_N_months_editors`; aggregate as distribution (histogram of files by editor count)
 - [x] **Protobuf schema** — add `KnowledgeDiffusionResults` message
-- [ ] **Python visualization**
+- [x] **Python visualization**
   - Lorenz curve of editor distribution across files
-  - Heatmap: files × time with editor count
-  - Top-N "knowledge silos" (files with fewest unique editors relative to churn)
+  - Distribution histogram of files by editor count
+  - Top-N "knowledge silos" (files with fewest unique editors)
 - [x] **Tests**
 - [ ] **Effort**: Medium — needs per-file author tracking, moderate state
 

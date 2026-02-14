@@ -328,3 +328,33 @@ func TestOnboardingAnalysis_CohortAggregation(t *testing.T) {
 	// Average lines: (50 + 30 + 40) / 3 = 40
 	assert.Equal(t, 40, avgSnap.TotalLines)
 }
+
+func TestOnboardingAnalysis_Configuration(t *testing.T) {
+	oa := &OnboardingAnalysis{}
+
+	facts := map[string]interface{}{
+		ConfigOnboardingWindows:             "14,60",
+		ConfigOnboardingMeaningfulThreshold: 50,
+		items.FactTickSize:                  24 * time.Hour,
+	}
+
+	err := oa.Configure(facts)
+	require.NoError(t, err)
+
+	// Verify configuration applied
+	assert.Equal(t, []int{14, 60}, oa.WindowDays)
+	assert.Equal(t, 50, oa.MeaningfulThreshold)
+	assert.Equal(t, 24*time.Hour, oa.tickSize)
+}
+
+func TestOnboardingAnalysis_Configuration_Invalid(t *testing.T) {
+	oa := &OnboardingAnalysis{}
+
+	facts := map[string]interface{}{
+		ConfigOnboardingWindows: "7,invalid,30",
+	}
+
+	err := oa.Configure(facts)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid window days")
+}

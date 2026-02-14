@@ -148,3 +148,20 @@ func (oa *OnboardingAnalysis) Flag() string {
 func (oa *OnboardingAnalysis) Description() string {
 	return "Measures how quickly new contributors ramp up: time-to-first-change, breadth-of-files in first N days, convergence to stable contribution patterns."
 }
+
+// Initialize resets the temporary caches and prepares this PipelineItem for a series of Consume() calls.
+func (oa *OnboardingAnalysis) Initialize(repository *git.Repository) error {
+	oa.l = core.NewLogger()
+	oa.authorTimeline = map[int]map[int]*onboardingTickMetrics{}
+	oa.OneShotMergeProcessor.Initialize()
+
+	// Set defaults if not configured
+	if len(oa.WindowDays) == 0 {
+		oa.WindowDays = []int{7, 30, 90}
+	}
+	if oa.MeaningfulThreshold == 0 {
+		oa.MeaningfulThreshold = 10
+	}
+
+	return nil
+}

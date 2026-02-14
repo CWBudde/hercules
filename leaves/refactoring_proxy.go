@@ -53,3 +53,64 @@ type RefactoringProxy struct {
 
 	l core.Logger
 }
+
+// Name of this PipelineItem
+func (rp *RefactoringProxy) Name() string {
+	return "RefactoringProxy"
+}
+
+// Provides returns entities produced
+func (rp *RefactoringProxy) Provides() []string {
+	return []string{}
+}
+
+// Requires returns entities needed
+func (rp *RefactoringProxy) Requires() []string {
+	return []string{
+		items.DependencyTreeChanges,
+		items.DependencyTick,
+	}
+}
+
+// Flag for command line switch
+func (rp *RefactoringProxy) Flag() string {
+	return "refactoring-proxy"
+}
+
+// Description explains what the analysis does
+func (rp *RefactoringProxy) Description() string {
+	return "Tracks rename/move rate over time to distinguish refactoring phases from feature work."
+}
+
+// ListConfigurationOptions returns changeable properties
+func (rp *RefactoringProxy) ListConfigurationOptions() []core.ConfigurationOption {
+	options := [...]core.ConfigurationOption{
+		{
+			Name:        ConfigRefactoringThreshold,
+			Description: "Rename ratio threshold to classify a tick as refactoring-heavy (0.0-1.0).",
+			Flag:        "refactoring-threshold",
+			Type:        core.FloatConfigurationOption,
+			Default:     0.5,
+		},
+	}
+	return options[:]
+}
+
+// Configure sets properties
+func (rp *RefactoringProxy) Configure(facts map[string]interface{}) error {
+	if l, exists := facts[core.ConfigLogger].(core.Logger); exists {
+		rp.l = l
+	}
+	if val, exists := facts[ConfigRefactoringThreshold].(float64); exists {
+		rp.RefactoringThreshold = val
+	}
+	if val, exists := facts[items.FactTickSize].(time.Duration); exists {
+		rp.tickSize = val
+	}
+	return nil
+}
+
+// ConfigureUpstream configures upstream dependencies
+func (*RefactoringProxy) ConfigureUpstream(facts map[string]interface{}) error {
+	return nil
+}

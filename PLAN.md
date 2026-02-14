@@ -456,7 +456,7 @@ The current workflow requires piping `hercules` into `labours` with format flags
 and mode selection. For first-time users and teaching, a single command that
 produces a complete report would lower the barrier significantly.
 
-- [ ] **Implement `hercules report` subcommand** in `cmd/hercules/`
+- [x] **Implement `hercules report` subcommand** in `cmd/hercules/`
   - Runs all enabled analyses, invokes labours internally, produces output directory
   - `hercules report --all -o ./report/ <repo>` generates all charts + summary
   - Output: directory with PNGs/SVGs + an `index.html` that embeds all charts

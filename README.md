@@ -468,6 +468,21 @@ The analysis produces two visualizations:
 #### Everything in a single pass
 
 ```
+hercules report --all -o ./report https://github.com/go-git/go-git
+```
+
+This command runs Hercules in Protocol Buffers mode, invokes `labours` internally,
+and writes a report directory with generated plots plus `index.html`.
+
+To customize the report scope, pass explicit analysis flags and modes:
+
+```
+hercules report --analysis burndown --analysis devs --mode burndown-project --mode devs -o ./report <repo>
+```
+
+Manual pipeline chaining is still supported:
+
+```
 hercules --burndown --burndown-files --burndown-people --couples --shotness --devs [--people-dict=/path/to/identities]
 labours -m all
 ```

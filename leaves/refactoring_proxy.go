@@ -12,7 +12,6 @@ import (
 	"github.com/meko-christian/hercules/internal/core"
 	"github.com/meko-christian/hercules/internal/pb"
 	items "github.com/meko-christian/hercules/internal/plumbing"
-	"github.com/meko-christian/hercules/internal/yaml"
 )
 
 const (
@@ -36,7 +35,7 @@ type RefactoringProxyResult struct {
 
 	// Configuration metadata
 	Threshold float64       // The threshold used for classification
-	TickSize  time.Duration
+	tickSize  time.Duration
 }
 
 // RefactoringProxy measures rename/move rate to identify refactoring phases
@@ -90,7 +89,7 @@ func (rp *RefactoringProxy) ListConfigurationOptions() []core.ConfigurationOptio
 			Description: "Rename ratio threshold to classify a tick as refactoring-heavy (0.0-1.0).",
 			Flag:        "refactoring-threshold",
 			Type:        core.FloatConfigurationOption,
-			Default:     0.5,
+			Default:     float32(0.5),
 		},
 	}
 	return options[:]
@@ -101,8 +100,8 @@ func (rp *RefactoringProxy) Configure(facts map[string]interface{}) error {
 	if l, exists := facts[core.ConfigLogger].(core.Logger); exists {
 		rp.l = l
 	}
-	if val, exists := facts[ConfigRefactoringThreshold].(float64); exists {
-		rp.RefactoringThreshold = val
+	if val, exists := facts[ConfigRefactoringThreshold]; exists {
+		rp.RefactoringThreshold = val.(float64)
 	}
 	if val, exists := facts[items.FactTickSize].(time.Duration); exists {
 		rp.tickSize = val
@@ -187,7 +186,7 @@ func (rp *RefactoringProxy) Finalize() interface{} {
 		IsRefactoring: make([]bool, len(ticks)),
 		TotalChanges:  make([]int, len(ticks)),
 		Threshold:     rp.RefactoringThreshold,
-		TickSize:      rp.tickSize,
+		tickSize:      rp.tickSize,
 	}
 
 	for i, tick := range ticks {
@@ -212,4 +211,119 @@ func (rp *RefactoringProxy) Finalize() interface{} {
 // Fork clones this pipeline item
 func (rp *RefactoringProxy) Fork(n int) []core.PipelineItem {
 	return core.ForkSamePipelineItem(rp, n)
+}
+
+// serializeText outputs YAML format
+func (rp *RefactoringProxy) serializeText(result *RefactoringProxyResult, writer io.Writer) {
+	fmt.Fprintln(writer, "  refactoring_proxy:")
+	fmt.Fprintf(writer, "    threshold: %.2f\n", result.Threshold)
+	fmt.Fprintf(writer, "    tick_size: %d\n", int(result.tickSize.Seconds()))
+
+	// Ticks array
+	fmt.Fprint(writer, "    ticks: [")
+	for i, tick := range result.Ticks {
+		if i > 0 {
+			fmt.Fprint(writer, ", ")
+		}
+		fmt.Fprintf(writer, "%d", tick)
+	}
+	fmt.Fprintln(writer, "]")
+
+	// Rename ratios array
+	fmt.Fprint(writer, "    rename_ratios: [")
+	for i, ratio := range result.RenameRatios {
+		if i > 0 {
+			fmt.Fprint(writer, ", ")
+		}
+		fmt.Fprintf(writer, "%.4f", ratio)
+	}
+	fmt.Fprintln(writer, "]")
+
+	// Is refactoring array
+	fmt.Fprint(writer, "    is_refactoring: [")
+	for i, isRef := range result.IsRefactoring {
+		if i > 0 {
+			fmt.Fprint(writer, ", ")
+		}
+		fmt.Fprintf(writer, "%t", isRef)
+	}
+	fmt.Fprintln(writer, "]")
+
+	// Total changes array
+	fmt.Fprint(writer, "    total_changes: [")
+	for i, total := range result.TotalChanges {
+		if i > 0 {
+			fmt.Fprint(writer, ", ")
+		}
+		fmt.Fprintf(writer, "%d", total)
+	}
+	fmt.Fprintln(writer, "]")
+}
+
+// serializeBinary outputs Protocol Buffers format
+func (rp *RefactoringProxy) serializeBinary(result *RefactoringProxyResult, writer io.Writer) error {
+	message := pb.RefactoringProxyResults{
+		Ticks:         make([]int32, len(result.Ticks)),
+		RenameRatios:  make([]float32, len(result.RenameRatios)),
+		IsRefactoring: result.IsRefactoring,
+		TotalChanges:  make([]int32, len(result.TotalChanges)),
+		Threshold:     float32(result.Threshold), // Convert float64 to float32 for protobuf
+		TickSize:      int64(result.tickSize),
+	}
+
+	for i := range result.Ticks {
+		message.Ticks[i] = int32(result.Ticks[i])
+		message.RenameRatios[i] = float32(result.RenameRatios[i])
+		message.TotalChanges[i] = int32(result.TotalChanges[i])
+	}
+
+	serialized, err := proto.Marshal(&message)
+	if err != nil {
+		return err
+	}
+	_, err = writer.Write(serialized)
+	return err
+}
+
+// Serialize converts analysis result to text or bytes
+func (rp *RefactoringProxy) Serialize(result interface{}, binary bool, writer io.Writer) error {
+	refactoringResult, ok := result.(RefactoringProxyResult)
+	if !ok {
+		return fmt.Errorf("result is not a RefactoringProxyResult: '%v'", result)
+	}
+	if binary {
+		return rp.serializeBinary(&refactoringResult, writer)
+	}
+	rp.serializeText(&refactoringResult, writer)
+	return nil
+}
+
+// Deserialize converts protobuf bytes to RefactoringProxyResult
+func (rp *RefactoringProxy) Deserialize(pbmessage []byte) (interface{}, error) {
+	message := pb.RefactoringProxyResults{}
+	err := proto.Unmarshal(pbmessage, &message)
+	if err != nil {
+		return nil, err
+	}
+
+	result := RefactoringProxyResult{
+		Ticks:         make([]int, len(message.Ticks)),
+		RenameRatios:  make([]float64, len(message.RenameRatios)),
+		IsRefactoring: message.IsRefactoring,
+		TotalChanges:  make([]int, len(message.TotalChanges)),
+		Threshold:     float64(message.Threshold), // Convert float32 from protobuf to float64
+		tickSize:      time.Duration(message.TickSize),
+	}
+
+	for i := range message.Ticks {
+		result.Ticks[i] = int(message.Ticks[i])
+		result.RenameRatios[i] = float64(message.RenameRatios[i])
+		result.TotalChanges[i] = int(message.TotalChanges[i])
+	}
+
+	return result, nil
+}
+
+func init() {
+	core.Registry.Register(&RefactoringProxy{})
 }

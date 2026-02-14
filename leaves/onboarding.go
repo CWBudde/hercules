@@ -78,3 +78,73 @@ func (oa *OnboardingAnalysis) Requires() []string {
 		items.DependencyTreeChanges,
 	}
 }
+
+// ListConfigurationOptions returns the list of changeable public properties of this PipelineItem.
+func (oa *OnboardingAnalysis) ListConfigurationOptions() []core.ConfigurationOption {
+	options := [...]core.ConfigurationOption{
+		{
+			Name:        ConfigOnboardingWindows,
+			Description: "Comma-separated list of days for snapshot milestones (e.g., '7,30,90').",
+			Flag:        "onboarding-windows",
+			Type:        core.StringConfigurationOption,
+			Default:     "7,30,90",
+		},
+		{
+			Name:        ConfigOnboardingMeaningfulThreshold,
+			Description: "Minimum lines changed for a commit to count as 'meaningful'.",
+			Flag:        "onboarding-meaningful-threshold",
+			Type:        core.IntConfigurationOption,
+			Default:     10,
+		},
+	}
+	return options[:]
+}
+
+// Configure sets the properties previously published by ListConfigurationOptions().
+func (oa *OnboardingAnalysis) Configure(facts map[string]interface{}) error {
+	if l, exists := facts[core.ConfigLogger].(core.Logger); exists {
+		oa.l = l
+	}
+	if val, exists := facts[ConfigOnboardingWindows].(string); exists {
+		// Parse comma-separated window days
+		parts := strings.Split(val, ",")
+		oa.WindowDays = make([]int, 0, len(parts))
+		for _, p := range parts {
+			p = strings.TrimSpace(p)
+			if p == "" {
+				continue
+			}
+			days, err := strconv.Atoi(p)
+			if err != nil {
+				return fmt.Errorf("invalid window days value '%s': %w", p, err)
+			}
+			oa.WindowDays = append(oa.WindowDays, days)
+		}
+		sort.Ints(oa.WindowDays)
+	}
+	if val, exists := facts[ConfigOnboardingMeaningfulThreshold].(int); exists {
+		oa.MeaningfulThreshold = val
+	}
+	if val, exists := facts[identity.FactIdentityDetectorReversedPeopleDict].([]string); exists {
+		oa.reversedPeopleDict = val
+	}
+	if val, exists := facts[items.FactTickSize].(time.Duration); exists {
+		oa.tickSize = val
+	}
+	return nil
+}
+
+// ConfigureUpstream configures the upstream dependencies.
+func (*OnboardingAnalysis) ConfigureUpstream(facts map[string]interface{}) error {
+	return nil
+}
+
+// Flag for the command line switch which enables this analysis.
+func (oa *OnboardingAnalysis) Flag() string {
+	return "onboarding"
+}
+
+// Description returns the text which explains what the analysis is doing.
+func (oa *OnboardingAnalysis) Description() string {
+	return "Measures how quickly new contributors ramp up: time-to-first-change, breadth-of-files in first N days, convergence to stable contribution patterns."
+}

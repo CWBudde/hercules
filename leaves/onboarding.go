@@ -275,3 +275,145 @@ func (oa *OnboardingAnalysis) Consume(deps map[string]interface{}) (map[string]i
 
 	return nil, nil
 }
+
+// cumulativeMetrics represents running totals across an author's timeline
+type cumulativeMetrics struct {
+	commits           int
+	files             map[string]bool
+	lines             int
+	meaningfulCommits int
+	meaningfulFiles   map[string]bool
+	meaningfulLines   int
+}
+
+// newCumulativeMetrics creates an empty cumulative metrics tracker
+func newCumulativeMetrics() *cumulativeMetrics {
+	return &cumulativeMetrics{
+		files:           map[string]bool{},
+		meaningfulFiles: map[string]bool{},
+	}
+}
+
+// accumulate adds tick metrics to cumulative totals
+func (cm *cumulativeMetrics) accumulate(tm *onboardingTickMetrics) {
+	cm.commits += tm.Commits
+	for file := range tm.Files {
+		cm.files[file] = true
+	}
+	cm.lines += tm.LinesAdded + tm.LinesRemoved + tm.LinesChanged
+	cm.meaningfulCommits += tm.MeaningfulCommits
+	for file := range tm.MeaningfulFiles {
+		cm.meaningfulFiles[file] = true
+	}
+	cm.meaningfulLines += tm.MeaningfulLinesAdded + tm.MeaningfulLinesRemoved + tm.MeaningfulLinesChanged
+}
+
+// findClosestTick finds the tick <= targetTick in sorted ticks array
+func findClosestTick(sortedTicks []int, targetTick int) int {
+	if len(sortedTicks) == 0 {
+		return -1
+	}
+
+	// Binary search for closest tick <= target
+	idx := sort.Search(len(sortedTicks), func(i int) bool {
+		return sortedTicks[i] > targetTick
+	})
+
+	if idx == 0 {
+		// All ticks are > target, no valid tick
+		return -1
+	}
+
+	return sortedTicks[idx-1]
+}
+
+// copyFileSet creates a copy of a file set
+func copyFileSet(src map[string]bool) map[string]bool {
+	dst := make(map[string]bool, len(src))
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
+}
+
+// Finalize returns the result of the analysis.
+func (oa *OnboardingAnalysis) Finalize() interface{} {
+	authors := make(map[int]*AuthorOnboardingData, len(oa.authorTimeline))
+	cohortGroups := map[string][]int{} // cohort -> author IDs
+
+	// Process each author
+	for authorID, timeline := range oa.authorTimeline {
+		// Find first commit tick
+		firstTick := -1
+		sortedTicks := make([]int, 0, len(timeline))
+		for tick := range timeline {
+			sortedTicks = append(sortedTicks, tick)
+			if firstTick == -1 || tick < firstTick {
+				firstTick = tick
+			}
+		}
+		sort.Ints(sortedTicks)
+
+		if firstTick == -1 {
+			continue // No commits for this author
+		}
+
+		// Determine join cohort (YYYY-MM)
+		firstTimestamp := items.FloorTime(time.Unix(0, 0).Add(time.Duration(firstTick)*oa.tickSize), oa.tickSize)
+		joinCohort := firstTimestamp.Format("2006-01")
+
+		// Build cumulative timeline
+		cumulative := newCumulativeMetrics()
+		tickToMetrics := map[int]*cumulativeMetrics{}
+
+		for _, tick := range sortedTicks {
+			tickMetrics := timeline[tick]
+			cumulative.accumulate(tickMetrics)
+
+			// Store snapshot of cumulative state at this tick
+			tickToMetrics[tick] = &cumulativeMetrics{
+				commits:           cumulative.commits,
+				files:             copyFileSet(cumulative.files),
+				lines:             cumulative.lines,
+				meaningfulCommits: cumulative.meaningfulCommits,
+				meaningfulFiles:   copyFileSet(cumulative.meaningfulFiles),
+				meaningfulLines:   cumulative.meaningfulLines,
+			}
+		}
+
+		// Compute window snapshots
+		snapshots := map[int]*OnboardingSnapshot{}
+		ticksPerDay := int(24 * time.Hour / oa.tickSize)
+
+		for _, windowDays := range oa.WindowDays {
+			targetTick := firstTick + (windowDays * ticksPerDay)
+			closestTick := findClosestTick(sortedTicks, targetTick)
+
+			if closestTick == -1 {
+				continue // No data within this window
+			}
+
+			cm := tickToMetrics[closestTick]
+			snapshots[windowDays] = &OnboardingSnapshot{
+				DaysSinceJoin:     windowDays,
+				TotalCommits:      cm.commits,
+				TotalFiles:        len(cm.files),
+				TotalLines:        cm.lines,
+				MeaningfulCommits: cm.meaningfulCommits,
+				MeaningfulFiles:   len(cm.meaningfulFiles),
+				MeaningfulLines:   cm.meaningfulLines,
+			}
+		}
+
+		authors[authorID] = &AuthorOnboardingData{
+			FirstCommitTick: firstTick,
+			JoinCohort:      joinCohort,
+			Snapshots:       snapshots,
+		}
+
+		cohortGroups[joinCohort] = append(cohortGroups[joinCohort], authorID)
+	}
+
+	// Continue to cohort aggregation
+	return oa.finalizeCohorts(authors, cohortGroups)
+}

@@ -417,3 +417,71 @@ func (oa *OnboardingAnalysis) Finalize() interface{} {
 	// Continue to cohort aggregation
 	return oa.finalizeCohorts(authors, cohortGroups)
 }
+
+// finalizeCohorts computes cohort aggregates and returns final result
+func (oa *OnboardingAnalysis) finalizeCohorts(
+	authors map[int]*AuthorOnboardingData,
+	cohortGroups map[string][]int,
+) OnboardingResult {
+	cohorts := make(map[string]*CohortStats, len(cohortGroups))
+
+	for cohort, authorIDs := range cohortGroups {
+		if len(authorIDs) == 0 {
+			continue
+		}
+
+		// Aggregate snapshots across all authors in cohort
+		windowSums := map[int]*OnboardingSnapshot{}
+
+		for _, authorID := range authorIDs {
+			authorData := authors[authorID]
+			for windowDays, snapshot := range authorData.Snapshots {
+				sum, exists := windowSums[windowDays]
+				if !exists {
+					sum = &OnboardingSnapshot{
+						DaysSinceJoin: windowDays,
+					}
+					windowSums[windowDays] = sum
+				}
+
+				sum.TotalCommits += snapshot.TotalCommits
+				sum.TotalFiles += snapshot.TotalFiles
+				sum.TotalLines += snapshot.TotalLines
+				sum.MeaningfulCommits += snapshot.MeaningfulCommits
+				sum.MeaningfulFiles += snapshot.MeaningfulFiles
+				sum.MeaningfulLines += snapshot.MeaningfulLines
+			}
+		}
+
+		// Compute averages
+		authorCount := len(authorIDs)
+		averageSnapshots := make(map[int]*OnboardingSnapshot, len(windowSums))
+
+		for windowDays, sum := range windowSums {
+			averageSnapshots[windowDays] = &OnboardingSnapshot{
+				DaysSinceJoin:     windowDays,
+				TotalCommits:      sum.TotalCommits / authorCount,
+				TotalFiles:        sum.TotalFiles / authorCount,
+				TotalLines:        sum.TotalLines / authorCount,
+				MeaningfulCommits: sum.MeaningfulCommits / authorCount,
+				MeaningfulFiles:   sum.MeaningfulFiles / authorCount,
+				MeaningfulLines:   sum.MeaningfulLines / authorCount,
+			}
+		}
+
+		cohorts[cohort] = &CohortStats{
+			Cohort:           cohort,
+			AuthorCount:      authorCount,
+			AverageSnapshots: averageSnapshots,
+		}
+	}
+
+	return OnboardingResult{
+		Authors:             authors,
+		Cohorts:             cohorts,
+		WindowDays:          oa.WindowDays,
+		MeaningfulThreshold: oa.MeaningfulThreshold,
+		reversedPeopleDict:  oa.reversedPeopleDict,
+		tickSize:            oa.tickSize,
+	}
+}

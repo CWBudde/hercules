@@ -34,6 +34,49 @@ type onboardingTickMetrics struct {
 	MeaningfulLinesChanged int
 }
 
+// OnboardingSnapshot captures metrics at a specific milestone
+type OnboardingSnapshot struct {
+	DaysSinceJoin int
+
+	// All commits
+	TotalCommits int
+	TotalFiles   int
+	TotalLines   int
+
+	// Meaningful commits only
+	MeaningfulCommits int
+	MeaningfulFiles   int
+	MeaningfulLines   int
+}
+
+// AuthorOnboardingData contains onboarding progression for one author
+type AuthorOnboardingData struct {
+	FirstCommitTick int
+	JoinCohort      string // "YYYY-MM"
+
+	// Indexed by window days (e.g., 7, 30, 90)
+	Snapshots map[int]*OnboardingSnapshot
+}
+
+// CohortStats contains aggregated statistics for a cohort
+type CohortStats struct {
+	Cohort       string // "YYYY-MM"
+	AuthorCount  int
+
+	// Averaged across all authors in cohort
+	AverageSnapshots map[int]*OnboardingSnapshot
+}
+
+// OnboardingResult is returned by OnboardingAnalysis.Finalize()
+type OnboardingResult struct {
+	Authors             map[int]*AuthorOnboardingData
+	Cohorts             map[string]*CohortStats
+	WindowDays          []int
+	MeaningfulThreshold int
+	reversedPeopleDict  []string
+	tickSize            time.Duration
+}
+
 // OnboardingAnalysis measures how quickly new contributors ramp up
 type OnboardingAnalysis struct {
 	core.NoopMerger

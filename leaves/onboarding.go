@@ -485,3 +485,8 @@ func (oa *OnboardingAnalysis) finalizeCohorts(
 		tickSize:            oa.tickSize,
 	}
 }
+
+// Fork clones this pipeline item.
+func (oa *OnboardingAnalysis) Fork(n int) []core.PipelineItem {
+	return core.ForkSamePipelineItem(oa, n)
+}

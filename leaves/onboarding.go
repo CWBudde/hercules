@@ -490,3 +490,86 @@ func (oa *OnboardingAnalysis) finalizeCohorts(
 func (oa *OnboardingAnalysis) Fork(n int) []core.PipelineItem {
 	return core.ForkSamePipelineItem(oa, n)
 }
+
+// serializeText outputs YAML format
+func (oa *OnboardingAnalysis) serializeText(result *OnboardingResult, writer io.Writer) {
+	fmt.Fprintln(writer, "  onboarding:")
+
+	// Configuration
+	windowStrs := make([]string, len(result.WindowDays))
+	for i, days := range result.WindowDays {
+		windowStrs[i] = strconv.Itoa(days)
+	}
+	fmt.Fprintf(writer, "    window_days: [%s]\n", strings.Join(windowStrs, ", "))
+	fmt.Fprintf(writer, "    meaningful_threshold: %d\n", result.MeaningfulThreshold)
+
+	// Authors (sorted by ID)
+	authorIDs := make([]int, 0, len(result.Authors))
+	for id := range result.Authors {
+		authorIDs = append(authorIDs, id)
+	}
+	sort.Ints(authorIDs)
+
+	fmt.Fprintln(writer, "    authors:")
+	for _, authorID := range authorIDs {
+		author := result.Authors[authorID]
+		if authorID == core.AuthorMissing {
+			authorID = -1
+		}
+		fmt.Fprintf(writer, "      %d:\n", authorID)
+		fmt.Fprintf(writer, "        first_commit_tick: %d\n", author.FirstCommitTick)
+		fmt.Fprintf(writer, "        join_cohort: %s\n", yaml.SafeString(author.JoinCohort))
+
+		// Snapshots (sorted by days)
+		windowDays := make([]int, 0, len(author.Snapshots))
+		for days := range author.Snapshots {
+			windowDays = append(windowDays, days)
+		}
+		sort.Ints(windowDays)
+
+		fmt.Fprintln(writer, "        snapshots:")
+		for _, days := range windowDays {
+			snap := author.Snapshots[days]
+			fmt.Fprintf(writer, "          %d: {days: %d, commits: %d, files: %d, lines: %d, meaningful_commits: %d, meaningful_files: %d, meaningful_lines: %d}\n",
+				days, snap.DaysSinceJoin, snap.TotalCommits, snap.TotalFiles, snap.TotalLines,
+				snap.MeaningfulCommits, snap.MeaningfulFiles, snap.MeaningfulLines)
+		}
+	}
+
+	// Cohorts (sorted alphabetically)
+	cohortNames := make([]string, 0, len(result.Cohorts))
+	for name := range result.Cohorts {
+		cohortNames = append(cohortNames, name)
+	}
+	sort.Strings(cohortNames)
+
+	fmt.Fprintln(writer, "    cohorts:")
+	for _, name := range cohortNames {
+		cohort := result.Cohorts[name]
+		fmt.Fprintf(writer, "      %s:\n", yaml.SafeString(name))
+		fmt.Fprintf(writer, "        author_count: %d\n", cohort.AuthorCount)
+
+		// Average snapshots (sorted by days)
+		windowDays := make([]int, 0, len(cohort.AverageSnapshots))
+		for days := range cohort.AverageSnapshots {
+			windowDays = append(windowDays, days)
+		}
+		sort.Ints(windowDays)
+
+		fmt.Fprintln(writer, "        average_snapshots:")
+		for _, days := range windowDays {
+			snap := cohort.AverageSnapshots[days]
+			fmt.Fprintf(writer, "          %d: {days: %d, commits: %d, files: %d, lines: %d, meaningful_commits: %d, meaningful_files: %d, meaningful_lines: %d}\n",
+				days, snap.DaysSinceJoin, snap.TotalCommits, snap.TotalFiles, snap.TotalLines,
+				snap.MeaningfulCommits, snap.MeaningfulFiles, snap.MeaningfulLines)
+		}
+	}
+
+	// People
+	fmt.Fprintln(writer, "    people:")
+	for _, person := range result.reversedPeopleDict {
+		fmt.Fprintf(writer, "    - %s\n", yaml.SafeString(person))
+	}
+
+	fmt.Fprintln(writer, "    tick_size:", int(result.tickSize.Seconds()))
+}

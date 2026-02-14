@@ -406,6 +406,15 @@ message HotspotRiskResults {
     repeated FileRisk files = 2;
 }
 
+message RefactoringProxyResults {
+    repeated int32 ticks = 1;
+    repeated float rename_ratios = 2;
+    repeated bool is_refactoring = 3;
+    repeated int32 total_changes = 4;
+    float threshold = 5;
+    int64 tick_size = 6;
+}
+
 message AnalysisResults {
     Metadata header = 1;
     // the mapped values are dynamic messages which require the second parsing pass.

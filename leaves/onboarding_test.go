@@ -1,6 +1,8 @@
 package leaves
 
 import (
+	"bytes"
+	"strings"
 	"testing"
 	"time"
 
@@ -357,4 +359,69 @@ func TestOnboardingAnalysis_Configuration_Invalid(t *testing.T) {
 	err := oa.Configure(facts)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid window days")
+}
+
+func TestOnboardingAnalysis_Serialization(t *testing.T) {
+	oa := &OnboardingAnalysis{
+		WindowDays:          []int{7, 30},
+		MeaningfulThreshold: 10,
+		tickSize:            24 * time.Hour,
+		reversedPeopleDict:  []string{"author0"},
+	}
+
+	require.NoError(t, oa.Initialize(test.Repository))
+
+	// Create simple test data
+	deps1 := makeTestDeps(0, 0, map[string]int{"file1.go": 20})
+	_, err := oa.Consume(deps1)
+	require.NoError(t, err)
+
+	deps2 := makeTestDeps(0, 5, map[string]int{"file2.go": 15})
+	_, err = oa.Consume(deps2)
+	require.NoError(t, err)
+
+	result := oa.Finalize().(OnboardingResult)
+
+	// Test YAML serialization
+	t.Run("YAML", func(t *testing.T) {
+		var yamlBuf strings.Builder
+		err := oa.Serialize(result, false, &yamlBuf)
+		require.NoError(t, err)
+
+		yamlOutput := yamlBuf.String()
+		assert.Contains(t, yamlOutput, "onboarding:")
+		assert.Contains(t, yamlOutput, "window_days:")
+		assert.Contains(t, yamlOutput, "meaningful_threshold:")
+		assert.Contains(t, yamlOutput, "authors:")
+		assert.Contains(t, yamlOutput, "cohorts:")
+		assert.Contains(t, yamlOutput, "people:")
+	})
+
+	// Test Protobuf serialization and deserialization
+	t.Run("Protobuf", func(t *testing.T) {
+		var pbBuf bytes.Buffer
+		err := oa.Serialize(result, true, &pbBuf)
+		require.NoError(t, err)
+
+		// Deserialize
+		deserializedResult, err := oa.Deserialize(pbBuf.Bytes())
+		require.NoError(t, err)
+
+		deserialized := deserializedResult.(OnboardingResult)
+
+		// Verify round-trip consistency
+		assert.Equal(t, result.WindowDays, deserialized.WindowDays)
+		assert.Equal(t, result.MeaningfulThreshold, deserialized.MeaningfulThreshold)
+		assert.Len(t, deserialized.Authors, len(result.Authors))
+		assert.Len(t, deserialized.Cohorts, len(result.Cohorts))
+
+		// Check author data preserved
+		for authorID, originalAuthor := range result.Authors {
+			deserializedAuthor, exists := deserialized.Authors[authorID]
+			require.True(t, exists)
+			assert.Equal(t, originalAuthor.FirstCommitTick, deserializedAuthor.FirstCommitTick)
+			assert.Equal(t, originalAuthor.JoinCohort, deserializedAuthor.JoinCohort)
+			assert.Len(t, deserializedAuthor.Snapshots, len(originalAuthor.Snapshots))
+		}
+	})
 }

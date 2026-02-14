@@ -165,3 +165,70 @@ func (oa *OnboardingAnalysis) Initialize(repository *git.Repository) error {
 
 	return nil
 }
+
+// getOrCreateTickMetrics retrieves or creates tick metrics for an author
+func (oa *OnboardingAnalysis) getOrCreateTickMetrics(author, tick int) *onboardingTickMetrics {
+	timeline, exists := oa.authorTimeline[author]
+	if !exists {
+		timeline = map[int]*onboardingTickMetrics{}
+		oa.authorTimeline[author] = timeline
+	}
+
+	metrics, exists := timeline[tick]
+	if !exists {
+		metrics = &onboardingTickMetrics{
+			Files:           map[string]bool{},
+			MeaningfulFiles: map[string]bool{},
+		}
+		timeline[tick] = metrics
+	}
+
+	return metrics
+}
+
+// Consume runs this PipelineItem on the next commit data.
+func (oa *OnboardingAnalysis) Consume(deps map[string]interface{}) (map[string]interface{}, error) {
+	if !oa.ShouldConsumeCommit(deps) {
+		return nil, nil
+	}
+
+	author := deps[identity.DependencyAuthor].(int)
+	tick := deps[items.DependencyTick].(int)
+	treeChanges := deps[items.DependencyTreeChanges].(object.Changes)
+	lineStats := deps[items.DependencyLineStats].(map[object.ChangeEntry]items.LineStats)
+
+	if len(treeChanges) == 0 {
+		return nil, nil
+	}
+
+	metrics := oa.getOrCreateTickMetrics(author, tick)
+
+	// Track files and accumulate line stats
+	commitTotalLines := 0
+	for changeEntry, stats := range lineStats {
+		fileName := changeEntry.Name
+		metrics.Files[fileName] = true
+
+		linesChanged := stats.Added + stats.Removed + stats.Changed
+		metrics.LinesAdded += stats.Added
+		metrics.LinesRemoved += stats.Removed
+		metrics.LinesChanged += stats.Changed
+		commitTotalLines += linesChanged
+
+		// Track meaningful metrics if threshold exceeded
+		if linesChanged >= oa.MeaningfulThreshold {
+			metrics.MeaningfulFiles[fileName] = true
+			metrics.MeaningfulLinesAdded += stats.Added
+			metrics.MeaningfulLinesRemoved += stats.Removed
+			metrics.MeaningfulLinesChanged += stats.Changed
+		}
+	}
+
+	// Increment commit counters
+	metrics.Commits++
+	if commitTotalLines >= oa.MeaningfulThreshold {
+		metrics.MeaningfulCommits++
+	}
+
+	return nil, nil
+}

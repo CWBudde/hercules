@@ -656,3 +656,77 @@ func (oa *OnboardingAnalysis) Serialize(result interface{}, binary bool, writer 
 	oa.serializeText(&onboardingResult, writer)
 	return nil
 }
+
+// Deserialize converts the specified protobuf bytes to OnboardingResult.
+func (oa *OnboardingAnalysis) Deserialize(pbmessage []byte) (interface{}, error) {
+	message := pb.OnboardingResults{}
+	err := proto.Unmarshal(pbmessage, &message)
+	if err != nil {
+		return nil, err
+	}
+
+	result := OnboardingResult{
+		Authors:             make(map[int]*AuthorOnboardingData, len(message.Authors)),
+		Cohorts:             make(map[string]*CohortStats, len(message.Cohorts)),
+		WindowDays:          make([]int, len(message.WindowDays)),
+		MeaningfulThreshold: int(message.MeaningfulThreshold),
+		reversedPeopleDict:  message.DevIndex,
+		tickSize:            time.Duration(message.TickSize),
+	}
+
+	for i, days := range message.WindowDays {
+		result.WindowDays[i] = int(days)
+	}
+
+	// Authors
+	for authorID, pbAuthor := range message.Authors {
+		if authorID == -1 {
+			authorID = int32(core.AuthorMissing)
+		}
+
+		author := &AuthorOnboardingData{
+			FirstCommitTick: int(pbAuthor.FirstCommitTick),
+			JoinCohort:      pbAuthor.JoinCohort,
+			Snapshots:       make(map[int]*OnboardingSnapshot, len(pbAuthor.Snapshots)),
+		}
+
+		for days, pbSnap := range pbAuthor.Snapshots {
+			author.Snapshots[int(days)] = &OnboardingSnapshot{
+				DaysSinceJoin:     int(pbSnap.DaysSinceJoin),
+				TotalCommits:      int(pbSnap.TotalCommits),
+				TotalFiles:        int(pbSnap.TotalFiles),
+				TotalLines:        int(pbSnap.TotalLines),
+				MeaningfulCommits: int(pbSnap.MeaningfulCommits),
+				MeaningfulFiles:   int(pbSnap.MeaningfulFiles),
+				MeaningfulLines:   int(pbSnap.MeaningfulLines),
+			}
+		}
+
+		result.Authors[int(authorID)] = author
+	}
+
+	// Cohorts
+	for cohortName, pbCohort := range message.Cohorts {
+		cohort := &CohortStats{
+			Cohort:           pbCohort.Cohort,
+			AuthorCount:      int(pbCohort.AuthorCount),
+			AverageSnapshots: make(map[int]*OnboardingSnapshot, len(pbCohort.AverageSnapshots)),
+		}
+
+		for days, pbSnap := range pbCohort.AverageSnapshots {
+			cohort.AverageSnapshots[int(days)] = &OnboardingSnapshot{
+				DaysSinceJoin:     int(pbSnap.DaysSinceJoin),
+				TotalCommits:      int(pbSnap.AvgTotalCommits),
+				TotalFiles:        int(pbSnap.AvgTotalFiles),
+				TotalLines:        int(pbSnap.AvgTotalLines),
+				MeaningfulCommits: int(pbSnap.AvgMeaningfulCommits),
+				MeaningfulFiles:   int(pbSnap.AvgMeaningfulFiles),
+				MeaningfulLines:   int(pbSnap.AvgMeaningfulLines),
+			}
+		}
+
+		result.Cohorts[cohortName] = cohort
+	}
+
+	return result, nil
+}

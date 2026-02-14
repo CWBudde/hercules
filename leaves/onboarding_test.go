@@ -114,3 +114,59 @@ func TestOnboardingAnalysis_BasicTracking(t *testing.T) {
 	assert.Equal(t, 4, snap90.TotalFiles)
 	assert.Equal(t, 75, snap90.TotalLines) // 15+15+20+25
 }
+
+func TestOnboardingAnalysis_MultipleAuthors(t *testing.T) {
+	oa := &OnboardingAnalysis{
+		WindowDays:          []int{7, 30},
+		MeaningfulThreshold: 10,
+		tickSize:            24 * time.Hour,
+		reversedPeopleDict:  []string{"author0", "author1", "author2"},
+	}
+
+	require.NoError(t, oa.Initialize(test.Repository))
+
+	// Author 0: first commit at tick 0
+	deps1 := makeTestDeps(0, 0, map[string]int{"file1.go": 20})
+	_, err := oa.Consume(deps1)
+	require.NoError(t, err)
+
+	// Author 1: first commit at tick 10
+	deps2 := makeTestDeps(1, 10, map[string]int{"file2.go": 15})
+	_, err = oa.Consume(deps2)
+	require.NoError(t, err)
+
+	// Author 2: first commit at tick 20
+	deps3 := makeTestDeps(2, 20, map[string]int{"file3.go": 25})
+	_, err = oa.Consume(deps3)
+	require.NoError(t, err)
+
+	// Author 0: second commit at tick 5
+	deps4 := makeTestDeps(0, 5, map[string]int{"file4.go": 30})
+	_, err = oa.Consume(deps4)
+	require.NoError(t, err)
+
+	// Finalize
+	result := oa.Finalize().(OnboardingResult)
+
+	// Verify all 3 authors present
+	assert.Len(t, result.Authors, 3)
+
+	// Author 0 started at tick 0
+	author0 := result.Authors[0]
+	assert.Equal(t, 0, author0.FirstCommitTick)
+	assert.Contains(t, author0.Snapshots, 7)
+	assert.Equal(t, 2, author0.Snapshots[7].TotalCommits)
+
+	// Author 1 started at tick 10
+	author1 := result.Authors[1]
+	assert.Equal(t, 10, author1.FirstCommitTick)
+	assert.Contains(t, author1.Snapshots, 7)
+	assert.Equal(t, 1, author1.Snapshots[7].TotalCommits)
+
+	// Author 2 started at tick 20
+	author2 := result.Authors[2]
+	assert.Equal(t, 20, author2.FirstCommitTick)
+
+	// Verify cohort grouping (all same month in this test)
+	assert.NotEmpty(t, result.Cohorts)
+}

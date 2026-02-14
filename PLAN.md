@@ -337,7 +337,7 @@ and knowledge silos.
 Measure how quickly new contributors ramp up: time-to-first-change,
 breadth-of-files in first N days, convergence to stable contribution patterns.
 
-- [ ] **Go analysis** (`leaves/onboarding.go`)
+- [x] **Go analysis** (`leaves/onboarding.go`)
   - Implement `core.LeafPipelineItem` with `Flag() = "onboarding"`
   - Require `identity.DependencyAuthor`, `items.DependencyTick`,
     `items.DependencyLineStats`, `items.DependencyTreeChanges`
@@ -345,23 +345,22 @@ breadth-of-files in first N days, convergence to stable contribution patterns.
     cumulative files touched, cumulative lines changed; bucket into configurable
     windows (default: 7/30/90 days from first commit)
   - In `Finalize()`: per author emit onboarding metrics; compute cohort averages
-    (group by join quarter)
-  - Configurable: `--onboarding-window 30` (days), `--onboarding-meaningful-threshold 10`
+    (group by join month)
+  - Configurable: `--onboarding-windows "7,30,90"` (days), `--onboarding-meaningful-threshold 10`
     (min lines to count as "meaningful change")
-- [ ] **Protobuf schema** — add `OnboardingResults` message
+- [x] **Protobuf schema** — add `OnboardingResults` message
 - [ ] **Python visualization**
   - Cohort heatmap: rows = join month, columns = days since first commit, cells = cumulative activity
   - Per-author ramp curves (overlay or small multiples)
-- [ ] **Tests**
-- [ ] **Effort**: Medium — new per-author temporal tracking, cohort aggregation logic
+- [x] **Tests**
+- [x] **Effort**: Medium — new per-author temporal tracking, cohort aggregation logic
 
-#### 6.5 Hotspot Risk Score
+#### 6.5 Hotspot Risk Score ✅
 
 Combined per-file risk metric: `log(size) × churn × coupling_degree × ownership_concentration`.
-Requires data from multiple existing analyses; best implemented as a post-processing
-step that consumes finalized results from Burndown, Couples, and Ownership.
+Implemented as a self-contained real-time pipeline item that tracks all metrics incrementally.
 
-- [ ] **Go analysis** (`leaves/hotspot_risk.go`)
+- [x] **Go analysis** (`leaves/hotspot_risk.go`)
   - Implement `core.LeafPipelineItem` with `Flag() = "hotspot-risk"`
   - Require `items.DependencyLineStats`, `items.DependencyTreeChanges`,
     `identity.DependencyAuthor`, `items.DependencyTick`
@@ -371,12 +370,13 @@ step that consumes finalized results from Burndown, Couples, and Ownership.
   - Configurable: `--hotspot-risk-top 20` (how many files to report),
     `--hotspot-risk-window 90` (days for churn window),
     weights for each factor via `--hotspot-risk-weights`
-- [ ] **Protobuf schema** — add `HotspotRiskResults` message
-- [ ] **Python visualization**
-  - Bubble chart: x=churn, y=coupling, size=file size, color=concentration
-  - Ranked table of top-N risky files with breakdown of each factor
-- [ ] **Tests**
-- [ ] **Effort**: Medium–High — combines multiple data streams, needs careful normalization
+- [x] **Protobuf schema** — add `HotspotRiskResults` and `FileRisk` messages
+- [x] **Python visualization** (`python/labours/modes/hotspot_risk.py`)
+  - Bubble chart: x=churn, y=coupling, size=file size, color=ownership Gini
+  - Ranked bar chart showing top-N files with component breakdown
+  - Text summary table in console output
+- [ ] **Tests** — Not yet implemented
+- [x] **Effort**: Medium–High — Self-contained implementation with normalized scoring
 
 #### 6.6 Refactoring Proxy (Move/Rename Rate)
 

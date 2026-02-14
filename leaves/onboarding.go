@@ -730,3 +730,7 @@ func (oa *OnboardingAnalysis) Deserialize(pbmessage []byte) (interface{}, error)
 
 	return result, nil
 }
+
+func init() {
+	core.Registry.Register(&OnboardingAnalysis{})
+}

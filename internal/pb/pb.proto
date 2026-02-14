@@ -386,6 +386,26 @@ message OnboardingResults {
     int64 tick_size = 6;
 }
 
+// Per-file risk assessment
+message FileRisk {
+    string path = 1;
+    double risk_score = 2;
+    int32 size = 3;
+    int32 churn = 4;
+    int32 coupling_degree = 5;
+    double ownership_gini = 6;
+    double size_normalized = 7;
+    double churn_normalized = 8;
+    double coupling_normalized = 9;
+    double ownership_normalized = 10;
+}
+
+// Hotspot risk analysis results
+message HotspotRiskResults {
+    int32 window_days = 1;
+    repeated FileRisk files = 2;
+}
+
 message AnalysisResults {
     Metadata header = 1;
     // the mapped values are dynamic messages which require the second parsing pass.

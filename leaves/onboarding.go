@@ -573,3 +573,86 @@ func (oa *OnboardingAnalysis) serializeText(result *OnboardingResult, writer io.
 
 	fmt.Fprintln(writer, "    tick_size:", int(result.tickSize.Seconds()))
 }
+
+// serializeBinary outputs Protocol Buffers format
+func (oa *OnboardingAnalysis) serializeBinary(result *OnboardingResult, writer io.Writer) error {
+	message := pb.OnboardingResults{
+		DevIndex:            result.reversedPeopleDict,
+		TickSize:            int64(result.tickSize),
+		WindowDays:          make([]int32, len(result.WindowDays)),
+		MeaningfulThreshold: int32(result.MeaningfulThreshold),
+	}
+
+	for i, days := range result.WindowDays {
+		message.WindowDays[i] = int32(days)
+	}
+
+	// Authors
+	message.Authors = make(map[int32]*pb.AuthorOnboardingData, len(result.Authors))
+	for authorID, author := range result.Authors {
+		if authorID == core.AuthorMissing {
+			authorID = -1
+		}
+
+		pbAuthor := &pb.AuthorOnboardingData{
+			FirstCommitTick: int32(author.FirstCommitTick),
+			JoinCohort:      author.JoinCohort,
+			Snapshots:       make(map[int32]*pb.OnboardingSnapshot, len(author.Snapshots)),
+		}
+
+		for days, snap := range author.Snapshots {
+			pbAuthor.Snapshots[int32(days)] = &pb.OnboardingSnapshot{
+				DaysSinceJoin:     int32(snap.DaysSinceJoin),
+				TotalCommits:      int32(snap.TotalCommits),
+				TotalFiles:        int32(snap.TotalFiles),
+				TotalLines:        int32(snap.TotalLines),
+				MeaningfulCommits: int32(snap.MeaningfulCommits),
+				MeaningfulFiles:   int32(snap.MeaningfulFiles),
+				MeaningfulLines:   int32(snap.MeaningfulLines),
+			}
+		}
+
+		message.Authors[int32(authorID)] = pbAuthor
+	}
+
+	// Cohorts
+	message.Cohorts = make(map[string]*pb.CohortStats, len(result.Cohorts))
+	for cohortName, cohort := range result.Cohorts {
+		pbCohort := &pb.CohortStats{
+			Cohort:           cohort.Cohort,
+			AuthorCount:      int32(cohort.AuthorCount),
+			AverageSnapshots: make(map[int32]*pb.OnboardingAverageSnapshot, len(cohort.AverageSnapshots)),
+		}
+
+		for days, snap := range cohort.AverageSnapshots {
+			pbCohort.AverageSnapshots[int32(days)] = &pb.OnboardingAverageSnapshot{
+				DaysSinceJoin:        int32(snap.DaysSinceJoin),
+				AvgTotalCommits:      float64(snap.TotalCommits),
+				AvgTotalFiles:        float64(snap.TotalFiles),
+				AvgTotalLines:        float64(snap.TotalLines),
+				AvgMeaningfulCommits: float64(snap.MeaningfulCommits),
+				AvgMeaningfulFiles:   float64(snap.MeaningfulFiles),
+				AvgMeaningfulLines:   float64(snap.MeaningfulLines),
+			}
+		}
+
+		message.Cohorts[cohortName] = pbCohort
+	}
+
+	serialized, err := proto.Marshal(&message)
+	if err != nil {
+		return err
+	}
+	_, err = writer.Write(serialized)
+	return err
+}
+
+// Serialize converts the analysis result as returned by Finalize() to text or bytes.
+func (oa *OnboardingAnalysis) Serialize(result interface{}, binary bool, writer io.Writer) error {
+	onboardingResult := result.(OnboardingResult)
+	if binary {
+		return oa.serializeBinary(&onboardingResult, writer)
+	}
+	oa.serializeText(&onboardingResult, writer)
+	return nil
+}

@@ -419,4 +419,5 @@ message AnalysisResults {
     Metadata header = 1;
     // the mapped values are dynamic messages which require the second parsing pass.
     map<string, bytes> contents = 2;
+    RefactoringProxyResults refactoring_proxy = 3;
 }

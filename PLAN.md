@@ -48,12 +48,14 @@ Why now: Babelfish is abandoned and increasingly hard to obtain/run. This makes 
   - [x] Add explicit non-Babelfish UX for legacy UAST entry points:
     - [x] `--dump-uast-changes` stays visible but fails with a clear rebuild hint.
     - [x] `--feature uast` returns a clear rebuild hint in non-Babelfish binaries.
+    - [x] `--help` now explicitly marks `uast` as deprecated/unavailable without `-tags babelfish`.
   - [ ] Decide future of Babelfish-only plumbing implementation:
     - [ ] Keep/deprecate/remove `dump-uast-changes` long-term.
     - [ ] Keep/deprecate/remove `FileDiffRefiner` UAST-enhanced diff mode long-term.
     - [ ] If kept, define equivalent tree-sitter-backed replacements and acceptance tests.
-  - [ ] Decide whether `--feature uast` should be hidden/deprecated in non-`babelfish` builds.
-  - [ ] Add migration docs for users relying on custom Babelfish XPath workflows.
+  - [x] Decide whether `--feature uast` should be hidden/deprecated in non-`babelfish` builds.
+    - [x] Decision: keep hidden from available feature list and show explicit deprecation/unavailable hints in parser error and `--help`.
+  - [x] Add migration docs for users relying on custom Babelfish XPath workflows.
 
 ### Milestone 2 — Large-repo scaling & operational safety (P1)
 

@@ -28,6 +28,7 @@
 - [Overview](#overview)
 - [Installation](#installation)
   - [Build from source](#build-from-source)
+  - [Build tags and optional dependencies](#build-tags-and-optional-dependencies)
   - [GitHub Action](#github-action)
 - [Contributions](#contributions)
 - [License](#license)
@@ -80,7 +81,7 @@ by testing, fixing bugs, adding [new analyses](https://github.com/src-d/hercules
 
 ![Hercules DAG of Burndown analysis](doc/dag.png)
 
-<p align="center">The DAG of burndown and couples analyses with UAST diff refining. Generated with <code>hercules --burndown --burndown-people --couples --feature=uast --dry-run --dump-dag doc/dag.dot https://github.com/src-d/hercules</code></p>
+<p align="center">The DAG of burndown and couples analyses. Generated with <code>hercules --burndown --burndown-people --couples --dry-run --dump-dag doc/dag.dot https://github.com/src-d/hercules</code></p>
 
 ![git/git image](doc/linux.png)
 
@@ -101,12 +102,49 @@ Numpy and Scipy can be installed on Windows using http://www.lfd.uci.edu/~gohlke
 
 ### Build from source
 
-You are going to need Go (>= v1.11), [`protoc`](https://github.com/google/protobuf/releases), and [`just`](https://github.com/casey/just).
+You are going to need Go (>= v1.18), [`protoc`](https://github.com/google/protobuf/releases), and [`just`](https://github.com/casey/just).
 
 ```
 git clone https://github.com/src-d/hercules && cd hercules
 just
 pip3 install -e ./python
+```
+
+### Build tags and optional dependencies
+
+Default build:
+
+```
+go build ./cmd/hercules
+```
+
+- No Babelfish dependency.
+- No TensorFlow dependency.
+- `--shotness` and `--typos-dataset` use tree-sitter by default.
+- `--dump-uast-changes` and `--feature uast` are unavailable and print rebuild hints.
+
+Optional Babelfish build:
+
+```
+TAGS=babelfish just
+```
+
+- Enables legacy UAST/Babelfish pipeline items and behavior.
+- Requires a running Babelfish server and language drivers.
+
+Optional TensorFlow build:
+
+```
+TAGS=tensorflow just
+```
+
+- Enables `--sentiment` (experimental).
+- Requires [`libtensorflow`](https://www.tensorflow.org/install/install_go).
+
+Combined build:
+
+```
+TAGS="tensorflow babelfish" just
 ```
 
 ### GitHub Action
@@ -291,7 +329,7 @@ hercules --couples [--people-dict=/path/to/identities]
 labours -m couples -o <name> [--couples-tmp-dir=/tmp]
 ```
 
-**Important**: it requires Tensorflow to be installed, please follow [official instructions](https://www.tensorflow.org/install/).
+**Important**: generating couples embeddings with `labours -m couples` requires Tensorflow to be installed, please follow [official instructions](https://www.tensorflow.org/install/).
 
 The files are coupled if they are changed in the same commit. The developers are coupled if they
 change the same file. `hercules` records the number of couples throughout the whole commit history
@@ -319,9 +357,12 @@ can be visualized with t-SNE implemented in TF Projector.
       20  jinja2/compiler.py:visit_Block [FunctionDef]
 ```
 
-Thanks to Babelfish, hercules is able to measure how many times each structural unit has been modified.
-By default, it looks at functions; refer to [Semantic UAST XPath](https://docs.sourced.tech/babelfish/using-babelfish/uast-querying)
-manual to switch to something else.
+By default, `--shotness` is powered by tree-sitter and tracks function-level units for Go, Python, JavaScript and TypeScript.
+In this mode, `--shotness-xpath-*` is accepted for compatibility but ignored.
+
+If you build with `-tags babelfish`, the legacy XPath-based Babelfish mode is available and `--shotness-xpath-*`
+becomes active again. Refer to [Semantic UAST XPath](https://docs.sourced.tech/babelfish/using-babelfish/uast-querying)
+for those queries.
 
 ```
 hercules --shotness [--shotness-xpath-*]
@@ -407,21 +448,23 @@ with owning lines.
 
 <p align="center">It can be clearly seen that Django comments were positive/optimistic in the beginning, but later became negative/pessimistic.<br><code>hercules --sentiment --pb https://github.com/django/django | labours -m sentiment -f pb</code></p>
 
+`--sentiment` is experimental.
+
 We extract new and changed comments from source code on every commit, apply [BiDiSentiment](https://github.com/vmarkovtsev/bidisentiment)
-general purpose sentiment recurrent neural network and plot the results. Requires
-[libtensorflow](https://www.tensorflow.org/install/install_go).
+general purpose sentiment recurrent neural network and plot the results. This analysis requires
+[libtensorflow](https://www.tensorflow.org/install/install_go) and a `tensorflow` build tag.
 E.g. [`sadly, we need to hide the rect from the documentation finder for now`](https://github.com/pygame/pygame/commit/b6091d38c8a5639d311858660b38841d96598509#diff-eae59f175858fcef57cb17e733981c73R27) is negative and
 [`Theano has a built-in optimization for logsumexp (...) so we can just write the expression directly`](https://github.com/keras-team/keras/commit/7d52af64c03e71bcd23112a7086dc8aab1b37ed2#diff-ff634bb5c5441d7052449f20018872b8R549)
 is positive. Don't expect too much though - as was written, the sentiment model is
 general purpose and the code comments have different nature, so there is no magic (for now).
 
-Hercules must be built with "tensorflow" tag - it is not by default:
+Hercules must be built with the `tensorflow` tag - it is not enabled by default:
 
 ```
 TAGS=tensorflow just
 ```
 
-Such a build requires [`libtensorflow`](https://www.tensorflow.org/install/install_go).
+Such a build requires [`libtensorflow`](https://www.tensorflow.org/install/install_go). Babelfish is not required for sentiment in the default TensorFlow build.
 
 #### Bus factor
 
@@ -583,5 +626,5 @@ fail with an OOM. You should try the following:
 - [ ] Switch from `src-d/go-git` to `go-git/go-git`. Upgrade the codebase to be compatible with the latest Go version.
 - [ ] Update the docs regarding the copyrights and such.
 - [ ] Fix the reported bugs.
-- [ ] Remove the dependency on Babelfish for parsing the code. It is abandoned and a better alternative should be found.
+- [ ] Finalize deprecation/removal plan for remaining optional Babelfish-only features.
 - [ ] Remove the ad-hoc analyses added while source{d} was agonizing.

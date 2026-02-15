@@ -91,7 +91,7 @@ setup-babelfish:
     echo ""
     echo "✓ Babelfish setup complete!"
     echo "  Server running at: 0.0.0.0:9432"
-    echo "  Run 'just test' to run full test suite including UAST tests"
+    echo "  Run 'just test-all' to run full test suite including UAST tests"
     echo "  Run 'just stop-babelfish' to stop the server"
 
 # Check Babelfish server status

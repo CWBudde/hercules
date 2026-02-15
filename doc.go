@@ -12,7 +12,7 @@ include:
 
 - CouplesAnalysis - coupling statistics for files and developers.
 
-- ShotnessAnalysis - structural hotness and couples, by any Babelfish UAST XPath (functions by default).
+- ShotnessAnalysis - structural hotness and couples, powered by tree-sitter in the default build.
 
 The typical API usage is to initialize the Pipeline class:
 
@@ -57,7 +57,7 @@ based on https://github.com/yasushi-saito/rbtree.
 Coupling stats are supposed to be further processed rather than observed directly.
 labours.py uses Swivel embeddings and visualises them in Tensorflow Projector.
 
-Shotness analysis as well as other UAST-featured items relies on
-[Babelfish](https://doc.bblf.sh) and requires the server to be running.
+Legacy UAST-featured items are optional and require building with the "babelfish" tag,
+plus a running [Babelfish](https://doc.bblf.sh) server.
 */
 package hercules

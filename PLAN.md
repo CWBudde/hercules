@@ -384,7 +384,7 @@ Track the proportion of commits dominated by file renames/moves to distinguish
 refactoring phases from feature work. Rename detection already exists in
 `internal/plumbing/renames.go`.
 
-- [ ] **Go analysis** (`leaves/refactoring_proxy.go`)
+- [x] **Go analysis** (`leaves/refactoring_proxy.go`)
   - Implement `core.LeafPipelineItem` with `Flag() = "refactoring-proxy"`
   - Require `items.DependencyTreeChanges`, `items.DependencyTick`
   - Use existing `TreeDiff` output which already detects renames via go-git's
@@ -393,12 +393,12 @@ refactoring phases from feature work. Rename detection already exists in
     classify commits as "refactoring-heavy" if rename ratio > threshold
   - In `Finalize()`: time series of rename rate, event markers for spikes
   - Configurable: `--refactoring-threshold 0.5` (rename ratio to classify as refactoring)
-- [ ] **Protobuf schema** — add `RefactoringProxyResults` message
+- [x] **Protobuf schema** — add `RefactoringProxyResults` message
 - [ ] **Python visualization**
   - Time series of rename rate overlaid with "Added vs Changed" for correlation
   - Event markers on burndown chart for major refactoring phases
-- [ ] **Tests**
-- [ ] **Effort**: Medium — rename detection exists, but interpretation logic is new
+- [x] **Tests**
+- [x] **Effort**: Medium — rename detection exists, but interpretation logic is new
 
 #### 6.7 Code Review Metrics (requires external API — deferred)
 

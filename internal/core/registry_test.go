@@ -274,7 +274,7 @@ func TestRegistryFeatures(t *testing.T) {
 	assert.True(t, val)
 }
 
-func TestRegistryFeaturesUastUnavailableMessage(t *testing.T) {
+func TestRegistryFeaturesUnknownFeature(t *testing.T) {
 	reg := getRegistry()
 	reg.Register(&dummyPipelineItem{})
 	testCmd := &cobra.Command{
@@ -285,27 +285,9 @@ func TestRegistryFeaturesUastUnavailableMessage(t *testing.T) {
 		Run:   func(cmd *cobra.Command, args []string) {},
 	}
 	reg.AddFlags(testCmd.Flags())
-	err := testCmd.ParseFlags([]string{"--feature", "uast"})
+	err := testCmd.ParseFlags([]string{"--feature", "missing"})
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "deprecated")
-	assert.Contains(t, err.Error(), "rebuild with -tags babelfish")
-}
-
-func TestRegistryFeaturesHelpMentionsUastDeprecation(t *testing.T) {
-	reg := getRegistry()
-	reg.Register(&dummyPipelineItem{})
-	testCmd := &cobra.Command{
-		Use:   "test",
-		Short: "Temporary command to test the stuff.",
-		Long:  ``,
-		Args:  cobra.MaximumNArgs(0),
-		Run:   func(cmd *cobra.Command, args []string) {},
-	}
-	reg.AddFlags(testCmd.Flags())
-	featureFlag := testCmd.Flags().Lookup("feature")
-	assert.NotNil(t, featureFlag)
-	assert.Contains(t, featureFlag.Usage, "uast")
-	assert.Contains(t, featureFlag.Usage, "requires -tags babelfish")
+	assert.Contains(t, err.Error(), "is not registered")
 }
 
 func TestRegistryCollectAllDependencies(t *testing.T) {

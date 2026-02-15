@@ -118,19 +118,10 @@ Default build:
 go build ./cmd/hercules
 ```
 
-- No Babelfish dependency.
+- No external parser service dependency.
 - No TensorFlow dependency.
 - `--shotness` and `--typos-dataset` use tree-sitter by default.
-- `--dump-uast-changes` and `--feature uast` are unavailable and print rebuild hints.
-
-Optional Babelfish build:
-
-```
-TAGS=babelfish just
-```
-
-- Enables legacy UAST/Babelfish pipeline items and behavior.
-- Requires a running Babelfish server and language drivers.
+- Tree-sitter is the only structural parsing backend.
 
 Optional TensorFlow build:
 
@@ -140,12 +131,6 @@ TAGS=tensorflow just
 
 - Enables `--sentiment` (experimental).
 - Requires [`libtensorflow`](https://www.tensorflow.org/install/install_go).
-
-Combined build:
-
-```
-TAGS="tensorflow babelfish" just
-```
 
 ### GitHub Action
 
@@ -360,10 +345,6 @@ can be visualized with t-SNE implemented in TF Projector.
 By default, `--shotness` is powered by tree-sitter and tracks function-level units for Go, Python, JavaScript and TypeScript.
 In this mode, `--shotness-xpath-*` is accepted for compatibility but ignored.
 
-If you build with `-tags babelfish`, the legacy XPath-based Babelfish mode is available and `--shotness-xpath-*`
-becomes active again. Refer to [Semantic UAST XPath](https://docs.sourced.tech/babelfish/using-babelfish/uast-querying)
-for those queries.
-
 ```
 hercules --shotness [--shotness-xpath-*]
 labours -m shotness
@@ -464,7 +445,7 @@ Hercules must be built with the `tensorflow` tag - it is not enabled by default:
 TAGS=tensorflow just
 ```
 
-Such a build requires [`libtensorflow`](https://www.tensorflow.org/install/install_go). Babelfish is not required for sentiment in the default TensorFlow build.
+Such a build requires [`libtensorflow`](https://www.tensorflow.org/install/install_go).
 
 #### Bus factor
 
@@ -626,5 +607,5 @@ fail with an OOM. You should try the following:
 - [ ] Switch from `src-d/go-git` to `go-git/go-git`. Upgrade the codebase to be compatible with the latest Go version.
 - [ ] Update the docs regarding the copyrights and such.
 - [ ] Fix the reported bugs.
-- [ ] Finalize deprecation/removal plan for remaining optional Babelfish-only features.
+- [ ] Finalize cleanup of legacy UAST-oriented interfaces and docs.
 - [ ] Remove the ad-hoc analyses added while source{d} was agonizing.

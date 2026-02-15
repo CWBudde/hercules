@@ -5,7 +5,7 @@ It does not enumerate work that is already done.
 
 ## Goals (definition of “done”)
 
-- A default `go build ./cmd/hercules` produces a useful binary **without Babelfish or TensorFlow**.
+- A default `go build ./cmd/hercules` produces a useful binary **without legacy parser services or TensorFlow**.
 - The tool scales to large repositories with documented presets and verified memory behavior.
 - Outputs are stable and documented (YAML/PB now; optional JSON later) and can be consumed by automation.
 - Remaining “partial” analyses are completed to a shippable level (tests + labours UX).
@@ -22,18 +22,13 @@ It does not enumerate work that is already done.
 
 ### Milestone 1 — Dependency modernization (tree-sitter first) (P0)
 
-Why now: Babelfish is abandoned and increasingly hard to obtain/run. This makes `--shotness` effectively unavailable and blocks a “works out of the box” story.
+Status: **mostly complete**.
 
-- [x] **Replace Babelfish with tree-sitter for Shotness**
-  - [x] Define a minimal AST/token interface needed by Shotness (avoid a full UAST reimplementation).
-  - [x] Implement tree-sitter-backed parsing in `internal/plumbing/` behind the existing abstraction.
-  - [x] Pick an initial language set (start small): Go, Python, JS/TS.
-  - [x] Add fixtures + deterministic tests for the new parser layer.
-  - [x] Acceptance: `--shotness` runs on a repo without Babelfish.
-
-- [x] **Keep Babelfish as optional fallback (build tag)**
-  - [x] Make Babelfish code path opt-in via `-tags babelfish`.
-  - [x] Acceptance: default build has **no Babelfish dependency**.
+- [x] **Tree-sitter migration completed for structural analyses**
+  - [x] `shotness` moved to tree-sitter-only implementation.
+  - [x] `research/typos-dataset` moved to tree-sitter-only implementation.
+  - [x] `sentiment` comment extraction moved to tree-sitter path (`-tags tensorflow` build).
+  - [x] Legacy parser-specific plumbing and tests removed from the codebase.
 
 - [ ] **Modularize TensorFlow usage (keep default build light)**
   - [ ] Ensure Couples and Sentiment behave sensibly when built without TensorFlow:
@@ -42,20 +37,10 @@ Why now: Babelfish is abandoned and increasingly hard to obtain/run. This makes 
   - [ ] Evaluate a pure-Go replacement only if needed (do not block the milestone on this).
   - [ ] Acceptance: default build does not require TensorFlow and doesn’t crash when relevant flags are used.
 
-- [ ] **Broader UAST migration beyond Shotness**
-  - [x] Migrate `research/typos-dataset` to tree-sitter in default builds.
-  - [x] Add a tree-sitter comment extraction path for Sentiment (`-tags tensorflow` build, no Babelfish required).
-  - [x] Add explicit non-Babelfish UX for legacy UAST entry points:
-    - [x] `--dump-uast-changes` stays visible but fails with a clear rebuild hint.
-    - [x] `--feature uast` returns a clear rebuild hint in non-Babelfish binaries.
-    - [x] `--help` now explicitly marks `uast` as deprecated/unavailable without `-tags babelfish`.
-  - [ ] Decide future of Babelfish-only plumbing implementation:
-    - [ ] Keep/deprecate/remove `dump-uast-changes` long-term.
-    - [ ] Keep/deprecate/remove `FileDiffRefiner` UAST-enhanced diff mode long-term.
-    - [ ] If kept, define equivalent tree-sitter-backed replacements and acceptance tests.
-  - [x] Decide whether `--feature uast` should be hidden/deprecated in non-`babelfish` builds.
-    - [x] Decision: keep hidden from available feature list and show explicit deprecation/unavailable hints in parser error and `--help`.
-  - [x] Add migration docs for users relying on custom Babelfish XPath workflows.
+- [ ] **Finish legacy UAST surface cleanup**
+  - [ ] Decide whether protobuf messages named `UAST*` should be renamed or kept for compatibility.
+  - [ ] Decide whether `--shotness-xpath-*` compatibility flags should be removed or kept as ignored aliases.
+  - [ ] Remove stale docs/examples that still imply XPath/UAST workflows.
 
 ### Milestone 2 — Large-repo scaling & operational safety (P1)
 

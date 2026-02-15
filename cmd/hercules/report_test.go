@@ -33,10 +33,9 @@ func TestSelectReportAnalysisFlagsRequestedUnknown(t *testing.T) {
 
 func TestSelectReportAnalysisFlagsAllUsesReportList(t *testing.T) {
 	available := map[string]struct{}{
-		"burndown":          {},
-		"shotness":          {},
-		"devs":              {},
-		"dump-uast-changes": {},
+		"burndown": {},
+		"shotness": {},
+		"devs":     {},
 	}
 	flags, err := selectReportAnalysisFlags(available, nil, true)
 	if err != nil {

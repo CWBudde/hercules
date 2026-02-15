@@ -6,7 +6,6 @@ import (
 	"github.com/meko-christian/hercules/internal/core"
 	"github.com/meko-christian/hercules/internal/plumbing"
 	"github.com/meko-christian/hercules/internal/plumbing/identity"
-	"github.com/meko-christian/hercules/internal/plumbing/uast"
 	"github.com/meko-christian/hercules/internal/yaml"
 	_ "github.com/meko-christian/hercules/leaves"          // add burndown and other analyses
 	_ "github.com/meko-christian/hercules/leaves/research" // add "research" analyses
@@ -134,10 +133,6 @@ const (
 	DependencyFileDiff = plumbing.DependencyFileDiff
 	// DependencyTreeChanges is the name of the dependency provided by TreeDiff.
 	DependencyTreeChanges = plumbing.DependencyTreeChanges
-	// DependencyUastChanges is the name of the dependency provided by Changes.
-	DependencyUastChanges = uast.DependencyUastChanges
-	// DependencyUasts is the name of the dependency provided by Extractor.
-	DependencyUasts = uast.DependencyUasts
 	// FactCommitsByTick contains the mapping between tick indices and the corresponding commits.
 	FactCommitsByTick = plumbing.FactCommitsByTick
 	// FactIdentityDetectorReversedPeopleDict is the name of the fact which is inserted in

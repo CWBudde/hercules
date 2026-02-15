@@ -1,5 +1,5 @@
-//go:build tensorflow && babelfish
-// +build tensorflow,babelfish
+//go:build tensorflow
+// +build tensorflow
 
 package leaves
 
@@ -13,13 +13,13 @@ import (
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/utils/merkletrie"
 	"github.com/gogo/protobuf/proto"
 	"github.com/meko-christian/hercules/internal/core"
 	"github.com/meko-christian/hercules/internal/pb"
 	items "github.com/meko-christian/hercules/internal/plumbing"
-	uast_items "github.com/meko-christian/hercules/internal/plumbing/uast"
-	"gopkg.in/bblfsh/sdk.v2/uast"
-	"gopkg.in/bblfsh/sdk.v2/uast/nodes"
+	ast_items "github.com/meko-christian/hercules/internal/plumbing/ast"
 	progress "gopkg.in/cheggaaa/pb.v1"
 	sentiment "gopkg.in/vmarkovtsev/BiDiSentiment.v1"
 )
@@ -33,7 +33,7 @@ type CommentSentimentAnalysis struct {
 
 	commentsByTick map[int][]string
 	commitsByTick  map[int][]plumbing.Hash
-	xpather        *uast_items.ChangesXPather
+	extractor      *ast_items.TreeSitterExtractor
 
 	l core.Logger
 }
@@ -82,7 +82,7 @@ func (sent *CommentSentimentAnalysis) Provides() []string {
 // Each requested entity will be inserted into `deps` of Consume(). In turn, those
 // entities are Provides() upstream.
 func (sent *CommentSentimentAnalysis) Requires() []string {
-	return []string{uast_items.DependencyUastChanges, items.DependencyTick}
+	return []string{items.DependencyTreeChanges, items.DependencyBlobCache, items.DependencyTick}
 }
 
 // ListConfigurationOptions returns the list of changeable public properties of this PipelineItem.
@@ -156,10 +156,26 @@ func (sent *CommentSentimentAnalysis) validate() {
 func (sent *CommentSentimentAnalysis) Initialize(repository *git.Repository) error {
 	sent.l = core.NewLogger()
 	sent.commentsByTick = map[int][]string{}
-	sent.xpather = &uast_items.ChangesXPather{XPath: "//uast:Comment"}
+	sent.extractor = ast_items.NewTreeSitterExtractor()
 	sent.validate()
 	sent.OneShotMergeProcessor.Initialize()
 	return nil
+}
+
+func diffComments(before, after []ast_items.Node) []ast_items.Node {
+	have := map[string]int{}
+	for _, node := range before {
+		have[node.Text]++
+	}
+	added := make([]ast_items.Node, 0, len(after))
+	for _, node := range after {
+		if have[node.Text] > 0 {
+			have[node.Text]--
+			continue
+		}
+		added = append(added, node)
+	}
+	return added
 }
 
 // Consume runs this PipelineItem on the next commit data.
@@ -171,10 +187,49 @@ func (sent *CommentSentimentAnalysis) Consume(deps map[string]interface{}) (map[
 	if !sent.ShouldConsumeCommit(deps) {
 		return nil, nil
 	}
-	changes := deps[uast_items.DependencyUastChanges].([]uast_items.Change)
+	changes := deps[items.DependencyTreeChanges].(object.Changes)
+	cache := deps[items.DependencyBlobCache].(map[plumbing.Hash]*items.CachedBlob)
 	tick := deps[items.DependencyTick].(int)
-	commentNodes, _ := sent.xpather.Extract(changes)
-	comments := sent.mergeComments(commentNodes)
+	collected := []ast_items.Node{}
+	for _, change := range changes {
+		action, err := change.Action()
+		if err != nil {
+			return nil, err
+		}
+		switch action {
+		case merkletrie.Delete:
+			continue
+		case merkletrie.Insert:
+			after := cache[change.To.TreeEntry.Hash]
+			if after == nil {
+				continue
+			}
+			comments, err := sent.extractor.ExtractComments(change.To.Name, after.Data)
+			if err != nil {
+				sent.l.Warnf("Sentiment: failed to parse comments in %s: %v", change.To.Name, err)
+				continue
+			}
+			collected = append(collected, comments...)
+		case merkletrie.Modify:
+			before := cache[change.From.TreeEntry.Hash]
+			after := cache[change.To.TreeEntry.Hash]
+			if before == nil || after == nil {
+				continue
+			}
+			beforeComments, err := sent.extractor.ExtractComments(change.From.Name, before.Data)
+			if err != nil {
+				sent.l.Warnf("Sentiment: failed to parse comments in %s: %v", change.From.Name, err)
+				continue
+			}
+			afterComments, err := sent.extractor.ExtractComments(change.To.Name, after.Data)
+			if err != nil {
+				sent.l.Warnf("Sentiment: failed to parse comments in %s: %v", change.To.Name, err)
+				continue
+			}
+			collected = append(collected, diffComments(beforeComments, afterComments)...)
+		}
+	}
+	comments := sent.mergeComments(collected)
 	tickComments := sent.commentsByTick[tick]
 	if tickComments == nil {
 		tickComments = []string{}
@@ -306,16 +361,14 @@ func (sent *CommentSentimentAnalysis) serializeBinary(
 	return nil
 }
 
-func (sent *CommentSentimentAnalysis) mergeComments(extracted []nodes.Node) []string {
+func (sent *CommentSentimentAnalysis) mergeComments(extracted []ast_items.Node) []string {
 	var mergedComments []string
-	lines := map[int][]nodes.Node{}
+	lines := map[int][]ast_items.Node{}
 	for _, node := range extracted {
-		pos := uast.PositionsOf(node.(nodes.Object))
-		if pos.Start() == nil {
+		if node.StartLine <= 0 {
 			continue
 		}
-		lineno := int(pos.Start().Line)
-		lines[lineno] = append(lines[lineno], node)
+		lines[node.StartLine] = append(lines[node.StartLine], node)
 	}
 	lineNums := make([]int, 0, len(lines))
 	for line := range lines {
@@ -327,11 +380,10 @@ func (sent *CommentSentimentAnalysis) mergeComments(extracted []nodes.Node) []st
 		lineNodes := lines[line]
 		maxEnd := line
 		for _, node := range lineNodes {
-			pos := uast.PositionsOf(node.(nodes.Object))
-			if pos.End() != nil && maxEnd < int(pos.End().Line) {
-				maxEnd = int(pos.End().Line)
+			if node.EndLine > maxEnd {
+				maxEnd = node.EndLine
 			}
-			token := strings.TrimSpace(string(node.(nodes.Object)["Text"].(nodes.String)))
+			token := strings.TrimSpace(node.Text)
 			if token != "" {
 				buffer = append(buffer, token)
 			}

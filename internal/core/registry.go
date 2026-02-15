@@ -203,9 +203,6 @@ func (acf *arrayFeatureFlags) String() string {
 
 func (acf *arrayFeatureFlags) Set(value string) error {
 	if _, exists := acf.Choices[value]; !exists {
-		if value == "uast" {
-			return fmt.Errorf("feature %q is deprecated in this build and unavailable; rebuild with -tags babelfish", value)
-		}
 		return fmt.Errorf("feature \"%s\" is not registered", value)
 	}
 	acf.Flags = append(acf.Flags, value)
@@ -353,9 +350,6 @@ func (registry *PipelineItemRegistry) AddFlags(flagSet *pflag.FlagSet) (
 	featureHelp := fmt.Sprintf("Enables the items which depend on the specified features. Can be specified "+
 		"multiple times. Available features: [%s] (see --feature below).",
 		strings.Join(features, ", "))
-	if _, exists := registry.featureFlags.Choices["uast"]; !exists {
-		featureHelp += " The \"uast\" feature is deprecated in this build and requires -tags babelfish."
-	}
 	flagSet.Var(&registry.featureFlags, "feature",
 		featureHelp)
 

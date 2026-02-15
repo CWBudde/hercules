@@ -1,6 +1,3 @@
-//go:build !babelfish
-// +build !babelfish
-
 package leaves
 
 import (
@@ -37,9 +34,9 @@ type ShotnessAnalysis struct {
 }
 
 const (
-	// ConfigShotnessXpathStruct is kept for command-line compatibility with the Babelfish build.
+	// ConfigShotnessXpathStruct is accepted for command-line compatibility and ignored.
 	ConfigShotnessXpathStruct = "Shotness.XpathStruct"
-	// ConfigShotnessXpathName is kept for command-line compatibility with the Babelfish build.
+	// ConfigShotnessXpathName is accepted for command-line compatibility and ignored.
 	ConfigShotnessXpathName = "Shotness.XpathName"
 
 	// DefaultShotnessXpathStruct is ignored in the default build.
@@ -96,14 +93,14 @@ func (shotness *ShotnessAnalysis) ListConfigurationOptions() []core.Configuratio
 	opts := [...]core.ConfigurationOption{
 		{
 			Name: ConfigShotnessXpathStruct,
-			Description: "Legacy Babelfish XPath filter (ignored by the default tree-sitter " +
+			Description: "Legacy XPath filter (ignored by the tree-sitter " +
 				"implementation).",
 			Flag:    "shotness-xpath-struct",
 			Type:    core.StringConfigurationOption,
 			Default: DefaultShotnessXpathStruct,
 		}, {
 			Name: ConfigShotnessXpathName,
-			Description: "Legacy Babelfish XPath name selector (ignored by the default tree-sitter " +
+			Description: "Legacy XPath name selector (ignored by the tree-sitter " +
 				"implementation).",
 			Flag:    "shotness-xpath-name",
 			Type:    core.StringConfigurationOption,

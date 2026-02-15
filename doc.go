@@ -57,7 +57,6 @@ based on https://github.com/yasushi-saito/rbtree.
 Coupling stats are supposed to be further processed rather than observed directly.
 labours.py uses Swivel embeddings and visualises them in Tensorflow Projector.
 
-Legacy UAST-featured items are optional and require building with the "babelfish" tag,
-plus a running [Babelfish](https://doc.bblf.sh) server.
+Structural analyses and comment extraction are powered by tree-sitter in the default build.
 */
 package hercules

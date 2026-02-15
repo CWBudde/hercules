@@ -1,5 +1,5 @@
-//go:build !babelfish
-// +build !babelfish
+//go:build babelfish
+// +build babelfish
 
 package leaves
 
@@ -10,15 +10,17 @@ import (
 	"unicode/utf8"
 
 	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/go-git/go-git/v5/utils/merkletrie"
 	"github.com/gogo/protobuf/proto"
 	"github.com/meko-christian/hercules/internal/core"
 	"github.com/meko-christian/hercules/internal/pb"
 	items "github.com/meko-christian/hercules/internal/plumbing"
-	ast_items "github.com/meko-christian/hercules/internal/plumbing/ast"
+	uast_items "github.com/meko-christian/hercules/internal/plumbing/uast"
 	"github.com/sergi/go-diff/diffmatchpatch"
+	"gopkg.in/bblfsh/client-go.v3/tools"
+	"gopkg.in/bblfsh/sdk.v2/uast"
+	uast_nodes "gopkg.in/bblfsh/sdk.v2/uast/nodes"
+	"gopkg.in/bblfsh/sdk.v2/uast/query"
 )
 
 // ShotnessAnalysis contains the intermediate state which is mutated by Consume(). It should implement
@@ -29,22 +31,27 @@ type ShotnessAnalysis struct {
 	XpathStruct string
 	XpathName   string
 
-	nodes     map[string]*nodeShotness
-	files     map[string]map[string]*nodeShotness
-	extractor ast_items.Extractor
+	nodes map[string]*nodeShotness
+	files map[string]map[string]*nodeShotness
 
 	l core.Logger
 }
 
 const (
-	// ConfigShotnessXpathStruct is kept for command-line compatibility with the Babelfish build.
+	// ConfigShotnessXpathStruct is the name of the configuration option (ShotnessAnalysis.Configure())
+	// which sets the UAST XPath to choose the analysed nodes.
+	// The format is Semantic UASTv2, see https://docs.sourced.tech/babelfish/using-babelfish/uast-querying
 	ConfigShotnessXpathStruct = "Shotness.XpathStruct"
-	// ConfigShotnessXpathName is kept for command-line compatibility with the Babelfish build.
+	// ConfigShotnessXpathName is the name of the configuration option (ShotnessAnalysis.Configure())
+	// which sets the UAST XPath to find the name of the nodes chosen by ConfigShotnessXpathStruct.
+	// The format is Semantic UASTv2, see https://docs.sourced.tech/babelfish/using-babelfish/uast-querying
 	ConfigShotnessXpathName = "Shotness.XpathName"
 
-	// DefaultShotnessXpathStruct is ignored in the default build.
+	// DefaultShotnessXpathStruct is the default UAST XPath to choose the analysed nodes.
+	// It extracts functions.
 	DefaultShotnessXpathStruct = "//uast:FunctionGroup"
-	// DefaultShotnessXpathName is ignored in the default build.
+	// DefaultShotnessXpathName is the default UAST XPath to choose the names of the analysed nodes.
+	// It looks at the current tree level and at the immediate children.
 	DefaultShotnessXpathName = "/Nodes/uast:Alias/Name"
 )
 
@@ -88,7 +95,7 @@ func (shotness *ShotnessAnalysis) Provides() []string {
 // Each requested entity will be inserted into `deps` of Consume(). In turn, those
 // entities are Provides() upstream.
 func (shotness *ShotnessAnalysis) Requires() []string {
-	return []string{items.DependencyFileDiff, items.DependencyTreeChanges, items.DependencyBlobCache}
+	return []string{items.DependencyFileDiff, uast_items.DependencyUastChanges}
 }
 
 // ListConfigurationOptions returns the list of changeable public properties of this PipelineItem.
@@ -96,15 +103,15 @@ func (shotness *ShotnessAnalysis) ListConfigurationOptions() []core.Configuratio
 	opts := [...]core.ConfigurationOption{
 		{
 			Name: ConfigShotnessXpathStruct,
-			Description: "Legacy Babelfish XPath filter (ignored by the default tree-sitter " +
-				"implementation).",
+			Description: "Semantic UAST XPath query to use for filtering the nodes. " +
+				"Refer to https://docs.sourced.tech/babelfish/using-babelfish/uast-querying",
 			Flag:    "shotness-xpath-struct",
 			Type:    core.StringConfigurationOption,
 			Default: DefaultShotnessXpathStruct,
 		}, {
 			Name: ConfigShotnessXpathName,
-			Description: "Legacy Babelfish XPath name selector (ignored by the default tree-sitter " +
-				"implementation).",
+			Description: "Semantic UAST XPath query to determine the names of the filtered nodes. " +
+				"Refer to https://docs.sourced.tech/babelfish/using-babelfish/uast-querying",
 			Flag:    "shotness-xpath-name",
 			Type:    core.StringConfigurationOption,
 			Default: DefaultShotnessXpathName,
@@ -120,15 +127,15 @@ func (shotness *ShotnessAnalysis) Flag() string {
 
 // Features returns the Hercules features required to deploy this leaf.
 func (shotness *ShotnessAnalysis) Features() []string {
-	return []string{}
+	return []string{uast_items.FeatureUast}
 }
 
 // Description returns the text which explains what the analysis is doing.
 func (shotness *ShotnessAnalysis) Description() string {
 	return "Structural hotness - a fine-grained alternative to --couples. " +
-		"Given tree-sitter function-level structure we build the square co-occurrence matrix. " +
-		"The value in each cell equals to the number of times the pair of selected structural " +
-		"units appeared in the same commit."
+		"Given an XPath over UASTs - selecting functions by default - we build the square " +
+		"co-occurrence matrix. The value in each cell equals to the number of times the pair " +
+		"of selected UAST units appeared in the same commit."
 }
 
 // Configure sets the properties previously published by ListConfigurationOptions().
@@ -159,7 +166,6 @@ func (shotness *ShotnessAnalysis) Initialize(repository *git.Repository) error {
 	shotness.l = core.NewLogger()
 	shotness.nodes = map[string]*nodeShotness{}
 	shotness.files = map[string]map[string]*nodeShotness{}
-	shotness.extractor = ast_items.NewTreeSitterExtractor()
 	shotness.OneShotMergeProcessor.Initialize()
 	return nil
 }
@@ -174,14 +180,13 @@ func (shotness *ShotnessAnalysis) Consume(deps map[string]interface{}) (map[stri
 		return nil, nil
 	}
 	commit := deps[core.DependencyCommit].(*object.Commit)
-	changes := deps[items.DependencyTreeChanges].(object.Changes)
+	changesList := deps[uast_items.DependencyUastChanges].([]uast_items.Change)
 	diffs := deps[items.DependencyFileDiff].(map[string]items.FileDiffData)
-	cache := deps[items.DependencyBlobCache].(map[plumbing.Hash]*items.CachedBlob)
 	allNodes := map[string]bool{}
 
-	addNode := func(name string, node ast_items.Node, fileName string) {
+	addNode := func(name string, node uast_nodes.Node, fileName string) {
 		nodeSummary := NodeSummary{
-			Type: node.Type,
+			Type: uast.TypeOf(node),
 			Name: name,
 			File: fileName,
 		}
@@ -202,114 +207,142 @@ func (shotness *ShotnessAnalysis) Consume(deps map[string]interface{}) (map[stri
 			}
 			fmap[key] = shotness.nodes[key]
 			shotness.files[nodeSummary.File] = fmap
-		} else if !exists {
+		} else if !exists { // in case there are removals and additions in the same node
 			shotness.nodes[key].Count = count + 1
 		}
 	}
 
-	for _, change := range changes {
-		action, err := change.Action()
-		if err != nil {
-			return nil, err
-		}
-		switch action {
-		case merkletrie.Delete:
-			fromName := change.From.Name
-			for key, summary := range shotness.files[fromName] {
+	for _, change := range changesList {
+		if change.After == nil {
+			for key, summary := range shotness.files[change.Change.From.Name] {
 				for subkey := range summary.Couples {
-					if shotness.nodes[subkey] != nil {
-						delete(shotness.nodes[subkey].Couples, key)
-					}
+					delete(shotness.nodes[subkey].Couples, key)
 				}
 			}
-			for key := range shotness.files[fromName] {
+			for key := range shotness.files[change.Change.From.Name] {
 				delete(shotness.nodes, key)
 			}
-			delete(shotness.files, fromName)
-		case merkletrie.Insert:
-			toName := change.To.Name
-			nodes, err := shotness.extractNodes(toName, cache, change.To.TreeEntry.Hash)
+			delete(shotness.files, change.Change.From.Name)
+			continue
+		}
+		toName := change.Change.To.Name
+		if change.Before == nil {
+			nodes, err := shotness.extractNodes(change.After)
 			if err != nil {
-				shotness.l.Warnf("Shotness: commit %s file %s failed to parse AST: %s\n",
+				shotness.l.Warnf("Shotness: commit %s file %s failed to filter UAST: %s\n",
 					commit.Hash.String(), toName, err.Error())
 				continue
 			}
 			for name, node := range nodes {
 				addNode(name, node, toName)
 			}
-		case merkletrie.Modify:
-			fromName := change.From.Name
-			toName := change.To.Name
-			if fromName != toName {
-				oldFile := shotness.files[fromName]
-				newFile := map[string]*nodeShotness{}
-				shotness.files[toName] = newFile
-				for oldKey, ns := range oldFile {
-					ns.Summary.File = toName
-					newKey := ns.Summary.String()
-					newFile[newKey] = ns
-					shotness.nodes[newKey] = ns
-					for coupleKey, count := range ns.Couples {
-						if shotness.nodes[coupleKey] == nil {
-							continue
+			continue
+		}
+		// Before -> After
+		if change.Change.From.Name != toName {
+			// renamed
+			oldFile := shotness.files[change.Change.From.Name]
+			newFile := map[string]*nodeShotness{}
+			shotness.files[toName] = newFile
+			for oldKey, ns := range oldFile {
+				ns.Summary.File = toName
+				newKey := ns.Summary.String()
+				newFile[newKey] = ns
+				shotness.nodes[newKey] = ns
+				for coupleKey, count := range ns.Couples {
+					coupleCouples := shotness.nodes[coupleKey].Couples
+					delete(coupleCouples, oldKey)
+					coupleCouples[newKey] = count
+				}
+			}
+			// deferred cleanup is needed
+			for key := range oldFile {
+				delete(shotness.nodes, key)
+			}
+			delete(shotness.files, change.Change.From.Name)
+		}
+		// pass through old UAST
+		// pass through new UAST
+		nodesBefore, err := shotness.extractNodes(change.Before)
+		if err != nil {
+			shotness.l.Warnf("Shotness: commit ^%s file %s failed to filter UAST: %s\n",
+				commit.Hash.String(), change.Change.From.Name, err.Error())
+			continue
+		}
+		reversedNodesBefore := reverseNodeMap(nodesBefore)
+		nodesAfter, err := shotness.extractNodes(change.After)
+		if err != nil {
+			shotness.l.Warnf("Shotness: commit %s file %s failed to filter UAST: %s\n",
+				commit.Hash.String(), toName, err.Error())
+			continue
+		}
+		reversedNodesAfter := reverseNodeMap(nodesAfter)
+		genLine2Node := func(nodes map[string]uast_nodes.Node, linesNum int) [][]uast_nodes.Node {
+			res := make([][]uast_nodes.Node, linesNum)
+			for _, node := range nodes {
+				pos := uast.PositionsOf(node.(uast_nodes.Object))
+				if pos.Start() == nil {
+					continue
+				}
+				startLine := pos.Start().Line
+				endLine := pos.Start().Line
+				if pos.End() != nil && pos.End().Line > pos.Start().Line {
+					endLine = pos.End().Line
+				} else {
+					// we need to determine pos.End().Line
+					uast_items.VisitEachNode(node, func(child uast_nodes.Node) {
+						childPos := uast.PositionsOf(child.(uast_nodes.Object))
+						if childPos.Start() != nil {
+							candidate := childPos.Start().Line
+							if childPos.End() != nil {
+								candidate = childPos.End().Line
+							}
+							if candidate > endLine {
+								endLine = candidate
+							}
 						}
-						coupleCouples := shotness.nodes[coupleKey].Couples
-						delete(coupleCouples, oldKey)
-						coupleCouples[newKey] = count
+					})
+				}
+				for l := startLine; l <= endLine; l++ {
+					lineNodes := res[l-1]
+					if lineNodes == nil {
+						lineNodes = []uast_nodes.Node{}
+					}
+					lineNodes = append(lineNodes, node)
+					res[l-1] = lineNodes
+				}
+			}
+			return res
+		}
+		diff := diffs[toName]
+		line2nodeBefore := genLine2Node(nodesBefore, diff.OldLinesOfCode)
+		line2nodeAfter := genLine2Node(nodesAfter, diff.NewLinesOfCode)
+		// Scan through all the edits. Given the line numbers, get the list of active nodes
+		// and add them.
+		var lineNumBefore, lineNumAfter int
+		for _, edit := range diff.Diffs {
+			size := utf8.RuneCountInString(edit.Text)
+			switch edit.Type {
+			case diffmatchpatch.DiffDelete:
+				for l := lineNumBefore; l < lineNumBefore+size; l++ {
+					nodes := line2nodeBefore[l]
+					for _, node := range nodes {
+						// toName because we handled a possible rename before
+						addNode(reversedNodesBefore[uast_nodes.UniqueKey(node)], node, toName)
 					}
 				}
-				for key := range oldFile {
-					delete(shotness.nodes, key)
-				}
-				delete(shotness.files, fromName)
-			}
-
-			nodesBefore, err := shotness.extractNodes(fromName, cache, change.From.TreeEntry.Hash)
-			if err != nil {
-				shotness.l.Warnf("Shotness: commit ^%s file %s failed to parse AST: %s\n",
-					commit.Hash.String(), fromName, err.Error())
-				continue
-			}
-			nodesAfter, err := shotness.extractNodes(toName, cache, change.To.TreeEntry.Hash)
-			if err != nil {
-				shotness.l.Warnf("Shotness: commit %s file %s failed to parse AST: %s\n",
-					commit.Hash.String(), toName, err.Error())
-				continue
-			}
-			diff, exists := diffs[toName]
-			if !exists {
-				for name, node := range nodesBefore {
-					addNode(name, node, toName)
-				}
-				for name, node := range nodesAfter {
-					addNode(name, node, toName)
-				}
-				continue
-			}
-			line2nodeBefore := genLine2Node(nodesBefore, diff.OldLinesOfCode)
-			line2nodeAfter := genLine2Node(nodesAfter, diff.NewLinesOfCode)
-			var lineNumBefore, lineNumAfter int
-			for _, edit := range diff.Diffs {
-				size := utf8.RuneCountInString(edit.Text)
-				switch edit.Type {
-				case diffmatchpatch.DiffDelete:
-					for l := lineNumBefore; l < lineNumBefore+size && l < len(line2nodeBefore); l++ {
-						for _, node := range line2nodeBefore[l] {
-							addNode(node.Name, node, toName)
-						}
+				lineNumBefore += size
+			case diffmatchpatch.DiffInsert:
+				for l := lineNumAfter; l < lineNumAfter+size; l++ {
+					nodes := line2nodeAfter[l]
+					for _, node := range nodes {
+						addNode(reversedNodesAfter[uast_nodes.UniqueKey(node)], node, toName)
 					}
-					lineNumBefore += size
-				case diffmatchpatch.DiffInsert:
-					for l := lineNumAfter; l < lineNumAfter+size && l < len(line2nodeAfter); l++ {
-						for _, node := range line2nodeAfter[l] {
-							addNode(node.Name, node, toName)
-						}
-					}
-					lineNumAfter += size
-				case diffmatchpatch.DiffEqual:
-					lineNumBefore += size
-					lineNumAfter += size
 				}
+				lineNumAfter += size
+			case diffmatchpatch.DiffEqual:
+				lineNumBefore += size
+				lineNumAfter += size
 			}
 		}
 	}
@@ -322,53 +355,6 @@ func (shotness *ShotnessAnalysis) Consume(deps map[string]interface{}) (map[stri
 		}
 	}
 	return nil, nil
-}
-
-func genLine2Node(nodes map[string]ast_items.Node, linesNum int) [][]ast_items.Node {
-	if linesNum <= 0 {
-		return nil
-	}
-	res := make([][]ast_items.Node, linesNum)
-	for _, node := range nodes {
-		startLine := node.StartLine
-		endLine := node.EndLine
-		if startLine < 1 {
-			startLine = 1
-		}
-		if endLine < startLine {
-			endLine = startLine
-		}
-		if startLine > linesNum {
-			continue
-		}
-		if endLine > linesNum {
-			endLine = linesNum
-		}
-		for l := startLine; l <= endLine; l++ {
-			res[l-1] = append(res[l-1], node)
-		}
-	}
-	return res
-}
-
-func (shotness *ShotnessAnalysis) extractNodes(
-	path string,
-	cache map[plumbing.Hash]*items.CachedBlob,
-	hash plumbing.Hash,
-) (map[string]ast_items.Node, error) {
-	blob := cache[hash]
-	if blob == nil {
-		return map[string]ast_items.Node{}, nil
-	}
-	nodes, err := shotness.extractor.Extract(path, blob.Data)
-	if err != nil {
-		return nil, err
-	}
-	res := map[string]ast_items.Node{}
-	for _, node := range nodes {
-		res[node.Name] = node
-	}
-	return res, nil
 }
 
 // Fork clones this PipelineItem.
@@ -463,6 +449,54 @@ func (shotness *ShotnessAnalysis) serializeBinary(result *ShotnessResult, writer
 	}
 	_, err = writer.Write(serialized)
 	return err
+}
+
+func (shotness *ShotnessAnalysis) extractNodes(root uast_nodes.Node) (map[string]uast_nodes.Node, error) {
+	it, err := tools.Filter(root, shotness.XpathStruct)
+	if err != nil {
+		return nil, err
+	}
+	structs := query.AllNodes(it)
+	// some structs may be inside other structs; we pick the outermost
+	// otherwise due to UAST quirks there may be false positives
+	internal := map[uast_nodes.Comparable]bool{}
+	for _, ext := range structs {
+		mainNode := ext.(uast_nodes.Node)
+		if internal[uast_nodes.UniqueKey(mainNode)] {
+			continue
+		}
+		subs, err := tools.Filter(mainNode, shotness.XpathStruct)
+		if err != nil {
+			return nil, err
+		}
+		for subs.Next() {
+			sub := subs.Node().(uast_nodes.Node)
+			if uast_nodes.UniqueKey(sub) != uast_nodes.UniqueKey(mainNode) {
+				internal[uast_nodes.UniqueKey(sub)] = true
+			}
+		}
+	}
+	res := map[string]uast_nodes.Node{}
+	for _, ext := range structs {
+		node := ext.(uast_nodes.Node)
+		if internal[uast_nodes.UniqueKey(node)] {
+			continue
+		}
+		nodeName, err := tools.FilterNode(node, "/*"+shotness.XpathName)
+		if err != nil {
+			return nil, err
+		}
+		res[string(nodeName.(uast_nodes.Object)["Name"].(uast_nodes.String))] = node
+	}
+	return res, nil
+}
+
+func reverseNodeMap(nodes map[string]uast_nodes.Node) map[uast_nodes.Comparable]string {
+	res := map[uast_nodes.Comparable]string{}
+	for key, node := range nodes {
+		res[uast_nodes.UniqueKey(node)] = key
+	}
+	return res
 }
 
 func init() {

@@ -203,6 +203,9 @@ func (acf *arrayFeatureFlags) String() string {
 
 func (acf *arrayFeatureFlags) Set(value string) error {
 	if _, exists := acf.Choices[value]; !exists {
+		if value == "uast" {
+			return fmt.Errorf("feature %q is unavailable in this build; rebuild with -tags babelfish", value)
+		}
 		return fmt.Errorf("feature \"%s\" is not registered", value)
 	}
 	acf.Flags = append(acf.Flags, value)

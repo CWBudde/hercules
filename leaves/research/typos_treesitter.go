@@ -1,5 +1,5 @@
-//go:build babelfish
-// +build babelfish
+//go:build !babelfish
+// +build !babelfish
 
 package research
 
@@ -12,16 +12,15 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/utils/merkletrie"
 	"github.com/gogo/protobuf/proto"
 	"github.com/meko-christian/hercules/internal/core"
 	"github.com/meko-christian/hercules/internal/levenshtein"
 	"github.com/meko-christian/hercules/internal/pb"
 	items "github.com/meko-christian/hercules/internal/plumbing"
-	uast_items "github.com/meko-christian/hercules/internal/plumbing/uast"
+	ast_items "github.com/meko-christian/hercules/internal/plumbing/ast"
 	"github.com/meko-christian/hercules/internal/yaml"
 	"github.com/sergi/go-diff/diffmatchpatch"
-	"gopkg.in/bblfsh/sdk.v2/uast"
-	"gopkg.in/bblfsh/sdk.v2/uast/nodes"
 )
 
 // TyposDatasetBuilder collects pairs of typo-fix in source code identifiers.
@@ -36,12 +35,11 @@ type TyposDatasetBuilder struct {
 	typos []Typo
 	// lcontext is the Context for measuring Levenshtein distance between lines.
 	lcontext *levenshtein.Context
-	// xpather filters identifiers.
-	xpather uast_items.ChangesXPather
 	// remote carries the repository remote URL (for debugging)
 	remote string
 
-	l core.Logger
+	extractor *ast_items.TreeSitterExtractor
+	l         core.Logger
 }
 
 // TyposResult is returned by TyposDatasetBuilder.Finalize() and carries the found typo-fix
@@ -86,7 +84,7 @@ func (tdb *TyposDatasetBuilder) Provides() []string {
 // entities are Provides() upstream.
 func (tdb *TyposDatasetBuilder) Requires() []string {
 	return []string{
-		uast_items.DependencyUastChanges, items.DependencyFileDiff, items.DependencyBlobCache,
+		items.DependencyTreeChanges, items.DependencyFileDiff, items.DependencyBlobCache,
 	}
 }
 
@@ -138,14 +136,28 @@ func (tdb *TyposDatasetBuilder) Initialize(repository *git.Repository) error {
 		tdb.MaximumAllowedDistance = DefaultMaximumAllowedTypoDistance
 	}
 	tdb.lcontext = &levenshtein.Context{}
-	tdb.xpather.XPath = "//uast:Identifier"
 	tdb.remote = core.GetSensibleRemote(repository)
+	tdb.extractor = ast_items.NewTreeSitterExtractor()
 	return nil
 }
 
 type candidate struct {
 	Before int
 	After  int
+}
+
+func collectIdentifiersByLine(nodes []ast_items.Node, focused map[int]bool) map[int][]string {
+	result := map[int][]string{}
+	for _, node := range nodes {
+		if node.Name == "" {
+			continue
+		}
+		line := node.StartLine - 1
+		if focused[line] {
+			result[line] = append(result[line], node.Name)
+		}
+	}
+	return result
 }
 
 // Consume runs this PipelineItem on the next commit data.
@@ -161,14 +173,26 @@ func (tdb *TyposDatasetBuilder) Consume(deps map[string]interface{}) (map[string
 	commit := deps[core.DependencyCommit].(*object.Commit).Hash
 	cache := deps[items.DependencyBlobCache].(map[plumbing.Hash]*items.CachedBlob)
 	diffs := deps[items.DependencyFileDiff].(map[string]items.FileDiffData)
-	changes := deps[uast_items.DependencyUastChanges].([]uast_items.Change)
+	changes := deps[items.DependencyTreeChanges].(object.Changes)
 	for _, change := range changes {
-		if change.Before == nil || change.After == nil {
+		action, err := change.Action()
+		if err != nil {
+			return nil, err
+		}
+		if action != merkletrie.Modify {
 			continue
 		}
-		linesBefore := bytes.Split(cache[change.Change.From.TreeEntry.Hash].Data, []byte{'\n'})
-		linesAfter := bytes.Split(cache[change.Change.To.TreeEntry.Hash].Data, []byte{'\n'})
-		diff := diffs[change.Change.To.Name]
+		before := cache[change.From.TreeEntry.Hash]
+		after := cache[change.To.TreeEntry.Hash]
+		if before == nil || after == nil {
+			continue
+		}
+		diff, exists := diffs[change.To.Name]
+		if !exists {
+			continue
+		}
+		linesBefore := bytes.Split(before.Data, []byte{'\n'})
+		linesAfter := bytes.Split(after.Data, []byte{'\n'})
 		var lineNumBefore, lineNumAfter int
 		var candidates []candidate
 		focusedLinesBefore := map[int]bool{}
@@ -185,6 +209,9 @@ func (tdb *TyposDatasetBuilder) Consume(deps map[string]interface{}) (map[string
 					for i := 0; i < size; i++ {
 						lb := lineNumBefore - size + i
 						la := lineNumAfter + i
+						if lb < 0 || lb >= len(linesBefore) || la < 0 || la >= len(linesAfter) {
+							continue
+						}
 						dist := tdb.lcontext.Distance(string(linesBefore[lb]), string(linesAfter[la]))
 						if dist <= tdb.MaximumAllowedDistance {
 							candidates = append(candidates, candidate{lb, la})
@@ -204,49 +231,30 @@ func (tdb *TyposDatasetBuilder) Consume(deps map[string]interface{}) (map[string
 		if len(candidates) == 0 {
 			continue
 		}
-		// at this point we have pairs of very similar lines
-		// we need to build the line mappings of the identifiers before/after the change
-		// we should keep only those which are present on those focused lines
-		nodesAdded, nodesRemoved := tdb.xpather.Extract([]uast_items.Change{change})
-		addedIdentifiers := map[int][]nodes.Node{}
-		removedIdentifiers := map[int][]nodes.Node{}
-		for _, n := range nodesAdded {
-			pos := uast.PositionsOf(n.(nodes.Object))
-			if pos.Start() == nil {
-				tdb.l.Warnf("repo %s commit %s file %s adds identifier %s with no position",
-					tdb.remote, commit.String(), change.Change.To.Name,
-					n.(nodes.Object)["Name"].(nodes.String))
-				continue
-			}
-			line := int(pos.Start().Line) - 1
-			if focusedLinesAfter[line] {
-				addedIdentifiers[line] = append(addedIdentifiers[line], n)
-			}
+
+		beforeIdentifiers, err := tdb.extractor.ExtractIdentifiers(change.From.Name, before.Data)
+		if err != nil {
+			tdb.l.Warnf("repo %s commit %s file %s failed to parse before AST: %v",
+				tdb.remote, commit.String(), change.From.Name, err)
+			continue
 		}
-		for _, n := range nodesRemoved {
-			pos := uast.PositionsOf(n.(nodes.Object))
-			if pos.Start() == nil {
-				tdb.l.Warnf("repo %s commit %s file %s removes identifier %s with no position",
-					tdb.remote, commit.String(), change.Change.To.Name,
-					n.(nodes.Object)["Name"].(nodes.String))
-				continue
-			}
-			line := int(pos.Start().Line) - 1
-			if focusedLinesBefore[line] {
-				removedIdentifiers[line] = append(removedIdentifiers[line], n)
-			}
+		afterIdentifiers, err := tdb.extractor.ExtractIdentifiers(change.To.Name, after.Data)
+		if err != nil {
+			tdb.l.Warnf("repo %s commit %s file %s failed to parse after AST: %v",
+				tdb.remote, commit.String(), change.To.Name, err)
+			continue
 		}
+		removedIdentifiers := collectIdentifiersByLine(beforeIdentifiers, focusedLinesBefore)
+		addedIdentifiers := collectIdentifiersByLine(afterIdentifiers, focusedLinesAfter)
 		for _, c := range candidates {
-			nodesBefore := removedIdentifiers[c.Before]
-			nodesAfter := addedIdentifiers[c.After]
-			if len(nodesBefore) == 1 && len(nodesAfter) == 1 {
-				idBefore := string(nodesBefore[0].(nodes.Object)["Name"].(nodes.String))
-				idAfter := string(nodesAfter[0].(nodes.Object)["Name"].(nodes.String))
+			idsBefore := removedIdentifiers[c.Before]
+			idsAfter := addedIdentifiers[c.After]
+			if len(idsBefore) == 1 && len(idsAfter) == 1 && idsBefore[0] != idsAfter[0] {
 				tdb.typos = append(tdb.typos, Typo{
-					Wrong:   idBefore,
-					Correct: idAfter,
+					Wrong:   idsBefore[0],
+					Correct: idsAfter[0],
 					Commit:  commit,
-					File:    change.Change.To.Name,
+					File:    change.To.Name,
 					Line:    c.After,
 				})
 			}

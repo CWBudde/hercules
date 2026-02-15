@@ -24,23 +24,36 @@ It does not enumerate work that is already done.
 
 Why now: Babelfish is abandoned and increasingly hard to obtain/run. This makes `--shotness` effectively unavailable and blocks a “works out of the box” story.
 
-- [ ] **Replace Babelfish with tree-sitter for Shotness**
-  - [ ] Define a minimal AST/token interface needed by Shotness (avoid a full UAST reimplementation).
-  - [ ] Implement tree-sitter-backed parsing in `internal/plumbing/` behind the existing abstraction.
-  - [ ] Pick an initial language set (start small): Go, Python, JS/TS.
-  - [ ] Add fixtures + deterministic tests for the new parser layer.
-  - [ ] Acceptance: `--shotness` runs on a repo without Babelfish.
+- [x] **Replace Babelfish with tree-sitter for Shotness**
+  - [x] Define a minimal AST/token interface needed by Shotness (avoid a full UAST reimplementation).
+  - [x] Implement tree-sitter-backed parsing in `internal/plumbing/` behind the existing abstraction.
+  - [x] Pick an initial language set (start small): Go, Python, JS/TS.
+  - [x] Add fixtures + deterministic tests for the new parser layer.
+  - [x] Acceptance: `--shotness` runs on a repo without Babelfish.
 
-- [ ] **Keep Babelfish as optional fallback (build tag)**
-  - [ ] Make Babelfish code path opt-in via `-tags babelfish`.
-  - [ ] Acceptance: default build has **no Babelfish dependency**.
+- [x] **Keep Babelfish as optional fallback (build tag)**
+  - [x] Make Babelfish code path opt-in via `-tags babelfish`.
+  - [x] Acceptance: default build has **no Babelfish dependency**.
 
 - [ ] **Modularize TensorFlow usage (keep default build light)**
   - [ ] Ensure Couples and Sentiment behave sensibly when built without TensorFlow:
-    - Couples: still produces usable non-embedding output (or a clear “feature unavailable” message).
-    - Sentiment: remains behind build tag and is explicitly described as experimental.
+    - [ ] Couples: still produces usable non-embedding output (or a clear “feature unavailable” message).
+    - [ ] Sentiment: remains behind build tag and is explicitly described as experimental.
   - [ ] Evaluate a pure-Go replacement only if needed (do not block the milestone on this).
   - [ ] Acceptance: default build does not require TensorFlow and doesn’t crash when relevant flags are used.
+
+- [ ] **Broader UAST migration beyond Shotness**
+  - [x] Migrate `research/typos-dataset` to tree-sitter in default builds.
+  - [x] Add a tree-sitter comment extraction path for Sentiment (`-tags tensorflow` build, no Babelfish required).
+  - [x] Add explicit non-Babelfish UX for legacy UAST entry points:
+    - [x] `--dump-uast-changes` stays visible but fails with a clear rebuild hint.
+    - [x] `--feature uast` returns a clear rebuild hint in non-Babelfish binaries.
+  - [ ] Decide future of Babelfish-only plumbing implementation:
+    - [ ] Keep/deprecate/remove `dump-uast-changes` long-term.
+    - [ ] Keep/deprecate/remove `FileDiffRefiner` UAST-enhanced diff mode long-term.
+    - [ ] If kept, define equivalent tree-sitter-backed replacements and acceptance tests.
+  - [ ] Decide whether `--feature uast` should be hidden/deprecated in non-`babelfish` builds.
+  - [ ] Add migration docs for users relying on custom Babelfish XPath workflows.
 
 ### Milestone 2 — Large-repo scaling & operational safety (P1)
 
@@ -180,4 +193,3 @@ go test ./leaves
   - [ ] CLI: prefix outputs with `[EXPERIMENTAL]`.
   - [ ] `--help`: include a caveat.
   - [ ] Labours: add subtitle warning on charts.
-

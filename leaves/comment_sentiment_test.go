@@ -1,5 +1,5 @@
-//go:build tensorflow
-// +build tensorflow
+//go:build tensorflow && babelfish
+// +build tensorflow,babelfish
 
 package leaves
 

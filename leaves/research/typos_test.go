@@ -1,4 +1,5 @@
-//go:build !disable_babelfish
+//go:build babelfish
+// +build babelfish
 
 package research
 

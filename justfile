@@ -22,13 +22,13 @@ default: hercules
 hercules: vendor pb-go pb-python plugin-template
     go build -tags "{{tags}}" -ldflags "-X github.com/meko-christian/hercules.BinaryGitHash=`git rev-parse HEAD`" github.com/meko-christian/hercules/cmd/hercules
 
-# Run all tests (without Babelfish)
+# Run all tests for the default build (without Babelfish)
 test: hercules
-    go test -tags disable_babelfish ./...
+    go test ./...
 
 # Run all tests including Babelfish/UAST tests (requires Babelfish server)
 test-all: hercules
-    go test ./...
+    go test -tags babelfish ./...
 
 # Run unit tests (alias for test)
 test-unit: test

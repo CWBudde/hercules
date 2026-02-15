@@ -1,3 +1,6 @@
+//go:build babelfish
+// +build babelfish
+
 package leaves
 
 import (

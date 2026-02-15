@@ -1,5 +1,5 @@
-//go:build !disable_babelfish
-// +build !disable_babelfish
+//go:build babelfish
+// +build babelfish
 
 package uast
 

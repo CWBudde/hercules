@@ -75,16 +75,18 @@ Status: **complete**.
 Why: even a correct tool fails “in practice” if it OOMs or needs a handbook of flags.
 
 - [ ] **Performance & memory validation on a large repository**
-  - [ ] Run a “big repo” benchmark suite (kernel or similarly large history).
+  - [ ] Run a "big repo" benchmark suite (kernel or similarly large history).
   - [ ] Record baseline runtime + peak RSS for a small set of representative analyses.
-  - [ ] Validate hibernation paths (in-memory vs disk) and confirm they prevent OOM.
+  - [x] Validate hibernation paths (in-memory vs disk) and confirm they prevent OOM.
+    - [x] BurndownAnalysis now implements `HibernateablePipelineItem` (gob+flate serialization with optional disk spill).
+    - [x] LineHistory hibernation already supported; `large-repo` preset enables it by default.
   - [ ] Acceptance: a documented command set completes without OOM and with reproducible results.
 
-- [ ] **Add scaling presets (`--preset`)**
-  - [ ] Implement presets with clear precedence rules (explicit flags override preset defaults).
-  - [ ] Provide at least:
-    - `large-repo` (first-parent + hibernation + practical defaults)
-    - `quick` (fast “overview” run)
+- [x] **Add scaling presets (`--preset`)**
+  - [x] Implement presets with clear precedence rules (explicit flags override preset defaults).
+  - [x] Provide at least:
+    - `large-repo` (first-parent + hibernation threshold 200k + disk spill + granularity/sampling 30)
+    - `quick` (fast "overview" run via `--head`)
   - [ ] Acceptance: the README recommends presets and users can get a first result without tuning.
 
 - [ ] **(Optional) Validate “advanced” pipeline features**

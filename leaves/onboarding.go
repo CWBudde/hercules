@@ -60,8 +60,8 @@ type AuthorOnboardingData struct {
 
 // CohortStats contains aggregated statistics for a cohort
 type CohortStats struct {
-	Cohort       string // "YYYY-MM"
-	AuthorCount  int
+	Cohort      string // "YYYY-MM"
+	AuthorCount int
 
 	// Averaged across all authors in cohort
 	AverageSnapshots map[int]*OnboardingSnapshot

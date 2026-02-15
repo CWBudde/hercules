@@ -32,21 +32,21 @@ type HotspotRiskAnalysis struct {
 	WeightOwnership float32 // Weight for ownership concentration factor
 
 	// Runtime state
-	fileMetrics  map[string]*fileRiskMetrics
-	tickSize     int64 // Duration of one tick in seconds
-	currentTick  int
-	lastCommit   *object.Commit
+	fileMetrics map[string]*fileRiskMetrics
+	tickSize    int64 // Duration of one tick in seconds
+	currentTick int
+	lastCommit  *object.Commit
 
 	l core.Logger
 }
 
 // fileRiskMetrics tracks all metrics needed to calculate risk score for a file
 type fileRiskMetrics struct {
-	CurrentSize   int                  // Current number of lines
-	ChurnInWindow int                  // Number of changes within time window
-	ChurnByTick   map[int]int          // Changes per tick for window calculation
-	CoupledFiles  map[string]bool      // Set of files that co-changed with this one
-	AuthorLines   map[int]int          // Lines contributed by each author
+	CurrentSize   int             // Current number of lines
+	ChurnInWindow int             // Number of changes within time window
+	ChurnByTick   map[int]int     // Changes per tick for window calculation
+	CoupledFiles  map[string]bool // Set of files that co-changed with this one
+	AuthorLines   map[int]int     // Lines contributed by each author
 }
 
 // HotspotRiskResult is returned by Finalize()
@@ -376,7 +376,6 @@ func (hra *HotspotRiskAnalysis) Finalize() interface{} {
 
 		return nil
 	})
-
 	if err != nil {
 		hra.l.Errorf("Failed to iterate files: %v", err)
 	}

@@ -936,9 +936,9 @@ type configUpstreamFailItem struct {
 	NoopMerger
 }
 
-func (item *configUpstreamFailItem) Name() string                                   { return "UpstreamFail" }
-func (item *configUpstreamFailItem) Provides() []string                             { return []string{"upstreamfail"} }
-func (item *configUpstreamFailItem) Requires() []string                             { return []string{} }
+func (item *configUpstreamFailItem) Name() string                                    { return "UpstreamFail" }
+func (item *configUpstreamFailItem) Provides() []string                              { return []string{"upstreamfail"} }
+func (item *configUpstreamFailItem) Requires() []string                              { return []string{} }
 func (item *configUpstreamFailItem) ListConfigurationOptions() []ConfigurationOption { return nil }
 func (item *configUpstreamFailItem) Configure(facts map[string]interface{}) error    { return nil }
 func (item *configUpstreamFailItem) ConfigureUpstream(facts map[string]interface{}) error {
@@ -948,6 +948,7 @@ func (item *configUpstreamFailItem) Initialize(repository *git.Repository) error
 func (item *configUpstreamFailItem) Consume(deps map[string]interface{}) (map[string]interface{}, error) {
 	return map[string]interface{}{"upstreamfail": true}, nil
 }
+
 func (item *configUpstreamFailItem) Fork(n int) []PipelineItem {
 	return ForkSamePipelineItem(item, n)
 }
@@ -1178,9 +1179,9 @@ type circularDepItem struct {
 	NoopMerger
 }
 
-func (item *circularDepItem) Name() string                                   { return "Circular" }
-func (item *circularDepItem) Provides() []string                             { return []string{"circular"} }
-func (item *circularDepItem) Requires() []string                             { return []string{"circular"} }
+func (item *circularDepItem) Name() string                                    { return "Circular" }
+func (item *circularDepItem) Provides() []string                              { return []string{"circular"} }
+func (item *circularDepItem) Requires() []string                              { return []string{"circular"} }
 func (item *circularDepItem) ListConfigurationOptions() []ConfigurationOption { return nil }
 func (item *circularDepItem) Configure(facts map[string]interface{}) error    { return nil }
 func (item *circularDepItem) ConfigureUpstream(facts map[string]interface{}) error {
@@ -1190,6 +1191,7 @@ func (item *circularDepItem) Initialize(repository *git.Repository) error { retu
 func (item *circularDepItem) Consume(deps map[string]interface{}) (map[string]interface{}, error) {
 	return map[string]interface{}{"circular": true}, nil
 }
+
 func (item *circularDepItem) Fork(n int) []PipelineItem {
 	return ForkSamePipelineItem(item, n)
 }

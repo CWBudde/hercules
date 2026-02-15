@@ -28,13 +28,13 @@ type tickChangeMetrics struct {
 // RefactoringProxyResult is returned by RefactoringProxy.Finalize()
 type RefactoringProxyResult struct {
 	// Time series data (parallel arrays, same length)
-	Ticks        []int       // Tick indices
-	RenameRatios []float64   // Rename ratio per tick (0.0 to 1.0)
-	IsRefactoring []bool      // true if ratio > threshold
-	TotalChanges []int       // Total changes per tick (for context)
+	Ticks         []int     // Tick indices
+	RenameRatios  []float64 // Rename ratio per tick (0.0 to 1.0)
+	IsRefactoring []bool    // true if ratio > threshold
+	TotalChanges  []int     // Total changes per tick (for context)
 
 	// Configuration metadata
-	Threshold float64       // The threshold used for classification
+	Threshold float64 // The threshold used for classification
 	tickSize  time.Duration
 }
 

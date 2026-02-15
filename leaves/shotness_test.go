@@ -90,7 +90,7 @@ func beta() int {
 			},
 		},
 		items.DependencyBlobCache: map[plumbing.Hash]*items.CachedBlob{
-			newHash: &items.CachedBlob{Data: []byte(oldText)},
+			newHash: {Data: []byte(oldText)},
 		},
 		items.DependencyFileDiff: map[string]items.FileDiffData{
 			"demo.go": fileDiff,
@@ -119,8 +119,8 @@ func beta() int {
 			},
 		},
 		items.DependencyBlobCache: map[plumbing.Hash]*items.CachedBlob{
-			oldHash: &items.CachedBlob{Data: []byte(oldText)},
-			newHash: &items.CachedBlob{Data: []byte(newText)},
+			oldHash: {Data: []byte(oldText)},
+			newHash: {Data: []byte(newText)},
 		},
 		items.DependencyFileDiff: map[string]items.FileDiffData{
 			"demo.go": fileDiff,

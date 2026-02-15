@@ -4,6 +4,7 @@ This document describes the **effective output schemas** currently produced by H
 It is derived from live `Serialize()` implementations in `leaves/` and protobuf definitions in `internal/pb/pb.proto`.
 
 Scope:
+
 - YAML output (`hercules ...`)
 - Protocol Buffers output (`hercules --pb ...`)
 - One compact example payload per analysis target
@@ -13,6 +14,7 @@ Scope:
 ### YAML
 
 YAML output is a stream with:
+
 - `hercules:` metadata block
 - one top-level block per enabled analysis, keyed by `Leaf.Name()`
 
@@ -39,6 +41,7 @@ Burndown:
 ### Protocol Buffers
 
 Binary output uses envelope `AnalysisResults`:
+
 - `header` (`Metadata`)
 - `contents` map where:
   - key = analysis `Name()` (e.g. `"Burndown"`, `"Devs"`)
@@ -48,34 +51,35 @@ See `internal/pb/pb.proto` for envelope/messages.
 
 ## Analysis Key Map
 
-| CLI flag | YAML key / `Name()` | PB payload type |
-|---|---|---|
-| `--burndown` | `Burndown` | `BurndownAnalysisResults` |
-| `--legacy-burndown` | `LegacyBurndown` | `BurndownAnalysisResults` |
-| `--bus-factor` | `BusFactor` | `BusFactorAnalysisResults` |
-| `--codechurn` | `CodeChurn` | none (currently not serialized) |
-| `--commits-stat` | `CommitsStat` | `CommitsAnalysisResults` |
-| `--couples` | `Couples` | `CouplesAnalysisResults` |
-| `--devs` | `Devs` | `DevsAnalysisResults` |
-| `--dump-uast-changes` | `UASTChangesSaver` | JSON bytes payload (not a protobuf message) |
-| `--file-history` | `FileHistoryAnalysis` | `FileHistoryResultMessage` |
-| `--hotspot-risk` | `HotspotRisk` | `HotspotRiskResults` |
-| `--imports-per-dev` | `ImportsPerDeveloper` | `ImportsPerDeveloperResults` |
-| `--knowledge-diffusion` | `KnowledgeDiffusion` | `KnowledgeDiffusionResults` |
-| `--linedump` | `LineDumper` | none (binary not supported) |
-| `--onboarding` | `Onboarding` | `OnboardingResults` |
-| `--ownership-concentration` | `OwnershipConcentration` | `OwnershipConcentrationResults` |
-| `--refactoring-proxy` | `RefactoringProxy` | `RefactoringProxyResults` |
-| `--sentiment` | `Sentiment` | `CommentSentimentResults` (tensorflow build) |
-| `--shotness` | `Shotness` | `ShotnessAnalysisResults` |
-| `--temporal-activity` | `TemporalActivity` | `TemporalActivityResults` |
-| `--typos-dataset` | `TyposDataset` | `TyposDataset` |
+| CLI flag                    | YAML key / `Name()`      | PB payload type                              |
+| --------------------------- | ------------------------ | -------------------------------------------- |
+| `--burndown`                | `Burndown`               | `BurndownAnalysisResults`                    |
+| `--legacy-burndown`         | `LegacyBurndown`         | `BurndownAnalysisResults`                    |
+| `--bus-factor`              | `BusFactor`              | `BusFactorAnalysisResults`                   |
+| `--codechurn`               | `CodeChurn`              | none (currently not serialized)              |
+| `--commits-stat`            | `CommitsStat`            | `CommitsAnalysisResults`                     |
+| `--couples`                 | `Couples`                | `CouplesAnalysisResults`                     |
+| `--devs`                    | `Devs`                   | `DevsAnalysisResults`                        |
+| `--dump-uast-changes`       | `UASTChangesSaver`       | JSON bytes payload (not a protobuf message)  |
+| `--file-history`            | `FileHistoryAnalysis`    | `FileHistoryResultMessage`                   |
+| `--hotspot-risk`            | `HotspotRisk`            | `HotspotRiskResults`                         |
+| `--imports-per-dev`         | `ImportsPerDeveloper`    | `ImportsPerDeveloperResults`                 |
+| `--knowledge-diffusion`     | `KnowledgeDiffusion`     | `KnowledgeDiffusionResults`                  |
+| `--linedump`                | `LineDumper`             | none (binary not supported)                  |
+| `--onboarding`              | `Onboarding`             | `OnboardingResults`                          |
+| `--ownership-concentration` | `OwnershipConcentration` | `OwnershipConcentrationResults`              |
+| `--refactoring-proxy`       | `RefactoringProxy`       | `RefactoringProxyResults`                    |
+| `--sentiment`               | `Sentiment`              | `CommentSentimentResults` (tensorflow build) |
+| `--shotness`                | `Shotness`               | `ShotnessAnalysisResults`                    |
+| `--temporal-activity`       | `TemporalActivity`       | `TemporalActivityResults`                    |
+| `--typos-dataset`           | `TyposDataset`           | `TyposDataset`                               |
 
 ## Schema Details + Examples
 
 ### Burndown (`--burndown`)
 
 YAML fields:
+
 - `granularity` int
 - `sampling` int
 - `tick_size` int seconds
@@ -115,6 +119,7 @@ LegacyBurndown:
 ### Bus Factor (`--bus-factor`)
 
 YAML fields:
+
 - `bus_factor.threshold` float
 - `bus_factor.per_tick.<tick> = {bus_factor, total_lines}`
 - optional `bus_factor.per_subsystem.<path> = int`
@@ -130,15 +135,16 @@ BusFactor:
   bus_factor:
     threshold: 0.80
     per_tick:
-      0: {bus_factor: 2, total_lines: 1000}
+      0: { bus_factor: 2, total_lines: 1000 }
     people:
-    - "alice|alice@example.com"
+      - "alice|alice@example.com"
     tick_size: 86400
 ```
 
 ### Code Churn (`--codechurn`)
 
 Current state:
+
 - `Serialize()` returns `nil` and emits no structured payload.
 - PB payload is not defined/used.
 
@@ -151,6 +157,7 @@ CodeChurn:
 ### Commits Stat (`--commits-stat`)
 
 YAML fields:
+
 - `commits` list with entries:
   - `hash`, `when` (unix), `author` (int index), `files`
   - file item: `name`, `language`, `stat: [added, changed, removed]`
@@ -167,16 +174,17 @@ CommitsStat:
       when: 1700000000
       author: 0
       files:
-       - name: "main.go"
-         language: "Go"
-         stat: [10, 2, 1]
+        - name: "main.go"
+          language: "Go"
+          stat: [10, 2, 1]
   people:
-  - "alice|alice@example.com"
+    - "alice|alice@example.com"
 ```
 
 ### Couples (`--couples`)
 
 YAML fields:
+
 - `files_coocc.index` list
 - `files_coocc.lines` list
 - `files_coocc.matrix` list of sparse row maps `{col: value}`
@@ -198,23 +206,24 @@ Couples:
       - 10
       - 20
     matrix:
-      - {1: 3}
-      - {0: 3}
+      - { 1: 3 }
+      - { 0: 3 }
   people_coocc:
     index:
       - "alice"
       - "bob"
     matrix:
-      - {1: 2}
-      - {0: 2}
+      - { 1: 2 }
+      - { 0: 2 }
     author_files:
       - "alice":
-        - "a.go"
+          - "a.go"
 ```
 
 ### Devs (`--devs`)
 
 YAML fields:
+
 - `ticks.<tick>.<dev> = [commits, added, removed, changed, {lang: [a,r,c]}]`
 - `people` list
 - `tick_size` seconds
@@ -227,31 +236,40 @@ Example:
 Devs:
   ticks:
     0:
-      0: [1, 10, 2, 1, {Go: [10, 2, 1]}]
+      0: [1, 10, 2, 1, { Go: [10, 2, 1] }]
   people:
-  - "alice"
+    - "alice"
   tick_size: 86400
 ```
 
 ### UAST Changes Saver (`--dump-uast-changes`)
 
 YAML fields (list items):
+
 - `file`, `src0`, `src1`, `uast0`, `uast1`
 - `uast*.ast.json` files contain tree-sitter named-node arrays
 
 Binary mode:
+
 - payload bytes are JSON object: `{"changes":[...records...]}` (not protobuf)
 
 Example:
 
 ```yaml
 UASTChangesSaver:
-  - {file: main.go, src0: /tmp/abc_before.src, src1: /tmp/abc_after.src, uast0: /tmp/abc_before.ast.json, uast1: /tmp/abc_after.ast.json}
+  - {
+      file: main.go,
+      src0: /tmp/abc_before.src,
+      src1: /tmp/abc_after.src,
+      uast0: /tmp/abc_before.ast.json,
+      uast1: /tmp/abc_after.ast.json,
+    }
 ```
 
 ### File History (`--file-history`)
 
 YAML fields:
+
 - list entries keyed by file path
 - per file:
   - `commits` list of hashes
@@ -271,6 +289,7 @@ FileHistoryAnalysis:
 ### Hotspot Risk (`--hotspot-risk`)
 
 YAML fields:
+
 - `window_days`
 - `files` list with:
   - `path`, `risk_score`, `size`, `churn`, `coupling_degree`, `ownership_gini`
@@ -300,6 +319,7 @@ HotspotRisk:
 ### Imports Per Developer (`--imports-per-dev`)
 
 YAML fields:
+
 - `tick_size`
 - `imports.<developer_name>` = JSON object string with nested language/import/tick counts
 
@@ -311,12 +331,13 @@ Example:
 ImportsPerDeveloper:
   tick_size: 86400
   imports:
-    "alice": {"Go":{"fmt":{"0":12}}}
+    "alice": { "Go": { "fmt": { "0": 12 } } }
 ```
 
 ### Knowledge Diffusion (`--knowledge-diffusion`)
 
 YAML fields:
+
 - `knowledge_diffusion.window_months`
 - `knowledge_diffusion.files.<path>`:
   - `unique_editors`, `recent_editors`, `editors_over_time`
@@ -336,24 +357,26 @@ KnowledgeDiffusion:
       "main.go":
         unique_editors: 3
         recent_editors: 2
-        editors_over_time: {0: 1, 10: 3}
+        editors_over_time: { 0: 1, 10: 3 }
     distribution:
       1: 5
       2: 3
     people:
-    - "alice"
+      - "alice"
     tick_size: 86400
 ```
 
 ### Line Dump (`--linedump`)
 
 YAML fields:
+
 - `commits.<hash>` literal block with change rows:
   - `file_id prev_author prev_tick curr_author curr_tick delta`
 - `file_sequence.<id> = path`
 - `author_sequence` list
 
 Binary mode:
+
 - not supported (`Serialize()` returns error)
 
 Example:
@@ -372,6 +395,7 @@ LineDumper:
 ### Onboarding (`--onboarding`)
 
 YAML fields:
+
 - `onboarding.window_days`
 - `onboarding.meaningful_threshold`
 - `onboarding.authors.<author_id>`:
@@ -395,20 +419,39 @@ Onboarding:
         first_commit_tick: 12
         join_cohort: "2025-01"
         snapshots:
-          7: {days: 7, commits: 3, files: 5, lines: 80, meaningful_commits: 2, meaningful_files: 4, meaningful_lines: 70}
+          7:
+            {
+              days: 7,
+              commits: 3,
+              files: 5,
+              lines: 80,
+              meaningful_commits: 2,
+              meaningful_files: 4,
+              meaningful_lines: 70,
+            }
     cohorts:
       "2025-01":
         author_count: 4
         average_snapshots:
-          7: {days: 7, commits: 2, files: 3, lines: 40, meaningful_commits: 1, meaningful_files: 2, meaningful_lines: 30}
+          7:
+            {
+              days: 7,
+              commits: 2,
+              files: 3,
+              lines: 40,
+              meaningful_commits: 1,
+              meaningful_files: 2,
+              meaningful_lines: 30,
+            }
     people:
-    - "alice"
+      - "alice"
     tick_size: 86400
 ```
 
 ### Ownership Concentration (`--ownership-concentration`)
 
 YAML fields:
+
 - `ownership_concentration.per_tick.<tick> = {gini, hhi, total_lines}`
 - optional `ownership_concentration.per_subsystem.<path> = {gini, hhi}`
 - `ownership_concentration.people` list
@@ -422,17 +465,18 @@ Example:
 OwnershipConcentration:
   ownership_concentration:
     per_tick:
-      0: {gini: 0.3000, hhi: 0.2200, total_lines: 1000}
+      0: { gini: 0.3000, hhi: 0.2200, total_lines: 1000 }
     per_subsystem:
-      "pkg": {gini: 0.2500, hhi: 0.2000}
+      "pkg": { gini: 0.2500, hhi: 0.2000 }
     people:
-    - "alice"
+      - "alice"
     tick_size: 86400
 ```
 
 ### Refactoring Proxy (`--refactoring-proxy`)
 
 YAML fields:
+
 - `refactoring_proxy.threshold`
 - `refactoring_proxy.tick_size`
 - arrays: `ticks`, `rename_ratios`, `is_refactoring`, `total_changes`
@@ -455,11 +499,13 @@ RefactoringProxy:
 ### Sentiment (`--sentiment`)
 
 YAML fields:
+
 - per tick line: `<tick>: [score, [commit_hashes], "comment1|comment2|..."]`
 
 PB: `CommentSentimentResults`
 
 Notes:
+
 - available only in tensorflow builds
 - non-tensorflow builds return an explicit error
 
@@ -467,12 +513,13 @@ Example:
 
 ```yaml
 Sentiment:
-  42: [0.8123, [deadbeef,cafebabe], "Looks good|please refactor this"]
+  42: [0.8123, [deadbeef, cafebabe], "Looks good|please refactor this"]
 ```
 
 ### Shotness (`--shotness`)
 
 YAML fields:
+
 - list entries with:
   - `name`, `file`, `internal_role`, `counters` map (`node_index -> score`)
 
@@ -485,12 +532,13 @@ Shotness:
   - name: Alpha
     file: "main.go"
     internal_role: "ast:function_declaration"
-    counters: {"0":3,"2":1}
+    counters: { "0": 3, "2": 1 }
 ```
 
 ### Temporal Activity (`--temporal-activity`)
 
 YAML fields:
+
 - `temporal_activity.activities.<dev_id>` with arrays:
   - `weekdays_commits`, `weekdays_lines`
   - `hours_commits`, `hours_lines`
@@ -516,12 +564,13 @@ TemporalActivity:
         weeks_commits: [1, 0, 0]
         weeks_lines: [10, 0, 0]
     people:
-    - "alice"
+      - "alice"
 ```
 
 ### Typos Dataset (`--typos-dataset`)
 
 YAML fields:
+
 - list entries:
   - `wrong`, `correct`, `commit`, `file`, `line`
 

@@ -108,9 +108,9 @@ func TestKnowledgeDiffusionConfigure(t *testing.T) {
 	kd := KnowledgeDiffusionAnalysis{}
 	facts := map[string]interface{}{
 		identity.FactIdentityDetectorReversedPeopleDict: []string{"Alice", "Bob", "Charlie"},
-		items.FactTickSize:                              24 * time.Hour,
-		ConfigKnowledgeDiffusionWindowMonths:            12,
-		core.ConfigLogger:                               core.NewLogger(),
+		items.FactTickSize:                   24 * time.Hour,
+		ConfigKnowledgeDiffusionWindowMonths: 12,
+		core.ConfigLogger:                    core.NewLogger(),
 	}
 	assert.Nil(t, kd.Configure(facts))
 	assert.Equal(t, []string{"Alice", "Bob", "Charlie"}, kd.reversedPeopleDict)

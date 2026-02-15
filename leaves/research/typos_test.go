@@ -58,8 +58,8 @@ func TestTyposTreeSitterConsume(t *testing.T) {
 			},
 		},
 		items.DependencyBlobCache: map[plumbing.Hash]*items.CachedBlob{
-			beforeHash: &items.CachedBlob{Data: []byte(before)},
-			afterHash:  &items.CachedBlob{Data: []byte(after)},
+			beforeHash: {Data: []byte(before)},
+			afterHash:  {Data: []byte(after)},
 		},
 		items.DependencyFileDiff: map[string]items.FileDiffData{
 			"demo.go": diff,

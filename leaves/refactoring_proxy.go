@@ -100,8 +100,8 @@ func (rp *RefactoringProxy) Configure(facts map[string]interface{}) error {
 	if l, exists := facts[core.ConfigLogger].(core.Logger); exists {
 		rp.l = l
 	}
-	if val, exists := facts[ConfigRefactoringThreshold]; exists {
-		rp.RefactoringThreshold = val.(float64)
+	if val, exists := facts[ConfigRefactoringThreshold].(float32); exists {
+		rp.RefactoringThreshold = float64(val)
 	}
 	if val, exists := facts[items.FactTickSize].(time.Duration); exists {
 		rp.tickSize = val

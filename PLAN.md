@@ -378,7 +378,7 @@ Implemented as a self-contained real-time pipeline item that tracks all metrics 
 - [ ] **Tests** — Not yet implemented
 - [x] **Effort**: Medium–High — Self-contained implementation with normalized scoring
 
-#### 6.6 Refactoring Proxy (Move/Rename Rate)
+#### 6.6 Refactoring Proxy (Move/Rename Rate) ✅
 
 Track the proportion of commits dominated by file renames/moves to distinguish
 refactoring phases from feature work. Rename detection already exists in
@@ -392,13 +392,36 @@ refactoring phases from feature work. Rename detection already exists in
   - In `Consume()`: per commit, count renames/moves vs. total changes;
     classify commits as "refactoring-heavy" if rename ratio > threshold
   - In `Finalize()`: time series of rename rate, event markers for spikes
-  - Configurable: `--refactoring-threshold 0.5` (rename ratio to classify as refactoring)
+  - Configurable: `--refactoring-threshold 0.3` (rename ratio to classify as refactoring)
 - [x] **Protobuf schema** — add `RefactoringProxyResults` message
-- [ ] **Python visualization**
-  - Time series of rename rate overlaid with "Added vs Changed" for correlation
-  - Event markers on burndown chart for major refactoring phases
-- [x] **Tests**
+- [x] **Python visualization** (`python/labours/modes/refactoring_proxy.py`)
+  - Timeline plot showing refactoring rate over time
+  - Threshold line and shaded regions for refactoring vs feature phases
+  - Text summary with statistics and longest streaks
+  - Date range filtering support
+  - **Note**: Burndown overlay deferred to future enhancement
+- [x] **Tests** — 7 comprehensive test cases covering all scenarios
 - [x] **Effort**: Medium — rename detection exists, but interpretation logic is new
+
+**Usage Example**:
+
+```bash
+# Generate analysis
+hercules --refactoring-proxy /path/to/repo > analysis.yml
+
+# View visualization
+labours -m refactoring-proxy analysis.yml
+
+# Combine with other analyses
+hercules --burndown --devs --refactoring-proxy /path/to/repo > analysis.yml
+labours -m all analysis.yml
+```
+
+**Interpretation**:
+- Refactoring rate ≥ 0.3 (30%) indicates refactoring-heavy phase
+- Phases show when teams restructured code vs. adding features
+- Long refactoring streaks may indicate architectural changes
+- Use with knowledge diffusion to assess refactoring risk
 
 #### 6.7 Code Review Metrics (requires external API — deferred)
 

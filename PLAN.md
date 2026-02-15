@@ -267,177 +267,47 @@ go test ./internal/linehistory
 
 ### Phase 6: New Analysis Features (from "Dig the Diff" presentation)
 
-These feature ideas were collected from the "Fehlende Metriken" and "Priorisierte
-Verbesserungen" sections of the presentation analysis. Each feature is a new
-`core.LeafPipelineItem` registered via `core.Registry.Register()` in `init()`.
-Reference implementation pattern: `leaves/temporal_activity.go`.
+Status snapshot: **mostly complete**.
 
-#### 6.1 Bus-Factor@80% (Repo & per Subsystem)
+- [x] **6.1 Bus-Factor@80%**: Go analysis, YAML/PB output, labours mode, and tests implemented.
+- [x] **6.2 Ownership Concentration (Gini/HHI)**: Go analysis, YAML/PB output, labours mode, and tests implemented.
+- [x] **6.3 Knowledge Diffusion**: Go analysis, YAML/PB output, labours mode, and tests implemented.
+- [ ] **6.4 Onboarding Ramp (partial)**: Go analysis + PB + tests done; labours visualization still pending.
+- [ ] **6.5 Hotspot Risk Score (partial)**: Go analysis + PB + labours mode done; dedicated Go tests still pending.
+- [x] **6.6 Refactoring Proxy**: Go analysis, YAML/PB output, labours mode, and tests implemented.
+- [ ] **6.7 Code Review Metrics**: deferred; requires external GitHub/GitLab API integration layer (not possible from Git data alone).
 
-Compute the smallest k such that the top-k owners cover ≥ 80% of living lines.
-Ownership data is already tracked by `BurndownAnalysis` with `--burndown-people`;
-this feature post-processes that data into an aggregate KPI.
+Completion estimate: **4 fully complete + 2 nearly complete + 1 deferred**.
 
-- [x] **Go analysis** (`leaves/bus_factor.go`)
-  - Implement `core.LeafPipelineItem` with `Flag() = "bus-factor"`
-  - Require `identity.DependencyAuthor` and `linehistory.DependencyLineHistory`
-  - In `Consume()`: accumulate per-file, per-author alive-line counts
-  - In `Finalize()`: sort authors by ownership share, find smallest k where
-    `Sum(Top-k) ≥ threshold` (default 80%, configurable via `--bus-factor-threshold`)
-  - Emit per-tick time series (bus-factor over project lifetime)
-  - Optional: per-directory/subsystem granularity using file path prefixes
-- [x] **Protobuf schema** — add `BusFactorResults` message to `internal/pb/pb.proto`
-  - Fields: `repeated int32 bus_factor_per_tick`, `map<string, int32> bus_factor_per_subsystem`
-- [x] **YAML serialization** in `Serialize()`
-- [x] **Python visualization** (`python/labours/modes/bus_factor.py`)
-  - Gauge chart (current value) + time series plot
-  - Register as labours mode `-m bus-factor`
-- [x] **Tests** — table-driven tests in `leaves/bus_factor_test.go`
+Remaining actions to close Phase 6 operationally (bite-size):
 
-#### 6.2 Ownership Concentration Index (Gini / HHI)
+#### 6.4 Onboarding Ramp (partial)
 
-Quantify how concentrated or distributed code ownership is, tracked over time.
-Complementary to Bus-Factor: Gini=0 means perfectly equal, Gini=1 means one person
-owns everything.
+Insight: core metric collection and PB output are already done; the missing piece is visualization/UX.
 
-- [x] **Go analysis** (`leaves/ownership_concentration.go`)
-  - Implement `core.LeafPipelineItem` with `Flag() = "ownership-concentration"`
-  - Require same dependencies as Bus-Factor (6.1)
-  - In `Finalize()`: compute Gini coefficient and/or HHI per tick
-    - Gini: `1 - 2 * integral(Lorenz curve)`
-    - HHI: `Sum(share_i²)` for all authors with share > 0
-  - Configurable via `--concentration-metric gini|hhi|both`
-- [x] **Protobuf schema** — add `OwnershipConcentrationResults` message
-- [x] **Python visualization** — time series of Gini/HHI with change-point markers
-- [x] **Tests**
-- [ ] **Effort**: Low–Medium — same data sources as 6.1, math is straightforward
+- [ ] Define chart input mapping from `OnboardingResults` (cohort matrix + per-author ramp series)
+- [ ] Implement `python/labours/modes/onboarding.py` (cohort heatmap)
+- [ ] Add per-author ramp plot (overlay or small multiples)
+- [ ] Register mode in labours so `-m onboarding` works
+- [ ] Add a quick usage example to docs/README (`hercules --onboarding ... | labours -m onboarding`)
+- [ ] Validate against a real repo and capture one expected-output screenshot
 
-#### 6.3 Knowledge Diffusion
+#### 6.5 Hotspot Risk Score (partial)
 
-Track unique editors per file over time to identify single-contributor risk areas
-and knowledge silos.
+Insight: algorithm and visual output are implemented; the remaining gap is test coverage for stability and regressions.
 
-- [x] **Go analysis** (`leaves/knowledge_diffusion.go`)
-  - Implement `core.LeafPipelineItem` with `Flag() = "knowledge-diffusion"`
-  - Require `identity.DependencyAuthor`, `items.DependencyTreeChanges`,
-    `items.DependencyTick`
-  - In `Consume()`: for each changed file, record the set of unique authors
-  - In `Finalize()`: per file emit `unique_editors_count`, `unique_editors_over_time`,
-    `last_N_months_editors`; aggregate as distribution (histogram of files by editor count)
-- [x] **Protobuf schema** — add `KnowledgeDiffusionResults` message
-- [x] **Python visualization**
-  - Lorenz curve of editor distribution across files
-  - Distribution histogram of files by editor count
-  - Top-N "knowledge silos" (files with fewest unique editors)
-- [x] **Tests**
-- [ ] **Effort**: Medium — needs per-file author tracking, moderate state
+- [ ] Create `leaves/hotspot_risk_test.go` with deterministic fixture data
+- [ ] Add ranking test (top-N order and tie handling)
+- [ ] Add score-behavior tests (factor scaling and weight application)
+- [ ] Add window/filter tests (`--hotspot-risk-window`)
+- [ ] Add serialization tests for YAML/PB output shape
+- [ ] Run focused tests and gate with `go test ./leaves -run HotspotRisk`
 
-#### 6.4 Onboarding Ramp
+#### 6.7 Code Review Metrics (deferred)
 
-Measure how quickly new contributors ramp up: time-to-first-change,
-breadth-of-files in first N days, convergence to stable contribution patterns.
+Insight: blocked by missing platform layer; Git history alone cannot provide review latency/cycle-time metrics.
 
-- [x] **Go analysis** (`leaves/onboarding.go`)
-  - Implement `core.LeafPipelineItem` with `Flag() = "onboarding"`
-  - Require `identity.DependencyAuthor`, `items.DependencyTick`,
-    `items.DependencyLineStats`, `items.DependencyTreeChanges`
-  - In `Consume()`: track per author: first commit tick, cumulative commits,
-    cumulative files touched, cumulative lines changed; bucket into configurable
-    windows (default: 7/30/90 days from first commit)
-  - In `Finalize()`: per author emit onboarding metrics; compute cohort averages
-    (group by join month)
-  - Configurable: `--onboarding-windows "7,30,90"` (days), `--onboarding-meaningful-threshold 10`
-    (min lines to count as "meaningful change")
-- [x] **Protobuf schema** — add `OnboardingResults` message
-- [ ] **Python visualization**
-  - Cohort heatmap: rows = join month, columns = days since first commit, cells = cumulative activity
-  - Per-author ramp curves (overlay or small multiples)
-- [x] **Tests**
-- [x] **Effort**: Medium — new per-author temporal tracking, cohort aggregation logic
-
-#### 6.5 Hotspot Risk Score ✅
-
-Combined per-file risk metric: `log(size) × churn × coupling_degree × ownership_concentration`.
-Implemented as a self-contained real-time pipeline item that tracks all metrics incrementally.
-
-- [x] **Go analysis** (`leaves/hotspot_risk.go`)
-  - Implement `core.LeafPipelineItem` with `Flag() = "hotspot-risk"`
-  - Require `items.DependencyLineStats`, `items.DependencyTreeChanges`,
-    `identity.DependencyAuthor`, `items.DependencyTick`
-  - In `Consume()`: per file track: current size (lines), change count (churn),
-    set of co-changed files (coupling degree), set of authors (ownership concentration)
-  - In `Finalize()`: compute composite score per file, rank, emit top-N
-  - Configurable: `--hotspot-risk-top 20` (how many files to report),
-    `--hotspot-risk-window 90` (days for churn window),
-    weights for each factor via `--hotspot-risk-weights`
-- [x] **Protobuf schema** — add `HotspotRiskResults` and `FileRisk` messages
-- [x] **Python visualization** (`python/labours/modes/hotspot_risk.py`)
-  - Bubble chart: x=churn, y=coupling, size=file size, color=ownership Gini
-  - Ranked bar chart showing top-N files with component breakdown
-  - Text summary table in console output
-- [ ] **Tests** — Not yet implemented
-- [x] **Effort**: Medium–High — Self-contained implementation with normalized scoring
-
-#### 6.6 Refactoring Proxy (Move/Rename Rate) ✅
-
-Track the proportion of commits dominated by file renames/moves to distinguish
-refactoring phases from feature work. Rename detection already exists in
-`internal/plumbing/renames.go`.
-
-- [x] **Go analysis** (`leaves/refactoring_proxy.go`)
-  - Implement `core.LeafPipelineItem` with `Flag() = "refactoring-proxy"`
-  - Require `items.DependencyTreeChanges`, `items.DependencyTick`
-  - Use existing `TreeDiff` output which already detects renames via go-git's
-    `DiffTree` (similarity-based rename detection)
-  - In `Consume()`: per commit, count renames/moves vs. total changes;
-    classify commits as "refactoring-heavy" if rename ratio > threshold
-  - In `Finalize()`: time series of rename rate, event markers for spikes
-  - Configurable: `--refactoring-threshold 0.3` (rename ratio to classify as refactoring)
-- [x] **Protobuf schema** — add `RefactoringProxyResults` message
-- [x] **Python visualization** (`python/labours/modes/refactoring_proxy.py`)
-  - Timeline plot showing refactoring rate over time
-  - Threshold line and shaded regions for refactoring vs feature phases
-  - Text summary with statistics and longest streaks
-  - Date range filtering support
-  - **Note**: Burndown overlay deferred to future enhancement
-- [x] **Tests** — 7 comprehensive test cases covering all scenarios
-- [x] **Effort**: Medium — rename detection exists, but interpretation logic is new
-
-**Usage Example**:
-
-```bash
-# Generate analysis
-hercules --refactoring-proxy /path/to/repo > analysis.yml
-
-# View visualization
-labours -m refactoring-proxy analysis.yml
-
-# Combine with other analyses
-hercules --burndown --devs --refactoring-proxy /path/to/repo > analysis.yml
-labours -m all analysis.yml
-```
-
-**Interpretation**:
-- Refactoring rate ≥ 0.3 (30%) indicates refactoring-heavy phase
-- Phases show when teams restructured code vs. adding features
-- Long refactoring streaks may indicate architectural changes
-- Use with knowledge diffusion to assess refactoring risk
-
-#### 6.7 Code Review Metrics (requires external API — deferred)
-
-Cycle time, review latency, rework-after-review. These metrics are **not available
-from Git alone** and require GitHub/GitLab API integration. Deferred until a
-platform integration layer exists.
-
-- [ ] **Design**: define API abstraction (`internal/platform/`) for GitHub/GitLab
-  - Interface: `ListPullRequests()`, `GetReviews()`, `GetComments()`
-- [ ] **Go analysis** (`leaves/code_review.go`)
-  - Correlate PR merge commits with review metadata
-  - Compute: time-to-first-review, review-to-merge latency, rework commits after approval
-- [ ] **Protobuf schema** — add `CodeReviewResults` message
-- [ ] **Python visualization** — cycle time distribution, review latency trends
-- [ ] **Effort**: High — new external dependency, API rate limiting, auth handling
-- [ ] **Status**: Deferred — design only until platform layer is available
+- [ ] Keep deferred until `internal/platform/` API abstraction exists
 
 ### Phase 7: Tool & UX Improvements (from "Dig the Diff" analysis)
 

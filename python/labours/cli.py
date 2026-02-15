@@ -115,6 +115,7 @@ def parse_args() -> Namespace:
             "ownership-concentration",
             "knowledge-diffusion",
             "hotspot-risk",
+            "refactoring-proxy",
             "all",
         ],
         help="What to plot. Can be repeated, e.g. " "-m burndown-project -m run-times",

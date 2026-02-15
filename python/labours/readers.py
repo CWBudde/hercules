@@ -301,22 +301,35 @@ class YamlReader(Reader):
 
     def get_refactoring_proxy(self):
         rp_data = self.data["RefactoringProxy"]["refactoring_proxy"]
-        ticks = []
-        for tick in rp_data.get("ticks", []):
-            ticks.append({
-                "timestamp": int(tick["timestamp"]),
-                "refactoring_rate": float(tick["refactoring_rate"]),
-            })
+
+        # Parse separate arrays format from Go YAML serialization
+        tick_indices = rp_data.get("ticks", [])
+        rename_ratios = rp_data.get("rename_ratios", [])
         threshold = float(rp_data.get("threshold", 0.3))
-        tick_size_days = int(rp_data.get("tick_size_days", 30))
-        start_date = int(rp_data.get("start_date", 0))
-        end_date = int(rp_data.get("end_date", 0))
+        tick_size_seconds = int(rp_data.get("tick_size", 86400))
+        tick_size_days = tick_size_seconds // 86400
+
+        # Get repo time range from header
+        header_start = self.get_header()[0]
+        header_end = self.get_header()[1]
+
+        # Convert to tick objects with timestamps
+        ticks = []
+        for i, tick_idx in enumerate(tick_indices):
+            # Calculate timestamp: start_date + (tick_index * tick_size_seconds)
+            timestamp = header_start + (tick_idx * tick_size_seconds)
+            refactoring_rate = rename_ratios[i] if i < len(rename_ratios) else 0.0
+            ticks.append({
+                "timestamp": int(timestamp),
+                "refactoring_rate": float(refactoring_rate),
+            })
+
         result = {
             "ticks": ticks,
             "threshold": threshold,
             "tick_size_days": tick_size_days,
-            "start_date": start_date,
-            "end_date": end_date,
+            "start_date": header_start,
+            "end_date": header_end,
         }
         return result
 
@@ -586,22 +599,34 @@ class ProtobufReader(Reader):
 
     def get_refactoring_proxy(self):
         rp = self.contents["RefactoringProxy"]
-        ticks = []
-        for tick in rp.ticks:
-            ticks.append({
-                "timestamp": int(tick.timestamp),
-                "refactoring_rate": float(tick.refactoring_rate),
-            })
+
+        # Parse arrays format from protobuf
+        tick_indices = list(rp.ticks)
+        rename_ratios = list(rp.rename_ratios)
         threshold = float(rp.threshold)
-        tick_size_days = int(rp.tick_size_days)
-        start_date = int(rp.start_date)
-        end_date = int(rp.end_date)
+        tick_size = int(rp.tick_size)
+        tick_size_days = tick_size // (86400 * 1_000_000_000)  # Convert nanoseconds to days
+
+        # Get repo time range from header
+        header_start, header_end = self.get_header()
+
+        # Convert to tick objects with timestamps
+        ticks = []
+        for i, tick_idx in enumerate(tick_indices):
+            # Calculate timestamp: start_date + (tick_index * tick_size_seconds)
+            timestamp = header_start + (tick_idx * tick_size_days * 86400)
+            refactoring_rate = rename_ratios[i] if i < len(rename_ratios) else 0.0
+            ticks.append({
+                "timestamp": int(timestamp),
+                "refactoring_rate": float(refactoring_rate),
+            })
+
         result = {
             "ticks": ticks,
             "threshold": threshold,
             "tick_size_days": tick_size_days,
-            "start_date": start_date,
-            "end_date": end_date,
+            "start_date": header_start,
+            "end_date": header_end,
         }
         return result
 

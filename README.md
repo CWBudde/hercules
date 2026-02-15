@@ -54,7 +54,6 @@
   - [Custom plotting backend](#custom-plotting-backend)
   - [Caveats](#caveats)
   - [Burndown Out-Of-Memory](#burndown-out-of-memory)
-- [Roadmap](#roadmap)
 
 ## Overview
 
@@ -633,13 +632,3 @@ fail with an OOM. You should try the following:
 3. Use the [hibernation](doc/HIBERNATION.md) feature: `--hibernation-distance 10 --burndown-hibernation-threshold=1000`. Play with those two numbers to start hibernating right before the OOM.
 4. Hibernate on disk: `--burndown-hibernation-disk --burndown-hibernation-dir /path`.
 5. `--first-parent`, you win.
-
-## Roadmap
-
-The detailed forward plan lives in [PLAN.md](PLAN.md).
-
-Current high-priority open tracks:
-
-- Large-repository scaling presets and memory/hibernation validation.
-- Output schema contracts (YAML/PB docs, compatibility policy, CI checks).
-- Finishing polish for onboarding/hotspot/report UX.

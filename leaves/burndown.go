@@ -1,8 +1,12 @@
 package leaves
 
 import (
+	"bytes"
+	"compress/flate"
+	"encoding/gob"
 	"fmt"
 	"io"
+	"os"
 	"sort"
 	"sync"
 	"time"
@@ -66,6 +70,14 @@ type BurndownAnalysis struct {
 	primaryResolver core.FileIdResolver
 	fileResolver    core.FileIdResolver
 
+	// HibernationToDisk saves hibernated data to disk rather than keeping in memory.
+	HibernationToDisk bool
+	// HibernationDirectory is the temp directory for hibernated data files.
+	HibernationDirectory string
+
+	hibernatedData     []byte
+	hibernatedFileName string
+
 	l core.Logger
 }
 
@@ -90,7 +102,22 @@ func (analyser *BurndownAnalysis) Requires() []string {
 
 // ListConfigurationOptions returns the list of changeable public properties of this PipelineItem.
 func (analyser *BurndownAnalysis) ListConfigurationOptions() []core.ConfigurationOption {
-	return BurndownSharedOptions[:]
+	opts := make([]core.ConfigurationOption, len(BurndownSharedOptions))
+	copy(opts, BurndownSharedOptions[:])
+	opts = append(opts, core.ConfigurationOption{
+		Name:        ConfigBurndownHibernationDisk,
+		Description: "Save hibernated burndown data to disk rather than keep in memory.",
+		Flag:        "burndown-hibernation-disk",
+		Type:        core.BoolConfigurationOption,
+		Default:     false,
+	}, core.ConfigurationOption{
+		Name:        ConfigBurndownHibernationDir,
+		Description: "Temporary directory for hibernated burndown data files.",
+		Flag:        "burndown-hibernation-dir",
+		Type:        core.PathConfigurationOption,
+		Default:     "",
+	})
+	return opts
 }
 
 // Configure sets the properties previously published by ListConfigurationOptions().
@@ -126,6 +153,13 @@ func (analyser *BurndownAnalysis) Configure(facts map[string]interface{}) error 
 		analyser.primaryResolver = resolver
 	}
 	analyser.fileResolver = analyser.primaryResolver
+
+	if val, exists := facts[ConfigBurndownHibernationDisk].(bool); exists {
+		analyser.HibernationToDisk = val
+	}
+	if val, exists := facts[ConfigBurndownHibernationDir].(string); exists {
+		analyser.HibernationDirectory = val
+	}
 
 	return nil
 }
@@ -282,6 +316,137 @@ func (analyser *BurndownAnalysis) updateChurnMatrix(change core.LineHistoryChang
 		analyser.matrix[change.PrevAuthor] = row
 	}
 	row[newAuthor] += int64(change.Delta)
+}
+
+// burndownState holds the serializable state for hibernation.
+type burndownState struct {
+	GlobalHistory   map[int]map[int]int64
+	FileHistories   map[core.FileId]map[int]map[int]int64
+	PeopleHistories []map[int]map[int]int64
+	Matrix          []map[core.AuthorId]int64
+}
+
+func sparseHistoryToMap(sh sparseHistory) map[int]map[int]int64 {
+	if sh == nil {
+		return nil
+	}
+	m := make(map[int]map[int]int64, len(sh))
+	for k, v := range sh {
+		m[k] = v.deltas
+	}
+	return m
+}
+
+func mapToSparseHistory(m map[int]map[int]int64) sparseHistory {
+	if m == nil {
+		return nil
+	}
+	sh := make(sparseHistory, len(m))
+	for k, v := range m {
+		sh[k] = sparseHistoryEntry{deltas: v}
+	}
+	return sh
+}
+
+// Hibernate compresses the burndown analysis state to save memory.
+func (analyser *BurndownAnalysis) Hibernate() error {
+	state := burndownState{
+		GlobalHistory: sparseHistoryToMap(analyser.globalHistory),
+		Matrix:        analyser.matrix,
+	}
+	if analyser.fileHistories != nil {
+		state.FileHistories = make(map[core.FileId]map[int]map[int]int64, len(analyser.fileHistories))
+		for k, v := range analyser.fileHistories {
+			state.FileHistories[k] = sparseHistoryToMap(v)
+		}
+	}
+	if analyser.peopleHistories != nil {
+		state.PeopleHistories = make([]map[int]map[int]int64, len(analyser.peopleHistories))
+		for i, v := range analyser.peopleHistories {
+			state.PeopleHistories[i] = sparseHistoryToMap(v)
+		}
+	}
+
+	var buf bytes.Buffer
+	fw, err := flate.NewWriter(&buf, flate.DefaultCompression)
+	if err != nil {
+		return err
+	}
+	if err := gob.NewEncoder(fw).Encode(state); err != nil {
+		fw.Close()
+		return err
+	}
+	if err := fw.Close(); err != nil {
+		return err
+	}
+
+	analyser.globalHistory = nil
+	analyser.fileHistories = nil
+	analyser.peopleHistories = nil
+	analyser.matrix = nil
+
+	if analyser.HibernationToDisk {
+		file, err := os.CreateTemp(analyser.HibernationDirectory, "*-hercules-burndown.bin")
+		if err != nil {
+			return err
+		}
+		analyser.hibernatedFileName = file.Name()
+		if _, err := file.Write(buf.Bytes()); err != nil {
+			file.Close()
+			return err
+		}
+		if err := file.Close(); err != nil {
+			return err
+		}
+	} else {
+		analyser.hibernatedData = buf.Bytes()
+	}
+	return nil
+}
+
+// Boot restores the burndown analysis state from hibernation.
+func (analyser *BurndownAnalysis) Boot() error {
+	var data []byte
+	if analyser.hibernatedFileName != "" {
+		var err error
+		data, err = os.ReadFile(analyser.hibernatedFileName)
+		if err != nil {
+			return err
+		}
+		if err := os.Remove(analyser.hibernatedFileName); err != nil {
+			return err
+		}
+		analyser.hibernatedFileName = ""
+	} else {
+		data = analyser.hibernatedData
+		analyser.hibernatedData = nil
+	}
+
+	fr := flate.NewReader(bytes.NewReader(data))
+	defer fr.Close()
+
+	var state burndownState
+	if err := gob.NewDecoder(fr).Decode(&state); err != nil {
+		return err
+	}
+
+	analyser.globalHistory = mapToSparseHistory(state.GlobalHistory)
+	analyser.matrix = state.Matrix
+
+	if state.FileHistories != nil {
+		analyser.fileHistories = make(map[core.FileId]sparseHistory, len(state.FileHistories))
+		for k, v := range state.FileHistories {
+			analyser.fileHistories[k] = mapToSparseHistory(v)
+		}
+	}
+	if state.PeopleHistories != nil {
+		analyser.peopleHistories = make([]sparseHistory, len(state.PeopleHistories))
+		for i, v := range state.PeopleHistories {
+			analyser.peopleHistories[i] = mapToSparseHistory(v)
+		}
+	}
+
+	return nil
 }
 
 // Finalize returns the result of the analysis. Further calls to Consume() are not expected.

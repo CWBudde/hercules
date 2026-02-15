@@ -270,14 +270,26 @@ func selectReportAnalysisFlags(
 	available map[string]struct{}, requested []string, includeAll bool,
 ) ([]string, error) {
 	set := map[string]struct{}{}
+	isSupportedInBuild := func(flag string) bool {
+		if flag == "sentiment" && !tensorflowEnabled {
+			return false
+		}
+		return true
+	}
 	if includeAll {
 		for _, flag := range reportAllAnalysisFlags {
+			if !isSupportedInBuild(flag) {
+				continue
+			}
 			if _, exists := available[flag]; exists {
 				set[flag] = struct{}{}
 			}
 		}
 	} else if len(requested) > 0 {
 		for _, flag := range requested {
+			if !isSupportedInBuild(flag) {
+				return nil, fmt.Errorf("analysis flag %q is unavailable in this build; rebuild with -tags tensorflow", flag)
+			}
 			if _, exists := available[flag]; !exists {
 				return nil, fmt.Errorf("unknown analysis flag %q", flag)
 			}
@@ -285,6 +297,9 @@ func selectReportAnalysisFlags(
 		}
 	} else {
 		for _, flag := range reportDefaultAnalysisFlags {
+			if !isSupportedInBuild(flag) {
+				continue
+			}
 			if _, exists := available[flag]; exists {
 				set[flag] = struct{}{}
 			}

@@ -4,13 +4,9 @@
 <h1 align="center">Hercules</h1>
 <p align="center">
       Fast, insightful and highly customizable Git history analysis.<br><br>
-      <a href="http://godoc.org/gopkg.in/src-d/hercules.v10"><img src="https://godoc.org/gopkg.in/src-d/hercules.v10?status.svg" alt="GoDoc"></a>
-      <a href="https://travis-ci.com/src-d/hercules"><img src="https://travis-ci.com/src-d/hercules.svg?branch=master" alt="Travis build Status"></a>
-      <a href="https://ci.appveyor.com/project/vmarkovtsev/hercules"><img src="https://ci.appveyor.com/api/projects/status/49f0lm3v2y6xyph3?svg=true" alt="AppVeyor build status"></a>
-      <a href="https://pypi.python.org/pypi/labours"><img src="https://img.shields.io/pypi/v/labours.svg" alt="PyPi package status"></a>
-      <a href="https://hub.docker.com/r/srcd/hercules"><img src="https://img.shields.io/docker/build/srcd/hercules.svg" alt="Docker build status"></a>
-      <a href="https://codecov.io/gh/src-d/hercules"><img src="https://codecov.io/github/src-d/hercules/coverage.svg" alt="Code coverage"></a>
-      <a href="https://goreportcard.com/report/github.com/src-d/hercules"><img src="https://goreportcard.com/badge/github.com/src-d/hercules" alt="Go Report Card"></a>
+      <a href="https://pkg.go.dev/github.com/meko-christian/hercules"><img src="https://pkg.go.dev/badge/github.com/meko-christian/hercules.svg" alt="Go Reference"></a>
+      <a href="https://github.com/meko-christian/hercules/actions"><img src="https://github.com/meko-christian/hercules/actions/workflows/test.yaml/badge.svg" alt="CI Status"></a>
+      <a href="https://goreportcard.com/report/github.com/meko-christian/hercules"><img src="https://goreportcard.com/badge/github.com/meko-christian/hercules" alt="Go Report Card"></a>
       <a href="https://opensource.org/licenses/Apache-2.0"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="Apache 2.0 license"></a>
 </p>
 <p align="center">
@@ -77,7 +73,7 @@ The analyzed commit history includes branches, merges, etc.
 Hercules has been successfully used for several internal projects at [source{d}](https://sourced.tech).
 There are blog posts: [1](https://blog.sourced.tech/post/hercules-v4), [2](https://blog.sourced.tech/post/hercules) and
 a [presentation](http://vmarkovtsev.github.io/gowayfest-2018-minsk/). Please [contribute](#contributions)
-by testing, fixing bugs, adding [new analyses](https://github.com/src-d/hercules/issues?q=is%3Aissue+is%3Aopen+label%3Anew-analysis), or coding swagger!
+by testing, fixing bugs, adding [new analyses](https://github.com/meko-christian/hercules/issues?q=is%3Aissue+is%3Aopen+label%3Anew-analysis), or coding swagger!
 
 ![Hercules DAG of Burndown analysis](doc/dag.png)
 
@@ -131,6 +127,7 @@ TAGS=tensorflow just
 
 - Enables `--sentiment` (experimental).
 - Requires [`libtensorflow`](https://www.tensorflow.org/install/install_go).
+- If `--sentiment` is requested without this tag, Hercules prints a clear rebuild hint.
 
 ### GitHub Action
 

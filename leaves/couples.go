@@ -123,7 +123,8 @@ func (couples *CouplesAnalysis) Flag() string {
 func (couples *CouplesAnalysis) Description() string {
 	return "The result is a square matrix, the value in each cell corresponds to the number " +
 		"of times the pair of files appeared in the same commit or pair of developers " +
-		"committed to the same file."
+		"committed to the same file. This analysis does not require TensorFlow; TensorFlow " +
+		"is only needed by labours for optional embedding visualizations."
 }
 
 // Initialize resets the temporary caches and prepares this PipelineItem for a series of Consume()

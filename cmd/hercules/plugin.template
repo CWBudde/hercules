@@ -24,7 +24,7 @@ import (
 
   "github.com/gogo/protobuf/proto"
   "github.com/go-git/go-git/v5"
-  "github.com/cyraxred/hercules"
+  "github.com/meko-christian/hercules"
 )
 
 // {{.name}} contains the intermediate state which is mutated by Consume(). It should implement

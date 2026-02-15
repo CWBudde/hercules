@@ -32,12 +32,22 @@ Status: **mostly complete**.
 
 - [ ] **Modularize TensorFlow usage (keep default build light)**
   - [ ] Ensure Couples and Sentiment behave sensibly when built without TensorFlow:
-    - [ ] Couples: still produces usable non-embedding output (or a clear “feature unavailable” message).
-    - [ ] Sentiment: remains behind build tag and is explicitly described as experimental.
+    - [x] Couples: still produces usable non-embedding output (or a clear “feature unavailable” message).
+    - [x] Sentiment: remains behind build tag and is explicitly described as experimental.
+    - [x] Non-`tensorflow` builds now provide explicit runtime/build-tag guidance when `--sentiment` is requested.
   - [ ] Evaluate a pure-Go replacement only if needed (do not block the milestone on this).
   - [ ] Acceptance: default build does not require TensorFlow and doesn’t crash when relevant flags are used.
 
 - [ ] **Finish legacy UAST surface cleanup**
+  - [ ] Legacy UAST output paths removed in this fork:
+    - [x] `--dump-uast-changes` removed from runtime/CLI.
+    - [x] `FileDiffRefiner` (UAST-based) removed from pipeline.
+    - [ ] Add a short migration note in docs/changelog describing removal and impact.
+  - [ ] Define replacement strategy for removed functionality:
+    - [ ] Decide whether a tree-sitter-backed commit-level AST dump mode is needed.
+    - [ ] If needed, design and implement a replacement for `--dump-uast-changes` with tests.
+    - [ ] Decide whether a tree-sitter-based diff-refinement pass should be added to `FileDiff`.
+    - [ ] If needed, implement refinement pass and acceptance tests for human-readable diff quality.
   - [ ] Decide whether protobuf messages named `UAST*` should be renamed or kept for compatibility.
   - [ ] Decide whether `--shotness-xpath-*` compatibility flags should be removed or kept as ignored aliases.
   - [ ] Remove stale docs/examples that still imply XPath/UAST workflows.

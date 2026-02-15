@@ -46,7 +46,7 @@ to provide your own logger, enable people-tracking, and set a custom tick size:
 	  leaves.ConfigBurndownTrackPeople: true,
 	})
 
-Hercules depends heavily on https://github.com/src-d/go-git and leverages the
+Hercules depends heavily on https://github.com/go-git/go-git and leverages the
 diff algorithm through https://github.com/sergi/go-diff.
 
 Besides, BurndownAnalysis involves File and RBTree. These are low level data structures

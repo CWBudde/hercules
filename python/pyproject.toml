@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "labours"
 version = "10.7.3"
-description = "Python companion for github.com/src-d/hercules to visualize the results."
+description = "Python companion for github.com/meko-christian/hercules to visualize the results."
 readme = "README.md"
 license = "Apache-2.0"
 authors = [

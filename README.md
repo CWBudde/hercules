@@ -77,7 +77,7 @@ by testing, fixing bugs, adding [new analyses](https://github.com/meko-christian
 
 ![Hercules DAG of Burndown analysis](doc/dag.png)
 
-<p align="center">The DAG of burndown and couples analyses. Generated with <code>hercules --burndown --burndown-people --couples --dry-run --dump-dag doc/dag.dot https://github.com/src-d/hercules</code></p>
+<p align="center">The DAG of burndown and couples analyses. Generated with <code>hercules --burndown --burndown-people --couples --dry-run --dump-dag doc/dag.dot https://github.com/meko-christian/hercules</code></p>
 
 ![git/git image](doc/linux.png)
 
@@ -85,7 +85,7 @@ by testing, fixing bugs, adding [new analyses](https://github.com/meko-christian
 
 ## Installation
 
-Grab `hercules` binary from the [Releases page](https://github.com/src-d/hercules/releases).
+Grab `hercules` binary from the [Releases page](https://github.com/meko-christian/hercules/releases).
 `labours` is installable from [PyPi](https://pypi.org/):
 
 ```
@@ -101,7 +101,7 @@ Numpy and Scipy can be installed on Windows using http://www.lfd.uci.edu/~gohlke
 You are going to need Go (>= v1.18), [`protoc`](https://github.com/google/protobuf/releases), and [`just`](https://github.com/casey/just).
 
 ```
-git clone https://github.com/src-d/hercules && cd hercules
+git clone https://github.com/meko-christian/hercules && cd hercules
 just
 pip3 install -e ./python
 ```
@@ -518,7 +518,7 @@ Hercules has a plugin system and allows to run custom analyses. See [PLUGINS.md]
 
 ```
 hercules --burndown --pb https://github.com/go-git/go-git > go-git.pb
-hercules --burndown --pb https://github.com/src-d/hercules > hercules.pb
+hercules --burndown --pb https://github.com/meko-christian/hercules > hercules.pb
 hercules combine go-git.pb hercules.pb | labours -f pb -m burndown-project --resample M
 ```
 
@@ -568,7 +568,7 @@ contain `"type"` which reflects the plot kind.
 
 ### Caveats
 
-1. Processing all the commits may fail in some rare cases. If you get an error similar to https://github.com/src-d/hercules/issues/106
+1. Processing all the commits may fail in some rare cases. If you get an error similar to https://github.com/meko-christian/hercules/issues/106
    please report there and specify `--first-parent` as a workaround.
 1. Burndown collection may fail with an Out-Of-Memory error. See the next session for the workarounds.
 1. Parsing YAML in Python is slow when the number of internal objects is big. `hercules`' output

@@ -24,6 +24,10 @@ const (
 	// authorSelf is the internal author index which is used in BurndownAnalysis.Finalize() to
 	// format the author overwrites matrix.
 	authorSelf = core.AuthorMissing + 1
+	// ConfigBurndownHibernationDisk enables writing hibernated burndown data to disk.
+	ConfigBurndownHibernationDisk = "Burndown.HibernationDisk"
+	// ConfigBurndownHibernationDir is the temp directory for hibernated burndown data.
+	ConfigBurndownHibernationDir = "Burndown.HibernationDir"
 )
 
 var BurndownSharedOptions = [...]core.ConfigurationOption{

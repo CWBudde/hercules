@@ -1162,3 +1162,48 @@ func TestBurndownResultGetters(t *testing.T) {
 	assert.Equal(t, br.tickSize, br.GetTickSize())
 	assert.Equal(t, br.GetIdentities(), br.reversedPeopleDict)
 }
+
+func TestBurndownHibernateBoot(t *testing.T) {
+	bd := BurndownAnalysis{}
+	assert.Nil(t, bd.Initialize(test.Repository))
+
+	// Populate with some data
+	bd.globalHistory.updateDelta(0, 0, 50)
+	bd.globalHistory.updateDelta(0, 10, -10)
+	bd.globalHistory.updateDelta(10, 10, 20)
+
+	bd.fileHistories[1] = sparseHistory{}
+	bd.fileHistories[1].updateDelta(0, 0, 30)
+
+	// Hibernate
+	assert.Nil(t, bd.Hibernate())
+	// Maps should be nil after hibernation
+	assert.Nil(t, bd.globalHistory)
+	assert.Nil(t, bd.fileHistories)
+	assert.Nil(t, bd.peopleHistories)
+	assert.Nil(t, bd.matrix)
+
+	// Boot
+	assert.Nil(t, bd.Boot())
+	// Data should be restored
+	assert.Equal(t, int64(50), bd.globalHistory[0].deltas[0])
+	assert.Equal(t, int64(-10), bd.globalHistory[10].deltas[0])
+	assert.Equal(t, int64(20), bd.globalHistory[10].deltas[10])
+	assert.Equal(t, int64(30), bd.fileHistories[1][0].deltas[0])
+}
+
+func TestBurndownHibernateBootDisk(t *testing.T) {
+	bd := BurndownAnalysis{}
+	assert.Nil(t, bd.Initialize(test.Repository))
+	bd.HibernationToDisk = true
+
+	bd.globalHistory.updateDelta(0, 5, 100)
+
+	assert.Nil(t, bd.Hibernate())
+	assert.NotEmpty(t, bd.hibernatedFileName)
+	assert.Nil(t, bd.globalHistory)
+
+	assert.Nil(t, bd.Boot())
+	assert.Empty(t, bd.hibernatedFileName)
+	assert.Equal(t, int64(100), bd.globalHistory[5].deltas[0])
+}

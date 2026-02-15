@@ -68,7 +68,7 @@ This fork focuses on:
 - practical report generation and operational tooling.
 
 There are two command-line tools: `hercules` and `labours`. The first is a program
-written in Go which takes a Git repository and executes a Directed Acyclic Graph (DAG) of [analysis tasks](doc/PIPELINE_ITEMS.md) over the full commit history.
+written in Go which takes a Git repository and executes a Directed Acyclic Graph (DAG) of [analysis tasks](docs/PIPELINE_ITEMS.md) over the full commit history.
 The second is a Python script which shows some predefined plots over the collected data. These two tools are normally used together through
 a pipe. It is possible to write custom analyses using the plugin system. It is also possible
 to merge several analysis results together - relevant for organizations.
@@ -81,11 +81,11 @@ Historical context from the original project is available in
 Please [contribute](#contributions) by testing, fixing bugs, and adding
 [new analyses](https://github.com/meko-christian/hercules/issues?q=is%3Aissue+is%3Aopen+label%3Anew-analysis).
 
-![Hercules DAG of Burndown analysis](doc/dag.png)
+![Hercules DAG of Burndown analysis](docs/dag.png)
 
-<p align="center">The DAG of burndown and couples analyses. Generated with <code>hercules --burndown --burndown-people --couples --dry-run --dump-dag doc/dag.dot https://github.com/meko-christian/hercules</code></p>
+<p align="center">The DAG of burndown and couples analyses. Generated with <code>hercules --burndown --burndown-people --couples --dry-run --dump-dag docs/dag.dot https://github.com/meko-christian/hercules</code></p>
 
-![git/git image](doc/linux.png)
+![git/git image](docs/linux.png)
 
 <p align="center">torvalds/linux line burndown (granularity 30, sampling 30, resampled by year). Generated with <code>hercules --burndown --first-parent --pb https://github.com/torvalds/linux | labours -f pb -m burndown-project</code> in 1h 40min.</p>
 
@@ -295,7 +295,7 @@ will be used if it exists in the latest commit.
 
 #### Overwrites matrix
 
-![Wireshark top 20 overwrites matrix](doc/wireshark_overwrites_matrix.png)
+![Wireshark top 20 overwrites matrix](docs/wireshark_overwrites_matrix.png)
 
 <p align="center">Wireshark top 20 devs - overwrites matrix</p>
 
@@ -320,7 +320,7 @@ The sequence of developers is stored in `people_sequence` YAML node.
 
 #### Code ownership
 
-![Ember.js top 20 code ownership](doc/emberjs_people.png)
+![Ember.js top 20 code ownership](docs/emberjs_people.png)
 
 <p align="center">Ember.js top 20 devs - code ownership</p>
 
@@ -334,7 +334,7 @@ how many lines are alive at the sampled moments in time for each identified deve
 
 #### Couples
 
-![Linux kernel file couples](doc/tfprojcouples.png)
+![Linux kernel file couples](docs/tfprojcouples.png)
 
 <p align="center">torvalds/linux files' coupling in Tensorflow Projector</p>
 
@@ -382,13 +382,13 @@ labours -m shotness
 
 Couples analysis automatically loads "shotness" data if available.
 
-![Jinja2 functions grouped by structural hotness](doc/jinja.png)
+![Jinja2 functions grouped by structural hotness](docs/jinja.png)
 
 <p align="center"><code>hercules --shotness --pb https://github.com/pallets/jinja | labours -m couples -f pb</code></p>
 
 #### Aligned commit series
 
-![tensorflow/tensorflow](doc/devs_tensorflow.png)
+![tensorflow/tensorflow](docs/devs_tensorflow.png)
 
 <p align="center">tensorflow/tensorflow aligned commit series of top 50 developers by commit number.</p>
 
@@ -424,7 +424,7 @@ insights from the `tensorflow/tensorflow` plot above:
 
 #### Added vs changed lines through time
 
-![tensorflow/tensorflow](doc/add_vs_changed.png)
+![tensorflow/tensorflow](docs/add_vs_changed.png)
 
 <p align="center">tensorflow/tensorflow added and changed lines through time.</p>
 
@@ -438,7 +438,7 @@ labours -m old-vs-new -o <name>
 
 #### Efforts through time
 
-![kubernetes/kubernetes](doc/k8s_efforts.png)
+![kubernetes/kubernetes](docs/k8s_efforts.png)
 
 <p align="center">kubernetes/kubernetes efforts through time.</p>
 
@@ -455,7 +455,7 @@ with owning lines.
 
 #### Sentiment (positive and negative comments)
 
-![Django sentiment](doc/sentiment.png)
+![Django sentiment](docs/sentiment.png)
 
 <p align="center">It can be clearly seen that Django comments were positive/optimistic in the beginning, but later became negative/pessimistic.<br><code>hercules --sentiment --pb https://github.com/django/django | labours -m sentiment -f pb</code></p>
 
@@ -629,6 +629,6 @@ fail with an OOM. You should try the following:
 
 1. Read the repo from disk instead of cloning into memory.
 2. Use `--skip-blacklist` to avoid analyzing the unwanted files. It is also possible to constrain the `--language`.
-3. Use the [hibernation](doc/HIBERNATION.md) feature: `--hibernation-distance 10 --burndown-hibernation-threshold=1000`. Play with those two numbers to start hibernating right before the OOM.
+3. Use the [hibernation](docs/HIBERNATION.md) feature: `--hibernation-distance 10 --burndown-hibernation-threshold=1000`. Play with those two numbers to start hibernating right before the OOM.
 4. Hibernate on disk: `--burndown-hibernation-disk --burndown-hibernation-dir /path`.
 5. `--first-parent`, you win.

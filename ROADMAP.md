@@ -96,10 +96,11 @@ Why: even a correct tool fails “in practice” if it OOMs or needs a handbook 
 
 Why: stable tooling needs stable schemas; otherwise every downstream consumer is fragile.
 
-- [ ] **Document existing YAML/PB schemas**
-  - [ ] Extract the effective YAML structure from each `Serialize()` implementation and write reference docs.
-  - [ ] Provide one example payload per analysis (small and readable).
-  - [ ] Acceptance: a reader can write a parser without reading Go code.
+- [x] **Document existing YAML/PB schemas**
+  - [x] Extract the effective YAML structure from each `Serialize()` implementation and write reference docs.
+  - [x] Provide one example payload per analysis (small and readable).
+  - [x] Acceptance: a reader can write a parser without reading Go code.
+  - [x] Reference: `docs/SCHEMAS.md`.
 
 - [ ] **Freeze and version the PB schema**
   - [ ] Introduce a schema version policy (semantic versioning).

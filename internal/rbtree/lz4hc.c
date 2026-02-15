@@ -241,8 +241,8 @@ void LZ4_wildCopy(void* dstPtr, const void* srcPtr, void* dstEnd)
 
 
 #define WILDCOPYLENGTH 8
-#define LASTLITERALS   5   /* see ../doc/lz4_Block_format.md#parsing-restrictions */
-#define MFLIMIT       12   /* see ../doc/lz4_Block_format.md#parsing-restrictions */
+#define LASTLITERALS   5   /* see ../docs/lz4_Block_format.md#parsing-restrictions */
+#define MFLIMIT       12   /* see ../docs/lz4_Block_format.md#parsing-restrictions */
 #define MATCH_SAFEGUARD_DISTANCE  ((2*WILDCOPYLENGTH) - MINMATCH)   /* ensure it's possible to write 2 x wildcopyLength without overflowing output buffer */
 static const int LZ4_minLength = (MFLIMIT+1);
 

@@ -20,10 +20,7 @@ Completed items are listed only when they clarify the current state or unblock p
 
 ## Current remaining focus (short list)
 
-1. **Finalize legacy UAST replacement strategy (P0)**
-   - Decide whether we need a tree-sitter-backed replacement for `--dump-uast-changes`.
-   - Decide whether `FileDiff` needs a tree-sitter refinement pass.
-2. **Complete larger P1/P2 milestones**
+1. **Complete larger P1/P2 milestones**
    - Scaling presets + large-repo validation.
    - Output schema contracts and compatibility checks.
    - Onboarding/hotspot/report polish.
@@ -32,7 +29,7 @@ Completed items are listed only when they clarify the current state or unblock p
 
 ### Milestone 1 — Dependency modernization (tree-sitter first) (P0)
 
-Status: **mostly complete**.
+Status: **complete**.
 
 - [x] **Tree-sitter migration completed for structural analyses**
   - [x] `shotness` moved to tree-sitter-only implementation.
@@ -50,25 +47,28 @@ Status: **mostly complete**.
   - [x] Acceptance: default build does not require TensorFlow and doesn’t crash when relevant flags are used.
     - [x] Verified (2026-02-15): `go build ./cmd/hercules` (default), `--couples --head` succeeds, `--sentiment --head` exits with explicit rebuild guidance (`rebuild with -tags tensorflow`).
 
-- [ ] **Finish legacy UAST surface cleanup**
-  - Status: **legacy surfaces removed; replacement strategy still open**.
-  - [x] Legacy UAST output paths removed in this fork:
-    - [x] `--dump-uast-changes` removed from runtime/CLI.
+- [x] **Finish legacy UAST surface cleanup**
+  - Status: **legacy surfaces removed or replaced in this fork**.
+  - [x] Legacy UAST output paths transitioned in this fork:
+    - [x] Babelfish-backed `--dump-uast-changes` removed.
+    - [x] Tree-sitter replacement for `--dump-uast-changes` implemented.
     - [x] `FileDiffRefiner` (UAST-based) removed from pipeline.
     - [x] Add a short migration note in docs/changelog describing removal and impact.
-  - [ ] Define replacement strategy for removed functionality:
-    - [ ] Decide whether a tree-sitter-backed commit-level AST dump mode is needed.
-    - [ ] If needed, design and implement a replacement for `--dump-uast-changes` with tests.
+  - [x] Define replacement strategy for removed functionality:
+    - [x] Decide whether a tree-sitter-backed commit-level AST dump mode is needed.
+      - [x] Decision: yes.
+    - [x] Design and implement a replacement for `--dump-uast-changes` with tests.
+      - [x] Implemented via `UASTChangesSaver` tree-sitter dump mode.
     - [x] Decide whether a tree-sitter-based diff-refinement pass should be added to `FileDiff`.
       - [x] Decision: yes. Add a tree-sitter-backed refinement pass directly in `FileDiff` (enabled by default, opt-out via `--no-diff-refine`).
-    - [x] If needed, implement refinement pass and acceptance tests for human-readable diff quality.
+    - [x] Implement refinement pass and acceptance tests for human-readable diff quality.
       - [x] Implemented in `internal/plumbing/diff.go` with deterministic unit tests.
   - [x] Decide whether protobuf messages named `UAST*` should be renamed or kept for compatibility.
     - [x] Decision: removed from schema for this fork (intentional protobuf compatibility break).
   - [x] Decide whether `--shotness-xpath-*` compatibility flags should be removed or kept as ignored aliases.
     - [x] Decision: removed from CLI/runtime in this fork.
   - [x] Remove stale docs/examples that still imply XPath/UAST workflows.
-  - [ ] Once replacement decisions are finalized, update README migration notes with the final replacement guidance.
+  - [x] Once replacement decisions are finalized, update README migration notes with the final replacement guidance.
 
 ### Milestone 2 — Large-repo scaling & operational safety (P1)
 

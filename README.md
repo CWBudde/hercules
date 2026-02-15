@@ -145,13 +145,16 @@ TAGS=tensorflow just
 This fork intentionally removed the legacy UAST/Babelfish surface and does not preserve backward compatibility for it.
 
 - Removed CLI/feature surface:
-  - `--dump-uast-changes`
   - `--feature uast`
   - `--shotness-xpath-*`
 - Removed internal pipeline items:
   - `UAST`
   - `UASTChanges`
   - `FileDiffRefiner` (UAST-based)
+- Replacement mode:
+  - `--dump-uast-changes` is available again as a tree-sitter-based replacement.
+  - It writes `.src` and `.ast.json` artifacts under `--changed-uast-dir`.
+  - Legacy protobuf messages for UAST dump payloads are still removed in this fork.
 - Protobuf schema change:
   - `UASTChange` and `UASTChangesSaverResults` were removed from `internal/pb/pb.proto`.
   - Older payloads containing these messages are not supported by this fork.
@@ -637,8 +640,6 @@ The detailed forward plan lives in [PLAN.md](PLAN.md).
 
 Current high-priority open tracks:
 
-- Finalize replacement strategy for removed legacy UAST-oriented functionality
-  (`--dump-uast-changes` replacement and diff-refinement decision).
 - Large-repository scaling presets and memory/hibernation validation.
 - Output schema contracts (YAML/PB docs, compatibility policy, CI checks).
 - Finishing polish for onboarding/hotspot/report UX.

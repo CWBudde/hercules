@@ -380,27 +380,30 @@ func (analyser *BurndownAnalysis) Hibernate() error {
 		return err
 	}
 
-	analyser.globalHistory = nil
-	analyser.fileHistories = nil
-	analyser.peopleHistories = nil
-	analyser.matrix = nil
-
 	if analyser.HibernationToDisk {
 		file, err := os.CreateTemp(analyser.HibernationDirectory, "*-hercules-burndown.bin")
 		if err != nil {
 			return err
 		}
-		analyser.hibernatedFileName = file.Name()
 		if _, err := file.Write(buf.Bytes()); err != nil {
 			file.Close()
+			os.Remove(file.Name())
 			return err
 		}
 		if err := file.Close(); err != nil {
+			os.Remove(file.Name())
 			return err
 		}
+		analyser.hibernatedFileName = file.Name()
 	} else {
 		analyser.hibernatedData = buf.Bytes()
 	}
+
+	// Clear state only after successful persistence.
+	analyser.globalHistory = nil
+	analyser.fileHistories = nil
+	analyser.peopleHistories = nil
+	analyser.matrix = nil
 	return nil
 }
 
@@ -420,6 +423,10 @@ func (analyser *BurndownAnalysis) Boot() error {
 	} else {
 		data = analyser.hibernatedData
 		analyser.hibernatedData = nil
+	}
+
+	if len(data) == 0 {
+		return fmt.Errorf("burndown: Boot() called without prior Hibernate()")
 	}
 
 	fr := flate.NewReader(bytes.NewReader(data))

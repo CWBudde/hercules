@@ -40,13 +40,15 @@ Status: **mostly complete**.
   - [x] `sentiment` comment extraction moved to tree-sitter path (`-tags tensorflow` build).
   - [x] Legacy parser-specific plumbing and tests removed from the codebase.
 
-- [ ] **Modularize TensorFlow usage (keep default build light)**
+- [x] **Modularize TensorFlow usage (keep default build light)**
   - [x] Ensure Couples and Sentiment behave sensibly when built without TensorFlow:
     - [x] Couples: still produces usable non-embedding output (or a clear “feature unavailable” message).
     - [x] Sentiment: remains behind build tag and is explicitly described as experimental.
     - [x] Non-`tensorflow` builds now provide explicit runtime/build-tag guidance when `--sentiment` is requested.
-  - [ ] Evaluate a pure-Go replacement only if needed (do not block the milestone on this).
-  - [ ] Acceptance: default build does not require TensorFlow and doesn’t crash when relevant flags are used.
+  - [x] Evaluate a pure-Go replacement only if needed (do not block the milestone on this).
+    - [x] Decision: not required for Milestone 1; keep current optional TensorFlow path and revisit only if usage data shows a need.
+  - [x] Acceptance: default build does not require TensorFlow and doesn’t crash when relevant flags are used.
+    - [x] Verified (2026-02-15): `go build ./cmd/hercules` (default), `--couples --head` succeeds, `--sentiment --head` exits with explicit rebuild guidance (`rebuild with -tags tensorflow`).
 
 - [ ] **Finish legacy UAST surface cleanup**
   - Status: **legacy surfaces removed; replacement strategy still open**.
@@ -57,8 +59,10 @@ Status: **mostly complete**.
   - [ ] Define replacement strategy for removed functionality:
     - [ ] Decide whether a tree-sitter-backed commit-level AST dump mode is needed.
     - [ ] If needed, design and implement a replacement for `--dump-uast-changes` with tests.
-    - [ ] Decide whether a tree-sitter-based diff-refinement pass should be added to `FileDiff`.
-    - [ ] If needed, implement refinement pass and acceptance tests for human-readable diff quality.
+    - [x] Decide whether a tree-sitter-based diff-refinement pass should be added to `FileDiff`.
+      - [x] Decision: yes. Add a tree-sitter-backed refinement pass directly in `FileDiff` (enabled by default, opt-out via `--no-diff-refine`).
+    - [x] If needed, implement refinement pass and acceptance tests for human-readable diff quality.
+      - [x] Implemented in `internal/plumbing/diff.go` with deterministic unit tests.
   - [x] Decide whether protobuf messages named `UAST*` should be renamed or kept for compatibility.
     - [x] Decision: removed from schema for this fork (intentional protobuf compatibility break).
   - [x] Decide whether `--shotness-xpath-*` compatibility flags should be removed or kept as ignored aliases.

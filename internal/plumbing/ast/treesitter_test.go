@@ -151,3 +151,29 @@ func alpha() int {
 		t.Fatalf("expected at least 2 comment nodes, got %d", len(nodes))
 	}
 }
+
+func TestExtractNamedNodes(t *testing.T) {
+	source := []byte(`package demo
+
+func alpha() int {
+	return 1
+}
+`)
+	nodes, err := ExtractNamedNodes("demo.go", source)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(nodes) == 0 {
+		t.Fatal("expected named nodes for Go source")
+	}
+	foundFunction := false
+	for _, node := range nodes {
+		if node.Type == "ast:function_declaration" && node.StartLine == 3 && node.EndLine == 5 {
+			foundFunction = true
+			break
+		}
+	}
+	if !foundFunction {
+		t.Fatalf("expected function_declaration node, got %+v", nodes)
+	}
+}

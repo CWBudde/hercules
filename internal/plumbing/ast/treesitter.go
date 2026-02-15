@@ -7,6 +7,7 @@ import (
 
 	sitter "github.com/smacker/go-tree-sitter"
 	golang "github.com/smacker/go-tree-sitter/golang"
+	java "github.com/smacker/go-tree-sitter/java"
 	javascript "github.com/smacker/go-tree-sitter/javascript"
 	python "github.com/smacker/go-tree-sitter/python"
 	typescript "github.com/smacker/go-tree-sitter/typescript/typescript"
@@ -164,6 +165,20 @@ var languageByExtension = map[string]languageSpec{
 			"comment": {},
 		},
 	},
+	".java": {
+		language: java.GetLanguage(),
+		functionNodeTypes: map[string]struct{}{
+			"method_declaration":      {},
+			"constructor_declaration": {},
+		},
+		identifierNodeTypes: map[string]struct{}{
+			"identifier": {},
+		},
+		commentNodeTypes: map[string]struct{}{
+			"line_comment":  {},
+			"block_comment": {},
+		},
+	},
 }
 
 // TreeSitterExtractor implements Extractor with tree-sitter grammars.
@@ -193,6 +208,52 @@ func (*TreeSitterExtractor) ExtractComments(path string, source []byte) ([]Node,
 	return extractByTypes(path, source, func(spec languageSpec) map[string]struct{} {
 		return spec.commentNodeTypes
 	}, false, false)
+}
+
+// ExtractNamedNodes returns all named syntax nodes for supported languages.
+// This is intended for line-level structural heuristics where broad node coverage is needed.
+func ExtractNamedNodes(path string, source []byte) ([]Node, error) {
+	spec, ok := languageByExtension[strings.ToLower(filepath.Ext(path))]
+	if !ok {
+		return nil, nil
+	}
+	root := sitter.Parse(source, spec.language)
+	if root == nil || root.IsNull() {
+		return nil, fmt.Errorf("tree-sitter failed to parse %s", path)
+	}
+	nodes := make([]Node, 0, 128)
+	var walk func(*sitter.Node)
+	walk = func(node *sitter.Node) {
+		if node == nil || node.IsNull() {
+			return
+		}
+		if node.IsNamed() {
+			startLine := int(node.StartPoint().Row) + 1
+			endLine := int(node.EndPoint().Row) + 1
+			if endLine < startLine {
+				endLine = startLine
+			}
+			nodes = append(nodes, Node{
+				ID:        fmt.Sprintf("%d:%d:%s:%d:%d", startLine, endLine, node.Type(), node.StartPoint().Column, node.EndPoint().Column),
+				Type:      "ast:" + node.Type(),
+				Name:      "",
+				Text:      "",
+				StartLine: startLine,
+				StartCol:  int(node.StartPoint().Column),
+				EndLine:   endLine,
+				EndCol:    int(node.EndPoint().Column),
+			})
+			for i := 0; i < int(node.NamedChildCount()); i++ {
+				walk(node.NamedChild(i))
+			}
+			return
+		}
+		for i := 0; i < int(node.ChildCount()); i++ {
+			walk(node.Child(i))
+		}
+	}
+	walk(root)
+	return nodes, nil
 }
 
 func extractByTypes(

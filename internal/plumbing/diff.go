@@ -3,12 +3,14 @@ package plumbing
 import (
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/utils/merkletrie"
 	"github.com/meko-christian/hercules/internal/core"
+	ast_items "github.com/meko-christian/hercules/internal/plumbing/ast"
 	"github.com/sergi/go-diff/diffmatchpatch"
 )
 
@@ -18,6 +20,7 @@ type FileDiff struct {
 	core.NoopMerger
 	CleanupDisabled  bool
 	WhitespaceIgnore bool
+	RefineDisabled   bool
 	Timeout          time.Duration
 
 	l core.Logger
@@ -39,6 +42,10 @@ const (
 	// ConfigFileDiffTimeout is the number of milliseconds a single diff calculation may elapse.
 	// We need this timeout to avoid spending too much time comparing big or "bad" files.
 	ConfigFileDiffTimeout = "FileDiff.Timeout"
+
+	// ConfigFileDiffDisableRefine disables tree-sitter-based post-processing
+	// which tweaks ambiguous insert/equal boundaries for better structural alignment.
+	ConfigFileDiffDisableRefine = "FileDiff.NoRefine"
 )
 
 // FileDiffData is the type of the dependency provided by FileDiff.
@@ -91,6 +98,13 @@ func (diff *FileDiff) ListConfigurationOptions() []core.ConfigurationOption {
 			Type:        core.IntConfigurationOption,
 			Default:     1000,
 		},
+		{
+			Name:        ConfigFileDiffDisableRefine,
+			Description: "Disable tree-sitter-based refinement of ambiguous diff boundaries.",
+			Flag:        "no-diff-refine",
+			Type:        core.BoolConfigurationOption,
+			Default:     false,
+		},
 	}
 
 	return options[:]
@@ -112,6 +126,9 @@ func (diff *FileDiff) Configure(facts map[string]interface{}) error {
 			diff.l.Warnf("invalid timeout value: %d", val)
 		}
 		diff.Timeout = time.Duration(val) * time.Millisecond
+	}
+	if val, exists := facts[ConfigFileDiffDisableRefine].(bool); exists {
+		diff.RefineDisabled = val
 	}
 	return nil
 }
@@ -176,16 +193,153 @@ func (diff *FileDiff) Consume(deps map[string]interface{}) (map[string]interface
 			if !diff.CleanupDisabled {
 				diffs = dmp.DiffCleanupMerge(dmp.DiffCleanupSemanticLossless(diffs))
 			}
-			result[change.To.Name] = FileDiffData{
+			fileDiffData := FileDiffData{
 				OldLinesOfCode: len(src),
 				NewLinesOfCode: len(dst),
 				Diffs:          diffs,
 			}
+			if !diff.RefineDisabled {
+				fileDiffData = diff.refineWithTreeSitter(change.To.Name, blobTo.Data, fileDiffData)
+			}
+			result[change.To.Name] = fileDiffData
 		default:
 			continue
 		}
 	}
 	return map[string]interface{}{DependencyFileDiff: result}, nil
+}
+
+func (diff *FileDiff) refineWithTreeSitter(path string, source []byte, original FileDiffData) FileDiffData {
+	if original.NewLinesOfCode <= 0 || len(original.Diffs) < 2 {
+		return original
+	}
+	nodes, err := ast_items.ExtractNamedNodes(path, source)
+	if err != nil {
+		diff.l.Warnf("FileDiff: failed to refine %s: %v", path, err)
+		return original
+	}
+	if len(nodes) == 0 {
+		return original
+	}
+	line2node := make([][]ast_items.Node, original.NewLinesOfCode)
+	for _, node := range nodes {
+		startLine := node.StartLine
+		endLine := node.EndLine
+		if startLine < 1 {
+			startLine = 1
+		}
+		if endLine < startLine {
+			endLine = startLine
+		}
+		if startLine > len(line2node) {
+			continue
+		}
+		if endLine > len(line2node) {
+			endLine = len(line2node)
+		}
+		for line := startLine; line <= endLine; line++ {
+			line2node[line-1] = append(line2node[line-1], node)
+		}
+	}
+	return refineDiffByNodeDensity(original, line2node)
+}
+
+func refineDiffByNodeDensity(original FileDiffData, line2node [][]ast_items.Node) FileDiffData {
+	suspicious := map[int][2]int{}
+	line := 0
+	for i, edit := range original.Diffs {
+		if i == len(original.Diffs)-1 {
+			break
+		}
+		if edit.Type == diffmatchpatch.DiffInsert &&
+			original.Diffs[i+1].Type == diffmatchpatch.DiffEqual {
+			matched := commonPrefixRunes(edit.Text, original.Diffs[i+1].Text)
+			if matched > 0 {
+				suspicious[i] = [2]int{line, matched}
+			}
+		}
+		if edit.Type != diffmatchpatch.DiffDelete {
+			line += utf8.RuneCountInString(edit.Text)
+		}
+	}
+	if len(suspicious) == 0 {
+		return original
+	}
+
+	refined := FileDiffData{
+		OldLinesOfCode: original.OldLinesOfCode,
+		NewLinesOfCode: original.NewLinesOfCode,
+		Diffs:          make([]diffmatchpatch.Diff, 0, len(original.Diffs)+len(suspicious)),
+	}
+	skipNext := false
+	for i, edit := range original.Diffs {
+		if skipNext {
+			skipNext = false
+			continue
+		}
+		info, ok := suspicious[i]
+		if !ok {
+			refined.Diffs = append(refined.Diffs, edit)
+			continue
+		}
+		baseLine := info[0]
+		matched := info[1]
+		size := utf8.RuneCountInString(edit.Text)
+		n1 := countNodesInInterval(line2node, baseLine, baseLine+size)
+		n2 := countNodesInInterval(line2node, baseLine+matched, baseLine+size+matched)
+		if n1 <= n2 {
+			refined.Diffs = append(refined.Diffs, edit)
+			continue
+		}
+
+		skipNext = true
+		runes := []rune(edit.Text)
+		refined.Diffs = append(refined.Diffs, diffmatchpatch.Diff{
+			Type: diffmatchpatch.DiffEqual,
+			Text: string(runes[:matched]),
+		})
+		refined.Diffs = append(refined.Diffs, diffmatchpatch.Diff{
+			Type: diffmatchpatch.DiffInsert,
+			Text: string(runes[matched:]) + string(runes[:matched]),
+		})
+		nextEqual := []rune(original.Diffs[i+1].Text)
+		if len(nextEqual) > matched {
+			refined.Diffs = append(refined.Diffs, diffmatchpatch.Diff{
+				Type: diffmatchpatch.DiffEqual,
+				Text: string(nextEqual[matched:]),
+			})
+		}
+	}
+	return refined
+}
+
+func commonPrefixRunes(left, right string) int {
+	lr := []rune(left)
+	rr := []rune(right)
+	matched := 0
+	for matched < len(lr) && matched < len(rr) && lr[matched] == rr[matched] {
+		matched++
+	}
+	return matched
+}
+
+func countNodesInInterval(line2node [][]ast_items.Node, start, end int) int {
+	if start < 0 {
+		start = 0
+	}
+	if end > len(line2node) {
+		end = len(line2node)
+	}
+	if start >= end {
+		return 0
+	}
+	seen := map[string]struct{}{}
+	for i := start; i < end; i++ {
+		for _, node := range line2node[i] {
+			seen[node.ID] = struct{}{}
+		}
+	}
+	return len(seen)
 }
 
 // Fork clones this PipelineItem.

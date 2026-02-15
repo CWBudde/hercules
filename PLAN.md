@@ -31,7 +31,7 @@ Status: **mostly complete**.
   - [x] Legacy parser-specific plumbing and tests removed from the codebase.
 
 - [ ] **Modularize TensorFlow usage (keep default build light)**
-  - [ ] Ensure Couples and Sentiment behave sensibly when built without TensorFlow:
+  - [x] Ensure Couples and Sentiment behave sensibly when built without TensorFlow:
     - [x] Couples: still produces usable non-embedding output (or a clear “feature unavailable” message).
     - [x] Sentiment: remains behind build tag and is explicitly described as experimental.
     - [x] Non-`tensorflow` builds now provide explicit runtime/build-tag guidance when `--sentiment` is requested.
@@ -48,8 +48,10 @@ Status: **mostly complete**.
     - [ ] If needed, design and implement a replacement for `--dump-uast-changes` with tests.
     - [ ] Decide whether a tree-sitter-based diff-refinement pass should be added to `FileDiff`.
     - [ ] If needed, implement refinement pass and acceptance tests for human-readable diff quality.
-  - [ ] Decide whether protobuf messages named `UAST*` should be renamed or kept for compatibility.
-  - [ ] Decide whether `--shotness-xpath-*` compatibility flags should be removed or kept as ignored aliases.
+  - [x] Decide whether protobuf messages named `UAST*` should be renamed or kept for compatibility.
+    - [x] Decision: removed from schema for this fork (intentional protobuf compatibility break).
+  - [x] Decide whether `--shotness-xpath-*` compatibility flags should be removed or kept as ignored aliases.
+    - [x] Decision: removed from CLI/runtime in this fork.
   - [ ] Remove stale docs/examples that still imply XPath/UAST workflows.
 
 ### Milestone 2 — Large-repo scaling & operational safety (P1)

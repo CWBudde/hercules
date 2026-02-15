@@ -23,8 +23,6 @@ import (
 type ShotnessAnalysis struct {
 	core.NoopMerger
 	core.OneShotMergeProcessor
-	XpathStruct string
-	XpathName   string
 
 	nodes     map[string]*nodeShotness
 	files     map[string]map[string]*nodeShotness
@@ -32,18 +30,6 @@ type ShotnessAnalysis struct {
 
 	l core.Logger
 }
-
-const (
-	// ConfigShotnessXpathStruct is accepted for command-line compatibility and ignored.
-	ConfigShotnessXpathStruct = "Shotness.XpathStruct"
-	// ConfigShotnessXpathName is accepted for command-line compatibility and ignored.
-	ConfigShotnessXpathName = "Shotness.XpathName"
-
-	// DefaultShotnessXpathStruct is ignored in the default build.
-	DefaultShotnessXpathStruct = "//uast:FunctionGroup"
-	// DefaultShotnessXpathName is ignored in the default build.
-	DefaultShotnessXpathName = "/Nodes/uast:Alias/Name"
-)
 
 type nodeShotness struct {
 	Count   int
@@ -90,24 +76,7 @@ func (shotness *ShotnessAnalysis) Requires() []string {
 
 // ListConfigurationOptions returns the list of changeable public properties of this PipelineItem.
 func (shotness *ShotnessAnalysis) ListConfigurationOptions() []core.ConfigurationOption {
-	opts := [...]core.ConfigurationOption{
-		{
-			Name: ConfigShotnessXpathStruct,
-			Description: "Legacy XPath filter (ignored by the tree-sitter " +
-				"implementation).",
-			Flag:    "shotness-xpath-struct",
-			Type:    core.StringConfigurationOption,
-			Default: DefaultShotnessXpathStruct,
-		}, {
-			Name: ConfigShotnessXpathName,
-			Description: "Legacy XPath name selector (ignored by the tree-sitter " +
-				"implementation).",
-			Flag:    "shotness-xpath-name",
-			Type:    core.StringConfigurationOption,
-			Default: DefaultShotnessXpathName,
-		},
-	}
-	return opts[:]
+	return []core.ConfigurationOption{}
 }
 
 // Flag returns the command line switch which activates the analysis.
@@ -132,16 +101,6 @@ func (shotness *ShotnessAnalysis) Description() string {
 func (shotness *ShotnessAnalysis) Configure(facts map[string]interface{}) error {
 	if l, exists := facts[core.ConfigLogger].(core.Logger); exists {
 		shotness.l = l
-	}
-	if val, exists := facts[ConfigShotnessXpathStruct]; exists {
-		shotness.XpathStruct = val.(string)
-	} else {
-		shotness.XpathStruct = DefaultShotnessXpathStruct
-	}
-	if val, exists := facts[ConfigShotnessXpathName]; exists {
-		shotness.XpathName = val.(string)
-	} else {
-		shotness.XpathName = DefaultShotnessXpathName
 	}
 	return nil
 }

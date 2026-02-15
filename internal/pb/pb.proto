@@ -90,18 +90,6 @@ message CouplesAnalysisResults {
     repeated int32 files_lines = 9;
 }
 
-message UASTChange {
-    string file_name = 1;
-    string src_before = 2;
-	string src_after = 3;
-	string uast_before = 4;
-	string uast_after = 5;
-}
-
-message UASTChangesSaverResults {
-    repeated UASTChange changes = 1;
-}
-
 message ShotnessRecord {
     string type = 1;
     string name = 2;

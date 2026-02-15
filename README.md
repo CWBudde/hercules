@@ -340,10 +340,9 @@ can be visualized with t-SNE implemented in TF Projector.
 ```
 
 By default, `--shotness` is powered by tree-sitter and tracks function-level units for Go, Python, JavaScript and TypeScript.
-In this mode, `--shotness-xpath-*` is accepted for compatibility but ignored.
 
 ```
-hercules --shotness [--shotness-xpath-*]
+hercules --shotness
 labours -m shotness
 ```
 

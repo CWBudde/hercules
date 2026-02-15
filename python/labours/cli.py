@@ -24,6 +24,7 @@ from labours.modes.ownership_concentration import show_ownership_concentration
 from labours.modes.knowledge_diffusion import show_knowledge_diffusion
 from labours.modes.hotspot_risk import show_hotspot_risk
 from labours.modes.temporal_activity import show_temporal_activity
+from labours.modes.refactoring_proxy import show_refactoring_proxy
 from labours.readers import read_input
 from labours.utils import import_pandas
 
@@ -552,6 +553,19 @@ def main() -> None:
 
         show_hotspot_risk(args, reader.get_name(), files, window_days)
 
+    def refactoring_proxy():
+        rp_warning = (
+            "Refactoring proxy data was not collected. "
+            "Re-run hercules with --refactoring-proxy."
+        )
+        try:
+            result = reader.get_refactoring_proxy()
+        except (KeyError, AttributeError):
+            print(rp_warning)
+            return
+
+        show_refactoring_proxy(args, reader.get_name(), result)
+
     modes = {
         "run-times": run_times,
         "burndown-project": project_burndown,
@@ -576,6 +590,7 @@ def main() -> None:
         "ownership-concentration": ownership_concentration,
         "knowledge-diffusion": knowledge_diffusion,
         "hotspot-risk": hotspot_risk,
+        "refactoring-proxy": refactoring_proxy,
     }
 
     if "all" in args.modes:

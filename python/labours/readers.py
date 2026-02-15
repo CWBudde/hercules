@@ -299,6 +299,27 @@ class YamlReader(Reader):
         tick_size = int(kd_data.get("tick_size", 0))
         return files, distribution, people, window_months, tick_size
 
+    def get_refactoring_proxy(self):
+        rp_data = self.data["RefactoringProxy"]["refactoring_proxy"]
+        ticks = []
+        for tick in rp_data.get("ticks", []):
+            ticks.append({
+                "timestamp": int(tick["timestamp"]),
+                "refactoring_rate": float(tick["refactoring_rate"]),
+            })
+        threshold = float(rp_data.get("threshold", 0.3))
+        tick_size_days = int(rp_data.get("tick_size_days", 30))
+        start_date = int(rp_data.get("start_date", 0))
+        end_date = int(rp_data.get("end_date", 0))
+        result = {
+            "ticks": ticks,
+            "threshold": threshold,
+            "tick_size_days": tick_size_days,
+            "start_date": start_date,
+            "end_date": end_date,
+        }
+        return result
+
     def _parse_burndown_matrix(self, matrix):
         return numpy.array(
             [numpy.fromstring(line, dtype=int, sep=" ") for line in matrix.split("\n")]
@@ -563,6 +584,27 @@ class ProtobufReader(Reader):
         tick_size = int(kd.tick_size)
         return files, distribution, people, window_months, tick_size
 
+    def get_refactoring_proxy(self):
+        rp = self.contents["RefactoringProxy"]
+        ticks = []
+        for tick in rp.ticks:
+            ticks.append({
+                "timestamp": int(tick.timestamp),
+                "refactoring_rate": float(tick.refactoring_rate),
+            })
+        threshold = float(rp.threshold)
+        tick_size_days = int(rp.tick_size_days)
+        start_date = int(rp.start_date)
+        end_date = int(rp.end_date)
+        result = {
+            "ticks": ticks,
+            "threshold": threshold,
+            "tick_size_days": tick_size_days,
+            "start_date": start_date,
+            "end_date": end_date,
+        }
+        return result
+
     def _parse_burndown_matrix(self, matrix):
         dense = numpy.zeros(
             (matrix.number_of_rows, matrix.number_of_columns), dtype=int
@@ -591,6 +633,7 @@ PB_MESSAGES = {
     "BusFactor": "labours.pb_pb2.BusFactorAnalysisResults",
     "OwnershipConcentration": "labours.pb_pb2.OwnershipConcentrationResults",
     "KnowledgeDiffusion": "labours.pb_pb2.KnowledgeDiffusionResults",
+    "RefactoringProxy": "labours.pb_pb2.RefactoringProxyResults",
 }
 
 

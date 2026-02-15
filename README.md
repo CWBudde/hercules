@@ -58,10 +58,15 @@
 
 ## Overview
 
-Hercules is an amazingly fast and highly customizable Git repository analysis engine written in Go. Batteries are included.
+Hercules is a fast and highly customizable Git repository analysis engine written in Go.
+It builds a dependency-aware DAG of analyses and processes the full commit history in a single run.
 Powered by [go-git](https://github.com/go-git/go-git).
 
-_Notice (November 2020): the main author is back from the limbo and is gradually resuming the development. See the [roadmap](#roadmap)._
+This fork focuses on:
+
+- tree-sitter-based structural analyses (no legacy parser service path),
+- lightweight default builds (no TensorFlow dependency),
+- practical report generation and operational tooling.
 
 There are two command-line tools: `hercules` and `labours`. The first is a program
 written in Go which takes a Git repository and executes a Directed Acyclic Graph (DAG) of [analysis tasks](doc/PIPELINE_ITEMS.md) over the full commit history.
@@ -70,10 +75,12 @@ a pipe. It is possible to write custom analyses using the plugin system. It is a
 to merge several analysis results together - relevant for organizations.
 The analyzed commit history includes branches, merges, etc.
 
-Hercules has been successfully used for several internal projects at [source{d}](https://sourced.tech).
-There are blog posts: [1](https://blog.sourced.tech/post/hercules-v4), [2](https://blog.sourced.tech/post/hercules) and
-a [presentation](http://vmarkovtsev.github.io/gowayfest-2018-minsk/). Please [contribute](#contributions)
-by testing, fixing bugs, adding [new analyses](https://github.com/meko-christian/hercules/issues?q=is%3Aissue+is%3Aopen+label%3Anew-analysis), or coding swagger!
+Historical context from the original project is available in
+[blog post 1](https://blog.sourced.tech/post/hercules-v4),
+[blog post 2](https://blog.sourced.tech/post/hercules), and a
+[presentation](http://vmarkovtsev.github.io/gowayfest-2018-minsk/).
+Please [contribute](#contributions) by testing, fixing bugs, and adding
+[new analyses](https://github.com/meko-christian/hercules/issues?q=is%3Aissue+is%3Aopen+label%3Anew-analysis).
 
 ![Hercules DAG of Burndown analysis](doc/dag.png)
 
@@ -98,11 +105,15 @@ Numpy and Scipy can be installed on Windows using http://www.lfd.uci.edu/~gohlke
 
 ### Build from source
 
-You are going to need Go (>= v1.18), [`protoc`](https://github.com/google/protobuf/releases), and [`just`](https://github.com/casey/just).
+You need Go (>= v1.18). For development workflows that regenerate protobuf files or use repo recipes, install
+[`protoc`](https://github.com/google/protobuf/releases) and [`just`](https://github.com/casey/just).
 
 ```
 git clone https://github.com/meko-christian/hercules && cd hercules
+go build ./cmd/hercules
+# optional: build helpers and generated assets
 just
+# optional: plotting companion
 pip3 install -e ./python
 ```
 
@@ -128,6 +139,25 @@ TAGS=tensorflow just
 - Enables `--sentiment` (experimental).
 - Requires [`libtensorflow`](https://www.tensorflow.org/install/install_go).
 - If `--sentiment` is requested without this tag, Hercules prints a clear rebuild hint.
+
+### Migration notes (fork-specific)
+
+This fork intentionally removed the legacy UAST/Babelfish surface and does not preserve backward compatibility for it.
+
+- Removed CLI/feature surface:
+  - `--dump-uast-changes`
+  - `--feature uast`
+  - `--shotness-xpath-*`
+- Removed internal pipeline items:
+  - `UAST`
+  - `UASTChanges`
+  - `FileDiffRefiner` (UAST-based)
+- Protobuf schema change:
+  - `UASTChange` and `UASTChangesSaverResults` were removed from `internal/pb/pb.proto`.
+  - Older payloads containing these messages are not supported by this fork.
+- Final decisions:
+  - Protobuf `UAST*` messages were removed, not renamed.
+  - `--shotness-xpath-*` compatibility flags were removed, not kept as ignored aliases.
 
 ### GitHub Action
 
@@ -311,7 +341,9 @@ hercules --couples [--people-dict=/path/to/identities]
 labours -m couples -o <name> [--couples-tmp-dir=/tmp]
 ```
 
-**Important**: generating couples embeddings with `labours -m couples` requires Tensorflow to be installed, please follow [official instructions](https://www.tensorflow.org/install/).
+`hercules --couples` itself works in default builds and outputs co-occurrence matrices.
+Generating embeddings with `labours -m couples` requires TensorFlow, please follow
+[official instructions](https://www.tensorflow.org/install/).
 
 The files are coupled if they are changed in the same commit. The developers are coupled if they
 change the same file. `hercules` records the number of couples throughout the whole commit history
@@ -442,6 +474,7 @@ TAGS=tensorflow just
 ```
 
 Such a build requires [`libtensorflow`](https://www.tensorflow.org/install/install_go).
+If `--sentiment` is requested in a non-`tensorflow` build, Hercules exits with a rebuild hint.
 
 #### Bus factor
 
@@ -600,8 +633,12 @@ fail with an OOM. You should try the following:
 
 ## Roadmap
 
-- [ ] Switch from `src-d/go-git` to `go-git/go-git`. Upgrade the codebase to be compatible with the latest Go version.
-- [ ] Update the docs regarding the copyrights and such.
-- [ ] Fix the reported bugs.
-- [ ] Finalize cleanup of legacy UAST-oriented interfaces and docs.
-- [ ] Remove the ad-hoc analyses added while source{d} was agonizing.
+The detailed forward plan lives in [PLAN.md](PLAN.md).
+
+Current high-priority open tracks:
+
+- Finalize replacement strategy for removed legacy UAST-oriented functionality
+  (`--dump-uast-changes` replacement and diff-refinement decision).
+- Large-repository scaling presets and memory/hibernation validation.
+- Output schema contracts (YAML/PB docs, compatibility policy, CI checks).
+- Finishing polish for onboarding/hotspot/report UX.

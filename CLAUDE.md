@@ -34,7 +34,7 @@ Hercules is a Git repository analysis engine with two main components:
 - `devs.go` - Developer activity and contribution analysis
 - `commits.go` - Basic commit statistics
 - `file_history.go` - Per-file change tracking
-- `shotness.go` - Structural hotness analysis (requires Babelfish)
+- `shotness.go` - Structural hotness analysis (tree-sitter based; no Babelfish)
 - `temporal_activity.go` - Temporal activity patterns (weekday, hour, month, ISO week)
 
 **Plumbing Components** (`internal/plumbing/`):

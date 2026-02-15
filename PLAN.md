@@ -1,7 +1,7 @@
 # Hercules — Forward Plan (What Still Needs Doing)
 
 This document is intentionally **forward-looking**: it tracks what remains, what is deferred, and why.
-It does not enumerate work that is already done.
+Completed items are listed only when they clarify the current state or unblock pending decisions.
 
 ## Goals (definition of “done”)
 
@@ -17,6 +17,16 @@ It does not enumerate work that is already done.
 - **P1 (Scale & contracts)**: large-repo usability, output schemas, compatibility checks.
 - **P2 (Finish partial features)**: onboarding labours, hotspot risk tests, report UX polish.
 - **P3 (Nice-to-have / research)**: new heuristics, platform integrations, optional optimizations.
+
+## Current remaining focus (short list)
+
+1. **Finalize legacy UAST replacement strategy (P0)**
+   - Decide whether we need a tree-sitter-backed replacement for `--dump-uast-changes`.
+   - Decide whether `FileDiff` needs a tree-sitter refinement pass.
+2. **Complete larger P1/P2 milestones**
+   - Scaling presets + large-repo validation.
+   - Output schema contracts and compatibility checks.
+   - Onboarding/hotspot/report polish.
 
 ## Milestones
 
@@ -39,10 +49,11 @@ Status: **mostly complete**.
   - [ ] Acceptance: default build does not require TensorFlow and doesn’t crash when relevant flags are used.
 
 - [ ] **Finish legacy UAST surface cleanup**
-  - [ ] Legacy UAST output paths removed in this fork:
+  - Status: **legacy surfaces removed; replacement strategy still open**.
+  - [x] Legacy UAST output paths removed in this fork:
     - [x] `--dump-uast-changes` removed from runtime/CLI.
     - [x] `FileDiffRefiner` (UAST-based) removed from pipeline.
-    - [ ] Add a short migration note in docs/changelog describing removal and impact.
+    - [x] Add a short migration note in docs/changelog describing removal and impact.
   - [ ] Define replacement strategy for removed functionality:
     - [ ] Decide whether a tree-sitter-backed commit-level AST dump mode is needed.
     - [ ] If needed, design and implement a replacement for `--dump-uast-changes` with tests.
@@ -52,7 +63,8 @@ Status: **mostly complete**.
     - [x] Decision: removed from schema for this fork (intentional protobuf compatibility break).
   - [x] Decide whether `--shotness-xpath-*` compatibility flags should be removed or kept as ignored aliases.
     - [x] Decision: removed from CLI/runtime in this fork.
-  - [ ] Remove stale docs/examples that still imply XPath/UAST workflows.
+  - [x] Remove stale docs/examples that still imply XPath/UAST workflows.
+  - [ ] Once replacement decisions are finalized, update README migration notes with the final replacement guidance.
 
 ### Milestone 2 — Large-repo scaling & operational safety (P1)
 

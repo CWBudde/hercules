@@ -28,6 +28,10 @@ func TestApplyPresetLargeRepo(t *testing.T) {
 	assert.Equal(t, 200000, thresh)
 	disk, _ := flags.GetBool("lines-hibernation-disk")
 	assert.True(t, disk)
+	gran, _ := flags.GetInt("granularity")
+	assert.Equal(t, 30, gran)
+	samp, _ := flags.GetInt("sampling")
+	assert.Equal(t, 30, samp)
 }
 
 func TestApplyPresetQuick(t *testing.T) {

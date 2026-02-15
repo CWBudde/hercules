@@ -206,6 +206,7 @@ targets can be added using the --plugin system.`,
 	Args: cobra.RangeArgs(1, 2),
 	Run: func(cmd *cobra.Command, args []string) {
 		flags := cmd.Flags()
+		applyPreset(flags)
 		getBool := func(name string) bool {
 			value, err := flags.GetBool(name)
 			if err != nil {
@@ -640,6 +641,9 @@ func init() {
 	rootFlags.Bool("quiet", !terminal.IsTerminal(int(os.Stdin.Fd())),
 		"Do not print status updates to stderr.")
 	rootFlags.Bool("profile", false, "Collect the profile to hercules.pprof.")
+	rootFlags.String("preset", "",
+		"Apply a named set of flag defaults. Available: large-repo, quick. "+
+			"Explicit flags override preset values.")
 	rootFlags.String("ssh-identity", "", "Path to SSH identity file (e.g., ~/.ssh/id_rsa) to clone from an SSH remote.")
 	err = rootCmd.MarkFlagFilename("ssh-identity")
 	if err != nil {

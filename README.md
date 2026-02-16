@@ -85,7 +85,7 @@ Please [contribute](#contributions) by testing, fixing bugs, and adding
 
 <p align="center">The DAG of burndown and couples analyses. Generated with <code>hercules --burndown --burndown-people --couples --dry-run --dump-dag docs/dag.dot https://github.com/meko-christian/hercules</code></p>
 
-![git/git image](docs/linux.png)
+![git/git image](docs/linux.svg)
 
 <p align="center">torvalds/linux line burndown (granularity 30, sampling 30, resampled by year). Generated with <code>hercules --burndown --first-parent --pb https://github.com/torvalds/linux | labours -f pb -m burndown-project</code> in 1h 40min.</p>
 

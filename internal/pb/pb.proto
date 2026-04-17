@@ -403,6 +403,38 @@ message RefactoringProxyResults {
     int64 tick_size = 6;
 }
 
+message CodeChurnSparseHistoryEntry {
+    int32 previous_tick = 1;
+    int64 delta = 2;
+}
+
+message CodeChurnDeleteHistory {
+    int32 author = 1;
+    int32 current_tick = 2;
+    repeated CodeChurnSparseHistoryEntry entries = 3;
+}
+
+message CodeChurnFileStat {
+    string file = 1;
+    int32 inserted_lines = 2;
+    int32 owned_lines = 3;
+    float memorability = 4;
+    float awareness = 5;
+    repeated CodeChurnDeleteHistory delete_history = 6;
+}
+
+message CodeChurnAuthorStat {
+    repeated CodeChurnFileStat files = 1;
+}
+
+message CodeChurnAnalysisResults {
+    int32 granularity = 1;
+    int32 sampling = 2;
+    int64 tick_size = 3;
+    repeated string people = 4;
+    repeated CodeChurnAuthorStat authors = 5;
+}
+
 message AnalysisResults {
     Metadata header = 1;
     // the mapped values are dynamic messages which require the second parsing pass.

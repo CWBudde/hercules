@@ -652,6 +652,7 @@ READERS = {"yaml": YamlReader, "yml": YamlReader, "pb": ProtobufReader}
 PB_MESSAGES = {
     "Burndown": "labours.pb_pb2.BurndownAnalysisResults",
     "Couples": "labours.pb_pb2.CouplesAnalysisResults",
+    "CodeChurn": "labours.pb_pb2.CodeChurnAnalysisResults",
     "Shotness": "labours.pb_pb2.ShotnessAnalysisResults",
     "Devs": "labours.pb_pb2.DevsAnalysisResults",
     "TemporalActivity": "labours.pb_pb2.TemporalActivityResults",

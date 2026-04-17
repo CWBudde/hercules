@@ -154,3 +154,7 @@ clean:
 # Show available recipes
 help:
     @just --list
+
+fix:
+    just lint-fix
+    just fmt

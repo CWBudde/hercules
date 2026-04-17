@@ -143,15 +143,35 @@ BusFactor:
 
 ### Code Churn (`--codechurn`)
 
-Current state:
+YAML fields:
 
-- `Serialize()` returns `nil` and emits no structured payload.
-- PB payload is not defined/used.
+- `people` list of developer identities
+- `tick_size`, `granularity`, `sampling`
+- `authors` map keyed by author index
+  - `name`
+  - `files` map keyed by file path
+    - `inserted_lines`, `owned_lines`, `memorability`, `awareness`
+
+PB: `CodeChurnAnalysisResults`
 
 Example:
 
 ```yaml
 CodeChurn:
+  people:
+    - "alice"
+  tick_size: 86400
+  granularity: 30
+  sampling: 30
+  authors:
+    0:
+      name: "alice"
+      files:
+        "main.go":
+          inserted_lines: 10
+          owned_lines: 7
+          memorability: 0.75
+          awareness: 0.80
 ```
 
 ### Commits Stat (`--commits-stat`)
@@ -591,6 +611,6 @@ TyposDataset:
 
 - PB envelope and message definitions: `internal/pb/pb.proto`.
 - `AnalysisResults.contents` keys use `Leaf.Name()` values (see table above).
-- `CodeChurn` and `LineDumper` currently do not provide protobuf payloads.
+- `LineDumper` currently does not provide a protobuf payload.
 - `UASTChangesSaver` binary payload is JSON-bytes in `contents["UASTChangesSaver"]`.
 - `Sentiment` is behind build tag `tensorflow`; non-tensorflow builds expose the flag but return a clear runtime error.

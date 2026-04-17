@@ -1,6 +1,7 @@
 package leaves
 
 import (
+	"bytes"
 	"testing"
 	"time"
 
@@ -427,27 +428,110 @@ func TestCodeChurnFinalize(t *testing.T) {
 		0: {insertedLines: 30, ownedLines: 25},
 	}
 
-	result := cc.Finalize()
-	assert.Nil(t, result) // Finalize returns nil currently
+	result := cc.Finalize().(CodeChurnResult)
+	assert.Equal(t, []string{"Alice", "Bob"}, result.GetIdentities())
+	assert.Len(t, result.Authors, 2)
+	assert.Equal(t, int32(50), result.Authors[0].Files["#0"].InsertedLines)
+	assert.Equal(t, int32(25), result.Authors[1].Files["#0"].OwnedLines)
 }
 
 func TestCodeChurnSerialize(t *testing.T) {
 	cc := CodeChurnAnalysis{}
-	assert.Nil(t, cc.Serialize(nil, false, nil))
-	assert.Nil(t, cc.Serialize(nil, true, nil))
+	result := CodeChurnResult{
+		Authors: []CodeChurnAuthorResult{{
+			Files: map[string]CodeChurnFileResult{
+				"main.go": {
+					InsertedLines: 10,
+					OwnedLines:    7,
+					Memorability:  0.5,
+					Awareness:     0.75,
+				},
+			},
+		}},
+		people:      []string{"Alice"},
+		tickSize:    24 * time.Hour,
+		sampling:    10,
+		granularity: 30,
+	}
+	var text bytes.Buffer
+	assert.Nil(t, cc.Serialize(result, false, &text))
+	assert.Contains(t, text.String(), "main.go")
+
+	var binary bytes.Buffer
+	assert.Nil(t, cc.Serialize(result, true, &binary))
+	assert.NotEmpty(t, binary.Bytes())
 }
 
 func TestCodeChurnDeserialize(t *testing.T) {
 	cc := CodeChurnAnalysis{}
-	result, err := cc.Deserialize(nil)
+	original := CodeChurnResult{
+		Authors: []CodeChurnAuthorResult{{
+			Files: map[string]CodeChurnFileResult{
+				"main.go": {
+					InsertedLines: 10,
+					OwnedLines:    7,
+					Memorability:  0.5,
+					Awareness:     0.75,
+					DeleteHistory: map[int]sparseHistory{
+						1: {
+							2: {deltas: map[int]int64{1: -3}},
+						},
+					},
+				},
+			},
+		}},
+		people:      []string{"Alice", "Bob"},
+		tickSize:    24 * time.Hour,
+		sampling:    10,
+		granularity: 30,
+	}
+	var binary bytes.Buffer
+	assert.Nil(t, cc.Serialize(original, true, &binary))
+
+	result, err := cc.Deserialize(binary.Bytes())
 	assert.Nil(t, err)
-	assert.Nil(t, result)
+	decoded := result.(CodeChurnResult)
+	assert.Equal(t, original.GetIdentities(), decoded.GetIdentities())
+	assert.Equal(t, original.Authors[0].Files["main.go"].InsertedLines, decoded.Authors[0].Files["main.go"].InsertedLines)
+	assert.Equal(t, int64(-3), decoded.Authors[0].Files["main.go"].DeleteHistory[1][2].deltas[1])
 }
 
 func TestCodeChurnMergeResults(t *testing.T) {
 	cc := CodeChurnAnalysis{}
-	result := cc.MergeResults(nil, nil, nil, nil)
-	assert.Nil(t, result)
+	r1 := CodeChurnResult{
+		Authors: []CodeChurnAuthorResult{{
+			Files: map[string]CodeChurnFileResult{
+				"main.go": {InsertedLines: 10, OwnedLines: 7},
+			},
+		}},
+		people:      []string{"Alice"},
+		tickSize:    24 * time.Hour,
+		sampling:    10,
+		granularity: 30,
+	}
+	r2 := CodeChurnResult{
+		Authors: []CodeChurnAuthorResult{{
+			Files: map[string]CodeChurnFileResult{
+				"main.go": {InsertedLines: 4, OwnedLines: 2},
+				"util.go": {InsertedLines: 6, OwnedLines: 6},
+			},
+		}, {
+			Files: map[string]CodeChurnFileResult{
+				"main.go": {InsertedLines: 3, OwnedLines: 1},
+			},
+		}},
+		people:      []string{"Alice", "Bob"},
+		tickSize:    24 * time.Hour,
+		sampling:    15,
+		granularity: 40,
+	}
+	result := cc.MergeResults(r1, r2, nil, nil).(CodeChurnResult)
+	assert.Equal(t, []string{"Alice", "Bob"}, result.GetIdentities())
+	assert.Equal(t, int32(14), result.Authors[0].Files["main.go"].InsertedLines)
+	assert.Equal(t, int32(6), result.Authors[0].Files["util.go"].OwnedLines)
+	assert.Equal(t, int32(3), result.Authors[1].Files["main.go"].InsertedLines)
+	assert.Equal(t, 15, result.sampling)
+	assert.Equal(t, 40, result.granularity)
 }
 
 func TestPersonChurnStatsGetFileEntry(t *testing.T) {

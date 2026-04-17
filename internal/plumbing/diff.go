@@ -241,7 +241,15 @@ func (diff *FileDiff) refineWithTreeSitter(path string, source []byte, original 
 			line2node[line-1] = append(line2node[line-1], node)
 		}
 	}
-	return refineDiffByNodeDensity(original, line2node)
+	refined := refineDiffByNodeDensity(original, line2node)
+	refined.Diffs = normalizeDiffs(refined.Diffs)
+	return refined
+}
+
+func normalizeDiffs(diffs []diffmatchpatch.Diff) []diffmatchpatch.Diff {
+	// Refinement can legally shift boundaries but must still return a normalized
+	// sequence without adjacent operations of the same type.
+	return diffmatchpatch.New().DiffCleanupMerge(diffs)
 }
 
 func refineDiffByNodeDensity(original FileDiffData, line2node [][]ast_items.Node) FileDiffData {

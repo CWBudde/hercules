@@ -118,6 +118,19 @@ Why: even a correct tool fails “in practice” if it OOMs or needs a handbook 
     - [x] LineHistory hibernation already supported; `large-repo` preset enables it by default.
   - [ ] Acceptance: a documented command set completes without OOM and with reproducible results.
 
+- [ ] **Tree-sitter memory reduction (follow-up to `--diff-refine-max-file-size`)**
+  - [x] **Phase 1 – Line-count threshold** (quick win): add `--diff-refine-max-lines` alongside
+        the existing byte-size gate (`--diff-refine-max-file-size`). Files exceeding N lines
+        (suggested default: 5 000) skip refinement. Handles minified/generated files where byte
+        size alone is insufficient. Change is ~10 lines in `internal/plumbing/diff.go`.
+  - [ ] **Phase 2 – Range-limited parsing**: use tree-sitter's `SetIncludedRanges()` to restrict
+        the parse to only the line ranges touched by the diff, rather than parsing the entire file.
+        Reduces per-call allocation from O(file_size) to O(diff_size) for large files with small
+        diffs. Requires pre-computing affected ranges from `FileDiffData` before calling
+        `ExtractNamedNodes()` in `internal/plumbing/diff.go`.
+  - [ ] Acceptance: peak RSS on a repo containing large generated files is measurably lower
+        without requiring `--no-diff-refine`.
+
 - [x] **Add scaling presets (`--preset`)**
   - [x] Implement presets with clear precedence rules (explicit flags override preset defaults).
   - [x] Provide at least:

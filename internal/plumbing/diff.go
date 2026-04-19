@@ -18,11 +18,12 @@ import (
 // It is a PipelineItem.
 type FileDiff struct {
 	core.NoopMerger
-	CleanupDisabled    bool
-	WhitespaceIgnore   bool
-	RefineDisabled     bool
-	RefineMaxFileSize  int
-	Timeout            time.Duration
+	CleanupDisabled   bool
+	WhitespaceIgnore  bool
+	RefineDisabled    bool
+	RefineMaxFileSize int
+	RefineMaxLines    int
+	Timeout           time.Duration
 
 	l core.Logger
 }
@@ -56,6 +57,15 @@ const (
 	// DefaultFileDiffRefineMaxFileSize is 200 KB — large generated files typically
 	// exceed this and cause multi-GB memory spikes in the tree-sitter AST cache.
 	DefaultFileDiffRefineMaxFileSize = 200 * 1024
+
+	// ConfigFileDiffRefineMaxLines is the maximum line count for which tree-sitter
+	// refinement is applied. Files with more lines than this threshold are skipped.
+	// 0 means unlimited. Complements ConfigFileDiffRefineMaxFileSize for files that
+	// are small in bytes but large in line count (e.g. minified or generated files).
+	ConfigFileDiffRefineMaxLines = "FileDiff.RefineMaxLines"
+
+	// DefaultFileDiffRefineMaxLines is 5000 lines.
+	DefaultFileDiffRefineMaxLines = 5000
 )
 
 // FileDiffData is the type of the dependency provided by FileDiff.
@@ -122,6 +132,13 @@ func (diff *FileDiff) ListConfigurationOptions() []core.ConfigurationOption {
 			Type:        core.IntConfigurationOption,
 			Default:     DefaultFileDiffRefineMaxFileSize,
 		},
+		{
+			Name:        ConfigFileDiffRefineMaxLines,
+			Description: "Maximum line count for tree-sitter diff refinement. Files with more lines than this are skipped to bound memory usage. 0 means unlimited.",
+			Flag:        "diff-refine-max-lines",
+			Type:        core.IntConfigurationOption,
+			Default:     DefaultFileDiffRefineMaxLines,
+		},
 	}
 
 	return options[:]
@@ -151,6 +168,11 @@ func (diff *FileDiff) Configure(facts map[string]interface{}) error {
 		diff.RefineMaxFileSize = val
 	} else {
 		diff.RefineMaxFileSize = DefaultFileDiffRefineMaxFileSize
+	}
+	if val, exists := facts[ConfigFileDiffRefineMaxLines].(int); exists {
+		diff.RefineMaxLines = val
+	} else {
+		diff.RefineMaxLines = DefaultFileDiffRefineMaxLines
 	}
 	return nil
 }
@@ -220,7 +242,9 @@ func (diff *FileDiff) Consume(deps map[string]interface{}) (map[string]interface
 				NewLinesOfCode: len(dst),
 				Diffs:          diffs,
 			}
-			if !diff.RefineDisabled && (diff.RefineMaxFileSize == 0 || len(blobTo.Data) <= diff.RefineMaxFileSize) {
+			if !diff.RefineDisabled &&
+				(diff.RefineMaxFileSize == 0 || len(blobTo.Data) <= diff.RefineMaxFileSize) &&
+				(diff.RefineMaxLines == 0 || fileDiffData.NewLinesOfCode <= diff.RefineMaxLines) {
 				fileDiffData = diff.refineWithTreeSitter(change.To.Name, blobTo.Data, fileDiffData)
 			}
 			result[change.To.Name] = fileDiffData

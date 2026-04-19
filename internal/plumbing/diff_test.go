@@ -25,22 +25,28 @@ func TestFileDiffMeta(t *testing.T) {
 	assert.Equal(t, len(fd.Requires()), 2)
 	assert.Equal(t, fd.Requires()[0], items.DependencyTreeChanges)
 	assert.Equal(t, fd.Requires()[1], items.DependencyBlobCache)
-	assert.Len(t, fd.ListConfigurationOptions(), 4)
+	assert.Len(t, fd.ListConfigurationOptions(), 6)
 	assert.Equal(t, fd.ListConfigurationOptions()[0].Name, items.ConfigFileDiffDisableCleanup)
 	assert.Equal(t, fd.ListConfigurationOptions()[1].Name, items.ConfigFileWhitespaceIgnore)
 	assert.Equal(t, fd.ListConfigurationOptions()[2].Name, items.ConfigFileDiffTimeout)
 	assert.Equal(t, fd.ListConfigurationOptions()[3].Name, items.ConfigFileDiffDisableRefine)
+	assert.Equal(t, fd.ListConfigurationOptions()[4].Name, items.ConfigFileDiffRefineMaxFileSize)
+	assert.Equal(t, fd.ListConfigurationOptions()[5].Name, items.ConfigFileDiffRefineMaxLines)
 	assert.NoError(t, fd.Configure(map[string]interface{}{
-		core.ConfigLogger:                  core.NewLogger(),
-		items.ConfigFileDiffDisableCleanup: true,
-		items.ConfigFileWhitespaceIgnore:   true,
-		items.ConfigFileDiffTimeout:        500,
-		items.ConfigFileDiffDisableRefine:  true,
+		core.ConfigLogger:                       core.NewLogger(),
+		items.ConfigFileDiffDisableCleanup:      true,
+		items.ConfigFileWhitespaceIgnore:        true,
+		items.ConfigFileDiffTimeout:             500,
+		items.ConfigFileDiffDisableRefine:       true,
+		items.ConfigFileDiffRefineMaxFileSize:   512 * 1024,
+		items.ConfigFileDiffRefineMaxLines:      2000,
 	}))
 	assert.True(t, fd.CleanupDisabled)
 	assert.True(t, fd.WhitespaceIgnore)
 	assert.Equal(t, 500*time.Millisecond, fd.Timeout)
 	assert.True(t, fd.RefineDisabled)
+	assert.Equal(t, 512*1024, fd.RefineMaxFileSize)
+	assert.Equal(t, 2000, fd.RefineMaxLines)
 }
 
 func TestFileDiffRegistration(t *testing.T) {
@@ -245,6 +251,10 @@ notifications:
 
 func TestFileDiffDarkMagic(t *testing.T) {
 	fd := fixtures.FileDiff()
+	// Disable tree-sitter refinement to test the cleanup heuristic in isolation.
+	// Refinement post-processes both paths and would normalise the diffs, masking
+	// the effect of DiffCleanupSemanticLossless that this test is verifying.
+	fd.RefineDisabled = true
 	deps := map[string]interface{}{}
 	cache := map[plumbing.Hash]*items.CachedBlob{}
 	items.AddHash(t, cache, "448eb3f312849b0ca766063d06b09481c987b309") // 1.java
@@ -283,6 +293,64 @@ func TestFileDiffDarkMagic(t *testing.T) {
 	assert.NotEqual(t, magicDiffs.Diffs, plainDiffs.Diffs)
 	assert.Equal(t, magicDiffs.OldLinesOfCode, plainDiffs.OldLinesOfCode)
 	assert.Equal(t, magicDiffs.NewLinesOfCode, plainDiffs.NewLinesOfCode)
+}
+
+func TestFileDiffRefineMaxLines(t *testing.T) {
+	fd := fixtures.FileDiff()
+
+	// default after Configure (no explicit value)
+	assert.NoError(t, fd.Configure(map[string]interface{}{}))
+	assert.Equal(t, items.DefaultFileDiffRefineMaxLines, fd.RefineMaxLines)
+
+	// explicit value
+	assert.NoError(t, fd.Configure(map[string]interface{}{
+		items.ConfigFileDiffRefineMaxLines: 3000,
+	}))
+	assert.Equal(t, 3000, fd.RefineMaxLines)
+
+	// 0 means unlimited
+	assert.NoError(t, fd.Configure(map[string]interface{}{
+		items.ConfigFileDiffRefineMaxLines: 0,
+	}))
+	assert.Equal(t, 0, fd.RefineMaxLines)
+}
+
+func TestFileDiffRefineMaxLinesSkips(t *testing.T) {
+	// With RefineMaxLines = 1 every real file exceeds the limit.
+	// The result must be identical to RefineDisabled = true.
+	cache := map[plumbing.Hash]*items.CachedBlob{}
+	items.AddHash(t, cache, "448eb3f312849b0ca766063d06b09481c987b309")
+	items.AddHash(t, cache, "3312c92f3e8bdfbbdb30bccb6acd1b85bc338dfc")
+	treeFrom, _ := test.Repository.TreeObject(plumbing.NewHash("f02289bfe843388a1bb3c7dea210374082dd86b9"))
+	treeTo, _ := test.Repository.TreeObject(plumbing.NewHash("eca91acf1fd828f20dcb653a061d8c97d965bc6c"))
+	change := &object.Change{
+		From: object.ChangeEntry{Name: "test.java", Tree: treeFrom, TreeEntry: object.TreeEntry{
+			Name: "test.java", Mode: 0o100644,
+			Hash: plumbing.NewHash("448eb3f312849b0ca766063d06b09481c987b309"),
+		}},
+		To: object.ChangeEntry{Name: "test.java", Tree: treeTo, TreeEntry: object.TreeEntry{
+			Name: "test.java", Mode: 0o100644,
+			Hash: plumbing.NewHash("3312c92f3e8bdfbbdb30bccb6acd1b85bc338dfc"),
+		}},
+	}
+	deps := map[string]interface{}{
+		items.DependencyBlobCache:    cache,
+		items.DependencyTreeChanges:  object.Changes{change},
+	}
+
+	fdDisabled := fixtures.FileDiff()
+	fdDisabled.RefineDisabled = true
+	resDisabled, err := fdDisabled.Consume(deps)
+	assert.NoError(t, err)
+	wantDiffs := resDisabled[items.DependencyFileDiff].(map[string]items.FileDiffData)["test.java"]
+
+	fdLimited := fixtures.FileDiff()
+	fdLimited.RefineMaxLines = 1
+	resLimited, err := fdLimited.Consume(deps)
+	assert.NoError(t, err)
+	gotDiffs := resLimited[items.DependencyFileDiff].(map[string]items.FileDiffData)["test.java"]
+
+	assert.Equal(t, wantDiffs.Diffs, gotDiffs.Diffs)
 }
 
 func TestFileDiffWhitespaceDarkMagic(t *testing.T) {

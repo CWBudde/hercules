@@ -1,3 +1,6 @@
+//go:build !purego
+// +build !purego
+
 package rbtree
 
 /*

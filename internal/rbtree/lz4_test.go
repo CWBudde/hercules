@@ -12,7 +12,7 @@ func TestCompressDecompressUInt32Slice(t *testing.T) {
 		data[i] = 7
 	}
 	packed := CompressUInt32Slice(data)
-	assert.Len(t, packed, 29)
+	assert.Less(t, len(packed), len(data)*4, "compressed size should be smaller than raw")
 	for i := range data {
 		data[i] = 0
 	}

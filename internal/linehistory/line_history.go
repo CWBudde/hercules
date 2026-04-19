@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"path"
 	"runtime/debug"
 	"sync/atomic"
 	"unicode/utf8"
@@ -41,6 +42,12 @@ type LineHistoryAnalyser struct {
 	// but it accurately checks all the intermediate states for invariant
 	// violations.
 	Debug bool
+
+	// ExcludePathPatterns is a list of glob patterns (as per path.Match).
+	// Any file whose path matches at least one pattern is excluded from line
+	// history tracking.  Use this to skip large generated files that would
+	// otherwise balloon memory usage.
+	ExcludePathPatterns []string
 
 	// Repository points to the analysed Git repository struct from go-git.
 	repository *git.Repository
@@ -159,6 +166,8 @@ const (
 	ConfigLinesHibernationDirectory = "LineHistory.HibernationDirectory"
 	// ConfigLinesDebug enables some extra debug assertions.
 	ConfigLinesDebug = "LineHistory.Debug"
+	// ConfigLinesExcludePaths is the config key for ExcludePathPatterns.
+	ConfigLinesExcludePaths = "LineHistory.ExcludePaths"
 )
 
 func (analyser *LineHistoryAnalyser) Name() string {
@@ -208,6 +217,12 @@ func (analyser *LineHistoryAnalyser) ListConfigurationOptions() []core.Configura
 			Flag:        "lines-debug",
 			Type:        core.BoolConfigurationOption,
 			Default:     false,
+		}, {
+			Name:        ConfigLinesExcludePaths,
+			Description: "Glob patterns of file paths to exclude from line history tracking (e.g. generated files). Repeat the flag or separate with commas.",
+			Flag:        "lines-exclude-paths",
+			Type:        core.StringsConfigurationOption,
+			Default:     []string{},
 		},
 	}
 	return options[:]
@@ -231,6 +246,9 @@ func (analyser *LineHistoryAnalyser) Configure(facts map[string]interface{}) err
 	}
 	if val, exists := facts[ConfigLinesDebug].(bool); exists {
 		analyser.Debug = val
+	}
+	if val, exists := facts[ConfigLinesExcludePaths].([]string); exists {
+		analyser.ExcludePathPatterns = val
 	}
 
 	var resolver core.FileIdResolver = FileIdResolver{analyser}
@@ -275,6 +293,9 @@ func (analyser *LineHistoryAnalyser) Consume(deps map[string]interface{}) (map[s
 
 	analyser.changes = make([]core.LineHistoryChange, 0, len(treeDiffs)*4)
 	for _, change := range treeDiffs {
+		if analyser.isExcluded(change.From.Name, change.To.Name) {
+			continue
+		}
 		action, _ := change.Action()
 		var err error
 		switch action {
@@ -297,6 +318,24 @@ func (analyser *LineHistoryAnalyser) Consume(deps map[string]interface{}) (map[s
 
 	analyser.changes = nil
 	return result, nil
+}
+
+// isExcluded reports whether a file change should be skipped because either
+// the source or destination path matches one of ExcludePathPatterns.
+func (analyser *LineHistoryAnalyser) isExcluded(fromName, toName string) bool {
+	for _, pattern := range analyser.ExcludePathPatterns {
+		if fromName != "" {
+			if ok, _ := path.Match(pattern, fromName); ok {
+				return true
+			}
+		}
+		if toName != "" {
+			if ok, _ := path.Match(pattern, toName); ok {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (analyser *LineHistoryAnalyser) findFileAndName(id FileId) (*File, string) {

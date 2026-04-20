@@ -7,7 +7,7 @@ import (
 	"encoding/binary"
 	"unsafe"
 
-	"github.com/pierrec/lz4/v4"
+	lz4 "github.com/cwbudde/lz4"
 )
 
 // CompressUInt32Slice compresses a slice of uint32-s with LZ4.

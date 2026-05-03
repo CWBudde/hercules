@@ -3,6 +3,7 @@ package ast
 import (
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	sitter "github.com/smacker/go-tree-sitter"
@@ -12,6 +13,13 @@ import (
 	python "github.com/smacker/go-tree-sitter/python"
 	typescript "github.com/smacker/go-tree-sitter/typescript/typescript"
 )
+
+// LineRange describes a 1-indexed, inclusive line interval in a source file.
+// Used by ExtractNamedNodesInRanges to scope tree-sitter parsing to specific lines.
+type LineRange struct {
+	Start int
+	End   int
+}
 
 // Node is the minimal structural unit needed by Shotness.
 type Node struct {
@@ -221,6 +229,48 @@ func ExtractNamedNodes(path string, source []byte) ([]Node, error) {
 	if root == nil || root.IsNull() {
 		return nil, fmt.Errorf("tree-sitter failed to parse %s", path)
 	}
+	return collectNamedNodes(root), nil
+}
+
+// ExtractNamedNodesInRanges is the range-limited counterpart of ExtractNamedNodes.
+// It instructs tree-sitter to only parse the line intervals listed in `ranges`,
+// reducing per-call allocation from O(file_size) to O(diff_size) for large files
+// with small diffs. Ranges may overlap or appear out of order; they are clamped
+// to [1, numLines], sorted, and merged before being passed to tree-sitter (which
+// requires non-overlapping, sorted ranges). Returns (nil, nil) for unsupported
+// extensions or when the resulting range set is empty.
+func ExtractNamedNodesInRanges(path string, source []byte, ranges []LineRange) ([]Node, error) {
+	spec, ok := languageByExtension[strings.ToLower(filepath.Ext(path))]
+	if !ok {
+		return nil, nil
+	}
+	if len(source) == 0 || len(ranges) == 0 {
+		return nil, nil
+	}
+	lineStarts := computeLineStarts(source)
+	numLines := len(lineStarts) - 1
+	sitterRanges := buildSitterRanges(ranges, lineStarts, numLines)
+	if len(sitterRanges) == 0 {
+		return nil, nil
+	}
+	parser := sitter.NewParser()
+	parser.SetLanguage(spec.language)
+	parser.SetIncludedRanges(sitterRanges)
+	tree := parser.Parse(source)
+	if tree == nil {
+		return nil, fmt.Errorf("tree-sitter failed to parse %s", path)
+	}
+	root := tree.RootNode()
+	if root == nil || root.IsNull() {
+		return nil, fmt.Errorf("tree-sitter failed to parse %s", path)
+	}
+	return collectNamedNodes(root), nil
+}
+
+// collectNamedNodes is the shared walker used by ExtractNamedNodes and
+// ExtractNamedNodesInRanges. It descends through unnamed nodes and emits one
+// entry per named node, capturing its line/column extents.
+func collectNamedNodes(root *sitter.Node) []Node {
 	nodes := make([]Node, 0, 128)
 	var walk func(*sitter.Node)
 	walk = func(node *sitter.Node) {
@@ -253,7 +303,89 @@ func ExtractNamedNodes(path string, source []byte) ([]Node, error) {
 		}
 	}
 	walk(root)
-	return nodes, nil
+	return nodes
+}
+
+// computeLineStarts returns a slice s where s[i] is the byte offset of the
+// (i+1)-th 1-indexed line, plus a trailing entry equal to len(source). It is
+// safe to call on empty input (returns []int{0}).
+func computeLineStarts(source []byte) []int {
+	starts := make([]int, 1, len(source)/40+2)
+	starts[0] = 0
+	for i, b := range source {
+		if b == '\n' {
+			starts = append(starts, i+1)
+		}
+	}
+	if starts[len(starts)-1] != len(source) {
+		starts = append(starts, len(source))
+	}
+	return starts
+}
+
+// buildSitterRanges normalizes raw LineRanges into a slice of sitter.Range
+// suitable for Parser.SetIncludedRanges (sorted, non-overlapping, non-empty).
+// Out-of-bounds inputs are clamped; empty intervals are dropped.
+func buildSitterRanges(ranges []LineRange, lineStarts []int, numLines int) []sitter.Range {
+	if numLines <= 0 {
+		return nil
+	}
+	clamped := make([]LineRange, 0, len(ranges))
+	for _, r := range ranges {
+		a, b := r.Start, r.End
+		if a < 1 {
+			a = 1
+		}
+		if b > numLines {
+			b = numLines
+		}
+		if a > b {
+			continue
+		}
+		clamped = append(clamped, LineRange{Start: a, End: b})
+	}
+	if len(clamped) == 0 {
+		return nil
+	}
+	sort.Slice(clamped, func(i, j int) bool {
+		return clamped[i].Start < clamped[j].Start
+	})
+	merged := clamped[:1]
+	for _, r := range clamped[1:] {
+		last := &merged[len(merged)-1]
+		if r.Start <= last.End+1 {
+			if r.End > last.End {
+				last.End = r.End
+			}
+			continue
+		}
+		merged = append(merged, r)
+	}
+	out := make([]sitter.Range, 0, len(merged))
+	for _, r := range merged {
+		startByte := lineStarts[r.Start-1]
+		endByte := lineStarts[r.End]
+		out = append(out, sitter.Range{
+			StartPoint: pointAt(startByte, lineStarts),
+			EndPoint:   pointAt(endByte, lineStarts),
+			StartByte:  uint32(startByte),
+			EndByte:    uint32(endByte),
+		})
+	}
+	return out
+}
+
+// pointAt converts a byte offset into a tree-sitter Point using the precomputed
+// line offset table.
+func pointAt(offset int, lineStarts []int) sitter.Point {
+	r := sort.SearchInts(lineStarts, offset+1) - 1
+	if r < 0 {
+		r = 0
+	}
+	return sitter.Point{
+		Row:    uint32(r),
+		Column: uint32(offset - lineStarts[r]),
+	}
 }
 
 func extractByTypes(

@@ -25,13 +25,14 @@ func TestFileDiffMeta(t *testing.T) {
 	assert.Equal(t, len(fd.Requires()), 2)
 	assert.Equal(t, fd.Requires()[0], items.DependencyTreeChanges)
 	assert.Equal(t, fd.Requires()[1], items.DependencyBlobCache)
-	assert.Len(t, fd.ListConfigurationOptions(), 6)
+	assert.Len(t, fd.ListConfigurationOptions(), 7)
 	assert.Equal(t, fd.ListConfigurationOptions()[0].Name, items.ConfigFileDiffDisableCleanup)
 	assert.Equal(t, fd.ListConfigurationOptions()[1].Name, items.ConfigFileWhitespaceIgnore)
 	assert.Equal(t, fd.ListConfigurationOptions()[2].Name, items.ConfigFileDiffTimeout)
 	assert.Equal(t, fd.ListConfigurationOptions()[3].Name, items.ConfigFileDiffDisableRefine)
 	assert.Equal(t, fd.ListConfigurationOptions()[4].Name, items.ConfigFileDiffRefineMaxFileSize)
 	assert.Equal(t, fd.ListConfigurationOptions()[5].Name, items.ConfigFileDiffRefineMaxLines)
+	assert.Equal(t, fd.ListConfigurationOptions()[6].Name, items.ConfigFileDiffRefineMode)
 	assert.NoError(t, fd.Configure(map[string]interface{}{
 		core.ConfigLogger:                       core.NewLogger(),
 		items.ConfigFileDiffDisableCleanup:      true,

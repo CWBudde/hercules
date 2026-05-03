@@ -1,6 +1,7 @@
 package plumbing
 
 import (
+	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -14,6 +15,42 @@ import (
 	"github.com/sergi/go-diff/diffmatchpatch"
 )
 
+// refineCoverageThreshold is the fraction of new-file lines above which the
+// range-limited tree-sitter parse is skipped in favor of a full-file parse.
+// Below the threshold, range-limited parsing reduces per-call allocation; above
+// it, the parser setup and range bookkeeping outweigh the savings.
+const refineCoverageThreshold = 0.5
+
+// refineRangePadding is how many lines of context are added on each side of a
+// computed range before the included-ranges parse. Tree-sitter's grammar
+// resolution is mildly context-sensitive, so giving the parser a window of
+// surrounding tokens can either improve or worsen agreement with the full
+// parse depending on what falls into the padded window. Empirically a small
+// non-zero pad (a few lines) is helpful; very large pads can amplify drift by
+// giving the parser enough partial structure to make confidently-different
+// decisions.
+const refineRangePadding = 4
+
+// refineRangeMinLines is the minimum new-file line count for which the
+// range-limited path is considered in auto mode. Below this threshold the
+// full-file parse is already cheap enough that the bookkeeping overhead is
+// not worth introducing any potential heuristic drift.
+const refineRangeMinLines = 1000
+
+// Refine modes for ConfigFileDiffRefineMode.
+const (
+	// RefineModeAuto picks between full-file and range-limited parsing using
+	// the file size, coverage threshold, and padding heuristics. Default.
+	RefineModeAuto = "auto"
+	// RefineModeFull always parses the entire file. Restores the pre-Phase-2
+	// behavior bit-for-bit; useful when reproducibility outweighs throughput.
+	RefineModeFull = "full"
+	// RefineModeRange always uses included-ranges parsing when at least one
+	// range is computed (still falls back to full when the range list is empty).
+	// Maximizes throughput at the cost of any small heuristic drift.
+	RefineModeRange = "range"
+)
+
 // FileDiff calculates the difference of files which were modified.
 // It is a PipelineItem.
 type FileDiff struct {
@@ -23,6 +60,7 @@ type FileDiff struct {
 	RefineDisabled    bool
 	RefineMaxFileSize int
 	RefineMaxLines    int
+	RefineMode        string
 	Timeout           time.Duration
 
 	l core.Logger
@@ -66,6 +104,10 @@ const (
 
 	// DefaultFileDiffRefineMaxLines is 5000 lines.
 	DefaultFileDiffRefineMaxLines = 5000
+
+	// ConfigFileDiffRefineMode selects the refinement parsing strategy. See the
+	// RefineMode* constants for accepted values.
+	ConfigFileDiffRefineMode = "FileDiff.RefineMode"
 )
 
 // FileDiffData is the type of the dependency provided by FileDiff.
@@ -139,6 +181,13 @@ func (diff *FileDiff) ListConfigurationOptions() []core.ConfigurationOption {
 			Type:        core.IntConfigurationOption,
 			Default:     DefaultFileDiffRefineMaxLines,
 		},
+		{
+			Name:        ConfigFileDiffRefineMode,
+			Description: "Strategy for tree-sitter refinement parsing: \"auto\" picks per-file (default, fast on large files), \"full\" always parses the entire file (bit-identical pre-Phase-2 output), \"range\" always uses included-ranges parsing.",
+			Flag:        "diff-refine-mode",
+			Type:        core.StringConfigurationOption,
+			Default:     RefineModeAuto,
+		},
 	}
 
 	return options[:]
@@ -173,6 +222,15 @@ func (diff *FileDiff) Configure(facts map[string]interface{}) error {
 		diff.RefineMaxLines = val
 	} else {
 		diff.RefineMaxLines = DefaultFileDiffRefineMaxLines
+	}
+	diff.RefineMode = RefineModeAuto
+	if val, exists := facts[ConfigFileDiffRefineMode].(string); exists && val != "" {
+		switch val {
+		case RefineModeAuto, RefineModeFull, RefineModeRange:
+			diff.RefineMode = val
+		default:
+			diff.l.Warnf("invalid diff-refine-mode %q; using %q", val, RefineModeAuto)
+		}
 	}
 	return nil
 }
@@ -259,7 +317,12 @@ func (diff *FileDiff) refineWithTreeSitter(path string, source []byte, original 
 	if original.NewLinesOfCode <= 0 || len(original.Diffs) < 2 {
 		return original
 	}
-	nodes, err := ast_items.ExtractNamedNodes(path, source)
+	boundaries := collectSuspiciousBoundaries(original.Diffs)
+	if len(boundaries) == 0 {
+		return original
+	}
+	ranges := boundariesToRanges(boundaries, original.NewLinesOfCode)
+	nodes, err := extractNodesForRefinement(path, source, ranges, original.NewLinesOfCode, diff.RefineMode)
 	if err != nil {
 		diff.l.Warnf("FileDiff: failed to refine %s: %v", path, err)
 		return original
@@ -267,7 +330,78 @@ func (diff *FileDiff) refineWithTreeSitter(path string, source []byte, original 
 	if len(nodes) == 0 {
 		return original
 	}
-	line2node := make([][]ast_items.Node, original.NewLinesOfCode)
+	line2node := buildLineToNodeIndex(nodes, original.NewLinesOfCode)
+	refined := refineDiffByNodeDensityWithBoundaries(original, line2node, boundaries)
+	refined.Diffs = normalizeDiffs(refined.Diffs)
+	return refined
+}
+
+// extractNodesForRefinement chooses between full-file and range-limited
+// tree-sitter parsing per the configured mode and the size/coverage of the
+// suspicious boundaries.
+//
+// In auto mode the decision is:
+//   - empty range list  → full parse (heuristic touches no specific lines).
+//   - newLOC < refineRangeMinLines → full parse (small files don't benefit).
+//   - padded coverage ≥ refineCoverageThreshold → full parse (savings would be
+//     marginal once range bookkeeping is paid).
+//   - otherwise → range-limited with refineRangePadding lines of context.
+//
+// Padding (refineRangePadding) gives tree-sitter enough surrounding tokens to
+// resolve grammar-context-sensitive constructs the same way it would in a
+// full-file parse, eliminating the rare single-line drift observed without it.
+func extractNodesForRefinement(path string, source []byte, ranges []ast_items.LineRange, newLOC int, mode string) ([]ast_items.Node, error) {
+	switch mode {
+	case RefineModeFull:
+		return ast_items.ExtractNamedNodes(path, source)
+	case RefineModeRange:
+		if len(ranges) == 0 {
+			return ast_items.ExtractNamedNodes(path, source)
+		}
+		return ast_items.ExtractNamedNodesInRanges(path, source, padRanges(ranges, newLOC, refineRangePadding))
+	default: // RefineModeAuto and anything unrecognized
+		if len(ranges) == 0 || newLOC < refineRangeMinLines {
+			return ast_items.ExtractNamedNodes(path, source)
+		}
+		padded := padRanges(ranges, newLOC, refineRangePadding)
+		if coverageRatio(padded, newLOC) >= refineCoverageThreshold {
+			return ast_items.ExtractNamedNodes(path, source)
+		}
+		return ast_items.ExtractNamedNodesInRanges(path, source, padded)
+	}
+}
+
+// padRanges extends each LineRange by `pad` lines on either side, clamping to
+// [1, newLOC]. The result is unsorted and may overlap — buildSitterRanges
+// (called inside ExtractNamedNodesInRanges) merges and sorts before passing the
+// list to tree-sitter. A non-positive `pad` returns the input untouched.
+func padRanges(ranges []ast_items.LineRange, newLOC int, pad int) []ast_items.LineRange {
+	if pad <= 0 || len(ranges) == 0 {
+		return ranges
+	}
+	out := make([]ast_items.LineRange, 0, len(ranges))
+	for _, r := range ranges {
+		start := r.Start - pad
+		if start < 1 {
+			start = 1
+		}
+		end := r.End + pad
+		if end > newLOC {
+			end = newLOC
+		}
+		if start > end {
+			continue
+		}
+		out = append(out, ast_items.LineRange{Start: start, End: end})
+	}
+	return out
+}
+
+// buildLineToNodeIndex turns a flat node list into a per-line lookup table the
+// node-density heuristic can read. Lines outside any node remain nil; lines
+// outside the [1, newLOC] window are silently dropped.
+func buildLineToNodeIndex(nodes []ast_items.Node, newLOC int) [][]ast_items.Node {
+	line2node := make([][]ast_items.Node, newLOC)
 	for _, node := range nodes {
 		startLine := node.StartLine
 		endLine := node.EndLine
@@ -287,9 +421,7 @@ func (diff *FileDiff) refineWithTreeSitter(path string, source []byte, original 
 			line2node[line-1] = append(line2node[line-1], node)
 		}
 	}
-	refined := refineDiffByNodeDensity(original, line2node)
-	refined.Diffs = normalizeDiffs(refined.Diffs)
-	return refined
+	return line2node
 }
 
 func normalizeDiffs(diffs []diffmatchpatch.Diff) []diffmatchpatch.Diff {
@@ -298,26 +430,123 @@ func normalizeDiffs(diffs []diffmatchpatch.Diff) []diffmatchpatch.Diff {
 	return diffmatchpatch.New().DiffCleanupMerge(diffs)
 }
 
-func refineDiffByNodeDensity(original FileDiffData, line2node [][]ast_items.Node) FileDiffData {
-	suspicious := map[int][2]int{}
+// suspiciousBoundary marks a DiffInsert→DiffEqual transition where the insert
+// shares a non-empty prefix with the following equal segment. The refinement
+// heuristic may reorder these boundaries based on node density.
+//
+// `line` is 0-indexed against the new file. `size` is the insert's rune length
+// (number of new lines, since the diff was produced via DiffLinesToRunes).
+// `matched` is the size of the common prefix shared with the following equal.
+type suspiciousBoundary struct {
+	diffIndex int
+	line      int
+	size      int
+	matched   int
+}
+
+// collectSuspiciousBoundaries walks a diff and emits one entry per
+// DiffInsert→DiffEqual boundary that has a non-empty common-prefix overlap.
+// `line` is 0-indexed against the new file, matching the convention used by
+// refineDiffByNodeDensityWithBoundaries.
+func collectSuspiciousBoundaries(diffs []diffmatchpatch.Diff) []suspiciousBoundary {
+	if len(diffs) < 2 {
+		return nil
+	}
+	var out []suspiciousBoundary
 	line := 0
-	for i, edit := range original.Diffs {
-		if i == len(original.Diffs)-1 {
+	for i, edit := range diffs {
+		if i == len(diffs)-1 {
 			break
 		}
+		size := utf8.RuneCountInString(edit.Text)
 		if edit.Type == diffmatchpatch.DiffInsert &&
-			original.Diffs[i+1].Type == diffmatchpatch.DiffEqual {
-			matched := commonPrefixRunes(edit.Text, original.Diffs[i+1].Text)
+			diffs[i+1].Type == diffmatchpatch.DiffEqual {
+			matched := commonPrefixRunes(edit.Text, diffs[i+1].Text)
 			if matched > 0 {
-				suspicious[i] = [2]int{line, matched}
+				out = append(out, suspiciousBoundary{
+					diffIndex: i,
+					line:      line,
+					size:      size,
+					matched:   matched,
+				})
 			}
 		}
 		if edit.Type != diffmatchpatch.DiffDelete {
-			line += utf8.RuneCountInString(edit.Text)
+			line += size
 		}
 	}
-	if len(suspicious) == 0 {
+	return out
+}
+
+// boundariesToRanges converts each suspicious boundary into the line interval
+// the node-density heuristic actually inspects:
+// [baseLine+1, baseLine+size+matched] (1-indexed, inclusive).
+// Result is unsorted and may overlap; ast_items.ExtractNamedNodesInRanges
+// handles normalization internally.
+func boundariesToRanges(boundaries []suspiciousBoundary, newLOC int) []ast_items.LineRange {
+	if len(boundaries) == 0 || newLOC <= 0 {
+		return nil
+	}
+	out := make([]ast_items.LineRange, 0, len(boundaries))
+	for _, b := range boundaries {
+		// The heuristic reads countNodesInInterval(line2node, b.line, b.line+size)
+		// and (b.line+matched, b.line+size+matched). Their union, expressed in
+		// 1-indexed inclusive line numbers, is [b.line+1, b.line+size+matched].
+		start := b.line + 1
+		end := b.line + b.size + b.matched
+		if end < start {
+			end = start
+		}
+		if end > newLOC {
+			end = newLOC
+		}
+		if start > newLOC {
+			continue
+		}
+		out = append(out, ast_items.LineRange{Start: start, End: end})
+	}
+	return out
+}
+
+// coverageRatio reports the fraction of new-file lines covered by the union of
+// `ranges` after merging overlaps. Result is in [0, 1].
+func coverageRatio(ranges []ast_items.LineRange, newLOC int) float64 {
+	if newLOC <= 0 || len(ranges) == 0 {
+		return 0
+	}
+	sorted := make([]ast_items.LineRange, len(ranges))
+	copy(sorted, ranges)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Start < sorted[j].Start })
+	total := 0
+	curStart, curEnd := sorted[0].Start, sorted[0].End
+	for _, r := range sorted[1:] {
+		if r.Start <= curEnd+1 {
+			if r.End > curEnd {
+				curEnd = r.End
+			}
+			continue
+		}
+		total += curEnd - curStart + 1
+		curStart, curEnd = r.Start, r.End
+	}
+	total += curEnd - curStart + 1
+	if total > newLOC {
+		total = newLOC
+	}
+	return float64(total) / float64(newLOC)
+}
+
+func refineDiffByNodeDensity(original FileDiffData, line2node [][]ast_items.Node) FileDiffData {
+	return refineDiffByNodeDensityWithBoundaries(original, line2node, collectSuspiciousBoundaries(original.Diffs))
+}
+
+func refineDiffByNodeDensityWithBoundaries(original FileDiffData, line2node [][]ast_items.Node, boundaries []suspiciousBoundary) FileDiffData {
+	if len(boundaries) == 0 {
 		return original
+	}
+	suspicious := make(map[int]suspiciousBoundary, len(boundaries))
+	for _, b := range boundaries {
+		suspicious[b.diffIndex] = b
 	}
 
 	refined := FileDiffData{
@@ -336,8 +565,8 @@ func refineDiffByNodeDensity(original FileDiffData, line2node [][]ast_items.Node
 			refined.Diffs = append(refined.Diffs, edit)
 			continue
 		}
-		baseLine := info[0]
-		matched := info[1]
+		baseLine := info.line
+		matched := info.matched
 		size := utf8.RuneCountInString(edit.Text)
 		n1 := countNodesInInterval(line2node, baseLine, baseLine+size)
 		n2 := countNodesInInterval(line2node, baseLine+matched, baseLine+size+matched)

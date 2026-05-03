@@ -1,5 +1,5 @@
-//go:build purego
-// +build purego
+//go:build !cgo_lz4
+// +build !cgo_lz4
 
 package rbtree
 

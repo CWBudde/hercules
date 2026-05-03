@@ -1,0 +1,50 @@
+name: test-crosscompile
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  rbtree-crosscompile:
+    name: rbtree cross-compile (CGO_ENABLED=0)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - { goos: linux,   goarch: arm64 }
+          - { goos: linux,   goarch: amd64 }
+          - { goos: windows, goarch: amd64 }
+          - { goos: darwin,  goarch: arm64 }
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: "*/*.sum"
+
+      - name: Build internal/rbtree without cgo (${{ matrix.target.goos }}/${{ matrix.target.goarch }})
+        env:
+          CGO_ENABLED: "0"
+          GOOS: ${{ matrix.target.goos }}
+          GOARCH: ${{ matrix.target.goarch }}
+        run: go build ./internal/rbtree
+
+  rbtree-cgo-optin:
+    name: rbtree cgo opt-in tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: "*/*.sum"
+
+      - name: Test rbtree with cgo LZ4 path
+        run: go test -tags cgo_lz4 ./internal/rbtree

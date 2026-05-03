@@ -20,7 +20,7 @@ Completed items are listed only when they clarify the current state or unblock p
 
 ## Current remaining focus (short list)
 
-1. ~~**Drop cgo (Milestone 1b)**~~ — pure-Go LZ4 implemented and benchmarked; CI cross-compilation smoke tests and doc updates remain.
+1. **Drop cgo (Milestone 1b)** — pure-Go LZ4 is now the default (`-tags cgo_lz4` retained as opt-in); `internal/rbtree` builds and tests cleanly with `CGO_ENABLED=0`. Full cgo-free `cmd/hercules` builds are still blocked by the tree-sitter bindings (cgo); see Milestone 1c.
 2. **Complete larger P1/P2 milestones**
    - Scaling presets + large-repo validation.
    - Output schema contracts and compatibility checks.
@@ -71,21 +71,23 @@ Status: **complete**.
   - [x] Remove stale docs/examples that still imply XPath/UAST workflows.
   - [x] Once replacement decisions are finalized, update README migration notes with the final replacement guidance.
 
-### Milestone 1b — Remove cgo dependency (P0)
+### Milestone 1b — Remove cgo from LZ4 (P0)
 
-Status: **complete** (pure-Go path implemented and benchmarked; cgo path retained as opt-in).
+Status: **complete** (pure-Go LZ4 is the default; cgo path retained as opt-in via `-tags cgo_lz4`).
 
-Why: the single cgo call in `internal/rbtree/lz4.go` forces a C toolchain for every build,
-breaks pure cross-compilation (`GOOS=windows CGO_ENABLED=0`), and contradicts the goal of a
+Why: the single cgo call in `internal/rbtree/lz4.go` forced a C toolchain for every build,
+broke pure cross-compilation (`GOOS=windows CGO_ENABLED=0`), and contradicted the goal of a
 dependency-light default binary.  The surface is tiny (two functions), so the replacement cost is low.
 
 - [x] **Replace C LZ4 wrapper with pure-Go LZ4**
-  - [x] Add `github.com/pierrec/lz4/v4 v4.1.26` as a vendored dependency.
+  - [x] Add `github.com/cwbudde/lz4` (fork of `github.com/pierrec/lz4/v4`) as a dependency.
   - [x] Implement `CompressUInt32Slice` / `DecompressUInt32Slice` in `lz4_purego.go` using
         `lz4.CompressBlockHC` / `lz4.UncompressBlock`, preserving the existing function signatures.
-  - [x] Guard cgo path with `//go:build !purego` so it is retained as an opt-in.
-        `CGO_ENABLED=0 -tags purego` selects the pure-Go path; default build is unchanged.
-  - [x] Verify round-trip tests pass with `CGO_ENABLED=0 -tags purego`.
+  - [x] Pure-Go is now the default; cgo path retained behind `//go:build cgo_lz4`.
+        `go build ./cmd/hercules` selects the pure-Go path; `go build -tags cgo_lz4 ./cmd/hercules`
+        opts back into the cgo wrapper.
+  - [x] Verify round-trip tests pass on both paths (`go test ./internal/rbtree`,
+        `go test -tags cgo_lz4 ./internal/rbtree`).
   - [x] Add comprehensive benchmark suite (`lz4_bench_test.go`) covering 1k/10k/100k inputs
         across uniform, random, and realistic distributions.
 
@@ -97,14 +99,35 @@ dependency-light default binary.  The surface is tiny (two functions), so the re
     (still sub-millisecond; not a bottleneck in the hibernation path which is compress-bound).
   - Conclusion: pure-Go is the better default for this workload.
 
-- [ ] **Cross-compilation smoke test** (pending CI integration)
-  - [ ] `GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build ./cmd/hercules` — succeeds.
-  - [ ] `GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build ./cmd/hercules` — succeeds.
-  - [ ] Acceptance: CI matrix can build for all target platforms without a C toolchain.
+- [x] **Cross-compilation smoke test for `internal/rbtree`** (the LZ4 package)
+  - [x] `GOOS=linux  GOARCH=arm64 CGO_ENABLED=0 go build ./internal/rbtree` — succeeds.
+  - [x] `GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build ./internal/rbtree` — succeeds.
+  - [x] CI smoke test added in `.github/workflows/test-crosscompile.yaml`.
+  - Note: a full cgo-free `cmd/hercules` build is still blocked by the tree-sitter
+    bindings; see Milestone 1c.
 
-- [ ] **Update docs**
-  - [ ] Remove any mention of a required C compiler from README / CONTRIBUTING install steps.
-  - [ ] Add a note that `CGO_ENABLED=0 -tags purego` is the cgo-free build path.
+- [x] **Update docs**
+  - [x] README "Build tags and optional dependencies" notes that the default LZ4 path is
+        pure-Go (`github.com/cwbudde/lz4`) and that `-tags cgo_lz4` opts back into cgo.
+  - [x] README explicitly notes that the binary still links cgo because of tree-sitter
+        bindings, even though `internal/rbtree` is cgo-free.
+
+### Milestone 1c — Make `cmd/hercules` cgo-free (P1)
+
+Status: **not started**.
+
+Why: with LZ4 converted, the only remaining cgo dependency in the default build is the
+`smacker/go-tree-sitter` bindings (`csharp`, `javascript`, `python`, `typescript`, …).
+Removing this is the last step required to satisfy the top-level goal of a fully
+cgo-free default `go build ./cmd/hercules` and unlocks pure cross-compilation.
+
+- [ ] Evaluate replacement options:
+  - [ ] WASM-compiled tree-sitter grammars driven from pure Go (`wazero` runtime).
+  - [ ] Pure-Go ports of the relevant grammars (where they exist and are maintained).
+  - [ ] Dropping language coverage we don't actually use in shotness/typos-dataset.
+- [ ] Implement chosen path behind a build tag first, then flip the default.
+- [ ] Acceptance: `CGO_ENABLED=0 go build ./cmd/hercules` succeeds on linux/arm64 and
+      windows/amd64 in CI.
 
 ### Milestone 2 — Large-repo scaling & operational safety (P1)
 

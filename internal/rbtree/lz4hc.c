@@ -1,3 +1,6 @@
+//go:build cgo_lz4
+// +build cgo_lz4
+
 /*
    LZ4 HC - High Compression Mode of LZ4
    Copyright (C) 2011-2017, Yann Collet.

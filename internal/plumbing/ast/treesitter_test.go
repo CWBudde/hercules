@@ -3,7 +3,7 @@ package ast
 import (
 	"testing"
 
-	sitter "github.com/smacker/go-tree-sitter"
+	sitter "github.com/odvcencio/gotreesitter"
 )
 
 func TestTreeSitterExtractorUnsupported(t *testing.T) {

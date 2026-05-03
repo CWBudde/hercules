@@ -104,7 +104,7 @@ Numpy and Scipy can be installed on Windows using http://www.lfd.uci.edu/~gohlke
 
 ### Build from source
 
-You need Go (>= v1.18). For development workflows that regenerate protobuf files or use repo recipes, install
+You need Go (>= v1.25). For development workflows that regenerate protobuf files or use repo recipes, install
 [`protoc`](https://github.com/google/protobuf/releases) and [`just`](https://github.com/casey/just).
 
 ```
@@ -128,13 +128,15 @@ go build ./cmd/hercules
 - No TensorFlow dependency.
 - `--shotness` and `--typos-dataset` use tree-sitter by default.
 - Tree-sitter is the only structural parsing backend.
-- LZ4 compression (used for hibernation) is pure-Go by default
-  (`github.com/cwbudde/lz4`). The legacy cgo LZ4 path is retained as opt-in
-  via `-tags cgo_lz4`.
-- The default build still links cgo because the tree-sitter bindings used by
-  `--shotness` / `--typos-dataset` rely on cgo. A fully cgo-free build of
-  `cmd/hercules` is not yet possible; the `internal/rbtree` package, however,
-  builds and tests cleanly with `CGO_ENABLED=0`.
+- The default build is fully cgo-free. `CGO_ENABLED=0 go build ./cmd/hercules`
+  produces a statically linked binary and cross-compiles cleanly to
+  linux/{amd64,arm64}, windows/amd64, and darwin/arm64.
+  - LZ4 compression (used for hibernation) is pure-Go via
+    `github.com/cwbudde/lz4`. The legacy cgo LZ4 path is retained as opt-in
+    via `-tags cgo_lz4` (only the `internal/rbtree` package is affected).
+  - Tree-sitter parsing (used by `--shotness`, `--typos-dataset`, and the
+    diff refinement pass) runs on the pure-Go runtime
+    [`github.com/odvcencio/gotreesitter`](https://github.com/odvcencio/gotreesitter).
 
 Optional TensorFlow build:
 

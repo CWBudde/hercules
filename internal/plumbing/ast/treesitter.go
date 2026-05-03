@@ -6,12 +6,8 @@ import (
 	"sort"
 	"strings"
 
-	sitter "github.com/smacker/go-tree-sitter"
-	golang "github.com/smacker/go-tree-sitter/golang"
-	java "github.com/smacker/go-tree-sitter/java"
-	javascript "github.com/smacker/go-tree-sitter/javascript"
-	python "github.com/smacker/go-tree-sitter/python"
-	typescript "github.com/smacker/go-tree-sitter/typescript/typescript"
+	sitter "github.com/odvcencio/gotreesitter"
+	"github.com/odvcencio/gotreesitter/grammars"
 )
 
 // LineRange describes a 1-indexed, inclusive line interval in a source file.
@@ -47,7 +43,7 @@ type languageSpec struct {
 
 var languageByExtension = map[string]languageSpec{
 	".go": {
-		language: golang.GetLanguage(),
+		language: grammars.GoLanguage(),
 		functionNodeTypes: map[string]struct{}{
 			"function_declaration": {},
 			"method_declaration":   {},
@@ -62,7 +58,7 @@ var languageByExtension = map[string]languageSpec{
 		},
 	},
 	".py": {
-		language: python.GetLanguage(),
+		language: grammars.PythonLanguage(),
 		functionNodeTypes: map[string]struct{}{
 			"function_definition": {},
 		},
@@ -74,7 +70,7 @@ var languageByExtension = map[string]languageSpec{
 		},
 	},
 	".js": {
-		language: javascript.GetLanguage(),
+		language: grammars.JavascriptLanguage(),
 		functionNodeTypes: map[string]struct{}{
 			"function_declaration":           {},
 			"generator_function_declaration": {},
@@ -90,7 +86,7 @@ var languageByExtension = map[string]languageSpec{
 		},
 	},
 	".jsx": {
-		language: javascript.GetLanguage(),
+		language: grammars.JavascriptLanguage(),
 		functionNodeTypes: map[string]struct{}{
 			"function_declaration":           {},
 			"generator_function_declaration": {},
@@ -106,7 +102,7 @@ var languageByExtension = map[string]languageSpec{
 		},
 	},
 	".mjs": {
-		language: javascript.GetLanguage(),
+		language: grammars.JavascriptLanguage(),
 		functionNodeTypes: map[string]struct{}{
 			"function_declaration":           {},
 			"generator_function_declaration": {},
@@ -122,7 +118,7 @@ var languageByExtension = map[string]languageSpec{
 		},
 	},
 	".cjs": {
-		language: javascript.GetLanguage(),
+		language: grammars.JavascriptLanguage(),
 		functionNodeTypes: map[string]struct{}{
 			"function_declaration":           {},
 			"generator_function_declaration": {},
@@ -138,7 +134,7 @@ var languageByExtension = map[string]languageSpec{
 		},
 	},
 	".ts": {
-		language: typescript.GetLanguage(),
+		language: grammars.TypescriptLanguage(),
 		functionNodeTypes: map[string]struct{}{
 			"function":                       {},
 			"function_declaration":           {},
@@ -156,7 +152,7 @@ var languageByExtension = map[string]languageSpec{
 		},
 	},
 	".tsx": {
-		language: typescript.GetLanguage(),
+		language: grammars.TypescriptLanguage(),
 		functionNodeTypes: map[string]struct{}{
 			"function":                       {},
 			"function_declaration":           {},
@@ -174,7 +170,7 @@ var languageByExtension = map[string]languageSpec{
 		},
 	},
 	".java": {
-		language: java.GetLanguage(),
+		language: grammars.JavaLanguage(),
 		functionNodeTypes: map[string]struct{}{
 			"method_declaration":      {},
 			"constructor_declaration": {},
@@ -218,6 +214,23 @@ func (*TreeSitterExtractor) ExtractComments(path string, source []byte) ([]Node,
 	}, false, false)
 }
 
+// parseFull parses an entire source file with the given language.
+func parseFull(source []byte, lang *sitter.Language) (*sitter.Node, error) {
+	parser := sitter.NewParser(lang)
+	tree, err := parser.Parse(source)
+	if err != nil {
+		return nil, err
+	}
+	if tree == nil {
+		return nil, fmt.Errorf("tree-sitter returned nil tree")
+	}
+	root := tree.RootNode()
+	if root == nil {
+		return nil, fmt.Errorf("tree-sitter returned nil root")
+	}
+	return root, nil
+}
+
 // ExtractNamedNodes returns all named syntax nodes for supported languages.
 // This is intended for line-level structural heuristics where broad node coverage is needed.
 func ExtractNamedNodes(path string, source []byte) ([]Node, error) {
@@ -225,11 +238,11 @@ func ExtractNamedNodes(path string, source []byte) ([]Node, error) {
 	if !ok {
 		return nil, nil
 	}
-	root := sitter.Parse(source, spec.language)
-	if root == nil || root.IsNull() {
-		return nil, fmt.Errorf("tree-sitter failed to parse %s", path)
+	root, err := parseFull(source, spec.language)
+	if err != nil {
+		return nil, fmt.Errorf("tree-sitter failed to parse %s: %w", path, err)
 	}
-	return collectNamedNodes(root), nil
+	return collectNamedNodes(root, spec.language), nil
 }
 
 // ExtractNamedNodesInRanges is the range-limited counterpart of ExtractNamedNodes.
@@ -253,28 +266,30 @@ func ExtractNamedNodesInRanges(path string, source []byte, ranges []LineRange) (
 	if len(sitterRanges) == 0 {
 		return nil, nil
 	}
-	parser := sitter.NewParser()
-	parser.SetLanguage(spec.language)
+	parser := sitter.NewParser(spec.language)
 	parser.SetIncludedRanges(sitterRanges)
-	tree := parser.Parse(source)
+	tree, err := parser.Parse(source)
+	if err != nil {
+		return nil, fmt.Errorf("tree-sitter failed to parse %s: %w", path, err)
+	}
 	if tree == nil {
-		return nil, fmt.Errorf("tree-sitter failed to parse %s", path)
+		return nil, fmt.Errorf("tree-sitter returned nil tree for %s", path)
 	}
 	root := tree.RootNode()
-	if root == nil || root.IsNull() {
-		return nil, fmt.Errorf("tree-sitter failed to parse %s", path)
+	if root == nil {
+		return nil, fmt.Errorf("tree-sitter returned nil root for %s", path)
 	}
-	return collectNamedNodes(root), nil
+	return collectNamedNodes(root, spec.language), nil
 }
 
 // collectNamedNodes is the shared walker used by ExtractNamedNodes and
 // ExtractNamedNodesInRanges. It descends through unnamed nodes and emits one
 // entry per named node, capturing its line/column extents.
-func collectNamedNodes(root *sitter.Node) []Node {
+func collectNamedNodes(root *sitter.Node, lang *sitter.Language) []Node {
 	nodes := make([]Node, 0, 128)
 	var walk func(*sitter.Node)
 	walk = func(node *sitter.Node) {
-		if node == nil || node.IsNull() {
+		if node == nil {
 			return
 		}
 		if node.IsNamed() {
@@ -284,8 +299,8 @@ func collectNamedNodes(root *sitter.Node) []Node {
 				endLine = startLine
 			}
 			nodes = append(nodes, Node{
-				ID:        fmt.Sprintf("%d:%d:%s:%d:%d", startLine, endLine, node.Type(), node.StartPoint().Column, node.EndPoint().Column),
-				Type:      "ast:" + node.Type(),
+				ID:        fmt.Sprintf("%d:%d:%s:%d:%d", startLine, endLine, node.Type(lang), node.StartPoint().Column, node.EndPoint().Column),
+				Type:      "ast:" + node.Type(lang),
 				Name:      "",
 				Text:      "",
 				StartLine: startLine,
@@ -293,12 +308,12 @@ func collectNamedNodes(root *sitter.Node) []Node {
 				EndLine:   endLine,
 				EndCol:    int(node.EndPoint().Column),
 			})
-			for i := 0; i < int(node.NamedChildCount()); i++ {
+			for i := 0; i < node.NamedChildCount(); i++ {
 				walk(node.NamedChild(i))
 			}
 			return
 		}
-		for i := 0; i < int(node.ChildCount()); i++ {
+		for i := 0; i < node.ChildCount(); i++ {
 			walk(node.Child(i))
 		}
 	}
@@ -400,37 +415,37 @@ func extractByTypes(
 		return nil, nil
 	}
 	nodeTypes := typeSelector(spec)
-	root := sitter.Parse(source, spec.language)
-	if root == nil || root.IsNull() {
-		return nil, fmt.Errorf("tree-sitter failed to parse %s", path)
+	root, err := parseFull(source, spec.language)
+	if err != nil {
+		return nil, fmt.Errorf("tree-sitter failed to parse %s: %w", path, err)
 	}
 	nodes := make([]Node, 0, 32)
 	var walk func(*sitter.Node)
 	walk = func(node *sitter.Node) {
-		if node == nil || node.IsNull() {
+		if node == nil {
 			return
 		}
-		if _, ok := nodeTypes[node.Type()]; ok {
-			nameNode := node.ChildByFieldName("name")
-			if nameNode == nil || nameNode.IsNull() {
-				for i := 0; i < int(node.NamedChildCount()); i++ {
+		if _, ok := nodeTypes[node.Type(spec.language)]; ok {
+			nameNode := node.ChildByFieldName("name", spec.language)
+			if nameNode == nil {
+				for i := 0; i < node.NamedChildCount(); i++ {
 					child := node.NamedChild(i)
-					switch child.Type() {
+					switch child.Type(spec.language) {
 					case "identifier", "field_identifier", "property_identifier",
 						"private_property_identifier":
 						nameNode = child
 					}
-					if nameNode != nil && !nameNode.IsNull() {
+					if nameNode != nil {
 						break
 					}
 				}
 			}
 			name := ""
-			if nameNode != nil && !nameNode.IsNull() {
-				name = strings.TrimSpace(nameNode.Content(source))
+			if nameNode != nil {
+				name = strings.TrimSpace(nameNode.Text(source))
 			}
 			if name == "" {
-				name = strings.TrimSpace(node.Content(source))
+				name = strings.TrimSpace(node.Text(source))
 			}
 			if requireName && name == "" {
 				goto recurse
@@ -441,10 +456,10 @@ func extractByTypes(
 				endLine = startLine
 			}
 			nodes = append(nodes, Node{
-				ID:        fmt.Sprintf("%d:%d:%s:%s", startLine, endLine, node.Type(), name),
-				Type:      "ast:" + node.Type(),
+				ID:        fmt.Sprintf("%d:%d:%s:%s", startLine, endLine, node.Type(spec.language), name),
+				Type:      "ast:" + node.Type(spec.language),
 				Name:      name,
-				Text:      strings.TrimSpace(node.Content(source)),
+				Text:      strings.TrimSpace(node.Text(source)),
 				StartLine: startLine,
 				StartCol:  int(node.StartPoint().Column),
 				EndLine:   endLine,
@@ -453,12 +468,12 @@ func extractByTypes(
 		}
 	recurse:
 		if namedOnlyWalk {
-			for i := 0; i < int(node.NamedChildCount()); i++ {
+			for i := 0; i < node.NamedChildCount(); i++ {
 				walk(node.NamedChild(i))
 			}
 			return
 		}
-		for i := 0; i < int(node.ChildCount()); i++ {
+		for i := 0; i < node.ChildCount(); i++ {
 			walk(node.Child(i))
 		}
 	}

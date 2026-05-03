@@ -10,8 +10,7 @@ import (
 	"github.com/go-git/go-git/v5/utils/merkletrie"
 	"github.com/meko-christian/hercules/internal/core"
 	"github.com/meko-christian/hercules/internal/plumbing"
-	"github.com/src-d/imports"
-	_ "github.com/src-d/imports/languages/all" // register the supported languages
+	"github.com/meko-christian/hercules/internal/plumbing/imports/lang"
 )
 
 // Extractor reports the imports in the changed files.
@@ -128,7 +127,7 @@ func (ex *Extractor) Initialize(repository *git.Repository) error {
 func (ex *Extractor) Consume(deps map[string]interface{}) (map[string]interface{}, error) {
 	changes := deps[plumbing.DependencyTreeChanges].(object.Changes)
 	cache := deps[plumbing.DependencyBlobCache].(map[gitplumbing.Hash]*plumbing.CachedBlob)
-	result := map[gitplumbing.Hash]imports.File{}
+	result := map[gitplumbing.Hash]lang.File{}
 	jobs := make(chan *object.Change, ex.Goroutines)
 	resultSync := sync.Mutex{}
 	wg := sync.WaitGroup{}
@@ -143,7 +142,7 @@ func (ex *Extractor) Consume(deps map[string]interface{}) (map[string]interface{
 						blob.Size, ex.MaxFileSize)
 					continue
 				}
-				file, err := imports.Extract(change.To.TreeEntry.Name, blob.Data)
+				file, err := lang.Extract(change.To.TreeEntry.Name, blob.Data)
 				if err != nil {
 					ex.l.Errorf("failed to extract imports from %s %s: %v",
 						change.To.TreeEntry.Name, change.To.TreeEntry.Hash.String(), err)

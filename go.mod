@@ -1,6 +1,6 @@
 module github.com/meko-christian/hercules
 
-go 1.18
+go 1.25.0
 
 require (
 	github.com/Masterminds/sprig v0.0.0-20180725212158-77bb58b7f5e1
@@ -11,13 +11,12 @@ require (
 	github.com/gogo/protobuf v1.3.2
 	github.com/meko-christian/go-billy-siva v0.5.1
 	github.com/mitchellh/go-homedir v1.1.0
+	github.com/odvcencio/gotreesitter v0.15.3
 	github.com/pkg/errors v0.9.1
 	github.com/sergi/go-diff v1.1.0
-	github.com/smacker/go-tree-sitter v0.0.0-20191127230340-5368dabef05e
 	github.com/spf13/cobra v0.0.3
 	github.com/spf13/pflag v1.0.3
 	github.com/src-d/enry/v2 v2.1.0
-	github.com/src-d/imports v0.0.0-20191128152346-bf22b73550b0
 	github.com/stretchr/testify v1.7.0
 	golang.org/x/crypto v0.3.0
 	gopkg.in/cheggaaa/pb.v1 v1.0.20
@@ -59,9 +58,7 @@ require (
 	gopkg.in/src-d/go-siva.v1 v1.7.0 // indirect
 	gopkg.in/toqueteos/substring.v1 v1.0.2 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
-	gopkg.in/yaml.v3 v3.0.0 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-replace github.com/smacker/go-tree-sitter => github.com/dennwc/go-tree-sitter v0.0.0-20191127160809-cea124db9399
 
 replace github.com/meko-christian/go-billy-siva => github.com/cyraxred/go-billy-siva v0.5.1

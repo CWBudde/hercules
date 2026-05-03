@@ -20,11 +20,14 @@ Completed items are listed only when they clarify the current state or unblock p
 
 ## Current remaining focus (short list)
 
-1. **Drop cgo (Milestone 1b)** — pure-Go LZ4 is now the default (`-tags cgo_lz4` retained as opt-in); `internal/rbtree` builds and tests cleanly with `CGO_ENABLED=0`. Full cgo-free `cmd/hercules` builds are still blocked by the tree-sitter bindings (cgo); see Milestone 1c.
+1. ~~**Milestone 1 — Dependency modernization (drop cgo)**~~ — done. The default
+  build is now cgo-free: pure-Go LZ4 is the default, `gotreesitter` replaced
+  the old bindings, `src-d/imports` was removed, and CI/docs cover
+  `CGO_ENABLED=0` builds and cross-compiles.
 2. **Complete larger P1/P2 milestones**
-   - Scaling presets + large-repo validation.
-   - Output schema contracts and compatibility checks.
-   - Onboarding/hotspot/report polish.
+   - Scaling presets + large-repo validation (Milestone 2).
+   - Output schema contracts and compatibility checks (Milestone 3).
+   - Onboarding/hotspot/report polish (Milestone 4).
 
 ## Milestones
 
@@ -32,102 +35,12 @@ Completed items are listed only when they clarify the current state or unblock p
 
 Status: **complete**.
 
-- [x] **Tree-sitter migration completed for structural analyses**
-  - [x] `shotness` moved to tree-sitter-only implementation.
-  - [x] `research/typos-dataset` moved to tree-sitter-only implementation.
-  - [x] `sentiment` comment extraction moved to tree-sitter path (`-tags tensorflow` build).
-  - [x] Legacy parser-specific plumbing and tests removed from the codebase.
+Milestone 1 is now here only to record the resulting baseline.
 
-- [x] **Modularize TensorFlow usage (keep default build light)**
-  - [x] Ensure Couples and Sentiment behave sensibly when built without TensorFlow:
-    - [x] Couples: still produces usable non-embedding output (or a clear “feature unavailable” message).
-    - [x] Sentiment: remains behind build tag and is explicitly described as experimental.
-    - [x] Non-`tensorflow` builds now provide explicit runtime/build-tag guidance when `--sentiment` is requested.
-  - [x] Evaluate a pure-Go replacement only if needed (do not block the milestone on this).
-    - [x] Decision: not required for Milestone 1; keep current optional TensorFlow path and revisit only if usage data shows a need.
-  - [x] Acceptance: default build does not require TensorFlow and doesn’t crash when relevant flags are used.
-    - [x] Verified (2026-02-15): `go build ./cmd/hercules` (default), `--couples --head` succeeds, `--sentiment --head` exits with explicit rebuild guidance (`rebuild with -tags tensorflow`).
-
-- [x] **Finish legacy UAST surface cleanup**
-  - Status: **legacy surfaces removed or replaced in this fork**.
-  - [x] Legacy UAST output paths transitioned in this fork:
-    - [x] Babelfish-backed `--dump-uast-changes` removed.
-    - [x] Tree-sitter replacement for `--dump-uast-changes` implemented.
-    - [x] `FileDiffRefiner` (UAST-based) removed from pipeline.
-    - [x] Add a short migration note in docs/changelog describing removal and impact.
-  - [x] Define replacement strategy for removed functionality:
-    - [x] Decide whether a tree-sitter-backed commit-level AST dump mode is needed.
-      - [x] Decision: yes.
-    - [x] Design and implement a replacement for `--dump-uast-changes` with tests.
-      - [x] Implemented via `UASTChangesSaver` tree-sitter dump mode.
-    - [x] Decide whether a tree-sitter-based diff-refinement pass should be added to `FileDiff`.
-      - [x] Decision: yes. Add a tree-sitter-backed refinement pass directly in `FileDiff` (enabled by default, opt-out via `--no-diff-refine`).
-    - [x] Implement refinement pass and acceptance tests for human-readable diff quality.
-      - [x] Implemented in `internal/plumbing/diff.go` with deterministic unit tests.
-  - [x] Decide whether protobuf messages named `UAST*` should be renamed or kept for compatibility.
-    - [x] Decision: removed from schema for this fork (intentional protobuf compatibility break).
-  - [x] Decide whether `--shotness-xpath-*` compatibility flags should be removed or kept as ignored aliases.
-    - [x] Decision: removed from CLI/runtime in this fork.
-  - [x] Remove stale docs/examples that still imply XPath/UAST workflows.
-  - [x] Once replacement decisions are finalized, update README migration notes with the final replacement guidance.
-
-### Milestone 1b — Remove cgo from LZ4 (P0)
-
-Status: **complete** (pure-Go LZ4 is the default; cgo path retained as opt-in via `-tags cgo_lz4`).
-
-Why: the single cgo call in `internal/rbtree/lz4.go` forced a C toolchain for every build,
-broke pure cross-compilation (`GOOS=windows CGO_ENABLED=0`), and contradicted the goal of a
-dependency-light default binary.  The surface is tiny (two functions), so the replacement cost is low.
-
-- [x] **Replace C LZ4 wrapper with pure-Go LZ4**
-  - [x] Add `github.com/cwbudde/lz4` (fork of `github.com/pierrec/lz4/v4`) as a dependency.
-  - [x] Implement `CompressUInt32Slice` / `DecompressUInt32Slice` in `lz4_purego.go` using
-        `lz4.CompressBlockHC` / `lz4.UncompressBlock`, preserving the existing function signatures.
-  - [x] Pure-Go is now the default; cgo path retained behind `//go:build cgo_lz4`.
-        `go build ./cmd/hercules` selects the pure-Go path; `go build -tags cgo_lz4 ./cmd/hercules`
-        opts back into the cgo wrapper.
-  - [x] Verify round-trip tests pass on both paths (`go test ./internal/rbtree`,
-        `go test -tags cgo_lz4 ./internal/rbtree`).
-  - [x] Add comprehensive benchmark suite (`lz4_bench_test.go`) covering 1k/10k/100k inputs
-        across uniform, random, and realistic distributions.
-
-- **Performance findings** (amd64, i7-1255U):
-  - Compress — real-world (random/realistic) data: pure-Go is **7–70× faster** than cgo LZ4-HC.
-    Uniform data at large sizes is 2–4× slower (artificial worst case rarely seen in practice).
-  - Compress — memory: 1 alloc/op vs 2 allocs/op for cgo (10% improvement).
-  - Decompress — random/realistic: comparable or faster. Uniform data at 10k/100k: 3–4× slower
-    (still sub-millisecond; not a bottleneck in the hibernation path which is compress-bound).
-  - Conclusion: pure-Go is the better default for this workload.
-
-- [x] **Cross-compilation smoke test for `internal/rbtree`** (the LZ4 package)
-  - [x] `GOOS=linux  GOARCH=arm64 CGO_ENABLED=0 go build ./internal/rbtree` — succeeds.
-  - [x] `GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build ./internal/rbtree` — succeeds.
-  - [x] CI smoke test added in `.github/workflows/test-crosscompile.yaml`.
-  - Note: a full cgo-free `cmd/hercules` build is still blocked by the tree-sitter
-    bindings; see Milestone 1c.
-
-- [x] **Update docs**
-  - [x] README "Build tags and optional dependencies" notes that the default LZ4 path is
-        pure-Go (`github.com/cwbudde/lz4`) and that `-tags cgo_lz4` opts back into cgo.
-  - [x] README explicitly notes that the binary still links cgo because of tree-sitter
-        bindings, even though `internal/rbtree` is cgo-free.
-
-### Milestone 1c — Make `cmd/hercules` cgo-free (P1)
-
-Status: **not started**.
-
-Why: with LZ4 converted, the only remaining cgo dependency in the default build is the
-`smacker/go-tree-sitter` bindings (`csharp`, `javascript`, `python`, `typescript`, …).
-Removing this is the last step required to satisfy the top-level goal of a fully
-cgo-free default `go build ./cmd/hercules` and unlocks pure cross-compilation.
-
-- [ ] Evaluate replacement options:
-  - [ ] WASM-compiled tree-sitter grammars driven from pure Go (`wazero` runtime).
-  - [ ] Pure-Go ports of the relevant grammars (where they exist and are maintained).
-  - [ ] Dropping language coverage we don't actually use in shotness/typos-dataset.
-- [ ] Implement chosen path behind a build tag first, then flip the default.
-- [ ] Acceptance: `CGO_ENABLED=0 go build ./cmd/hercules` succeeds on linux/arm64 and
-      windows/amd64 in CI.
+- [x] **cgo-free default build**: `CGO_ENABLED=0 go build ./cmd/hercules` succeeds, cross-compiles are verified for linux/{amd64,arm64}, windows/amd64, and darwin/arm64, and CI runs both the matrix and a `CGO_ENABLED=0` test job.
+- [x] **Legacy parser/UAST cleanup**: structural analyses are tree-sitter-only, Babelfish-backed surfaces are gone, and `--dump-uast-changes` plus diff refinement now use the replacement tree-sitter implementations.
+- [x] **Dependency simplification**: `internal/rbtree` uses pure-Go LZ4 by default (`-tags cgo_lz4` remains opt-in), `internal/plumbing/ast` uses `github.com/odvcencio/gotreesitter`, and `src-d/imports` was replaced by the in-tree implementation under `internal/plumbing/imports/lang`.
+- [x] **Optional features remain optional**: TensorFlow-backed sentiment stays behind the `tensorflow` build tag, and non-`tensorflow` builds return explicit guidance instead of failing ambiguously.
 
 ### Milestone 2 — Large-repo scaling & operational safety (P1)
 
@@ -141,7 +54,7 @@ Why: even a correct tool fails “in practice” if it OOMs or needs a handbook 
     - [x] LineHistory hibernation already supported; `large-repo` preset enables it by default.
   - [ ] Acceptance: a documented command set completes without OOM and with reproducible results.
 
-- [ ] **Tree-sitter memory reduction (follow-up to `--diff-refine-max-file-size`)**
+- [x] **Tree-sitter memory reduction (follow-up to `--diff-refine-max-file-size`)**
   - [x] **Phase 1 – Line-count threshold** (quick win): add `--diff-refine-max-lines` alongside
         the existing byte-size gate (`--diff-refine-max-file-size`). Files exceeding N lines
         (suggested default: 5 000) skip refinement. Handles minified/generated files where byte

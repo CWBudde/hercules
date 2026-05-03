@@ -8,8 +8,8 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/meko-christian/hercules/internal/core"
 	"github.com/meko-christian/hercules/internal/plumbing"
+	"github.com/meko-christian/hercules/internal/plumbing/imports/lang"
 	"github.com/meko-christian/hercules/internal/test"
-	"github.com/src-d/imports"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -97,7 +97,7 @@ func TestExtractorConsumeModification(t *testing.T) {
 	assert.Equal(t, len(result), 1)
 	exIface, exists := result[DependencyImports]
 	assert.True(t, exists)
-	ex := exIface.(map[gitplumbing.Hash]imports.File)
+	ex := exIface.(map[gitplumbing.Hash]lang.File)
 	assert.Len(t, ex, 1)
 	file := ex[gitplumbing.NewHash("c872b8d2291a5224e2c9f6edd7f46039b96b4742")]
 	assert.Equal(t, "labours.py", file.Path)

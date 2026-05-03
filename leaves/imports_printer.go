@@ -16,8 +16,8 @@ import (
 	"github.com/meko-christian/hercules/internal/plumbing"
 	"github.com/meko-christian/hercules/internal/plumbing/identity"
 	"github.com/meko-christian/hercules/internal/plumbing/imports"
+	importslang "github.com/meko-christian/hercules/internal/plumbing/imports/lang"
 	"github.com/meko-christian/hercules/internal/yaml"
-	imports2 "github.com/src-d/imports"
 )
 
 // ImportsMap is the type of the mapping from dev indexes to languages to import names to ticks to
@@ -119,7 +119,7 @@ func (ipd *ImportsPerDeveloper) Initialize(repository *git.Repository) error {
 // in Provides(). If there was an error, nil is returned.
 func (ipd *ImportsPerDeveloper) Consume(deps map[string]interface{}) (map[string]interface{}, error) {
 	author := deps[identity.DependencyAuthor].(int)
-	imps := deps[imports.DependencyImports].(map[gitplumbing.Hash]imports2.File)
+	imps := deps[imports.DependencyImports].(map[gitplumbing.Hash]importslang.File)
 	aimps := ipd.imports[author]
 	tick := deps[plumbing.DependencyTick].(int)
 	if aimps == nil {

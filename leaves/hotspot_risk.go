@@ -383,10 +383,7 @@ func (hra *HotspotRiskAnalysis) Finalize() interface{} {
 	// Normalize and calculate risk scores
 	hra.normalizeAndScore(risks)
 
-	// Sort by risk score descending
-	sort.Slice(risks, func(i, j int) bool {
-		return risks[i].RiskScore > risks[j].RiskScore
-	})
+	sortFileRisks(risks)
 
 	// Take top N
 	if len(risks) > hra.TopN {
@@ -460,6 +457,15 @@ func (hra *HotspotRiskAnalysis) normalizeAndScore(risks []FileRisk) {
 
 		risks[i].RiskScore = score
 	}
+}
+
+func sortFileRisks(risks []FileRisk) {
+	sort.Slice(risks, func(i, j int) bool {
+		if risks[i].RiskScore == risks[j].RiskScore {
+			return risks[i].Path < risks[j].Path
+		}
+		return risks[i].RiskScore > risks[j].RiskScore
+	})
 }
 
 // calculateGini computes the Gini coefficient for line ownership distribution
@@ -614,9 +620,7 @@ func (hra *HotspotRiskAnalysis) MergeResults(r1, r2 interface{}, c1, c2 *core.Co
 	cr2 := r2.(HotspotRiskResult)
 
 	allFiles := append(cr1.Files, cr2.Files...)
-	sort.Slice(allFiles, func(i, j int) bool {
-		return allFiles[i].RiskScore > allFiles[j].RiskScore
-	})
+	sortFileRisks(allFiles)
 
 	if len(allFiles) > hra.TopN {
 		allFiles = allFiles[:hra.TopN]

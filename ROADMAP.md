@@ -111,11 +111,11 @@ Status: **open**.
   - [x] Add one usage example and one screenshot in docs.
   - [x] Acceptance: one command produces a clear onboarding chart for a real repo.
 
-- [ ] **Hotspot risk score: add deterministic Go tests**
-  - [ ] Add `leaves/hotspot_risk_test.go` with fixed fixture data.
-  - [ ] Verify ranking (top-N and tie-handling), factor scaling, and windowing.
-  - [ ] Verify YAML/PB serialization shape.
-  - [ ] Acceptance: `go test ./leaves -run HotspotRisk` is stable and meaningful.
+- [x] **Hotspot risk score: add deterministic Go tests**
+  - [x] Add `leaves/hotspot_risk_test.go` with fixed fixture data.
+  - [x] Verify ranking (top-N and tie-handling), factor scaling, and windowing.
+  - [x] Verify YAML/PB serialization shape.
+  - [x] Acceptance: `go test ./leaves -run HotspotRisk` is stable and meaningful.
 
 - [ ] **One-command reports: finish the “easy path”**
   - [ ] Audit `hercules report` and current labours invocation flow.

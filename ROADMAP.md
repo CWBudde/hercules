@@ -20,14 +20,14 @@ Completed items are listed only when they clarify the current state or unblock p
 
 ## Current remaining focus (short list)
 
-1. ~~**Milestone 1 — Dependency modernization (drop cgo)**~~ — done. The default
-  build is now cgo-free: pure-Go LZ4 is the default, `gotreesitter` replaced
-  the old bindings, `src-d/imports` was removed, and CI/docs cover
-  `CGO_ENABLED=0` builds and cross-compiles.
-2. **Complete larger P1/P2 milestones**
-   - Scaling presets + large-repo validation (Milestone 2).
-   - Output schema contracts and compatibility checks (Milestone 3).
-   - Onboarding/hotspot/report polish (Milestone 4).
+1. **Finish the remaining P1 contract work**: PB schema versioning and CI
+   compatibility checks (Milestone 3).
+2. **Close P2 usability gaps**: onboarding labours mode, hotspot-risk tests, and
+   report easy path (Milestone 4).
+3. **Prepare release hygiene**: documentation, quality gates, version policy, and
+   migration notes (Milestone 6).
+4. **Defer or explicitly mark experimental work**: advanced pipeline support,
+   identity audit flows, JSON export, and sentiment caveats.
 
 ## Milestones
 
@@ -35,117 +35,80 @@ Completed items are listed only when they clarify the current state or unblock p
 
 Status: **complete**.
 
-Milestone 1 is now here only to record the resulting baseline.
-
-- [x] **cgo-free default build**: `CGO_ENABLED=0 go build ./cmd/hercules` succeeds, cross-compiles are verified for linux/{amd64,arm64}, windows/amd64, and darwin/arm64, and CI runs both the matrix and a `CGO_ENABLED=0` test job.
-- [x] **Legacy parser/UAST cleanup**: structural analyses are tree-sitter-only, Babelfish-backed surfaces are gone, and `--dump-uast-changes` plus diff refinement now use the replacement tree-sitter implementations.
-- [x] **Dependency simplification**: `internal/rbtree` uses pure-Go LZ4 by default (`-tags cgo_lz4` remains opt-in), `internal/plumbing/ast` uses `github.com/odvcencio/gotreesitter`, and `src-d/imports` was replaced by the in-tree implementation under `internal/plumbing/imports/lang`.
-- [x] **Optional features remain optional**: TensorFlow-backed sentiment stays behind the `tensorflow` build tag, and non-`tensorflow` builds return explicit guidance instead of failing ambiguously.
+Baseline now in place: the default build is cgo-free, structural analyses are
+tree-sitter-only, legacy Babelfish/UAST surfaces are gone, `src-d/imports` was
+replaced by in-tree import handling, pure-Go LZ4 is the default, and
+TensorFlow-backed sentiment remains behind the `tensorflow` build tag.
 
 ### Milestone 2 — Large-repo scaling & operational safety (P1)
 
+Status: **core complete; optional validation remains**.
+
 Why: even a correct tool fails “in practice” if it OOMs or needs a handbook of flags.
 
-- [x] **Performance & memory validation on a large repository**
-  - [x] Run a "big repo" benchmark suite (kernel or similarly large history).
-        Implemented as `scripts/bench-large-repo.sh` (also `just bench-large-repo
-        <REPO_PATH>`); reference target is CPython (≈ 112 401 commits) — the
-        kernel was deferred for disk-pressure reasons but the script accepts
-        any local clone.
-  - [x] Record baseline runtime + peak RSS for a small set of representative analyses.
-        Four configurations (`quick`, `burndown-fp`, `burndown-lr`, `devs-fp`)
-        timed under `/usr/bin/time -v`. CPython results: full burndown in
-        ~ 15 min at ~ 2.1 GiB peak RSS on an i7-1255U. Throughput
-        ≈ 120 commits/s for burndown. See [docs/SCALING.md](docs/SCALING.md).
-  - [x] Validate hibernation paths (in-memory vs disk) and confirm they prevent OOM.
-    - [x] BurndownAnalysis now implements `HibernateablePipelineItem` (gob+flate serialization with optional disk spill).
-    - [x] LineHistory hibernation already supported; `large-repo` preset enables it by default.
-    - [x] CPython benchmark run did not trigger hibernation (per-branch state stays
-          under the 200 000-entry threshold), confirming the preset is sized for
-          repos meaningfully larger than CPython — kernel-class.
-  - [x] Acceptance: a documented command set completes without OOM and with reproducible results.
-        See [docs/SCALING.md § Acceptance](docs/SCALING.md#acceptance-no-oom-command-set).
+Completed baseline:
 
-- [x] **Tree-sitter memory reduction (follow-up to `--diff-refine-max-file-size`)**
-  - [x] **Phase 1 – Line-count threshold** (quick win): add `--diff-refine-max-lines` alongside
-        the existing byte-size gate (`--diff-refine-max-file-size`). Files exceeding N lines
-        (suggested default: 5 000) skip refinement. Handles minified/generated files where byte
-        size alone is insufficient. Change is ~10 lines in `internal/plumbing/diff.go`.
-  - [x] **Phase 2 – Range-limited parsing**: `ExtractNamedNodesInRanges` (added in
-        `internal/plumbing/ast/treesitter.go`) drives a `*sitter.Parser` with
-        `SetIncludedRanges()` so the parse only touches the line intervals consulted
-        by the node-density heuristic. Routing in `extractNodesForRefinement`
-        (`internal/plumbing/diff.go`) selects the strategy per-file:
-    - **Size gate** (`refineRangeMinLines = 1000`): files with fewer than 1 000
-      new-file lines always full-parse — no perf gain to chase, and avoids any
-      possibility of drift on small files.
-    - **Coverage threshold** (`refineCoverageThreshold = 0.5`): if padded ranges
-      cover ≥ 50 % of the new file, fall back to full parse.
-    - **Range padding** (`refineRangePadding = 4`): each computed range is
-      extended by 4 lines on either side before being handed to tree-sitter,
-      giving the grammar enough surrounding tokens to resolve context-sensitive
-      constructs the same way it would in a full-file parse.
-    - **Mode flag** (`--diff-refine-mode=auto|full|range`, default `auto`):
-      `full` restores bit-identical pre-Phase-2 output; `range` always uses
-      included-ranges parsing when at least one range exists; `auto` applies the
-      heuristics above.
-  - **Benchmark** (5 000-line synthetic Go file, single 10-line edit, amd64 i7-1255U):
-    - Full-file parse: 40.8 ms · 17.3 MB · 158 k allocs
-    - Range-limited (10 lines): 0.16 ms · 162 KB · 373 allocs
-    - ≈ 250× faster, ≈ 107× less memory, ≈ 420× fewer allocations.
-  - **Output stability**: with the size gate + padding active, a
-    `hercules --burndown --first-parent` smoke run on this repo is
-    bit-identical to the pre-Phase-2 baseline (only `hash` and `run_time`
-    metadata fields differ). End-to-end runtime drops from 17.8 s to 3.3 s.
-  - [x] Acceptance: peak RSS on files exercised by the new path is measurably lower
-        without `--no-diff-refine` (benchmark above). Big-repo RSS validation is
-        tracked under "Performance & memory validation on a large repository" above.
+- Large-repo benchmark workflow exists as `scripts/bench-large-repo.sh` and
+  `just bench-large-repo <REPO_PATH>`, with CPython baseline results documented
+  in [docs/SCALING.md](docs/SCALING.md).
+- Hibernation support covers LineHistory and BurndownAnalysis, and the
+  `large-repo` preset enables conservative spill behavior by default.
+- Diff refinement now has byte, line-count, and range-limited tree-sitter gates;
+  smoke output stayed stable while synthetic large-file parsing became
+  materially cheaper.
+- `--preset quick` and `--preset large-repo` provide documented starting points,
+  with explicit flags overriding preset defaults.
 
-- [x] **Add scaling presets (`--preset`)**
-  - [x] Implement presets with clear precedence rules (explicit flags override preset defaults).
-  - [x] Provide at least:
-    - `large-repo` (first-parent + hibernation threshold 200k + disk spill + granularity/sampling 30)
-    - `quick` (fast "overview" run via `--head`)
-  - [x] Acceptance: the README recommends presets and users can get a first result without tuning.
-        See the "Presets" section in [README.md](README.md#presets).
+Remaining:
 
-- [ ] **(Optional) Validate “advanced” pipeline features**
-  - [ ] Merge tracking correctness tests.
-  - [ ] Plugin compatibility smoke test.
-  - [ ] Acceptance: documented as supported or explicitly marked experimental.
+- [ ] **Validate or demote advanced pipeline features**
+  - [ ] Add merge-tracking correctness tests that exercise non-linear histories.
+  - [ ] Add a plugin compatibility smoke test that loads a minimal plugin.
+  - [ ] Decide whether each advanced path is supported or experimental, then
+        document that status in README/help text.
+  - [ ] Acceptance: advanced pipeline behavior is either covered by tests or
+        explicitly documented as experimental.
 
 ### Milestone 3 — Output contracts & compatibility checks (P1)
 
+Status: **open**.
+
 Why: stable tooling needs stable schemas; otherwise every downstream consumer is fragile.
 
-- [x] **Document existing YAML/PB schemas**
-  - [x] Extract the effective YAML structure from each `Serialize()` implementation and write reference docs.
-  - [x] Provide one example payload per analysis (small and readable).
-  - [x] Acceptance: a reader can write a parser without reading Go code.
-  - [x] Reference: `docs/SCHEMAS.md`.
+Completed baseline: existing YAML/PB output structures and examples are
+documented in [docs/SCHEMAS.md](docs/SCHEMAS.md).
 
 - [ ] **Freeze and version the PB schema**
-  - [ ] Introduce a schema version policy (semantic versioning).
-  - [ ] Use `reserved` fields for removals.
-  - [ ] Acceptance: PB changes are intentional and reviewed as compatibility changes.
+  - [x] Define the schema version policy.
+  - [ ] Define where the current schema version is emitted.
+  - [x] Document compatible vs. breaking PB changes.
+  - [ ] Reserve removed field numbers/names in `.proto` files.
+  - [x] Add a changelog entry format for schema changes.
+  - [ ] Acceptance: PB changes can be reviewed against a written compatibility policy.
 
 - [ ] **Add CI guardrails for schema changes**
-  - [ ] Add a check that flags incompatible PB changes.
-  - [ ] Acceptance: breaking changes require an explicit version bump + changelog entry.
+  - [x] Add a generated descriptor or equivalent schema snapshot.
+  - [x] Add a CI check that flags PB schema changes.
+  - [ ] Require an explicit version bump and changelog entry for breaking changes.
+  - [ ] Acceptance: accidental breaking PB changes fail CI and intentional changes
+        point to the version/changelog decision.
 
-- [ ] **(Optional) JSON export mode**
+- [ ] **Decide on JSON export mode**
+  - [ ] Confirm whether downstream users need native JSON or whether YAML/PB is enough.
   - [ ] Add `--json` output for direct consumption (not via labours).
   - [ ] Provide JSON Schemas per analysis.
-  - [ ] Acceptance: JSON output is documented and stable.
+  - [ ] Acceptance: either JSON is documented and stable, or the roadmap records why it is deferred.
 
 ### Milestone 4 — Close “partial” features (P2)
 
+Status: **open**.
+
 - [ ] **Onboarding ramp: labours visualization**
   - [ ] Define the chart input mapping from `OnboardingResults`.
-  - [ ] Implement `python/labours/modes/onboarding.py` (cohort heatmap).
-  - [ ] Add per-author ramp plot (overlay or small multiples).
+  - [ ] Implement `python/labours/modes/onboarding.py` with a cohort heatmap.
+  - [ ] Add a per-author ramp plot if it stays readable on a real repo.
   - [ ] Register mode so `labours -m onboarding` works.
-  - [ ] Add one usage example + one screenshot in docs.
+  - [ ] Add one usage example and one screenshot in docs.
   - [ ] Acceptance: one command produces a clear onboarding chart for a real repo.
 
 - [ ] **Hotspot risk score: add deterministic Go tests**
@@ -155,17 +118,22 @@ Why: stable tooling needs stable schemas; otherwise every downstream consumer is
   - [ ] Acceptance: `go test ./leaves -run HotspotRisk` is stable and meaningful.
 
 - [ ] **One-command reports: finish the “easy path”**
-  - [ ] Add a `just report` recipe if it still adds value alongside `hercules report`.
+  - [ ] Audit `hercules report` and current labours invocation flow.
+  - [ ] Add a `just report` recipe only if it removes real first-run friction.
+  - [ ] Document the recommended report command in README.
   - [ ] Acceptance: first-time users can generate a report without knowing labours flags.
 
 ### Milestone 5 — Identity correctness & auditability (P2/P3)
 
+Status: **open; after P1 contracts**.
+
 Why: identity errors silently corrupt multiple downstream metrics.
 
-- [ ] **Additional heuristics**
+- [ ] **Improve identity merge heuristics**
   - [ ] GitHub username resolution via commit trailers (`Co-authored-by:`).
   - [ ] Fuzzy matching for name variants (Levenshtein or Jaro-Winkler).
   - [ ] Configurable confidence threshold for automatic merges.
+  - [ ] Acceptance: heuristic decisions are deterministic and covered by fixtures.
 
 - [ ] **Identity audit report (`--identity-audit`)**
   - [ ] Emit all detected identities and merge decisions with confidence.
@@ -178,6 +146,8 @@ Why: identity errors silently corrupt multiple downstream metrics.
   - [ ] Acceptance: identity refinement becomes an explicit workflow step.
 
 ### Milestone 6 — Documentation & release hygiene (P2)
+
+Status: **open**.
 
 - [ ] **Update README / docs to match reality**
   - [ ] Installation steps (including optional build tags).
@@ -193,6 +163,7 @@ Why: identity errors silently corrupt multiple downstream metrics.
 - [ ] **Release preparation**
   - [ ] Confirm `--version` and version policy.
   - [ ] Add a short migration guide for users of the old upstream.
+  - [ ] Confirm release artifacts build with the default cgo-free configuration.
   - [ ] Acceptance: a tagged release is buildable and documented.
 
 ## Test & validation matrix (what to run while working)
@@ -222,8 +193,9 @@ go test ./leaves
 - **Remote repository cloning support (HTTPS/SSH)**: nice to have, but not core to correctness; can be handled externally by cloning locally.
   - Revisit after scaling presets and schema contracts are solid.
 
-- **Caching**: postpone until real-world perf numbers exist; premature caching risks wrong-by-default behavior.
-  - Revisit after Milestone 2 benchmarks.
+- **Caching**: still deferred until repeated real-world workloads show a stable
+  bottleneck; premature caching risks wrong-by-default behavior.
+  - Revisit after schema contracts and release hygiene are in place.
 
 ## Low-effort correctness/UX fixes (small wins)
 

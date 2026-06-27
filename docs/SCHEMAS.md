@@ -610,7 +610,35 @@ TyposDataset:
 ## Compatibility Notes
 
 - PB envelope and message definitions: `internal/pb/pb.proto`.
+- PB field compatibility is guarded by `internal/pb/pb.schema.json` and
+  `internal/pb/schema_snapshot_test.go`. Run
+  `UPDATE_PB_SCHEMA_SNAPSHOT=1 go test ./internal/pb -run TestProtobufSchemaSnapshot -count=1`
+  only after reviewing the compatibility impact.
 - `AnalysisResults.contents` keys use `Leaf.Name()` values (see table above).
 - `LineDumper` currently does not provide a protobuf payload.
 - `UASTChangesSaver` binary payload is JSON-bytes in `contents["UASTChangesSaver"]`.
 - `Sentiment` is behind build tag `tensorflow`; non-tensorflow builds expose the flag but return a clear runtime error.
+
+### PB Schema Change Policy
+
+Compatible changes:
+
+- Add a new field with a previously unused field number.
+- Add a new message that is not required by existing payloads.
+- Add comments or documentation without changing field names, types, labels, or numbers.
+
+Breaking changes:
+
+- Remove or rename a message or field.
+- Change a field number, type, label, map key type, or map value type.
+- Reuse a removed field number or name.
+- Change `AnalysisResults.contents` keys for an existing analysis.
+
+Required process for PB changes:
+
+1. Update `internal/pb/pb.proto`.
+2. If removing a field, add a `reserved` statement for its field number and name.
+3. Update this document and any affected examples.
+4. Record the change in `docs/SCHEMA_CHANGELOG.md`.
+5. Refresh `internal/pb/pb.schema.json` with the command above.
+6. Regenerate Go/Python protobuf files when required.

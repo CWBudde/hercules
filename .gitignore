@@ -78,6 +78,7 @@ python/build
 *.tsv
 *.tsv.gz
 *.json
+!internal/pb/pb.schema.json
 /.run/
 /bench-results/
 

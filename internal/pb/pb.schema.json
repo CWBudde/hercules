@@ -1,0 +1,1303 @@
+{
+  "messages": [
+    {
+      "name": "AnalysisResults",
+      "fields": [
+        {
+          "number": 1,
+          "name": "header",
+          "type": "Metadata"
+        },
+        {
+          "number": 2,
+          "name": "contents",
+          "type": "map",
+          "key": "string",
+          "value": "bytes"
+        },
+        {
+          "number": 3,
+          "name": "refactoring_proxy",
+          "type": "RefactoringProxyResults"
+        }
+      ]
+    },
+    {
+      "name": "AuthorOnboardingData",
+      "fields": [
+        {
+          "number": 1,
+          "name": "first_commit_tick",
+          "type": "int32"
+        },
+        {
+          "number": 2,
+          "name": "join_cohort",
+          "type": "string"
+        },
+        {
+          "number": 3,
+          "name": "snapshots",
+          "type": "map",
+          "key": "int32",
+          "value": "OnboardingSnapshot"
+        }
+      ]
+    },
+    {
+      "name": "BurndownAnalysisResults",
+      "fields": [
+        {
+          "number": 1,
+          "name": "granularity",
+          "type": "int32"
+        },
+        {
+          "number": 2,
+          "name": "sampling",
+          "type": "int32"
+        },
+        {
+          "number": 3,
+          "name": "project",
+          "type": "BurndownSparseMatrix"
+        },
+        {
+          "number": 4,
+          "name": "files",
+          "type": "BurndownSparseMatrix",
+          "label": "repeated"
+        },
+        {
+          "number": 5,
+          "name": "people",
+          "type": "BurndownSparseMatrix",
+          "label": "repeated"
+        },
+        {
+          "number": 6,
+          "name": "people_interaction",
+          "type": "CompressedSparseRowMatrix"
+        },
+        {
+          "number": 7,
+          "name": "files_ownership",
+          "type": "FilesOwnership",
+          "label": "repeated"
+        },
+        {
+          "number": 8,
+          "name": "tick_size",
+          "type": "int64"
+        },
+        {
+          "number": 9,
+          "name": "repository_sequence",
+          "type": "string",
+          "label": "repeated"
+        },
+        {
+          "number": 10,
+          "name": "repositories",
+          "type": "BurndownSparseMatrix",
+          "label": "repeated"
+        }
+      ]
+    },
+    {
+      "name": "BurndownSparseMatrix",
+      "fields": [
+        {
+          "number": 1,
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "number": 2,
+          "name": "number_of_rows",
+          "type": "int32"
+        },
+        {
+          "number": 3,
+          "name": "number_of_columns",
+          "type": "int32"
+        },
+        {
+          "number": 4,
+          "name": "rows",
+          "type": "BurndownSparseMatrixRow",
+          "label": "repeated"
+        }
+      ]
+    },
+    {
+      "name": "BurndownSparseMatrixRow",
+      "fields": [
+        {
+          "number": 1,
+          "name": "columns",
+          "type": "uint32",
+          "label": "repeated"
+        }
+      ]
+    },
+    {
+      "name": "BusFactorAnalysisResults",
+      "fields": [
+        {
+          "number": 1,
+          "name": "snapshots",
+          "type": "map",
+          "key": "int32",
+          "value": "BusFactorTickSnapshot"
+        },
+        {
+          "number": 2,
+          "name": "subsystem_bus_factor",
+          "type": "map",
+          "key": "string",
+          "value": "int32"
+        },
+        {
+          "number": 3,
+          "name": "dev_index",
+          "type": "string",
+          "label": "repeated"
+        },
+        {
+          "number": 4,
+          "name": "tick_size",
+          "type": "int64"
+        },
+        {
+          "number": 5,
+          "name": "threshold",
+          "type": "float"
+        }
+      ]
+    },
+    {
+      "name": "BusFactorTickSnapshot",
+      "fields": [
+        {
+          "number": 1,
+          "name": "bus_factor",
+          "type": "int32"
+        },
+        {
+          "number": 2,
+          "name": "total_lines",
+          "type": "int64"
+        },
+        {
+          "number": 3,
+          "name": "author_lines",
+          "type": "map",
+          "key": "int32",
+          "value": "int64"
+        }
+      ]
+    },
+    {
+      "name": "CodeChurnAnalysisResults",
+      "fields": [
+        {
+          "number": 1,
+          "name": "granularity",
+          "type": "int32"
+        },
+        {
+          "number": 2,
+          "name": "sampling",
+          "type": "int32"
+        },
+        {
+          "number": 3,
+          "name": "tick_size",
+          "type": "int64"
+        },
+        {
+          "number": 4,
+          "name": "people",
+          "type": "string",
+          "label": "repeated"
+        },
+        {
+          "number": 5,
+          "name": "authors",
+          "type": "CodeChurnAuthorStat",
+          "label": "repeated"
+        }
+      ]
+    },
+    {
+      "name": "CodeChurnAuthorStat",
+      "fields": [
+        {
+          "number": 1,
+          "name": "files",
+          "type": "CodeChurnFileStat",
+          "label": "repeated"
+        }
+      ]
+    },
+    {
+      "name": "CodeChurnDeleteHistory",
+      "fields": [
+        {
+          "number": 1,
+          "name": "author",
+          "type": "int32"
+        },
+        {
+          "number": 2,
+          "name": "current_tick",
+          "type": "int32"
+        },
+        {
+          "number": 3,
+          "name": "entries",
+          "type": "CodeChurnSparseHistoryEntry",
+          "label": "repeated"
+        }
+      ]
+    },
+    {
+      "name": "CodeChurnFileStat",
+      "fields": [
+        {
+          "number": 1,
+          "name": "file",
+          "type": "string"
+        },
+        {
+          "number": 2,
+          "name": "inserted_lines",
+          "type": "int32"
+        },
+        {
+          "number": 3,
+          "name": "owned_lines",
+          "type": "int32"
+        },
+        {
+          "number": 4,
+          "name": "memorability",
+          "type": "float"
+        },
+        {
+          "number": 5,
+          "name": "awareness",
+          "type": "float"
+        },
+        {
+          "number": 6,
+          "name": "delete_history",
+          "type": "CodeChurnDeleteHistory",
+          "label": "repeated"
+        }
+      ]
+    },
+    {
+      "name": "CodeChurnSparseHistoryEntry",
+      "fields": [
+        {
+          "number": 1,
+          "name": "previous_tick",
+          "type": "int32"
+        },
+        {
+          "number": 2,
+          "name": "delta",
+          "type": "int64"
+        }
+      ]
+    },
+    {
+      "name": "CohortStats",
+      "fields": [
+        {
+          "number": 1,
+          "name": "cohort",
+          "type": "string"
+        },
+        {
+          "number": 2,
+          "name": "author_count",
+          "type": "int32"
+        },
+        {
+          "number": 3,
+          "name": "average_snapshots",
+          "type": "map",
+          "key": "int32",
+          "value": "OnboardingAverageSnapshot"
+        }
+      ]
+    },
+    {
+      "name": "CommentSentimentResults",
+      "fields": [
+        {
+          "number": 1,
+          "name": "sentiment_by_tick",
+          "type": "map",
+          "key": "int32",
+          "value": "Sentiment"
+        }
+      ]
+    },
+    {
+      "name": "Commit",
+      "fields": [
+        {
+          "number": 1,
+          "name": "hash",
+          "type": "string"
+        },
+        {
+          "number": 2,
+          "name": "when_unix_time",
+          "type": "int64"
+        },
+        {
+          "number": 3,
+          "name": "author",
+          "type": "int32"
+        },
+        {
+          "number": 4,
+          "name": "files",
+          "type": "CommitFile",
+          "label": "repeated"
+        }
+      ]
+    },
+    {
+      "name": "CommitFile",
+      "fields": [
+        {
+          "number": 1,
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "number": 3,
+          "name": "language",
+          "type": "string"
+        },
+        {
+          "number": 4,
+          "name": "stats",
+          "type": "LineStats"
+        }
+      ]
+    },
+    {
+      "name": "CommitsAnalysisResults",
+      "fields": [
+        {
+          "number": 1,
+          "name": "commits",
+          "type": "Commit",
+          "label": "repeated"
+        },
+        {
+          "number": 2,
+          "name": "author_index",
+          "type": "string",
+          "label": "repeated"
+        }
+      ]
+    },
+    {
+      "name": "CompressedSparseRowMatrix",
+      "fields": [
+        {
+          "number": 1,
+          "name": "number_of_rows",
+          "type": "int32"
+        },
+        {
+          "number": 2,
+          "name": "number_of_columns",
+          "type": "int32"
+        },
+        {
+          "number": 3,
+          "name": "data",
+          "type": "int64",
+          "label": "repeated"
+        },
+        {
+          "number": 4,
+          "name": "indices",
+          "type": "int32",
+          "label": "repeated"
+        },
+        {
+          "number": 5,
+          "name": "indptr",
+          "type": "int64",
+          "label": "repeated"
+        }
+      ]
+    },
+    {
+      "name": "Couples",
+      "fields": [
+        {
+          "number": 1,
+          "name": "index",
+          "type": "string",
+          "label": "repeated"
+        },
+        {
+          "number": 2,
+          "name": "matrix",
+          "type": "CompressedSparseRowMatrix"
+        }
+      ]
+    },
+    {
+      "name": "CouplesAnalysisResults",
+      "fields": [
+        {
+          "number": 6,
+          "name": "file_couples",
+          "type": "Couples"
+        },
+        {
+          "number": 7,
+          "name": "people_couples",
+          "type": "Couples"
+        },
+        {
+          "number": 8,
+          "name": "people_files",
+          "type": "TouchedFiles",
+          "label": "repeated"
+        },
+        {
+          "number": 9,
+          "name": "files_lines",
+          "type": "int32",
+          "label": "repeated"
+        }
+      ]
+    },
+    {
+      "name": "DevTick",
+      "fields": [
+        {
+          "number": 1,
+          "name": "commits",
+          "type": "int32"
+        },
+        {
+          "number": 2,
+          "name": "stats",
+          "type": "LineStats"
+        },
+        {
+          "number": 3,
+          "name": "languages",
+          "type": "map",
+          "key": "string",
+          "value": "LineStats"
+        }
+      ]
+    },
+    {
+      "name": "DeveloperTemporalActivity",
+      "fields": [
+        {
+          "number": 1,
+          "name": "weekdays",
+          "type": "TemporalDimension"
+        },
+        {
+          "number": 2,
+          "name": "hours",
+          "type": "TemporalDimension"
+        },
+        {
+          "number": 3,
+          "name": "months",
+          "type": "TemporalDimension"
+        },
+        {
+          "number": 4,
+          "name": "weeks",
+          "type": "TemporalDimension"
+        }
+      ]
+    },
+    {
+      "name": "DevsAnalysisResults",
+      "fields": [
+        {
+          "number": 1,
+          "name": "ticks",
+          "type": "map",
+          "key": "int32",
+          "value": "TickDevs"
+        },
+        {
+          "number": 2,
+          "name": "dev_index",
+          "type": "string",
+          "label": "repeated"
+        },
+        {
+          "number": 8,
+          "name": "tick_size",
+          "type": "int64"
+        }
+      ]
+    },
+    {
+      "name": "FileHistory",
+      "fields": [
+        {
+          "number": 1,
+          "name": "commits",
+          "type": "string",
+          "label": "repeated"
+        },
+        {
+          "number": 2,
+          "name": "changes_by_developer",
+          "type": "map",
+          "key": "int32",
+          "value": "LineStats"
+        }
+      ]
+    },
+    {
+      "name": "FileHistoryResultMessage",
+      "fields": [
+        {
+          "number": 1,
+          "name": "files",
+          "type": "map",
+          "key": "string",
+          "value": "FileHistory"
+        }
+      ]
+    },
+    {
+      "name": "FileRisk",
+      "fields": [
+        {
+          "number": 1,
+          "name": "path",
+          "type": "string"
+        },
+        {
+          "number": 2,
+          "name": "risk_score",
+          "type": "double"
+        },
+        {
+          "number": 3,
+          "name": "size",
+          "type": "int32"
+        },
+        {
+          "number": 4,
+          "name": "churn",
+          "type": "int32"
+        },
+        {
+          "number": 5,
+          "name": "coupling_degree",
+          "type": "int32"
+        },
+        {
+          "number": 6,
+          "name": "ownership_gini",
+          "type": "double"
+        },
+        {
+          "number": 7,
+          "name": "size_normalized",
+          "type": "double"
+        },
+        {
+          "number": 8,
+          "name": "churn_normalized",
+          "type": "double"
+        },
+        {
+          "number": 9,
+          "name": "coupling_normalized",
+          "type": "double"
+        },
+        {
+          "number": 10,
+          "name": "ownership_normalized",
+          "type": "double"
+        }
+      ]
+    },
+    {
+      "name": "FilesOwnership",
+      "fields": [
+        {
+          "number": 1,
+          "name": "value",
+          "type": "map",
+          "key": "int32",
+          "value": "int32"
+        }
+      ]
+    },
+    {
+      "name": "HotspotRiskResults",
+      "fields": [
+        {
+          "number": 1,
+          "name": "window_days",
+          "type": "int32"
+        },
+        {
+          "number": 2,
+          "name": "files",
+          "type": "FileRisk",
+          "label": "repeated"
+        }
+      ]
+    },
+    {
+      "name": "ImportsPerDeveloper",
+      "fields": [
+        {
+          "number": 1,
+          "name": "languages",
+          "type": "map",
+          "key": "string",
+          "value": "ImportsPerLanguage"
+        }
+      ]
+    },
+    {
+      "name": "ImportsPerDeveloperResults",
+      "fields": [
+        {
+          "number": 1,
+          "name": "imports",
+          "type": "ImportsPerDeveloper",
+          "label": "repeated"
+        },
+        {
+          "number": 2,
+          "name": "author_index",
+          "type": "string",
+          "label": "repeated"
+        },
+        {
+          "number": 3,
+          "name": "tick_size",
+          "type": "int64"
+        }
+      ]
+    },
+    {
+      "name": "ImportsPerLanguage",
+      "fields": [
+        {
+          "number": 1,
+          "name": "ticks",
+          "type": "map",
+          "key": "string",
+          "value": "ImportsPerTick"
+        }
+      ]
+    },
+    {
+      "name": "ImportsPerTick",
+      "fields": [
+        {
+          "number": 1,
+          "name": "counts",
+          "type": "map",
+          "key": "int32",
+          "value": "int64"
+        }
+      ]
+    },
+    {
+      "name": "KnowledgeDiffusionFileData",
+      "fields": [
+        {
+          "number": 1,
+          "name": "unique_editors_count",
+          "type": "int32"
+        },
+        {
+          "number": 2,
+          "name": "unique_editors_over_time",
+          "type": "map",
+          "key": "int32",
+          "value": "int32"
+        },
+        {
+          "number": 3,
+          "name": "recent_editors_count",
+          "type": "int32"
+        },
+        {
+          "number": 4,
+          "name": "authors",
+          "type": "int32",
+          "label": "repeated"
+        }
+      ]
+    },
+    {
+      "name": "KnowledgeDiffusionResults",
+      "fields": [
+        {
+          "number": 1,
+          "name": "files",
+          "type": "map",
+          "key": "string",
+          "value": "KnowledgeDiffusionFileData"
+        },
+        {
+          "number": 2,
+          "name": "distribution",
+          "type": "map",
+          "key": "int32",
+          "value": "int32"
+        },
+        {
+          "number": 3,
+          "name": "window_months",
+          "type": "int32"
+        },
+        {
+          "number": 4,
+          "name": "dev_index",
+          "type": "string",
+          "label": "repeated"
+        },
+        {
+          "number": 5,
+          "name": "tick_size",
+          "type": "int64"
+        }
+      ]
+    },
+    {
+      "name": "LineStats",
+      "fields": [
+        {
+          "number": 1,
+          "name": "added",
+          "type": "int32"
+        },
+        {
+          "number": 2,
+          "name": "removed",
+          "type": "int32"
+        },
+        {
+          "number": 3,
+          "name": "changed",
+          "type": "int32"
+        }
+      ]
+    },
+    {
+      "name": "Metadata",
+      "fields": [
+        {
+          "number": 1,
+          "name": "version",
+          "type": "int32"
+        },
+        {
+          "number": 2,
+          "name": "hash",
+          "type": "string"
+        },
+        {
+          "number": 3,
+          "name": "repository",
+          "type": "string"
+        },
+        {
+          "number": 4,
+          "name": "begin_unix_time",
+          "type": "int64"
+        },
+        {
+          "number": 5,
+          "name": "end_unix_time",
+          "type": "int64"
+        },
+        {
+          "number": 6,
+          "name": "commits",
+          "type": "int32"
+        },
+        {
+          "number": 7,
+          "name": "run_time",
+          "type": "int64"
+        },
+        {
+          "number": 8,
+          "name": "run_time_per_item",
+          "type": "map",
+          "key": "string",
+          "value": "double"
+        }
+      ]
+    },
+    {
+      "name": "OnboardingAverageSnapshot",
+      "fields": [
+        {
+          "number": 1,
+          "name": "days_since_join",
+          "type": "int32"
+        },
+        {
+          "number": 2,
+          "name": "avg_total_commits",
+          "type": "double"
+        },
+        {
+          "number": 3,
+          "name": "avg_total_files",
+          "type": "double"
+        },
+        {
+          "number": 4,
+          "name": "avg_total_lines",
+          "type": "double"
+        },
+        {
+          "number": 5,
+          "name": "avg_meaningful_commits",
+          "type": "double"
+        },
+        {
+          "number": 6,
+          "name": "avg_meaningful_files",
+          "type": "double"
+        },
+        {
+          "number": 7,
+          "name": "avg_meaningful_lines",
+          "type": "double"
+        }
+      ]
+    },
+    {
+      "name": "OnboardingResults",
+      "fields": [
+        {
+          "number": 1,
+          "name": "authors",
+          "type": "map",
+          "key": "int32",
+          "value": "AuthorOnboardingData"
+        },
+        {
+          "number": 2,
+          "name": "cohorts",
+          "type": "map",
+          "key": "string",
+          "value": "CohortStats"
+        },
+        {
+          "number": 3,
+          "name": "window_days",
+          "type": "int32",
+          "label": "repeated"
+        },
+        {
+          "number": 4,
+          "name": "meaningful_threshold",
+          "type": "int32"
+        },
+        {
+          "number": 5,
+          "name": "dev_index",
+          "type": "string",
+          "label": "repeated"
+        },
+        {
+          "number": 6,
+          "name": "tick_size",
+          "type": "int64"
+        }
+      ]
+    },
+    {
+      "name": "OnboardingSnapshot",
+      "fields": [
+        {
+          "number": 1,
+          "name": "days_since_join",
+          "type": "int32"
+        },
+        {
+          "number": 2,
+          "name": "total_commits",
+          "type": "int32"
+        },
+        {
+          "number": 3,
+          "name": "total_files",
+          "type": "int32"
+        },
+        {
+          "number": 4,
+          "name": "total_lines",
+          "type": "int32"
+        },
+        {
+          "number": 5,
+          "name": "meaningful_commits",
+          "type": "int32"
+        },
+        {
+          "number": 6,
+          "name": "meaningful_files",
+          "type": "int32"
+        },
+        {
+          "number": 7,
+          "name": "meaningful_lines",
+          "type": "int32"
+        }
+      ]
+    },
+    {
+      "name": "OwnershipConcentrationResults",
+      "fields": [
+        {
+          "number": 1,
+          "name": "snapshots",
+          "type": "map",
+          "key": "int32",
+          "value": "OwnershipConcentrationTickSnapshot"
+        },
+        {
+          "number": 2,
+          "name": "subsystem_gini",
+          "type": "map",
+          "key": "string",
+          "value": "double"
+        },
+        {
+          "number": 3,
+          "name": "dev_index",
+          "type": "string",
+          "label": "repeated"
+        },
+        {
+          "number": 4,
+          "name": "tick_size",
+          "type": "int64"
+        },
+        {
+          "number": 5,
+          "name": "subsystem_hhi",
+          "type": "map",
+          "key": "string",
+          "value": "double"
+        }
+      ]
+    },
+    {
+      "name": "OwnershipConcentrationTickSnapshot",
+      "fields": [
+        {
+          "number": 1,
+          "name": "gini",
+          "type": "double"
+        },
+        {
+          "number": 2,
+          "name": "hhi",
+          "type": "double"
+        },
+        {
+          "number": 3,
+          "name": "total_lines",
+          "type": "int64"
+        },
+        {
+          "number": 4,
+          "name": "author_lines",
+          "type": "map",
+          "key": "int32",
+          "value": "int64"
+        }
+      ]
+    },
+    {
+      "name": "RefactoringProxyResults",
+      "fields": [
+        {
+          "number": 1,
+          "name": "ticks",
+          "type": "int32",
+          "label": "repeated"
+        },
+        {
+          "number": 2,
+          "name": "rename_ratios",
+          "type": "float",
+          "label": "repeated"
+        },
+        {
+          "number": 3,
+          "name": "is_refactoring",
+          "type": "bool",
+          "label": "repeated"
+        },
+        {
+          "number": 4,
+          "name": "total_changes",
+          "type": "int32",
+          "label": "repeated"
+        },
+        {
+          "number": 5,
+          "name": "threshold",
+          "type": "float"
+        },
+        {
+          "number": 6,
+          "name": "tick_size",
+          "type": "int64"
+        }
+      ]
+    },
+    {
+      "name": "Sentiment",
+      "fields": [
+        {
+          "number": 1,
+          "name": "value",
+          "type": "float"
+        },
+        {
+          "number": 2,
+          "name": "comments",
+          "type": "string",
+          "label": "repeated"
+        },
+        {
+          "number": 3,
+          "name": "commits",
+          "type": "string",
+          "label": "repeated"
+        }
+      ]
+    },
+    {
+      "name": "ShotnessAnalysisResults",
+      "fields": [
+        {
+          "number": 1,
+          "name": "records",
+          "type": "ShotnessRecord",
+          "label": "repeated"
+        }
+      ]
+    },
+    {
+      "name": "ShotnessRecord",
+      "fields": [
+        {
+          "number": 1,
+          "name": "type",
+          "type": "string"
+        },
+        {
+          "number": 2,
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "number": 3,
+          "name": "file",
+          "type": "string"
+        },
+        {
+          "number": 4,
+          "name": "counters",
+          "type": "map",
+          "key": "int32",
+          "value": "int32"
+        }
+      ]
+    },
+    {
+      "name": "TemporalActivityResults",
+      "fields": [
+        {
+          "number": 1,
+          "name": "activities",
+          "type": "map",
+          "key": "int32",
+          "value": "DeveloperTemporalActivity"
+        },
+        {
+          "number": 2,
+          "name": "dev_index",
+          "type": "string",
+          "label": "repeated"
+        },
+        {
+          "number": 3,
+          "name": "ticks",
+          "type": "map",
+          "key": "int32",
+          "value": "TemporalActivityTickDevs"
+        },
+        {
+          "number": 4,
+          "name": "tick_size",
+          "type": "int64"
+        }
+      ]
+    },
+    {
+      "name": "TemporalActivityTick",
+      "fields": [
+        {
+          "number": 1,
+          "name": "commits",
+          "type": "int32"
+        },
+        {
+          "number": 2,
+          "name": "lines",
+          "type": "int32"
+        },
+        {
+          "number": 3,
+          "name": "weekday",
+          "type": "int32"
+        },
+        {
+          "number": 4,
+          "name": "hour",
+          "type": "int32"
+        },
+        {
+          "number": 5,
+          "name": "month",
+          "type": "int32"
+        },
+        {
+          "number": 6,
+          "name": "week",
+          "type": "int32"
+        }
+      ]
+    },
+    {
+      "name": "TemporalActivityTickDevs",
+      "fields": [
+        {
+          "number": 1,
+          "name": "devs",
+          "type": "map",
+          "key": "int32",
+          "value": "TemporalActivityTick"
+        }
+      ]
+    },
+    {
+      "name": "TemporalDimension",
+      "fields": [
+        {
+          "number": 1,
+          "name": "commits",
+          "type": "int32",
+          "label": "repeated"
+        },
+        {
+          "number": 2,
+          "name": "lines",
+          "type": "int32",
+          "label": "repeated"
+        }
+      ]
+    },
+    {
+      "name": "TickDevs",
+      "fields": [
+        {
+          "number": 1,
+          "name": "devs",
+          "type": "map",
+          "key": "int32",
+          "value": "DevTick"
+        }
+      ]
+    },
+    {
+      "name": "TouchedFiles",
+      "fields": [
+        {
+          "number": 1,
+          "name": "files",
+          "type": "int32",
+          "label": "repeated"
+        }
+      ]
+    },
+    {
+      "name": "Typo",
+      "fields": [
+        {
+          "number": 1,
+          "name": "wrong",
+          "type": "string"
+        },
+        {
+          "number": 2,
+          "name": "correct",
+          "type": "string"
+        },
+        {
+          "number": 3,
+          "name": "commit",
+          "type": "string"
+        },
+        {
+          "number": 4,
+          "name": "file",
+          "type": "string"
+        },
+        {
+          "number": 5,
+          "name": "line",
+          "type": "int32"
+        }
+      ]
+    },
+    {
+      "name": "TyposDataset",
+      "fields": [
+        {
+          "number": 1,
+          "name": "typos",
+          "type": "Typo",
+          "label": "repeated"
+        }
+      ]
+    }
+  ]
+}

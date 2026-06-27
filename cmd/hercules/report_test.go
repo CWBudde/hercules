@@ -9,17 +9,51 @@ import (
 
 func TestSelectReportAnalysisFlagsDefault(t *testing.T) {
 	available := map[string]struct{}{
-		"burndown":       {},
-		"burndown-files": {},
-		"devs":           {},
+		"burndown":            {},
+		"burndown-files":      {},
+		"devs":                {},
+		"onboarding":          {},
+		"refactoring-proxy":   {},
+		"temporal-activity":   {},
+		"hotspot-risk":        {},
+		"knowledge-diffusion": {},
 	}
 	flags, err := selectReportAnalysisFlags(available, nil, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	expected := []string{"burndown", "burndown-files", "devs"}
+	expected := []string{
+		"burndown",
+		"burndown-files",
+		"devs",
+		"hotspot-risk",
+		"knowledge-diffusion",
+		"onboarding",
+		"refactoring-proxy",
+		"temporal-activity",
+	}
 	if !reflect.DeepEqual(flags, expected) {
 		t.Fatalf("unexpected flags: got %v want %v", flags, expected)
+	}
+}
+
+func TestSelectReportModesDefaultIncludesMilestoneFourEasyPath(t *testing.T) {
+	modes, err := selectReportModes(nil, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	for _, expected := range []string{"onboarding", "refactoring-proxy", "hotspot-risk"} {
+		found := false
+		for _, mode := range modes {
+			if mode == expected {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("default report modes do not include %q: %v", expected, modes)
+		}
 	}
 }
 

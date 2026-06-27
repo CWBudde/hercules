@@ -117,11 +117,11 @@ Status: **open**.
   - [x] Verify YAML/PB serialization shape.
   - [x] Acceptance: `go test ./leaves -run HotspotRisk` is stable and meaningful.
 
-- [ ] **One-command reports: finish the “easy path”**
-  - [ ] Audit `hercules report` and current labours invocation flow.
-  - [ ] Add a `just report` recipe only if it removes real first-run friction.
-  - [ ] Document the recommended report command in README.
-  - [ ] Acceptance: first-time users can generate a report without knowing labours flags.
+- [x] **One-command reports: finish the “easy path”**
+  - [x] Audit `hercules report` and current labours invocation flow.
+  - [x] Add a `just report` recipe only if it removes real first-run friction.
+  - [x] Document the recommended report command in README.
+  - [x] Acceptance: first-time users can generate a report without knowing labours flags.
 
 ### Milestone 5 — Identity correctness & auditability (P2/P3)
 

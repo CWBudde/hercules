@@ -27,7 +27,9 @@ var reportDefaultAnalysisFlags = []string{
 	"bus-factor",
 	"ownership-concentration",
 	"knowledge-diffusion",
+	"onboarding",
 	"hotspot-risk",
+	"refactoring-proxy",
 }
 
 var reportAllAnalysisFlags = []string{
@@ -41,7 +43,9 @@ var reportAllAnalysisFlags = []string{
 	"bus-factor",
 	"ownership-concentration",
 	"knowledge-diffusion",
+	"onboarding",
 	"hotspot-risk",
+	"refactoring-proxy",
 	"sentiment",
 }
 
@@ -61,7 +65,9 @@ var reportDefaultModes = []string{
 	"bus-factor",
 	"ownership-concentration",
 	"knowledge-diffusion",
+	"onboarding",
 	"hotspot-risk",
+	"refactoring-proxy",
 }
 
 var reportAllModes = []string{
@@ -86,7 +92,9 @@ var reportAllModes = []string{
 	"bus-factor",
 	"ownership-concentration",
 	"knowledge-diffusion",
+	"onboarding",
 	"hotspot-risk",
+	"refactoring-proxy",
 }
 
 var reportValidModes = map[string]struct{}{
@@ -111,7 +119,9 @@ var reportValidModes = map[string]struct{}{
 	"bus-factor":              {},
 	"ownership-concentration": {},
 	"knowledge-diffusion":     {},
+	"onboarding":              {},
 	"hotspot-risk":            {},
+	"refactoring-proxy":       {},
 }
 
 // reportCmd generates a complete labours report in one command.

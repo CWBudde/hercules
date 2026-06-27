@@ -588,11 +588,26 @@ The labours mode produces two visualizations:
 #### Everything in a single pass
 
 ```
-hercules report --all -o ./report https://github.com/go-git/go-git
+hercules report -o ./report https://github.com/go-git/go-git
 ```
 
 This command runs Hercules in Protocol Buffers mode, invokes `labours` internally,
-and writes a report directory with generated plots plus `index.html`.
+and writes a report directory with generated plots plus `index.html`. The default
+report includes the usual project, file, people, ownership, temporal activity,
+bus factor, knowledge diffusion, onboarding, hotspot risk, and refactoring proxy
+views without requiring separate `labours` flags.
+
+From a source checkout, the same report can be generated with:
+
+```
+just report https://github.com/go-git/go-git
+```
+
+Use `--all` to request every report mode, including optional or heavier views:
+
+```
+hercules report --all -o ./report https://github.com/go-git/go-git
+```
 
 To customize the report scope, pass explicit analysis flags and modes:
 

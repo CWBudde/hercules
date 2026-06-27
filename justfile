@@ -33,6 +33,10 @@ test-all: hercules
 # Run unit tests (alias for test)
 test-unit: test
 
+# Generate a complete report directory for a repository.
+report REPO OUTPUT="./report": hercules
+    ./hercules{{exe}} report -o "{{OUTPUT}}" "{{REPO}}"
+
 # Install Python labours package using uv
 install-labours:
     #!/usr/bin/env bash

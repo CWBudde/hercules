@@ -29,6 +29,7 @@
 - [Contributions](#contributions)
 - [License](#license)
 - [Usage](#usage)
+  - [Presets](#presets)
   - [Caching](#caching)
   - [GitHub Action](#github-action-1)
   - [Docker image](#docker-image)
@@ -211,6 +212,40 @@ git rev-list HEAD | tac | hercules --commits - --burndown https://github.com/git
 ```
 
 `labours -i /path/to/yaml` allows to read the output from `hercules` which was saved on disk.
+
+### Presets
+
+`--preset <name>` applies a curated set of flag defaults so you can get a useful first
+result without tuning. Explicit flags on the command line always override preset values,
+so a preset is a starting point you can fine-tune incrementally.
+
+Two presets ship today:
+
+- `--preset quick` — fastest path to a result. Sets `--head`, so only the most recent
+  commit is analysed. Use this to validate that a repo is parseable, sanity-check labours
+  rendering, or get a first burndown for a small repo:
+
+  ```
+  hercules --preset quick --burndown /path/to/repo | labours -m burndown-project
+  ```
+
+- `--preset large-repo` — for repositories where a default run would otherwise OOM or
+  take hours. Enables first-parent traversal (`--first-parent`), turns on RBTree
+  hibernation with a 200 000-allocation threshold and disk spill
+  (`--lines-hibernation-threshold=200000 --lines-hibernation-disk`), and reduces output
+  resolution to 30-day buckets (`--granularity=30 --sampling=30`):
+
+  ```
+  hercules --preset large-repo --burndown /path/to/big/repo > burndown.yml
+  labours -i burndown.yml -m burndown-project
+  ```
+
+  Hibernation periodically compresses RBTree allocators and (with `--lines-hibernation-disk`)
+  spills them to a temporary file, trading some CPU for a much lower memory ceiling. See
+  [docs/HIBERNATION.md](docs/HIBERNATION.md) for the underlying mechanism.
+
+If you find yourself overriding the same preset flag every run, file an issue — the
+preset defaults are tunable and we want them to match what users actually need.
 
 ### Caching
 

@@ -188,9 +188,17 @@ func (ipd *ImportsPerDeveloper) serializeText(result *ImportsPerDeveloperResult,
 }
 
 func (ipd *ImportsPerDeveloper) serializeBinary(result *ImportsPerDeveloperResult, writer io.Writer) error {
+	authorsLen := len(result.reversedPeopleDict)
+	for key := range result.Imports {
+		if key >= authorsLen {
+			authorsLen = key + 1
+		}
+	}
+	authorIndex := make([]string, authorsLen)
+	copy(authorIndex, result.reversedPeopleDict)
 	message := pb.ImportsPerDeveloperResults{
-		Imports:     make([]*pb.ImportsPerDeveloper, len(result.reversedPeopleDict)),
-		AuthorIndex: result.reversedPeopleDict,
+		Imports:     make([]*pb.ImportsPerDeveloper, authorsLen),
+		AuthorIndex: authorIndex,
 		TickSize:    int64(result.tickSize),
 	}
 	// Initialize all entries to avoid nil elements in the repeated protobuf field

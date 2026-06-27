@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -65,4 +66,34 @@ func TestLoadStubRepository(t *testing.T) {
 	assert.NotNil(t, repo)
 	assert.Equal(t, repoUri, "-")
 	assert.Equal(t, repoFeature, core.FeatureGitStub)
+}
+
+func TestFormatProgressEventLines(t *testing.T) {
+	line, err := formatProgressEvent(progressEvent{
+		Event:  "commit",
+		Commit: 12,
+		Total:  90,
+		Action: "TreeDiff",
+	}, progressModeLines)
+
+	assert.NoError(t, err)
+	assert.Equal(t, "commit commit=12 total=90 action=TreeDiff\n", line)
+}
+
+func TestFormatProgressEventJSON(t *testing.T) {
+	line, err := formatProgressEvent(progressEvent{
+		Event:  "write-start",
+		Output: "protobuf",
+	}, progressModeJSON)
+
+	assert.NoError(t, err)
+	var decoded progressEvent
+	assert.NoError(t, json.Unmarshal([]byte(line), &decoded))
+	assert.Equal(t, "write-start", decoded.Event)
+	assert.Equal(t, "protobuf", decoded.Output)
+}
+
+func TestParseProgressModeRejectsUnknownValue(t *testing.T) {
+	_, err := parseProgressMode("loud")
+	assert.Error(t, err)
 }

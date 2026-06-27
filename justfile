@@ -151,6 +151,12 @@ clean:
     rm -f cmd/hercules/plugin_template_source.go
     rm -rf vendor
 
+# Run the large-repo benchmark suite. Pass a path to any local clone with
+# substantial history (e.g. cpython, kubernetes). Results land in bench-results/.
+# See docs/SCALING.md for what the configurations measure and how to interpret them.
+bench-large-repo REPO_PATH: hercules
+    HERCULES="$(pwd)/hercules{{exe}}" scripts/bench-large-repo.sh "{{REPO_PATH}}"
+
 # Show available recipes
 help:
     @just --list

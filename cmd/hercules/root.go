@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -40,6 +41,73 @@ import (
 	"golang.org/x/crypto/ssh/terminal"
 	progress "gopkg.in/cheggaaa/pb.v1"
 )
+
+type progressMode string
+
+const (
+	progressModeAuto  progressMode = "auto"
+	progressModeBar   progressMode = "bar"
+	progressModeLines progressMode = "lines"
+	progressModeJSON  progressMode = "json"
+	progressModeNone  progressMode = "none"
+)
+
+type progressEvent struct {
+	Event  string `json:"event"`
+	Commit int    `json:"commit,omitempty"`
+	Total  int    `json:"total,omitempty"`
+	Action string `json:"action,omitempty"`
+	Repo   string `json:"repo,omitempty"`
+	Output string `json:"output,omitempty"`
+}
+
+func parseProgressMode(raw string) (progressMode, error) {
+	switch progressMode(strings.ToLower(strings.TrimSpace(raw))) {
+	case progressModeAuto:
+		return progressModeAuto, nil
+	case progressModeBar:
+		return progressModeBar, nil
+	case progressModeLines:
+		return progressModeLines, nil
+	case progressModeJSON:
+		return progressModeJSON, nil
+	case progressModeNone, "off":
+		return progressModeNone, nil
+	default:
+		return "", fmt.Errorf("unknown progress mode %q", raw)
+	}
+}
+
+func formatProgressEvent(event progressEvent, mode progressMode) (string, error) {
+	switch mode {
+	case progressModeLines:
+		fields := []string{event.Event}
+		if event.Commit != 0 {
+			fields = append(fields, fmt.Sprintf("commit=%d", event.Commit))
+		}
+		if event.Total != 0 {
+			fields = append(fields, fmt.Sprintf("total=%d", event.Total))
+		}
+		if event.Action != "" {
+			fields = append(fields, "action="+event.Action)
+		}
+		if event.Repo != "" {
+			fields = append(fields, "repo="+event.Repo)
+		}
+		if event.Output != "" {
+			fields = append(fields, "output="+event.Output)
+		}
+		return strings.Join(fields, " ") + "\n", nil
+	case progressModeJSON:
+		data, err := json.Marshal(event)
+		if err != nil {
+			return "", err
+		}
+		return string(data) + "\n", nil
+	default:
+		return "", fmt.Errorf("progress mode %q does not support event formatting", mode)
+	}
+}
 
 // oneLineWriter splits the output data by lines and outputs one on top of another using '\r'.
 // It also does some dark magic to handle Git statuses.
@@ -227,6 +295,15 @@ targets can be added using the --plugin system.`,
 		protobuf := getBool("pb")
 		profile := getBool("profile")
 		disableStatus := getBool("quiet")
+		progressModeValue, err := parseProgressMode(getString("progress"))
+		if err != nil {
+			log.Fatal(err)
+		}
+		if disableStatus && !flags.Changed("progress") {
+			progressModeValue = progressModeNone
+		} else if progressModeValue == progressModeAuto {
+			progressModeValue = progressModeBar
+		}
 		sshIdentity := getString("ssh-identity")
 
 		if profile {
@@ -257,7 +334,17 @@ targets can be added using the --plugin system.`,
 		}
 		pipeline.SetFeaturesFromFlags()
 		var bar *progress.ProgressBar
-		if !disableStatus {
+		emitProgress := func(event progressEvent) {
+			if progressModeValue != progressModeLines && progressModeValue != progressModeJSON {
+				return
+			}
+			line, err := formatProgressEvent(event, progressModeValue)
+			if err != nil {
+				log.Fatal(err)
+			}
+			_, _ = os.Stderr.WriteString(line)
+		}
+		if progressModeValue == progressModeBar {
 			pipeline.OnProgress = func(commit, length int, action string) {
 				if bar == nil {
 					bar = progress.New(length)
@@ -276,6 +363,27 @@ targets can be added using the --plugin system.`,
 					bar.Set(commit).Postfix(" [" + action + "] ")
 				}
 			}
+		} else if progressModeValue == progressModeLines || progressModeValue == progressModeJSON {
+			lastCommit := -1
+			pipeline.OnProgress = func(commit, length int, action string) {
+				if action == hercules.MessageFinalize {
+					emitProgress(progressEvent{Event: "finalize", Commit: commit, Total: length, Action: action})
+					return
+				}
+				interval := 100
+				if length > 0 {
+					interval = length / 20
+					if interval < 25 {
+						interval = 25
+					} else if interval > 500 {
+						interval = 500
+					}
+				}
+				if commit == 0 || commit == length || commit-lastCommit >= interval {
+					emitProgress(progressEvent{Event: "commit", Commit: commit, Total: length, Action: action})
+					lastCommit = commit
+				}
+			}
 		}
 
 		if repoFeature == core.FeatureGitCommits {
@@ -283,8 +391,13 @@ targets can be added using the --plugin system.`,
 			var err error
 			if commitsFile == "" {
 				if !head {
-					_, _ = fmt.Fprint(os.Stderr, "git log...\r")
+					if progressModeValue == progressModeBar {
+						_, _ = fmt.Fprint(os.Stderr, "git log...\r")
+					} else {
+						emitProgress(progressEvent{Event: "git-log-start", Repo: repoUri})
+					}
 					commits, err = pipeline.Commits(firstParent)
+					emitProgress(progressEvent{Event: "git-log-done", Repo: repoUri, Total: len(commits)})
 				} else {
 					commits, err = pipeline.HeadCommit()
 				}
@@ -313,12 +426,13 @@ targets can be added using the --plugin system.`,
 		if err := pipeline.InitializeExt(cmdlineFacts, priorityFn, true); err != nil {
 			log.Fatal(err)
 		}
+		emitProgress(progressEvent{Event: "pipeline-initialized", Repo: repoUri})
 
 		results, err := pipeline.RunPreparedPlan()
 		if err != nil {
 			log.Fatalf("failed to run the pipeline: %v", err)
 		}
-		if !disableStatus {
+		if progressModeValue == progressModeBar {
 			_, _ = fmt.Fprint(os.Stderr, "\033[2K\r")
 			// if not a terminal, the user will not see the output, so show the status
 			if !terminal.IsTerminal(int(os.Stdout.Fd())) {
@@ -326,10 +440,13 @@ targets can be added using the --plugin system.`,
 			}
 		}
 		if protobuf {
+			emitProgress(progressEvent{Event: "write-start", Repo: repoUri, Output: "protobuf"})
 			protobufResults(repoUri, deployedLeafs, results)
 		} else {
+			emitProgress(progressEvent{Event: "write-start", Repo: repoUri, Output: "yaml"})
 			printResults(repoUri, deployedLeafs, results)
 		}
+		emitProgress(progressEvent{Event: "write-done", Repo: repoUri})
 	},
 }
 
@@ -640,6 +757,8 @@ func init() {
 	rootFlags.Bool("pb", false, "The output format will be Protocol Buffers instead of YAML.")
 	rootFlags.Bool("quiet", !terminal.IsTerminal(int(os.Stdin.Fd())),
 		"Do not print status updates to stderr.")
+	rootFlags.String("progress", "auto",
+		"Progress output format on stderr: auto, bar, lines, json, none.")
 	rootFlags.Bool("profile", false, "Collect the profile to hercules.pprof.")
 	rootFlags.String("preset", "",
 		"Apply a named set of flag defaults. Available: large-repo, quick. "+

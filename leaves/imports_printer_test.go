@@ -10,8 +10,8 @@ import (
 	"github.com/meko-christian/hercules/internal/plumbing"
 	"github.com/meko-christian/hercules/internal/plumbing/identity"
 	"github.com/meko-christian/hercules/internal/plumbing/imports"
-	"github.com/meko-christian/hercules/internal/test"
 	importslang "github.com/meko-christian/hercules/internal/plumbing/imports/lang"
+	"github.com/meko-christian/hercules/internal/test"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -123,4 +123,20 @@ func TestImportsPerDeveloperSerializeBinary(t *testing.T) {
 	back, err := ipd.Deserialize(buffer.Bytes())
 	ass.NoError(err)
 	ass.Equal(res, back)
+}
+
+func TestImportsPerDeveloperSerializeBinarySparseAuthorIndex(t *testing.T) {
+	ipd := fixtureImportsPerDev()
+	res := ImportsPerDeveloperResult{Imports: ImportsMap{
+		4: {"Go": {"fmt": {1: 1}}},
+	}, reversedPeopleDict: []string{"one", "two"}}
+	buffer := &bytes.Buffer{}
+
+	assert.NotPanics(t, func() {
+		assert.NoError(t, ipd.Serialize(res, true, buffer))
+	})
+
+	back, err := ipd.Deserialize(buffer.Bytes())
+	assert.NoError(t, err)
+	assert.Contains(t, back.(ImportsPerDeveloperResult).Imports, 4)
 }

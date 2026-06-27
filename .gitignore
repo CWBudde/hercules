@@ -79,6 +79,7 @@ python/build
 *.tsv.gz
 *.json
 /.run/
+/bench-results/
 
 # CGO
 *.cgo1.go

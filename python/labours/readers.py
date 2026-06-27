@@ -299,6 +299,54 @@ class YamlReader(Reader):
         tick_size = int(kd_data.get("tick_size", 0))
         return files, distribution, people, window_months, tick_size
 
+    def get_onboarding(self):
+        onboarding = self.data["Onboarding"]["onboarding"]
+        authors = {}
+        for author_id, author in onboarding.get("authors", {}).items():
+            snapshots = {}
+            for days, snapshot in author.get("snapshots", {}).items():
+                snapshots[int(days)] = {
+                    "days": int(snapshot["days"]),
+                    "commits": int(snapshot["commits"]),
+                    "files": int(snapshot["files"]),
+                    "lines": int(snapshot["lines"]),
+                    "meaningful_commits": int(snapshot["meaningful_commits"]),
+                    "meaningful_files": int(snapshot["meaningful_files"]),
+                    "meaningful_lines": int(snapshot["meaningful_lines"]),
+                }
+            authors[int(author_id)] = {
+                "first_commit_tick": int(author["first_commit_tick"]),
+                "join_cohort": str(author["join_cohort"]),
+                "snapshots": snapshots,
+            }
+
+        cohorts = {}
+        for cohort_name, cohort in onboarding.get("cohorts", {}).items():
+            average_snapshots = {}
+            for days, snapshot in cohort.get("average_snapshots", {}).items():
+                average_snapshots[int(days)] = {
+                    "days": int(snapshot["days"]),
+                    "commits": float(snapshot["commits"]),
+                    "files": float(snapshot["files"]),
+                    "lines": float(snapshot["lines"]),
+                    "meaningful_commits": float(snapshot["meaningful_commits"]),
+                    "meaningful_files": float(snapshot["meaningful_files"]),
+                    "meaningful_lines": float(snapshot["meaningful_lines"]),
+                }
+            cohorts[str(cohort_name)] = {
+                "author_count": int(cohort["author_count"]),
+                "average_snapshots": average_snapshots,
+            }
+
+        return (
+            authors,
+            cohorts,
+            onboarding.get("people", []),
+            [int(days) for days in onboarding.get("window_days", [])],
+            int(onboarding.get("meaningful_threshold", 0)),
+            int(onboarding.get("tick_size", 0)),
+        )
+
     def get_refactoring_proxy(self):
         rp_data = self.data["RefactoringProxy"]["refactoring_proxy"]
 
@@ -597,6 +645,54 @@ class ProtobufReader(Reader):
         tick_size = int(kd.tick_size)
         return files, distribution, people, window_months, tick_size
 
+    def get_onboarding(self):
+        onboarding = self.contents["Onboarding"]
+        authors = {}
+        for author_id, author in onboarding.authors.items():
+            snapshots = {}
+            for days, snapshot in author.snapshots.items():
+                snapshots[int(days)] = {
+                    "days": int(snapshot.days_since_join),
+                    "commits": int(snapshot.total_commits),
+                    "files": int(snapshot.total_files),
+                    "lines": int(snapshot.total_lines),
+                    "meaningful_commits": int(snapshot.meaningful_commits),
+                    "meaningful_files": int(snapshot.meaningful_files),
+                    "meaningful_lines": int(snapshot.meaningful_lines),
+                }
+            authors[int(author_id)] = {
+                "first_commit_tick": int(author.first_commit_tick),
+                "join_cohort": str(author.join_cohort),
+                "snapshots": snapshots,
+            }
+
+        cohorts = {}
+        for cohort_name, cohort in onboarding.cohorts.items():
+            average_snapshots = {}
+            for days, snapshot in cohort.average_snapshots.items():
+                average_snapshots[int(days)] = {
+                    "days": int(snapshot.days_since_join),
+                    "commits": float(snapshot.avg_total_commits),
+                    "files": float(snapshot.avg_total_files),
+                    "lines": float(snapshot.avg_total_lines),
+                    "meaningful_commits": float(snapshot.avg_meaningful_commits),
+                    "meaningful_files": float(snapshot.avg_meaningful_files),
+                    "meaningful_lines": float(snapshot.avg_meaningful_lines),
+                }
+            cohorts[str(cohort_name)] = {
+                "author_count": int(cohort.author_count),
+                "average_snapshots": average_snapshots,
+            }
+
+        return (
+            authors,
+            cohorts,
+            list(onboarding.dev_index),
+            [int(days) for days in onboarding.window_days],
+            int(onboarding.meaningful_threshold),
+            int(onboarding.tick_size),
+        )
+
     def get_refactoring_proxy(self):
         rp = self.contents["RefactoringProxy"]
 
@@ -659,6 +755,7 @@ PB_MESSAGES = {
     "BusFactor": "labours.pb_pb2.BusFactorAnalysisResults",
     "OwnershipConcentration": "labours.pb_pb2.OwnershipConcentrationResults",
     "KnowledgeDiffusion": "labours.pb_pb2.KnowledgeDiffusionResults",
+    "Onboarding": "labours.pb_pb2.OnboardingResults",
     "RefactoringProxy": "labours.pb_pb2.RefactoringProxyResults",
 }
 

@@ -47,6 +47,7 @@
     - [Sentiment (positive and negative comments)](#sentiment-positive-and-negative-comments)
     - [Bus factor](#bus-factor)
     - [Ownership concentration](#ownership-concentration)
+    - [Onboarding ramp](#onboarding-ramp)
     - [Everything in a single pass](#everything-in-a-single-pass)
   - [Plugins](#plugins)
   - [Merging](#merging)
@@ -563,6 +564,26 @@ The analysis produces two visualizations:
    lifetime, with reference lines for moderate and high concentration.
 2. **Subsystems** - a grouped horizontal bar chart comparing Gini and HHI by top-level
    directory.
+
+#### Onboarding ramp
+
+```
+hercules --onboarding [--onboarding-windows=7,30,90] [--onboarding-meaningful-threshold=10]
+labours -m onboarding
+```
+
+The onboarding analysis tracks how quickly new contributors ramp up after their first commit.
+It groups authors by monthly join cohort and measures commits, files, and changed lines at
+configurable day windows.
+
+The labours mode produces two visualizations:
+
+1. **Cohort heatmap** - average meaningful lines by join cohort and days since first commit.
+2. **Author ramps** - per-author meaningful-line trajectories for the top contributors in the view.
+
+<p align="center">
+  <img src="docs/onboarding_cohorts.png" alt="Onboarding cohort heatmap" width="800">
+</p>
 
 #### Everything in a single pass
 

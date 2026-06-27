@@ -22,6 +22,7 @@ from labours.modes.shotness import show_shotness_stats
 from labours.modes.bus_factor import show_bus_factor
 from labours.modes.ownership_concentration import show_ownership_concentration
 from labours.modes.knowledge_diffusion import show_knowledge_diffusion
+from labours.modes.onboarding import show_onboarding
 from labours.modes.hotspot_risk import show_hotspot_risk
 from labours.modes.temporal_activity import show_temporal_activity
 from labours.modes.refactoring_proxy import show_refactoring_proxy
@@ -114,6 +115,7 @@ def parse_args() -> Namespace:
             "bus-factor",
             "ownership-concentration",
             "knowledge-diffusion",
+            "onboarding",
             "hotspot-risk",
             "refactoring-proxy",
             "all",
@@ -554,6 +556,19 @@ def main() -> None:
 
         show_hotspot_risk(args, reader.get_name(), files, window_days)
 
+    def onboarding():
+        onboarding_warning = (
+            "Onboarding stats were not collected. "
+            "Re-run hercules with --onboarding."
+        )
+        try:
+            data = reader.get_onboarding()
+        except (KeyError, AttributeError):
+            print(onboarding_warning)
+            return
+
+        show_onboarding(args, reader.get_name(), *data)
+
     def refactoring_proxy():
         rp_warning = (
             "Refactoring proxy data was not collected. "
@@ -590,6 +605,7 @@ def main() -> None:
         "bus-factor": bus_factor,
         "ownership-concentration": ownership_concentration,
         "knowledge-diffusion": knowledge_diffusion,
+        "onboarding": onboarding,
         "hotspot-risk": hotspot_risk,
         "refactoring-proxy": refactoring_proxy,
     }

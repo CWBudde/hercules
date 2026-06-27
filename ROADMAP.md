@@ -103,13 +103,13 @@ documented in [docs/SCHEMAS.md](docs/SCHEMAS.md).
 
 Status: **open**.
 
-- [ ] **Onboarding ramp: labours visualization**
-  - [ ] Define the chart input mapping from `OnboardingResults`.
-  - [ ] Implement `python/labours/modes/onboarding.py` with a cohort heatmap.
-  - [ ] Add a per-author ramp plot if it stays readable on a real repo.
-  - [ ] Register mode so `labours -m onboarding` works.
-  - [ ] Add one usage example and one screenshot in docs.
-  - [ ] Acceptance: one command produces a clear onboarding chart for a real repo.
+- [x] **Onboarding ramp: labours visualization**
+  - [x] Define the chart input mapping from `OnboardingResults`.
+  - [x] Implement `python/labours/modes/onboarding.py` with a cohort heatmap.
+  - [x] Add a per-author ramp plot.
+  - [x] Register mode so `labours -m onboarding` works.
+  - [x] Add one usage example and one screenshot in docs.
+  - [x] Acceptance: one command produces a clear onboarding chart for a real repo.
 
 - [ ] **Hotspot risk score: add deterministic Go tests**
   - [ ] Add `leaves/hotspot_risk_test.go` with fixed fixture data.

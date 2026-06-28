@@ -34,13 +34,13 @@ func TestFileDiffMeta(t *testing.T) {
 	assert.Equal(t, fd.ListConfigurationOptions()[5].Name, items.ConfigFileDiffRefineMaxLines)
 	assert.Equal(t, fd.ListConfigurationOptions()[6].Name, items.ConfigFileDiffRefineMode)
 	assert.NoError(t, fd.Configure(map[string]interface{}{
-		core.ConfigLogger:                       core.NewLogger(),
-		items.ConfigFileDiffDisableCleanup:      true,
-		items.ConfigFileWhitespaceIgnore:        true,
-		items.ConfigFileDiffTimeout:             500,
-		items.ConfigFileDiffDisableRefine:       true,
-		items.ConfigFileDiffRefineMaxFileSize:   512 * 1024,
-		items.ConfigFileDiffRefineMaxLines:      2000,
+		core.ConfigLogger:                     core.NewLogger(),
+		items.ConfigFileDiffDisableCleanup:    true,
+		items.ConfigFileWhitespaceIgnore:      true,
+		items.ConfigFileDiffTimeout:           500,
+		items.ConfigFileDiffDisableRefine:     true,
+		items.ConfigFileDiffRefineMaxFileSize: 512 * 1024,
+		items.ConfigFileDiffRefineMaxLines:    2000,
 	}))
 	assert.True(t, fd.CleanupDisabled)
 	assert.True(t, fd.WhitespaceIgnore)
@@ -335,8 +335,8 @@ func TestFileDiffRefineMaxLinesSkips(t *testing.T) {
 		}},
 	}
 	deps := map[string]interface{}{
-		items.DependencyBlobCache:    cache,
-		items.DependencyTreeChanges:  object.Changes{change},
+		items.DependencyBlobCache:   cache,
+		items.DependencyTreeChanges: object.Changes{change},
 	}
 
 	fdDisabled := fixtures.FileDiff()

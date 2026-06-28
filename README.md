@@ -26,6 +26,7 @@
   - [Build from source](#build-from-source)
   - [Build tags and optional dependencies](#build-tags-and-optional-dependencies)
   - [GitHub Action](#github-action)
+  - [Release and version policy](#release-and-version-policy)
 - [Contributions](#contributions)
 - [License](#license)
 - [Usage](#usage)
@@ -106,7 +107,8 @@ Numpy and Scipy can be installed on Windows using http://www.lfd.uci.edu/~gohlke
 
 ### Build from source
 
-You need Go (>= v1.25). For development workflows that regenerate protobuf files or use repo recipes, install
+You need Go 1.25 or newer. The exact minimum is declared in [`go.mod`](go.mod).
+For development workflows that regenerate protobuf files or use repo recipes, install
 [`protoc`](https://github.com/google/protobuf/releases) and [`just`](https://github.com/casey/just).
 
 ```
@@ -150,6 +152,15 @@ TAGS=tensorflow just
 - Requires [`libtensorflow`](https://www.tensorflow.org/install/install_go).
 - If `--sentiment` is requested without this tag, Hercules prints a clear rebuild hint.
 
+Optional cgo LZ4 build:
+
+```
+go build -tags cgo_lz4 ./cmd/hercules
+```
+
+- Restores the legacy cgo-backed LZ4 path for RBTree hibernation.
+- Not required for normal releases; the default pure-Go LZ4 path is preferred.
+
 ### Migration notes (fork-specific)
 
 This fork intentionally removed the legacy UAST/Babelfish surface and does not preserve backward compatibility for it.
@@ -177,6 +188,21 @@ This fork intentionally removed the legacy UAST/Babelfish surface and does not p
 It is possible to run Hercules as a [GitHub Action](https://help.github.com/en/articles/about-github-actions):
 [Hercules on GitHub Marketplace](https://github.com/marketplace/actions/hercules-insights).
 Please refer to the [sample workflow](.github/workflows/main.yml) which demonstrates how to setup.
+
+### Release and version policy
+
+Default release artifacts are built without TensorFlow, without legacy parser services, and without
+cgo-only dependencies. The supported release build is:
+
+```
+CGO_ENABLED=0 go build ./cmd/hercules
+```
+
+`hercules version` prints the API version derived from the Go module path plus the Git hash embedded
+at build time. Builds made through `just` set the Git hash automatically with `-ldflags`.
+
+See [docs/RELEASE.md](docs/RELEASE.md) for the maintainer checklist, version policy, optional build
+tags, and migration notes from the old upstream.
 
 ## Contributions
 
@@ -271,8 +297,13 @@ go to [projector.tensorflow.org](https://projector.tensorflow.org), click "Load"
 ### Docker image
 
 ```
-docker run --rm srcd/hercules hercules --burndown --pb https://github.com/git/git | docker run --rm -i -v $(pwd):/io srcd/hercules labours -f pb -m burndown-project -o /io/git_git.png
+docker build -t hercules .
+docker run --rm hercules hercules --preset quick --burndown --pb https://github.com/git/git | \
+  docker run --rm -i -v "$(pwd):/io" hercules labours -f pb -m burndown-project -o /io/git_git.png
 ```
+
+The old `srcd/hercules` Docker image belongs to the upstream project and is not the release artifact
+for this fork.
 
 ### Built-in analyses
 
@@ -526,7 +557,7 @@ with owning lines.
 
 <p align="center">It can be clearly seen that Django comments were positive/optimistic in the beginning, but later became negative/pessimistic.<br><code>hercules --sentiment --pb https://github.com/django/django | labours -m sentiment -f pb</code></p>
 
-`--sentiment` is experimental.
+`--sentiment` is experimental and optional. It is unavailable in default release builds.
 
 We extract new and changed comments from source code on every commit, apply [BiDiSentiment](https://github.com/vmarkovtsev/bidisentiment)
 general purpose sentiment recurrent neural network and plot the results. This analysis requires
@@ -707,6 +738,8 @@ contain `"type"` which reflects the plot kind.
 1. Processing all the commits may fail in some rare cases. If you get an error similar to https://github.com/meko-christian/hercules/issues/106
    please report there and specify `--first-parent` as a workaround.
 1. Burndown collection may fail with an Out-Of-Memory error. See the next session for the workarounds.
+1. `--sentiment` and couples embeddings are optional/experimental TensorFlow-backed paths. They are
+   not enabled in default release builds and should not be treated as release-blocking analyses.
 1. Parsing YAML in Python is slow when the number of internal objects is big. `hercules`' output
    for the Linux kernel in "couples" mode is 1.5 GB and takes more than an hour / 180GB RAM to be
    parsed. However, most of the repositories are parsed within a minute. Try using Protocol Buffers

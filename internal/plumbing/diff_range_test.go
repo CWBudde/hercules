@@ -33,7 +33,7 @@ func TestCollectSuspiciousBoundariesNone(t *testing.T) {
 func TestCollectSuspiciousBoundariesOne(t *testing.T) {
 	prefix := runeLines(2, 'X')
 	diffs := []diffmatchpatch.Diff{
-		{Type: diffmatchpatch.DiffEqual, Text: runeLines(3, 'a')},  // 3 lines (0..2)
+		{Type: diffmatchpatch.DiffEqual, Text: runeLines(3, 'a')},           // 3 lines (0..2)
 		{Type: diffmatchpatch.DiffInsert, Text: prefix + runeLines(1, 'I')}, // 3 inserted lines, shares 2-line prefix with next
 		{Type: diffmatchpatch.DiffEqual, Text: prefix + runeLines(2, 'd')},
 	}

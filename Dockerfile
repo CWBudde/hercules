@@ -1,4 +1,4 @@
-FROM golang:1.18 AS builder
+FROM golang:1.25 AS builder
 ENV PROTOBUF_VERSION 21.12
 ENV ARCH linux-x86_64
 COPY . /root/src

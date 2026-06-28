@@ -197,9 +197,9 @@ func TestExtractNamedNodesInRangesEmptyInputs(t *testing.T) {
 		source []byte
 		ranges []LineRange
 	}{
-		"empty source":              {source: nil, ranges: []LineRange{{Start: 1, End: 1}}},
-		"empty ranges":              {source: []byte("package demo\n"), ranges: nil},
-		"all ranges out of bounds":  {source: []byte("package demo\n"), ranges: []LineRange{{Start: 99, End: 100}}},
+		"empty source":               {source: nil, ranges: []LineRange{{Start: 1, End: 1}}},
+		"empty ranges":               {source: []byte("package demo\n"), ranges: nil},
+		"all ranges out of bounds":   {source: []byte("package demo\n"), ranges: []LineRange{{Start: 99, End: 100}}},
 		"empty interval after clamp": {source: []byte("package demo\n"), ranges: []LineRange{{Start: 5, End: 2}}},
 	}
 	for name, tc := range cases {
@@ -372,7 +372,7 @@ func TestBuildSitterRangesClampsAndDrops(t *testing.T) {
 	lineStarts := computeLineStarts(source)
 	numLines := len(lineStarts) - 1
 	ranges := []LineRange{
-		{Start: -3, End: 1},  // clamps to 1..1
+		{Start: -3, End: 1},   // clamps to 1..1
 		{Start: 99, End: 100}, // dropped
 		{Start: 5, End: 2},    // empty after clamp → dropped
 	}

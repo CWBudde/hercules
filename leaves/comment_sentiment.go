@@ -113,7 +113,7 @@ func (sent *CommentSentimentAnalysis) Flag() string {
 
 // Description returns the text which explains what the analysis is doing.
 func (sent *CommentSentimentAnalysis) Description() string {
-	return "Classifies each new or changed comment per commit as containing positive or " +
+	return "[EXPERIMENTAL] Classifies each new or changed comment per commit as containing positive or " +
 		"negative emotions. The classifier outputs a real number between 0 and 1," +
 		"1 is the most positive and 0 is the most negative."
 }

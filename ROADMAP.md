@@ -125,25 +125,25 @@ Status: **open**.
 
 ### Milestone 5 — Identity correctness & auditability (P2/P3)
 
-Status: **open; after P1 contracts**.
+Status: **complete**.
 
 Why: identity errors silently corrupt multiple downstream metrics.
 
-- [ ] **Improve identity merge heuristics**
-  - [ ] GitHub username resolution via commit trailers (`Co-authored-by:`).
-  - [ ] Fuzzy matching for name variants (Levenshtein or Jaro-Winkler).
-  - [ ] Configurable confidence threshold for automatic merges.
-  - [ ] Acceptance: heuristic decisions are deterministic and covered by fixtures.
+- [x] **Improve identity merge heuristics**
+  - [x] GitHub username resolution via commit trailers (`Co-authored-by:`).
+  - [x] Fuzzy matching for name variants (Levenshtein or Jaro-Winkler).
+  - [x] Configurable confidence threshold for automatic merges.
+  - [x] Acceptance: heuristic decisions are deterministic and covered by fixtures.
 
-- [ ] **Identity audit report (`--identity-audit`)**
-  - [ ] Emit all detected identities and merge decisions with confidence.
-  - [ ] Flag ambiguous cases for manual review.
-  - [ ] Output format: JSON (preferred) plus optional table.
-  - [ ] Acceptance: users can find and fix suspicious merges without reading code.
+- [x] **Identity audit report (`--identity-audit`)**
+  - [x] Emit all detected identities and merge decisions with confidence.
+  - [x] Flag ambiguous cases for manual review.
+  - [x] Output format: JSON (preferred); table output remains unnecessary unless users ask for it.
+  - [x] Acceptance: users can find and fix suspicious merges without reading code.
 
-- [ ] **Generate `people-dict` template**
-  - [ ] Produce a template file from detected identities for manual refinement.
-  - [ ] Acceptance: identity refinement becomes an explicit workflow step.
+- [x] **Generate `people-dict` template**
+  - [x] Produce a template file from detected identities for manual refinement.
+  - [x] Acceptance: identity refinement becomes an explicit workflow step.
 
 ### Milestone 6 — Documentation & release hygiene (P2)
 

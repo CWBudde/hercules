@@ -338,6 +338,28 @@ Vadim Markovtsev|vadim@sourced.tech|another@one.com
 If `--people-dict` is not specified a [`.mailmap`](https://git-scm.com/docs/git-check-mailmap) file
 will be used if it exists in the latest commit.
 
+Identity discovery can be audited before running people-sensitive analyses:
+
+```
+hercules --identity-audit /path/to/repo > identities.json
+```
+
+The JSON report lists detected identities, automatic merge decisions with confidence values, and
+ambiguous candidates which should be reviewed manually. The automatic heuristic threshold defaults
+to `0.92` and can be adjusted:
+
+```
+hercules --identity-audit --identity-merge-threshold=0.98 /path/to/repo > identities.json
+```
+
+To start a manual identity refinement workflow, generate a template in the same format accepted by
+`--people-dict`:
+
+```
+hercules --people-dict-template=people.txt /path/to/repo
+hercules --burndown --burndown-people --people-dict=people.txt /path/to/repo
+```
+
 #### Overwrites matrix
 
 ![Wireshark top 20 overwrites matrix](docs/wireshark_overwrites_matrix.png)

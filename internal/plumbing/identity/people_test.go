@@ -39,10 +39,11 @@ func TestPeopleDetectorMeta(t *testing.T) {
 	assert.Equal(t, len(id.Provides()), 1)
 	assert.Equal(t, id.Provides()[0], DependencyAuthor)
 	opts := id.ListConfigurationOptions()
-	assert.Len(t, opts, 3)
+	assert.Len(t, opts, 4)
 	assert.Equal(t, opts[0].Name, ConfigIdentityDetectorPeopleDictPath)
 	assert.Equal(t, opts[1].Name, ConfigIdentityDetectorExactSignatures)
 	assert.Equal(t, opts[2].Name, ConfigIdentityDetectorAnonymity)
+	assert.Equal(t, opts[3].Name, ConfigIdentityDetectorMergeThreshold)
 	logger := core.NewLogger()
 	assert.NoError(t, id.Configure(map[string]interface{}{
 		core.ConfigLogger: logger,
@@ -273,6 +274,82 @@ func TestPeopleDetectorGeneratePeopleDictExact(t *testing.T) {
 	ass.NotEqual(id.ReversedPeopleDict[len(id.ReversedPeopleDict)-1], core.AuthorMissingName)
 }
 
+func TestPeopleDetectorCoAuthorTrailers(t *testing.T) {
+	id := PeopleDetector{}
+	id.GeneratePeopleDict([]*object.Commit{
+		getFakeCommitWithSignature(
+			"Alice Example", "alice@users.noreply.github.com",
+			"Pairing work\n\nCo-authored-by: Alice Example <alice@example.com>",
+		),
+	})
+
+	audit := id.IdentityAudit()
+	assert.Len(t, audit.Identities, 1)
+	assert.Equal(t, "alice example|alice@example.com|alice@users.noreply.github.com", audit.Identities[0].PeopleDictLine)
+	assert.Len(t, audit.MergeDecisions, 1)
+	assert.Equal(t, "co-authored-by", audit.MergeDecisions[0].Reason)
+	assert.Equal(t, 1.0, audit.MergeDecisions[0].Confidence)
+	assert.Empty(t, audit.Ambiguous)
+}
+
+func TestPeopleDetectorFuzzyIdentityMerges(t *testing.T) {
+	id := PeopleDetector{}
+	id.GeneratePeopleDict([]*object.Commit{
+		getFakeCommitWithSignature("Katherine Johnson", "kat@example.com", "Initial"),
+		getFakeCommitWithSignature("Kathryn Johnson", "kathryn@example.com", "Follow-up"),
+	})
+
+	audit := id.IdentityAudit()
+	assert.Len(t, audit.Identities, 1)
+	assert.Equal(t, "katherine johnson|kathryn johnson|kat@example.com|kathryn@example.com", audit.Identities[0].PeopleDictLine)
+	assert.Len(t, audit.MergeDecisions, 1)
+	assert.Equal(t, "fuzzy-name", audit.MergeDecisions[0].Reason)
+	assert.GreaterOrEqual(t, audit.MergeDecisions[0].Confidence, id.MergeThreshold)
+}
+
+func TestPeopleDetectorIdentityThresholdKeepsAmbiguousCandidates(t *testing.T) {
+	id := PeopleDetector{MergeThreshold: 0.99}
+	id.GeneratePeopleDict([]*object.Commit{
+		getFakeCommitWithSignature("Katherine Johnson", "kat@example.com", "Initial"),
+		getFakeCommitWithSignature("Kathryn Johnson", "kathryn@example.com", "Follow-up"),
+	})
+
+	audit := id.IdentityAudit()
+	assert.Len(t, audit.Identities, 2)
+	assert.Empty(t, audit.MergeDecisions)
+	assert.Len(t, audit.Ambiguous, 1)
+	assert.Equal(t, "fuzzy-name", audit.Ambiguous[0].Reason)
+	assert.Less(t, audit.Ambiguous[0].Confidence, id.MergeThreshold)
+}
+
+func TestPeopleDetectorPeopleDictTemplate(t *testing.T) {
+	id := PeopleDetector{}
+	id.GeneratePeopleDict([]*object.Commit{
+		getFakeCommitWithSignature("Bob Example", "bob@example.com", "Initial"),
+		getFakeCommitWithSignature("Alice Example", "alice@example.com", "Initial"),
+		getFakeCommitWithSignature("Alice Example", "alice@work.example.com", "Work"),
+	})
+
+	assert.Equal(t,
+		"bob example|bob@example.com\nalice example|alice@example.com|alice@work.example.com\n",
+		id.GeneratePeopleDictTemplate())
+}
+
+func TestPeopleDetectorIdentityThresholdConfiguration(t *testing.T) {
+	id := PeopleDetector{}
+	facts := map[string]interface{}{
+		ConfigIdentityDetectorMergeThreshold: 1.5,
+		core.ConfigPipelineCommits: []*object.Commit{
+			getFakeCommitWithSignature("Alice Example", "alice@example.com", "Initial"),
+		},
+	}
+	assert.Error(t, id.Configure(facts))
+
+	facts[ConfigIdentityDetectorMergeThreshold] = 0.98
+	assert.NoError(t, id.Configure(facts))
+	assert.Equal(t, 0.98, id.MergeThreshold)
+}
+
 func TestPeopleDetectorLoadPeopleDictInvalidPath(t *testing.T) {
 	id := fixturePeopleDetector()
 	ipath := "/xxxyyyzzzInvalidPath!hehe"
@@ -393,6 +470,14 @@ func getFakeCommitWithFile(name string, contents string) *object.Commit {
 	strr := fakeEncodedObjectStorer{Name: name, Contents: contents}
 	*(*storer.EncodedObjectStorer)(ptr) = strr
 	return &c
+}
+
+func getFakeCommitWithSignature(name, email, message string) *object.Commit {
+	c := getFakeCommitWithFile("not-mailmap", "")
+	c.Author = object.Signature{Name: name, Email: email}
+	c.Committer = object.Signature{Name: name, Email: email}
+	c.Message = message
+	return c
 }
 
 func TestPeopleDetectorGeneratePeopleDictMailmap(t *testing.T) {

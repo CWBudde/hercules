@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"io/ioutil"
 	"os"
@@ -11,8 +12,10 @@ import (
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/cache"
+	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/meko-christian/hercules/internal/core"
+	"github.com/meko-christian/hercules/internal/plumbing/identity"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -96,4 +99,54 @@ func TestFormatProgressEventJSON(t *testing.T) {
 func TestParseProgressModeRejectsUnknownValue(t *testing.T) {
 	_, err := parseProgressMode("loud")
 	assert.Error(t, err)
+}
+
+func TestIdentityWorkflowFlagsRegistered(t *testing.T) {
+	assert.NotNil(t, rootCmd.Flags().Lookup("identity-audit"))
+	assert.NotNil(t, rootCmd.Flags().Lookup("identity-merge-threshold"))
+	assert.NotNil(t, rootCmd.Flags().Lookup("people-dict-template"))
+}
+
+func TestIdentityAuditWorkflowWritesJSON(t *testing.T) {
+	var out bytes.Buffer
+	err := runIdentityWorkflow(identityWorkflowOptions{
+		Commits: []*object.Commit{
+			{
+				Author:  object.Signature{Name: "Alice Example", Email: "alice@users.noreply.github.com"},
+				Message: "Pairing\n\nCo-authored-by: Alice Example <alice@example.com>",
+			},
+		},
+		Facts: map[string]interface{}{},
+		Audit: true,
+		Out:   &out,
+	})
+
+	assert.NoError(t, err)
+	var audit identity.IdentityAudit
+	assert.NoError(t, json.Unmarshal(out.Bytes(), &audit))
+	assert.Len(t, audit.Identities, 1)
+	assert.Equal(t, "co-authored-by", audit.MergeDecisions[0].Reason)
+}
+
+func TestIdentityTemplateWorkflowWritesPeopleDictFile(t *testing.T) {
+	tempdir, err := ioutil.TempDir("", "hercules-identity-")
+	assert.NoError(t, err)
+	defer func() { _ = os.RemoveAll(tempdir) }()
+	templatePath := filepath.Join(tempdir, "people.txt")
+
+	err = runIdentityWorkflow(identityWorkflowOptions{
+		Commits: []*object.Commit{
+			{
+				Author:  object.Signature{Name: "Alice Example", Email: "alice@example.com"},
+				Message: "Initial",
+			},
+		},
+		Facts:        map[string]interface{}{},
+		TemplatePath: templatePath,
+	})
+
+	assert.NoError(t, err)
+	data, err := os.ReadFile(templatePath)
+	assert.NoError(t, err)
+	assert.Equal(t, "alice example|alice@example.com\n", string(data))
 }

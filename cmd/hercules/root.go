@@ -35,6 +35,7 @@ import (
 	"github.com/meko-christian/hercules"
 	"github.com/meko-christian/hercules/internal/core"
 	"github.com/meko-christian/hercules/internal/pb"
+	"github.com/meko-christian/hercules/internal/plumbing/identity"
 	"github.com/mitchellh/go-homedir"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -295,6 +296,8 @@ targets can be added using the --plugin system.`,
 		protobuf := getBool("pb")
 		profile := getBool("profile")
 		disableStatus := getBool("quiet")
+		identityAudit := getBool("identity-audit")
+		peopleDictTemplate := getString("people-dict-template")
 		progressModeValue, err := parseProgressMode(getString("progress"))
 		if err != nil {
 			log.Fatal(err)
@@ -410,6 +413,24 @@ targets can be added using the --plugin system.`,
 			cmdlineFacts[hercules.ConfigPipelineCommits] = commits
 		}
 
+		if identityAudit || peopleDictTemplate != "" {
+			commits, ok := cmdlineFacts[hercules.ConfigPipelineCommits].([]*object.Commit)
+			if !ok {
+				log.Fatal("identity audit requires a Git commit repository")
+			}
+			err := runIdentityWorkflow(identityWorkflowOptions{
+				Commits:      commits,
+				Facts:        cmdlineFacts,
+				Audit:        identityAudit,
+				TemplatePath: peopleDictTemplate,
+				Out:          os.Stdout,
+			})
+			if err != nil {
+				log.Fatal(err)
+			}
+			return
+		}
+
 		priorityFn := func(items []core.PipelineItem) core.PipelineItem {
 			if len(items) == 0 {
 				return nil
@@ -448,6 +469,45 @@ targets can be added using the --plugin system.`,
 		}
 		emitProgress(progressEvent{Event: "write-done", Repo: repoUri})
 	},
+}
+
+type identityWorkflowOptions struct {
+	Commits      []*object.Commit
+	Facts        map[string]interface{}
+	Audit        bool
+	TemplatePath string
+	Out          io.Writer
+}
+
+func runIdentityWorkflow(options identityWorkflowOptions) error {
+	facts := make(map[string]interface{}, len(options.Facts)+1)
+	for key, value := range options.Facts {
+		facts[key] = value
+	}
+	facts[hercules.ConfigPipelineCommits] = options.Commits
+	delete(facts, identity.FactIdentityDetectorReversedPeopleDict)
+
+	detector := identity.PeopleDetector{}
+	if err := detector.Configure(facts); err != nil {
+		return err
+	}
+	if options.TemplatePath != "" {
+		if err := os.WriteFile(options.TemplatePath, []byte(detector.GeneratePeopleDictTemplate()), 0644); err != nil {
+			return err
+		}
+	}
+	if options.Audit {
+		out := options.Out
+		if out == nil {
+			out = os.Stdout
+		}
+		encoder := json.NewEncoder(out)
+		encoder.SetIndent("", "  ")
+		if err := encoder.Encode(detector.IdentityAudit()); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func deployItemsToPipeline(pipeline *core.Pipeline, flags *pflag.FlagSet,
@@ -755,6 +815,8 @@ func init() {
 	rootFlags.Bool("first-parent", false, "Follow only the first parent in the commit history - "+
 		"\"git log --first-parent\".")
 	rootFlags.Bool("pb", false, "The output format will be Protocol Buffers instead of YAML.")
+	rootFlags.Bool("identity-audit", false,
+		"Write detected identities, merge decisions, and ambiguous identity candidates as JSON and exit.")
 	rootFlags.Bool("quiet", !terminal.IsTerminal(int(os.Stdin.Fd())),
 		"Do not print status updates to stderr.")
 	rootFlags.String("progress", "auto",
@@ -769,6 +831,13 @@ func init() {
 		panic(err)
 	}
 	hercules.PathifyFlagValue(rootFlags.Lookup("ssh-identity"))
+	rootFlags.String("people-dict-template", "",
+		"Write detected identities to a people-dict template file and exit.")
+	err = rootCmd.MarkFlagFilename("people-dict-template")
+	if err != nil {
+		panic(err)
+	}
+	hercules.PathifyFlagValue(rootFlags.Lookup("people-dict-template"))
 	cmdlineFacts, cmdlineDeployed, activationByFlags = hercules.Registry.AddFlags(rootFlags)
 	rootCmd.SetUsageFunc(formatUsage)
 	rootCmd.AddCommand(versionCmd)

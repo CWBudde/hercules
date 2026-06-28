@@ -4,8 +4,10 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -26,6 +28,10 @@ type PeopleDetector struct {
 	// or exact email && name
 	ExactSignatures bool
 	Anonymity       bool
+	MergeThreshold  float64
+
+	audit                    IdentityAudit
+	mergeThresholdConfigured bool
 
 	l core.Logger
 }
@@ -44,9 +50,52 @@ const (
 	ConfigIdentityDetectorExactSignatures = "PeopleDetector.ExactSignatures"
 
 	ConfigIdentityDetectorAnonymity = "PeopleDetector.Anonymity"
+	// ConfigIdentityDetectorMergeThreshold is the configuration option which controls
+	// the minimum confidence for automatic heuristic identity merges.
+	ConfigIdentityDetectorMergeThreshold = "PeopleDetector.MergeThreshold"
+
+	defaultIdentityMergeThreshold = 0.92
+	ambiguousIdentityThreshold    = 0.85
 )
 
 var _ core.IdentityResolver = peopleResolver{}
+
+var coAuthorTrailerRE = regexp.MustCompile(`(?im)^Co-authored-by:\s*(.+?)\s*<([^<>@\s]+@[^<>\s]+)>`)
+
+// IdentityAudit is the JSON-friendly report of detected identities and merge decisions.
+type IdentityAudit struct {
+	Threshold      float64                   `json:"threshold"`
+	Identities     []IdentityAuditIdentity   `json:"identities"`
+	MergeDecisions []IdentityMergeDecision   `json:"merge_decisions"`
+	Ambiguous      []IdentityMergeSuggestion `json:"ambiguous"`
+}
+
+// IdentityAuditIdentity describes a resolved canonical identity.
+type IdentityAuditIdentity struct {
+	ID             int      `json:"id"`
+	Primary        string   `json:"primary"`
+	Names          []string `json:"names"`
+	Emails         []string `json:"emails"`
+	PeopleDictLine string   `json:"people_dict_line"`
+	SourceCount    int      `json:"source_count"`
+}
+
+// IdentityMergeDecision describes one automatic merge.
+type IdentityMergeDecision struct {
+	Identity   int     `json:"identity"`
+	From       string  `json:"from"`
+	To         string  `json:"to"`
+	Reason     string  `json:"reason"`
+	Confidence float64 `json:"confidence"`
+}
+
+// IdentityMergeSuggestion describes one candidate which was left for manual review.
+type IdentityMergeSuggestion struct {
+	Left       string  `json:"left"`
+	Right      string  `json:"right"`
+	Reason     string  `json:"reason"`
+	Confidence float64 `json:"confidence"`
+}
 
 type peopleResolver struct {
 	identities *PeopleDetector
@@ -161,6 +210,13 @@ func (detector *PeopleDetector) ListConfigurationOptions() []core.ConfigurationO
 			Flag:        "people-anonymity",
 			Type:        core.BoolConfigurationOption,
 			Default:     false,
+		}, {
+			Name: ConfigIdentityDetectorMergeThreshold,
+			Description: "Minimum confidence for automatic heuristic identity merges. " +
+				"Lower values merge more name variants; higher values leave more cases for audit.",
+			Flag:    "identity-merge-threshold",
+			Type:    core.FloatConfigurationOption,
+			Default: float32(defaultIdentityMergeThreshold),
 		},
 	}
 }
@@ -186,6 +242,14 @@ func (detector *PeopleDetector) Configure(facts map[string]interface{}) error {
 		detector.Anonymity = val
 	}
 
+	if val, exists := identityMergeThresholdFromFacts(facts); exists {
+		if val < 0 || val > 1 {
+			return errors.Errorf("%s must be between 0 and 1: %f", ConfigIdentityDetectorMergeThreshold, val)
+		}
+		detector.MergeThreshold = val
+		detector.mergeThresholdConfigured = true
+	}
+
 	if peopleDictPath, ok := facts[ConfigIdentityDetectorPeopleDictPath].(string); ok && peopleDictPath != "" {
 		err := detector.LoadPeopleDict(peopleDictPath)
 		if err != nil {
@@ -206,6 +270,10 @@ func (detector *PeopleDetector) Configure(facts map[string]interface{}) error {
 		for k, v := range detector.ReversedPeopleDict {
 			detector.PeopleDict[v] = k
 		}
+	}
+	if len(detector.audit.Identities) == 0 && len(detector.ReversedPeopleDict) > 0 {
+		detector.ensureMergeThreshold()
+		detector.rebuildAuditFromState(nil, nil, nil)
 	}
 
 	var resolver core.IdentityResolver = peopleResolver{detector}
@@ -257,6 +325,7 @@ func (detector *PeopleDetector) Fork(n int) []core.PipelineItem {
 // The format is one signature per line, and the signature consists of several
 // keys separated by "|". The first key is the main one and used to reference all the rest.
 func (detector *PeopleDetector) LoadPeopleDict(path string) error {
+	detector.ensureMergeThreshold()
 	file, err := os.Open(path)
 	if err != nil {
 		return err
@@ -283,21 +352,24 @@ func (detector *PeopleDetector) LoadPeopleDict(path string) error {
 	}
 	detector.PeopleDict = dict
 	detector.ReversedPeopleDict = reverseDict
+	detector.rebuildAuditFromState(nil, nil, nil)
 	return nil
 }
 
 // GeneratePeopleDict loads author signatures from the specified list of Git commits.
 func (detector *PeopleDetector) GeneratePeopleDict(commits []*object.Commit) {
+	detector.ensureMergeThreshold()
 	dict := map[string]int{}
 	emails := map[int][]string{}
 	names := map[int][]string{}
+	sourceCounts := map[int]int{}
+	var decisions []IdentityMergeDecision
+	var ambiguous []IdentityMergeSuggestion
 	size := 0
 
-	mailmapFile, err := commits[len(commits)-1].File(".mailmap")
 	// TODO(vmarkovtsev): properly handle .mailmap if ExactSignatures
-	if !detector.ExactSignatures && err == nil {
-		mailMapContents, err := mailmapFile.Contents()
-		if err == nil {
+	if !detector.ExactSignatures {
+		if mailMapContents, ok := lastCommitMailmapContents(commits); ok {
 			mailmap := ParseMailmap(mailMapContents)
 			for key, val := range mailmap {
 				key = strings.ToLower(key)
@@ -351,33 +423,26 @@ func (detector *PeopleDetector) GeneratePeopleDict(commits []*object.Commit) {
 
 	for _, commit := range commits {
 		if !detector.ExactSignatures {
-			email := strings.ToLower(commit.Author.Email)
-			name := strings.ToLower(commit.Author.Name)
-			id, exists := dict[email]
-			if exists {
-				_, exists := dict[name]
-				if !exists {
-					dict[name] = id
-					names[id] = append(names[id], name)
+			_, addedDecision := detector.addSignature(
+				commit.Author.Name, commit.Author.Email, "commit", &size, dict, names, emails, sourceCounts, &ambiguous)
+			if addedDecision != nil {
+				decisions = append(decisions, *addedDecision)
+			}
+			for _, signature := range parseCoAuthors(commit.Message) {
+				_, addedDecision = detector.addSignature(
+					signature.Name, signature.Email, "co-authored-by", &size, dict, names, emails, sourceCounts, &ambiguous)
+				if addedDecision != nil {
+					decisions = append(decisions, *addedDecision)
 				}
-				continue
 			}
-			id, exists = dict[name]
-			if exists {
-				dict[email] = id
-				emails[id] = append(emails[id], email)
-				continue
-			}
-			dict[email] = size
-			dict[name] = size
-			emails[size] = append(emails[size], email)
-			names[size] = append(names[size], name)
-			size++
 		} else { // !detector.ExactSignatures
 			sig := strings.ToLower(commit.Author.String())
 			if _, exists := dict[sig]; !exists {
 				dict[sig] = size
+				sourceCounts[size]++
 				size++
+			} else {
+				sourceCounts[dict[sig]]++
 			}
 		}
 	}
@@ -395,6 +460,413 @@ func (detector *PeopleDetector) GeneratePeopleDict(commits []*object.Commit) {
 	}
 	detector.PeopleDict = dict
 	detector.ReversedPeopleDict = reverseDict
+	detector.rebuildAuditFromState(names, emails, sourceCounts, decisions, ambiguous)
+}
+
+func (detector *PeopleDetector) ensureMergeThreshold() {
+	if detector.MergeThreshold == 0 && !detector.mergeThresholdConfigured {
+		detector.MergeThreshold = defaultIdentityMergeThreshold
+	}
+}
+
+func identityMergeThresholdFromFacts(facts map[string]interface{}) (float64, bool) {
+	switch val := facts[ConfigIdentityDetectorMergeThreshold].(type) {
+	case float64:
+		return val, true
+	case float32:
+		return float64(val), true
+	default:
+		return 0, false
+	}
+}
+
+func (detector *PeopleDetector) addSignature(name, email, reason string, size *int,
+	dict map[string]int, names map[int][]string, emails map[int][]string, sourceCounts map[int]int,
+	ambiguous *[]IdentityMergeSuggestion) (int, *IdentityMergeDecision) {
+	name = normalizeIdentityKey(name)
+	email = normalizeIdentityKey(email)
+	if name == "" && email == "" {
+		return core.AuthorMissing, nil
+	}
+	if email != "" {
+		if id, exists := dict[email]; exists {
+			sourceCounts[id]++
+			to := peopleDictLine(names[id], emails[id])
+			addIdentityKey(id, name, false, dict, names, emails)
+			return id, mergeDecisionForReason(id, name, email, reason, to, 1)
+		}
+	}
+	if name != "" {
+		if id, exists := dict[name]; exists {
+			sourceCounts[id]++
+			to := peopleDictLine(names[id], emails[id])
+			addIdentityKey(id, email, true, dict, names, emails)
+			return id, mergeDecisionForReason(id, name, email, reason, to, 1)
+		}
+	}
+
+	if reason == "commit" {
+		if candidate, confidence, tied := detector.bestFuzzyCandidate(name, email, names, emails); candidate != core.AuthorMissing {
+			suggestion := IdentityMergeSuggestion{
+				Left:       detector.identityLine(candidate, names, emails),
+				Right:      peopleDictLine([]string{name}, []string{email}),
+				Reason:     "fuzzy-name",
+				Confidence: confidence,
+			}
+			if !tied && confidence >= detector.MergeThreshold {
+				sourceCounts[candidate]++
+				addIdentityKey(candidate, name, false, dict, names, emails)
+				addIdentityKey(candidate, email, true, dict, names, emails)
+				return candidate, &IdentityMergeDecision{
+					Identity:   candidate,
+					From:       suggestion.Right,
+					To:         suggestion.Left,
+					Reason:     "fuzzy-name",
+					Confidence: confidence,
+				}
+			}
+			*ambiguous = append(*ambiguous, suggestion)
+		}
+	}
+
+	id := *size
+	*size++
+	sourceCounts[id]++
+	addIdentityKey(id, name, false, dict, names, emails)
+	addIdentityKey(id, email, true, dict, names, emails)
+	return id, nil
+}
+
+func mergeDecisionForReason(id int, name, email, reason, to string, confidence float64) *IdentityMergeDecision {
+	if reason != "co-authored-by" {
+		return nil
+	}
+	return &IdentityMergeDecision{
+		Identity:   id,
+		From:       peopleDictLine([]string{name}, []string{email}),
+		To:         to,
+		Reason:     reason,
+		Confidence: confidence,
+	}
+}
+
+func (detector *PeopleDetector) bestFuzzyCandidate(name, email string, names map[int][]string,
+	emails map[int][]string) (int, float64, bool) {
+	if name == "" {
+		return core.AuthorMissing, 0, false
+	}
+	ids := make([]int, 0, len(names))
+	for id := range names {
+		ids = append(ids, id)
+	}
+	sort.Ints(ids)
+	bestID := core.AuthorMissing
+	bestScore := 0.0
+	tied := false
+	for _, id := range ids {
+		if !sameEmailDomain(email, emails[id]) {
+			continue
+		}
+		for _, candidateName := range names[id] {
+			score := jaroWinkler(name, candidateName)
+			if score < ambiguousIdentityThreshold {
+				continue
+			}
+			if score > bestScore {
+				bestScore = score
+				bestID = id
+				tied = false
+			} else if score == bestScore {
+				tied = true
+			}
+		}
+	}
+	return bestID, bestScore, tied
+}
+
+func (detector *PeopleDetector) identityLine(id int, names map[int][]string, emails map[int][]string) string {
+	return peopleDictLine(names[id], emails[id])
+}
+
+func addIdentityKey(id int, key string, isEmail bool, dict map[string]int, names map[int][]string,
+	emails map[int][]string) {
+	if key == "" {
+		return
+	}
+	dict[key] = id
+	if isEmail {
+		emails[id] = appendUnique(emails[id], key)
+		return
+	}
+	names[id] = appendUnique(names[id], key)
+}
+
+func appendUnique(values []string, value string) []string {
+	for _, existing := range values {
+		if existing == value {
+			return values
+		}
+	}
+	return append(values, value)
+}
+
+func normalizeIdentityKey(value string) string {
+	value = strings.TrimSpace(strings.ToLower(value))
+	return strings.Join(strings.Fields(value), " ")
+}
+
+func parseCoAuthors(message string) []object.Signature {
+	matches := coAuthorTrailerRE.FindAllStringSubmatch(message, -1)
+	signatures := make([]object.Signature, 0, len(matches))
+	for _, match := range matches {
+		signatures = append(signatures, object.Signature{
+			Name:  strings.TrimSpace(match[1]),
+			Email: strings.TrimSpace(match[2]),
+		})
+	}
+	return signatures
+}
+
+func lastCommitMailmapContents(commits []*object.Commit) (contents string, ok bool) {
+	if len(commits) == 0 {
+		return "", false
+	}
+	defer func() {
+		if recover() != nil {
+			contents = ""
+			ok = false
+		}
+	}()
+	mailmapFile, err := commits[len(commits)-1].File(".mailmap")
+	if err != nil {
+		return "", false
+	}
+	contents, err = mailmapFile.Contents()
+	if err != nil {
+		return "", false
+	}
+	return contents, true
+}
+
+func peopleDictLine(names []string, emails []string) string {
+	names = append([]string(nil), names...)
+	emails = append([]string(nil), emails...)
+	sort.Strings(names)
+	sort.Strings(emails)
+	parts := append(names, emails...)
+	compact := parts[:0]
+	for _, part := range parts {
+		if part != "" {
+			compact = append(compact, part)
+		}
+	}
+	return strings.Join(compact, "|")
+}
+
+func sameEmailDomain(email string, existing []string) bool {
+	domain := emailDomain(email)
+	if domain == "" {
+		return false
+	}
+	for _, candidate := range existing {
+		if emailDomain(candidate) == domain {
+			return true
+		}
+	}
+	return false
+}
+
+func emailDomain(email string) string {
+	parts := strings.Split(email, "@")
+	if len(parts) != 2 {
+		return ""
+	}
+	return parts[1]
+}
+
+func jaroWinkler(a, b string) float64 {
+	a = normalizeForSimilarity(a)
+	b = normalizeForSimilarity(b)
+	if a == b {
+		return 1
+	}
+	if a == "" || b == "" {
+		return 0
+	}
+	jaro := jaroSimilarity(a, b)
+	prefix := 0
+	maxPrefix := minInt(4, minInt(len(a), len(b)))
+	for prefix < maxPrefix && a[prefix] == b[prefix] {
+		prefix++
+	}
+	return jaro + float64(prefix)*0.1*(1-jaro)
+}
+
+func normalizeForSimilarity(value string) string {
+	var b strings.Builder
+	for _, r := range value {
+		if unicode.IsLetter(r) || unicode.IsNumber(r) {
+			b.WriteRune(unicode.ToLower(r))
+		}
+	}
+	return b.String()
+}
+
+func jaroSimilarity(a, b string) float64 {
+	if len(a) > len(b) {
+		a, b = b, a
+	}
+	matchDistance := maxInt(len(b)/2-1, 0)
+	aMatches := make([]bool, len(a))
+	bMatches := make([]bool, len(b))
+	matches := 0
+	for i := range a {
+		start := maxInt(i-matchDistance, 0)
+		end := minInt(i+matchDistance+1, len(b))
+		for j := start; j < end; j++ {
+			if bMatches[j] || a[i] != b[j] {
+				continue
+			}
+			aMatches[i] = true
+			bMatches[j] = true
+			matches++
+			break
+		}
+	}
+	if matches == 0 {
+		return 0
+	}
+	transpositions := 0
+	k := 0
+	for i := range a {
+		if !aMatches[i] {
+			continue
+		}
+		for !bMatches[k] {
+			k++
+		}
+		if a[i] != b[k] {
+			transpositions++
+		}
+		k++
+	}
+	m := float64(matches)
+	return (m/float64(len(a)) + m/float64(len(b)) + (m-float64(transpositions)/2)/m) / 3
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+// IdentityAudit returns a copy of the detector's identity audit report.
+func (detector *PeopleDetector) IdentityAudit() IdentityAudit {
+	audit := detector.audit
+	audit.Identities = append([]IdentityAuditIdentity(nil), detector.audit.Identities...)
+	audit.MergeDecisions = append([]IdentityMergeDecision(nil), detector.audit.MergeDecisions...)
+	audit.Ambiguous = append([]IdentityMergeSuggestion(nil), detector.audit.Ambiguous...)
+	return audit
+}
+
+// GeneratePeopleDictTemplate returns the current detected identities in people-dict format.
+func (detector *PeopleDetector) GeneratePeopleDictTemplate() string {
+	if len(detector.audit.Identities) == 0 && len(detector.ReversedPeopleDict) > 0 {
+		detector.rebuildAuditFromState(nil, nil, nil)
+	}
+	var builder strings.Builder
+	for _, identity := range detector.audit.Identities {
+		builder.WriteString(identity.PeopleDictLine)
+		builder.WriteByte('\n')
+	}
+	return builder.String()
+}
+
+func (detector *PeopleDetector) rebuildAuditFromState(names map[int][]string, emails map[int][]string,
+	sourceCounts map[int]int, decisions ...interface{}) {
+	var mergeDecisions []IdentityMergeDecision
+	var ambiguous []IdentityMergeSuggestion
+	if len(decisions) > 0 {
+		if val, ok := decisions[0].([]IdentityMergeDecision); ok {
+			mergeDecisions = val
+		}
+	}
+	if len(decisions) > 1 {
+		if val, ok := decisions[1].([]IdentityMergeSuggestion); ok {
+			ambiguous = val
+		}
+	}
+	if names == nil || emails == nil {
+		names = map[int][]string{}
+		emails = map[int][]string{}
+		for id, line := range detector.ReversedPeopleDict {
+			for _, part := range strings.Split(line, "|") {
+				if strings.Contains(part, "@") {
+					emails[id] = append(emails[id], part)
+				} else if part != "" {
+					names[id] = append(names[id], part)
+				}
+			}
+		}
+	}
+	identities := make([]IdentityAuditIdentity, 0, len(detector.ReversedPeopleDict))
+	for id := range detector.ReversedPeopleDict {
+		line := peopleDictLine(names[id], emails[id])
+		identityNames := append([]string(nil), names[id]...)
+		identityEmails := append([]string(nil), emails[id]...)
+		sort.Strings(identityNames)
+		sort.Strings(identityEmails)
+		identities = append(identities, IdentityAuditIdentity{
+			ID:             id,
+			Primary:        primaryIdentityValue(identityNames, identityEmails),
+			Names:          identityNames,
+			Emails:         identityEmails,
+			PeopleDictLine: line,
+			SourceCount:    sourceCounts[id],
+		})
+	}
+	sort.Slice(mergeDecisions, func(i, j int) bool {
+		if mergeDecisions[i].Identity != mergeDecisions[j].Identity {
+			return mergeDecisions[i].Identity < mergeDecisions[j].Identity
+		}
+		if mergeDecisions[i].Reason != mergeDecisions[j].Reason {
+			return mergeDecisions[i].Reason < mergeDecisions[j].Reason
+		}
+		return mergeDecisions[i].From < mergeDecisions[j].From
+	})
+	sort.Slice(ambiguous, func(i, j int) bool {
+		if ambiguous[i].Confidence != ambiguous[j].Confidence {
+			return ambiguous[i].Confidence > ambiguous[j].Confidence
+		}
+		if ambiguous[i].Left != ambiguous[j].Left {
+			return ambiguous[i].Left < ambiguous[j].Left
+		}
+		return ambiguous[i].Right < ambiguous[j].Right
+	})
+	detector.audit = IdentityAudit{
+		Threshold:      detector.MergeThreshold,
+		Identities:     identities,
+		MergeDecisions: mergeDecisions,
+		Ambiguous:      ambiguous,
+	}
+}
+
+func primaryIdentityValue(names []string, emails []string) string {
+	if len(names) > 0 {
+		return names[0]
+	}
+	if len(emails) > 0 {
+		return emails[0]
+	}
+	return ""
 }
 
 func init() {

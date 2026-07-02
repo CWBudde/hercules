@@ -479,7 +479,7 @@ tests nor explicitly marked experimental.
       as experimental. → Non-linear histories + hibernation + merge_tracks are test-covered;
       plugins are test-covered on the cgo path and documented as unavailable in cgo-free builds.
 
-### Phase 12 — PB schema versioning & CI guardrails (P1)
+### Phase 12 — PB schema versioning & CI guardrails (P1) ✅ done 2026-07-02 (uncommitted)
 
 Why: stable tooling needs stable schemas; otherwise every downstream consumer is fragile.
 
@@ -487,14 +487,32 @@ Already done: schema version policy defined, compatible-vs-breaking PB changes d
 changelog entry format added, schema snapshot + CI check that flags PB schema changes in place.
 Output structures and examples are documented in [docs/SCHEMAS.md](docs/SCHEMAS.md).
 
-- [ ] Define where the current schema version is emitted.
-- [ ] Reserve removed field numbers/names in `.proto` files.
-- [ ] Require an explicit version bump and changelog entry for breaking changes in CI.
-- [ ] Acceptance: PB changes can be reviewed against the written compatibility policy, and
+- [x] Define where the current schema version is emitted.
+  - Single source of truth: `pb.SchemaVersion` (`internal/pb/version.go`, = 2), emitted in the
+    YAML header, PB `Metadata.version` (incl. `combine`), `hercules version` (`Schema:` line)
+    and `labours version` (its duplicate const removed). Fixed a real bug: YAML/`combine`
+    emitted `0` because the module rename broke package-suffix-derived `BinaryVersion`;
+    `--pb` hardcoded 2. Documented in SCHEMAS.md ("Schema Version").
+- [x] Reserve removed field numbers/names in `.proto` files.
+  - Audit vs upstream: no fields were ever removed from surviving messages; only whole
+    messages `UASTChange`/`UASTChangesSaverResults` died (proto3 has no file-level `reserved`
+    for message names) — recorded as "Retired message names" in the pb.proto header comment.
+    Tooling now parses `reserved` statements, snapshots them in `pb.schema.json`, and CI
+    flags removed-but-unreserved fields and reserved-number/name reuse for the future.
+- [x] Require an explicit version bump and changelog entry for breaking changes in CI.
+  - New `internal/pb/schema` package (proto parser + compatible/breaking classifier per the
+    SCHEMAS.md policy, unit-tested) + `cmd/schema-guard` CLI. New `test-schema` CI workflow
+    diffs `pb.schema.json` against the push/PR base: any schema change without a
+    `docs/SCHEMA_CHANGELOG.md` entry fails; breaking changes additionally require
+    `pb.SchemaVersion` > base. Locally: `just check-schema [base]`.
+- [x] Acceptance: PB changes can be reviewed against the written compatibility policy, and
       accidental breaking PB changes fail CI while intentional changes point to the
-      version/changelog decision.
+      version/changelog decision. → Verified with synthetic snapshots: unrecorded breaking
+      change fails with both violations named; compatible change fails without changelog and
+      passes with it; reserved+bumped+logged breaking change passes.
 
 Note: coordinate with **Phase 5** — versioning applies to whichever single proto source survives.
+(Phase 5 landed first; the guard covers the surviving `internal/pb/pb.proto`.)
 
 ### Phase 13 — Decide on JSON export mode (P1)
 

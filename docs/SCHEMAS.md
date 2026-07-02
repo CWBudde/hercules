@@ -9,6 +9,20 @@ Scope:
 - Protocol Buffers output (`hercules --pb ...`)
 - One compact example payload per analysis target
 
+## Schema Version
+
+The output schema is versioned by a single constant: `pb.SchemaVersion` in
+`internal/pb/version.go` (currently **2**). It is emitted in:
+
+- the YAML header: `hercules.version`
+- the PB envelope: `Metadata.version` (also for `hercules combine` output)
+- `hercules version` (the `Schema:` line) and `labours version`
+- the checked-in snapshot `internal/pb/pb.schema.json` (top-level `version`)
+
+Compatible changes (see policy below) keep the version; every breaking change
+must bump it. CI enforces this via `cmd/schema-guard`
+(`.github/workflows/test-schema.yaml`, locally `just check-schema`).
+
 ## Top-Level Envelope
 
 ### YAML
@@ -638,7 +652,16 @@ Required process for PB changes:
 
 1. Update `internal/pb/pb.proto`.
 2. If removing a field, add a `reserved` statement for its field number and name.
-3. Update this document and any affected examples.
-4. Record the change in `docs/SCHEMA_CHANGELOG.md`.
-5. Refresh `internal/pb/pb.schema.json` with the command above.
-6. Regenerate Go/Python protobuf files when required.
+   If removing a whole message, list it under "Retired message names" in the
+   pb.proto header comment.
+3. For breaking changes, bump `pb.SchemaVersion` in `internal/pb/version.go`.
+4. Update this document and any affected examples.
+5. Record the change in `docs/SCHEMA_CHANGELOG.md`.
+6. Refresh `internal/pb/pb.schema.json` with the command above.
+7. Regenerate Go/Python protobuf files when required.
+
+CI enforcement: the `test-schema` workflow diffs `pb.schema.json` against the
+push/PR base with `cmd/schema-guard` and fails when a schema change lacks a
+`docs/SCHEMA_CHANGELOG.md` entry, when a breaking change lacks a version bump,
+when a removed field is not reserved, or when a new field reuses a reserved
+number or name. Run `just check-schema [base]` to check locally.

@@ -82,6 +82,19 @@ check-formatted:
         exit 1
     fi
 
+# Check PB schema compatibility against a git base ref (mirrors CI's test-schema job)
+check-schema base="origin/main":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    baseline=$(mktemp)
+    trap 'rm -f "$baseline"' EXIT
+    git show "{{base}}:internal/pb/pb.schema.json" > "$baseline"
+    changelog_flag=""
+    if ! git diff --quiet "{{base}}" -- docs/SCHEMA_CHANGELOG.md; then
+        changelog_flag="-changelog-updated"
+    fi
+    go run ./cmd/schema-guard -old "$baseline" $changelog_flag
+
 # Check if go.mod is tidy
 check-tidy:
     #!/usr/bin/env bash

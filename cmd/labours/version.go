@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"runtime"
 
+	"github.com/meko-christian/hercules/internal/pb"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -17,17 +18,13 @@ var (
 	date    = "unknown"
 )
 
-// herculesPBSchemaVersion is the Hercules protobuf Metadata.version this build expects.
-// Bump when pb.proto is resynced from ../hercules/internal/pb/pb.proto.
-const herculesPBSchemaVersion = 2
-
 var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Print version, build, and Hercules schema compatibility information",
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Printf("labours-go %s (commit %s, built %s, %s/%s)\n",
 			version, commit, date, runtime.GOOS, runtime.GOARCH)
-		fmt.Printf("hercules protobuf schema: v%d\n", herculesPBSchemaVersion)
+		fmt.Printf("hercules protobuf schema: v%d\n", pb.SchemaVersion)
 		fmt.Printf("go: %s\n", runtime.Version())
 	},
 }

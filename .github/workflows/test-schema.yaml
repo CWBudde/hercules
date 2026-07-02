@@ -1,0 +1,62 @@
+name: test-schema
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  schema-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: "*/*.sum"
+
+      - name: Check PB schema compatibility against base
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_BEFORE: ${{ github.event.before }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+
+          base=""
+          zero="0000000000000000000000000000000000000000"
+          if [ "$EVENT_NAME" = "pull_request" ] && [ -n "$BASE_REF" ]; then
+            git fetch --no-tags origin "$BASE_REF"
+            base=$(git merge-base "origin/$BASE_REF" HEAD)
+          elif [ -n "${EVENT_BEFORE:-}" ] && [ "$EVENT_BEFORE" != "$zero" ] \
+              && git cat-file -e "$EVENT_BEFORE^{commit}" 2>/dev/null; then
+            base="$EVENT_BEFORE"
+          elif git rev-parse -q --verify origin/main >/dev/null 2>&1 \
+              && [ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]; then
+            base=$(git merge-base origin/main HEAD)
+          fi
+
+          if [ -z "$base" ]; then
+            echo "No base commit to compare against (first push?); skipping."
+            exit 0
+          fi
+          echo "Comparing PB schema against base $base"
+
+          baseline=$(mktemp)
+          if ! git show "$base:internal/pb/pb.schema.json" > "$baseline" 2>/dev/null; then
+            echo "No pb.schema.json at base commit; skipping."
+            exit 0
+          fi
+
+          changelog_flag=""
+          if ! git diff --quiet "$base" HEAD -- docs/SCHEMA_CHANGELOG.md; then
+            changelog_flag="-changelog-updated"
+          fi
+
+          go run ./cmd/schema-guard -old "$baseline" $changelog_flag

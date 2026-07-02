@@ -519,7 +519,7 @@ func newReportIndexData(
 	begin := "n/a"
 	end := "n/a"
 	repository := ""
-	version := int32(hercules.BinaryVersion)
+	version := int32(pb.SchemaVersion)
 	gitHash := hercules.BinaryGitHash
 	commits := int32(0)
 	runtimeMS := int64(0)

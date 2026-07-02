@@ -19,5 +19,8 @@ jobs:
   test-unit:
     uses: ./.github/workflows/test-unit.yaml
 
+  test-schema:
+    uses: ./.github/workflows/test-schema.yaml
+
   test-crosscompile:
     uses: ./.github/workflows/test-crosscompile.yaml

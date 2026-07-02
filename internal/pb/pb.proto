@@ -1,5 +1,17 @@
 syntax = "proto3";
 
+// This file is the canonical Hercules output schema. Changes are governed by
+// the compatibility policy in docs/SCHEMAS.md ("PB Schema Change Policy"):
+// record every change in docs/SCHEMA_CHANGELOG.md, reserve the numbers and
+// names of removed fields, and bump SchemaVersion in internal/pb/version.go
+// for breaking changes. The checked-in snapshot pb.schema.json plus
+// cmd/schema-guard enforce this in CI.
+//
+// Retired message names (do not reuse with different semantics):
+//   UASTChange, UASTChangesSaverResults — removed with the Babelfish
+//   dependency; --dump-uast-changes now stores raw JSON bytes in
+//   AnalysisResults.contents["UASTChangesSaver"].
+
 message Metadata {
     // this format is versioned
     int32 version = 1;

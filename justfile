@@ -42,6 +42,12 @@ test-all: hercules labours
 # Run unit tests (alias for test)
 test-unit: test
 
+# Run the plugin compatibility smoke test. Go plugins need cgo, so this
+# overrides the repo-wide CGO_ENABLED=0 default; the test builds a dedicated
+# `-tags purego` hercules binary (the cgo FreeType path is not shipped).
+test-plugin:
+    CGO_ENABLED=1 go test -v -run TestPluginCompatibilitySmoke ./test/plugin_smoke/
+
 # Run structural visual tests (no goldens or references required)
 test-visual:
     go test ./test/visual/

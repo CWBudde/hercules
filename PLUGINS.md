@@ -1,5 +1,24 @@
 # Hercules plugins
 
+### Status and requirements
+
+Plugins are supported, with the constraints inherent to
+[Go plugins](https://pkg.go.dev/plugin):
+
+- **cgo is mandatory.** Both the plugin and the `hercules` binary which loads it must be
+  built with `CGO_ENABLED=1`. The default build (`just`, releases, Docker) is
+  `CGO_ENABLED=0` and refuses to load any plugin (`--plugin` prints
+  "Failed to load plugin ... plugin: not implemented"). When building hercules with cgo,
+  add `-tags purego` (or `-tags systemfreetype` with system FreeType installed) — the
+  render stack's cgo FreeType path is not shipped.
+- **The toolchain and source tree must match.** A plugin only loads into a binary built
+  with the same Go version, the same module source and the same build tags.
+- **Linux and macOS only** — Go plugins are not supported on Windows.
+
+The whole path is covered by a compatibility smoke test: `just test-plugin`
+(`test/plugin_smoke/`), which builds a [minimal plugin](test/plugin_smoke/testdata/minimal_plugin/minimal.go)
+and a cgo hercules binary from the current tree and runs an analysis with it.
+
 ### Prerequisites
 
 It is required to have [GoGo Protobuf](https://github.com/gogo/protobuf) installed:

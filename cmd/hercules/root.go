@@ -248,7 +248,8 @@ func loadPlugins() {
 	fs.SetOutput(ioutil.Discard)
 	pluginFlagName := "plugin"
 	const pluginDesc = "Load the specified plugin by the full or relative path. " +
-		"Can be specified multiple times."
+		"Can be specified multiple times. Requires a hercules binary built with " +
+		"CGO_ENABLED=1 (the default build is cgo-free and cannot load plugins); see PLUGINS.md."
 	fs.Var(&pluginFlags, pluginFlagName, pluginDesc)
 	err := cobra.MarkFlagFilename(fs, "plugin")
 	if err != nil {

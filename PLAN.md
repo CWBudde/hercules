@@ -366,9 +366,9 @@ Refined 2026-07-02 after scouting the harness. Facts that reshape the phase:
     heatmap 58.6 raw).
   - Result: **25/26 pairs equal-or-better** (12 pass-within-tolerance, 7 strictly better incl.
     burndown-project 0.101→0.0979 — now meets the ≤0.10 goal — ownership 0.090→0.0884,
-    refactoring-proxy, knowledge-diffusion×3, weekdays_lines); 1 marginal: devs-efforts
+    refactoring-proxy, knowledge-diffusion×3, weekdays*lines); 1 marginal: devs-efforts
     0.139→0.1442 (+0.0052) — caused by the post-matrix y-axis offset-notation renderer feature,
-    perceptually equivalent (the same feature _improved_ four other modes).
+    perceptually equivalent (the same feature \_improved* four other modes).
   - Port fidelity: on identical fixtures our integrated `labours` is **byte-identical (RMSE 0.0)**
     to a fresh upstream-current labours-go build. Six seemingly-worse modes vs the checked-in
     `go_*.png` reference set traced to those artifacts being stale (May 8 < matrix code May 25);
@@ -444,17 +444,40 @@ These phases are independent of the renderer integration and can be worked in an
 Priorities follow the former roadmap model: **P1** = scale & contracts, **P2** = finish partial
 features, **P3** = nice-to-have.
 
-### Phase 11 — Validate or demote advanced pipeline features (P1)
+### Phase 11 — Validate or demote advanced pipeline features (P1) ✅ done 2026-07-02
 
 Why: advanced pipeline behavior (non-linear histories, plugins) is currently neither covered by
 tests nor explicitly marked experimental.
 
-- [ ] Add merge-tracking correctness tests that exercise non-linear histories.
-- [ ] Add a plugin compatibility smoke test that loads a minimal plugin.
-- [ ] Decide whether each advanced path is supported or experimental, then document that status
+- [x] Add merge-tracking correctness tests that exercise non-linear histories.
+  - `internal/core/merge_tracking_test.go`: an instrumented item (fork = deep copy,
+    merge = union) runs full `Pipeline.Run()`s over synthetic commit DAGs — diamond, octopus,
+    criss-cross, sequential feature branches, long parallel branches, multiple roots,
+    duplicate merge parents, redundant merge edges (fast-forward collapse), a stacked-diamond
+    stress topology — each verified against five invariants: consumed exactly once, parents
+    before children, branch-state isolation (no sibling leakage), lineage completeness at
+    non-merge commits, full final state on the master branch. Also covered: hibernation
+    transparency on branchy plans (same results + Hibernate/Boot invoked) and the
+    `merge_tracks` feature (`DependencyNextMerge` annotation via
+    `InitializeExt`/`RunPreparedPlan`, `FactMergeHashCount`, plain-`Initialize` rejection).
+- [x] Add a plugin compatibility smoke test that loads a minimal plugin.
+  - `test/plugin_smoke/` (run via `just test-plugin`): builds
+    `testdata/minimal_plugin` with `-buildmode=plugin` plus a `CGO_ENABLED=1 -tags purego`
+    hercules from the same tree, then asserts `--plugin` registers the flag in `--help` and
+    the analysis runs end-to-end on a generated 2-commit repo (`consumed_commits: 2`).
+    Skips (with pointer to `just test-plugin`) when cgo is off — i.e. under `just test`,
+    which pins `CGO_ENABLED=0`. Finding: a cgo hercules build requires `-tags purego`
+    (or `systemfreetype`), confirming the Phase 1 note.
+- [x] Decide whether each advanced path is supported or experimental, then document that status
       in README/help text.
-- [ ] Acceptance: advanced pipeline behavior is either covered by tests or explicitly documented
-      as experimental.
+  - **Non-linear histories: supported** (now invariant-tested) — README states it.
+  - **Plugins: supported only on cgo builds** — the default/release build is `CGO_ENABLED=0`
+    and cannot load plugins. Documented in README (Plugins), PLUGINS.md (new
+    "Status and requirements" section: cgo mandatory, same toolchain/tree/tags,
+    linux+darwin only) and the `--plugin` help text.
+- [x] Acceptance: advanced pipeline behavior is either covered by tests or explicitly documented
+      as experimental. → Non-linear histories + hibernation + merge_tracks are test-covered;
+      plugins are test-covered on the cgo path and documented as unavailable in cgo-free builds.
 
 ### Phase 12 — PB schema versioning & CI guardrails (P1)
 

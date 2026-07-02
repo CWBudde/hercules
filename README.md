@@ -77,7 +77,9 @@ for the retired Python `labours` package). The two tools can be chained through 
 run as a single step with `hercules report`, which renders all charts in-process — no
 Python required. It is possible to write custom analyses using the plugin system. It is
 also possible to merge several analysis results together - relevant for organizations.
-The analyzed commit history includes branches, merges, etc.
+The analyzed commit history includes branches, merges, etc. — non-linear histories are a
+supported, tested path (the pipeline forks and merges analysis state across branches; see
+the merge-tracking tests in `internal/core`).
 
 Historical context from the original project is available in
 [blog post 1](https://blog.sourced.tech/post/hercules-v4),
@@ -669,6 +671,12 @@ labours -m all
 ### Plugins
 
 Hercules has a plugin system and allows to run custom analyses. See [PLUGINS.md](PLUGINS.md).
+
+Status: plugins are supported with an important caveat — Go plugins require cgo, while the
+default build of hercules (`just`, releases, Docker) is `CGO_ENABLED=0` and therefore cannot
+load any plugin. To use `--plugin`, build both the plugin and hercules from the same source
+tree with `CGO_ENABLED=1`. The compatibility of this path is verified by
+`just test-plugin` (`test/plugin_smoke/`).
 
 ### Merging
 

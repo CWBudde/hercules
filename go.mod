@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	github.com/Masterminds/sprig v0.0.0-20180725212158-77bb58b7f5e1
 	github.com/cwbudde/lz4 v1.0.2-0.20260419232955-5f478e68f711
+	github.com/cwbudde/matplotlib-go v0.3.0
 	github.com/fatih/camelcase v1.0.0
 	github.com/go-git/go-billy/v5 v5.4.0
 	github.com/go-git/go-git/v5 v5.5.2
@@ -14,23 +15,28 @@ require (
 	github.com/odvcencio/gotreesitter v0.15.3
 	github.com/pkg/errors v0.9.1
 	github.com/sergi/go-diff v1.1.0
-	github.com/spf13/cobra v0.0.3
-	github.com/spf13/pflag v1.0.3
+	github.com/spf13/cobra v1.10.2
+	github.com/spf13/pflag v1.0.10
 	github.com/src-d/enry/v2 v2.1.0
 	github.com/stretchr/testify v1.7.0
-	golang.org/x/crypto v0.3.0
+	golang.org/x/crypto v0.53.0
 	gopkg.in/cheggaaa/pb.v1 v1.0.20
 	gopkg.in/vmarkovtsev/BiDiSentiment.v1 v1.0.0-20180311115214-75f168ddf161
 	gopkg.in/yaml.v2 v2.2.7
 )
 
 require (
+	codeberg.org/go-fonts/dejavu v0.4.0 // indirect
 	github.com/Masterminds/semver v0.0.0-20180807142431-c84ddcca87bf // indirect
 	github.com/Microsoft/go-winio v0.5.2 // indirect
 	github.com/ProtonMail/go-crypto v0.0.0-20221026131551-cf6655e29de4 // indirect
 	github.com/acomagu/bufpipe v1.0.3 // indirect
 	github.com/aokoli/goutils v1.0.1 // indirect
 	github.com/cloudflare/circl v1.1.0 // indirect
+	github.com/cwbudde/agg_go v0.3.2 // indirect
+	github.com/cwbudde/algo-fft v0.6.11 // indirect
+	github.com/cwbudde/mathtext v0.4.4 // indirect
+	github.com/cwbudde/qhull-go v0.1.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
 	github.com/fatih/color v1.18.0 // indirect
@@ -38,7 +44,7 @@ require (
 	github.com/google/uuid v0.0.0-20180828181555-e704694aed0e // indirect
 	github.com/huandu/xstrings v0.0.0-20180906151751-8bbcf2f9ccb5 // indirect
 	github.com/imdario/mergo v0.3.13 // indirect
-	github.com/inconshreveable/mousetrap v1.0.0 // indirect
+	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
 	github.com/kevinburke/ssh_config v1.2.0 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
@@ -51,9 +57,11 @@ require (
 	github.com/tensorflow/tensorflow v0.0.0-20180308082300-f73d7c90ed05 // indirect
 	github.com/toqueteos/trie v1.0.0 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
-	golang.org/x/net v0.2.0 // indirect
-	golang.org/x/sys v0.29.0 // indirect
-	golang.org/x/term v0.2.0 // indirect
+	golang.org/x/image v0.42.0 // indirect
+	golang.org/x/net v0.56.0 // indirect
+	golang.org/x/sys v0.46.0 // indirect
+	golang.org/x/term v0.44.0 // indirect
+	golang.org/x/text v0.38.0 // indirect
 	gopkg.in/neurosnap/sentences.v1 v1.0.6 // indirect
 	gopkg.in/src-d/go-siva.v1 v1.7.0 // indirect
 	gopkg.in/toqueteos/substring.v1 v1.0.2 // indirect

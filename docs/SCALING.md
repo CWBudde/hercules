@@ -15,9 +15,10 @@ The reference benchmark target is the **CPython** repository
 (`github.com/python/cpython`), chosen because it is large enough to exercise
 hibernation paths (≈ 112 000 commits, ~1 GB of git objects) without requiring a
 multi-hour clone, and because its mixture of C and Python files exercises the
-tree-sitter refinement path on a non-trivial language set. ROADMAP Milestone 2
-mentions the Linux kernel as the original target; we treat CPython as a
-"similarly large history" stand-in for the same role.
+tree-sitter refinement path on a non-trivial language set. The original
+scaling milestone (former ROADMAP Milestone 2) mentioned the Linux kernel as
+the target; we treat CPython as a "similarly large history" stand-in for the
+same role.
 
 ## Reproducing the numbers
 
@@ -113,8 +114,9 @@ hercules --preset large-repo --burndown --pb /path/to/repo > burndown.pb
 labours -i burndown.pb -m burndown-project -f pb
 ```
 
-This satisfies the ROADMAP Milestone 2 acceptance criterion: "a documented
-command set completes without OOM and with reproducible results."
+This satisfies the scaling acceptance criterion from the former ROADMAP
+Milestone 2: "a documented command set completes without OOM and with
+reproducible results."
 
 If even `--preset large-repo` is too tight, the next escape hatches are:
 

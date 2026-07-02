@@ -2,9 +2,11 @@
 
 This file provides guidance for AI Agents (Claude Code, Codex etc.) when working with code in this repository.
 
-## Roadmap
+## Plan
 
-For the forward-looking plan and current priorities, see [ROADMAP.md](ROADMAP.md).
+For the forward-looking plan and current priorities, see [PLAN.md](PLAN.md). It covers the
+ongoing integration of the Go renderer (`labours-go`) into this repo (Part A) and the remaining
+roadmap work carried over from the former `ROADMAP.md` (Part B).
 
 ## Build and Development Commands
 
@@ -21,6 +23,10 @@ Hercules is a Git repository analysis engine with two main components:
 
 1. **hercules** (Go) - Core analysis engine that processes Git commits through a DAG pipeline
 2. **labours** (Python) - Visualization and plotting companion for analysis results
+
+Note: the Python `labours` package is slated to be replaced by an in-repo Go renderer
+(a native `labours` binary with in-process rendering via `hercules report`); see
+[PLAN.md](PLAN.md) Part A.
 
 ### Core Architecture Components
 

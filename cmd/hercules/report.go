@@ -14,6 +14,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/meko-christian/hercules"
 	"github.com/meko-christian/hercules/internal/pb"
+	"github.com/meko-christian/hercules/internal/render"
 	"github.com/spf13/cobra"
 )
 
@@ -65,7 +66,6 @@ var reportDefaultModes = []string{
 	"bus-factor",
 	"ownership-concentration",
 	"knowledge-diffusion",
-	"onboarding",
 	"hotspot-risk",
 	"refactoring-proxy",
 }
@@ -92,7 +92,6 @@ var reportAllModes = []string{
 	"bus-factor",
 	"ownership-concentration",
 	"knowledge-diffusion",
-	"onboarding",
 	"hotspot-risk",
 	"refactoring-proxy",
 }
@@ -119,7 +118,6 @@ var reportValidModes = map[string]struct{}{
 	"bus-factor":              {},
 	"ownership-concentration": {},
 	"knowledge-diffusion":     {},
-	"onboarding":              {},
 	"hotspot-risk":            {},
 	"refactoring-proxy":       {},
 }
@@ -128,8 +126,10 @@ var reportValidModes = map[string]struct{}{
 var reportCmd = &cobra.Command{
 	Use:   "report [flags] <repository> [cache-path]",
 	Short: "Generate a complete report directory with charts and summary.",
-	Long: `Runs Hercules in Protocol Buffers mode, invokes labours internally and writes
-an output directory with generated chart assets and index.html summary.`,
+	Long: `Runs Hercules in Protocol Buffers mode, renders the charts with the built-in
+in-process renderer (or an external labours command when --labours-cmd is
+given) and writes an output directory with generated chart assets and
+index.html summary.`,
 	Args: cobra.RangeArgs(1, 2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		flags := cmd.Flags()
@@ -174,6 +174,9 @@ an output directory with generated chart assets and index.html summary.`,
 		}
 		laboursCmdOverride, err := flags.GetString("labours-cmd")
 		if err != nil {
+			return err
+		}
+		if err := validateReportLaboursFlags(laboursCmdOverride, laboursExtra); err != nil {
 			return err
 		}
 
@@ -221,38 +224,56 @@ an output directory with generated chart assets and index.html summary.`,
 			return fmt.Errorf("failed to parse generated protobuf report: %w", err)
 		}
 
-		cwd, err := os.Getwd()
-		if err != nil {
-			return err
-		}
-		laboursCmd, extraEnv, err := resolveLaboursCommand(cwd, laboursCmdOverride)
-		if err != nil {
-			return err
-		}
-
 		chartsRoot := filepath.Join(outputDir, "charts")
 		if err := os.MkdirAll(chartsRoot, 0o755); err != nil {
 			return err
 		}
 
 		var modeResults []reportModeFailure
-		for _, mode := range modes {
-			modeOutput := filepath.Join(chartsRoot, sanitizePathComponent(mode)+"."+format)
-			cmdArgs := make([]string, 0, len(laboursCmd)+len(laboursExtra)+8)
-			cmdArgs = append(cmdArgs, laboursCmd[1:]...)
-			cmdArgs = append(cmdArgs,
-				"-f", "pb",
-				"-i", reportPB,
-				"-o", modeOutput,
-				"-m", mode,
-				"--backend", "Agg",
-			)
-			cmdArgs = append(cmdArgs, laboursExtra...)
-			_, _ = fmt.Fprintf(os.Stderr, "report: running labours mode %s...\n", mode)
-			if _, err := runAndCaptureTo(os.Stderr, laboursCmd[0], cmdArgs, extraEnv); err != nil {
-				modeResults = append(modeResults, reportModeFailure{Mode: mode, Error: err.Error()})
-				if strict {
-					return fmt.Errorf("labours mode %s failed: %w", mode, err)
+		if laboursCmdOverride == "" {
+			// Default: render in-process via the importable render API.
+			render.SetRenderDefaults()
+			reader, err := render.LoadInput(reportPB, "pb")
+			if err != nil {
+				return fmt.Errorf("failed to load generated protobuf report for rendering: %w", err)
+			}
+			for _, mode := range modes {
+				modeOutput := filepath.Join(chartsRoot, sanitizePathComponent(mode)+"."+format)
+				_, _ = fmt.Fprintf(os.Stderr, "report: rendering mode %s...\n", mode)
+				for _, result := range render.RunWithResults(reader, []string{mode}, render.Options{Output: modeOutput}) {
+					if result.Err != nil {
+						modeResults = append(modeResults, reportModeFailure{Mode: mode, Error: result.Err.Error()})
+						if strict {
+							return fmt.Errorf("render mode %s failed: %w", mode, result.Err)
+						}
+					}
+				}
+			}
+		} else {
+			// Escape hatch: shell out to an external drop-in labours command.
+			laboursCmd, err := resolveLaboursCommand(laboursCmdOverride)
+			if err != nil {
+				return err
+			}
+			for _, mode := range modes {
+				modeOutput := filepath.Join(chartsRoot, sanitizePathComponent(mode)+"."+format)
+				cmdArgs := make([]string, 0, len(laboursCmd)+len(laboursExtra)+8)
+				cmdArgs = append(cmdArgs, laboursCmd[1:]...)
+				cmdArgs = append(
+					cmdArgs,
+					"-f", "pb",
+					"-i", reportPB,
+					"-o", modeOutput,
+					"-m", mode,
+					"--backend", "Agg",
+				)
+				cmdArgs = append(cmdArgs, laboursExtra...)
+				_, _ = fmt.Fprintf(os.Stderr, "report: running labours mode %s...\n", mode)
+				if _, err := runAndCaptureTo(os.Stderr, laboursCmd[0], cmdArgs, nil); err != nil {
+					modeResults = append(modeResults, reportModeFailure{Mode: mode, Error: err.Error()})
+					if strict {
+						return fmt.Errorf("labours mode %s failed: %w", mode, err)
+					}
 				}
 			}
 		}
@@ -276,6 +297,13 @@ an output directory with generated chart assets and index.html summary.`,
 	},
 }
 
+// reportAnalysisFlagParents maps analysis flags that are sub-options of another
+// leaf (not registry leaves themselves) to the leaf whose availability governs them.
+var reportAnalysisFlagParents = map[string]string{
+	"burndown-files":  "burndown",
+	"burndown-people": "burndown",
+}
+
 func selectReportAnalysisFlags(
 	available map[string]struct{}, requested []string, includeAll bool,
 ) ([]string, error) {
@@ -286,12 +314,19 @@ func selectReportAnalysisFlags(
 		}
 		return true
 	}
+	isAvailable := func(flag string) bool {
+		if parent, ok := reportAnalysisFlagParents[flag]; ok {
+			flag = parent
+		}
+		_, exists := available[flag]
+		return exists
+	}
 	if includeAll {
 		for _, flag := range reportAllAnalysisFlags {
 			if !isSupportedInBuild(flag) {
 				continue
 			}
-			if _, exists := available[flag]; exists {
+			if isAvailable(flag) {
 				set[flag] = struct{}{}
 			}
 		}
@@ -300,7 +335,7 @@ func selectReportAnalysisFlags(
 			if !isSupportedInBuild(flag) {
 				return nil, fmt.Errorf("analysis flag %q is unavailable in this build; rebuild with -tags tensorflow", flag)
 			}
-			if _, exists := available[flag]; !exists {
+			if !isAvailable(flag) {
 				return nil, fmt.Errorf("unknown analysis flag %q", flag)
 			}
 			set[flag] = struct{}{}
@@ -310,7 +345,7 @@ func selectReportAnalysisFlags(
 			if !isSupportedInBuild(flag) {
 				continue
 			}
-			if _, exists := available[flag]; exists {
+			if isAvailable(flag) {
 				set[flag] = struct{}{}
 			}
 		}
@@ -351,34 +386,21 @@ func selectReportModes(requested []string, includeAll bool) ([]string, error) {
 	return result, nil
 }
 
-func resolveLaboursCommand(cwd string, override string) ([]string, []string, error) {
-	if override != "" {
-		parts := strings.Fields(override)
-		if len(parts) == 0 {
-			return nil, nil, fmt.Errorf("--labours-cmd is empty")
-		}
-		return parts, nil, nil
+// validateReportLaboursFlags rejects flag combinations that only make sense
+// for the external labours subprocess path.
+func validateReportLaboursFlags(laboursCmdOverride string, laboursExtra []string) error {
+	if laboursCmdOverride == "" && len(laboursExtra) > 0 {
+		return fmt.Errorf("--labours-arg requires --labours-cmd: the built-in renderer does not accept extra labours arguments")
 	}
-	if _, err := exec.LookPath("labours"); err == nil {
-		return []string{"labours"}, nil, nil
-	}
-	if _, err := exec.LookPath("python3"); err == nil {
-		localPython := filepath.Join(cwd, "python")
-		laboursPkg := filepath.Join(localPython, "labours")
-		if stat, statErr := os.Stat(laboursPkg); statErr == nil && stat.IsDir() {
-			return []string{"python3", "-m", "labours"}, []string{prependPythonPath(localPython)}, nil
-		}
-		return []string{"python3", "-m", "labours"}, nil, nil
-	}
-	return nil, nil, fmt.Errorf("labours was not found in PATH and python3 is unavailable")
+	return nil
 }
 
-func prependPythonPath(path string) string {
-	existing := os.Getenv("PYTHONPATH")
-	if existing == "" {
-		return "PYTHONPATH=" + path
+func resolveLaboursCommand(override string) ([]string, error) {
+	parts := strings.Fields(override)
+	if len(parts) == 0 {
+		return nil, fmt.Errorf("--labours-cmd is empty")
 	}
-	return "PYTHONPATH=" + path + string(os.PathListSeparator) + existing
+	return parts, nil
 }
 
 func runAndCapture(command string, args []string, env []string) ([]byte, error) {
@@ -676,7 +698,7 @@ func init() {
 		"Output directory for report.pb, chart assets and index.html.")
 	reportCmd.Flags().String("format", "png", "Chart output format: png or svg.")
 	reportCmd.Flags().Bool("strict", false,
-		"Fail immediately if any labours mode fails.")
+		"Fail immediately if any report mode fails (hard rendering errors; missing-analysis warnings do not count).")
 	reportCmd.Flags().StringSlice("analysis", nil,
 		"Enable only selected analysis flags (without leading --).")
 	reportCmd.Flags().StringSlice("mode", nil,
@@ -684,7 +706,7 @@ func init() {
 	reportCmd.Flags().StringArray("hercules-arg", nil,
 		"Additional argument passed through to the internal hercules run.")
 	reportCmd.Flags().StringArray("labours-arg", nil,
-		"Additional argument passed through to each labours mode run.")
+		"Additional argument passed through to each labours mode run (requires --labours-cmd).")
 	reportCmd.Flags().String("labours-cmd", "",
-		"Override labours launcher, e.g. \"labours\" or \"python3 -m labours\".")
+		"Render with an external drop-in labours command instead of the built-in in-process renderer, e.g. \"labours\" or \"/path/to/labours\".")
 }

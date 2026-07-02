@@ -13,6 +13,7 @@
 ### Task 1: Identity Audit Model And Helpers
 
 **Files:**
+
 - Modify: `internal/plumbing/identity/people.go`
 - Test: `internal/plumbing/identity/people_test.go`
 
@@ -39,6 +40,7 @@ Expected: PASS.
 ### Task 2: Threshold Configuration And People-Dict Template
 
 **Files:**
+
 - Modify: `internal/plumbing/identity/people.go`
 - Test: `internal/plumbing/identity/people_test.go`
 
@@ -65,6 +67,7 @@ Expected: PASS.
 ### Task 3: CLI Audit And Template Workflows
 
 **Files:**
+
 - Modify: `cmd/hercules/root.go`
 - Test: `cmd/hercules/root_test.go`
 
@@ -91,6 +94,7 @@ Expected: PASS.
 ### Task 4: Documentation And Roadmap
 
 **Files:**
+
 - Modify: `README.md`
 - Modify: `ROADMAP.md`
 

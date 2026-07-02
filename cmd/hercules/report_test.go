@@ -25,6 +25,7 @@ func TestSelectReportAnalysisFlagsDefault(t *testing.T) {
 	expected := []string{
 		"burndown",
 		"burndown-files",
+		"burndown-people",
 		"devs",
 		"hotspot-risk",
 		"knowledge-diffusion",
@@ -43,7 +44,7 @@ func TestSelectReportModesDefaultIncludesMilestoneFourEasyPath(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	for _, expected := range []string{"onboarding", "refactoring-proxy", "hotspot-risk"} {
+	for _, expected := range []string{"knowledge-diffusion", "refactoring-proxy", "hotspot-risk"} {
 		found := false
 		for _, mode := range modes {
 			if mode == expected {
@@ -75,7 +76,7 @@ func TestSelectReportAnalysisFlagsAllUsesReportList(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	expected := []string{"burndown", "devs", "shotness"}
+	expected := []string{"burndown", "burndown-files", "burndown-people", "devs", "shotness"}
 	if !reflect.DeepEqual(flags, expected) {
 		t.Fatalf("unexpected flags: got %v want %v", flags, expected)
 	}
@@ -88,6 +89,18 @@ func TestSelectReportModesAll(t *testing.T) {
 	}
 	if len(modes) != len(reportAllModes) {
 		t.Fatalf("unexpected mode count: got %d want %d", len(modes), len(reportAllModes))
+	}
+}
+
+func TestValidateReportLaboursFlags(t *testing.T) {
+	if err := validateReportLaboursFlags("", nil); err != nil {
+		t.Fatalf("in-process default should be valid: %v", err)
+	}
+	if err := validateReportLaboursFlags("./labours", []string{"--relative"}); err != nil {
+		t.Fatalf("labours-arg with labours-cmd should be valid: %v", err)
+	}
+	if err := validateReportLaboursFlags("", []string{"--relative"}); err == nil {
+		t.Fatal("expected error for --labours-arg without --labours-cmd")
 	}
 }
 

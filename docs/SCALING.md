@@ -44,12 +44,12 @@ the shell builtin — install the `time` package if needed) and writes:
 
 ## Configuration matrix
 
-| Config         | Flags                                          | Intent                                                       |
-| -------------- | ---------------------------------------------- | ------------------------------------------------------------ |
-| `quick`        | `--preset quick --burndown --pb`               | Baseline cost; analyses only `HEAD`. Validates the path.    |
-| `burndown-fp`  | `--burndown --first-parent --pb`               | The default "give me a burndown" workload, first-parent only.|
-| `burndown-lr`  | `--burndown --preset large-repo --pb`          | Recommended for big repos; enables hibernation + 30-day buckets. |
-| `devs-fp`      | `--devs --first-parent --pb`                   | Alternate analysis path; exercises identity resolution.     |
+| Config        | Flags                                 | Intent                                                           |
+| ------------- | ------------------------------------- | ---------------------------------------------------------------- |
+| `quick`       | `--preset quick --burndown --pb`      | Baseline cost; analyses only `HEAD`. Validates the path.         |
+| `burndown-fp` | `--burndown --first-parent --pb`      | The default "give me a burndown" workload, first-parent only.    |
+| `burndown-lr` | `--burndown --preset large-repo --pb` | Recommended for big repos; enables hibernation + 30-day buckets. |
+| `devs-fp`     | `--devs --first-parent --pb`          | Alternate analysis path; exercises identity resolution.          |
 
 `--pb` is used everywhere to keep YAML serialization out of the timing — the
 benchmark is about the analysis cost, not the output format.
@@ -61,18 +61,20 @@ benchmark is about the analysis cost, not the output format.
 > is order-of-magnitude validation, not precise micro-benchmarking.
 
 <!-- BENCHMARK_RESULTS_START -->
-| Config         | Wall time   | Peak RSS  | Throughput        | Status |
-| -------------- | ----------- | --------- | ----------------- | ------ |
-| `quick`        | 2.1 s       | 600 MiB   | n/a (HEAD only)   | ok     |
-| `burndown-fp`  | 15 min 18 s | 2.13 GiB  | ≈ 122 commits/s   | ok     |
-| `burndown-lr`  | 14 min 25 s | 2.12 GiB  | ≈ 130 commits/s   | ok     |
-| `devs-fp`      | 16 min 25 s | 2.11 GiB  | ≈ 114 commits/s   | ok     |
+
+| Config        | Wall time   | Peak RSS | Throughput      | Status |
+| ------------- | ----------- | -------- | --------------- | ------ |
+| `quick`       | 2.1 s       | 600 MiB  | n/a (HEAD only) | ok     |
+| `burndown-fp` | 15 min 18 s | 2.13 GiB | ≈ 122 commits/s | ok     |
+| `burndown-lr` | 14 min 25 s | 2.12 GiB | ≈ 130 commits/s | ok     |
+| `devs-fp`     | 16 min 25 s | 2.11 GiB | ≈ 114 commits/s | ok     |
+
 <!-- BENCHMARK_RESULTS_END -->
 
 ### Reading the table
 
 - **Wall time** is end-to-end including git object decoding, the analysis DAG,
-  and protobuf serialization. It does *not* include the optional plotting step
+  and protobuf serialization. It does _not_ include the optional plotting step
   (`labours`).
 - **Peak RSS** is the high-water mark of resident set size during the run, as
   reported by GNU `time -v` ("Maximum resident set size"). For configs that
@@ -98,7 +100,7 @@ benchmark is about the analysis cost, not the output format.
   e.g. the Linux kernel at ~1.3 M commits is **~3 hours straight-line**, with
   the actual figure likely higher due to super-linear blame-state growth.
 - **`quick` should be roughly constant across repo sizes** — it analyses only
-  the most recent commit. If it is *not* fast on your repo, something else is
+  the most recent commit. If it is _not_ fast on your repo, something else is
   wrong (very large blobs on `HEAD`, missing index, network-mounted git dir).
 - **`devs-fp` overhead**: ~7 % wall and ~1 % RSS over `burndown-fp`. The cost
   of identity resolution + activity tracking is mostly CPU. If your repo has a

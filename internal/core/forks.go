@@ -462,7 +462,8 @@ func collapseFastForwards(
 						toRemove[child.Hash] = true
 						if childNumOtherParents == 1 && len(mergedDag[immediateParent]) == 1 {
 							mergedSeq[immediateParent] = append(
-								mergedSeq[immediateParent], mergedSeq[child.Hash]...)
+								mergedSeq[immediateParent], mergedSeq[child.Hash]...,
+							)
 							delete(mergedSeq, child.Hash)
 							mergedDag[immediateParent] = mergedDag[child.Hash]
 							delete(mergedDag, child.Hash)

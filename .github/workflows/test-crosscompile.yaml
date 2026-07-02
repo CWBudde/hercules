@@ -14,10 +14,10 @@ jobs:
       fail-fast: false
       matrix:
         target:
-          - { goos: linux,   goarch: arm64 }
-          - { goos: linux,   goarch: amd64 }
+          - { goos: linux, goarch: arm64 }
+          - { goos: linux, goarch: amd64 }
           - { goos: windows, goarch: amd64 }
-          - { goos: darwin,  goarch: arm64 }
+          - { goos: darwin, goarch: arm64 }
     steps:
       - uses: actions/checkout@v4
 
@@ -27,12 +27,14 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: "*/*.sum"
 
-      - name: Build cmd/hercules without cgo (${{ matrix.target.goos }}/${{ matrix.target.goarch }})
+      - name: Build cmd/hercules and cmd/labours without cgo (${{ matrix.target.goos }}/${{ matrix.target.goarch }})
         env:
           CGO_ENABLED: "0"
           GOOS: ${{ matrix.target.goos }}
           GOARCH: ${{ matrix.target.goarch }}
-        run: go build ./cmd/hercules
+        run: |
+          go build ./cmd/hercules
+          go build ./cmd/labours
 
   no-cgo-tests:
     name: unit tests with CGO_ENABLED=0

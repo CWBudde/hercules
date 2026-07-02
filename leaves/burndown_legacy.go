@@ -390,7 +390,8 @@ func (analyser *LegacyBurndownAnalysis) Merge(branches []core.PipelineItem) {
 		}
 		files[0].Merge(
 			analyser.packPersonWithTick(analyser.mergedAuthor, analyser.tick),
-			files[1:]...)
+			files[1:]...,
+		)
 		for _, burn := range all {
 			if burn.files[key] != files[0] {
 				if burn.files[key] != nil {
@@ -604,7 +605,8 @@ func (analyser *LegacyBurndownAnalysis) MergeResults(
 	}
 	var people map[string]join.JoinedIndex
 	people, merged.reversedPeopleDict = join.PeopleIdentities(
-		bar1.reversedPeopleDict, bar2.reversedPeopleDict)
+		bar1.reversedPeopleDict, bar2.reversedPeopleDict,
+	)
 	var wg sync.WaitGroup
 	sem := make(chan int, 5) // with large files not limiting number of GoRoutines eats 200G of RAM on large merges
 	if len(bar1.GlobalHistory) > 0 || len(bar2.GlobalHistory) > 0 {
@@ -618,7 +620,8 @@ func (analyser *LegacyBurndownAnalysis) MergeResults(
 				bar1.granularity, bar1.sampling,
 				bar2.granularity, bar2.sampling,
 				bar1.tickSize,
-				c1, c2)
+				c1, c2,
+			)
 		}()
 	}
 	// we don't merge files
@@ -665,7 +668,8 @@ func (analyser *LegacyBurndownAnalysis) MergeResults(
 				if len(bar1.PeopleMatrix) > 0 {
 					for i := len(bar1.reversedPeopleDict); i < len(merged.reversedPeopleDict); i++ {
 						merged.PeopleMatrix = append(
-							merged.PeopleMatrix, make([]int64, len(merged.reversedPeopleDict)+2))
+							merged.PeopleMatrix, make([]int64, len(merged.reversedPeopleDict)+2),
+						)
 					}
 				}
 			} else {
@@ -1059,7 +1063,8 @@ func (analyser *LegacyBurndownAnalysis) serializeBinary(result *BurndownResult, 
 
 	if len(result.PeopleHistories) > 0 {
 		message.People = make(
-			[]*pb.BurndownSparseMatrix, len(result.PeopleHistories))
+			[]*pb.BurndownSparseMatrix, len(result.PeopleHistories),
+		)
 		for key, val := range result.PeopleHistories {
 			if len(val) > 0 {
 				message.People[key] = pb.ToBurndownSparseMatrix(val, result.reversedPeopleDict[key])

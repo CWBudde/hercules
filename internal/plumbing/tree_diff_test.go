@@ -71,11 +71,13 @@ func TestTreeDiffRegistration(t *testing.T) {
 func TestTreeDiffConsume(t *testing.T) {
 	td := fixtureTreeDiff()
 	commit, _ := test.Repository.CommitObject(plumbing.NewHash(
-		"2b1ed978194a94edeabbca6de7ff3b5771d4d665"))
+		"2b1ed978194a94edeabbca6de7ff3b5771d4d665",
+	))
 	deps := map[string]interface{}{}
 	deps[core.DependencyCommit] = commit
 	prevCommit, _ := test.Repository.CommitObject(plumbing.NewHash(
-		"fbe766ffdc3f87f6affddc051c6f8b419beea6a2"))
+		"fbe766ffdc3f87f6affddc051c6f8b419beea6a2",
+	))
 	td.previousTree, _ = prevCommit.Tree()
 	res, err := td.Consume(deps)
 	assert.NoError(t, err)
@@ -112,7 +114,8 @@ func TestTreeDiffConsume(t *testing.T) {
 func TestTreeDiffConsumeFirst(t *testing.T) {
 	td := fixtureTreeDiff()
 	commit, _ := test.Repository.CommitObject(plumbing.NewHash(
-		"2b1ed978194a94edeabbca6de7ff3b5771d4d665"))
+		"2b1ed978194a94edeabbca6de7ff3b5771d4d665",
+	))
 	deps := map[string]interface{}{}
 	deps[core.DependencyCommit] = commit
 	res, err := td.Consume(deps)
@@ -130,7 +133,8 @@ func TestTreeDiffConsumeFirst(t *testing.T) {
 func TestTreeDiffBadCommit(t *testing.T) {
 	td := fixtureTreeDiff()
 	commit, _ := test.Repository.CommitObject(plumbing.NewHash(
-		"2b1ed978194a94edeabbca6de7ff3b5771d4d665"))
+		"2b1ed978194a94edeabbca6de7ff3b5771d4d665",
+	))
 	commit.TreeHash = plumbing.NewHash("0000000000000000000000000000000000000000")
 	deps := map[string]interface{}{}
 	deps[core.DependencyCommit] = commit
@@ -144,11 +148,13 @@ func TestTreeDiffConsumeSkip(t *testing.T) {
 	td := fixtureTreeDiff()
 	assert.Contains(t, td.Languages, allLanguages)
 	commit, _ := test.Repository.CommitObject(plumbing.NewHash(
-		"aefdedf7cafa6ee110bae9a3910bf5088fdeb5a9"))
+		"aefdedf7cafa6ee110bae9a3910bf5088fdeb5a9",
+	))
 	deps := map[string]interface{}{}
 	deps[core.DependencyCommit] = commit
 	prevCommit, _ := test.Repository.CommitObject(plumbing.NewHash(
-		"1e076dc56989bc6aa1ef5f55901696e9e01423d4"))
+		"1e076dc56989bc6aa1ef5f55901696e9e01423d4",
+	))
 	td.previousTree, _ = prevCommit.Tree()
 	res, err := td.Consume(deps)
 	assert.NoError(t, err)
@@ -175,11 +181,13 @@ func TestTreeDiffConsumeOnlyFilesThatMatchFilter(t *testing.T) {
 	td := fixtureTreeDiff()
 	assert.Contains(t, td.Languages, allLanguages)
 	commit, _ := test.Repository.CommitObject(plumbing.NewHash(
-		"aefdedf7cafa6ee110bae9a3910bf5088fdeb5a9"))
+		"aefdedf7cafa6ee110bae9a3910bf5088fdeb5a9",
+	))
 	deps := map[string]interface{}{}
 	deps[core.DependencyCommit] = commit
 	prevCommit, _ := test.Repository.CommitObject(plumbing.NewHash(
-		"1e076dc56989bc6aa1ef5f55901696e9e01423d4"))
+		"1e076dc56989bc6aa1ef5f55901696e9e01423d4",
+	))
 	td.previousTree, _ = prevCommit.Tree()
 	res, err := td.Consume(deps)
 	assert.NoError(t, err)
@@ -204,7 +212,8 @@ func TestTreeDiffConsumeLanguageFilterFirst(t *testing.T) {
 	td := fixtureTreeDiff()
 	td.Configure(map[string]interface{}{ConfigTreeDiffLanguages: []string{"Go"}})
 	commit, _ := test.Repository.CommitObject(plumbing.NewHash(
-		"fbe766ffdc3f87f6affddc051c6f8b419beea6a2"))
+		"fbe766ffdc3f87f6affddc051c6f8b419beea6a2",
+	))
 	deps := map[string]interface{}{}
 	deps[core.DependencyCommit] = commit
 	res, err := td.Consume(deps)
@@ -224,14 +233,16 @@ func TestTreeDiffConsumeLanguageFilter(t *testing.T) {
 	td := fixtureTreeDiff()
 	assert.NoError(t, td.Configure(map[string]interface{}{ConfigTreeDiffLanguages: []string{"Python"}}))
 	commit, _ := test.Repository.CommitObject(plumbing.NewHash(
-		"e89c1d10fb31e32668ad905eb59dc44d7a4a021e"))
+		"e89c1d10fb31e32668ad905eb59dc44d7a4a021e",
+	))
 	deps := map[string]interface{}{}
 	deps[core.DependencyCommit] = commit
 	res, err := td.Consume(deps)
 	assert.NoError(t, err)
 	assert.Equal(t, len(res), 1)
 	commit, _ = test.Repository.CommitObject(plumbing.NewHash(
-		"fbe766ffdc3f87f6affddc051c6f8b419beea6a2"))
+		"fbe766ffdc3f87f6affddc051c6f8b419beea6a2",
+	))
 	deps[core.DependencyCommit] = commit
 	res, err = td.Consume(deps)
 	assert.NoError(t, err)
@@ -264,13 +275,15 @@ func TestTreeDiffFork(t *testing.T) {
 func TestTreeDiffCheckLanguage(t *testing.T) {
 	td := fixtureTreeDiff()
 	lang, err := td.checkLanguage(
-		"version.go", plumbing.NewHash("975f35a1412b8ae79b5ba2558f71f41e707fd5a9"))
+		"version.go", plumbing.NewHash("975f35a1412b8ae79b5ba2558f71f41e707fd5a9"),
+	)
 	assert.NoError(t, err)
 	assert.True(t, lang)
 	td.Languages["go"] = true
 	delete(td.Languages, allLanguages)
 	lang, err = td.checkLanguage(
-		"version.go", plumbing.NewHash("975f35a1412b8ae79b5ba2558f71f41e707fd5a9"))
+		"version.go", plumbing.NewHash("975f35a1412b8ae79b5ba2558f71f41e707fd5a9"),
+	)
 	assert.NoError(t, err)
 	assert.True(t, lang)
 }
@@ -300,7 +313,8 @@ func TestTreeDiffCheckLanguageEmpty(t *testing.T) {
 	td.Languages["python"] = true
 	delete(td.Languages, allLanguages)
 	lang, err := td.checkLanguage(
-		"__init__.py", plumbing.NewHash("e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"))
+		"__init__.py", plumbing.NewHash("e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"),
+	)
 	assert.NoError(t, err)
 	assert.True(t, lang)
 }

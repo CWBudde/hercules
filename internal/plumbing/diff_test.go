@@ -73,9 +73,11 @@ func TestFileDiffConsume(t *testing.T) {
 	deps[items.DependencyBlobCache] = cache
 	changes := make(object.Changes, 3)
 	treeFrom, _ := test.Repository.TreeObject(plumbing.NewHash(
-		"a1eb2ea76eb7f9bfbde9b243861474421000eb96"))
+		"a1eb2ea76eb7f9bfbde9b243861474421000eb96",
+	))
 	treeTo, _ := test.Repository.TreeObject(plumbing.NewHash(
-		"994eac1cd07235bb9815e547a75c84265dea00f5"))
+		"994eac1cd07235bb9815e547a75c84265dea00f5",
+	))
 	changes[0] = &object.Change{From: object.ChangeEntry{
 		Name: "analyser.go",
 		Tree: treeFrom,
@@ -150,9 +152,11 @@ func TestFileDiffConsumeInvalidBlob(t *testing.T) {
 	deps[items.DependencyBlobCache] = cache
 	changes := make(object.Changes, 1)
 	treeFrom, _ := test.Repository.TreeObject(plumbing.NewHash(
-		"a1eb2ea76eb7f9bfbde9b243861474421000eb96"))
+		"a1eb2ea76eb7f9bfbde9b243861474421000eb96",
+	))
 	treeTo, _ := test.Repository.TreeObject(plumbing.NewHash(
-		"994eac1cd07235bb9815e547a75c84265dea00f5"))
+		"994eac1cd07235bb9815e547a75c84265dea00f5",
+	))
 	changes[0] = &object.Change{From: object.ChangeEntry{
 		Name: "analyser.go",
 		Tree: treeFrom,
@@ -198,7 +202,8 @@ func TestFileDiffConsumeInvalidBlob(t *testing.T) {
 
 func TestCountLines(t *testing.T) {
 	blob, err := test.Repository.BlobObject(
-		plumbing.NewHash("291286b4ac41952cbd1389fda66420ec03c1a9fe"))
+		plumbing.NewHash("291286b4ac41952cbd1389fda66420ec03c1a9fe"),
+	)
 	assert.Nil(t, err)
 	cb := &items.CachedBlob{Blob: *blob}
 	cb.Cache()
@@ -206,14 +211,16 @@ func TestCountLines(t *testing.T) {
 	assert.Equal(t, lines, 12)
 	assert.Nil(t, err)
 	blob, err = internal.CreateDummyBlob(
-		plumbing.NewHash("291286b4ac41952cbd1389fda66420ec03c1a9fe"), true)
+		plumbing.NewHash("291286b4ac41952cbd1389fda66420ec03c1a9fe"), true,
+	)
 	assert.Nil(t, err)
 	cb = &items.CachedBlob{Blob: *blob}
 	err = cb.Cache()
 	assert.Equal(t, err.Error(), "dummy failure")
 	// test_data/blob
 	blob, err = test.Repository.BlobObject(
-		plumbing.NewHash("c86626638e0bc8cf47ca49bb1525b40e9737ee64"))
+		plumbing.NewHash("c86626638e0bc8cf47ca49bb1525b40e9737ee64"),
+	)
 	assert.Nil(t, err)
 	cb = &items.CachedBlob{Blob: *blob}
 	cb.Cache()
@@ -225,7 +232,8 @@ func TestCountLines(t *testing.T) {
 
 func TestBlobToString(t *testing.T) {
 	blob, _ := test.Repository.BlobObject(
-		plumbing.NewHash("291286b4ac41952cbd1389fda66420ec03c1a9fe"))
+		plumbing.NewHash("291286b4ac41952cbd1389fda66420ec03c1a9fe"),
+	)
 	cb := &items.CachedBlob{Blob: *blob}
 	err := cb.Cache()
 	assert.Nil(t, err)
@@ -244,7 +252,8 @@ notifications:
   email: false
 `)
 	blob, _ = internal.CreateDummyBlob(
-		plumbing.NewHash("291286b4ac41952cbd1389fda66420ec03c1a9fe"), true)
+		plumbing.NewHash("291286b4ac41952cbd1389fda66420ec03c1a9fe"), true,
+	)
 	cb = &items.CachedBlob{Blob: *blob}
 	err = cb.Cache()
 	assert.NotNil(t, err)
@@ -263,9 +272,11 @@ func TestFileDiffDarkMagic(t *testing.T) {
 	deps[items.DependencyBlobCache] = cache
 	changes := make(object.Changes, 1)
 	treeFrom, _ := test.Repository.TreeObject(plumbing.NewHash(
-		"f02289bfe843388a1bb3c7dea210374082dd86b9"))
+		"f02289bfe843388a1bb3c7dea210374082dd86b9",
+	))
 	treeTo, _ := test.Repository.TreeObject(plumbing.NewHash(
-		"eca91acf1fd828f20dcb653a061d8c97d965bc6c"))
+		"eca91acf1fd828f20dcb653a061d8c97d965bc6c",
+	))
 	changes[0] = &object.Change{From: object.ChangeEntry{
 		Name: "test.java",
 		Tree: treeFrom,
@@ -363,9 +374,11 @@ func TestFileDiffWhitespaceDarkMagic(t *testing.T) {
 	deps[items.DependencyBlobCache] = cache
 	changes := make(object.Changes, 1)
 	treeFrom, _ := test.Repository.TreeObject(plumbing.NewHash(
-		"f02289bfe843388a1bb3c7dea210374082dd86b9"))
+		"f02289bfe843388a1bb3c7dea210374082dd86b9",
+	))
 	treeTo, _ := test.Repository.TreeObject(plumbing.NewHash(
-		"eca91acf1fd828f20dcb653a061d8c97d965bc6c"))
+		"eca91acf1fd828f20dcb653a061d8c97d965bc6c",
+	))
 	changes[0] = &object.Change{From: object.ChangeEntry{
 		Name: "test.java",
 		Tree: treeFrom,

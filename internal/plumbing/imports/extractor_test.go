@@ -61,12 +61,15 @@ func TestExtractorRegistration(t *testing.T) {
 
 func TestExtractorConsumeModification(t *testing.T) {
 	commit, _ := test.Repository.CommitObject(gitplumbing.NewHash(
-		"af2d8db70f287b52d2428d9887a69a10bc4d1f46"))
+		"af2d8db70f287b52d2428d9887a69a10bc4d1f46",
+	))
 	changes := make(object.Changes, 1)
 	treeFrom, _ := test.Repository.TreeObject(gitplumbing.NewHash(
-		"80fe25955b8e725feee25c08ea5759d74f8b670d"))
+		"80fe25955b8e725feee25c08ea5759d74f8b670d",
+	))
 	treeTo, _ := test.Repository.TreeObject(gitplumbing.NewHash(
-		"63076fa0dfd93e94b6d2ef0fc8b1fdf9092f83c4"))
+		"63076fa0dfd93e94b6d2ef0fc8b1fdf9092f83c4",
+	))
 	changes[0] = &object.Change{From: object.ChangeEntry{
 		Name: "labours.py",
 		Tree: treeFrom,

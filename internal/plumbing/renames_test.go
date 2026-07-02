@@ -84,9 +84,11 @@ func TestRenameAnalysisConsume(t *testing.T) {
 	changes := make(object.Changes, 3)
 	// 2b1ed978194a94edeabbca6de7ff3b5771d4d665
 	treeFrom, _ := test.Repository.TreeObject(plumbing.NewHash(
-		"96c6ece9b2f3c7c51b83516400d278dea5605100"))
+		"96c6ece9b2f3c7c51b83516400d278dea5605100",
+	))
 	treeTo, _ := test.Repository.TreeObject(plumbing.NewHash(
-		"251f2094d7b523d5bcc60e663b6cf38151bf8844"))
+		"251f2094d7b523d5bcc60e663b6cf38151bf8844",
+	))
 	changes[0] = &object.Change{
 		From: object.ChangeEntry{
 			Name: "analyser.go",
@@ -215,12 +217,14 @@ func TestRenameAnalysisSortRenameCandidates(t *testing.T) {
 
 func TestBlobsAreCloseFlakyBug(t *testing.T) {
 	gitBlob1, err := test.Repository.BlobObject(plumbing.NewHash(
-		"29c9fafd6a2fae8cd20298c3f60115bc31a4c0f2"))
+		"29c9fafd6a2fae8cd20298c3f60115bc31a4c0f2",
+	))
 	if err != nil {
 		t.Fatalf("get 29c9fafd6a2fae8cd20298c3f60115bc31a4c0f2 %v", err)
 	}
 	gitBlob2, err := test.Repository.BlobObject(plumbing.NewHash(
-		"baa64828831d174f40140e4b3cfa77d1e917a2c1"))
+		"baa64828831d174f40140e4b3cfa77d1e917a2c1",
+	))
 	if err != nil {
 		t.Fatalf("get baa64828831d174f40140e4b3cfa77d1e917a2c1 %v", err)
 	}

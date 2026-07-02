@@ -1,0 +1,47 @@
+hercules:
+  version: 0
+  hash: ca6b32fe793d297d4b256e9637f2fdaa08d8a6a7
+  repository: /home/christian/Code/labours-go
+  begin_unix_time: 1734315181
+  end_unix_time: 1754512384
+  commits: 8
+  run_time: 123
+Devs:
+  ticks:
+    0:
+      0:
+        [
+          4,
+          4222,
+          0,
+          2,
+          {
+            Go: [3971, 0, 0],
+            Ignore List: [3, 0, 0],
+            Markdown: [41, 0, 2],
+            Text: [207, 0, 0],
+          },
+        ]
+    233:
+      0:
+        [
+          4,
+          5108,
+          1663,
+          955,
+          {
+            Go: [2715, 1431, 649],
+            Ignore List: [75, 0, 1],
+            Makefile: [204, 0, 0],
+            Markdown: [1162, 221, 131],
+            Protocol Buffer: [73, 0, 0],
+            Shell: [332, 0, 174],
+            TOML: [119, 0, 0],
+            Text: [10, 11, 0],
+            YAML: [327, 0, 0],
+            none: [91, 0, 0],
+          },
+        ]
+  people:
+    - "christian budde|144226859+meko-christian@users.noreply.github.com|christian.budde@meko.de"
+  tick_size: 86400

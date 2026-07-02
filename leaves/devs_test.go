@@ -103,9 +103,11 @@ func TestDevsConsumeFinalize(t *testing.T) {
 	}
 	changes := make(object.Changes, 3)
 	treeFrom, _ := test.Repository.TreeObject(plumbing.NewHash(
-		"a1eb2ea76eb7f9bfbde9b243861474421000eb96"))
+		"a1eb2ea76eb7f9bfbde9b243861474421000eb96",
+	))
 	treeTo, _ := test.Repository.TreeObject(plumbing.NewHash(
-		"994eac1cd07235bb9815e547a75c84265dea00f5"))
+		"994eac1cd07235bb9815e547a75c84265dea00f5",
+	))
 	changes[0] = &object.Change{From: object.ChangeEntry{
 		Name: "analyser.go",
 		Tree: treeFrom,
@@ -151,7 +153,8 @@ func TestDevsConsumeFinalize(t *testing.T) {
 	assert.Nil(t, err)
 	deps[items.DependencyFileDiff] = result[items.DependencyFileDiff]
 	deps[core.DependencyCommit], _ = test.Repository.CommitObject(plumbing.NewHash(
-		"cce947b98a050c6d356bc6ba95030254914027b1"))
+		"cce947b98a050c6d356bc6ba95030254914027b1",
+	))
 	lsc := &items.LinesStatsCalculator{}
 	lscres, err := lsc.Consume(deps)
 	assert.Nil(t, err)

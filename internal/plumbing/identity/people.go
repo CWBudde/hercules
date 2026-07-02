@@ -424,13 +424,15 @@ func (detector *PeopleDetector) GeneratePeopleDict(commits []*object.Commit) {
 	for _, commit := range commits {
 		if !detector.ExactSignatures {
 			_, addedDecision := detector.addSignature(
-				commit.Author.Name, commit.Author.Email, "commit", &size, dict, names, emails, sourceCounts, &ambiguous)
+				commit.Author.Name, commit.Author.Email, "commit", &size, dict, names, emails, sourceCounts, &ambiguous,
+			)
 			if addedDecision != nil {
 				decisions = append(decisions, *addedDecision)
 			}
 			for _, signature := range parseCoAuthors(commit.Message) {
 				_, addedDecision = detector.addSignature(
-					signature.Name, signature.Email, "co-authored-by", &size, dict, names, emails, sourceCounts, &ambiguous)
+					signature.Name, signature.Email, "co-authored-by", &size, dict, names, emails, sourceCounts, &ambiguous,
+				)
 				if addedDecision != nil {
 					decisions = append(decisions, *addedDecision)
 				}
@@ -482,7 +484,8 @@ func identityMergeThresholdFromFacts(facts map[string]interface{}) (float64, boo
 
 func (detector *PeopleDetector) addSignature(name, email, reason string, size *int,
 	dict map[string]int, names map[int][]string, emails map[int][]string, sourceCounts map[int]int,
-	ambiguous *[]IdentityMergeSuggestion) (int, *IdentityMergeDecision) {
+	ambiguous *[]IdentityMergeSuggestion,
+) (int, *IdentityMergeDecision) {
 	name = normalizeIdentityKey(name)
 	email = normalizeIdentityKey(email)
 	if name == "" && email == "" {
@@ -551,7 +554,8 @@ func mergeDecisionForReason(id int, name, email, reason, to string, confidence f
 }
 
 func (detector *PeopleDetector) bestFuzzyCandidate(name, email string, names map[int][]string,
-	emails map[int][]string) (int, float64, bool) {
+	emails map[int][]string,
+) (int, float64, bool) {
 	if name == "" {
 		return core.AuthorMissing, 0, false
 	}
@@ -589,7 +593,8 @@ func (detector *PeopleDetector) identityLine(id int, names map[int][]string, ema
 }
 
 func addIdentityKey(id int, key string, isEmail bool, dict map[string]int, names map[int][]string,
-	emails map[int][]string) {
+	emails map[int][]string,
+) {
 	if key == "" {
 		return
 	}
@@ -791,7 +796,8 @@ func (detector *PeopleDetector) GeneratePeopleDictTemplate() string {
 }
 
 func (detector *PeopleDetector) rebuildAuditFromState(names map[int][]string, emails map[int][]string,
-	sourceCounts map[int]int, decisions ...interface{}) {
+	sourceCounts map[int]int, decisions ...interface{},
+) {
 	var mergeDecisions []IdentityMergeDecision
 	var ambiguous []IdentityMergeSuggestion
 	if len(decisions) > 0 {

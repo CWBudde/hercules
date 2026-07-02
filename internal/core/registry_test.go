@@ -242,9 +242,11 @@ func TestRegistryAddFlags(t *testing.T) {
 	assert.NotNil(t, testCmd.Flags().Lookup("hibernation-distance"))
 	assert.NotNil(t, testCmd.Flags().Lookup("print-actions"))
 	assert.NotNil(t, testCmd.Flags().Lookup(
-		(&testPipelineItem{}).ListConfigurationOptions()[0].Flag))
+		(&testPipelineItem{}).ListConfigurationOptions()[0].Flag,
+	))
 	assert.NotNil(t, testCmd.Flags().Lookup(
-		(&dummyPipelineItem{}).ListConfigurationOptions()[0].Flag))
+		(&dummyPipelineItem{}).ListConfigurationOptions()[0].Flag,
+	))
 	testCmd.UsageString() // to test that nothing is broken
 }
 

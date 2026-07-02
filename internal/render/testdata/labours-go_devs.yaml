@@ -1,0 +1,47 @@
+hercules:
+  version: 0
+  hash: ca6b32fe793d297d4b256e9637f2fdaa08d8a6a7
+  repository: .
+  begin_unix_time: 1734315181
+  end_unix_time: 1754522276
+  commits: 9
+  run_time: 139
+Devs:
+  ticks:
+    0:
+      0:
+        [
+          4,
+          4222,
+          0,
+          2,
+          {
+            Go: [3971, 0, 0],
+            Ignore List: [3, 0, 0],
+            Markdown: [41, 0, 2],
+            Text: [207, 0, 0],
+          },
+        ]
+    233:
+      0:
+        [
+          5,
+          11254,
+          1671,
+          1050,
+          {
+            Go: [6388, 1439, 731],
+            Ignore List: [75, 0, 1],
+            Makefile: [204, 0, 0],
+            Markdown: [2137, 221, 144],
+            Protocol Buffer: [87, 0, 0],
+            Shell: [717, 0, 174],
+            TOML: [119, 0, 0],
+            Text: [10, 11, 0],
+            YAML: [1426, 0, 0],
+            none: [91, 0, 0],
+          },
+        ]
+  people:
+    - "christian budde|144226859+meko-christian@users.noreply.github.com|christian.budde@meko.de"
+  tick_size: 86400

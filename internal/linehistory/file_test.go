@@ -542,7 +542,8 @@ func TestUpdatePanic(t *testing.T) {
 	assert.PanicsWithValue(t, "invalid tree state", func() { file.Update(1, 0, 1, 0) })
 	file.tree.Insert(rbtree.Item{Key: 0, Value: math.MaxUint32})
 	assert.PanicsWithValue(
-		t, "time may not be >= MaxUint32", func() { file.Update(math.MaxUint32, 0, 1, 0) })
+		t, "time may not be >= MaxUint32", func() { file.Update(math.MaxUint32, 0, 1, 0) },
+	)
 }
 
 func TestFileValidate(t *testing.T) {

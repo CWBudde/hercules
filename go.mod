@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	github.com/Masterminds/sprig v0.0.0-20180725212158-77bb58b7f5e1
+	github.com/araddon/dateparse v0.0.0-20210429162001-6b43995a97de
 	github.com/cwbudde/lz4 v1.0.2-0.20260419232955-5f478e68f711
 	github.com/cwbudde/matplotlib-go v0.3.0
 	github.com/fatih/camelcase v1.0.0
@@ -14,15 +15,18 @@ require (
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/odvcencio/gotreesitter v0.15.3
 	github.com/pkg/errors v0.9.1
+	github.com/schollz/progressbar/v3 v3.19.1
 	github.com/sergi/go-diff v1.1.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
+	github.com/spf13/viper v1.21.0
 	github.com/src-d/enry/v2 v2.1.0
-	github.com/stretchr/testify v1.7.0
+	github.com/stretchr/testify v1.11.1
 	golang.org/x/crypto v0.53.0
 	gopkg.in/cheggaaa/pb.v1 v1.0.20
 	gopkg.in/vmarkovtsev/BiDiSentiment.v1 v1.0.0-20180311115214-75f168ddf161
 	gopkg.in/yaml.v2 v2.2.7
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -40,7 +44,10 @@ require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
 	github.com/fatih/color v1.18.0 // indirect
+	github.com/fsnotify/fsnotify v1.10.1 // indirect
 	github.com/go-git/gcfg v1.5.0 // indirect
+	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
+	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/uuid v0.0.0-20180828181555-e704694aed0e // indirect
 	github.com/huandu/xstrings v0.0.0-20180906151751-8bbcf2f9ccb5 // indirect
 	github.com/imdario/mergo v0.3.13 // indirect
@@ -48,15 +55,23 @@ require (
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
 	github.com/kevinburke/ssh_config v1.2.0 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
-	github.com/mattn/go-runewidth v0.0.0-20170510074858-97311d9f7767 // indirect
+	github.com/mattn/go-runewidth v0.0.16 // indirect
+	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db // indirect
 	github.com/neurosnap/sentences v1.1.2 // indirect
+	github.com/pelletier/go-toml/v2 v2.4.0 // indirect
 	github.com/pjbgf/sha1cd v0.2.3 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
+	github.com/rivo/uniseg v0.4.7 // indirect
+	github.com/sagikazarmark/locafero v0.12.0 // indirect
 	github.com/skeema/knownhosts v1.1.0 // indirect
+	github.com/spf13/afero v1.15.0 // indirect
+	github.com/spf13/cast v1.10.0 // indirect
 	github.com/src-d/go-oniguruma v1.1.0 // indirect
+	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/tensorflow/tensorflow v0.0.0-20180308082300-f73d7c90ed05 // indirect
 	github.com/toqueteos/trie v1.0.0 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
+	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/image v0.42.0 // indirect
 	golang.org/x/net v0.56.0 // indirect
 	golang.org/x/sys v0.46.0 // indirect
@@ -66,7 +81,6 @@ require (
 	gopkg.in/src-d/go-siva.v1 v1.7.0 // indirect
 	gopkg.in/toqueteos/substring.v1 v1.0.2 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
 replace github.com/meko-christian/go-billy-siva => github.com/cyraxred/go-billy-siva v0.5.1

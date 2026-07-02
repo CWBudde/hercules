@@ -127,14 +127,16 @@ func TestPeopleDetectorConfigureEmpty(t *testing.T) {
 
 func TestPeopleDetectorConsume(t *testing.T) {
 	commit, _ := test.Repository.CommitObject(plumbing.NewHash(
-		"5c0e755dd85ac74584d9988cc361eccf02ce1a48"))
+		"5c0e755dd85ac74584d9988cc361eccf02ce1a48",
+	))
 	deps := map[string]interface{}{}
 	deps[core.DependencyCommit] = commit
 	res, err := fixturePeopleDetector().Consume(deps)
 	assert.Nil(t, err)
 	assert.Equal(t, res[DependencyAuthor].(int), 0)
 	commit, _ = test.Repository.CommitObject(plumbing.NewHash(
-		"8a03b5620b1caa72ec9cb847ea88332621e2950a"))
+		"8a03b5620b1caa72ec9cb847ea88332621e2950a",
+	))
 	deps[core.DependencyCommit] = commit
 	res, err = fixturePeopleDetector().Consume(deps)
 	assert.Nil(t, err)
@@ -143,7 +145,8 @@ func TestPeopleDetectorConsume(t *testing.T) {
 
 func TestPeopleDetectorConsumeExact(t *testing.T) {
 	commit, _ := test.Repository.CommitObject(plumbing.NewHash(
-		"5c0e755dd85ac74584d9988cc361eccf02ce1a48"))
+		"5c0e755dd85ac74584d9988cc361eccf02ce1a48",
+	))
 	deps := map[string]interface{}{}
 	deps[core.DependencyCommit] = commit
 	id := fixturePeopleDetector()
@@ -156,7 +159,8 @@ func TestPeopleDetectorConsumeExact(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Equal(t, res[DependencyAuthor].(int), 1)
 	commit, _ = test.Repository.CommitObject(plumbing.NewHash(
-		"8a03b5620b1caa72ec9cb847ea88332621e2950a"))
+		"8a03b5620b1caa72ec9cb847ea88332621e2950a",
+	))
 	deps[core.DependencyCommit] = commit
 	res, err = id.Consume(deps)
 	assert.Nil(t, err)
@@ -408,7 +412,8 @@ func (obj fakeTreeEncodedObject) SetSize(int64) {}
 
 func (obj fakeTreeEncodedObject) Reader() (io.ReadCloser, error) {
 	return ioutil.NopCloser(strings.NewReader(
-		"100644 " + obj.Name + "\x00ffffffffffffffffffffffffffffffffffffffff")), nil
+		"100644 " + obj.Name + "\x00ffffffffffffffffffffffffffffffffffffffff",
+	)), nil
 }
 
 func (obj fakeTreeEncodedObject) Writer() (io.WriteCloser, error) {
@@ -493,7 +498,8 @@ func TestPeopleDetectorGeneratePeopleDictMailmap(t *testing.T) {
 	}
 	fake := getFakeCommitWithFile(
 		".mailmap",
-		"Strange Guy <vadim@sourced.tech>\nVadim Markovtsev <vadim@sourced.tech> Strange Guy <vadim@sourced.tech>")
+		"Strange Guy <vadim@sourced.tech>\nVadim Markovtsev <vadim@sourced.tech> Strange Guy <vadim@sourced.tech>",
+	)
 	commits = append(commits, fake)
 	id.GeneratePeopleDict(commits)
 	assert.Contains(t, id.ReversedPeopleDict,

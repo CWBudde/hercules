@@ -64,17 +64,22 @@ func TestFileHistoryConsume(t *testing.T) {
 		assert.Equal(t, fh.files["analyser.go"].People, map[int]items.LineStats{1: ls(628, 9, 67)})
 		assert.Len(t, fh.files["analyser.go"].Hashes, 2)
 		assert.Equal(t, fh.files["analyser.go"].Hashes[0], plumbing.NewHash(
-			"ffffffffffffffffffffffffffffffffffffffff"))
+			"ffffffffffffffffffffffffffffffffffffffff",
+		))
 		assert.Equal(t, fh.files["analyser.go"].Hashes[1], plumbing.NewHash(
-			"2b1ed978194a94edeabbca6de7ff3b5771d4d665"))
+			"2b1ed978194a94edeabbca6de7ff3b5771d4d665",
+		))
 		assert.Len(t, fh.files[".travis.yml"].Hashes, 1)
 		assert.Equal(t, fh.files[".travis.yml"].Hashes[0], plumbing.NewHash(
-			"2b1ed978194a94edeabbca6de7ff3b5771d4d665"))
+			"2b1ed978194a94edeabbca6de7ff3b5771d4d665",
+		))
 		assert.Len(t, fh.files["cmd/hercules/main.go"].Hashes, 2)
 		assert.Equal(t, fh.files["cmd/hercules/main.go"].Hashes[0], plumbing.NewHash(
-			"0000000000000000000000000000000000000000"))
+			"0000000000000000000000000000000000000000",
+		))
 		assert.Equal(t, fh.files["cmd/hercules/main.go"].Hashes[1], plumbing.NewHash(
-			"2b1ed978194a94edeabbca6de7ff3b5771d4d665"))
+			"2b1ed978194a94edeabbca6de7ff3b5771d4d665",
+		))
 	}
 	validate()
 	res := fh.Finalize().(FileHistoryResult)
@@ -139,9 +144,11 @@ func bakeFileHistoryForSerialization(t *testing.T) (*FileHistoryAnalysis, map[st
 	deps[items.DependencyBlobCache] = cache
 	changes := make(object.Changes, 3)
 	treeFrom, _ := test.Repository.TreeObject(plumbing.NewHash(
-		"a1eb2ea76eb7f9bfbde9b243861474421000eb96"))
+		"a1eb2ea76eb7f9bfbde9b243861474421000eb96",
+	))
 	treeTo, _ := test.Repository.TreeObject(plumbing.NewHash(
-		"994eac1cd07235bb9815e547a75c84265dea00f5"))
+		"994eac1cd07235bb9815e547a75c84265dea00f5",
+	))
 	changes[0] = &object.Change{From: object.ChangeEntry{
 		Name: "analyser.go",
 		Tree: treeFrom,
@@ -183,7 +190,8 @@ func bakeFileHistoryForSerialization(t *testing.T) (*FileHistoryAnalysis, map[st
 	}
 	deps[items.DependencyTreeChanges] = changes
 	commit, _ := test.Repository.CommitObject(plumbing.NewHash(
-		"2b1ed978194a94edeabbca6de7ff3b5771d4d665"))
+		"2b1ed978194a94edeabbca6de7ff3b5771d4d665",
+	))
 	deps[core.DependencyCommit] = commit
 	deps[identity.DependencyAuthor] = 1
 	fd := fixtures.FileDiff()
@@ -196,9 +204,11 @@ func bakeFileHistoryForSerialization(t *testing.T) (*FileHistoryAnalysis, map[st
 	deps[items.DependencyLineStats] = lineStats[items.DependencyLineStats]
 
 	fh.files["cmd/hercules/main.go"] = &FileHistory{Hashes: []plumbing.Hash{plumbing.NewHash(
-		"0000000000000000000000000000000000000000")}}
+		"0000000000000000000000000000000000000000",
+	)}}
 	fh.files["analyser.go"] = &FileHistory{Hashes: []plumbing.Hash{plumbing.NewHash(
-		"ffffffffffffffffffffffffffffffffffffffff")}}
+		"ffffffffffffffffffffffffffffffffffffffff",
+	)}}
 	cres, err := fh.Consume(deps)
 	assert.Nil(t, cres)
 	assert.Nil(t, err)

@@ -84,15 +84,19 @@ func (langs *LanguagesDetection) Consume(deps map[string]interface{}) (map[strin
 		switch action {
 		case merkletrie.Insert:
 			result[change.To.TreeEntry.Hash] = langs.detectLanguage(
-				change.To.Name, cache[change.To.TreeEntry.Hash])
+				change.To.Name, cache[change.To.TreeEntry.Hash],
+			)
 		case merkletrie.Delete:
 			result[change.From.TreeEntry.Hash] = langs.detectLanguage(
-				change.From.Name, cache[change.From.TreeEntry.Hash])
+				change.From.Name, cache[change.From.TreeEntry.Hash],
+			)
 		case merkletrie.Modify:
 			result[change.To.TreeEntry.Hash] = langs.detectLanguage(
-				change.To.Name, cache[change.To.TreeEntry.Hash])
+				change.To.Name, cache[change.To.TreeEntry.Hash],
+			)
 			result[change.From.TreeEntry.Hash] = langs.detectLanguage(
-				change.From.Name, cache[change.From.TreeEntry.Hash])
+				change.From.Name, cache[change.From.TreeEntry.Hash],
+			)
 		}
 	}
 	return map[string]interface{}{DependencyLanguages: result}, nil

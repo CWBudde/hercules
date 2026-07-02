@@ -3,6 +3,11 @@
 # Set environment variables
 export GO111MODULE := "on"
 
+# The in-repo Go renderer (matplotlib-go) only supports the non-cgo build path
+# (the cgo path needs a vendored FreeType; see PLAN.md Phase 1). Override with
+# CGO_ENABLED=1 in the environment if you really need cgo.
+export CGO_ENABLED := env_var_or_default("CGO_ENABLED", "0")
+
 # Detect OS and set executable extension
 exe := if os() == "windows" { ".exe" } else { "" }
 
@@ -16,36 +21,38 @@ gobin := env_var_or_default("GOBIN", ".")
 tags := env_var_or_default("TAGS", "")
 
 # Default recipe (runs when you just type 'just')
-default: hercules
+default: hercules labours
 
 # Build the hercules binary
-hercules: vendor pb-go pb-python plugin-template
+hercules: vendor pb-go plugin-template
     go build -tags "{{tags}}" -ldflags "-X github.com/meko-christian/hercules.BinaryGitHash=`git rev-parse HEAD`" github.com/meko-christian/hercules/cmd/hercules
 
+# Build the labours binary (Go renderer)
+labours: vendor pb-go
+    go build -tags "{{tags}}" -ldflags "-X main.version=`git describe --tags --always` -X main.commit=`git rev-parse HEAD` -X main.date=`date -u +%Y-%m-%dT%H:%M:%SZ`" github.com/meko-christian/hercules/cmd/labours
+
 # Run all tests for the default build
-test: hercules
+test: hercules labours
     go test ./...
 
 # Run all tests (alias for test)
-test-all: hercules
+test-all: hercules labours
     go test ./...
 
 # Run unit tests (alias for test)
 test-unit: test
 
+# Run structural visual tests (no goldens or references required)
+test-visual:
+    go test ./test/visual/
+
+# Run opt-in golden and Python visual parity tests
+test-visual-parity:
+    LABOURS_GO_VISUAL_PARITY=1 LABOURS_GO_PYTHON_PARITY=1 go test ./test/visual/ -v
+
 # Generate a complete report directory for a repository.
 report REPO OUTPUT="./report": hercules
     ./hercules{{exe}} report -o "{{OUTPUT}}" "{{REPO}}"
-
-# Install Python labours package using uv
-install-labours:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    if ! command -v uv &> /dev/null; then
-        echo "Error: uv is not installed. Install it with: curl -LsSf https://astral.sh/uv/install.sh | sh"
-        exit 1
-    fi
-    cd python && uv pip install -e .
 
 # Format code using treefmt
 fmt:
@@ -126,14 +133,6 @@ pb-go: protoc-gen-gogo
         protoc --gogo_out=internal/pb --proto_path=internal/pb internal/pb/pb.proto
     fi
 
-# Generate Python protobuf code
-pb-python:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    if [ ! -f python/labours/pb_pb2.py ] || [ internal/pb/pb.proto -nt python/labours/pb_pb2.py ]; then
-        protoc --python_out python/labours --proto_path=internal/pb internal/pb/pb.proto
-    fi
-
 # Generate plugin template source
 plugin-template:
     #!/usr/bin/env bash
@@ -149,9 +148,9 @@ vendor:
 # Clean build artifacts
 clean:
     rm -f hercules{{exe}}
+    rm -f labours{{exe}}
     rm -f protoc-gen-gogo{{exe}}
     rm -f internal/pb/pb.pb.go
-    rm -f python/labours/pb_pb2.py
     rm -f cmd/hercules/plugin_template_source.go
     rm -rf vendor
 

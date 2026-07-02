@@ -176,7 +176,8 @@ func (couples *CouplesAnalysis) Consume(deps map[string]interface{}) (map[string
 			if fromName != toName {
 				// renamed
 				*couples.renames = append(
-					*couples.renames, rename{ToName: toName, FromName: fromName})
+					*couples.renames, rename{ToName: toName, FromName: fromName},
+				)
 			}
 			context = append(context, toName)
 			couples.people[author][toName]++
@@ -339,7 +340,8 @@ func (couples *CouplesAnalysis) MergeResults(r1, r2 interface{}, c1, c2 *core.Co
 	merged := CouplesResult{}
 	var people, files map[string]join.JoinedIndex
 	people, merged.reversedPeopleDict = join.PeopleIdentities(
-		cr1.reversedPeopleDict, cr2.reversedPeopleDict)
+		cr1.reversedPeopleDict, cr2.reversedPeopleDict,
+	)
 	files, merged.Files = join.LiteralIdentities(cr1.Files, cr2.Files)
 	merged.FilesLines = make([]int, len(merged.Files))
 	for i, name := range merged.Files {

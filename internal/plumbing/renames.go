@@ -190,7 +190,8 @@ func (ra *RenameAnalysis) Consume(deps map[string]interface{}) (map[string]inter
 			if added[a].hash == deleted[d].hash {
 				reducedChanges = append(
 					reducedChanges,
-					&object.Change{From: deleted[d].change.From, To: added[a].change.To})
+					&object.Change{From: deleted[d].change.From, To: added[a].change.To},
+				)
 				a++
 				d++
 			} else if added[a].Less(&deleted[d]) {
@@ -225,7 +226,8 @@ func (ra *RenameAnalysis) Consume(deps map[string]interface{}) (map[string]inter
 			smallChanges = append(smallChanges, change)
 		} else {
 			addedBlobs = append(
-				addedBlobs, sortableBlob{change: change, size: blob.Size})
+				addedBlobs, sortableBlob{change: change, size: blob.Size},
+			)
 		}
 	}
 	for _, change := range stillDeleted {
@@ -234,7 +236,8 @@ func (ra *RenameAnalysis) Consume(deps map[string]interface{}) (map[string]inter
 			smallChanges = append(smallChanges, change)
 		} else {
 			deletedBlobs = append(
-				deletedBlobs, sortableBlob{change: change, size: blob.Size})
+				deletedBlobs, sortableBlob{change: change, size: blob.Size},
+			)
 		}
 	}
 	sort.Sort(addedBlobs)
@@ -289,7 +292,8 @@ func (ra *RenameAnalysis) Consume(deps map[string]interface{}) (map[string]inter
 					break
 				}
 				blobsAreClose, err := ra.blobsAreClose(
-					myBlob, cache[addedBlobsA[a].change.To.TreeEntry.Hash])
+					myBlob, cache[addedBlobsA[a].change.To.TreeEntry.Hash],
+				)
 				if err != nil {
 					errs <- err
 					return
@@ -301,7 +305,8 @@ func (ra *RenameAnalysis) Consume(deps map[string]interface{}) (map[string]inter
 						&object.Change{
 							From: deletedBlobsA[d].change.From,
 							To:   addedBlobsA[a].change.To,
-						})
+						},
+					)
 					break
 				}
 			}
@@ -348,7 +353,8 @@ func (ra *RenameAnalysis) Consume(deps map[string]interface{}) (map[string]inter
 					break
 				}
 				blobsAreClose, err := ra.blobsAreClose(
-					myBlob, cache[deletedBlobsB[d].change.From.TreeEntry.Hash])
+					myBlob, cache[deletedBlobsB[d].change.From.TreeEntry.Hash],
+				)
 				if err != nil {
 					errs <- err
 					return
@@ -360,7 +366,8 @@ func (ra *RenameAnalysis) Consume(deps map[string]interface{}) (map[string]inter
 						&object.Change{
 							From: deletedBlobsB[d].change.From,
 							To:   addedBlobsB[a].change.To,
-						})
+						},
+					)
 					break
 				}
 			}
@@ -434,7 +441,8 @@ func (ra *RenameAnalysis) blobsAreClose(blob1 *CachedBlob, blob2 *CachedBlob) (b
 		// binary mode
 		bsdifflen := DiffBytes(blob1.Data, blob2.Data)
 		delta := int((int64(bsdifflen) * 100) / internal.Max64(
-			internal.Min64(blob1.Size, blob2.Size), 1))
+			internal.Min64(blob1.Size, blob2.Size), 1,
+		))
 		cleanReturn = true
 		return 100-delta >= ra.SimilarityThreshold, nil
 	}
@@ -472,7 +480,8 @@ func (ra *RenameAnalysis) blobsAreClose(blob1 *CachedBlob, blob2 *CachedBlob) (b
 					localSrc := src[srcPositions[prevPosSrc]:srcPositions[posSrc]]
 					localDst := dst[dstPositions[posDst]:dstPositions[nextPosDst]]
 					localDiffs := localDmp.DiffMainRunes(
-						strToLiteralRunes(localSrc), strToLiteralRunes(localDst), false)
+						strToLiteralRunes(localSrc), strToLiteralRunes(localDst), false,
+					)
 					for _, localEdit := range localDiffs {
 						if localEdit.Type == diffmatchpatch.DiffEqual {
 							common += utf8.RuneCountInString(localEdit.Text)

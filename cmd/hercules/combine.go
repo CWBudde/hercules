@@ -109,7 +109,8 @@ var combineCmd = &cobra.Command{
 		for key, val := range mergedResults {
 			buffer := bytes.Buffer{}
 			err := hercules.Registry.Summon(key)[0].(hercules.LeafPipelineItem).Serialize(
-				val, true, &buffer)
+				val, true, &buffer,
+			)
 			if err != nil {
 				panic(err)
 			}

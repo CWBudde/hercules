@@ -111,7 +111,8 @@ func (treediff *TreeDiff) ListConfigurationOptions() []core.ConfigurationOption 
 				"List of programming languages to analyze. Separated by comma \",\". "+
 					"The names are the keys in https://github.com/github/linguist/blob/master/lib/linguist/languages.yml "+
 					"\"%s\" is the special name which disables this filter and lets all the files through.",
-				allLanguages),
+				allLanguages,
+			),
 			Flag:    "languages",
 			Type:    core.StringsConfigurationOption,
 			Default: []string{allLanguages},

@@ -1,0 +1,21 @@
+hercules:
+  version: 0
+  hash: ca6b32fe793d297d4b256e9637f2fdaa08d8a6a7
+  repository: /home/christian/Code/labours-go
+  begin_unix_time: 1734315181
+  end_unix_time: 1754512384
+  commits: 8
+  run_time: 75
+Burndown:
+  granularity: 30
+  sampling: 30
+  tick_size: 86400
+  "project": |-
+    4222    0    0    0    0    0    0    0
+    4222    0    0    0    0    0    0    0
+    4222    0    0    0    0    0    0    0
+    4222    0    0    0    0    0    0    0
+    4222    0    0    0    0    0    0    0
+    4222    0    0    0    0    0    0    0
+    4222    0    0    0    0    0    0    0
+    2239    0    0    0    0    0    0 5428

@@ -243,7 +243,8 @@ func (registry *PipelineItemRegistry) AddFlags(flagSet *pflag.FlagSet) (
 		if fpi, ok := itemIface.(LeafPipelineItem); ok {
 			leafFlag = fpi.Flag()
 			deployed[fpi.Name()] = flagSet.Bool(
-				leafFlag, false, fmt.Sprintf("Runs %s analysis.", fpi.Name()))
+				leafFlag, false, fmt.Sprintf("Runs %s analysis.", fpi.Name()),
+			)
 		}
 
 		addFlagActivation := func(optFlag string) {

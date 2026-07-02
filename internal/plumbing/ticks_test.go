@@ -52,7 +52,8 @@ func TestTicksSinceStartConsume(t *testing.T) {
 	tss.TickSize = time.Second
 	deps := map[string]interface{}{}
 	commit, _ := test.Repository.CommitObject(plumbing.NewHash(
-		"cce947b98a050c6d356bc6ba95030254914027b1"))
+		"cce947b98a050c6d356bc6ba95030254914027b1",
+	))
 	deps[core.DependencyCommit] = commit
 	deps[core.DependencyIndex] = 0
 	res, err := tss.Consume(deps)
@@ -79,7 +80,8 @@ func TestTicksSinceStartConsume(t *testing.T) {
 	assert.Equal(t, 0, tss.tick0.Second())
 
 	commit, _ = test.Repository.CommitObject(plumbing.NewHash(
-		"fc9ceecb6dabcb2aab60e8619d972e8d8208a7df"))
+		"fc9ceecb6dabcb2aab60e8619d972e8d8208a7df",
+	))
 	deps[core.DependencyCommit] = commit
 	deps[core.DependencyIndex] = 10
 	res, err = tss.Consume(deps)
@@ -88,7 +90,8 @@ func TestTicksSinceStartConsume(t *testing.T) {
 	assert.Equal(t, 1, tss.previousTick)
 
 	commit, _ = test.Repository.CommitObject(plumbing.NewHash(
-		"a3ee37f91f0d705ec9c41ae88426f0ae44b2fbc3"))
+		"a3ee37f91f0d705ec9c41ae88426f0ae44b2fbc3",
+	))
 	deps[core.DependencyCommit] = commit
 	deps[core.DependencyIndex] = 20
 	res, err = tss.Consume(deps)
@@ -97,7 +100,8 @@ func TestTicksSinceStartConsume(t *testing.T) {
 	assert.Equal(t, 1, tss.previousTick)
 
 	commit, _ = test.Repository.CommitObject(plumbing.NewHash(
-		"a8b665a65d7aced63f5ba2ff6d9b71dac227f8cf"))
+		"a8b665a65d7aced63f5ba2ff6d9b71dac227f8cf",
+	))
 	deps[core.DependencyCommit] = commit
 	deps[core.DependencyIndex] = 20
 	res, err = tss.Consume(deps)
@@ -106,7 +110,8 @@ func TestTicksSinceStartConsume(t *testing.T) {
 	assert.Equal(t, 2, tss.previousTick)
 
 	commit, _ = test.Repository.CommitObject(plumbing.NewHash(
-		"186ff0d7e4983637bb3762a24d6d0a658e7f4712"))
+		"186ff0d7e4983637bb3762a24d6d0a658e7f4712",
+	))
 	deps[core.DependencyCommit] = commit
 	deps[core.DependencyIndex] = 30
 	res, err = tss.Consume(deps)
@@ -116,7 +121,8 @@ func TestTicksSinceStartConsume(t *testing.T) {
 
 	assert.Len(t, tss.commits, 3)
 	assert.Equal(t, tss.commits[0], []plumbing.Hash{plumbing.NewHash(
-		"cce947b98a050c6d356bc6ba95030254914027b1")})
+		"cce947b98a050c6d356bc6ba95030254914027b1",
+	)})
 	assert.Equal(t, tss.commits[1], []plumbing.Hash{
 		plumbing.NewHash("fc9ceecb6dabcb2aab60e8619d972e8d8208a7df"),
 		plumbing.NewHash("a3ee37f91f0d705ec9c41ae88426f0ae44b2fbc3"),
@@ -132,7 +138,8 @@ func TestTicksSinceStartConsumeWithTickSize(t *testing.T) {
 		ConfigTicksSinceStartTickSize: 1, // 1x hour
 	})
 	commit, _ := test.Repository.CommitObject(plumbing.NewHash(
-		"cce947b98a050c6d356bc6ba95030254914027b1"))
+		"cce947b98a050c6d356bc6ba95030254914027b1",
+	))
 	deps := map[string]interface{}{
 		core.DependencyCommit: commit,
 		core.DependencyIndex:  0,
@@ -146,7 +153,8 @@ func TestTicksSinceStartConsumeWithTickSize(t *testing.T) {
 	assert.Equal(t, 0, tss.tick0.Second()) // 29
 
 	commit, _ = test.Repository.CommitObject(plumbing.NewHash(
-		"fc9ceecb6dabcb2aab60e8619d972e8d8208a7df"))
+		"fc9ceecb6dabcb2aab60e8619d972e8d8208a7df",
+	))
 	deps[core.DependencyCommit] = commit
 	deps[core.DependencyIndex] = 10
 	res, err = tss.Consume(deps)
@@ -155,7 +163,8 @@ func TestTicksSinceStartConsumeWithTickSize(t *testing.T) {
 	assert.Equal(t, 24, tss.previousTick)
 
 	commit, _ = test.Repository.CommitObject(plumbing.NewHash(
-		"a3ee37f91f0d705ec9c41ae88426f0ae44b2fbc3"))
+		"a3ee37f91f0d705ec9c41ae88426f0ae44b2fbc3",
+	))
 	deps[core.DependencyCommit] = commit
 	deps[core.DependencyIndex] = 20
 	res, err = tss.Consume(deps)
@@ -165,7 +174,8 @@ func TestTicksSinceStartConsumeWithTickSize(t *testing.T) {
 
 	assert.Len(t, tss.commits, 2)
 	assert.Equal(t, []plumbing.Hash{plumbing.NewHash(
-		"cce947b98a050c6d356bc6ba95030254914027b1")},
+		"cce947b98a050c6d356bc6ba95030254914027b1",
+	)},
 		tss.commits[0])
 	assert.Equal(t, []plumbing.Hash{
 		plumbing.NewHash("fc9ceecb6dabcb2aab60e8619d972e8d8208a7df"),
@@ -177,7 +187,8 @@ func TestTicksSinceStartConsumeWithTickSize(t *testing.T) {
 func TestTicksCommits(t *testing.T) {
 	tss := fixtureTicksSinceStart()
 	tss.commits[0] = []plumbing.Hash{plumbing.NewHash(
-		"cce947b98a050c6d356bc6ba95030254914027b1")}
+		"cce947b98a050c6d356bc6ba95030254914027b1",
+	)}
 	commits := tss.commits
 	assert.NoError(t, tss.Initialize(test.Repository))
 	assert.Len(t, tss.commits, 0)
@@ -187,7 +198,8 @@ func TestTicksCommits(t *testing.T) {
 func TestTicksSinceStartFork(t *testing.T) {
 	tss1 := fixtureTicksSinceStart()
 	tss1.commits[0] = []plumbing.Hash{plumbing.NewHash(
-		"cce947b98a050c6d356bc6ba95030254914027b1")}
+		"cce947b98a050c6d356bc6ba95030254914027b1",
+	)}
 	clones := tss1.Fork(1)
 	assert.Len(t, clones, 1)
 	tss2 := clones[0].(*TicksSinceStart)
@@ -205,7 +217,8 @@ func TestTicksSinceStartConsumeZero(t *testing.T) {
 	tss := fixtureTicksSinceStart()
 	deps := map[string]interface{}{}
 	commit, _ := test.Repository.CommitObject(plumbing.NewHash(
-		"cce947b98a050c6d356bc6ba95030254914027b1"))
+		"cce947b98a050c6d356bc6ba95030254914027b1",
+	))
 	commit.Committer.When = time.Unix(0, 0)
 	deps[core.DependencyCommit] = commit
 	deps[core.DependencyIndex] = 0

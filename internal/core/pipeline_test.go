@@ -112,7 +112,8 @@ func (item *testPipelineItem) Consume(deps map[string]interface{}) (map[string]i
 	if item.DepsConsumed {
 		commit := obj.(*object.Commit)
 		item.CommitMatches = commit.Hash == plumbing.NewHash(
-			"af9ddc0db70f09f3f27b4b98e415592a7485171c")
+			"af9ddc0db70f09f3f27b4b98e415592a7485171c",
+		)
 		obj, item.DepsConsumed = deps[DependencyIndex]
 		if item.DepsConsumed {
 			item.IndexMatches = obj.(int) == 0
@@ -265,7 +266,8 @@ func TestPipelineFeatures(t *testing.T) {
 	assert.False(t, exists)
 	assert.Panics(t, func() {
 		pipeline.SetFeaturesFromFlags(
-			&PipelineItemRegistry{}, &PipelineItemRegistry{})
+			&PipelineItemRegistry{}, &PipelineItemRegistry{},
+		)
 	})
 }
 
@@ -322,7 +324,8 @@ func TestPipelineRun(t *testing.T) {
 	assert.True(t, item.Initialized)
 	commits := make([]*object.Commit, 1)
 	commits[0], _ = test.Repository.CommitObject(plumbing.NewHash(
-		"af9ddc0db70f09f3f27b4b98e415592a7485171c"))
+		"af9ddc0db70f09f3f27b4b98e415592a7485171c",
+	))
 	result, err := pipeline.Run(commits)
 	assert.NoError(t, err)
 	assert.Equal(t, 2, len(result))
@@ -403,7 +406,8 @@ func TestPipelineOnProgress(t *testing.T) {
 	pipeline.OnProgress = onProgress
 	commits := make([]*object.Commit, 1)
 	commits[0], _ = test.Repository.CommitObject(plumbing.NewHash(
-		"af9ddc0db70f09f3f27b4b98e415592a7485171c"))
+		"af9ddc0db70f09f3f27b4b98e415592a7485171c",
+	))
 	result, err := pipeline.Run(commits)
 	assert.Nil(t, err)
 	assert.Equal(t, 1, len(result))
@@ -421,9 +425,11 @@ func TestPipelineCommitsFull(t *testing.T) {
 	}
 	assert.Equal(t, len(commits), len(hashMap))
 	assert.Contains(t, hashMap, plumbing.NewHash(
-		"cce947b98a050c6d356bc6ba95030254914027b1"))
+		"cce947b98a050c6d356bc6ba95030254914027b1",
+	))
 	assert.Contains(t, hashMap, plumbing.NewHash(
-		"a3ee37f91f0d705ec9c41ae88426f0ae44b2fbc3"))
+		"a3ee37f91f0d705ec9c41ae88426f0ae44b2fbc3",
+	))
 }
 
 func TestPipelineCommitsFirstParent(t *testing.T) {
@@ -437,9 +443,11 @@ func TestPipelineCommitsFirstParent(t *testing.T) {
 	}
 	assert.Equal(t, len(commits), len(hashMap))
 	assert.Contains(t, hashMap, plumbing.NewHash(
-		"cce947b98a050c6d356bc6ba95030254914027b1"))
+		"cce947b98a050c6d356bc6ba95030254914027b1",
+	))
 	assert.NotContains(t, hashMap, plumbing.NewHash(
-		"a3ee37f91f0d705ec9c41ae88426f0ae44b2fbc3"))
+		"a3ee37f91f0d705ec9c41ae88426f0ae44b2fbc3",
+	))
 }
 
 func TestPipelineHeadCommit(t *testing.T) {
@@ -462,9 +470,11 @@ func TestLoadCommitsFromFile(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Equal(t, len(commits), 2)
 	assert.Equal(t, commits[0].Hash, plumbing.NewHash(
-		"cce947b98a050c6d356bc6ba95030254914027b1"))
+		"cce947b98a050c6d356bc6ba95030254914027b1",
+	))
 	assert.Equal(t, commits[1].Hash, plumbing.NewHash(
-		"6db8065cdb9bb0758f36a7e75fc72ab95f9e8145"))
+		"6db8065cdb9bb0758f36a7e75fc72ab95f9e8145",
+	))
 	commits, err = LoadCommitsFromFile("/WAT?xxx!", test.Repository)
 	assert.Nil(t, commits)
 	assert.NotNil(t, err)
@@ -496,7 +506,8 @@ func TestPipelineDeps(t *testing.T) {
 	pipeline.Initialize(map[string]interface{}{})
 	commits := make([]*object.Commit, 1)
 	commits[0], _ = test.Repository.CommitObject(plumbing.NewHash(
-		"af9ddc0db70f09f3f27b4b98e415592a7485171c"))
+		"af9ddc0db70f09f3f27b4b98e415592a7485171c",
+	))
 	result, err := pipeline.Run(commits)
 	assert.NoError(t, err)
 	assert.True(t, result[item1].(bool))
@@ -521,7 +532,8 @@ func TestPipelineError(t *testing.T) {
 	assert.NoError(t, pipeline.Initialize(map[string]interface{}{}))
 	commits := make([]*object.Commit, 1)
 	commits[0], _ = test.Repository.CommitObject(plumbing.NewHash(
-		"af9ddc0db70f09f3f27b4b98e415592a7485171c"))
+		"af9ddc0db70f09f3f27b4b98e415592a7485171c",
+	))
 	result, err := pipeline.Run(commits)
 	assert.Nil(t, result)
 	assert.NotNil(t, err)
@@ -540,7 +552,8 @@ func TestPipelineDryRun(t *testing.T) {
 	assert.True(t, pipeline.DryRun)
 	commits := make([]*object.Commit, 1)
 	commits[0], _ = test.Repository.CommitObject(plumbing.NewHash(
-		"af9ddc0db70f09f3f27b4b98e415592a7485171c"))
+		"af9ddc0db70f09f3f27b4b98e415592a7485171c",
+	))
 	result, err := pipeline.Run(commits)
 	assert.NotNil(t, result)
 	assert.Len(t, result, 1)
@@ -555,7 +568,8 @@ func TestPipelineDryRunFalse(t *testing.T) {
 	pipeline.Initialize(map[string]interface{}{ConfigPipelineDryRun: false})
 	commits := make([]*object.Commit, 1)
 	commits[0], _ = test.Repository.CommitObject(plumbing.NewHash(
-		"af9ddc0db70f09f3f27b4b98e415592a7485171c"))
+		"af9ddc0db70f09f3f27b4b98e415592a7485171c",
+	))
 	result, err := pipeline.Run(commits)
 	assert.NotNil(t, result)
 	assert.Len(t, result, 2)
@@ -591,7 +605,8 @@ func TestPipelineDumpPlanConfigure(t *testing.T) {
 	}()
 	commits := make([]*object.Commit, 1)
 	commits[0], _ = test.Repository.CommitObject(plumbing.NewHash(
-		"af9ddc0db70f09f3f27b4b98e415592a7485171c"))
+		"af9ddc0db70f09f3f27b4b98e415592a7485171c",
+	))
 	result, err := pipeline.Run(commits)
 	assert.NotNil(t, result)
 	assert.Len(t, result, 1)
@@ -676,7 +691,8 @@ func TestConfigurationOptionFormatDefault(t *testing.T) {
 
 func TestPrepareRunPlanTiny(t *testing.T) {
 	rootCommit, err := test.Repository.CommitObject(plumbing.NewHash(
-		"cce947b98a050c6d356bc6ba95030254914027b1"))
+		"cce947b98a050c6d356bc6ba95030254914027b1",
+	))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -825,7 +841,8 @@ func TestPrepareRunPlanBig(t *testing.T) {
 			defer cit.Close()
 			var commits []*object.Commit
 			timeCutoff := time.Date(
-				testCase[0], time.Month(testCase[1]), testCase[2], 0, 0, 0, 0, time.FixedZone("CET", 7200))
+				testCase[0], time.Month(testCase[1]), testCase[2], 0, 0, 0, 0, time.FixedZone("CET", 7200),
+			)
 			cit.ForEach(func(commit *object.Commit) error {
 				reliableTime := time.Date(commit.Author.When.Year(), commit.Author.When.Month(),
 					commit.Author.When.Day(), commit.Author.When.Hour(), commit.Author.When.Minute(),
@@ -936,8 +953,10 @@ type configUpstreamFailItem struct {
 	NoopMerger
 }
 
-func (item *configUpstreamFailItem) Name() string                                    { return "UpstreamFail" }
-func (item *configUpstreamFailItem) Provides() []string                              { return []string{"upstreamfail"} }
+func (item *configUpstreamFailItem) Name() string { return "UpstreamFail" }
+
+func (item *configUpstreamFailItem) Provides() []string { return []string{"upstreamfail"} }
+
 func (item *configUpstreamFailItem) Requires() []string                              { return []string{} }
 func (item *configUpstreamFailItem) ListConfigurationOptions() []ConfigurationOption { return nil }
 func (item *configUpstreamFailItem) Configure(facts map[string]interface{}) error    { return nil }
@@ -1038,7 +1057,8 @@ func TestPipelineRunPreparedPlanValid(t *testing.T) {
 
 	commits := make([]*object.Commit, 1)
 	commits[0], _ = test.Repository.CommitObject(plumbing.NewHash(
-		"af9ddc0db70f09f3f27b4b98e415592a7485171c"))
+		"af9ddc0db70f09f3f27b4b98e415592a7485171c",
+	))
 
 	err := pipeline.InitializeExt(map[string]interface{}{
 		ConfigPipelineCommits: commits,
@@ -1179,8 +1199,9 @@ type circularDepItem struct {
 	NoopMerger
 }
 
-func (item *circularDepItem) Name() string                                    { return "Circular" }
-func (item *circularDepItem) Provides() []string                              { return []string{"circular"} }
+func (item *circularDepItem) Name() string       { return "Circular" }
+func (item *circularDepItem) Provides() []string { return []string{"circular"} }
+
 func (item *circularDepItem) Requires() []string                              { return []string{"circular"} }
 func (item *circularDepItem) ListConfigurationOptions() []ConfigurationOption { return nil }
 func (item *circularDepItem) Configure(facts map[string]interface{}) error    { return nil }
@@ -1218,7 +1239,8 @@ func TestPipelineInitializeWithCommitsFact(t *testing.T) {
 
 	commits := make([]*object.Commit, 1)
 	commits[0], _ = test.Repository.CommitObject(plumbing.NewHash(
-		"af9ddc0db70f09f3f27b4b98e415592a7485171c"))
+		"af9ddc0db70f09f3f27b4b98e415592a7485171c",
+	))
 
 	// Pass commits directly via fact to skip Commits() call
 	err := pipeline.Initialize(map[string]interface{}{
@@ -1236,7 +1258,8 @@ func TestPipelineInitializeExtMergeTracksWithPreparePlan(t *testing.T) {
 
 	commits := make([]*object.Commit, 1)
 	commits[0], _ = test.Repository.CommitObject(plumbing.NewHash(
-		"af9ddc0db70f09f3f27b4b98e415592a7485171c"))
+		"af9ddc0db70f09f3f27b4b98e415592a7485171c",
+	))
 
 	// merge tracks with preparePlan=true should work
 	err := pipeline.InitializeExt(map[string]interface{}{

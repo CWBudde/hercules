@@ -47,9 +47,11 @@ func TestLanguagesDetectionConsume(t *testing.T) {
 	changes := make(object.Changes, 3)
 	// 2b1ed978194a94edeabbca6de7ff3b5771d4d665
 	treeFrom, _ := test.Repository.TreeObject(plumbing.NewHash(
-		"96c6ece9b2f3c7c51b83516400d278dea5605100"))
+		"96c6ece9b2f3c7c51b83516400d278dea5605100",
+	))
 	treeTo, _ := test.Repository.TreeObject(plumbing.NewHash(
-		"251f2094d7b523d5bcc60e663b6cf38151bf8844"))
+		"251f2094d7b523d5bcc60e663b6cf38151bf8844",
+	))
 	changes[0] = &object.Change{
 		From: object.ChangeEntry{
 			Name: "analyser.go",

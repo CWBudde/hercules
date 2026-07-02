@@ -65,9 +65,11 @@ func benchmarkRoundtrip(b *testing.B, n int, kind string) {
 func BenchmarkCompressUInt32Slice_1k_uniform(b *testing.B) {
 	benchmarkCompress(b, 1_000, "uniform")
 }
+
 func BenchmarkCompressUInt32Slice_1k_random(b *testing.B) {
 	benchmarkCompress(b, 1_000, "random")
 }
+
 func BenchmarkCompressUInt32Slice_1k_realistic(b *testing.B) {
 	benchmarkCompress(b, 1_000, "realistic")
 }
@@ -75,9 +77,11 @@ func BenchmarkCompressUInt32Slice_1k_realistic(b *testing.B) {
 func BenchmarkCompressUInt32Slice_10k_uniform(b *testing.B) {
 	benchmarkCompress(b, 10_000, "uniform")
 }
+
 func BenchmarkCompressUInt32Slice_10k_random(b *testing.B) {
 	benchmarkCompress(b, 10_000, "random")
 }
+
 func BenchmarkCompressUInt32Slice_10k_realistic(b *testing.B) {
 	benchmarkCompress(b, 10_000, "realistic")
 }
@@ -85,9 +89,11 @@ func BenchmarkCompressUInt32Slice_10k_realistic(b *testing.B) {
 func BenchmarkCompressUInt32Slice_100k_uniform(b *testing.B) {
 	benchmarkCompress(b, 100_000, "uniform")
 }
+
 func BenchmarkCompressUInt32Slice_100k_random(b *testing.B) {
 	benchmarkCompress(b, 100_000, "random")
 }
+
 func BenchmarkCompressUInt32Slice_100k_realistic(b *testing.B) {
 	benchmarkCompress(b, 100_000, "realistic")
 }
@@ -97,9 +103,11 @@ func BenchmarkCompressUInt32Slice_100k_realistic(b *testing.B) {
 func BenchmarkDecompressUInt32Slice_1k_uniform(b *testing.B) {
 	benchmarkRoundtrip(b, 1_000, "uniform")
 }
+
 func BenchmarkDecompressUInt32Slice_1k_random(b *testing.B) {
 	benchmarkRoundtrip(b, 1_000, "random")
 }
+
 func BenchmarkDecompressUInt32Slice_1k_realistic(b *testing.B) {
 	benchmarkRoundtrip(b, 1_000, "realistic")
 }
@@ -107,9 +115,11 @@ func BenchmarkDecompressUInt32Slice_1k_realistic(b *testing.B) {
 func BenchmarkDecompressUInt32Slice_10k_uniform(b *testing.B) {
 	benchmarkRoundtrip(b, 10_000, "uniform")
 }
+
 func BenchmarkDecompressUInt32Slice_10k_random(b *testing.B) {
 	benchmarkRoundtrip(b, 10_000, "random")
 }
+
 func BenchmarkDecompressUInt32Slice_10k_realistic(b *testing.B) {
 	benchmarkRoundtrip(b, 10_000, "realistic")
 }
@@ -117,9 +127,11 @@ func BenchmarkDecompressUInt32Slice_10k_realistic(b *testing.B) {
 func BenchmarkDecompressUInt32Slice_100k_uniform(b *testing.B) {
 	benchmarkRoundtrip(b, 100_000, "uniform")
 }
+
 func BenchmarkDecompressUInt32Slice_100k_random(b *testing.B) {
 	benchmarkRoundtrip(b, 100_000, "random")
 }
+
 func BenchmarkDecompressUInt32Slice_100k_realistic(b *testing.B) {
 	benchmarkRoundtrip(b, 100_000, "realistic")
 }

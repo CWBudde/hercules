@@ -13,6 +13,7 @@
 ### Task 1: Sentiment Help Text
 
 **Files:**
+
 - Modify: `leaves/comment_sentiment.go`
 - Inspect: `leaves/comment_sentiment_stub.go`
 
@@ -35,6 +36,7 @@ Expected: command exits 0.
 ### Task 2: Release Documentation
 
 **Files:**
+
 - Modify: `README.md`
 - Create: `docs/RELEASE.md`
 
@@ -55,6 +57,7 @@ Expected: no output.
 ### Task 3: Roadmap And Quality Gates
 
 **Files:**
+
 - Modify: `ROADMAP.md`
 
 - [ ] **Step 1: Run formatting and vet checks**

@@ -21,7 +21,8 @@ func CompressUInt32Slice(data []uint32) []byte {
 		unsafe.Pointer(&dst[0]),
 		C.int(len(data)*4),
 		dstSize,
-		12)
+		12,
+	)
 	finalDst := make([]byte, dstSize)
 	copy(finalDst, dst[:dstSize])
 	return finalDst
@@ -33,5 +34,6 @@ func DecompressUInt32Slice(data []byte, result []uint32) {
 	C.LZ4_decompress_fast(
 		unsafe.Pointer(&data[0]),
 		unsafe.Pointer(&result[0]),
-		C.int(len(result)*4))
+		C.int(len(result)*4),
+	)
 }

@@ -205,17 +205,37 @@ func TestPadRanges(t *testing.T) {
 		pad    int
 		want   []ast_items.LineRange
 	}{
-		{"zero pad is identity", []ast_items.LineRange{{Start: 5, End: 10}}, 100, 0,
-			[]ast_items.LineRange{{Start: 5, End: 10}}},
-		{"negative pad is identity", []ast_items.LineRange{{Start: 5, End: 10}}, 100, -3,
-			[]ast_items.LineRange{{Start: 5, End: 10}}},
+		{
+			"zero pad is identity",
+			[]ast_items.LineRange{{Start: 5, End: 10}},
+			100, 0,
+			[]ast_items.LineRange{{Start: 5, End: 10}},
+		},
+		{
+			"negative pad is identity",
+			[]ast_items.LineRange{{Start: 5, End: 10}},
+			100, -3,
+			[]ast_items.LineRange{{Start: 5, End: 10}},
+		},
 		{"empty input", nil, 100, 5, nil},
-		{"interior pad", []ast_items.LineRange{{Start: 50, End: 60}}, 200, 5,
-			[]ast_items.LineRange{{Start: 45, End: 65}}},
-		{"clamps low side", []ast_items.LineRange{{Start: 3, End: 7}}, 200, 10,
-			[]ast_items.LineRange{{Start: 1, End: 17}}},
-		{"clamps high side", []ast_items.LineRange{{Start: 90, End: 100}}, 100, 10,
-			[]ast_items.LineRange{{Start: 80, End: 100}}},
+		{
+			"interior pad",
+			[]ast_items.LineRange{{Start: 50, End: 60}},
+			200, 5,
+			[]ast_items.LineRange{{Start: 45, End: 65}},
+		},
+		{
+			"clamps low side",
+			[]ast_items.LineRange{{Start: 3, End: 7}},
+			200, 10,
+			[]ast_items.LineRange{{Start: 1, End: 17}},
+		},
+		{
+			"clamps high side",
+			[]ast_items.LineRange{{Start: 90, End: 100}},
+			100, 10,
+			[]ast_items.LineRange{{Start: 80, End: 100}},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

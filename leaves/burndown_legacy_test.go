@@ -142,9 +142,11 @@ func TestLegacyBurndownConsumeFinalize(t *testing.T) {
 	deps[items.DependencyBlobCache] = cache
 	changes := make(object.Changes, 3)
 	treeFrom, _ := test.Repository.TreeObject(plumbing.NewHash(
-		"a1eb2ea76eb7f9bfbde9b243861474421000eb96"))
+		"a1eb2ea76eb7f9bfbde9b243861474421000eb96",
+	))
 	treeTo, _ := test.Repository.TreeObject(plumbing.NewHash(
-		"994eac1cd07235bb9815e547a75c84265dea00f5"))
+		"994eac1cd07235bb9815e547a75c84265dea00f5",
+	))
 	changes[0] = &object.Change{From: object.ChangeEntry{
 		Name: "analyser.go",
 		Tree: treeFrom,
@@ -190,7 +192,8 @@ func TestLegacyBurndownConsumeFinalize(t *testing.T) {
 	assert.Nil(t, err)
 	deps[items.DependencyFileDiff] = result[items.DependencyFileDiff]
 	deps[core.DependencyCommit], _ = test.Repository.CommitObject(plumbing.NewHash(
-		"cce947b98a050c6d356bc6ba95030254914027b1"))
+		"cce947b98a050c6d356bc6ba95030254914027b1",
+	))
 
 	bd := LegacyBurndownAnalysis{
 		Granularity:  30,
@@ -264,9 +267,11 @@ func TestLegacyBurndownConsumeFinalize(t *testing.T) {
 	deps[items.DependencyBlobCache] = cache
 	changes = make(object.Changes, 3)
 	treeFrom, _ = test.Repository.TreeObject(plumbing.NewHash(
-		"96c6ece9b2f3c7c51b83516400d278dea5605100"))
+		"96c6ece9b2f3c7c51b83516400d278dea5605100",
+	))
 	treeTo, _ = test.Repository.TreeObject(plumbing.NewHash(
-		"251f2094d7b523d5bcc60e663b6cf38151bf8844"))
+		"251f2094d7b523d5bcc60e663b6cf38151bf8844",
+	))
 	changes[0] = &object.Change{
 		From: object.ChangeEntry{
 			Name: "analyser.go",
@@ -413,9 +418,11 @@ func TestLegacyBurndownConsumeMergeAuthorMissing(t *testing.T) {
 	deps[items.DependencyBlobCache] = cache
 	changes := make(object.Changes, 3)
 	treeFrom, _ := test.Repository.TreeObject(plumbing.NewHash(
-		"a1eb2ea76eb7f9bfbde9b243861474421000eb96"))
+		"a1eb2ea76eb7f9bfbde9b243861474421000eb96",
+	))
 	treeTo, _ := test.Repository.TreeObject(plumbing.NewHash(
-		"994eac1cd07235bb9815e547a75c84265dea00f5"))
+		"994eac1cd07235bb9815e547a75c84265dea00f5",
+	))
 	changes[0] = &object.Change{From: object.ChangeEntry{
 		Name: "analyser.go",
 		Tree: treeFrom,
@@ -461,7 +468,8 @@ func TestLegacyBurndownConsumeMergeAuthorMissing(t *testing.T) {
 	assert.Nil(t, err)
 	deps[items.DependencyFileDiff] = filediff[items.DependencyFileDiff]
 	deps[core.DependencyCommit], _ = test.Repository.CommitObject(plumbing.NewHash(
-		"cce947b98a050c6d356bc6ba95030254914027b1"))
+		"cce947b98a050c6d356bc6ba95030254914027b1",
+	))
 
 	// check that we survive merge + missing author
 	bd := LegacyBurndownAnalysis{PeopleNumber: 1}
@@ -472,9 +480,11 @@ func TestLegacyBurndownConsumeMergeAuthorMissing(t *testing.T) {
 
 	AddHash(t, cache, "4cdb0d969cf976f76634d1f348da3a175c9b4501")
 	treeFrom, _ = test.Repository.TreeObject(plumbing.NewHash(
-		"994eac1cd07235bb9815e547a75c84265dea00f5"))
+		"994eac1cd07235bb9815e547a75c84265dea00f5",
+	))
 	treeTo, _ = test.Repository.TreeObject(plumbing.NewHash(
-		"89f33a2320f6cd0bd3d16351cfc10bea7e3dce1a"))
+		"89f33a2320f6cd0bd3d16351cfc10bea7e3dce1a",
+	))
 	changes = object.Changes{
 		&object.Change{
 			From: object.ChangeEntry{
@@ -501,7 +511,8 @@ func TestLegacyBurndownConsumeMergeAuthorMissing(t *testing.T) {
 	assert.Nil(t, err)
 	deps[items.DependencyFileDiff] = filediff[items.DependencyFileDiff]
 	deps[core.DependencyCommit], _ = test.Repository.CommitObject(plumbing.NewHash(
-		"7ef5c47aa79a1b229e3227d9ffe2401dbcbeb22f"))
+		"7ef5c47aa79a1b229e3227d9ffe2401dbcbeb22f",
+	))
 	deps[identity.DependencyAuthor] = core.AuthorMissing
 	deps[core.DependencyIsMerge] = true
 	_, err = bd.Consume(deps)
@@ -532,9 +543,11 @@ func bakeBurndownForSerialization(t *testing.T, firstAuthor, secondAuthor int) (
 	deps[items.DependencyBlobCache] = cache
 	changes := make(object.Changes, 3)
 	treeFrom, _ := test.Repository.TreeObject(plumbing.NewHash(
-		"a1eb2ea76eb7f9bfbde9b243861474421000eb96"))
+		"a1eb2ea76eb7f9bfbde9b243861474421000eb96",
+	))
 	treeTo, _ := test.Repository.TreeObject(plumbing.NewHash(
-		"994eac1cd07235bb9815e547a75c84265dea00f5"))
+		"994eac1cd07235bb9815e547a75c84265dea00f5",
+	))
 	changes[0] = &object.Change{From: object.ChangeEntry{
 		Name: "analyser.go",
 		Tree: treeFrom,
@@ -576,7 +589,8 @@ func bakeBurndownForSerialization(t *testing.T, firstAuthor, secondAuthor int) (
 	}
 	deps[items.DependencyTreeChanges] = changes
 	deps[core.DependencyCommit], _ = test.Repository.CommitObject(plumbing.NewHash(
-		"cce947b98a050c6d356bc6ba95030254914027b1"))
+		"cce947b98a050c6d356bc6ba95030254914027b1",
+	))
 	fd := fixtures.FileDiff()
 	result, _ := fd.Consume(deps)
 	deps[items.DependencyFileDiff] = result[items.DependencyFileDiff]
@@ -595,9 +609,11 @@ func bakeBurndownForSerialization(t *testing.T, firstAuthor, secondAuthor int) (
 	deps[items.DependencyBlobCache] = cache
 	changes = make(object.Changes, 3)
 	treeFrom, _ = test.Repository.TreeObject(plumbing.NewHash(
-		"96c6ece9b2f3c7c51b83516400d278dea5605100"))
+		"96c6ece9b2f3c7c51b83516400d278dea5605100",
+	))
 	treeTo, _ = test.Repository.TreeObject(plumbing.NewHash(
-		"251f2094d7b523d5bcc60e663b6cf38151bf8844"))
+		"251f2094d7b523d5bcc60e663b6cf38151bf8844",
+	))
 	changes[0] = &object.Change{
 		From: object.ChangeEntry{
 			Name: "analyser.go",

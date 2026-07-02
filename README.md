@@ -52,7 +52,6 @@
     - [Everything in a single pass](#everything-in-a-single-pass)
   - [Plugins](#plugins)
   - [Merging](#merging)
-  - [Bad unicode errors](#bad-unicode-errors)
   - [Plotting](#plotting)
   - [Custom plotting backend](#custom-plotting-backend)
   - [Caveats](#caveats)
@@ -70,11 +69,14 @@ This fork focuses on:
 - lightweight default builds (no TensorFlow dependency),
 - practical report generation and operational tooling.
 
-There are two command-line tools: `hercules` and `labours`. The first is a program
-written in Go which takes a Git repository and executes a Directed Acyclic Graph (DAG) of [analysis tasks](docs/PIPELINE_ITEMS.md) over the full commit history.
-The second is a Python script which shows some predefined plots over the collected data. These two tools are normally used together through
-a pipe. It is possible to write custom analyses using the plugin system. It is also possible
-to merge several analysis results together - relevant for organizations.
+There are two command-line tools, both written in Go and built from this repository:
+`hercules` and `labours`. The first takes a Git repository and executes a Directed Acyclic
+Graph (DAG) of [analysis tasks](docs/PIPELINE_ITEMS.md) over the full commit history.
+The second renders predefined plots over the collected data (a native drop-in replacement
+for the retired Python `labours` package). The two tools can be chained through a pipe, or
+run as a single step with `hercules report`, which renders all charts in-process — no
+Python required. It is possible to write custom analyses using the plugin system. It is
+also possible to merge several analysis results together - relevant for organizations.
 The analyzed commit history includes branches, merges, etc.
 
 Historical context from the original project is available in
@@ -94,16 +96,10 @@ Please [contribute](#contributions) by testing, fixing bugs, and adding
 
 ## Installation
 
-Grab `hercules` binary from the [Releases page](https://github.com/meko-christian/hercules/releases).
-`labours` is installable from [PyPi](https://pypi.org/):
-
-```
-pip3 install labours
-```
-
-[`pip3`](https://pip.pypa.io/en/stable/installing/) is the Python package manager.
-
-Numpy and Scipy can be installed on Windows using http://www.lfd.uci.edu/~gohlke/pythonlibs/
+Grab the `hercules` binary from the [Releases page](https://github.com/meko-christian/hercules/releases),
+or build both `hercules` and `labours` from source (see below). No Python installation is
+needed: `labours` is a statically linked Go binary and `hercules report` renders charts
+in-process.
 
 ### Build from source
 
@@ -113,11 +109,11 @@ For development workflows that regenerate protobuf files or use repo recipes, in
 
 ```
 git clone https://github.com/meko-christian/hercules && cd hercules
-go build ./cmd/hercules
-# optional: build helpers and generated assets
+# builds both binaries (hercules and labours) plus generated assets
 just
-# optional: plotting companion
-pip3 install -e ./python
+# or build them directly
+go build ./cmd/hercules
+go build ./cmd/labours
 ```
 
 ### Build tags and optional dependencies
@@ -291,8 +287,7 @@ hercules --some-analysis /tmp/repo-cache
 
 The action produces the artifact named
 `hercules_charts`. Since it is currently impossible to pack several files in one artifact, all the
-charts and Tensorflow Projector files are packed in the inner tar archive. In order to view the embeddings,
-go to [projector.tensorflow.org](https://projector.tensorflow.org), click "Load" and choose the two TSVs. Then use UMAP or T-SNE.
+charts are packed in the inner tar archive.
 
 ### Docker image
 
@@ -441,20 +436,13 @@ hercules --couples [--people-dict=/path/to/identities]
 labours -m couples -o <name> [--couples-tmp-dir=/tmp]
 ```
 
-`hercules --couples` itself works in default builds and outputs co-occurrence matrices.
-Generating embeddings with `labours -m couples` requires TensorFlow, please follow
-[official instructions](https://www.tensorflow.org/install/).
-
 The files are coupled if they are changed in the same commit. The developers are coupled if they
 change the same file. `hercules` records the number of couples throughout the whole commit history
-and outputs the two corresponding co-occurrence matrices. `labours` then trains
-[Swivel embeddings](https://github.com/src-d/tensorflow-swivel) - dense vectors which reflect the
-co-occurrence probability through the Euclidean distance. The training requires a working
-[Tensorflow](http://tensorflow.org) installation. The intermediate files are stored in the
-system temporary directory or `--couples-tmp-dir` if it is specified. The trained embeddings are
-written to the current working directory with the name depending on `-o`. The output format is TSV
-and matches [Tensorflow Projector](http://projector.tensorflow.org/) so that the files and people
-can be visualized with t-SNE implemented in TF Projector.
+and outputs the two corresponding co-occurrence matrices. `labours -m couples` renders the
+file-coupling, people-coupling and (when collected) shotness-coupling charts from those matrices.
+The TensorFlow-based [Swivel embedding](https://github.com/src-d/tensorflow-swivel) training and
+[Tensorflow Projector](http://projector.tensorflow.org/) TSV export were features of the retired
+Python `labours` package and are not part of the Go renderer.
 
 #### Structural hotness
 
@@ -622,14 +610,15 @@ The analysis produces two visualizations:
 
 ```
 hercules --onboarding [--onboarding-windows=7,30,90] [--onboarding-meaningful-threshold=10]
-labours -m onboarding
 ```
 
 The onboarding analysis tracks how quickly new contributors ramp up after their first commit.
 It groups authors by monthly join cohort and measures commits, files, and changed lines at
 configurable day windows.
 
-The labours mode produces two visualizations:
+An `onboarding` render mode is not yet implemented in the Go renderer, so consume the
+YAML/protobuf output directly. The retired Python renderer produced two visualizations
+from this data (shown below):
 
 1. **Cohort heatmap** - average meaningful lines by join cohort and days since first commit.
 2. **Author ramps** - per-author meaningful-line trajectories for the top contributors in the view.
@@ -644,11 +633,13 @@ The labours mode produces two visualizations:
 hercules report -o ./report https://github.com/go-git/go-git
 ```
 
-This command runs Hercules in Protocol Buffers mode, invokes `labours` internally,
+This command runs Hercules in Protocol Buffers mode, renders the charts with the
+built-in in-process renderer (no separate `labours` process and no Python needed),
 and writes a report directory with generated plots plus `index.html`. The default
 report includes the usual project, file, people, ownership, temporal activity,
-bus factor, knowledge diffusion, onboarding, hotspot risk, and refactoring proxy
-views without requiring separate `labours` flags.
+bus factor, knowledge diffusion, hotspot risk, and refactoring proxy
+views without requiring separate `labours` flags. An external drop-in renderer can
+be substituted with `--labours-cmd`.
 
 From a source checkout, the same report can be generated with:
 
@@ -689,34 +680,22 @@ hercules --burndown --pb https://github.com/meko-christian/hercules > hercules.p
 hercules combine go-git.pb hercules.pb | labours -f pb -m burndown-project --resample M
 ```
 
-### Bad unicode errors
-
-YAML does not support the whole range of Unicode characters and the parser on `labours` side
-may raise exceptions. Filter the output from `hercules` through `fix_yaml_unicode.py` to discard
-such offending characters.
-
-```
-hercules --burndown --burndown-people https://github.com/... | python3 fix_yaml_unicode.py | labours -m people
-```
-
 ### Plotting
 
 These options affects all plots:
 
 ```
-labours [--style=white|black] [--backend=] [--size=Y,X]
+labours [--style=white|black] [--size=Y,X] [--theme=default|dark|minimal|vibrant|matplotlib]
 ```
 
 `--style` sets the general style of the plot (see `labours --help`).
 `--background` changes the plot background to be either white or black.
-`--backend` chooses the Matplotlib backend.
 `--size` sets the size of the figure in inches. The default is `12,9`.
+`--backend` is accepted for compatibility with the retired Python `labours` CLI.
 
-(required in macOS) you can pin the default Matplotlib backend with
-
-```
-echo "backend: TkAgg" > ~/.matplotlib/matplotlibrc
-```
+The Go renderer aims for visual parity with the original matplotlib output; the tracked
+parity matrix and how to re-run it are documented in
+[docs/RENDER_PARITY.md](docs/RENDER_PARITY.md).
 
 These options are effective in burndown charts only:
 
@@ -730,7 +709,7 @@ labours [--text-size] [--relative]
 
 It is possible to output all the information needed to draw the plots in JSON format.
 Simply append `.json` to the output (`-o`) and you are done. The data format is not fully
-specified and depends on the Python code which generates it. Each JSON file should
+specified and depends on the renderer code which generates it. Each JSON file should
 contain `"type"` which reflects the plot kind.
 
 ### Caveats
@@ -740,22 +719,9 @@ contain `"type"` which reflects the plot kind.
 1. Burndown collection may fail with an Out-Of-Memory error. See the next session for the workarounds.
 1. `--sentiment` and couples embeddings are optional/experimental TensorFlow-backed paths. They are
    not enabled in default release builds and should not be treated as release-blocking analyses.
-1. Parsing YAML in Python is slow when the number of internal objects is big. `hercules`' output
-   for the Linux kernel in "couples" mode is 1.5 GB and takes more than an hour / 180GB RAM to be
-   parsed. However, most of the repositories are parsed within a minute. Try using Protocol Buffers
-   instead (`hercules --pb` and `labours -f pb`).
-1. To speed up yaml parsing
-
-   ```
-   # Debian, Ubuntu
-   apt install libyaml-dev
-   # macOS
-   brew install yaml-cpp libyaml
-
-   # you might need to re-install pyyaml for changes to make effect
-   pip uninstall pyyaml
-   pip --no-cache-dir install pyyaml
-   ```
+1. Parsing huge YAML outputs is slow and memory-hungry (e.g. the Linux kernel in "couples" mode
+   produces a 1.5 GB YAML document). Most repositories are parsed within a minute, but for big
+   ones prefer Protocol Buffers (`hercules --pb` and `labours -f pb`).
 
 ### Burndown Out-Of-Memory
 

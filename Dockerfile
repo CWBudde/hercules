@@ -7,38 +7,26 @@ RUN apt-get update && \
     curl -SLo protoc.zip https://github.com/google/protobuf/releases/download/v$PROTOBUF_VERSION/protoc-$PROTOBUF_VERSION-$ARCH.zip && \
     unzip -d /usr/local protoc.zip && \
     rm protoc.zip && \
-    wget -qO - 'https://proget.makedeb.org/debian-feeds/prebuilt-mpr.pub' | gpg --dearmor | tee /usr/share/keyrings/prebuilt-mpr-archive-keyring.gpg 1> /dev/null && \
-    echo "deb [signed-by=/usr/share/keyrings/prebuilt-mpr-archive-keyring.gpg] https://proget.makedeb.org prebuilt-mpr bullseye" | tee /etc/apt/sources.list.d/prebuilt-mpr.list && \
-    apt-get update && \
-    apt-get install -y just && \
+    curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -- --to /usr/local/bin && \
     cd /root/src && \
     just
 
-FROM ubuntu:18.04
+# Rendering happens in-process in `hercules report` (or via the Go `labours`
+# binary); fonts are embedded, so no Python or extra runtime deps are needed.
+# The former Python labours package was removed from the repo (Phase 9); the
+# Go `labours` binary is its drop-in replacement.
+FROM ubuntu:22.04
 COPY --from=builder /root/src/hercules /usr/local/bin
-COPY python /root/src
-ENV LC_ALL en_US.UTF-8
+COPY --from=builder /root/src/labours /usr/local/bin
+ENV LC_ALL C.UTF-8
 RUN apt-get update && \
-    apt-get upgrade -y  && \
-    apt-get install -y --no-install-suggests --no-install-recommends locales ca-certificates python3 python3-dev python3-distutils libyaml-dev libyaml-0-2 libxml2-dev libxml2 curl git g++ && \
-    locale-gen en_US.UTF-8 && \
-    echo '#!/bin/bash\n\
-\n\
-echo\n\
-echo "	$@"\n\
-echo\n\' > /browser && \
+    apt-get upgrade -y && \
+    apt-get install -y --no-install-suggests --no-install-recommends ca-certificates && \
+    printf '#!/bin/bash\n\necho\necho "\t$@"\necho\n' > /browser && \
     chmod +x /browser && \
-    curl https://bootstrap.pypa.io/pip/3.6/get-pip.py | python3 - pip==21.3.1 && \
-    pip3 install --no-cache-dir --no-build-isolation cython && \
-    sed -i 's/DEFAULT_MATPLOTLIB_BACKEND = None/DEFAULT_MATPLOTLIB_BACKEND = "Agg"/' /root/src/labours/cli.py && \
-    pip3 install --no-cache-dir /root/src && \
-    rm -rf /root/src && \
-    apt-get remove -y python3-dev libyaml-dev libxml2-dev curl git g++ && \
-    apt-get autoremove -y && \
     rm -rf /usr/share/doc /usr/share/man && \
     rm -rf /var/lib/apt/lists/* && \
     apt-get clean
-
 
 EXPOSE 8000
 ENV BROWSER /browser

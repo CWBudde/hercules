@@ -492,7 +492,7 @@ func runIdentityWorkflow(options identityWorkflowOptions) error {
 		return err
 	}
 	if options.TemplatePath != "" {
-		if err := os.WriteFile(options.TemplatePath, []byte(detector.GeneratePeopleDictTemplate()), 0644); err != nil {
+		if err := os.WriteFile(options.TemplatePath, []byte(detector.GeneratePeopleDictTemplate()), 0o644); err != nil {
 			return err
 		}
 	}

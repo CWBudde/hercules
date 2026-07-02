@@ -273,7 +273,8 @@ func (devs *DevsAnalysis) MergeResults(r1, r2 interface{}, c1, c2 *core.CommonAn
 	merged := DevsResult{tickSize: cr1.tickSize}
 	var mergedIndex map[string]join.JoinedIndex
 	mergedIndex, merged.reversedPeopleDict = join.PeopleIdentities(
-		cr1.reversedPeopleDict, cr2.reversedPeopleDict)
+		cr1.reversedPeopleDict, cr2.reversedPeopleDict,
+	)
 	newticks := map[int]map[int]*DevTick{}
 	merged.Ticks = newticks
 	for tick, dd := range cr1.Ticks {

@@ -43,7 +43,9 @@ skip-blank-lines = false
 [linters.exclusions]
 generated = 'lax'
 presets = ['comments', 'common-false-positives', 'legacy', 'std-error-handling']
-paths = ['third_party$', 'builtin$', 'examples$']
+# internal/render and cmd/labours are the Go renderer moved verbatim from
+# labours-go (PLAN.md Part A); excluded wholesale until brought up to house style.
+paths = ['third_party$', 'builtin$', 'examples$', 'internal/render/', 'cmd/labours/']
 
 [[linters.exclusions.rules]]
 linters = ['gosec']

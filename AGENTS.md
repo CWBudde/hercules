@@ -10,9 +10,10 @@ roadmap work carried over from the former `ROADMAP.md` (Part B).
 
 ## Build and Development Commands
 
-- `just` or `just hercules` - Build the hercules binary
+- `just` - Build both binaries (`hercules` and `labours`)
+- `just hercules` / `just labours` - Build a single binary
 - `just test` - Run all Go tests
-- `just install-labours` - Install the Python labours package for plotting/visualization using uv
+- `just test-visual` / `just test-visual-parity` - Run the chart rendering test harness (see [docs/RENDER_PARITY.md](docs/RENDER_PARITY.md))
 - `just clean` - Clean build artifacts
 - `just help` - List all available recipes
 - `go test github.com/meko-christian/hercules` - Run Go tests directly
@@ -22,11 +23,14 @@ roadmap work carried over from the former `ROADMAP.md` (Part B).
 Hercules is a Git repository analysis engine with two main components:
 
 1. **hercules** (Go) - Core analysis engine that processes Git commits through a DAG pipeline
-2. **labours** (Python) - Visualization and plotting companion for analysis results
+2. **labours** (Go, `cmd/labours` + `internal/render`) - Visualization and plotting companion for analysis results
 
-Note: the Python `labours` package is slated to be replaced by an in-repo Go renderer
-(a native `labours` binary with in-process rendering via `hercules report`); see
-[PLAN.md](PLAN.md) Part A.
+Note: the former Python `labours` package has been replaced by the in-repo Go renderer
+(a native `labours` binary; `hercules report` renders in-process). Rendering parity with
+the Python original is tracked in [docs/RENDER_PARITY.md](docs/RENDER_PARITY.md); the
+migration history is in [PLAN.md](PLAN.md) Part A. Many identifiers in `internal/render`
+(e.g. `GenerateBurndownProjectPython`, `python_compatible.go`) are _compatibility_ names
+referring to matching the Python output — do not "clean them up".
 
 ### Core Architecture Components
 
@@ -86,14 +90,14 @@ The `--temporal-activity` analysis tracks when developers work by extracting tem
 
 ```bash
 hercules --temporal-activity /path/to/repo > temporal.yml
-labours -m temporal-activity temporal.yml
+labours -m temporal-activity -i temporal.yml
 ```
 
 **Combined with other analyses:**
 
 ```bash
 hercules --burndown --devs --temporal-activity /path/to/repo > analysis.yml
-labours -m all analysis.yml
+labours -m all -i analysis.yml
 ```
 
 ### Output

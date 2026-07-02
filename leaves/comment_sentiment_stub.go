@@ -20,7 +20,8 @@ const (
 )
 
 var errTensorflowRequired = errors.New(
-	"sentiment analysis is unavailable in this build; rebuild with -tags tensorflow")
+	"sentiment analysis is unavailable in this build; rebuild with -tags tensorflow",
+)
 
 // CommentSentimentAnalysis is a placeholder in non-tensorflow builds.
 type CommentSentimentAnalysis struct {

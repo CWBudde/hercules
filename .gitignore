@@ -49,7 +49,6 @@ __pycache__/
 /hercules
 /labours
 protoc-gen-gogo
-cmd/hercules/plugin_template_source.go
 contrib/_plugin_example/churn_analysis.pb.go
 pb/pb.pb.go
 coverage.txt

@@ -24,7 +24,7 @@ tags := env_var_or_default("TAGS", "")
 default: hercules labours
 
 # Build the hercules binary
-hercules: vendor pb-go plugin-template
+hercules: vendor pb-go
     go build -tags "{{tags}}" -ldflags "-X github.com/meko-christian/hercules.BinaryGitHash=`git rev-parse HEAD`" github.com/meko-christian/hercules/cmd/hercules
 
 # Build the labours binary (Go renderer)
@@ -144,21 +144,22 @@ protoc-gen-gogo:
         go install github.com/gogo/protobuf/protoc-gen-gogo@latest
     fi
 
-# Generate Go protobuf code
-pb-go: protoc-gen-gogo
+# Ensure the generated Go protobuf code exists. The committed
+# internal/pb/pb.pb.go is the source of truth (proto drift is caught by the
+# schema-guard CI and code review), so this only regenerates when the file is
+# missing — avoiding a hard dependency on protoc during ordinary builds (CI
+# checkout mtimes are non-deterministic, which previously triggered spurious
+# protoc runs). Run `just pb-go-force` after editing pb.proto.
+pb-go:
     #!/usr/bin/env bash
     set -euo pipefail
-    if [ ! -f internal/pb/pb.pb.go ] || [ internal/pb/pb.proto -nt internal/pb/pb.pb.go ]; then
-        protoc --gogo_out=internal/pb --proto_path=internal/pb internal/pb/pb.proto
+    if [ ! -f internal/pb/pb.pb.go ]; then
+        just pb-go-force
     fi
 
-# Generate plugin template source
-plugin-template:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    if [ ! -f cmd/hercules/plugin_template_source.go ] || [ cmd/hercules/plugin.template -nt cmd/hercules/plugin_template_source.go ]; then
-        cd cmd/hercules && go generate
-    fi
+# Regenerate Go protobuf code from pb.proto (requires protoc + protoc-gen-gogo).
+pb-go-force: protoc-gen-gogo
+    protoc --gogo_out=internal/pb --proto_path=internal/pb internal/pb/pb.proto
 
 # Vendor dependencies
 vendor:
@@ -170,7 +171,6 @@ clean:
     rm -f labours{{exe}}
     rm -f protoc-gen-gogo{{exe}}
     rm -f internal/pb/pb.pb.go
-    rm -f cmd/hercules/plugin_template_source.go
     rm -rf vendor
 
 # Run the large-repo benchmark suite. Pass a path to any local clone with

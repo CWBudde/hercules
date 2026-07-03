@@ -45,7 +45,9 @@ generated = 'lax'
 presets = ['comments', 'common-false-positives', 'legacy', 'std-error-handling']
 # internal/render and cmd/labours are the Go renderer moved verbatim from
 # labours-go (PLAN.md Part A); excluded wholesale until brought up to house style.
-paths = ['third_party$', 'builtin$', 'examples$', 'internal/render/', 'cmd/labours/']
+# internal/test is shared test scaffolding (a fixture-repository helper), not
+# production code, so it is exempt from the strict `default = all` house style.
+paths = ['third_party$', 'builtin$', 'examples$', 'internal/render/', 'cmd/labours/', 'internal/test/']
 
 [[linters.exclusions.rules]]
 linters = ['gosec']
@@ -63,6 +65,12 @@ path = 'cmd/.*\.go'
 linters = ['revive']
 path = 'internal/common/fs_operations.go'
 text = 'avoid meaningless package names'
+
+# Opinionated readability/complexity linters target production code; they are
+# noise in tests (and wsl conflicts with gofumpt's blank-line handling).
+[[linters.exclusions.rules]]
+linters = ['wsl_v5', 'varnamelen', 'funlen', 'cyclop', 'gocognit', 'gocyclo', 'maintidx', 'dupl']
+path = '_test\.go'
 
 [severity]
 default = 'warn'

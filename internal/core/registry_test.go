@@ -264,7 +264,7 @@ func TestRegistryFeatures(t *testing.T) {
 	reg.AddFlags(testCmd.Flags())
 	args := [...]string{"--feature", "other", "--feature", "power"}
 	testCmd.ParseFlags(args[:])
-	pipeline := NewPipeline(test.Repository)
+	pipeline := NewPipeline(test.FixtureRepository())
 	val, _ := pipeline.GetFeature("power")
 	assert.False(t, val)
 	val, _ = pipeline.GetFeature("other")

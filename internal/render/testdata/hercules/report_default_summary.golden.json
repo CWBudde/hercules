@@ -1,0 +1,105 @@
+{
+  "repository": "test/testdata/hercules/hercules.siva",
+  "beginUnixTime": 1481563829,
+  "endUnixTime": 1516878058,
+  "projectBurndown": {
+    "rows": 14,
+    "cols": 14,
+    "total": 111935
+  },
+  "filesBurndown": {
+    "count": 87,
+    "firstName": ".gitignore",
+    "firstMatrix": {
+      "rows": 14,
+      "cols": 14,
+      "total": 396
+    }
+  },
+  "peopleBurndown": {
+    "count": 5,
+    "firstName": "vadim markovtsev|gmarkhor@gmail.com|vadim@sourced.tech",
+    "firstMatrix": {
+      "rows": 14,
+      "cols": 14,
+      "total": 111059
+    }
+  },
+  "peopleInteraction": {
+    "rows": 5,
+    "cols": 7,
+    "total": 26549
+  },
+  "fileCooccurrence": {
+    "items": 99,
+    "matrix": {
+      "rows": 99,
+      "cols": 99,
+      "total": 4479
+    }
+  },
+  "peopleCooccurrence": {
+    "items": 5,
+    "matrix": {
+      "rows": 6,
+      "cols": 6,
+      "total": 882
+    }
+  },
+  "developers": {
+    "people": 5,
+    "days": 92,
+    "commits": 300,
+    "linesAdded": 31285,
+    "linesRemoved": 4736,
+    "linesModified": 4887,
+    "languages": {
+      "": 419,
+      "Dockerfile": 53,
+      "Go": 24101,
+      "Graphviz (DOT)": 78,
+      "Ignore List": 39,
+      "Java": 634,
+      "Makefile": 127,
+      "Markdown": 1259,
+      "Protocol Buffer": 185,
+      "PureBasic": 9332,
+      "Python": 4072,
+      "Text": 462,
+      "YAML": 147
+    }
+  },
+  "temporalActivity": {
+    "people": 5,
+    "ticks": 92,
+    "commits": 334,
+    "lines": 36021
+  },
+  "busFactor": {
+    "snapshots": 92,
+    "subsystems": 10,
+    "threshold": 0.8,
+    "maxFactor": 1,
+    "maxLines": 26233
+  },
+  "ownershipConcentration": {
+    "snapshots": 92,
+    "subsystemGini": 10,
+    "subsystemHhi": 10,
+    "maxGini": 0.7985951912315232,
+    "maxHhi": 0.9957372760101825,
+    "maxTotalLines": 26233
+  },
+  "knowledgeDiffusion": {
+    "files": 110,
+    "distribution": 3,
+    "windowMonths": 6,
+    "maxEditors": 4
+  },
+  "hotspotRisk": {
+    "files": 20,
+    "windowDays": 90,
+    "topPath": ".gitignore",
+    "topRisk": 0
+  }
+}

@@ -13,7 +13,6 @@ excludes = [
   "vendor/**",
   # generated files
   "internal/pb/pb.pb.go",
-  "cmd/hercules/plugin_template_source.go",
 ]
 
 ### Misc

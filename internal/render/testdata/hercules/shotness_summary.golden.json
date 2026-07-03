@@ -1,0 +1,13 @@
+{
+  "records": 764,
+  "counterTotal": 50281,
+  "cooccurrence": {
+    "items": 764,
+    "matrix": {
+      "rows": 764,
+      "cols": 764,
+      "total": 50281
+    }
+  },
+  "firstRecord": "diff.go:BlobToString"
+}

@@ -16,8 +16,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-//go:generate go run embed.go
-
 // ShlibExts is the mapping between platform names and shared library file name extensions.
 var ShlibExts = map[string]string{
 	"window":  "dll",

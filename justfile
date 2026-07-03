@@ -24,7 +24,7 @@ tags := env_var_or_default("TAGS", "")
 default: hercules labours
 
 # Build the hercules binary
-hercules: vendor pb-go plugin-template
+hercules: vendor pb-go
     go build -tags "{{tags}}" -ldflags "-X github.com/meko-christian/hercules.BinaryGitHash=`git rev-parse HEAD`" github.com/meko-christian/hercules/cmd/hercules
 
 # Build the labours binary (Go renderer)
@@ -114,20 +114,25 @@ setup-deps:
     # Install treefmt (required for formatting)
     command -v treefmt >/dev/null 2>&1 || { echo "Installing treefmt..."; curl -fsSL https://github.com/numtide/treefmt/releases/download/v2.1.1/treefmt_2.1.1_linux_amd64.tar.gz | sudo tar -C /usr/local/bin -xz treefmt; }
 
+    # Formatter versions are pinned so `just fmt` / `check-formatted` are
+    # reproducible: unpinned `@latest`/`npm -g` installs drifted between local
+    # runs and CI and produced spurious formatting diffs.
+
     # Install prettier (Node.js formatter)
-    command -v prettier >/dev/null 2>&1 || { echo "Installing prettier..."; npm install -g prettier || echo "Prettier installation failed - npm not found. Please install Node.js/npm manually."; }
+    command -v prettier >/dev/null 2>&1 || { echo "Installing prettier..."; npm install -g prettier@3.8.1 || echo "Prettier installation failed - npm not found. Please install Node.js/npm manually."; }
 
     # Install gofumpt (Go formatter)
-    command -v gofumpt >/dev/null 2>&1 || { echo "Installing gofumpt..."; go install mvdan.cc/gofumpt@latest; }
+    command -v gofumpt >/dev/null 2>&1 || { echo "Installing gofumpt..."; go install mvdan.cc/gofumpt@v0.10.0; }
 
     # Install gci (Go import formatter)
-    command -v gci >/dev/null 2>&1 || { echo "Installing gci..."; go install github.com/daixiang0/gci@latest; }
+    command -v gci >/dev/null 2>&1 || { echo "Installing gci..."; go install github.com/daixiang0/gci@v0.14.0; }
 
     # Install shfmt (Shell formatter)
-    command -v shfmt >/dev/null 2>&1 || { echo "Installing shfmt..."; go install mvdan.cc/sh/v3/cmd/shfmt@latest; }
+    command -v shfmt >/dev/null 2>&1 || { echo "Installing shfmt..."; go install mvdan.cc/sh/v3/cmd/shfmt@v3.13.1; }
 
-    # Install golangci-lint (Go linter)
-    command -v golangci-lint >/dev/null 2>&1 || { echo "Installing golangci-lint..."; curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.61.0; }
+    # Install golangci-lint (Go linter) — v2.x to match the CI lint action and
+    # the version = "2" .golangci.toml (v1.x cannot parse the v2 config).
+    command -v golangci-lint >/dev/null 2>&1 || { echo "Installing golangci-lint..."; GOTOOLCHAIN=go1.25.0 go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.5.0; }
 
     # Note: shellcheck requires manual installation on most systems
     command -v shellcheck >/dev/null 2>&1 || echo "WARNING: shellcheck not found. Please install manually: apt-get install shellcheck (Ubuntu/Debian) or brew install shellcheck (macOS)"
@@ -144,21 +149,22 @@ protoc-gen-gogo:
         go install github.com/gogo/protobuf/protoc-gen-gogo@latest
     fi
 
-# Generate Go protobuf code
-pb-go: protoc-gen-gogo
+# Ensure the generated Go protobuf code exists. The committed
+# internal/pb/pb.pb.go is the source of truth (proto drift is caught by the
+# schema-guard CI and code review), so this only regenerates when the file is
+# missing — avoiding a hard dependency on protoc during ordinary builds (CI
+# checkout mtimes are non-deterministic, which previously triggered spurious
+# protoc runs). Run `just pb-go-force` after editing pb.proto.
+pb-go:
     #!/usr/bin/env bash
     set -euo pipefail
-    if [ ! -f internal/pb/pb.pb.go ] || [ internal/pb/pb.proto -nt internal/pb/pb.pb.go ]; then
-        protoc --gogo_out=internal/pb --proto_path=internal/pb internal/pb/pb.proto
+    if [ ! -f internal/pb/pb.pb.go ]; then
+        just pb-go-force
     fi
 
-# Generate plugin template source
-plugin-template:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    if [ ! -f cmd/hercules/plugin_template_source.go ] || [ cmd/hercules/plugin.template -nt cmd/hercules/plugin_template_source.go ]; then
-        cd cmd/hercules && go generate
-    fi
+# Regenerate Go protobuf code from pb.proto (requires protoc + protoc-gen-gogo).
+pb-go-force: protoc-gen-gogo
+    protoc --gogo_out=internal/pb --proto_path=internal/pb internal/pb/pb.proto
 
 # Vendor dependencies
 vendor:
@@ -169,8 +175,6 @@ clean:
     rm -f hercules{{exe}}
     rm -f labours{{exe}}
     rm -f protoc-gen-gogo{{exe}}
-    rm -f internal/pb/pb.pb.go
-    rm -f cmd/hercules/plugin_template_source.go
     rm -rf vendor
 
 # Run the large-repo benchmark suite. Pass a path to any local clone with

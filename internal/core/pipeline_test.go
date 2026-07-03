@@ -251,7 +251,7 @@ func (item *dependingTestPipelineItem) Serialize(result interface{}, binary bool
 }
 
 func TestPipelineFeatures(t *testing.T) {
-	pipeline := NewPipeline(test.Repository)
+	pipeline := NewPipeline(test.FixtureRepository())
 	pipeline.SetFeature("feat")
 	val, _ := pipeline.GetFeature("feat")
 	assert.True(t, val)
@@ -272,7 +272,7 @@ func TestPipelineFeatures(t *testing.T) {
 }
 
 func TestPipelineErrors(t *testing.T) {
-	pipeline := NewPipeline(test.Repository)
+	pipeline := NewPipeline(test.FixtureRepository())
 	item := &testPipelineItem{}
 	pipeline.AddItem(item)
 	item.ConfigureRaises = true
@@ -293,7 +293,7 @@ func TestPipelineErrors(t *testing.T) {
 
 func TestPipelineInitialize(t *testing.T) {
 	t.Run("without logger fact", func(t *testing.T) {
-		pipeline := NewPipeline(test.Repository)
+		pipeline := NewPipeline(test.FixtureRepository())
 		item := &testPipelineItem{}
 		pipeline.AddItem(item)
 		require.NoError(t, pipeline.Initialize(map[string]interface{}{}))
@@ -303,7 +303,7 @@ func TestPipelineInitialize(t *testing.T) {
 	})
 
 	t.Run("with logger fact", func(t *testing.T) {
-		pipeline := NewPipeline(test.Repository)
+		pipeline := NewPipeline(test.FixtureRepository())
 		item := &testPipelineItem{}
 		logger := NewLogger()
 		pipeline.AddItem(item)
@@ -317,13 +317,13 @@ func TestPipelineInitialize(t *testing.T) {
 }
 
 func TestPipelineRun(t *testing.T) {
-	pipeline := NewPipeline(test.Repository)
+	pipeline := NewPipeline(test.FixtureRepository())
 	item := &testPipelineItem{}
 	pipeline.AddItem(item)
 	assert.NoError(t, pipeline.Initialize(map[string]interface{}{}))
 	assert.True(t, item.Initialized)
 	commits := make([]*object.Commit, 1)
-	commits[0], _ = test.Repository.CommitObject(plumbing.NewHash(
+	commits[0], _ = test.FixtureRepository().CommitObject(plumbing.NewHash(
 		"af9ddc0db70f09f3f27b4b98e415592a7485171c",
 	))
 	result, err := pipeline.Run(commits)
@@ -353,7 +353,7 @@ func TestPipelineRun(t *testing.T) {
 }
 
 func TestPipelineRunBranches(t *testing.T) {
-	pipeline := NewPipeline(test.Repository)
+	pipeline := NewPipeline(test.FixtureRepository())
 	item := &testPipelineItem{}
 	pipeline.AddItem(item)
 	pipeline.Initialize(map[string]interface{}{})
@@ -368,7 +368,7 @@ func TestPipelineRunBranches(t *testing.T) {
 	commits := make([]*object.Commit, len(hashes))
 	for i, h := range hashes {
 		var err error
-		commits[i], err = test.Repository.CommitObject(plumbing.NewHash(h))
+		commits[i], err = test.FixtureRepository().CommitObject(plumbing.NewHash(h))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -385,7 +385,7 @@ func TestPipelineRunBranches(t *testing.T) {
 }
 
 func TestPipelineOnProgress(t *testing.T) {
-	pipeline := NewPipeline(test.Repository)
+	pipeline := NewPipeline(test.FixtureRepository())
 	progressOk := 0
 
 	onProgress := func(step int, total int, action string) {
@@ -405,7 +405,7 @@ func TestPipelineOnProgress(t *testing.T) {
 
 	pipeline.OnProgress = onProgress
 	commits := make([]*object.Commit, 1)
-	commits[0], _ = test.Repository.CommitObject(plumbing.NewHash(
+	commits[0], _ = test.FixtureRepository().CommitObject(plumbing.NewHash(
 		"af9ddc0db70f09f3f27b4b98e415592a7485171c",
 	))
 	result, err := pipeline.Run(commits)
@@ -415,7 +415,7 @@ func TestPipelineOnProgress(t *testing.T) {
 }
 
 func TestPipelineCommitsFull(t *testing.T) {
-	pipeline := NewPipeline(test.Repository)
+	pipeline := NewPipeline(test.FixtureRepository())
 	commits, err := pipeline.Commits(false)
 	assert.Nil(t, err)
 	assert.True(t, len(commits) >= 100)
@@ -433,7 +433,7 @@ func TestPipelineCommitsFull(t *testing.T) {
 }
 
 func TestPipelineCommitsFirstParent(t *testing.T) {
-	pipeline := NewPipeline(test.Repository)
+	pipeline := NewPipeline(test.FixtureRepository())
 	commits, err := pipeline.Commits(true)
 	assert.NoError(t, err)
 	assert.True(t, len(commits) >= 100)
@@ -451,12 +451,12 @@ func TestPipelineCommitsFirstParent(t *testing.T) {
 }
 
 func TestPipelineHeadCommit(t *testing.T) {
-	pipeline := NewPipeline(test.Repository)
+	pipeline := NewPipeline(test.FixtureRepository())
 	commits, err := pipeline.HeadCommit()
 	assert.NoError(t, err)
 	assert.Len(t, commits, 1)
 	assert.True(t, len(commits[0].ParentHashes) > 0)
-	head, _ := test.Repository.Head()
+	head, _ := test.FixtureRepository().Head()
 	assert.Equal(t, head.Hash(), commits[0].Hash)
 }
 
@@ -466,7 +466,7 @@ func TestLoadCommitsFromFile(t *testing.T) {
 	tmp.WriteString("cce947b98a050c6d356bc6ba95030254914027b1\n6db8065cdb9bb0758f36a7e75fc72ab95f9e8145")
 	tmp.Close()
 	defer os.Remove(tmp.Name())
-	commits, err := LoadCommitsFromFile(tmp.Name(), test.Repository)
+	commits, err := LoadCommitsFromFile(tmp.Name(), test.FixtureRepository())
 	assert.Nil(t, err)
 	assert.Equal(t, len(commits), 2)
 	assert.Equal(t, commits[0].Hash, plumbing.NewHash(
@@ -475,7 +475,7 @@ func TestLoadCommitsFromFile(t *testing.T) {
 	assert.Equal(t, commits[1].Hash, plumbing.NewHash(
 		"6db8065cdb9bb0758f36a7e75fc72ab95f9e8145",
 	))
-	commits, err = LoadCommitsFromFile("/WAT?xxx!", test.Repository)
+	commits, err = LoadCommitsFromFile("/WAT?xxx!", test.FixtureRepository())
 	assert.Nil(t, commits)
 	assert.NotNil(t, err)
 	tmp, err = ioutil.TempFile("", "hercules-test-")
@@ -483,7 +483,7 @@ func TestLoadCommitsFromFile(t *testing.T) {
 	tmp.WriteString("WAT")
 	tmp.Close()
 	defer os.Remove(tmp.Name())
-	commits, err = LoadCommitsFromFile(tmp.Name(), test.Repository)
+	commits, err = LoadCommitsFromFile(tmp.Name(), test.FixtureRepository())
 	assert.Nil(t, commits)
 	assert.NotNil(t, err)
 	tmp, err = ioutil.TempFile("", "hercules-test-")
@@ -491,13 +491,13 @@ func TestLoadCommitsFromFile(t *testing.T) {
 	tmp.WriteString("ffffffffffffffffffffffffffffffffffffffff")
 	tmp.Close()
 	defer os.Remove(tmp.Name())
-	commits, err = LoadCommitsFromFile(tmp.Name(), test.Repository)
+	commits, err = LoadCommitsFromFile(tmp.Name(), test.FixtureRepository())
 	assert.Nil(t, commits)
 	assert.NotNil(t, err)
 }
 
 func TestPipelineDeps(t *testing.T) {
-	pipeline := NewPipeline(test.Repository)
+	pipeline := NewPipeline(test.FixtureRepository())
 	item1 := &dependingTestPipelineItem{}
 	item2 := &testPipelineItem{}
 	pipeline.AddItem(item1)
@@ -505,7 +505,7 @@ func TestPipelineDeps(t *testing.T) {
 	assert.Equal(t, pipeline.Len(), 2)
 	pipeline.Initialize(map[string]interface{}{})
 	commits := make([]*object.Commit, 1)
-	commits[0], _ = test.Repository.CommitObject(plumbing.NewHash(
+	commits[0], _ = test.FixtureRepository().CommitObject(plumbing.NewHash(
 		"af9ddc0db70f09f3f27b4b98e415592a7485171c",
 	))
 	result, err := pipeline.Run(commits)
@@ -518,20 +518,20 @@ func TestPipelineDeps(t *testing.T) {
 }
 
 func TestPipelineDeployFeatures(t *testing.T) {
-	pipeline := NewPipeline(test.Repository)
+	pipeline := NewPipeline(test.FixtureRepository())
 	pipeline.DeployItem(&testPipelineItem{})
 	f, _ := pipeline.GetFeature("power")
 	assert.True(t, f)
 }
 
 func TestPipelineError(t *testing.T) {
-	pipeline := NewPipeline(test.Repository)
+	pipeline := NewPipeline(test.FixtureRepository())
 	item := &testPipelineItem{}
 	item.TestError = true
 	pipeline.AddItem(item)
 	assert.NoError(t, pipeline.Initialize(map[string]interface{}{}))
 	commits := make([]*object.Commit, 1)
-	commits[0], _ = test.Repository.CommitObject(plumbing.NewHash(
+	commits[0], _ = test.FixtureRepository().CommitObject(plumbing.NewHash(
 		"af9ddc0db70f09f3f27b4b98e415592a7485171c",
 	))
 	result, err := pipeline.Run(commits)
@@ -540,7 +540,7 @@ func TestPipelineError(t *testing.T) {
 }
 
 func TestPipelineDryRun(t *testing.T) {
-	pipeline := NewPipeline(test.Repository)
+	pipeline := NewPipeline(test.FixtureRepository())
 	item := &testPipelineItem{}
 	item.TestError = true
 	pipeline.AddItem(item)
@@ -551,7 +551,7 @@ func TestPipelineDryRun(t *testing.T) {
 	pipeline.Initialize(map[string]interface{}{ConfigPipelineDryRun: true})
 	assert.True(t, pipeline.DryRun)
 	commits := make([]*object.Commit, 1)
-	commits[0], _ = test.Repository.CommitObject(plumbing.NewHash(
+	commits[0], _ = test.FixtureRepository().CommitObject(plumbing.NewHash(
 		"af9ddc0db70f09f3f27b4b98e415592a7485171c",
 	))
 	result, err := pipeline.Run(commits)
@@ -562,12 +562,12 @@ func TestPipelineDryRun(t *testing.T) {
 }
 
 func TestPipelineDryRunFalse(t *testing.T) {
-	pipeline := NewPipeline(test.Repository)
+	pipeline := NewPipeline(test.FixtureRepository())
 	item := &testPipelineItem{}
 	pipeline.AddItem(item)
 	pipeline.Initialize(map[string]interface{}{ConfigPipelineDryRun: false})
 	commits := make([]*object.Commit, 1)
-	commits[0], _ = test.Repository.CommitObject(plumbing.NewHash(
+	commits[0], _ = test.FixtureRepository().CommitObject(plumbing.NewHash(
 		"af9ddc0db70f09f3f27b4b98e415592a7485171c",
 	))
 	result, err := pipeline.Run(commits)
@@ -585,7 +585,7 @@ func TestPipelineDryRunFalse(t *testing.T) {
 }
 
 func TestPipelineDumpPlanConfigure(t *testing.T) {
-	pipeline := NewPipeline(test.Repository)
+	pipeline := NewPipeline(test.FixtureRepository())
 	item := &testPipelineItem{}
 	pipeline.AddItem(item)
 	pipeline.DumpPlan = true
@@ -604,7 +604,7 @@ func TestPipelineDumpPlanConfigure(t *testing.T) {
 		planPrintFunc = backupPlanPrintFunc
 	}()
 	commits := make([]*object.Commit, 1)
-	commits[0], _ = test.Repository.CommitObject(plumbing.NewHash(
+	commits[0], _ = test.FixtureRepository().CommitObject(plumbing.NewHash(
 		"af9ddc0db70f09f3f27b4b98e415592a7485171c",
 	))
 	result, err := pipeline.Run(commits)
@@ -690,7 +690,7 @@ func TestConfigurationOptionFormatDefault(t *testing.T) {
 }
 
 func TestPrepareRunPlanTiny(t *testing.T) {
-	rootCommit, err := test.Repository.CommitObject(plumbing.NewHash(
+	rootCommit, err := test.FixtureRepository().CommitObject(plumbing.NewHash(
 		"cce947b98a050c6d356bc6ba95030254914027b1",
 	))
 	if err != nil {
@@ -707,7 +707,7 @@ func TestPrepareRunPlanTiny(t *testing.T) {
 }
 
 func TestPrepareRunPlanSmall(t *testing.T) {
-	cit, err := test.Repository.Log(&git.LogOptions{From: plumbing.ZeroHash})
+	cit, err := test.FixtureRepository().Log(&git.LogOptions{From: plumbing.ZeroHash})
 	if err != nil {
 		panic(err)
 	}
@@ -748,7 +748,7 @@ func TestPrepareRunPlanSmall(t *testing.T) {
 }
 
 func TestMergeDag(t *testing.T) {
-	cit, err := test.Repository.Log(&git.LogOptions{From: plumbing.ZeroHash})
+	cit, err := test.FixtureRepository().Log(&git.LogOptions{From: plumbing.ZeroHash})
 	if err != nil {
 		panic(err)
 	}
@@ -828,13 +828,13 @@ func TestPrepareRunPlanBig(t *testing.T) {
 		{2018, 1, 16, 0, 3, 3, 3},
 		{2018, 1, 18, 0, 5, 4, 4},
 		{2018, 1, 23, 0, 5, 5, 5},
-		{2018, 3, 12, 0, 6, 6, 6},
-		{2018, 5, 13, 0, 6, 6, 6},
-		{2018, 5, 16, 0, 7, 7, 7},
+		// The hermetic siva fixture's history ends at its master commit
+		// (authored 2018-01-25), so cases with later cutoffs — which relied on
+		// upstream commits not present in the fixture — are not included.
 	}
 	for _, testCase := range cases {
 		func() {
-			cit, err := test.Repository.Log(&git.LogOptions{From: plumbing.ZeroHash})
+			cit, err := test.FixtureRepository().Log(&git.LogOptions{From: plumbing.ZeroHash})
 			if err != nil {
 				panic(err)
 			}
@@ -911,7 +911,7 @@ func TestPrepareRunPlanBig(t *testing.T) {
 }
 
 func TestPipelineRunHibernation(t *testing.T) {
-	pipeline := NewPipeline(test.Repository)
+	pipeline := NewPipeline(test.FixtureRepository())
 	pipeline.HibernationDistance = 2
 	pipeline.AddItem(&testPipelineItem{})
 	item := &dependingTestPipelineItem{}
@@ -928,7 +928,7 @@ func TestPipelineRunHibernation(t *testing.T) {
 	commits := make([]*object.Commit, len(hashes))
 	for i, h := range hashes {
 		var err error
-		commits[i], err = test.Repository.CommitObject(plumbing.NewHash(h))
+		commits[i], err = test.FixtureRepository().CommitObject(plumbing.NewHash(h))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -981,7 +981,7 @@ func TestConfigurationOptionFormatDefaultStrings(t *testing.T) {
 }
 
 func TestGetSensibleRemote(t *testing.T) {
-	remote := GetSensibleRemote(test.Repository)
+	remote := GetSensibleRemote(test.FixtureRepository())
 	assert.NotEmpty(t, remote)
 	assert.NotEqual(t, "<no remote>", remote)
 }
@@ -1019,7 +1019,7 @@ func TestCommonAnalysisResultMergeNoTimeChange(t *testing.T) {
 }
 
 func TestPipelineDeployItemOnce(t *testing.T) {
-	pipeline := NewPipeline(test.Repository)
+	pipeline := NewPipeline(test.FixtureRepository())
 	item1 := &testPipelineItem{}
 	pipeline.AddItem(item1)
 
@@ -1032,7 +1032,7 @@ func TestPipelineDeployItemOnce(t *testing.T) {
 
 func TestPipelineDeployItemOnceNew(t *testing.T) {
 	// DeployItemOnce with a new item (not yet in pipeline) should add it
-	pipeline := NewPipeline(test.Repository)
+	pipeline := NewPipeline(test.FixtureRepository())
 	item := &testPipelineItem{}
 	result := pipeline.DeployItemOnce(item)
 	assert.Same(t, item, result)
@@ -1040,7 +1040,7 @@ func TestPipelineDeployItemOnceNew(t *testing.T) {
 }
 
 func TestPipelineRunPreparedPlanNil(t *testing.T) {
-	pipeline := NewPipeline(test.Repository)
+	pipeline := NewPipeline(test.FixtureRepository())
 	pipeline.AddItem(&testPipelineItem{})
 	pipeline.Initialize(map[string]interface{}{})
 
@@ -1051,12 +1051,12 @@ func TestPipelineRunPreparedPlanNil(t *testing.T) {
 }
 
 func TestPipelineRunPreparedPlanValid(t *testing.T) {
-	pipeline := NewPipeline(test.Repository)
+	pipeline := NewPipeline(test.FixtureRepository())
 	item := &testPipelineItem{}
 	pipeline.AddItem(item)
 
 	commits := make([]*object.Commit, 1)
-	commits[0], _ = test.Repository.CommitObject(plumbing.NewHash(
+	commits[0], _ = test.FixtureRepository().CommitObject(plumbing.NewHash(
 		"af9ddc0db70f09f3f27b4b98e415592a7485171c",
 	))
 
@@ -1077,7 +1077,7 @@ func TestPipelineRunPreparedPlanValid(t *testing.T) {
 }
 
 func TestPipelineNegativeHibernationDistance(t *testing.T) {
-	pipeline := NewPipeline(test.Repository)
+	pipeline := NewPipeline(test.FixtureRepository())
 	pipeline.AddItem(&testPipelineItem{})
 	err := pipeline.Initialize(map[string]interface{}{
 		ConfigPipelineHibernationDistance: -1,
@@ -1087,7 +1087,7 @@ func TestPipelineNegativeHibernationDistance(t *testing.T) {
 }
 
 func TestPipelineHibernationDistanceFromFact(t *testing.T) {
-	pipeline := NewPipeline(test.Repository)
+	pipeline := NewPipeline(test.FixtureRepository())
 	pipeline.AddItem(&testPipelineItem{})
 	err := pipeline.Initialize(map[string]interface{}{
 		ConfigPipelineHibernationDistance: 5,
@@ -1097,7 +1097,7 @@ func TestPipelineHibernationDistanceFromFact(t *testing.T) {
 }
 
 func TestPipelinePrintActionsFromFact(t *testing.T) {
-	pipeline := NewPipeline(test.Repository)
+	pipeline := NewPipeline(test.FixtureRepository())
 	pipeline.AddItem(&testPipelineItem{})
 	pipeline.Initialize(map[string]interface{}{
 		ConfigPipelinePrintActions: true,
@@ -1106,7 +1106,7 @@ func TestPipelinePrintActionsFromFact(t *testing.T) {
 }
 
 func TestPipelineUnsatisfiedDependency(t *testing.T) {
-	pipeline := NewPipeline(test.Repository)
+	pipeline := NewPipeline(test.FixtureRepository())
 	item := &dependingTestPipelineItem{} // requires "test" but nothing provides it
 	pipeline.AddItem(item)
 	err := pipeline.Initialize(map[string]interface{}{})
@@ -1115,7 +1115,7 @@ func TestPipelineUnsatisfiedDependency(t *testing.T) {
 }
 
 func TestPipelineDAGDumpToFile(t *testing.T) {
-	pipeline := NewPipeline(test.Repository)
+	pipeline := NewPipeline(test.FixtureRepository())
 	pipeline.AddItem(&testPipelineItem{})
 
 	tmpFile, err := ioutil.TempFile("", "hercules-dag-test-")
@@ -1134,7 +1134,7 @@ func TestPipelineDAGDumpToFile(t *testing.T) {
 }
 
 func TestPipelineDAGDumpToStderr(t *testing.T) {
-	pipeline := NewPipeline(test.Repository)
+	pipeline := NewPipeline(test.FixtureRepository())
 	pipeline.AddItem(&testPipelineItem{})
 
 	oldStderr := os.Stderr
@@ -1157,7 +1157,7 @@ func TestPipelineDAGDumpToStderr(t *testing.T) {
 }
 
 func TestPipelineConfigureUpstreamError(t *testing.T) {
-	pipeline := NewPipeline(test.Repository)
+	pipeline := NewPipeline(test.FixtureRepository())
 	pipeline.AddItem(&configUpstreamFailItem{})
 	err := pipeline.Initialize(map[string]interface{}{})
 	assert.Error(t, err)
@@ -1165,7 +1165,7 @@ func TestPipelineConfigureUpstreamError(t *testing.T) {
 }
 
 func TestPipelineInitializeMergeTracksNotAllowed(t *testing.T) {
-	pipeline := NewPipeline(test.Repository)
+	pipeline := NewPipeline(test.FixtureRepository())
 	pipeline.SetFeature(FeatureMergeTracks)
 	pipeline.AddItem(&testPipelineItem{})
 	err := pipeline.Initialize(map[string]interface{}{})
@@ -1174,7 +1174,7 @@ func TestPipelineInitializeMergeTracksNotAllowed(t *testing.T) {
 }
 
 func TestPipelineInitializeExtNoCommits(t *testing.T) {
-	pipeline := NewPipeline(test.Repository)
+	pipeline := NewPipeline(test.FixtureRepository())
 	pipeline.AddItem(&testPipelineItem{})
 	err := pipeline.InitializeExt(map[string]interface{}{},
 		func(items []PipelineItem) PipelineItem { return items[0] }, true)
@@ -1183,7 +1183,7 @@ func TestPipelineInitializeExtNoCommits(t *testing.T) {
 }
 
 func TestPipelineInitializeDryRunSkipsConfigure(t *testing.T) {
-	pipeline := NewPipeline(test.Repository)
+	pipeline := NewPipeline(test.FixtureRepository())
 	item := &testPipelineItem{ConfigureRaises: true}
 	pipeline.AddItem(item)
 	// DryRun via fact should skip Configure (which would fail)
@@ -1218,7 +1218,7 @@ func (item *circularDepItem) Fork(n int) []PipelineItem {
 }
 
 func TestPipelineResolveCircularDependency(t *testing.T) {
-	pipeline := NewPipeline(test.Repository)
+	pipeline := NewPipeline(test.FixtureRepository())
 	pipeline.AddItem(&circularDepItem{})
 	err := pipeline.Initialize(map[string]interface{}{})
 	assert.Error(t, err)
@@ -1233,12 +1233,12 @@ func TestGetSensibleRemoteNoRemote(t *testing.T) {
 }
 
 func TestPipelineInitializeWithCommitsFact(t *testing.T) {
-	pipeline := NewPipeline(test.Repository)
+	pipeline := NewPipeline(test.FixtureRepository())
 	item := &testPipelineItem{}
 	pipeline.AddItem(item)
 
 	commits := make([]*object.Commit, 1)
-	commits[0], _ = test.Repository.CommitObject(plumbing.NewHash(
+	commits[0], _ = test.FixtureRepository().CommitObject(plumbing.NewHash(
 		"af9ddc0db70f09f3f27b4b98e415592a7485171c",
 	))
 
@@ -1251,13 +1251,13 @@ func TestPipelineInitializeWithCommitsFact(t *testing.T) {
 }
 
 func TestPipelineInitializeExtMergeTracksWithPreparePlan(t *testing.T) {
-	pipeline := NewPipeline(test.Repository)
+	pipeline := NewPipeline(test.FixtureRepository())
 	pipeline.SetFeature(FeatureMergeTracks)
 	item := &testPipelineItem{}
 	pipeline.AddItem(item)
 
 	commits := make([]*object.Commit, 1)
-	commits[0], _ = test.Repository.CommitObject(plumbing.NewHash(
+	commits[0], _ = test.FixtureRepository().CommitObject(plumbing.NewHash(
 		"af9ddc0db70f09f3f27b4b98e415592a7485171c",
 	))
 

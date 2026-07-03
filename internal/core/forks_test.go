@@ -110,9 +110,9 @@ func TestInsertHibernateBoot(t *testing.T) {
 }
 
 func TestRunActionString(t *testing.T) {
-	c, _ := test.Repository.CommitObject(plumbing.NewHash("c1002f4265a704c703207fafb95f1d4255bfae1a"))
+	c, _ := test.FixtureRepository().CommitObject(plumbing.NewHash("cce947b98a050c6d356bc6ba95030254914027b1"))
 	ra := runAction{runActionCommit, c, nil, nil}
-	assert.Equal(t, ra.String(), "c1002f4")
+	assert.Equal(t, ra.String(), "cce947b")
 	ra = runAction{runActionFork, nil, nil, []int{1, 2, 5}}
 	assert.Equal(t, ra.String(), "fork^3")
 	ra = runAction{runActionMerge, nil, nil, []int{1, 2, 5}}
@@ -674,7 +674,7 @@ func TestPrintAction(t *testing.T) {
 	}
 	defer func() { planPrintFunc = old }()
 
-	c, _ := test.Repository.CommitObject(plumbing.NewHash("c1002f4265a704c703207fafb95f1d4255bfae1a"))
+	c, _ := test.FixtureRepository().CommitObject(plumbing.NewHash("cce947b98a050c6d356bc6ba95030254914027b1"))
 
 	tests := []struct {
 		name     string

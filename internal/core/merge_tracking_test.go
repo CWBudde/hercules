@@ -221,7 +221,7 @@ func runLineagePipeline(
 	t *testing.T, commits []*object.Commit, hibernationDistance int,
 ) (*lineageRecorder, lineageState) {
 	t.Helper()
-	pipeline := NewPipeline(test.Repository)
+	pipeline := NewPipeline(test.FixtureRepository())
 	item := &lineageTestItem{recorder: &lineageRecorder{}}
 	pipeline.AddItem(item)
 	facts := map[string]interface{}{ConfigPipelineCommits: commits}
@@ -536,7 +536,7 @@ func TestMergeTrackingNextMerge(t *testing.T) {
 	d := makeTestCommit("dd", "bb", "cc")
 	commits := []*object.Commit{a, b, c, d}
 
-	pipeline := NewPipeline(test.Repository)
+	pipeline := NewPipeline(test.FixtureRepository())
 	item := &lineageTestItem{recorder: &lineageRecorder{}}
 	pipeline.AddItem(item)
 	pipeline.SetFeature(FeatureMergeTracks)
@@ -572,7 +572,7 @@ func TestMergeTrackingNextMergeAfterLastMerge(t *testing.T) {
 	tail := makeTestCommit("ee", "dd")
 	commits := []*object.Commit{a, b, c, d, tail}
 
-	pipeline := NewPipeline(test.Repository)
+	pipeline := NewPipeline(test.FixtureRepository())
 	item := &lineageTestItem{recorder: &lineageRecorder{}}
 	pipeline.AddItem(item)
 	pipeline.SetFeature(FeatureMergeTracks)
@@ -604,7 +604,7 @@ func TestMergeTracksRequiresPreparedPlan(t *testing.T) {
 	a := makeTestCommit("aa")
 	commits := []*object.Commit{a}
 
-	pipeline := NewPipeline(test.Repository)
+	pipeline := NewPipeline(test.FixtureRepository())
 	pipeline.AddItem(&lineageTestItem{recorder: &lineageRecorder{}})
 	pipeline.SetFeature(FeatureMergeTracks)
 	err := pipeline.Initialize(map[string]interface{}{ConfigPipelineCommits: commits})

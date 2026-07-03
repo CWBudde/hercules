@@ -551,12 +551,28 @@ Note: coordinate with **Phase 5** — versioning applies to whichever single pro
 Release hygiene is otherwise complete, but the broad `just test` gate still fails in existing
 fixture-sensitive tests:
 
-- [x] `internal/core` pipeline fixture expectations.
-  - No longer failing: `internal/test.Repository` (`internal/test/repository.go`) opens the
-    **local** checkout and only clones `src-d/hercules` as a fallback when the local repo has
-    <100 commits or can't be opened. The earlier "asserts upstream src-d commits unreachable from
-    this fork's HEAD" caveat was an artifact of the checkout state during release prep; against a
-    full-history checkout `go test ./internal/core/...` is green (verified with `-count=1`).
+- [x] `internal/core` pipeline fixture expectations — made **hermetic**.
+  - Root cause: the `internal/core` tests (`TestMergeDag`, `TestPrepareRunPlan*`, `TestRunActionString`,
+    `TestPrintAction`, …) assert specific upstream src-d/hercules commit hashes and pipeline plans,
+    but they resolved them through `internal/test.Repository`, whose init opens the **ambient**
+    checkout (or clones `src-d/hercules` as a fallback when the local repo has <100 commits). The
+    resulting commit DAG therefore varied with checkout depth / upstream drift, so the plans differed
+    and CI failed — while a local sandbox that happened to fall back to the network clone passed,
+    masking the problem.
+  - Fix: added a deterministic, network-free `internal/test.FixtureRepository()` that loads the
+    checked-in `cmd/hercules/test_data/hercules.siva` fixture (a fixed src-d/hercules snapshot,
+    master authored 2018-01-25). It is opened **read-only** — the default read-write siva filesystem
+    rewrites the archive's index footer and would mutate the committed fixture — via a small
+    `fixtureStorer` that serves objects from the read-only siva while keeping references in an
+    in-memory store, so master can be exposed as HEAD (`Head()` / `Log(From: ZeroHash)` work like a
+    normal clone). The `internal/core` test files were pointed at this fixture; `test.Repository`
+    itself is unchanged, so `identity` / `leaves` / other packages that depend on its (looser)
+    assertions are untouched. Two `internal/core`-local follow-ups: `TestRunActionString` /
+    `TestPrintAction` used commit `c1002f4…` (newer than the fixture) → repointed to the fixture
+    root `cce947b…`; `TestPrepareRunPlanBig`'s three cases with post-2018-01-25 cutoffs (which
+    relied on commits absent from the fixture) were dropped with a comment noting the horizon.
+    `go test ./internal/core/...` is green and deterministic (`-count=1`), and the siva fixture is
+    verified byte-unchanged after the run.
 - [x] `internal/linehistory/TestLinesMeta`.
   - Root cause: `9cd7397` added the `lines-exclude-paths` option (`ConfigLinesExcludePaths`) to
     `LineHistoryAnalyser` without updating the test's option enumeration, so

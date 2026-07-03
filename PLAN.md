@@ -543,8 +543,8 @@ Note: coordinate with **Phase 5** — versioning applies to whichever single pro
     `internal/pb/pb.proto` (e.g. a `protoc` json-schema plugin) so they stay in lockstep with the
     schema version.
 - [x] Acceptance: either JSON is documented and stable, or this plan records why it is deferred.
-  → This plan records why it is deferred; `docs/SCHEMAS.md` documents the two supported formats and
-  the intentional absence of a JSON mode plus the practical `yaml→json` alternative.
+      → This plan records why it is deferred; `docs/SCHEMAS.md` documents the two supported formats and
+      the intentional absence of a JSON mode plus the practical `yaml→json` alternative.
 
 ### Phase 14 — Fix broad `just test` fixture failures (P2) ✅ done 2026-07-03
 
@@ -579,12 +579,12 @@ fixture-sensitive tests:
     `ListConfigurationOptions()` returned 5 options while the test's `switch` only counted 4.
     Fixed by adding `ConfigLinesExcludePaths` to the enumerated cases in `line_history_test.go`.
 - [x] Also fixed (blocked the whole `internal/render/readers` package, not called out originally):
-  `report_default_summary.golden.json` / `shotness_summary.golden.json` were caught by the
-  blanket `*.json` `.gitignore` rule, so they were never committed and
-  `TestProtobufReader_*ExtractionGolden` failed with "no such file or directory". Added a
-  `!internal/render/testdata/**/*.golden.json` negation (mirroring the existing
-  `!internal/pb/pb.schema.json` carve-out) and committed the two deterministic goldens
-  (regenerable via `LABOURS_GO_UPDATE_GOLDENS=1`).
+      `report_default_summary.golden.json` / `shotness_summary.golden.json` were caught by the
+      blanket `*.json` `.gitignore` rule, so they were never committed and
+      `TestProtobufReader_*ExtractionGolden` failed with "no such file or directory". Added a
+      `!internal/render/testdata/**/*.golden.json` negation (mirroring the existing
+      `!internal/pb/pb.schema.json` carve-out) and committed the two deterministic goldens
+      (regenerable via `LABOURS_GO_UPDATE_GOLDENS=1`).
 - [x] Acceptance: `go test ./...` (CGO_ENABLED=0, after `go generate ./cmd/hercules/`) is clean
       except for `cmd/hercules/TestLoadGitRepositoryWithCreds`, which is **not** a fixture/logic
       failure: it asserts that bogus URL credentials (`user:user@github.com`) cause an auth error,
@@ -636,5 +636,5 @@ go test ./leaves
   and `hercules combine` read only YAML/PB, and the output contract is already machine-readable and
   documented in those two formats (YAML converts to JSON with any off-the-shelf tool; PB is the
   canonical versioned schema). Adding a correct third format is invasive (per-leaf hand-serialization
-  + the `LeafPipelineItem` contract) and speculative. Revisit when a concrete downstream JSON
-  consumer or schema-validation need appears; recommended low-invasion path recorded in Phase 13.
+  - the `LeafPipelineItem` contract) and speculative. Revisit when a concrete downstream JSON
+    consumer or schema-validation need appears; recommended low-invasion path recorded in Phase 13.

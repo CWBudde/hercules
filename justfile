@@ -175,7 +175,6 @@ clean:
     rm -f hercules{{exe}}
     rm -f labours{{exe}}
     rm -f protoc-gen-gogo{{exe}}
-    rm -f internal/pb/pb.pb.go
     rm -rf vendor
 
 # Run the large-repo benchmark suite. Pass a path to any local clone with

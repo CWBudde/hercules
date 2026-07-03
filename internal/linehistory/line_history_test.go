@@ -42,7 +42,7 @@ func TestLinesMeta(t *testing.T) {
 		switch opt.Name {
 		case ConfigLinesHibernationThreshold,
 			ConfigLinesHibernationToDisk, ConfigLinesHibernationDirectory,
-			ConfigLinesDebug:
+			ConfigLinesDebug, ConfigLinesExcludePaths:
 			matches++
 		}
 	}

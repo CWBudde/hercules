@@ -546,15 +546,38 @@ Note: coordinate with **Phase 5** — versioning applies to whichever single pro
   → This plan records why it is deferred; `docs/SCHEMAS.md` documents the two supported formats and
   the intentional absence of a JSON mode plus the practical `yaml→json` alternative.
 
-### Phase 14 — Fix broad `just test` fixture failures (P2)
+### Phase 14 — Fix broad `just test` fixture failures (P2) ✅ done 2026-07-03
 
 Release hygiene is otherwise complete, but the broad `just test` gate still fails in existing
 fixture-sensitive tests:
 
-- [ ] `internal/core` pipeline fixture expectations.
-- [ ] `internal/linehistory/TestLinesMeta`.
-- [ ] Acceptance: `just test` passes clean; the pre-tag caveat recorded during release prep is
-      removed.
+- [x] `internal/core` pipeline fixture expectations.
+  - No longer failing: `internal/test.Repository` (`internal/test/repository.go`) opens the
+    **local** checkout and only clones `src-d/hercules` as a fallback when the local repo has
+    <100 commits or can't be opened. The earlier "asserts upstream src-d commits unreachable from
+    this fork's HEAD" caveat was an artifact of the checkout state during release prep; against a
+    full-history checkout `go test ./internal/core/...` is green (verified with `-count=1`).
+- [x] `internal/linehistory/TestLinesMeta`.
+  - Root cause: `9cd7397` added the `lines-exclude-paths` option (`ConfigLinesExcludePaths`) to
+    `LineHistoryAnalyser` without updating the test's option enumeration, so
+    `ListConfigurationOptions()` returned 5 options while the test's `switch` only counted 4.
+    Fixed by adding `ConfigLinesExcludePaths` to the enumerated cases in `line_history_test.go`.
+- [x] Also fixed (blocked the whole `internal/render/readers` package, not called out originally):
+  `report_default_summary.golden.json` / `shotness_summary.golden.json` were caught by the
+  blanket `*.json` `.gitignore` rule, so they were never committed and
+  `TestProtobufReader_*ExtractionGolden` failed with "no such file or directory". Added a
+  `!internal/render/testdata/**/*.golden.json` negation (mirroring the existing
+  `!internal/pb/pb.schema.json` carve-out) and committed the two deterministic goldens
+  (regenerable via `LABOURS_GO_UPDATE_GOLDENS=1`).
+- [x] Acceptance: `go test ./...` (CGO_ENABLED=0, after `go generate ./cmd/hercules/`) is clean
+      except for `cmd/hercules/TestLoadGitRepositoryWithCreds`, which is **not** a fixture/logic
+      failure: it asserts that bogus URL credentials (`user:user@github.com`) cause an auth error,
+      but this sandbox's outbound HTTPS proxy accepts bogus creds for public repos and the clone
+      succeeds (verified: `git clone https://user:user@github.com/src-d/hercules` → exit 0). Under
+      normal network conditions (the project's GitHub Actions CI, no credential-injecting proxy)
+      GitHub returns 401 and the test passes; the test was left unchanged so as not to weaken its
+      real-CI coverage. The pre-tag caveat about the `internal/core` + `TestLinesMeta` fixture
+      failures is removed.
 
 ### Phase 15 — Sentiment: mark as experimental everywhere (P3)
 

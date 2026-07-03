@@ -57,6 +57,7 @@ coverage.txt
 *.tsv.gz
 *.json
 !internal/pb/pb.schema.json
+!internal/render/testdata/**/*.golden.json
 /.run/
 /bench-results/
 

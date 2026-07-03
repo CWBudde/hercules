@@ -61,6 +61,12 @@ path = 'cmd/.*\.go'
 linters = ['err113', 'wrapcheck']
 path = 'cmd/.*\.go'
 
+# cmd/ is CLI glue; inline error handling is its established style and wsl's
+# blank-line demands there conflict with gofumpt.
+[[linters.exclusions.rules]]
+linters = ['noinlineerr', 'wsl_v5']
+path = 'cmd/.*\.go'
+
 [[linters.exclusions.rules]]
 linters = ['revive']
 path = 'internal/common/fs_operations.go'

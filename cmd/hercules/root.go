@@ -18,6 +18,7 @@ import (
 	"sort"
 	"strings"
 	"text/template"
+	"time"
 	"unicode"
 
 	"github.com/Masterminds/sprig"
@@ -159,7 +160,13 @@ func loadRepositoryWithError(uri string, cachePath string, disableStatus bool, s
 	if uri == "-" && cachePath == "" {
 		repository, err = git.Init(memory.NewStorage(), memfs.New())
 		w, _ := repository.Worktree()
-		if _, err = w.Commit("Initial", &git.CommitOptions{AllowEmptyCommits: true}); err != nil {
+		// Provide an explicit signature so creating the stub repo does not
+		// depend on ambient git user.name/user.email config (absent on fresh
+		// CI runners, where go-git errors with "author field is required").
+		sig := &object.Signature{Name: "Hercules", Email: "hercules@localhost", When: time.Now()}
+		if _, err = w.Commit("Initial", &git.CommitOptions{
+			AllowEmptyCommits: true, Author: sig, Committer: sig,
+		}); err != nil {
 			log.Panicf("failed to create a virtual repo: %v", err)
 		}
 		repoFeature = core.FeatureGitStub

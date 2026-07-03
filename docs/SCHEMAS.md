@@ -9,6 +9,16 @@ Scope:
 - Protocol Buffers output (`hercules --pb ...`)
 - One compact example payload per analysis target
 
+### No native JSON output (by design)
+
+Hercules intentionally emits only YAML and Protocol Buffers. There is no `--json` mode: the
+`labours` renderer and `hercules combine` consume YAML/PB, and both formats are already
+machine-readable and versioned (see [Schema Version](#schema-version)). Consumers that need JSON
+can convert the YAML stream with any off-the-shelf `yaml→json` tool, or decode the PB envelope
+against `internal/pb/pb.proto`. A first-class JSON export (with per-analysis JSON Schemas) is
+deferred until a concrete downstream requirement appears; the rationale and recommended
+implementation path are recorded in [PLAN.md](../PLAN.md) (Phase 13).
+
 ## Schema Version
 
 The output schema is versioned by a single constant: `pb.SchemaVersion` in

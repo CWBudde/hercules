@@ -514,12 +514,37 @@ Output structures and examples are documented in [docs/SCHEMAS.md](docs/SCHEMAS.
 Note: coordinate with **Phase 5** — versioning applies to whichever single proto source survives.
 (Phase 5 landed first; the guard covers the surviving `internal/pb/pb.proto`.)
 
-### Phase 13 — Decide on JSON export mode (P1)
+### Phase 13 — Decide on JSON export mode (P1) ✅ decided 2026-07-03 — **deferred with rationale**
 
-- [ ] Confirm whether downstream users need native JSON or whether YAML/PB is enough.
-- [ ] If needed: add `--json` output for direct consumption (not via labours) and provide JSON
+- [x] Confirm whether downstream users need native JSON or whether YAML/PB is enough.
+  - **Decision: native JSON is not needed now; defer it.** No consumer requires it and the output
+    contract is already machine-readable in two documented formats:
+    - The `labours` renderer reads only YAML/PB (`internal/render/readers/helpers.go` `createReader`
+      accepts `yaml`/`pb` only; `internal/render/modeset.go` `NormalizeInputFormat` rejects anything
+      else). `hercules combine` (`cmd/hercules/combine.go`) reads only PB.
+    - YAML output is a stable, structured, fully-documented stream ([docs/SCHEMAS.md](docs/SCHEMAS.md))
+      that converts to JSON with any off-the-shelf `yaml→json` tool; PB carries the canonical,
+      versioned, CI-guarded schema (`pb.SchemaVersion`, snapshot + guard from Phase 12). Downstream
+      JSON consumers are therefore already served without adding a third first-class format.
+- [x] If needed: add `--json` output for direct consumption (not via labours) and provide JSON
       Schemas per analysis.
-- [ ] Acceptance: either JSON is documented and stable, or this plan records why it is deferred.
+  - Not implemented — **deferred** (see rationale above and the "Deferred / not planned" section).
+    A correct native JSON emitter is invasive and speculative: leaf results are hand-serialized
+    (each leaf hand-writes YAML in `serializeText` and builds a `pb.*Results` in `serializeBinary`),
+    and the `Finalize()` structs carry unexported fields, so a naive `encoding/json` of them would
+    silently drop data and diverge from the documented schema. Doing it right means threading a
+    third format through all ~7 leaves + the plugin template + the `LeafPipelineItem` contract
+    (`internal/core/pipeline.go`) — real surface area for no known requirement.
+  - **Recommended path when revisited** (least invasive): add a `--json` branch in
+    `cmd/hercules/root.go` alongside `protobufResults`/`printResults` that reuses the per-leaf
+    `pb.*Results` messages and marshals them with `github.com/gogo/protobuf/jsonpb` — staying
+    schema-aligned with the documented PB contract and the `pb.SchemaVersion` guard rather than
+    hand-adding a third path to every leaf. JSON Schemas per analysis can then be generated from
+    `internal/pb/pb.proto` (e.g. a `protoc` json-schema plugin) so they stay in lockstep with the
+    schema version.
+- [x] Acceptance: either JSON is documented and stable, or this plan records why it is deferred.
+  → This plan records why it is deferred; `docs/SCHEMAS.md` documents the two supported formats and
+  the intentional absence of a JSON mode plus the practical `yaml→json` alternative.
 
 ### Phase 14 — Fix broad `just test` fixture failures (P2)
 
@@ -568,3 +593,9 @@ go test ./leaves
 - **Caching**: still deferred until repeated real-world workloads show a stable bottleneck;
   premature caching risks wrong-by-default behavior. Revisit after schema contracts and release
   hygiene are in place.
+- **Native JSON export mode** (Phase 13): deferred. No consumer needs it — the `labours` renderer
+  and `hercules combine` read only YAML/PB, and the output contract is already machine-readable and
+  documented in those two formats (YAML converts to JSON with any off-the-shelf tool; PB is the
+  canonical versioned schema). Adding a correct third format is invasive (per-leaf hand-serialization
+  + the `LeafPipelineItem` contract) and speculative. Revisit when a concrete downstream JSON
+  consumer or schema-validation need appears; recommended low-invasion path recorded in Phase 13.

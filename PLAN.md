@@ -1,10 +1,19 @@
 # Hercules — Plan
 
-Date: 2026-07-02
+Date: 2026-07-04 (originally 2026-07-02)
 
 This is the single forward-looking plan for the repository. **Part A** (Phases 0–10) covers the
 integration of the Go renderer (`labours-go`); **Part B** (Phases 11–15) carries the remaining open
 items from the former `ROADMAP.md` (now deleted; completed milestones live in git history).
+
+**Status 2026-07-04: all in-repo work in Parts A and B is done, committed, and merged to `main`**
+(the phase work landed via PRs #1–#3; earlier "(uncommitted)" phase annotations have been removed).
+The only open items live in **other repositories** and are tracked in Phase 10: the `labours-go`
+archive pointer (Phase 9, deferred), the `ewws-statistics` repoint (needs the user's go-ahead), and
+the upstream `matplotlib-go` stderr-noise fix (investigated 2026-07-04, see Phase 10).
+Update, later on 2026-07-04: the labours-go pointer and the matplotlib-go fix are implemented and
+pushed on branches in their repos (details in Phase 10); what remains there is owner-side
+merge/tag/archive plus the eventual matplotlib-go v0.3.1 bump in this repo's `go.mod`.
 
 ## Part A: Integrate the Go renderer (`labours-go`) into Hercules
 
@@ -148,13 +157,15 @@ Refined 2026-07-02 after a source inventory; findings that shape the sub-phases:
   copied along temporarily so Phase 4 builds standalone — Phase 5 deletes it.
 - `cmd/parityviewer` is a repo-root-coupled QA tool (stdlib-only, shells `go run .`, expects
   `analysis_results/`) — **not moved**; revisit after Phase 8 if the parity harness needs it.
+  - Resolved 2026-07-04: the Phase 8 harness ran and the gate passed without it (8b used it only
+    once, in-place in labours-go, to calibrate the RMSE formula). It stays in labours-go; no move.
 - Test fixtures (`example_data/` 28K, `test/testdata/` 444K incl. two `.golden.json` files) and
   runtime `themes/` move too; relative test paths (`../../example_data`) change depth.
 - Lint carve-outs for the big graphics/modes files are deferred to Phase 7; acceptance here is
   build + test, not lint.
 - Per the Phase 1 finding, the renderer builds non-cgo: use `CGO_ENABLED=0`.
 
-#### Phase 4a — internal render packages ✅ done 2026-07-02 (uncommitted)
+#### Phase 4a — internal render packages ✅ done 2026-07-02
 
 - [x] Copy labours-go `internal/{readers,modes,graphics,burndown,progress,pb}` →
       `internal/render/…`; remove the `internal/render/deps.go` anchor (real imports replace it).
@@ -182,7 +193,7 @@ Refined 2026-07-02 after a source inventory; findings that shape the sub-phases:
       `go mod tidy` is a no-op. Only deviation from verbatim: `modes/report_metrics.go` was
       gofmt-dirty upstream and got formatted.
 
-#### Phase 4b — cmd/labours binary ✅ done 2026-07-02 (uncommitted)
+#### Phase 4b — cmd/labours binary ✅ done 2026-07-02
 
 - [x] Copy labours-go `cmd/{root,modes,helpers,version}.go` + tests → `cmd/labours/`; rewrite
       imports; keep the viper config behavior (`config.yaml`, `$HOME/.labours-go`).
@@ -203,7 +214,7 @@ Refined 2026-07-02 after a source inventory; findings that shape the sub-phases:
       promoted to direct (used since 4a). Phase 7 TODO noted: `.gitignore` covers `labours-go` but
       not the new `labours` binary artifact.
 
-### Phase 5 — Collapse onto a single proto source/runtime ✅ done 2026-07-02 (uncommitted)
+### Phase 5 — Collapse onto a single proto source/runtime ✅ done 2026-07-02
 
 - [x] Default path: rewrite `internal/render/readers/pb_reader.go` to unmarshal hercules' **gogo**
       `pb.AnalysisResults` from `internal/pb`; drop the google-protobuf copy + dependency.
@@ -227,7 +238,7 @@ Refined 2026-07-02 after a source inventory; findings that shape the sub-phases:
 Refined 2026-07-02: the mode-dispatch logic (`executeModes` etc.) landed in `package main` under
 `cmd/labours/` in Phase 4b, so it is not callable from `cmd/hercules/report.go`. Split:
 
-#### Phase 6a — extract a callable render API ✅ done 2026-07-02 (uncommitted)
+#### Phase 6a — extract a callable render API ✅ done 2026-07-02
 
 - [x] Move the mode-dispatch/execution logic from `cmd/labours/modes.go` (+ whatever helpers it
       drags along) into an importable package. `cmd/labours` becomes a thin CLI wrapper over it;
@@ -247,7 +258,7 @@ Refined 2026-07-02: the mode-dispatch logic (`executeModes` etc.) landed in `pac
     (`Devs stats were not collected. Re-run hercules with --devs.`, exit 0); JSON output smoke ok;
     tidy no-op, vendor unchanged, gofmt + vet clean.
 
-#### Phase 6b — report.go calls it in-process ✅ done 2026-07-02 (uncommitted)
+#### Phase 6b — report.go calls it in-process ✅ done 2026-07-02
 
 - [x] Change `resolveLaboursCommand` / the mode loop in `cmd/hercules/report.go` to call the render
       API directly (no subprocess) by default; keep the external-binary fallback via
@@ -272,7 +283,7 @@ Refined 2026-07-02: the mode-dispatch logic (`executeModes` etc.) landed in `pac
     API — worth an upstream `diag` handler fix). (3) `resolveLaboursCommand`'s PATH/python3
     auto-detection is now dead code unless `--labours-cmd` is set.
 
-### Phase 7 — Build system, CI, Docker ✅ done 2026-07-02 (uncommitted)
+### Phase 7 — Build system, CI, Docker ✅ done 2026-07-02
 
 - [x] justfile: add a `labours` build recipe and fold it into `default`/`test`; keep `pb-python` and
       `install-labours` behind a flag until Python removal.
@@ -326,7 +337,7 @@ Refined 2026-07-02 after scouting the harness. Facts that reshape the phase:
   derived `.pb` fixtures are already at `internal/render/testdata/hercules/`.
 - Python is only needed to REgenerate references; the run itself is Python-free.
 
-#### Phase 8a — port the visual harness ✅ done 2026-07-02 (uncommitted)
+#### Phase 8a — port the visual harness ✅ done 2026-07-02
 
 - [x] Copy `labours-go/test/visual/` → hercules `test/visual/` (rewrite imports to
       `internal/render/…`, repath fixtures to `internal/render/testdata/…`); copy the pre-baked
@@ -378,7 +389,7 @@ Refined 2026-07-02 after scouting the harness. Facts that reshape the phase:
 - [x] Post-gate fix: `selectReportAnalysisFlags` now maps the burndown sub-options through, so
       `report --all` collects files/people burndown without workarounds.
 
-### Phase 9 — Retire Python labours + cleanup ✅ done 2026-07-02 (uncommitted; last bullet deferred)
+### Phase 9 — Retire Python labours + cleanup ✅ done 2026-07-02 (last bullet moved to Phase 10)
 
 - [x] Delete `python/`, the `pb-python` and `install-labours` recipes, and the Python fallback path.
   - Also removed: the stale `.travis.yml` (dead upstream CI: Go 1.11–1.13, bblfsh, PyPI deploy,
@@ -391,16 +402,51 @@ Refined 2026-07-02 after scouting the harness. Facts that reshape the phase:
 - [x] Remove the stray root `labours-go` ar-archive artifact.
 - [x] Update `README.md` and `AGENTS.md` (two-tool model → one repo, Go renderer); migrate
       the labours-go parity matrix into `docs/` → [docs/RENDER_PARITY.md](docs/RENDER_PARITY.md).
-- [ ] Add a README pointer in (and archive) the old `labours-go` repo. _(deferred — separate repo,
-      explicitly out of scope for the in-repo cleanup)_
+- Add a README pointer in (and archive) the old `labours-go` repo. _(deferred — separate repo,
+  explicitly out of scope for the in-repo cleanup; **tracked in Phase 10**)_
 
-### Phase 10 — Downstream follow-up (tracked, not blocking the merge)
+### Phase 10 — Cross-repo follow-ups (tracked, not blocking the merge)
+
+Everything in this phase requires access to a repository other than hercules; none of it is
+executable from a hercules-only checkout. All in-repo work is complete (see the status note at the
+top).
 
 - [ ] Point `ewws-statistics/scripts/generate-burndown.sh` (`LABOURS_BIN`) and the `setup-hercules`
       / `install-labours` Justfile recipes at the hercules-built `labours` binary.
   - 2026-07-02: repo located at `/mnt/projekte/Code/MeKo/ewws-statistics` (not the sibling path the
     plan assumed). Not touched — separate repo, needs the user's go-ahead; the merged `labours`
     binary is drop-in compatible (verified byte-identical rendering vs labours-go in Phase 8b).
+- [ ] Add a README pointer in (and archive) the old `labours-go` repo (carried from Phase 9).
+  - 2026-07-04: README/PLAN pointer **done and pushed** — labours-go branch `claude/archive-pointer`
+    (commit `33943c9`): `[!IMPORTANT]` notice at the top of the README (superseded; renderer lives
+    in hercules `internal/render` + `cmd/labours`; parity verified; issues/PRs → hercules) plus a
+    one-line closing note atop labours-go's PLAN.md. Remaining owner actions: merge the branch and
+    flip the repository's archive (read-only) flag in GitHub settings.
+- [ ] Upstream `matplotlib-go` fix for the rcParam stderr noise (the Phase 6b finding: ~50
+      `rcParam "…" is … not parsed by matplotlib-go` warnings on **every** `hercules`/`labours`
+      invocation, even `hercules version`). Investigated 2026-07-04 — **not fixable from this
+      repo**:
+  - The warnings fire during `matplotlib-go/style`'s package `init()`
+    (`registerBundledStyles` → `ParseMPLStyle` on the ~30 embedded `.mplstyle` sheets →
+    `maybeWarnUnparsedRCParam`), i.e. before any hercules code — including hercules `init()`
+    functions — can run, so `log.SetOutput`/handler tricks in this repo cannot intercept them.
+  - matplotlib-go **has** the right hook (`internal/diag.SetHandler`; a nil handler silences), but
+    the package is `internal/` and unreachable from hercules.
+  - Latest published tag is still v0.3.0 (checked 2026-07-04); no fixed version exists to bump to.
+  - Upstream fix (either works): (a) re-export the diag handler as public API (e.g.
+    `matplotlibgo.SetWarningHandler`) so hercules can install a filter, and/or (b) don't emit
+    unparsed-rcParam warnings while parsing the _bundled_ stylesheets at init (only warn for user
+    sheets). Then tag v0.3.1 and bump `go.mod` here.
+  - 2026-07-04: both (a) and (b) **implemented and pushed** — matplotlib-go branch
+    `claude/silence-bundled-style-warnings` (commit `39f7164`): `registerBundledStyles` parses the
+    bundled sheets under a silenced handler and then resets the one-shot warning dedup (so
+    user-supplied sheets with the same keys still warn — regression-tested), and a new public
+    `github.com/cwbudde/matplotlib-go/diag` package exposes
+    `SetHandler(fn func(string)) (restore func())` (nil silences; delegates to `internal/diag`).
+    Full `CGO_ENABLED=0` suite: zero new failures vs a clean v0.3.0 baseline (diffed). E2E against
+    hercules via a temporary `replace`: `hercules version` stderr 50 lines → **0**.
+    Remaining owner actions: merge the branch, tag **v0.3.1**, then bump this repo's `go.mod`
+    (no hercules code change needed — the init-time silencing alone fixes the noise).
 
 ## Verification (run after Phase 6, then again after Phase 9)
 
@@ -479,7 +525,7 @@ tests nor explicitly marked experimental.
       as experimental. → Non-linear histories + hibernation + merge_tracks are test-covered;
       plugins are test-covered on the cgo path and documented as unavailable in cgo-free builds.
 
-### Phase 12 — PB schema versioning & CI guardrails (P1) ✅ done 2026-07-02 (uncommitted)
+### Phase 12 — PB schema versioning & CI guardrails (P1) ✅ done 2026-07-02
 
 Why: stable tooling needs stable schemas; otherwise every downstream consumer is fragile.
 
@@ -605,7 +651,7 @@ tensorflow and the stub builds). Now done:
     (`cmd/hercules/root.go:633`) and is reused as the PB content-map key and by the render
     readers, so it must not change. Instead `serializeText` (`leaves/comment_sentiment.go`) now
     emits a leading YAML comment `  # [EXPERIMENTAL] Sentiment analysis is experimental and may
-    be inaccurate.` — ignored by every YAML parser and by the labours readers, untouched PB path.
+be inaccurate.` — ignored by every YAML parser and by the labours readers, untouched PB path.
     Only affects `-tags tensorflow` builds (the only builds that emit sentiment output).
 - [x] Renderer: add a subtitle warning on sentiment charts.
   - Added an optional `Subtitle` field to the three option structs sentiment renders through

@@ -31,6 +31,7 @@ type MatplotlibTextLabel struct {
 
 type MatplotlibTimeAreaOptions struct {
 	Title        string
+	Subtitle     string
 	XLabel       string
 	YLabel       string
 	Output       string
@@ -82,6 +83,7 @@ type MatplotlibGroupedBarSeries struct {
 
 type MatplotlibGroupedBarOptions struct {
 	Title        string
+	Subtitle     string
 	XLabel       string
 	YLabel       string
 	Output       string
@@ -121,6 +123,23 @@ type MatplotlibHeatmapOptions struct {
 	HeightInches float64
 	XLabelLimit  int
 	YLabelLimit  int
+}
+
+// drawSubtitle renders an optional secondary caption line centered just below
+// the axes title, inside the top of the plot area. It is drawn last (on top of
+// the plotted data) so it stays legible. An empty subtitle is a no-op, so the
+// call is safe on every plot even though only sentiment charts currently set it.
+func drawSubtitle(ax *core.Axes, subtitle string) {
+	if ax == nil || subtitle == "" {
+		return
+	}
+	ax.Text(0.5, 0.98, subtitle, core.TextOptions{
+		Coords:   core.Coords(core.CoordAxes),
+		FontSize: 9,
+		Color:    render.Color{R: 0.5, G: 0.5, B: 0.5, A: 1},
+		HAlign:   core.TextAlignCenter,
+		VAlign:   core.TextVAlignTop,
+	})
 }
 
 func PlotTimeAreasMatplotlib(dates []time.Time, series []MatplotlibTimeAreaSeries, opts MatplotlibTimeAreaOptions) error {
@@ -236,6 +255,8 @@ func PlotTimeAreasMatplotlib(dates []time.Time, series []MatplotlibTimeAreaSerie
 		ax.XAxis.ShowSpine = false
 		ax.YAxis.ShowSpine = false
 	}
+
+	drawSubtitle(ax, opts.Subtitle)
 
 	return saveMatplotlibFigure(fig, opts.Output, width, height)
 }
@@ -553,6 +574,7 @@ type MatplotlibScatterSeries struct {
 
 type MatplotlibScatterOptions struct {
 	Title          string
+	Subtitle       string
 	XLabel         string
 	YLabel         string
 	Output         string
@@ -650,6 +672,8 @@ func PlotScatterMatplotlib(series []MatplotlibScatterSeries, opts MatplotlibScat
 		ax.AddLegend()
 	}
 
+	drawSubtitle(ax, opts.Subtitle)
+
 	return saveMatplotlibFigure(fig, opts.Output, width, height)
 }
 
@@ -715,6 +739,8 @@ func PlotStackedBarChartMatplotlib(labels []string, series []MatplotlibGroupedBa
 		}
 	}
 	ax.AddLegend()
+
+	drawSubtitle(ax, opts.Subtitle)
 
 	return saveMatplotlibFigure(fig, opts.Output, width, height)
 }

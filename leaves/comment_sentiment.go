@@ -319,6 +319,7 @@ func (sent *CommentSentimentAnalysis) Serialize(result interface{}, binary bool,
 }
 
 func (sent *CommentSentimentAnalysis) serializeText(result *CommentSentimentResult, writer io.Writer) {
+	fmt.Fprintln(writer, "  # [EXPERIMENTAL] Sentiment analysis is experimental and may be inaccurate.")
 	ticks := make([]int, 0, len(result.EmotionsByTick))
 	for tick := range result.EmotionsByTick {
 		ticks = append(ticks, tick)

@@ -37,8 +37,8 @@ github.com/cwbudde/lz4 v1.0.2-0.20260419232955-5f478e68f711 h1:yx8B/oU7GMK6ZzX+q
 github.com/cwbudde/lz4 v1.0.2-0.20260419232955-5f478e68f711/go.mod h1:azrrZhQgq2pM89kR5dlwhPQjA89uwi5WYpThJPknHxc=
 github.com/cwbudde/mathtext v0.4.4 h1:ztU/OnxGpLTbvukpLCNqyLyR6abtDd8cs/jXxVJalrU=
 github.com/cwbudde/mathtext v0.4.4/go.mod h1:U+8ryw66DJYX8UerM5kgtA2QVG5Y+f/4m5eqZxKwD2k=
-github.com/cwbudde/matplotlib-go v0.3.0 h1:hkNt1H9WIPs6RH8/y/2BHDgu5y3W8vaEi0rHvE2wxB4=
-github.com/cwbudde/matplotlib-go v0.3.0/go.mod h1:pr2qdhkC4v3tofwOAU31G2fDAZxWd6BrLE6hw+NeipQ=
+github.com/cwbudde/matplotlib-go v0.3.1 h1:BVvG+TGLoY//MiUy+ErF6kxMCdaNY+hFOmOeNqXi+t0=
+github.com/cwbudde/matplotlib-go v0.3.1/go.mod h1:pr2qdhkC4v3tofwOAU31G2fDAZxWd6BrLE6hw+NeipQ=
 github.com/cwbudde/qhull-go v0.1.0 h1:xededYDzEFqV/HPNQToH+oZwoMwmPEoqmDrKket87uA=
 github.com/cwbudde/qhull-go v0.1.0/go.mod h1:S5kseVfeEObgl1XoL1UAi+eNMr7lnrJmuPJolqAHmF8=
 github.com/cyraxred/go-billy-siva v0.5.1 h1:7nWEl6Q81GnTtHXfWBleWDusdDj/ZM9f998qHUNhqBk=

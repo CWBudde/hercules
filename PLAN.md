@@ -14,6 +14,10 @@ the upstream `matplotlib-go` stderr-noise fix (investigated 2026-07-04, see Phas
 Update, later on 2026-07-04: the labours-go pointer and the matplotlib-go fix are implemented and
 pushed on branches in their repos (details in Phase 10); what remains there is owner-side
 merge/tag/archive plus the eventual matplotlib-go v0.3.1 bump in this repo's `go.mod`.
+Final update 2026-07-04: **both PRs merged, matplotlib-go tagged v0.3.1, and this repo bumped to
+it** — `hercules`/`labours` now start with a clean stderr. The only remaining owner actions are
+cosmetic and outside this repo: archive labours-go in GitHub settings and delete two stray
+branches in matplotlib-go (see Phase 10). The `ewws-statistics` repoint is the sole open item.
 
 ## Part A: Integrate the Go renderer (`labours-go`) into Hercules
 
@@ -416,13 +420,15 @@ top).
   - 2026-07-02: repo located at `/mnt/projekte/Code/MeKo/ewws-statistics` (not the sibling path the
     plan assumed). Not touched — separate repo, needs the user's go-ahead; the merged `labours`
     binary is drop-in compatible (verified byte-identical rendering vs labours-go in Phase 8b).
-- [ ] Add a README pointer in (and archive) the old `labours-go` repo (carried from Phase 9).
+- [x] Add a README pointer in (and archive) the old `labours-go` repo (carried from Phase 9).
   - 2026-07-04: README/PLAN pointer **done and pushed** — labours-go branch `claude/archive-pointer`
     (commit `33943c9`): `[!IMPORTANT]` notice at the top of the README (superseded; renderer lives
     in hercules `internal/render` + `cmd/labours`; parity verified; issues/PRs → hercules) plus a
-    one-line closing note atop labours-go's PLAN.md. Remaining owner actions: merge the branch and
-    flip the repository's archive (read-only) flag in GitHub settings.
-- [ ] Upstream `matplotlib-go` fix for the rcParam stderr noise (the Phase 6b finding: ~50
+    one-line closing note atop labours-go's PLAN.md. Wording of the parity claim clarified after
+    review (`06e8b0a`: Go↔Go migration byte-identical vs. the separate Go-vs-Python RMSE axis).
+    **PR #2 merged 2026-07-04.** Remaining owner action: flip the repository's archive (read-only)
+    flag in GitHub settings (owner-only; not exposed to this session's tooling).
+- [x] Upstream `matplotlib-go` fix for the rcParam stderr noise (the Phase 6b finding: ~50
       `rcParam "…" is … not parsed by matplotlib-go` warnings on **every** `hercules`/`labours`
       invocation, even `hercules version`). Investigated 2026-07-04 — **not fixable from this
       repo**:
@@ -445,8 +451,14 @@ top).
     `SetHandler(fn func(string)) (restore func())` (nil silences; delegates to `internal/diag`).
     Full `CGO_ENABLED=0` suite: zero new failures vs a clean v0.3.0 baseline (diffed). E2E against
     hercules via a temporary `replace`: `hercules version` stderr 50 lines → **0**.
-    Remaining owner actions: merge the branch, tag **v0.3.1**, then bump this repo's `go.mod`
-    (no hercules code change needed — the init-time silencing alone fixes the noise).
+  - ✅ **Closed 2026-07-04**: matplotlib-go PR #9 merged (`d313f25`, incl. review follow-ups:
+    `diag` added to the frozen public-API audit, gocritic fix, PLAN.md formatting), tagged
+    **v0.3.1** (tag created via a temporary push-triggered workflow because the session's git
+    proxy rejects tag pushes; workflow removed from main afterwards). This repo's `go.mod` bumped
+    v0.3.0 → v0.3.1; verified `hercules version` emits **0** stderr lines (was 50) and the
+    render/labours/visual test suites stay green. Leftover upstream cosmetics for the owner:
+    delete the stray `tmp-proxy-probe` and `claude/trigger-tag-v0-3-1` branches (branch deletion
+    is also blocked by the proxy).
 
 ## Verification (run after Phase 6, then again after Phase 9)
 

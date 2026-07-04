@@ -595,13 +595,27 @@ fixture-sensitive tests:
       real-CI coverage. The pre-tag caveat about the `internal/core` + `TestLinesMeta` fixture
       failures is removed.
 
-### Phase 15 — Sentiment: mark as experimental everywhere (P3)
+### Phase 15 — Sentiment: mark as experimental everywhere (P3) ✅ done 2026-07-04
 
-`--help` already includes a caveat. Remaining:
+`--help` already carried a caveat (`Description()` is `[EXPERIMENTAL]`-prefixed in both the
+tensorflow and the stub builds). Now done:
 
-- [ ] CLI: prefix sentiment outputs with `[EXPERIMENTAL]`.
-- [ ] Renderer: add a subtitle warning on sentiment charts (in the Go renderer once Part A
-      Phase 9 lands; until then, Python labours).
+- [x] CLI: prefix sentiment outputs with `[EXPERIMENTAL]`.
+  - The YAML section header `Sentiment:` is emitted generically from `item.Name()`
+    (`cmd/hercules/root.go:633`) and is reused as the PB content-map key and by the render
+    readers, so it must not change. Instead `serializeText` (`leaves/comment_sentiment.go`) now
+    emits a leading YAML comment `  # [EXPERIMENTAL] Sentiment analysis is experimental and may
+    be inaccurate.` — ignored by every YAML parser and by the labours readers, untouched PB path.
+    Only affects `-tags tensorflow` builds (the only builds that emit sentiment output).
+- [x] Renderer: add a subtitle warning on sentiment charts.
+  - Added an optional `Subtitle` field to the three option structs sentiment renders through
+    (`MatplotlibTimeAreaOptions`, `MatplotlibGroupedBarOptions`, `MatplotlibScatterOptions`) plus
+    a shared `drawSubtitle` helper in `internal/render/graphics/matplotlib_plots.go` that draws it
+    as a small gray caption centered just below the axes title (axes-coords `ax.Text`, drawn last
+    so it stays on top). Empty subtitle is a no-op, so every other mode is unaffected.
+    `internal/render/modes/sentiment.go` sets the warning on all three sentiment chart paths and
+    prefixes the printed `printSentimentSummary` header with `[EXPERIMENTAL]`. Verified visually:
+    the caption renders under the title without overlapping the plot.
 
 ## Test & validation matrix (what to run while working)
 

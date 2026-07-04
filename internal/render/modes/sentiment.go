@@ -15,6 +15,11 @@ import (
 	"github.com/meko-christian/hercules/internal/render/readers"
 )
 
+// experimentalSentimentSubtitle is shown beneath every sentiment chart title to
+// flag that this analysis is experimental (it depends on a TensorFlow build and
+// its scores may be inaccurate).
+const experimentalSentimentSubtitle = "[EXPERIMENTAL] Sentiment analysis is experimental and may be inaccurate."
+
 // SentimentResult represents sentiment analysis for a developer or file
 type SentimentResult struct {
 	Entity   string
@@ -178,6 +183,7 @@ func plotCollectedSentimentTimeline(name string, startUnix int64, ticks map[int]
 	}
 	opts := graphics.MatplotlibTimeAreaOptions{
 		Title:        titleName + " sentiment",
+		Subtitle:     experimentalSentimentSubtitle,
 		XLabel:       "Time",
 		YLabel:       "Comment sentiment",
 		WidthInches:  16,
@@ -454,6 +460,7 @@ func plotSentimentOverview(results []SentimentResult, output string) error {
 	}
 	opts := graphics.MatplotlibGroupedBarOptions{
 		Title:        "Repository Sentiment Analysis Overview",
+		Subtitle:     experimentalSentimentSubtitle,
 		XLabel:       "Entities (Developers & Languages)",
 		YLabel:       "Sentiment Distribution",
 		WidthInches:  16,
@@ -527,6 +534,7 @@ func plotSentimentForType(results []SentimentResult, title, output, filename str
 	}
 	opts := graphics.MatplotlibScatterOptions{
 		Title:        title,
+		Subtitle:     experimentalSentimentSubtitle,
 		XLabel:       "Entities",
 		YLabel:       "Sentiment Score",
 		WidthInches:  14,
@@ -555,8 +563,8 @@ func plotSentimentForType(results []SentimentResult, title, output, filename str
 
 // printSentimentSummary prints a text summary of sentiment analysis
 func printSentimentSummary(results []SentimentResult) {
-	fmt.Println("\nSentiment Analysis Summary:")
-	fmt.Println("===========================")
+	fmt.Println("\n[EXPERIMENTAL] Sentiment Analysis Summary:")
+	fmt.Println("==========================================")
 
 	// Calculate overall statistics
 	var totalPositive, totalNeutral, totalNegative float64

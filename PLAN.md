@@ -11,6 +11,9 @@ items from the former `ROADMAP.md` (now deleted; completed milestones live in gi
 The only open items live in **other repositories** and are tracked in Phase 10: the `labours-go`
 archive pointer (Phase 9, deferred), the `ewws-statistics` repoint (needs the user's go-ahead), and
 the upstream `matplotlib-go` stderr-noise fix (investigated 2026-07-04, see Phase 10).
+Update, later on 2026-07-04: the labours-go pointer and the matplotlib-go fix are implemented and
+pushed on branches in their repos (details in Phase 10); what remains there is owner-side
+merge/tag/archive plus the eventual matplotlib-go v0.3.1 bump in this repo's `go.mod`.
 
 ## Part A: Integrate the Go renderer (`labours-go`) into Hercules
 
@@ -414,6 +417,11 @@ top).
     plan assumed). Not touched — separate repo, needs the user's go-ahead; the merged `labours`
     binary is drop-in compatible (verified byte-identical rendering vs labours-go in Phase 8b).
 - [ ] Add a README pointer in (and archive) the old `labours-go` repo (carried from Phase 9).
+  - 2026-07-04: README/PLAN pointer **done and pushed** — labours-go branch `claude/archive-pointer`
+    (commit `33943c9`): `[!IMPORTANT]` notice at the top of the README (superseded; renderer lives
+    in hercules `internal/render` + `cmd/labours`; parity verified; issues/PRs → hercules) plus a
+    one-line closing note atop labours-go's PLAN.md. Remaining owner actions: merge the branch and
+    flip the repository's archive (read-only) flag in GitHub settings.
 - [ ] Upstream `matplotlib-go` fix for the rcParam stderr noise (the Phase 6b finding: ~50
       `rcParam "…" is … not parsed by matplotlib-go` warnings on **every** `hercules`/`labours`
       invocation, even `hercules version`). Investigated 2026-07-04 — **not fixable from this
@@ -429,6 +437,16 @@ top).
     `matplotlibgo.SetWarningHandler`) so hercules can install a filter, and/or (b) don't emit
     unparsed-rcParam warnings while parsing the _bundled_ stylesheets at init (only warn for user
     sheets). Then tag v0.3.1 and bump `go.mod` here.
+  - 2026-07-04: both (a) and (b) **implemented and pushed** — matplotlib-go branch
+    `claude/silence-bundled-style-warnings` (commit `39f7164`): `registerBundledStyles` parses the
+    bundled sheets under a silenced handler and then resets the one-shot warning dedup (so
+    user-supplied sheets with the same keys still warn — regression-tested), and a new public
+    `github.com/cwbudde/matplotlib-go/diag` package exposes
+    `SetHandler(fn func(string)) (restore func())` (nil silences; delegates to `internal/diag`).
+    Full `CGO_ENABLED=0` suite: zero new failures vs a clean v0.3.0 baseline (diffed). E2E against
+    hercules via a temporary `replace`: `hercules version` stderr 50 lines → **0**.
+    Remaining owner actions: merge the branch, tag **v0.3.1**, then bump this repo's `go.mod`
+    (no hercules code change needed — the init-time silencing alone fixes the noise).
 
 ## Verification (run after Phase 6, then again after Phase 9)
 

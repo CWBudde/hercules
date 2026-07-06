@@ -19,10 +19,9 @@ This can be done easily using the [`-s`](https://github.com/git/git/blob/b2c150d
 
 ## Support Channels
 
-The official support channels, for both users and contributors, are:
+The official support channel, for both users and contributors, is:
 
 - GitHub [issues](https://github.com/cwbudde/hercules/issues)\*
-- Slack: #machine-learning room in the [source{d} Slack](https://join.slack.com/t/sourced-community/shared_invite/enQtMjc4Njk5MzEyNzM2LTFjNzY4NjEwZGEwMzRiNTM4MzRlMzQ4MmIzZjkwZmZlM2NjODUxZmJjNDI1OTcxNDAyMmZlNmFjODZlNTg0YWM)
 
 \*Before opening a new issue or submitting a new pull request, it's helpful to
 search the project - it's likely that another user has already reported the
@@ -30,7 +29,7 @@ issue you're facing, or it's a known issue that we're already aware of.
 
 ## How to Contribute
 
-Pull Requests (PRs) are the main and exclusive way to contribute to the official go-git project.
+Pull Requests (PRs) are the main and exclusive way to contribute to this project.
 In order for a PR to be accepted it needs to pass a list of requirements:
 
 - Code Coverage does not decrease.
@@ -38,7 +37,7 @@ In order for a PR to be accepted it needs to pass a list of requirements:
 - Go code is idiomatic, formatted according to [gofmt](https://golang.org/cmd/gofmt/), and without any warnings from [go lint](https://github.com/golang/lint) nor [go vet](https://golang.org/cmd/vet/).
 - If the PR is a bug fix, it has to include a new unit test that fails before the patch is merged.
 - If the PR is a new feature, it has to come with a suite of unit tests, that tests the new functionality.
-- In any case, all the PRs have to pass the personal evaluation of at least one of the [maintainers](MAINTAINERS.md).
+- In any case, all the PRs have to pass the personal evaluation of a maintainer.
 
 ### Format of the commit message
 

@@ -4,9 +4,9 @@ This file provides guidance for AI Agents (Claude Code, Codex etc.) when working
 
 ## Plan
 
-For the forward-looking plan and current priorities, see [PLAN.md](PLAN.md). It covers the
-ongoing integration of the Go renderer (`labours-go`) into this repo (Part A) and the remaining
-roadmap work carried over from the former `ROADMAP.md` (Part B).
+For any remaining priorities, see [PLAN.md](PLAN.md). The Go-renderer integration and the
+carried-over roadmap work are complete; the plan now tracks only the last open follow-up and a short
+list of deferred decisions. The full history lives in git and the merged PRs.
 
 ## Build and Development Commands
 

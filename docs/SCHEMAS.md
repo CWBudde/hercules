@@ -16,8 +16,9 @@ Hercules intentionally emits only YAML and Protocol Buffers. There is no `--json
 machine-readable and versioned (see [Schema Version](#schema-version)). Consumers that need JSON
 can convert the YAML stream with any off-the-shelf `yaml→json` tool, or decode the PB envelope
 against `internal/pb/pb.proto`. A first-class JSON export (with per-analysis JSON Schemas) is
-deferred until a concrete downstream requirement appears; the rationale and recommended
-implementation path are recorded in [PLAN.md](../PLAN.md) (Phase 13).
+deferred until a concrete downstream requirement appears. The recommended path, if revisited: add a
+`--json` branch marshaling the per-leaf PB messages with `github.com/gogo/protobuf/jsonpb`, and
+generate JSON Schemas from `internal/pb/pb.proto` so validation stays aligned with `pb.SchemaVersion`.
 
 ## Schema Version
 

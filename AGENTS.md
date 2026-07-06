@@ -2,11 +2,14 @@
 
 This file provides guidance for AI Agents (Claude Code, Codex etc.) when working with code in this repository.
 
-## Plan
+## Status
 
-For any remaining priorities, see [PLAN.md](PLAN.md). The Go-renderer integration and the
-carried-over roadmap work are complete; the plan now tracks only the last open follow-up and a short
-list of deferred decisions. The full history lives in git and the merged PRs.
+The Go-renderer integration (`labours-go` → in-repo `internal/render` + `cmd/labours`) and the
+carried-over roadmap work are complete, including the cross-repo follow-ups (`ewws-statistics`
+repointed, old `labours-go` archived, `matplotlib-go` bumped to `v0.3.1`). The former `PLAN.md`/
+`ROADMAP.md` history lives in git and the merged PRs. A few items remain intentionally deferred
+(native JSON export, code-review metrics, remote cloning, caching) — revisit only on a concrete
+trigger.
 
 ## Build and Development Commands
 
@@ -28,7 +31,7 @@ Hercules is a Git repository analysis engine with two main components:
 Note: the former Python `labours` package has been replaced by the in-repo Go renderer
 (a native `labours` binary; `hercules report` renders in-process). Rendering parity with
 the Python original is tracked in [docs/RENDER_PARITY.md](docs/RENDER_PARITY.md); the
-migration history is in [PLAN.md](PLAN.md) Part A. Many identifiers in `internal/render`
+migration history lives in git and the merged PRs. Many identifiers in `internal/render`
 (e.g. `GenerateBurndownProjectPython`, `python_compatible.go`) are _compatibility_ names
 referring to matching the Python output — do not "clean them up".
 

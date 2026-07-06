@@ -7,13 +7,17 @@ been compacted for phases that are entirely complete. Completed implementation h
 available in git and in the merged PRs #1-#3.
 
 **Current status:** all in-repo work in Parts A and B is done, committed, and merged to `main`.
-The only open work is cross-repo follow-up in **Phase 10**:
+**Phase 10 (cross-repo follow-up) is essentially complete** as of 2026-07-06:
 
-- update `ewws-statistics` to use the in-repo `labours` binary (done on branch
-  `claude/repoint-labours`, 2026-07-06; committed, awaiting push/merge — see Phase 10a);
-- merge/archive the old `labours-go` repository: pointer branch merged (PR #2); only the archive-flag
-  flip remains, blocked on owner (`CWBudde`) credentials — see Phase 10b;
-- merge/tag the upstream `matplotlib-go` stderr-noise fix, then bump this repo to the new tag.
+- **10a** — `ewws-statistics` repointed off `labours-go` to the in-repo `labours`; pushed as
+  `claude/repoint-labours`, open as PR #1 (awaiting merge). See Phase 10a.
+- **10b** — old `labours-go` repo: pointer branch merged (PR #2), superseded notice live, repo
+  archived by the owner. Done. See Phase 10b.
+- **10c** — upstream `matplotlib-go` stderr-noise fix merged (PR #9) and tagged `v0.3.1`; this repo
+  bumped to `v0.3.1`; init-time rcParam noise verified gone on both binaries; committed to `main`.
+  Done. See Phase 10c.
+
+Only remaining loose end: merging `ewws-statistics` PR #1.
 
 ## Part A: Integrate the Go renderer (`labours-go`) into Hercules
 
@@ -34,12 +38,12 @@ End state, now achieved in this repo:
 
 ## Decisions (confirmed 2026-07-02)
 
-| Decision          | Chosen                                                                                                                          |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Decision          | Chosen                                                                                                                           |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------- |
 | Layout            | One module, two binaries (`cmd/hercules` + `cmd/labours`), with `report` rendering in-process. Renderer under `internal/render`. |
-| Python `labours`  | Removed after parity was verified.                                                                                              |
-| Render-stack deps | Published/tagged `cwbudde/*` modules; no sibling `replace` dirs in this repo.                                                   |
-| Protobuf          | Renderer readers use the Hercules gogo `internal/pb` runtime; the duplicate protobuf package was deleted.                       |
+| Python `labours`  | Removed after parity was verified.                                                                                               |
+| Render-stack deps | Published/tagged `cwbudde/*` modules; no sibling `replace` dirs in this repo.                                                    |
+| Protobuf          | Renderer readers use the Hercules gogo `internal/pb` runtime; the duplicate protobuf package was deleted.                        |
 
 ## Compact Completion Record
 
@@ -203,13 +207,13 @@ Subtasks:
 - [x] Get explicit approval to edit `/mnt/projekte/Code/MeKo/ewws-statistics`.
 - [x] Inspect current `scripts/generate-burndown.sh` and `Justfile` before changing them.
 - [x] Replace `LABOURS_BIN` default with a path to the Hercules-built `labours` binary, preserving
-  any existing environment override behavior.
+      any existing environment override behavior.
 - [x] Update `setup-hercules` / `install-labours` recipes so they build or install from the merged
-  Hercules repo instead of the old `labours-go` repo.
+      Hercules repo instead of the old `labours-go` repo.
 - [x] Run the smallest available smoke that exercises burndown generation.
 - [ ] If practical, run the full `just burndown-clean` regeneration and compare the MeKo project and
-  repo burndown outputs. (Deferred: heavy — re-runs Hercules across all auto-filtered repos. The
-  exact `labours` render invocations were smoked directly instead; see Results.)
+      repo burndown outputs. (Deferred: heavy — re-runs Hercules across all auto-filtered repos. The
+      exact `labours` render invocations were smoked directly instead; see Results.)
 - [x] Record the exact command results in this phase before marking it complete.
 
 Results (2026-07-06, branch `claude/repoint-labours`):
@@ -259,27 +263,28 @@ Subtasks:
 
 - [x] Merge `labours-go` branch `claude/archive-pointer`. (PR #2, merge commit `b084d0b`.)
 - [x] Confirm the default branch README renders the superseded notice correctly on GitHub. (Verified
-  via API 2026-07-06: `master` README opens with the `[!IMPORTANT]` superseded/archived notice.)
+      via API 2026-07-06: `master` README opens with the `[!IMPORTANT]` superseded/archived notice.)
 - [x] Confirm the old repo has no open release branch that still needs the renderer code active.
-  (Branches: `master`, `claude/archive-pointer`, `claude/fix-plot-visuals-E743H`; the latter two are
-  `ahead:0` of `master` — fully contained, nothing unmerged would be lost. No open issues or PRs.)
-- [ ] Flip the repository's GitHub archive/read-only flag. **Blocked:** the local `gh` is
-  authenticated as `MeKo-Christian`, which has push but not admin on `CWBudde/labours-go`, so
-  `gh repo archive` returns `does not have the correct permissions to execute ArchiveRepository`.
-  Owner action needed: as `CWBudde`, run `gh repo archive CWBudde/labours-go --yes`, or use the
-  GitHub web UI (Settings → Danger Zone → Archive this repository).
+      (Branches: `master`, `claude/archive-pointer`, `claude/fix-plot-visuals-E743H`; the latter two are
+      `ahead:0` of `master` — fully contained, nothing unmerged would be lost. No open issues or PRs.)
+- [x] Flip the repository's GitHub archive/read-only flag. Done by the owner (`CWBudde`) on
+      2026-07-06 (the local `gh`, authenticated as `MeKo-Christian`, lacked admin on
+      `CWBudde/labours-go` to do it programmatically).
 - [x] Record the merge commit or archive confirmation here.
 
 Acceptance:
 
 - [x] the old `labours-go` repository clearly points users to Hercules (README notice live on
-  `master`);
-- [ ] the old repository is archived/read-only (pending the owner-credential archive flip above);
+      `master`);
+- [x] the old repository is archived/read-only (archived by the owner 2026-07-06);
 - [x] new renderer issues and PRs are directed to this repository (stated in the README notice).
+
+**Phase 10b complete (2026-07-06).**
 
 #### Phase 10c - Merge/tag upstream `matplotlib-go` stderr-noise fix and bump Hercules
 
-Status: upstream fix branch is pushed; owner-side merge/tag and the Hercules dependency bump remain.
+Status: done 2026-07-06. Upstream fix merged and tagged `v0.3.1`; Hercules bumped to it; init-time
+rcParam noise verified gone on both binaries. See Results.
 
 Problem:
 
@@ -308,21 +313,44 @@ Known upstream state from 2026-07-04:
 
 Subtasks:
 
-- [ ] Merge `matplotlib-go` branch `claude/silence-bundled-style-warnings`.
-- [ ] Tag the merge as `v0.3.1`.
-- [ ] Confirm `go list -m -versions github.com/cwbudde/matplotlib-go` sees `v0.3.1`.
-- [ ] In this repository, bump `github.com/cwbudde/matplotlib-go` from `v0.3.0` to `v0.3.1`.
-- [ ] Run `go mod tidy` and `just vendor`.
-- [ ] Verify `CGO_ENABLED=0 go test ./internal/render/... ./cmd/labours/...`.
-- [ ] Verify `./hercules version` and `./labours version` produce no rcParam stderr noise.
-- [ ] Run the standard repo verification subset listed below.
-- [ ] Record the exact tag, dependency diff, and verification results here.
+- [x] Merge `matplotlib-go` branch `claude/silence-bundled-style-warnings`. (Merged via PR #9 on
+      `cwbudde/matplotlib-go`.)
+- [x] Tag the merge as `v0.3.1`.
+- [x] Confirm `go list -m -versions github.com/cwbudde/matplotlib-go` sees `v0.3.1`. (Returns
+      `v0.1.0 v0.2.0 v0.3.0 v0.3.1`.)
+- [x] In this repository, bump `github.com/cwbudde/matplotlib-go` from `v0.3.0` to `v0.3.1`.
+- [x] Run `go mod tidy` and `just vendor`.
+- [x] Verify `CGO_ENABLED=0 go test ./internal/render/... ./cmd/labours/...`. (All pass.)
+- [x] Verify `./hercules version` and `./labours version` produce no rcParam stderr noise.
+- [x] Run the standard repo verification subset listed below.
+- [x] Record the exact tag, dependency diff, and verification results here.
+
+Results (2026-07-06):
+
+- Dependency diff: `go.mod` `github.com/cwbudde/matplotlib-go v0.3.0 → v0.3.1`; `go.sum` updated
+  accordingly (its `go.mod` hash is unchanged from v0.3.0, as expected — the fix added no new deps).
+  `vendor/` is gitignored here, so it is not committed; CI/`just vendor` regenerate it.
+- rcParam stderr noise: **before** the bump, `./labours version` and `./hercules version` each
+  emitted 50 `matplotlib-go: rcParam "..."` lines to stderr; **after** the bump, both emit
+  **0 stderr lines** (0 rcParam). No local `replace`, `log.SetOutput`, or handler workaround needed.
+- Tests: `CGO_ENABLED=0 go test ./internal/render/... ./cmd/labours/...` all pass;
+  `just test` (full `go test ./...`) passes; `just check-tidy` and `just check-formatted` clean
+  after commit.
+- Incidental build fix required first: `main` did not build because `cmd/hercules/plugin_template_source.go`
+  (added in `3420f42`, a `const PluginTemplateSource`) duplicated the working `//go:embed plugin.template`
+  declaration in `cmd/hercules/plugin_template.go`. Removed the duplicate const file (the embed file
+  `cmd/hercules/plugin.template` exists and is the established approach); `hercules` then builds.
+- Landed directly on `main` (no PR, per the user's choice): one commit removing the duplicate, one
+  commit for the v0.3.1 bump + this bookkeeping.
 
 Acceptance:
 
-- Hercules depends on `github.com/cwbudde/matplotlib-go v0.3.1` or newer;
-- the init-time bundled-style rcParam warnings are gone without local workarounds;
-- user stylesheet warnings still work upstream.
+- [x] Hercules depends on `github.com/cwbudde/matplotlib-go v0.3.1` or newer;
+- [x] the init-time bundled-style rcParam warnings are gone without local workarounds;
+- [x] user stylesheet warnings still work upstream (preserved by the upstream fix: dedup state resets
+      after the bundled-style parse, verified upstream on the fix branch).
+
+**Phase 10c complete (2026-07-06). All of Phase 10 is now done.**
 
 ## Verification
 

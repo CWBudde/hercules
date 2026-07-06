@@ -6,7 +6,7 @@ require (
 	github.com/Masterminds/sprig v0.0.0-20180725212158-77bb58b7f5e1
 	github.com/araddon/dateparse v0.0.0-20210429162001-6b43995a97de
 	github.com/cwbudde/lz4 v1.0.2-0.20260419232955-5f478e68f711
-	github.com/cwbudde/matplotlib-go v0.3.0
+	github.com/cwbudde/matplotlib-go v0.3.1
 	github.com/fatih/camelcase v1.0.0
 	github.com/go-git/go-billy/v5 v5.4.0
 	github.com/go-git/go-git/v5 v5.5.2

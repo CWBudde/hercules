@@ -11,7 +11,8 @@ The only open work is cross-repo follow-up in **Phase 10**:
 
 - update `ewws-statistics` to use the in-repo `labours` binary (done on branch
   `claude/repoint-labours`, 2026-07-06; committed, awaiting push/merge — see Phase 10a);
-- merge/archive the old `labours-go` repository after its pointer branch lands;
+- merge/archive the old `labours-go` repository: pointer branch merged (PR #2); only the archive-flag
+  flip remains, blocked on owner (`CWBudde`) credentials — see Phase 10b;
 - merge/tag the upstream `matplotlib-go` stderr-noise fix, then bump this repo to the new tag.
 
 ## Part A: Integrate the Go renderer (`labours-go`) into Hercules
@@ -240,31 +241,41 @@ so it no longer shadows the Go binary on PATH; that is a local cleanup, outside 
 
 #### Phase 10b - Archive the old `labours-go` repo
 
-Status: partly done. Pointer branch is pushed; owner-side merge/archive actions remain.
+Status: all but the final archive-flag flip is done (2026-07-06). Repo is `CWBudde/labours-go`
+(default branch `master`). The archive flag flip is blocked on credentials — see below.
 
 Known context:
 
-- Branch: `claude/archive-pointer`.
-- Commit: `33943c9`.
-- Completed on that branch:
+- Branch: `claude/archive-pointer` (advanced past the recorded `33943c9` to `06e8b0a` — a later
+  commit clarified the parity wording after a Codex review), merged to `master` via PR #2
+  (merge commit `b084d0b`).
+- Completed on that branch (now on `master`):
   - README starts with an `[!IMPORTANT]` notice explaining that the renderer is superseded;
   - the notice points to Hercules `internal/render` and `cmd/labours`;
   - the notice says parity was verified and issues/PRs should go to Hercules;
-  - labours-go `PLAN.md` has a one-line closing note.
+  - labours-go `PLAN.md` has a closing note.
 
 Subtasks:
 
-- [ ] Merge `labours-go` branch `claude/archive-pointer`.
-- [ ] Confirm the default branch README renders the superseded notice correctly on GitHub.
-- [ ] Confirm the old repo has no open release branch that still needs the renderer code active.
-- [ ] Flip the repository's GitHub archive/read-only flag.
-- [ ] Record the merge commit or archive confirmation here.
+- [x] Merge `labours-go` branch `claude/archive-pointer`. (PR #2, merge commit `b084d0b`.)
+- [x] Confirm the default branch README renders the superseded notice correctly on GitHub. (Verified
+  via API 2026-07-06: `master` README opens with the `[!IMPORTANT]` superseded/archived notice.)
+- [x] Confirm the old repo has no open release branch that still needs the renderer code active.
+  (Branches: `master`, `claude/archive-pointer`, `claude/fix-plot-visuals-E743H`; the latter two are
+  `ahead:0` of `master` — fully contained, nothing unmerged would be lost. No open issues or PRs.)
+- [ ] Flip the repository's GitHub archive/read-only flag. **Blocked:** the local `gh` is
+  authenticated as `MeKo-Christian`, which has push but not admin on `CWBudde/labours-go`, so
+  `gh repo archive` returns `does not have the correct permissions to execute ArchiveRepository`.
+  Owner action needed: as `CWBudde`, run `gh repo archive CWBudde/labours-go --yes`, or use the
+  GitHub web UI (Settings → Danger Zone → Archive this repository).
+- [x] Record the merge commit or archive confirmation here.
 
 Acceptance:
 
-- the old `labours-go` repository clearly points users to Hercules;
-- the old repository is archived/read-only;
-- new renderer issues and PRs are directed to this repository.
+- [x] the old `labours-go` repository clearly points users to Hercules (README notice live on
+  `master`);
+- [ ] the old repository is archived/read-only (pending the owner-credential archive flip above);
+- [x] new renderer issues and PRs are directed to this repository (stated in the README notice).
 
 #### Phase 10c - Merge/tag upstream `matplotlib-go` stderr-noise fix and bump Hercules
 

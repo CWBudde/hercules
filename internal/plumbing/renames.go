@@ -9,13 +9,13 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/cwbudde/hercules/internal"
+	"github.com/cwbudde/hercules/internal/core"
+	"github.com/cwbudde/hercules/internal/levenshtein"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/utils/merkletrie"
-	"github.com/meko-christian/hercules/internal"
-	"github.com/meko-christian/hercules/internal/core"
-	"github.com/meko-christian/hercules/internal/levenshtein"
 	"github.com/sergi/go-diff/diffmatchpatch"
 )
 

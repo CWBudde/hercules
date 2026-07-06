@@ -11,14 +11,14 @@ import (
 	"sync/atomic"
 	"unicode/utf8"
 
+	"github.com/cwbudde/hercules/internal/core"
+	items "github.com/cwbudde/hercules/internal/plumbing"
+	"github.com/cwbudde/hercules/internal/plumbing/identity"
+	"github.com/cwbudde/hercules/internal/rbtree"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/utils/merkletrie"
-	"github.com/meko-christian/hercules/internal/core"
-	items "github.com/meko-christian/hercules/internal/plumbing"
-	"github.com/meko-christian/hercules/internal/plumbing/identity"
-	"github.com/meko-christian/hercules/internal/rbtree"
 	"github.com/sergi/go-diff/diffmatchpatch"
 )
 

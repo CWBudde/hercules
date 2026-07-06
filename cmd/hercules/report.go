@@ -11,10 +11,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cwbudde/hercules"
+	"github.com/cwbudde/hercules/internal/pb"
+	"github.com/cwbudde/hercules/internal/render"
 	"github.com/gogo/protobuf/proto"
-	"github.com/meko-christian/hercules"
-	"github.com/meko-christian/hercules/internal/pb"
-	"github.com/meko-christian/hercules/internal/render"
 	"github.com/spf13/cobra"
 )
 

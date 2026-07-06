@@ -6,8 +6,8 @@ import (
 	"math"
 	"sort"
 
-	"github.com/meko-christian/hercules/internal/render/graphics"
-	"github.com/meko-christian/hercules/internal/render/readers"
+	"github.com/cwbudde/hercules/internal/render/graphics"
+	"github.com/cwbudde/hercules/internal/render/readers"
 )
 
 type ParallelismMetrics struct {

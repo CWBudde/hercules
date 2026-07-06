@@ -9,12 +9,12 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/cwbudde/hercules/internal/render/graphics"
+	"github.com/cwbudde/hercules/internal/render/readers"
 	"github.com/cwbudde/matplotlib-go/backends"
 	"github.com/cwbudde/matplotlib-go/core"
 	"github.com/cwbudde/matplotlib-go/render"
 	"github.com/cwbudde/matplotlib-go/style"
-	"github.com/meko-christian/hercules/internal/render/graphics"
-	"github.com/meko-christian/hercules/internal/render/readers"
 )
 
 func OverwritesMatrix(reader readers.Reader, output string) error {

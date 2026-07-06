@@ -1,14 +1,14 @@
 package hercules
 
 import (
+	"github.com/cwbudde/hercules/internal/core"
+	"github.com/cwbudde/hercules/internal/plumbing"
+	"github.com/cwbudde/hercules/internal/plumbing/identity"
+	"github.com/cwbudde/hercules/internal/yaml"
+	_ "github.com/cwbudde/hercules/leaves"          // add burndown and other analyses
+	_ "github.com/cwbudde/hercules/leaves/research" // add "research" analyses
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/meko-christian/hercules/internal/core"
-	"github.com/meko-christian/hercules/internal/plumbing"
-	"github.com/meko-christian/hercules/internal/plumbing/identity"
-	"github.com/meko-christian/hercules/internal/yaml"
-	_ "github.com/meko-christian/hercules/leaves"          // add burndown and other analyses
-	_ "github.com/meko-christian/hercules/leaves/research" // add "research" analyses
 	"github.com/spf13/pflag"
 )
 

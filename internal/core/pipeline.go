@@ -13,12 +13,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cwbudde/hercules/internal/pb"
+	"github.com/cwbudde/hercules/internal/toposort"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/storer"
-	"github.com/meko-christian/hercules/internal/pb"
-	"github.com/meko-christian/hercules/internal/toposort"
 	"github.com/pkg/errors"
 )
 

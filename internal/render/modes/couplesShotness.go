@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"github.com/meko-christian/hercules/internal/render/graphics"
-	"github.com/meko-christian/hercules/internal/render/readers"
+	"github.com/cwbudde/hercules/internal/render/graphics"
+	"github.com/cwbudde/hercules/internal/render/readers"
 )
 
 // CouplesShotness generates shotness-based coupling analysis and visualization

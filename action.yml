@@ -1,6 +1,6 @@
 name: "Hercules Git Archaeology"
-description: "Run various Git history analyses with MeKo-Christian/hercules"
-author: "MeKo-Christian"
+description: "Run various Git history analyses with CWBudde/hercules"
+author: "CWBudde"
 
 inputs:
   args:

@@ -6,9 +6,9 @@ import (
 	"path"
 	"testing"
 
-	"github.com/meko-christian/hercules/internal/core"
-	"github.com/meko-christian/hercules/internal/test"
-	"github.com/meko-christian/hercules/leaves"
+	"github.com/cwbudde/hercules/internal/core"
+	"github.com/cwbudde/hercules/internal/test"
+	"github.com/cwbudde/hercules/leaves"
 	"github.com/stretchr/testify/assert"
 )
 

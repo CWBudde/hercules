@@ -5,8 +5,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/meko-christian/hercules/internal/render"
-	"github.com/meko-christian/hercules/internal/render/graphics"
+	"github.com/cwbudde/hercules/internal/render"
+	"github.com/cwbudde/hercules/internal/render/graphics"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )

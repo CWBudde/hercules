@@ -4,9 +4,9 @@
 <h1 align="center">Hercules</h1>
 <p align="center">
       Fast, insightful and highly customizable Git history analysis.<br><br>
-      <a href="https://pkg.go.dev/github.com/meko-christian/hercules"><img src="https://pkg.go.dev/badge/github.com/meko-christian/hercules.svg" alt="Go Reference"></a>
-      <a href="https://github.com/meko-christian/hercules/actions"><img src="https://github.com/meko-christian/hercules/actions/workflows/test.yaml/badge.svg" alt="CI Status"></a>
-      <a href="https://goreportcard.com/report/github.com/meko-christian/hercules"><img src="https://goreportcard.com/badge/github.com/meko-christian/hercules" alt="Go Report Card"></a>
+      <a href="https://pkg.go.dev/github.com/cwbudde/hercules"><img src="https://pkg.go.dev/badge/github.com/cwbudde/hercules.svg" alt="Go Reference"></a>
+      <a href="https://github.com/cwbudde/hercules/actions"><img src="https://github.com/cwbudde/hercules/actions/workflows/test.yaml/badge.svg" alt="CI Status"></a>
+      <a href="https://goreportcard.com/report/github.com/cwbudde/hercules"><img src="https://goreportcard.com/badge/github.com/cwbudde/hercules" alt="Go Report Card"></a>
       <a href="https://opensource.org/licenses/Apache-2.0"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="Apache 2.0 license"></a>
 </p>
 <p align="center">
@@ -86,11 +86,11 @@ Historical context from the original project is available in
 [blog post 2](https://blog.sourced.tech/post/hercules), and a
 [presentation](http://vmarkovtsev.github.io/gowayfest-2018-minsk/).
 Please [contribute](#contributions) by testing, fixing bugs, and adding
-[new analyses](https://github.com/meko-christian/hercules/issues?q=is%3Aissue+is%3Aopen+label%3Anew-analysis).
+[new analyses](https://github.com/cwbudde/hercules/issues?q=is%3Aissue+is%3Aopen+label%3Anew-analysis).
 
 ![Hercules DAG of Burndown analysis](docs/dag.png)
 
-<p align="center">The DAG of burndown and couples analyses. Generated with <code>hercules --burndown --burndown-people --couples --dry-run --dump-dag docs/dag.dot https://github.com/meko-christian/hercules</code></p>
+<p align="center">The DAG of burndown and couples analyses. Generated with <code>hercules --burndown --burndown-people --couples --dry-run --dump-dag docs/dag.dot https://github.com/cwbudde/hercules</code></p>
 
 ![git/git image](docs/linux.svg)
 
@@ -98,7 +98,7 @@ Please [contribute](#contributions) by testing, fixing bugs, and adding
 
 ## Installation
 
-Grab the `hercules` binary from the [Releases page](https://github.com/meko-christian/hercules/releases),
+Grab the `hercules` binary from the [Releases page](https://github.com/cwbudde/hercules/releases),
 or build both `hercules` and `labours` from source (see below). No Python installation is
 needed: `labours` is a statically linked Go binary and `hercules report` renders charts
 in-process.
@@ -110,7 +110,7 @@ For development workflows that regenerate protobuf files or use repo recipes, in
 [`protoc`](https://github.com/google/protobuf/releases) and [`just`](https://github.com/casey/just).
 
 ```
-git clone https://github.com/meko-christian/hercules && cd hercules
+git clone https://github.com/cwbudde/hercules && cd hercules
 # builds both binaries (hercules and labours) plus generated assets
 just
 # or build them directly
@@ -684,7 +684,7 @@ tree with `CGO_ENABLED=1`. The compatibility of this path is verified by
 
 ```
 hercules --burndown --pb https://github.com/go-git/go-git > go-git.pb
-hercules --burndown --pb https://github.com/meko-christian/hercules > hercules.pb
+hercules --burndown --pb https://github.com/cwbudde/hercules > hercules.pb
 hercules combine go-git.pb hercules.pb | labours -f pb -m burndown-project --resample M
 ```
 
@@ -722,7 +722,7 @@ contain `"type"` which reflects the plot kind.
 
 ### Caveats
 
-1. Processing all the commits may fail in some rare cases. If you get an error similar to https://github.com/meko-christian/hercules/issues/106
+1. Processing all the commits may fail in some rare cases. If you get an error similar to https://github.com/cwbudde/hercules/issues/106
    please report there and specify `--first-parent` as a workaround.
 1. Burndown collection may fail with an Out-Of-Memory error. See the next session for the workarounds.
 1. `--sentiment` and couples embeddings are optional/experimental TensorFlow-backed paths. They are

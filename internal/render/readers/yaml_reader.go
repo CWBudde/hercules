@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/meko-christian/hercules/internal/render/burndown"
-	"github.com/meko-christian/hercules/internal/render/progress"
+	"github.com/cwbudde/hercules/internal/render/burndown"
+	"github.com/cwbudde/hercules/internal/render/progress"
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"
 )

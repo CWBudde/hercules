@@ -19,7 +19,7 @@ trigger.
 - `just test-visual` / `just test-visual-parity` - Run the chart rendering test harness (see [docs/RENDER_PARITY.md](docs/RENDER_PARITY.md))
 - `just clean` - Clean build artifacts
 - `just help` - List all available recipes
-- `go test github.com/meko-christian/hercules` - Run Go tests directly
+- `go test github.com/cwbudde/hercules` - Run Go tests directly
 
 ## Project Architecture
 

@@ -6,8 +6,8 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/meko-christian/hercules/internal/core"
-	"github.com/meko-christian/hercules/internal/plumbing"
+	"github.com/cwbudde/hercules/internal/core"
+	"github.com/cwbudde/hercules/internal/plumbing"
 )
 
 // DenseHistory is a 2D matrix with dimensions [number of samples][number of bands] -> number of lines.

@@ -14,14 +14,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cwbudde/hercules/internal/render/graphics"
+	"github.com/cwbudde/hercules/internal/render/readers"
 	"github.com/cwbudde/matplotlib-go/backends"
 	_ "github.com/cwbudde/matplotlib-go/backends/agg"
 	_ "github.com/cwbudde/matplotlib-go/backends/svg"
 	"github.com/cwbudde/matplotlib-go/core"
 	"github.com/cwbudde/matplotlib-go/render"
 	"github.com/cwbudde/matplotlib-go/style"
-	"github.com/meko-christian/hercules/internal/render/graphics"
-	"github.com/meko-christian/hercules/internal/render/readers"
 )
 
 // temporalWeekdayLabels matches Python labours' WEEKDAY_LABELS ordering, which

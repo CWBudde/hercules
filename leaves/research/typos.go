@@ -6,17 +6,17 @@ import (
 	"io"
 	"unicode/utf8"
 
+	"github.com/cwbudde/hercules/internal/core"
+	"github.com/cwbudde/hercules/internal/levenshtein"
+	"github.com/cwbudde/hercules/internal/pb"
+	items "github.com/cwbudde/hercules/internal/plumbing"
+	ast_items "github.com/cwbudde/hercules/internal/plumbing/ast"
+	"github.com/cwbudde/hercules/internal/yaml"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/utils/merkletrie"
 	"github.com/gogo/protobuf/proto"
-	"github.com/meko-christian/hercules/internal/core"
-	"github.com/meko-christian/hercules/internal/levenshtein"
-	"github.com/meko-christian/hercules/internal/pb"
-	items "github.com/meko-christian/hercules/internal/plumbing"
-	ast_items "github.com/meko-christian/hercules/internal/plumbing/ast"
-	"github.com/meko-christian/hercules/internal/yaml"
 	"github.com/sergi/go-diff/diffmatchpatch"
 )
 

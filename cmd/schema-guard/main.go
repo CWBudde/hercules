@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/meko-christian/hercules/internal/pb/schema"
+	"github.com/cwbudde/hercules/internal/pb/schema"
 )
 
 func main() {

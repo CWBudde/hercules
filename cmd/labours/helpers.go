@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/araddon/dateparse"
-	"github.com/meko-christian/hercules/internal/render"
-	"github.com/meko-christian/hercules/internal/render/readers"
+	"github.com/cwbudde/hercules/internal/render"
+	"github.com/cwbudde/hercules/internal/render/readers"
 	"github.com/spf13/viper"
 )
 

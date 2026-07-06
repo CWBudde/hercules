@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/meko-christian/hercules/internal/render/graphics"
+	"github.com/cwbudde/hercules/internal/render/graphics"
 )
 
 const maxPythonCouplingHeatmapEntries = 60

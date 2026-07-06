@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/meko-christian/hercules/internal/render/graphics"
-	"github.com/meko-christian/hercules/internal/render/readers"
+	"github.com/cwbudde/hercules/internal/render/graphics"
+	"github.com/cwbudde/hercules/internal/render/readers"
 )
 
 // ShotnessResult represents a processed shotness record with aggregated statistics

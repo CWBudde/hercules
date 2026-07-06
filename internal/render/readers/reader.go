@@ -4,7 +4,7 @@ import (
 	"errors"
 	"io"
 
-	"github.com/meko-christian/hercules/internal/render/burndown"
+	"github.com/cwbudde/hercules/internal/render/burndown"
 )
 
 var (

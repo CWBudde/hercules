@@ -6,8 +6,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/meko-christian/hercules/internal/render/burndown"
-	"github.com/meko-christian/hercules/internal/render/readers"
+	"github.com/cwbudde/hercules/internal/render/burndown"
+	"github.com/cwbudde/hercules/internal/render/readers"
 )
 
 // MockReader implements readers.Reader interface for testing sentiment mode

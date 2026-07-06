@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/meko-christian/hercules/internal/render/burndown"
+	"github.com/cwbudde/hercules/internal/render/burndown"
 	"github.com/spf13/viper"
 )
 

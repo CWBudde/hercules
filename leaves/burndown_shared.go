@@ -5,8 +5,8 @@ import (
 	"sort"
 	"time"
 
-	"github.com/meko-christian/hercules/internal/burndown"
-	"github.com/meko-christian/hercules/internal/core"
+	"github.com/cwbudde/hercules/internal/burndown"
+	"github.com/cwbudde/hercules/internal/core"
 )
 
 const (

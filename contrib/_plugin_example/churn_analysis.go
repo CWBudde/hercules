@@ -7,12 +7,12 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/cwbudde/hercules"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/utils/merkletrie"
 	"github.com/gogo/protobuf/proto"
-	"github.com/meko-christian/hercules"
 	"github.com/sergi/go-diff/diffmatchpatch"
 )
 

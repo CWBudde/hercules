@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/meko-christian/hercules/internal/pb/schema"
+	"github.com/cwbudde/hercules/internal/pb/schema"
 )
 
 // TestProtobufSchemaSnapshot guards pb.proto against unreviewed changes:

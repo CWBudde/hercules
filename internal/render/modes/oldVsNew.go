@@ -6,8 +6,8 @@ import (
 	"math"
 	"time"
 
-	"github.com/meko-christian/hercules/internal/render/graphics"
-	"github.com/meko-christian/hercules/internal/render/readers"
+	"github.com/cwbudde/hercules/internal/render/graphics"
+	"github.com/cwbudde/hercules/internal/render/readers"
 )
 
 // OldVsNew generates an analysis showing the evolution of new code vs modifications to existing code over time.

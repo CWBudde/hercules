@@ -5,6 +5,10 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/cwbudde/hercules/internal/core"
+	"github.com/cwbudde/hercules/internal/pb"
+	items "github.com/cwbudde/hercules/internal/plumbing"
+	"github.com/cwbudde/hercules/internal/plumbing/identity"
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5"
@@ -12,10 +16,6 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/gogo/protobuf/proto"
-	"github.com/meko-christian/hercules/internal/core"
-	"github.com/meko-christian/hercules/internal/pb"
-	items "github.com/meko-christian/hercules/internal/plumbing"
-	"github.com/meko-christian/hercules/internal/plumbing/identity"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

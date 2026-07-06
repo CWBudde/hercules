@@ -5,9 +5,9 @@ import (
 	"log"
 	"math"
 
-	"github.com/meko-christian/hercules/internal"
-	"github.com/meko-christian/hercules/internal/core"
-	"github.com/meko-christian/hercules/internal/rbtree"
+	"github.com/cwbudde/hercules/internal"
+	"github.com/cwbudde/hercules/internal/core"
+	"github.com/cwbudde/hercules/internal/rbtree"
 )
 
 // Updater is the function which is called back on File.Update().

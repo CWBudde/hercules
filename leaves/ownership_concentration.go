@@ -8,14 +8,14 @@ import (
 	"sort"
 	"time"
 
+	"github.com/cwbudde/hercules/internal/core"
+	"github.com/cwbudde/hercules/internal/linehistory"
+	"github.com/cwbudde/hercules/internal/pb"
+	items "github.com/cwbudde/hercules/internal/plumbing"
+	"github.com/cwbudde/hercules/internal/plumbing/identity"
+	"github.com/cwbudde/hercules/internal/yaml"
 	"github.com/go-git/go-git/v5"
 	"github.com/gogo/protobuf/proto"
-	"github.com/meko-christian/hercules/internal/core"
-	"github.com/meko-christian/hercules/internal/linehistory"
-	"github.com/meko-christian/hercules/internal/pb"
-	items "github.com/meko-christian/hercules/internal/plumbing"
-	"github.com/meko-christian/hercules/internal/plumbing/identity"
-	"github.com/meko-christian/hercules/internal/yaml"
 )
 
 // OwnershipConcentrationAnalysis computes the Gini coefficient and

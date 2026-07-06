@@ -6,10 +6,10 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/cwbudde/hercules/internal/core"
+	items "github.com/cwbudde/hercules/internal/plumbing"
+	"github.com/cwbudde/hercules/internal/plumbing/identity"
 	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/meko-christian/hercules/internal/core"
-	items "github.com/meko-christian/hercules/internal/plumbing"
-	"github.com/meko-christian/hercules/internal/plumbing/identity"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v2"

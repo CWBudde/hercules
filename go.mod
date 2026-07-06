@@ -1,4 +1,4 @@
-module github.com/meko-christian/hercules
+module github.com/cwbudde/hercules
 
 go 1.25.0
 
@@ -11,7 +11,7 @@ require (
 	github.com/go-git/go-billy/v5 v5.4.0
 	github.com/go-git/go-git/v5 v5.5.2
 	github.com/gogo/protobuf v1.3.2
-	github.com/meko-christian/go-billy-siva v0.5.1
+	github.com/cyraxred/go-billy-siva v0.5.1
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/odvcencio/gotreesitter v0.15.3
 	github.com/pkg/errors v0.9.1
@@ -82,5 +82,3 @@ require (
 	gopkg.in/toqueteos/substring.v1 v1.0.2 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 )
-
-replace github.com/meko-christian/go-billy-siva => github.com/cyraxred/go-billy-siva v0.5.1

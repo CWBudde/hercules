@@ -5,8 +5,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/cwbudde/hercules/internal/pb"
 	"github.com/gogo/protobuf/proto"
-	"github.com/meko-christian/hercules/internal/pb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

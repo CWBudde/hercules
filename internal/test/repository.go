@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 
+	sivafs "github.com/cyraxred/go-billy-siva"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5"
@@ -21,7 +22,6 @@ import (
 	"github.com/go-git/go-git/v5/storage"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/go-git/go-git/v5/storage/memory"
-	sivafs "github.com/meko-christian/go-billy-siva"
 )
 
 // Repository is a boilerplate sample repository (Hercules itself).

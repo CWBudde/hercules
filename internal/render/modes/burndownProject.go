@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/meko-christian/hercules/internal/render/readers"
+	"github.com/cwbudde/hercules/internal/render/readers"
 )
 
 // BurndownProject generates a burndown chart for the entire project.

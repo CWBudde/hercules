@@ -6,13 +6,13 @@ import (
 	"os"
 	"sort"
 
+	"github.com/cwbudde/hercules/internal/core"
+	"github.com/cwbudde/hercules/internal/linehistory"
+	"github.com/cwbudde/hercules/internal/plumbing/identity"
+	"github.com/cwbudde/hercules/internal/yaml"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/meko-christian/hercules/internal/core"
-	"github.com/meko-christian/hercules/internal/linehistory"
-	"github.com/meko-christian/hercules/internal/plumbing/identity"
-	"github.com/meko-christian/hercules/internal/yaml"
 )
 
 type LineDumperCommit struct {

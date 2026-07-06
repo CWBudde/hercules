@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/meko-christian/hercules/internal/core"
+	"github.com/cwbudde/hercules/internal/core"
 	"github.com/stretchr/testify/assert"
 )
 

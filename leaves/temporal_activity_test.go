@@ -5,11 +5,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cwbudde/hercules/internal/core"
+	items "github.com/cwbudde/hercules/internal/plumbing"
+	"github.com/cwbudde/hercules/internal/plumbing/identity"
+	"github.com/cwbudde/hercules/internal/test"
 	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/meko-christian/hercules/internal/core"
-	items "github.com/meko-christian/hercules/internal/plumbing"
-	"github.com/meko-christian/hercules/internal/plumbing/identity"
-	"github.com/meko-christian/hercules/internal/test"
 	"github.com/stretchr/testify/assert"
 )
 

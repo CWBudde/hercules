@@ -5,10 +5,10 @@ import (
 	"io"
 	"sort"
 
+	"github.com/cwbudde/hercules/internal/pb"
+	"github.com/cwbudde/hercules/internal/render/burndown"
+	"github.com/cwbudde/hercules/internal/render/progress"
 	"github.com/gogo/protobuf/proto"
-	"github.com/meko-christian/hercules/internal/pb"
-	"github.com/meko-christian/hercules/internal/render/burndown"
-	"github.com/meko-christian/hercules/internal/render/progress"
 	"github.com/spf13/viper"
 )
 

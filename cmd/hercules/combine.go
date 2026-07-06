@@ -11,11 +11,11 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/cwbudde/hercules"
+	"github.com/cwbudde/hercules/internal/burndown"
+	"github.com/cwbudde/hercules/internal/pb"
+	"github.com/cwbudde/hercules/leaves"
 	"github.com/gogo/protobuf/proto"
-	"github.com/meko-christian/hercules"
-	"github.com/meko-christian/hercules/internal/burndown"
-	"github.com/meko-christian/hercules/internal/pb"
-	"github.com/meko-christian/hercules/leaves"
 	"github.com/spf13/cobra"
 	progress "gopkg.in/cheggaaa/pb.v1"
 )

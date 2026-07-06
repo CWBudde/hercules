@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	ast_items "github.com/meko-christian/hercules/internal/plumbing/ast"
+	ast_items "github.com/cwbudde/hercules/internal/plumbing/ast"
 )
 
 // buildLargeGoSource synthesizes a Go file with `funcs` short functions, totalling

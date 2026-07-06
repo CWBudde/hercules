@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/meko-christian/hercules/internal/render/modes"
-	"github.com/meko-christian/hercules/internal/render/progress"
-	"github.com/meko-christian/hercules/internal/render/readers"
+	"github.com/cwbudde/hercules/internal/render/modes"
+	"github.com/cwbudde/hercules/internal/render/progress"
+	"github.com/cwbudde/hercules/internal/render/readers"
 	"github.com/spf13/viper"
 )
 

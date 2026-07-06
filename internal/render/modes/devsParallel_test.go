@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/meko-christian/hercules/internal/render/readers"
+	"github.com/cwbudde/hercules/internal/render/readers"
 )
 
 func TestDevsParallelRequiresPeopleBurndownByDefault(t *testing.T) {

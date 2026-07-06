@@ -12,8 +12,8 @@ import (
 	"fmt"
 	"io"
 
+	hercules "github.com/cwbudde/hercules"
 	"github.com/go-git/go-git/v5"
-	hercules "github.com/meko-christian/hercules"
 )
 
 // MinimalPluginTest counts the number of consumed commits.

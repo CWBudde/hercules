@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cwbudde/hercules/internal/render/graphics"
+	"github.com/cwbudde/hercules/internal/render/progress"
+	"github.com/cwbudde/hercules/internal/render/readers"
 	"github.com/cwbudde/matplotlib-go/core"
-	"github.com/meko-christian/hercules/internal/render/graphics"
-	"github.com/meko-christian/hercules/internal/render/progress"
-	"github.com/meko-christian/hercules/internal/render/readers"
 	"github.com/spf13/viper"
 )
 

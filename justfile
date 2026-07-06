@@ -25,11 +25,11 @@ default: hercules labours
 
 # Build the hercules binary
 hercules: vendor pb-go
-    go build -tags "{{tags}}" -ldflags "-X github.com/meko-christian/hercules.BinaryGitHash=`git rev-parse HEAD`" github.com/meko-christian/hercules/cmd/hercules
+    go build -tags "{{tags}}" -ldflags "-X github.com/cwbudde/hercules.BinaryGitHash=`git rev-parse HEAD`" github.com/cwbudde/hercules/cmd/hercules
 
 # Build the labours binary (Go renderer)
 labours: vendor pb-go
-    go build -tags "{{tags}}" -ldflags "-X main.version=`git describe --tags --always` -X main.commit=`git rev-parse HEAD` -X main.date=`date -u +%Y-%m-%dT%H:%M:%SZ`" github.com/meko-christian/hercules/cmd/labours
+    go build -tags "{{tags}}" -ldflags "-X main.version=`git describe --tags --always` -X main.commit=`git rev-parse HEAD` -X main.date=`date -u +%Y-%m-%dT%H:%M:%SZ`" github.com/cwbudde/hercules/cmd/labours
 
 # Run all tests for the default build
 test: hercules labours

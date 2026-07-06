@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"runtime"
 
-	"github.com/meko-christian/hercules/internal/pb"
+	"github.com/cwbudde/hercules/internal/pb"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )

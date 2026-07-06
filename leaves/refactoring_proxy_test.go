@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/cwbudde/hercules/internal/core"
+	items "github.com/cwbudde/hercules/internal/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/meko-christian/hercules/internal/core"
-	items "github.com/meko-christian/hercules/internal/plumbing"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

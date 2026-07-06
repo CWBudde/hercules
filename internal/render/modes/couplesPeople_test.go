@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/meko-christian/hercules/internal/render/burndown"
-	"github.com/meko-christian/hercules/internal/render/readers"
+	"github.com/cwbudde/hercules/internal/render/burndown"
+	"github.com/cwbudde/hercules/internal/render/readers"
 	"github.com/spf13/viper"
 )
 

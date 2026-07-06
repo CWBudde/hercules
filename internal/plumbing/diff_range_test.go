@@ -3,7 +3,7 @@ package plumbing
 import (
 	"testing"
 
-	ast_items "github.com/meko-christian/hercules/internal/plumbing/ast"
+	ast_items "github.com/cwbudde/hercules/internal/plumbing/ast"
 	"github.com/sergi/go-diff/diffmatchpatch"
 )
 

@@ -6,12 +6,12 @@ import (
 	"os"
 	"testing"
 
+	"github.com/cwbudde/hercules/internal/core"
+	items "github.com/cwbudde/hercules/internal/plumbing"
+	ast_items "github.com/cwbudde/hercules/internal/plumbing/ast"
+	"github.com/cwbudde/hercules/internal/test"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/meko-christian/hercules/internal/core"
-	items "github.com/meko-christian/hercules/internal/plumbing"
-	ast_items "github.com/meko-christian/hercules/internal/plumbing/ast"
-	"github.com/meko-christian/hercules/internal/test"
 	"github.com/stretchr/testify/assert"
 )
 

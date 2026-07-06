@@ -3,7 +3,7 @@ package modes
 import (
 	"testing"
 
-	"github.com/meko-christian/hercules/internal/render/readers"
+	"github.com/cwbudde/hercules/internal/render/readers"
 )
 
 // TestRepositoryBands verifies that each repository becomes its own stacked

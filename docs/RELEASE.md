@@ -1,6 +1,6 @@
 # Hercules Release Guide
 
-This guide records the release policy for the `meko-christian/hercules` fork.
+This guide records the release policy for the `CWBudde/hercules` fork.
 
 ## Supported Default Build
 
@@ -35,7 +35,7 @@ Optional builds are not the default release artifacts unless a release note expl
 Builds produced through `just` embed the current Git hash with:
 
 ```bash
--ldflags "-X github.com/meko-christian/hercules.BinaryGitHash=$(git rev-parse HEAD)"
+-ldflags "-X github.com/cwbudde/hercules.BinaryGitHash=$(git rev-parse HEAD)"
 ```
 
 For tagged releases, create the tag from the commit used to build the binary and verify

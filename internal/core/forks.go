@@ -434,7 +434,7 @@ func mergeDag(
 		}
 
 		c := head
-		for true {
+		for {
 			nextParents := parents[c]
 
 			var next plumbing.Hash
@@ -453,7 +453,7 @@ func mergeDag(
 		head = c
 		var seq []*object.Commit
 
-		for true {
+		for {
 			visited[c] = true
 
 			seq = append(seq, hashes[c.String()])

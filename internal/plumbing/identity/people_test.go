@@ -3,7 +3,6 @@ package identity
 import (
 	"errors"
 	"io"
-	"io/ioutil"
 	"os"
 	"path"
 	"reflect"
@@ -64,7 +63,7 @@ func TestPeopleDetectorConfigure(t *testing.T) {
 	assert.Equal(t, m1, id.PeopleDict)
 	assert.Equal(t, m2, id.ReversedPeopleDict)
 
-	tmpf, err := ioutil.TempFile("", "hercules-test-")
+	tmpf, err := os.CreateTemp(t.TempDir(), "hercules-test-")
 	assert.NoError(t, err)
 	defer func() { _ = os.Remove(tmpf.Name()) }()
 	_, err = tmpf.WriteString("Egor|egor@sourced.tech\nVadim|vadim@sourced.tech")
@@ -97,6 +96,7 @@ func TestPeopleDetectorConfigure(t *testing.T) {
 	delete(facts, ConfigIdentityDetectorPeopleDictPath)
 	commits := make([]*object.Commit, 0)
 	iter, err := test.Repository.CommitObjects()
+	assert.NoError(t, err)
 	commit, err := iter.Next()
 	for ; !errors.Is(err, io.EOF); commit, err = iter.Next() {
 		if err != nil {
@@ -210,6 +210,7 @@ func TestPeopleDetectorGeneratePeopleDict(t *testing.T) {
 	id := fixturePeopleDetector()
 	commits := make([]*object.Commit, 0)
 	iter, err := test.Repository.CommitObjects()
+	assert.NoError(t, err)
 	commit, err := iter.Next()
 	for ; !errors.Is(err, io.EOF); commit, err = iter.Next() {
 		if err != nil {
@@ -264,6 +265,7 @@ func TestPeopleDetectorGeneratePeopleDictExact(t *testing.T) {
 	id.ExactSignatures = true
 	commits := make([]*object.Commit, 0)
 	iter, err := test.Repository.CommitObjects()
+	assert.NoError(t, err)
 	commit, err := iter.Next()
 	for ; !errors.Is(err, io.EOF); commit, err = iter.Next() {
 		if err != nil {
@@ -389,7 +391,7 @@ func (obj fakeBlobEncodedObject) Size() int64 {
 func (obj fakeBlobEncodedObject) SetSize(int64) {}
 
 func (obj fakeBlobEncodedObject) Reader() (io.ReadCloser, error) {
-	return ioutil.NopCloser(strings.NewReader(obj.Contents)), nil
+	return io.NopCloser(strings.NewReader(obj.Contents)), nil
 }
 
 func (obj fakeBlobEncodedObject) Writer() (io.WriteCloser, error) {
@@ -417,7 +419,7 @@ func (obj fakeTreeEncodedObject) Size() int64 {
 func (obj fakeTreeEncodedObject) SetSize(int64) {}
 
 func (obj fakeTreeEncodedObject) Reader() (io.ReadCloser, error) {
-	return ioutil.NopCloser(strings.NewReader(
+	return io.NopCloser(strings.NewReader(
 		"100644 " + obj.Name + "\x00ffffffffffffffffffffffffffffffffffffffff",
 	)), nil
 }
@@ -496,6 +498,7 @@ func TestPeopleDetectorGeneratePeopleDictMailmap(t *testing.T) {
 	id := fixturePeopleDetector()
 	commits := make([]*object.Commit, 0)
 	iter, err := test.Repository.CommitObjects()
+	assert.NoError(t, err)
 	commit, err := iter.Next()
 	for ; !errors.Is(err, io.EOF); commit, err = iter.Next() {
 		if err != nil {

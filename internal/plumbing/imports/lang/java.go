@@ -36,7 +36,7 @@ func (javaExtractor) Imports(content []byte) ([]string, error) {
 			n := c.Node
 
 			parts := make([]string, 0, n.ChildCount())
-			for i := 0; i < n.ChildCount(); i++ {
+			for i := range n.ChildCount() {
 				child := n.Child(i)
 				switch child.Type(javaLang) {
 				case "identifier":

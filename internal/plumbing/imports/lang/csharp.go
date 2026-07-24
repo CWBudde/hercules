@@ -74,7 +74,7 @@ func csharpJoinName(node *sitter.Node, content []byte) string {
 			return
 		}
 
-		for i := 0; i < n.ChildCount(); i++ {
+		for i := range n.ChildCount() {
 			walk(n.Child(i))
 		}
 	}

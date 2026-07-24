@@ -29,7 +29,7 @@ func (tsExtractor) Imports(content []byte) ([]string, error) {
 
 	eachNodeOfTypes(root, tsLang, func(n *sitter.Node) bool {
 		if n.Type(tsLang) == "export_statement" {
-			for i := 0; i < n.ChildCount(); i++ {
+			for i := range n.ChildCount() {
 				child := n.Child(i)
 				if child.Type(tsLang) != "string" {
 					continue
@@ -41,13 +41,13 @@ func (tsExtractor) Imports(content []byte) ([]string, error) {
 			return false
 		}
 		// import_statement
-		for i := 0; i < n.ChildCount(); i++ {
+		for i := range n.ChildCount() {
 			child := n.Child(i)
 			switch child.Type(tsLang) {
 			case "string":
 				out = append(out, stripStringQuotes(child, content))
 			case "import_require_clause":
-				for j := 0; j < child.ChildCount(); j++ {
+				for j := range child.ChildCount() {
 					inner := child.Child(j)
 					if inner.Type(tsLang) != "string" {
 						continue

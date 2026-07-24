@@ -105,7 +105,7 @@ func (analyser *BurndownAnalysis) Requires() []string {
 
 // ListConfigurationOptions returns the list of changeable public properties of this PipelineItem.
 func (analyser *BurndownAnalysis) ListConfigurationOptions() []core.ConfigurationOption {
-	opts := make([]core.ConfigurationOption, len(BurndownSharedOptions))
+	opts := make([]core.ConfigurationOption, len(BurndownSharedOptions), len(BurndownSharedOptions)+2)
 	copy(opts, BurndownSharedOptions[:])
 	opts = append(opts, core.ConfigurationOption{
 		Name:        ConfigBurndownHibernationDisk,

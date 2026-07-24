@@ -1,7 +1,6 @@
 package rbtree
 
 import (
-	"io/ioutil"
 	"math/rand"
 	"os"
 	"slices"
@@ -558,7 +557,7 @@ func TestAllocatorHibernateTruncation(t *testing.T) {
 	assert.Equal(t, 51, alloc.Used())
 
 	alloc.Hibernate()
-	assert.Equal(t, 51, int(alloc.hibernatedStorageLen))
+	assert.Equal(t, 51, alloc.hibernatedStorageLen)
 	alloc.Boot()
 	assert.Equal(t, 0, int(alloc.nextGap))
 	assert.Equal(t, 0, int(alloc.gapCount))
@@ -598,13 +597,13 @@ func TestAllocatorNothingToHibernate(t *testing.T) {
 
 	alloc.Hibernate()
 	assert.Equal(t, 0, int(alloc.nextGap))
-	assert.Equal(t, 0, int(alloc.hibernatedStorageLen))
+	assert.Equal(t, 0, alloc.hibernatedStorageLen)
 	assert.Equal(t, 0, alloc.Size())
 	assert.Equal(t, 0, alloc.Used())
 
 	alloc.Boot()
 	assert.Equal(t, 0, int(alloc.nextGap))
-	assert.Equal(t, 0, int(alloc.hibernatedStorageLen))
+	assert.Equal(t, 0, alloc.hibernatedStorageLen)
 	assert.Equal(t, 0, alloc.Size())
 	assert.Equal(t, 0, alloc.Used())
 }
@@ -647,7 +646,7 @@ func TestAllocatorSerializeDeserialize(t *testing.T) {
 		func() { alloc.Deserialize("...") })
 
 	alloc.Hibernate()
-	file, err := ioutil.TempFile("", "")
+	file, err := os.CreateTemp(t.TempDir(), "")
 	assert.NoError(t, err)
 	name := file.Name()
 	defer os.Remove(name)

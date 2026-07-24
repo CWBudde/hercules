@@ -53,12 +53,6 @@ type CodeChurnAnalysis struct {
 	l core.Logger
 }
 
-type churnDeletedFileEntry struct {
-	fileId    core.FileId
-	deletedAt int
-	entry     churnFileEntry
-}
-
 type personChurnStats struct {
 	files map[core.FileId]churnFileEntry
 }

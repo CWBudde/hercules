@@ -263,7 +263,7 @@ func (analyser *LineHistoryLoader) loadChangesFrom(name string) error {
 	}
 }
 
-var regexSplitBySpace = regexp.MustCompile("\\s+")
+var regexSplitBySpace = regexp.MustCompile(`\s+`)
 
 func (analyser *LineHistoryLoader) loadChangesFromYaml(decoder *yaml.Decoder) error {
 	type dumperScheme struct {

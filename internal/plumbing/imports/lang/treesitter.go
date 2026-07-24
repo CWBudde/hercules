@@ -63,7 +63,7 @@ func eachNode(root *sitter.Node, lang *sitter.Language, fnc func(n *sitter.Node)
 		return
 	}
 
-	for i := 0; i < root.ChildCount(); i++ {
+	for i := range root.ChildCount() {
 		eachNode(root.Child(i), lang, fnc)
 	}
 }

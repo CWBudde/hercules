@@ -216,8 +216,6 @@ func AddBurndownMatrix(matrix DenseHistory, granularity, sampling int, accPerTic
 		perTick[i] = nil
 	}
 
-	perTick = nil
-
 	runtime.GC()
 	var a runtime.MemStats
 	runtime.ReadMemStats(&a)
@@ -299,8 +297,6 @@ func MergeBurndownMatrices(
 	for i := range perTick {
 		perTick[i] = nil
 	}
-
-	perTick = nil
 
 	runtime.GC()
 

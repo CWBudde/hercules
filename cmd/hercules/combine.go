@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"sort"
@@ -199,7 +198,7 @@ func loadMessage(fileName string, repos *[]string) (
 		errs = append(errs, "Cannot parse "+fileName+": file size is 0")
 		return nil, nil, "", errs
 	}
-	buffer, err := ioutil.ReadFile(fileName)
+	buffer, err := os.ReadFile(fileName)
 	if err != nil {
 		errs = append(errs, "Cannot read "+fileName+": "+err.Error())
 		return nil, nil, "", errs
@@ -293,8 +292,9 @@ func mergeResults(mergedResults map[string]any,
 }
 
 func getOptionsString() string {
-	var leaves []string
-	for _, leaf := range hercules.Registry.GetLeaves() {
+	registeredLeaves := hercules.Registry.GetLeaves()
+	leaves := make([]string, 0, len(registeredLeaves))
+	for _, leaf := range registeredLeaves {
 		leaves = append(leaves, leaf.Name())
 	}
 	return strings.Join(leaves, ", ")

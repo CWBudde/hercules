@@ -311,7 +311,7 @@ func (g *Graph) Serialize(sorted []string) string {
 	var buffer bytes.Buffer
 	buffer.WriteString("digraph Hercules {\n")
 
-	var nodesFrom []string
+	nodesFrom := make([]string, 0, len(g.outputs))
 	for nodeFrom := range g.outputs {
 		nodesFrom = append(nodesFrom, nodeFrom)
 	}
@@ -319,7 +319,7 @@ func (g *Graph) Serialize(sorted []string) string {
 	g.Sort(nodesFrom)
 
 	for _, nodeFrom := range nodesFrom {
-		var links []string
+		links := make([]string, 0, len(g.outputs[nodeFrom]))
 		for nodeTo := range g.outputs[nodeFrom] {
 			links = append(links, nodeTo)
 		}
@@ -350,7 +350,7 @@ func (g *Graph) DebugDump() string {
 	var buffer bytes.Buffer
 	buffer.WriteString(strings.Join(S, " ") + "\n")
 
-	keys := []string(nil)
+	keys := make([]string, 0, len(g.outputs))
 	vals := map[string][]string{}
 
 	for key, val1 := range g.outputs {

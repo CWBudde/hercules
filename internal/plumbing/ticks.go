@@ -117,7 +117,7 @@ func (ticks *TicksSinceStart) Initialize(repository *git.Repository) error {
 
 	ticks.previousTick = 0
 	if len(ticks.commits) > 0 {
-		keys := make([]int, len(ticks.commits))
+		keys := make([]int, 0, len(ticks.commits))
 		for key := range ticks.commits {
 			keys = append(keys, key)
 		}

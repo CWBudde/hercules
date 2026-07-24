@@ -631,7 +631,7 @@ func TestMergeTrackingStress(t *testing.T) {
 	_, tip := newCommit(nextID())
 	// Five stacked diamonds with growing branch lengths.
 	for width := 1; width <= 5; width++ {
-		var heads []string
+		heads := make([]string, 0, 2)
 		for range 2 {
 			parent := tip
 			for range width {
@@ -642,7 +642,7 @@ func TestMergeTrackingStress(t *testing.T) {
 		_, tip = newCommit(nextID(), heads...)
 	}
 	// One octopus across four branches.
-	var heads []string
+	heads := make([]string, 0, 4)
 	for range 4 {
 		_, head := newCommit(nextID(), tip)
 		heads = append(heads, head)

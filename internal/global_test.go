@@ -1,7 +1,6 @@
 package internal_test
 
 import (
-	"io/ioutil"
 	"os"
 	"path"
 	"testing"
@@ -19,12 +18,12 @@ func TestPipelineSerialize(t *testing.T) {
 	pipeline.DeployItem(&leaves.LegacyBurndownAnalysis{})
 	facts := map[string]any{}
 	facts[core.ConfigPipelineDryRun] = true
-	tmpdir, _ := ioutil.TempDir("", "hercules-")
+	tmpdir, _ := os.MkdirTemp("", "hercules-")
 	defer func() { _ = os.RemoveAll(tmpdir) }()
 	dotpath := path.Join(tmpdir, "graph.dot")
 	facts[core.ConfigPipelineDAGPath] = dotpath
 	_ = pipeline.Initialize(facts)
-	bdot, _ := ioutil.ReadFile(dotpath)
+	bdot, _ := os.ReadFile(dotpath)
 	dot := string(bdot)
 	assert.Equal(t, `digraph Hercules {
   "5 BlobCache_1" -> "6 [blob_cache]"

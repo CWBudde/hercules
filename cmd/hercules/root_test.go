@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -35,7 +34,7 @@ func TestLoadGitRepositoryWithCreds(t *testing.T) {
 }
 
 func TestLoadLocalRepository(t *testing.T) {
-	tempdir, err := ioutil.TempDir("", "hercules-")
+	tempdir, err := os.MkdirTemp("", "hercules-")
 	assert.NoError(t, err)
 	defer func() { _ = os.RemoveAll(tempdir) }()
 
@@ -130,7 +129,7 @@ func TestIdentityAuditWorkflowWritesJSON(t *testing.T) {
 }
 
 func TestIdentityTemplateWorkflowWritesPeopleDictFile(t *testing.T) {
-	tempdir, err := ioutil.TempDir("", "hercules-identity-")
+	tempdir, err := os.MkdirTemp("", "hercules-identity-")
 	assert.NoError(t, err)
 	defer func() { _ = os.RemoveAll(tempdir) }()
 	templatePath := filepath.Join(tempdir, "people.txt")

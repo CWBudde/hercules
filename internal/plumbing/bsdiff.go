@@ -52,7 +52,7 @@ func split(I, V []int, start, length, h int) {
 				}
 			}
 
-			for i = 0; i < j; i++ {
+			for i = range j {
 				V[I[k+i]] = k + j - 1
 			}
 
@@ -110,7 +110,7 @@ func split(I, V []int, start, length, h int) {
 		split(I, V, start, jj-start, h)
 	}
 
-	for i = 0; i < kk-jj; i++ {
+	for i = range kk - jj {
 		V[I[jj+i]] = kk - 1
 	}
 
@@ -184,7 +184,7 @@ func qsufsort(obuf []byte) []int {
 		}
 	}
 
-	for i = 0; i < len(obuf)+1; i++ {
+	for i = range len(obuf) + 1 {
 		I[V[i]] = i
 	}
 

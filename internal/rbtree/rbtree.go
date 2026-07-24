@@ -492,7 +492,7 @@ func (tree *RBTree) Insert(item Item) (bool, Iterator) {
 
 	alloc[n].color = red
 
-	for true {
+	for {
 		// Case 1: N is at the root
 		if alloc[n].parent == 0 {
 			alloc[n].color = black
@@ -837,7 +837,7 @@ func (tree *RBTree) doInsert(item Item) uint32 {
 	parent := tree.root
 
 	storage := tree.storage()
-	for true {
+	for {
 		parentNode := storage[parent]
 
 		comp := int(item.Key) - int(parentNode.item.Key)
@@ -875,8 +875,6 @@ func (tree *RBTree) doInsert(item Item) uint32 {
 			parent = parentNode.right
 		}
 	}
-
-	panic("should not reach here")
 }
 
 // Find a node whose item >= Key. The 2nd return Value is true iff the
@@ -886,7 +884,7 @@ func (tree RBTree) findGE(key uint32) (uint32, bool) {
 	alloc := tree.storage()
 
 	n := tree.root
-	for true {
+	for {
 		if n == 0 {
 			return 0, false
 		}
@@ -913,8 +911,6 @@ func (tree RBTree) findGE(key uint32) (uint32, bool) {
 			}
 		}
 	}
-
-	panic("should not reach here")
 }
 
 // Delete N from the tree.
@@ -1036,7 +1032,7 @@ func (tree *RBTree) swapNodes(n, pred uint32) {
 
 func (tree *RBTree) deleteCase1(n uint32) {
 	alloc := tree.storage()
-	for true {
+	for {
 		if alloc[n].parent != 0 {
 			if getColor(sibling(n, alloc), alloc) == red {
 				alloc[alloc[n].parent].color = red

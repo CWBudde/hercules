@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"io"
-	"io/ioutil"
+	"os"
 	"path"
 	"testing"
 	"time"
@@ -1245,7 +1245,7 @@ func TestLegacyBurndownMergeGlobalHistory(t *testing.T) {
 	assert.Equal(t, int64(0), merged.PeopleMatrix[2][2])
 	assert.Equal(t, int64(700), merged.PeopleMatrix[2][3])
 	assert.Equal(t, int64(800), merged.PeopleMatrix[2][4])
-	assert.NoError(t, bd.serializeBinary(&merged, ioutil.Discard))
+	assert.NoError(t, bd.serializeBinary(&merged, io.Discard))
 }
 
 func TestLegacyBurndownMergeGlobalHistory_withDifferentTickSizes(t *testing.T) {
@@ -1319,7 +1319,7 @@ func TestLegacyBurndownMergeNils(t *testing.T) {
 	assert.Nil(t, merged.FileHistories)
 	assert.Nil(t, merged.PeopleHistories)
 	assert.Nil(t, merged.PeopleMatrix)
-	assert.NoError(t, bd.serializeBinary(&merged, ioutil.Discard))
+	assert.NoError(t, bd.serializeBinary(&merged, io.Discard))
 
 	res2.GlobalHistory = [][]int64{
 		{900, 0, 0},
@@ -1375,11 +1375,11 @@ func TestLegacyBurndownMergeNils(t *testing.T) {
 	assert.Equal(t, int64(0), merged.PeopleMatrix[2][2])
 	assert.Equal(t, int64(0), merged.PeopleMatrix[2][3])
 	assert.Equal(t, int64(0), merged.PeopleMatrix[2][4])
-	assert.NoError(t, bd.serializeBinary(&merged, ioutil.Discard))
+	assert.NoError(t, bd.serializeBinary(&merged, io.Discard))
 }
 
 func TestLegacyBurndownDeserialize(t *testing.T) {
-	allBuffer, err := ioutil.ReadFile(path.Join("..", "internal", "test_data", "burndown.pb"))
+	allBuffer, err := os.ReadFile(path.Join("..", "internal", "test_data", "burndown.pb"))
 	assert.NoError(t, err)
 	bd := LegacyBurndownAnalysis{}
 	iresult, err := bd.Deserialize(allBuffer)
@@ -1638,7 +1638,7 @@ func TestLegacyBurndownMergePeopleHistories(t *testing.T) {
 	}
 	assert.Equal(t, mh, merged.PeopleHistories[2])
 	assert.Nil(t, merged.PeopleMatrix)
-	assert.NoError(t, bd.serializeBinary(&merged, ioutil.Discard))
+	assert.NoError(t, bd.serializeBinary(&merged, io.Discard))
 }
 
 func TestLegacyBurndownHandleRenameCycle(t *testing.T) {

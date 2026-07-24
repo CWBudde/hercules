@@ -257,7 +257,7 @@ func insertOnly(tree *rbtree.RBTree, iter rbtree.Iterator, origin rbtree.Item,
 func deleteRange(file *File, tree *rbtree.RBTree, iter rbtree.Iterator,
 	origin, prevOrigin rbtree.Item, time, pos, insLength, delLength int,
 ) (rbtree.Iterator, rbtree.Item) {
-	for true {
+	for {
 		node := iter.Item()
 
 		nextIter := iter.Next()

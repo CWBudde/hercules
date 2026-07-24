@@ -268,9 +268,8 @@ func (detector *StoryDetector) LoadMergeDict(path string) error {
 		for ; i < len(values); i++ {
 			value := values[i]
 			var key plumbing.Hash
-			n := 0
 
-			n, err = hex.Decode(key[:], []byte(value))
+			n, err := hex.Decode(key[:], []byte(value))
 			if err == nil && n != len(key) {
 				err = errors.Errorf("hash must be of %d bytes: %s", len(key), value)
 			}
@@ -290,7 +289,7 @@ func (detector *StoryDetector) LoadMergeDict(path string) error {
 			dict[key] = id
 		}
 
-		name := ""
+		var name string
 		if i == len(values) {
 			name = fmt.Sprintf("Merge #%d", id)
 		} else {

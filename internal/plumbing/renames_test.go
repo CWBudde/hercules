@@ -3,7 +3,7 @@ package plumbing
 import (
 	"bytes"
 	"compress/gzip"
-	"io/ioutil"
+	"io"
 	"os"
 	"path"
 	"sync"
@@ -340,15 +340,15 @@ func TestBlobsAreCloseBinary(t *testing.T) {
 
 func loadData(t *testing.T, name string) []byte {
 	gzsource, err := os.Open(path.Join("..", "test_data", name))
-	defer gzsource.Close()
 	if err != nil {
 		t.Errorf("open ../test_data/%s: %v", name, err)
 	}
+	defer gzsource.Close()
 	gzreader, err := gzip.NewReader(gzsource)
 	if err != nil {
 		t.Errorf("gzip ../test_data/%s: %v", name, err)
 	}
-	data, err := ioutil.ReadAll(gzreader)
+	data, err := io.ReadAll(gzreader)
 	if err != nil {
 		t.Errorf("gzip ../test_data/%s: %v", name, err)
 	}

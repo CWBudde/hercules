@@ -343,7 +343,7 @@ func (couples *CouplesAnalysis) Deserialize(pbmessage []byte) (any, error) {
 	}
 
 	if len(message.GetFileCouples().GetIndex()) != len(message.GetFilesLines()) {
-		err := fmt.Errorf("Couples PB message integrity violation: file_couples (%d) != file_lines (%d)",
+		err := fmt.Errorf("couples PB message integrity violation: file_couples (%d) != file_lines (%d)",
 			len(message.GetFileCouples().GetIndex()), len(message.GetFilesLines()))
 		couples.l.Critical(err)
 

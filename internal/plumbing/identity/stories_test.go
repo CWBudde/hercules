@@ -1,7 +1,6 @@
 package identity
 
 import (
-	"io/ioutil"
 	"os"
 	"testing"
 	"time"
@@ -93,7 +92,7 @@ func TestStoryDetectorConfigureWithDictPath(t *testing.T) {
 	sd := &StoryDetector{}
 
 	// Create temp file with merge dict
-	tmpf, err := ioutil.TempFile("", "hercules-story-test-*.txt")
+	tmpf, err := os.CreateTemp(t.TempDir(), "hercules-story-test-*.txt")
 	require.NoError(t, err)
 	defer os.Remove(tmpf.Name())
 
@@ -329,7 +328,7 @@ func TestStoryDetectorFork(t *testing.T) {
 func TestStoryDetectorLoadMergeDict(t *testing.T) {
 	sd := &StoryDetector{}
 
-	tmpf, err := ioutil.TempFile("", "hercules-story-load-*.txt")
+	tmpf, err := os.CreateTemp(t.TempDir(), "hercules-story-load-*.txt")
 	require.NoError(t, err)
 	defer os.Remove(tmpf.Name())
 
@@ -367,7 +366,7 @@ func TestStoryDetectorLoadMergeDictInvalidFile(t *testing.T) {
 func TestStoryDetectorLoadMergeDictInvalidHash(t *testing.T) {
 	sd := &StoryDetector{}
 
-	tmpf, err := ioutil.TempFile("", "hercules-story-invalid-*.txt")
+	tmpf, err := os.CreateTemp(t.TempDir(), "hercules-story-invalid-*.txt")
 	require.NoError(t, err)
 	defer os.Remove(tmpf.Name())
 
@@ -384,7 +383,7 @@ func TestStoryDetectorLoadMergeDictInvalidHash(t *testing.T) {
 func TestStoryDetectorLoadMergeDictShortHash(t *testing.T) {
 	sd := &StoryDetector{}
 
-	tmpf, err := ioutil.TempFile("", "hercules-story-short-*.txt")
+	tmpf, err := os.CreateTemp(t.TempDir(), "hercules-story-short-*.txt")
 	require.NoError(t, err)
 	defer os.Remove(tmpf.Name())
 
@@ -402,7 +401,7 @@ func TestStoryDetectorLoadMergeDictShortHash(t *testing.T) {
 func TestStoryDetectorLoadMergeDictDuplicateHash(t *testing.T) {
 	sd := &StoryDetector{}
 
-	tmpf, err := ioutil.TempFile("", "hercules-story-dup-*.txt")
+	tmpf, err := os.CreateTemp(t.TempDir(), "hercules-story-dup-*.txt")
 	require.NoError(t, err)
 	defer os.Remove(tmpf.Name())
 
@@ -600,7 +599,7 @@ func TestStoryDetectorIntegration(t *testing.T) {
 	sd := &StoryDetector{}
 
 	// Create merge dict file
-	tmpf, err := ioutil.TempFile("", "hercules-story-integration-*.txt")
+	tmpf, err := os.CreateTemp(t.TempDir(), "hercules-story-integration-*.txt")
 	require.NoError(t, err)
 	defer os.Remove(tmpf.Name())
 

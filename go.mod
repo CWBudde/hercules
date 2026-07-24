@@ -7,11 +7,11 @@ require (
 	github.com/araddon/dateparse v0.0.0-20210429162001-6b43995a97de
 	github.com/cwbudde/lz4 v1.0.2-0.20260419232955-5f478e68f711
 	github.com/cwbudde/matplotlib-go v0.3.1
+	github.com/cyraxred/go-billy-siva v0.5.1
 	github.com/fatih/camelcase v1.0.0
 	github.com/go-git/go-billy/v5 v5.4.0
 	github.com/go-git/go-git/v5 v5.5.2
 	github.com/gogo/protobuf v1.3.2
-	github.com/cyraxred/go-billy-siva v0.5.1
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/odvcencio/gotreesitter v0.15.3
 	github.com/pkg/errors v0.9.1
@@ -23,6 +23,7 @@ require (
 	github.com/src-d/enry/v2 v2.1.0
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/crypto v0.53.0
+	golang.org/x/term v0.44.0
 	gopkg.in/cheggaaa/pb.v1 v1.0.20
 	gopkg.in/vmarkovtsev/BiDiSentiment.v1 v1.0.0-20180311115214-75f168ddf161
 	gopkg.in/yaml.v2 v2.2.7
@@ -75,7 +76,6 @@ require (
 	golang.org/x/image v0.42.0 // indirect
 	golang.org/x/net v0.56.0 // indirect
 	golang.org/x/sys v0.46.0 // indirect
-	golang.org/x/term v0.44.0 // indirect
 	golang.org/x/text v0.38.0 // indirect
 	gopkg.in/neurosnap/sentences.v1 v1.0.6 // indirect
 	gopkg.in/src-d/go-siva.v1 v1.7.0 // indirect

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"testing"
 	"time"
@@ -462,7 +461,7 @@ func TestPipelineHeadCommit(t *testing.T) {
 }
 
 func TestLoadCommitsFromFile(t *testing.T) {
-	tmp, err := ioutil.TempFile("", "hercules-test-")
+	tmp, err := os.CreateTemp(t.TempDir(), "hercules-test-")
 	assert.NoError(t, err)
 	tmp.WriteString("cce947b98a050c6d356bc6ba95030254914027b1\n6db8065cdb9bb0758f36a7e75fc72ab95f9e8145")
 	tmp.Close()
@@ -479,7 +478,7 @@ func TestLoadCommitsFromFile(t *testing.T) {
 	commits, err = LoadCommitsFromFile("/WAT?xxx!", test.FixtureRepository())
 	assert.Nil(t, commits)
 	assert.Error(t, err)
-	tmp, err = ioutil.TempFile("", "hercules-test-")
+	tmp, err = os.CreateTemp(t.TempDir(), "hercules-test-")
 	assert.NoError(t, err)
 	tmp.WriteString("WAT")
 	tmp.Close()
@@ -487,7 +486,7 @@ func TestLoadCommitsFromFile(t *testing.T) {
 	commits, err = LoadCommitsFromFile(tmp.Name(), test.FixtureRepository())
 	assert.Nil(t, commits)
 	assert.Error(t, err)
-	tmp, err = ioutil.TempFile("", "hercules-test-")
+	tmp, err = os.CreateTemp(t.TempDir(), "hercules-test-")
 	assert.NoError(t, err)
 	tmp.WriteString("ffffffffffffffffffffffffffffffffffffffff")
 	tmp.Close()
@@ -1119,7 +1118,7 @@ func TestPipelineDAGDumpToFile(t *testing.T) {
 	pipeline := NewPipeline(test.FixtureRepository())
 	pipeline.AddItem(&testPipelineItem{})
 
-	tmpFile, err := ioutil.TempFile("", "hercules-dag-test-")
+	tmpFile, err := os.CreateTemp(t.TempDir(), "hercules-dag-test-")
 	require.NoError(t, err)
 	tmpFile.Close()
 	defer os.Remove(tmpFile.Name())
@@ -1129,7 +1128,7 @@ func TestPipelineDAGDumpToFile(t *testing.T) {
 	})
 	assert.NoError(t, err)
 
-	content, err := ioutil.ReadFile(tmpFile.Name())
+	content, err := os.ReadFile(tmpFile.Name())
 	assert.NoError(t, err)
 	assert.NotEmpty(t, content)
 }

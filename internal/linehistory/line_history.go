@@ -3,7 +3,6 @@ package linehistory
 import (
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"maps"
 	"os"
@@ -474,7 +473,7 @@ func (analyser *LineHistoryAnalyser) Hibernate() error {
 	analyser.fileAllocator.Hibernate()
 
 	if analyser.HibernationToDisk {
-		file, err := ioutil.TempFile(analyser.HibernationDirectory, "*-hercules.bin")
+		file, err := os.CreateTemp(analyser.HibernationDirectory, "*-hercules.bin")
 		if err != nil {
 			return err
 		}
@@ -630,7 +629,7 @@ func (analyser *LineHistoryAnalyser) handleInsertion(
 	}
 
 	hash := blob.Hash
-	file, err = analyser.newFile(hash, name, author, analyser.tick, lines)
+	_, err = analyser.newFile(hash, name, author, analyser.tick, lines)
 
 	return err
 }

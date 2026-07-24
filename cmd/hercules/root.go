@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"maps"
 	"net/http"
@@ -39,7 +38,7 @@ import (
 	"github.com/mitchellh/go-homedir"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-	"golang.org/x/crypto/ssh/terminal"
+	"golang.org/x/term"
 	progress "gopkg.in/cheggaaa/pb.v1"
 
 	"github.com/cwbudde/hercules"
@@ -146,7 +145,7 @@ func loadSSHIdentity(sshIdentity string) (*ssh.PublicKeys, error) {
 	return ssh.NewPublicKeysFromFile("git", actual, "")
 }
 
-var regexUri = regexp.MustCompile("^[A-Za-z]\\w*@[A-Za-z0-9][\\w.]*:")
+var regexUri = regexp.MustCompile(`^[A-Za-z]\w*@[A-Za-z0-9][\w.]*:`)
 
 func createStubRepository() (*git.Repository, error) {
 	repository, err := git.Init(memory.NewStorage(), memfs.New())
@@ -268,7 +267,7 @@ func openSivaRepository(uri string) (*git.Repository, error) {
 type arrayPluginFlags map[string]bool
 
 func (apf *arrayPluginFlags) String() string {
-	var list []string
+	list := make([]string, 0, len(*apf))
 	for key := range *apf {
 		list = append(list, key)
 	}
@@ -287,7 +286,7 @@ func (apf *arrayPluginFlags) Type() string {
 func loadPlugins() {
 	pluginFlags := arrayPluginFlags{}
 	fs := pflag.NewFlagSet(os.Args[0], pflag.ContinueOnError)
-	fs.SetOutput(ioutil.Discard)
+	fs.SetOutput(io.Discard)
 	pluginFlagName := "plugin"
 	const pluginDesc = "Load the specified plugin by the full or relative path. " +
 		"Can be specified multiple times. Requires a hercules binary built with " +
@@ -665,7 +664,7 @@ func writeRootResults(
 	if options.progress == progressModeBar {
 		_, _ = fmt.Fprint(os.Stderr, "\033[2K\r")
 		// if not a terminal, the user will not see the output, so show the status
-		if !terminal.IsTerminal(int(os.Stdout.Fd())) {
+		if !term.IsTerminal(int(os.Stdout.Fd())) {
 			_, _ = fmt.Fprint(os.Stderr, "writing...\r")
 		}
 	}
@@ -1063,7 +1062,7 @@ func init() {
 	rootFlags.Bool("pb", false, "The output format will be Protocol Buffers instead of YAML.")
 	rootFlags.Bool("identity-audit", false,
 		"Write detected identities, merge decisions, and ambiguous identity candidates as JSON and exit.")
-	rootFlags.Bool("quiet", !terminal.IsTerminal(int(os.Stdin.Fd())),
+	rootFlags.Bool("quiet", !term.IsTerminal(int(os.Stdin.Fd())),
 		"Do not print status updates to stderr.")
 	rootFlags.String("progress", "auto",
 		"Progress output format on stderr: auto, bar, lines, json, none.")

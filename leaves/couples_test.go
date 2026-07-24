@@ -2,7 +2,7 @@ package leaves
 
 import (
 	"bytes"
-	"io/ioutil"
+	"os"
 	"path"
 	"strconv"
 	"strings"
@@ -421,7 +421,7 @@ func TestCouplesSerialize(t *testing.T) {
 }
 
 func TestCouplesDeserialize(t *testing.T) {
-	message, err := ioutil.ReadFile(path.Join("..", "internal", "test_data", "couples.pb"))
+	message, err := os.ReadFile(path.Join("..", "internal", "test_data", "couples.pb"))
 	assert.NoError(t, err)
 	couples := CouplesAnalysis{}
 	iresult, err := couples.Deserialize(message)

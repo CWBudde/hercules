@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"math"
 	"os"
@@ -443,7 +442,7 @@ func (analyser *LegacyBurndownAnalysis) Hibernate() error {
 	analyser.fileAllocator.Hibernate()
 
 	if analyser.HibernationToDisk {
-		file, err := ioutil.TempFile(analyser.HibernationDirectory, "*-hercules.bin")
+		file, err := os.CreateTemp(analyser.HibernationDirectory, "*-hercules.bin")
 		if err != nil {
 			return err
 		}
@@ -513,7 +512,7 @@ func (analyser *LegacyBurndownAnalysis) Finalize() any {
 
 			previousLine = line
 
-			previousAuthor, _ = analyser.unpackPersonWithTick(int(value))
+			previousAuthor, _ = analyser.unpackPersonWithTick(value)
 			if previousAuthor == core.AuthorMissing {
 				previousAuthor = -1
 			}
@@ -856,8 +855,6 @@ func (analyser *LegacyBurndownAnalysis) mergeMatrices(
 	for i := range perTick {
 		perTick[i] = nil
 	}
-
-	perTick = nil
 
 	runtime.GC()
 
@@ -1317,7 +1314,7 @@ func (analyser *LegacyBurndownAnalysis) updateChurnMatrix(_ *linehistory.File, c
 func (analyser *LegacyBurndownAnalysis) newFile(
 	_ plumbing.Hash, name string, author, tick, size int,
 ) (*linehistory.File, error) {
-	updaters := make([]linehistory.Updater, 1)
+	updaters := make([]linehistory.Updater, 1, 4)
 
 	updaters[0] = analyser.updateGlobal
 	if analyser.TrackFiles {

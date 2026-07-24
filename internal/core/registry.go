@@ -77,14 +77,14 @@ func (registry *PipelineItemRegistry) Summon(providesOrNames ...string) []Pipeli
 
 // GetLeaves returns all LeafPipelineItem-s registered.
 func (registry *PipelineItemRegistry) GetLeaves() []LeafPipelineItem {
-	var keys []string
+	keys := make([]string, 0, len(registry.flags))
 	for key := range registry.flags {
 		keys = append(keys, key)
 	}
 
 	sort.Strings(keys)
 
-	var items []LeafPipelineItem
+	items := make([]LeafPipelineItem, 0, len(keys))
 	for _, key := range keys {
 		items = append(items, reflect.New(registry.flags[key].Elem()).Interface().(LeafPipelineItem))
 	}
@@ -94,7 +94,7 @@ func (registry *PipelineItemRegistry) GetLeaves() []LeafPipelineItem {
 
 // GetPlumbingItems returns all non-LeafPipelineItem-s registered.
 func (registry *PipelineItemRegistry) GetPlumbingItems() []PipelineItem {
-	var keys []string
+	keys := make([]string, 0, len(registry.registered))
 	for key := range registry.registered {
 		keys = append(keys, key)
 	}
@@ -375,7 +375,7 @@ func (registry *PipelineItemRegistry) AddFlags(flagSet *pflag.FlagSet) (
 		flags[ConfigPipelinePrintActions] = iface
 	}
 
-	var features []string
+	features := make([]string, 0, len(registry.featureFlags.Choices))
 	for f := range registry.featureFlags.Choices {
 		features = append(features, f)
 	}

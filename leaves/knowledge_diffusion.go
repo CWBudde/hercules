@@ -213,11 +213,6 @@ func (kd *KnowledgeDiffusionAnalysis) Finalize() any {
 
 	for fileName, authors := range kd.fileAuthors {
 		// Build unique editors over time from first-edit ticks.
-		type tickEntry struct {
-			tick  int
-			count int // cumulative count at this tick
-		}
-
 		firstTicks := make([]int, 0, len(authors))
 		for _, info := range authors {
 			firstTicks = append(firstTicks, info.FirstTick)

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"maps"
 
 	"github.com/go-git/go-git/v5"
@@ -31,7 +30,7 @@ type CachedBlob struct {
 
 // Reader returns a reader allow the access to the content of the blob.
 func (b *CachedBlob) Reader() (io.ReadCloser, error) {
-	return ioutil.NopCloser(bytes.NewReader(b.Data)), nil
+	return io.NopCloser(bytes.NewReader(b.Data)), nil
 }
 
 // Cache reads the underlying blob object and sets CachedBlob.Data.

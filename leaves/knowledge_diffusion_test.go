@@ -18,7 +18,6 @@ import (
 var (
 	dummyHash1 = plumbing.NewHash("1111111111111111111111111111111111111111")
 	dummyHash2 = plumbing.NewHash("2222222222222222222222222222222222222222")
-	dummyHash3 = plumbing.NewHash("3333333333333333333333333333333333333333")
 )
 
 // makeInsertChange creates a Change representing a file insertion.

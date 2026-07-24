@@ -1098,7 +1098,7 @@ func TestLegacyBurndownAddMatrixNaNs(t *testing.T) {
 			if prev == 0 {
 				prev = daily[y][x]
 			}
-			assert.Equal(t, daily[y][x], prev)
+			assert.InDelta(t, prev, daily[y][x], 0.00001)
 		}
 		for y := x; y < 16; y++ {
 			if prev == 0 {

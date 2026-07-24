@@ -320,14 +320,14 @@ func TestPipelineRun(t *testing.T) {
 	pipeline := NewPipeline(test.FixtureRepository())
 	item := &testPipelineItem{}
 	pipeline.AddItem(item)
-	assert.NoError(t, pipeline.Initialize(map[string]any{}))
+	require.NoError(t, pipeline.Initialize(map[string]any{}))
 	assert.True(t, item.Initialized)
 	commits := make([]*object.Commit, 1)
 	commits[0], _ = test.FixtureRepository().CommitObject(plumbing.NewHash(
 		"af9ddc0db70f09f3f27b4b98e415592a7485171c",
 	))
 	result, err := pipeline.Run(commits)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Len(t, result, 2)
 	assert.Equal(t, item, result[item].(*testPipelineItem))
 	common := result[nil].(*CommonAnalysisResult)
@@ -348,7 +348,7 @@ func TestPipelineRun(t *testing.T) {
 	assert.False(t, *item.Merged)
 	pipeline.RemoveItem(item)
 	result, err = pipeline.Run(commits)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Len(t, result, 1)
 }
 

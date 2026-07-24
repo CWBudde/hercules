@@ -616,8 +616,8 @@ func TestCodeChurnCalculateAwareness(t *testing.T) {
 		entry := churnFileEntry{insertedLines: 0}
 		change := core.LineHistoryChange{CurrTick: 5}
 		awareness, memorability := cc.calculateAwareness(entry, change, 0, churnLines{})
-		assert.Equal(t, 0.0, awareness)
-		assert.Equal(t, 0.5, memorability)
+		assert.InDelta(t, 0.0, awareness, 0.00001)
+		assert.InDelta(t, 0.5, memorability, 0.00001)
 	})
 
 	t.Run("lastTouch >= CurrTick returns current values", func(t *testing.T) {

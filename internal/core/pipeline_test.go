@@ -558,7 +558,7 @@ func TestPipelineDryRun(t *testing.T) {
 	assert.NotNil(t, result)
 	assert.Len(t, result, 1)
 	assert.Contains(t, result, nil)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 }
 
 func TestPipelineDryRunFalse(t *testing.T) {
@@ -1152,7 +1152,7 @@ func TestPipelineDAGDumpToStderr(t *testing.T) {
 	io.Copy(&buf, r)
 	r.Close()
 
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.NotEmpty(t, buf.String())
 }
 

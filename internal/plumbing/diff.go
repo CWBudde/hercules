@@ -290,13 +290,13 @@ func (diff *FileDiff) Consume(deps map[string]any) (map[string]any, error) {
 			blobTo := cache[change.To.TreeEntry.Hash]
 
 			// Skip binary files; diffmatchpatch treats them as text and would produce noisy line counts.
-			if _, err := blobFrom.CountLines(); errors.Is(err, ErrorBinary) {
+			if _, err := blobFrom.CountLines(); errors.Is(err, ErrBinary) {
 				continue
 			} else if err != nil {
 				return nil, err
 			}
 
-			if _, err := blobTo.CountLines(); errors.Is(err, ErrorBinary) {
+			if _, err := blobTo.CountLines(); errors.Is(err, ErrBinary) {
 				continue
 			} else if err != nil {
 				return nil, err

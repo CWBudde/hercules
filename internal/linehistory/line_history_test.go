@@ -15,6 +15,7 @@ import (
 )
 
 func AddHash(t *testing.T, cache map[plumbing.Hash]*items.CachedBlob, hash string) {
+	t.Helper()
 	objHash := plumbing.NewHash(hash)
 	blob, err := test.Repository.BlobObject(objHash)
 	assert.NoError(t, err)
@@ -327,6 +328,7 @@ func TestLinesConsume(t *testing.T) {
 }
 
 func bakeBurndownForSerialization(t *testing.T, firstAuthor, secondAuthor int) *LineHistoryAnalyser {
+	t.Helper()
 	bd := &LineHistoryAnalyser{}
 	assert.NoError(t, bd.Initialize(test.Repository))
 	deps := map[string]any{}

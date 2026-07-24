@@ -228,7 +228,7 @@ func TestCountLines(t *testing.T) {
 	lines, err = cb.CountLines()
 	assert.Equal(t, 0, lines)
 	assert.Error(t, err)
-	assert.Equal(t, err.Error(), items.ErrorBinary.Error())
+	assert.Equal(t, err.Error(), items.ErrBinary.Error())
 }
 
 func TestBlobToString(t *testing.T) {

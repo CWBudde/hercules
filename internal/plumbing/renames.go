@@ -572,7 +572,7 @@ func (ra *RenameAnalysis) binaryBlobsAreClose(blob1, blob2 *CachedBlob) (bool, b
 	_, firstErr := blob1.CountLines()
 
 	_, secondErr := blob2.CountLines()
-	if !errors.Is(firstErr, ErrorBinary) && !errors.Is(secondErr, ErrorBinary) {
+	if !errors.Is(firstErr, ErrBinary) && !errors.Is(secondErr, ErrBinary) {
 		return false, false
 	}
 

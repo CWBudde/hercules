@@ -76,23 +76,23 @@ func ForkCopyPipelineItem(origin PipelineItem, n int) []PipelineItem {
 
 const (
 	// runActionCommit corresponds to a regular commit.
-	runActionCommit = 0
+	runActionCommit = iota
 	// runActionFork splits a branch into several parts.
-	runActionFork = iota
+	runActionFork
 	// runActionMerge merges several branches together.
-	runActionMerge = iota
+	runActionMerge
 	// runActionEmerge starts a root branch.
-	runActionEmerge = iota
+	runActionEmerge
 	// runActionDelete removes the branch as it is no longer needed.
-	runActionDelete = iota
+	runActionDelete
 	// runActionHibernate preserves the items in the branch.
-	runActionHibernate = iota
+	runActionHibernate
 	// runActionBoot does the opposite to runActionHibernate - recovers the original memory.
-	runActionBoot = iota
-
-	// rootBranchIndex is the minimum branch index in the plan.
-	rootBranchIndex = 1
+	runActionBoot
 )
+
+// rootBranchIndex is the minimum branch index in the plan.
+const rootBranchIndex = 1
 
 // planPrintFunc is used to print the execution plan in prepareRunPlan().
 var planPrintFunc = func(args ...any) {

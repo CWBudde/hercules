@@ -116,7 +116,7 @@ func (langs *LanguagesDetection) Fork(n int) []core.PipelineItem {
 // detectLanguage returns the programming language of a blob.
 func (langs *LanguagesDetection) detectLanguage(name string, blob *CachedBlob) string {
 	_, err := blob.CountLines()
-	if errors.Is(err, ErrorBinary) {
+	if errors.Is(err, ErrBinary) {
 		return ""
 	}
 

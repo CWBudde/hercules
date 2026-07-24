@@ -33,6 +33,7 @@ func TestInitializeFile(t *testing.T) {
 }
 
 func testPanicFile(t *testing.T, method func(*File), msg string) {
+	t.Helper()
 	defer func() {
 		r := recover()
 		assert.NotNil(t, r, "not panic()-ed")

@@ -140,13 +140,13 @@ func (saver *UASTChangesSaver) Consume(deps map[string]any) (map[string]any, err
 			continue
 		}
 
-		if _, err = fromBlob.CountLines(); errors.Is(err, items.ErrorBinary) {
+		if _, err = fromBlob.CountLines(); errors.Is(err, items.ErrBinary) {
 			continue
 		} else if err != nil {
 			return nil, err
 		}
 
-		if _, err = toBlob.CountLines(); errors.Is(err, items.ErrorBinary) {
+		if _, err = toBlob.CountLines(); errors.Is(err, items.ErrBinary) {
 			continue
 		} else if err != nil {
 			return nil, err

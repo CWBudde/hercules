@@ -17,8 +17,8 @@ import (
 	"github.com/cwbudde/hercules/internal/core"
 )
 
-// ErrorBinary is raised in CachedBlob.CountLines() if the file is binary.
-var ErrorBinary = errors.New("binary")
+// ErrBinary is raised in CachedBlob.CountLines() if the file is binary.
+var ErrBinary = errors.New("binary")
 
 // CachedBlob allows to explicitly cache the binary data associated with the Blob object.
 type CachedBlob struct {
@@ -59,7 +59,7 @@ func (b *CachedBlob) Cache() error {
 	return nil
 }
 
-// CountLines returns the number of lines in the blob or (0, ErrorBinary) if it is binary.
+// CountLines returns the number of lines in the blob or (0, ErrBinary) if it is binary.
 func (b *CachedBlob) CountLines() (int, error) {
 	if len(b.Data) == 0 {
 		return 0, nil
@@ -73,7 +73,7 @@ func (b *CachedBlob) CountLines() (int, error) {
 	}
 
 	if bytes.IndexByte(sniff, 0) >= 0 {
-		return 0, ErrorBinary
+		return 0, ErrBinary
 	}
 
 	lines := bytes.Count(b.Data, []byte{'\n'})

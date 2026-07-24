@@ -40,7 +40,9 @@ const (
 	StringsConfigurationOption
 	// PathConfigurationOption reflects the file system path value type.
 	PathConfigurationOption
+)
 
+const (
 	FeatureGitCommits = "git.commits"
 	FeatureGitStub    = "git.stub"
 )

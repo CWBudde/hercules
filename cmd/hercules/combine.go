@@ -10,6 +10,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/spf13/cobra"
@@ -27,102 +28,162 @@ var combineCmd = &cobra.Command{
 	Short: "Merge several binary analysis results together.",
 	Long:  ``,
 	Args:  cobra.MinimumNArgs(1),
-	Run: func(cmd *cobra.Command, files []string) {
-		if len(files) == 1 {
-			file, err := os.Open(files[0])
-			if err != nil {
-				panic(err)
-			}
-			defer file.Close()
-			_, err = io.Copy(os.Stdout, bufio.NewReader(file))
-			if err != nil {
-				panic(err)
-			}
-			return
-		}
+	RunE:  runCombine,
+}
 
-		profile, err := cmd.Flags().GetBool("profile")
+type combineAccumulator struct {
+	repositories []string
+	errors       map[string][]string
+	results      map[string]any
+	metadata     *hercules.CommonAnalysisResult
+}
 
-		if profile {
-			go func() {
-				err := http.ListenAndServe("localhost:6060", nil)
-				if err != nil {
-					panic(err)
-				}
-			}()
-		}
+func runCombine(cmd *cobra.Command, files []string) error {
+	if len(files) == 1 {
+		return copyAnalysisResult(files[0], os.Stdout)
+	}
 
-		only, err := cmd.Flags().GetString("only")
-		if err != nil {
-			panic(err)
+	profile, err := cmd.Flags().GetBool("profile")
+	if err != nil {
+		return fmt.Errorf("read profile flag: %w", err)
+	}
+	if profile {
+		startCombineProfileServer()
+	}
+
+	only, err := cmd.Flags().GetString("only")
+	if err != nil {
+		return fmt.Errorf("read only flag: %w", err)
+	}
+
+	accumulator := newCombineAccumulator()
+	accumulator.mergeFiles(files, only)
+	printErrors(accumulator.errors)
+	sort.Strings(accumulator.repositories)
+	return writeCombinedResult(os.Stdout, accumulator)
+}
+
+func copyAnalysisResult(fileName string, destination io.Writer) error {
+	file, err := os.Open(fileName)
+	if err != nil {
+		return fmt.Errorf("open %s: %w", fileName, err)
+	}
+	defer file.Close()
+
+	if _, err := io.Copy(destination, bufio.NewReader(file)); err != nil {
+		return fmt.Errorf("copy %s: %w", fileName, err)
+	}
+	return nil
+}
+
+func startCombineProfileServer() {
+	server := &http.Server{
+		Addr:              "localhost:6060",
+		Handler:           nil,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	go func() {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			_, _ = fmt.Fprintf(os.Stderr, "profiling server: %v\n", err)
 		}
-		var repos []string
-		allErrors := map[string][]string{}
-		mergedResults := map[string]interface{}{}
-		mergedMetadata := &hercules.CommonAnalysisResult{}
-		var fileName string
-		bar := progress.New(len(files))
-		bar.Callback = func(msg string) {
-			os.Stderr.WriteString("\033[2K\r" + msg + " " + fileName)
+	}()
+}
+
+func newCombineAccumulator() *combineAccumulator {
+	return &combineAccumulator{
+		errors:   map[string][]string{},
+		results:  map[string]any{},
+		metadata: &hercules.CommonAnalysisResult{},
+	}
+}
+
+func (accumulator *combineAccumulator) mergeFiles(files []string, only string) {
+	currentFile := ""
+	bar := newCombineProgress(len(files), &currentFile)
+	for _, currentFile = range files {
+		bar.Increment()
+		accumulator.mergeFile(currentFile, only)
+	}
+	bar.Finish()
+	_, _ = os.Stderr.WriteString("\033[2K\r")
+}
+
+func newCombineProgress(fileCount int, currentFile *string) *progress.ProgressBar {
+	bar := progress.New(fileCount)
+	bar.Callback = func(message string) {
+		_, _ = os.Stderr.WriteString("\033[2K\r" + message + " " + *currentFile)
+	}
+	bar.NotPrint = true
+	bar.ShowPercent = false
+	bar.ShowSpeed = false
+	return bar.SetMaxWidth(80).Start()
+}
+
+func (accumulator *combineAccumulator) mergeFile(fileName, only string) {
+	results, metadata, repository, messages := loadMessage(fileName, &accumulator.repositories)
+	if metadata == nil {
+		accumulator.errors[fileName] = messages
+		return
+	}
+
+	initializeBurndownRepository(results, repository)
+	for _, err := range mergeResults(accumulator.results, accumulator.metadata, results, metadata, only) {
+		messages = append(messages, err.Error())
+	}
+	accumulator.errors[fileName] = messages
+}
+
+func initializeBurndownRepository(results map[string]any, repository string) {
+	burndownResult, ok := results["Burndown"].(leaves.BurndownResult)
+	if !ok || len(burndownResult.RepositoryHistories) > 0 || len(burndownResult.GlobalHistory) == 0 {
+		return
+	}
+	burndownResult.ReversedRepositoryDict = []string{repository}
+	burndownResult.RepositoryHistories = []burndown.DenseHistory{burndownResult.GlobalHistory}
+	results["Burndown"] = burndownResult
+}
+
+func writeCombinedResult(destination io.Writer, accumulator *combineAccumulator) error {
+	message := pb.AnalysisResults{
+		Header: &pb.Metadata{
+			Version:    pb.SchemaVersion,
+			Hash:       hercules.BinaryGitHash,
+			Repository: strings.Join(accumulator.repositories, " & "),
+		},
+		Contents: map[string][]byte{},
+	}
+	accumulator.metadata.FillMetadata(message.GetHeader())
+
+	if err := serializeCombinedContents(message.GetContents(), accumulator.results); err != nil {
+		return err
+	}
+	serialized, err := proto.Marshal(&message)
+	if err != nil {
+		return fmt.Errorf("marshal combined result: %w", err)
+	}
+	if _, err := destination.Write(serialized); err != nil {
+		return fmt.Errorf("write combined result: %w", err)
+	}
+	return nil
+}
+
+func serializeCombinedContents(contents map[string][]byte, results map[string]any) error {
+	for key, value := range results {
+		items := hercules.Registry.Summon(key)
+		if len(items) == 0 {
+			return fmt.Errorf("serialize %s: pipeline item not found", key)
 		}
-		bar.NotPrint = true
-		bar.ShowPercent = false
-		bar.ShowSpeed = false
-		bar.SetMaxWidth(80).Start()
-		//		debug.SetGCPercent(20)
-		for _, fileName = range files {
-			bar.Increment()
-			anotherResults, anotherMetadata, repoName, errs := loadMessage(fileName, &repos)
-			if anotherMetadata != nil {
-				// Initialize repository tracking for the first file or if not already set
-				if burndownResult, ok := anotherResults["Burndown"].(leaves.BurndownResult); ok {
-					if len(burndownResult.RepositoryHistories) == 0 && len(burndownResult.GlobalHistory) > 0 {
-						// This result doesn't have repository tracking yet, initialize it
-						burndownResult.ReversedRepositoryDict = []string{repoName}
-						burndownResult.RepositoryHistories = []burndown.DenseHistory{burndownResult.GlobalHistory}
-						anotherResults["Burndown"] = burndownResult
-					}
-				}
-				mergeErrs := mergeResults(mergedResults, mergedMetadata, anotherResults, anotherMetadata, only)
-				for _, err := range mergeErrs {
-					errs = append(errs, err.Error())
-				}
-			}
-			allErrors[fileName] = errs
-			// debug.FreeOSMemory()
+		leaf, ok := items[0].(hercules.LeafPipelineItem)
+		if !ok {
+			return fmt.Errorf("serialize %s: pipeline item is not a leaf", key)
 		}
-		bar.Finish()
-		os.Stderr.WriteString("\033[2K\r")
-		printErrors(allErrors)
-		sort.Strings(repos)
-		if mergedMetadata == nil {
-			return
+		buffer := bytes.Buffer{}
+		if err := leaf.Serialize(value, true, &buffer); err != nil {
+			return fmt.Errorf("serialize %s: %w", key, err)
 		}
-		mergedMessage := pb.AnalysisResults{
-			Header: &pb.Metadata{
-				Version:    pb.SchemaVersion,
-				Hash:       hercules.BinaryGitHash,
-				Repository: strings.Join(repos, " & "),
-			},
-			Contents: map[string][]byte{},
-		}
-		mergedMetadata.FillMetadata(mergedMessage.Header)
-		for key, val := range mergedResults {
-			buffer := bytes.Buffer{}
-			err := hercules.Registry.Summon(key)[0].(hercules.LeafPipelineItem).Serialize(
-				val, true, &buffer,
-			)
-			if err != nil {
-				panic(err)
-			}
-			mergedMessage.Contents[key] = buffer.Bytes()
-		}
-		serialized, err := proto.Marshal(&mergedMessage)
-		if err != nil {
-			panic(err)
-		}
-		os.Stdout.Write(serialized)
-	},
+		contents[key] = buffer.Bytes()
+	}
+	return nil
 }
 
 func loadMessage(fileName string, repos *[]string) (

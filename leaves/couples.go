@@ -488,6 +488,7 @@ func (couples *CouplesAnalysis) serializeText(result *CouplesResult, writer io.W
 	writeCouplesIndex(writer, result.Files)
 
 	fmt.Fprintln(writer, "    lines:")
+
 	for _, l := range result.FilesLines {
 		fmt.Fprintf(writer, "      - %d\n", l)
 	}
@@ -525,6 +526,7 @@ func writeCouplesMatrix(writer io.Writer, matrix []map[int]int64) {
 
 		for i, index := range indices {
 			fmt.Fprintf(writer, "%d: %d", index, row[index])
+
 			if i < len(indices)-1 {
 				fmt.Fprint(writer, ", ")
 			}

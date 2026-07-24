@@ -33,6 +33,7 @@ func ParseProto(data []byte) (Snapshot, error) {
 		}
 
 		var err error
+
 		current, err = parseProtoLine(&snapshot, current, line)
 		if err != nil {
 			return Snapshot{}, fmt.Errorf("line %d: %w", lineno+1, err)

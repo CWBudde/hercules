@@ -102,6 +102,7 @@ func (lsc *LinesStatsCalculator) Consume(deps map[string]any) (map[string]any, e
 			if err != nil {
 				return nil, err
 			}
+
 			if binary {
 				continue
 			}
@@ -161,6 +162,7 @@ func modificationIsBinary(
 func countModifiedLines(fileDiff FileDiffData) LineStats {
 	var stats LineStats
 	removedPending := 0
+
 	for _, edit := range fileDiff.Diffs {
 		switch edit.Type {
 		case diffmatchpatch.DiffEqual:
@@ -176,6 +178,7 @@ func countModifiedLines(fileDiff FileDiffData) LineStats {
 			removedPending = utf8.RuneCountInString(edit.Text)
 		}
 	}
+
 	stats.Removed += removedPending
 
 	return stats

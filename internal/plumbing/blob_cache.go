@@ -221,6 +221,7 @@ func (blobCache *BlobCache) cacheTo(
 ) error {
 	cache[entry.TreeEntry.Hash] = &CachedBlob{}
 	newCache[entry.TreeEntry.Hash] = &CachedBlob{}
+
 	blob, err := blobCache.getBlob(&entry, commit.File)
 	if err != nil {
 		blobCache.l.Errorf("file to %s %s: %v\n", entry.Name, entry.TreeEntry.Hash, err)
@@ -232,6 +233,7 @@ func (blobCache *BlobCache) cacheTo(
 		blobCache.l.Errorf("file to %s %s: %v\n", entry.Name, entry.TreeEntry.Hash, err)
 		return err
 	}
+
 	cache[entry.TreeEntry.Hash] = cached
 	newCache[entry.TreeEntry.Hash] = cached
 
@@ -248,6 +250,7 @@ func (blobCache *BlobCache) cacheFrom(
 		cache[entry.TreeEntry.Hash] = cached
 		return nil
 	}
+
 	cache[entry.TreeEntry.Hash] = &CachedBlob{}
 
 	blob, err := blobCache.getBlob(&entry, commit.File)
@@ -256,8 +259,10 @@ func (blobCache *BlobCache) cacheFrom(
 		if err == nil {
 			cache[entry.TreeEntry.Hash] = &CachedBlob{Blob: *blob}
 		}
+
 		return err
 	}
+
 	if err != nil {
 		blobCache.l.Errorf("file from %s %s: %v\n", entry.Name, entry.TreeEntry.Hash, err)
 		return err
@@ -268,6 +273,7 @@ func (blobCache *BlobCache) cacheFrom(
 		blobCache.l.Errorf("file from %s %s: %v\n", entry.Name, entry.TreeEntry.Hash, err)
 		return err
 	}
+
 	cache[entry.TreeEntry.Hash] = cached
 
 	return nil

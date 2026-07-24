@@ -293,6 +293,7 @@ func (registry *PipelineItemRegistry) addItemFlags(
 	}
 
 	leafFlag := registry.addLeafFlag(flagSet, itemIface, deployed)
+
 	addActivation := func(optionFlag string) {
 		registry.addFlagActivation(flagSet, name, leafFlag, optionFlag, activations)
 	}
@@ -331,6 +332,7 @@ func (registry *PipelineItemRegistry) addFlagActivation(
 	}
 
 	flagName := flagSet.Lookup(optionFlag).Name
+
 	list := activations[flagName]
 	if _, preferred := registry.preferred[itemName]; !preferred || len(list) == 0 {
 		activations[flagName] = append(list, itemName)
@@ -346,6 +348,7 @@ func (registry *PipelineItemRegistry) reuseOption(
 	addActivation func(string),
 ) bool {
 	optionCopy := option
+
 	reused, exists := reusableOptions[option.Flag]
 	if !exists {
 		optionCopy.Description = itemName
@@ -384,11 +387,14 @@ func addConfigurationFlag(flagSet *pflag.FlagSet, itemName string, option Config
 		*(**int)(valuePointer()) = flagSet.Int(option.Flag, option.Default.(int), help)
 	case StringConfigurationOption, PathConfigurationOption:
 		value = any("")
+
 		*(**string)(valuePointer()) = flagSet.String(option.Flag, option.Default.(string), help)
 		if option.Type == PathConfigurationOption {
-			if err := cobra.MarkFlagFilename(flagSet, option.Flag); err != nil {
+			err := cobra.MarkFlagFilename(flagSet, option.Flag)
+			if err != nil {
 				panic(err)
 			}
+
 			PathifyFlagValue(flagSet.Lookup(option.Flag))
 		}
 	case FloatConfigurationOption:

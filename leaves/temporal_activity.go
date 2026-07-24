@@ -334,9 +334,11 @@ func dimensionFromProto(source *pb.TemporalDimension, size int) TemporalDimensio
 	if source == nil {
 		return dimension
 	}
+
 	for i, count := range source.GetCommits()[:min(size, len(source.GetCommits()))] {
 		dimension.Commits[i] = int(count)
 	}
+
 	for i, count := range source.GetLines()[:min(size, len(source.GetLines()))] {
 		dimension.Lines[i] = int(count)
 	}
@@ -387,12 +389,15 @@ func writeTemporalDimension(writer io.Writer, name string, dimension TemporalDim
 
 func writeTemporalValues(writer io.Writer, name string, values []int) {
 	fmt.Fprintf(writer, "        %s: [", name)
+
 	for i, value := range values {
 		if i > 0 {
 			fmt.Fprint(writer, ", ")
 		}
+
 		fmt.Fprintf(writer, "%d", value)
 	}
+
 	fmt.Fprintln(writer, "]")
 }
 

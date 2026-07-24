@@ -288,6 +288,7 @@ func (hra *HotspotRiskAnalysis) updateFileRisk(
 	}
 
 	var fileName string
+
 	switch action {
 	case merkletrie.Insert:
 		fileName = change.To.Name
@@ -297,6 +298,7 @@ func (hra *HotspotRiskAnalysis) updateFileRisk(
 		hra.transferFileRisk(change.From.Name, change.To.Name)
 		fileName = change.To.Name
 	}
+
 	if fileName == "" {
 		return "", nil
 	}
@@ -308,6 +310,7 @@ func (hra *HotspotRiskAnalysis) updateFileRisk(
 		}
 		hra.fileMetrics[fileName] = metrics
 	}
+
 	metrics.ChurnByTick[tick]++
 	if stats, exists := lineStats[object.ChangeEntry{Name: fileName}]; exists {
 		metrics.AuthorLines[author] += stats.Added - stats.Removed
@@ -320,6 +323,7 @@ func (hra *HotspotRiskAnalysis) transferFileRisk(from, to string) {
 	if from == to {
 		return
 	}
+
 	if old, exists := hra.fileMetrics[from]; exists {
 		hra.fileMetrics[to] = old
 		delete(hra.fileMetrics, from)

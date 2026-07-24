@@ -121,7 +121,7 @@ func TestToposortFindCycle(t *testing.T) {
 	expected := [...]string{"2", "3", "1"}
 	assert.Equal(t, expected[:], cycle)
 	cycle = graph.FindCycle("5")
-	assert.Len(t, cycle, 0)
+	assert.Empty(t, cycle)
 }
 
 func TestToposortFindParents(t *testing.T) {
@@ -141,9 +141,10 @@ func TestToposortFindParents(t *testing.T) {
 	assert.Len(t, parents, 2)
 	checks := [2]bool{}
 	for _, p := range parents {
-		if p == "3" {
+		switch p {
+		case "3":
 			checks[0] = true
-		} else if p == "5" {
+		case "5":
 			checks[1] = true
 		}
 	}
@@ -171,9 +172,10 @@ func TestToposortFindChildren(t *testing.T) {
 	assert.Len(t, children, 2)
 	checks := [2]bool{}
 	for _, p := range children {
-		if p == "3" {
+		switch p {
+		case "3":
 			checks[0] = true
-		} else if p == "4" {
+		case "4":
 			checks[1] = true
 		}
 	}

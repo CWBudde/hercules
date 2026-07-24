@@ -81,7 +81,7 @@ func TestHotspotRiskFinalizeAppliesWindowAndTopN(t *testing.T) {
 	})
 
 	hra := HotspotRiskAnalysis{TopN: 2, WindowDays: 2}
-	require.NoError(t, hra.Configure(map[string]interface{}{items.FactTickSize: int64(24 * 60 * 60)}))
+	require.NoError(t, hra.Configure(map[string]any{items.FactTickSize: int64(24 * 60 * 60)}))
 	require.NoError(t, hra.Initialize(repo))
 
 	consumeHotspotRiskCommit(t, &hra, head, 0, 0, []string{"alpha.go", "beta.go"}, map[string]items.LineStats{
@@ -152,15 +152,15 @@ func TestHotspotRiskSerializationShapes(t *testing.T) {
 	require.NoError(t, hra.Serialize(result, true, &binary))
 	message := pb.HotspotRiskResults{}
 	require.NoError(t, proto.Unmarshal(binary.Bytes(), &message))
-	assert.Equal(t, int32(30), message.WindowDays)
-	require.Len(t, message.Files, 1)
-	assert.Equal(t, "main.go", message.Files[0].Path)
-	assert.Equal(t, 0.25, message.Files[0].RiskScore)
-	assert.Equal(t, int32(12), message.Files[0].Size_)
-	assert.Equal(t, int32(3), message.Files[0].Churn)
-	assert.Equal(t, int32(2), message.Files[0].CouplingDegree)
-	assert.Equal(t, 0.75, message.Files[0].OwnershipGini)
-	assert.Equal(t, 1.0, message.Files[0].SizeNormalized)
+	assert.Equal(t, int32(30), message.GetWindowDays())
+	require.Len(t, message.GetFiles(), 1)
+	assert.Equal(t, "main.go", message.GetFiles()[0].GetPath())
+	assert.Equal(t, 0.25, message.GetFiles()[0].GetRiskScore())
+	assert.Equal(t, int32(12), message.GetFiles()[0].GetSize_())
+	assert.Equal(t, int32(3), message.GetFiles()[0].GetChurn())
+	assert.Equal(t, int32(2), message.GetFiles()[0].GetCouplingDegree())
+	assert.Equal(t, 0.75, message.GetFiles()[0].GetOwnershipGini())
+	assert.Equal(t, 1.0, message.GetFiles()[0].GetSizeNormalized())
 }
 
 func newHotspotRiskFixtureRepository(t *testing.T, files map[string]string) (*git.Repository, *object.Commit) {
@@ -196,7 +196,7 @@ func writeFixtureFile(t *testing.T, fs billy.Filesystem, name, content string) {
 
 func lines(count int) string {
 	var buf bytes.Buffer
-	for i := 0; i < count; i++ {
+	for i := range count {
 		fmt.Fprintf(&buf, "line %d\n", i)
 	}
 	return buf.String()
@@ -220,7 +220,7 @@ func consumeHotspotRiskCommit(
 			lineStats[object.ChangeEntry{Name: path}] = stats
 		}
 	}
-	result, err := hra.Consume(map[string]interface{}{
+	result, err := hra.Consume(map[string]any{
 		core.DependencyCommit:       commit,
 		core.DependencyIsMerge:      false,
 		items.DependencyTreeChanges: changes,

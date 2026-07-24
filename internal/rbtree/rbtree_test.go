@@ -1,17 +1,18 @@
 package rbtree
 
 import (
-	"fmt"
 	"io/ioutil"
 	"math/rand"
 	"os"
+	"slices"
 	"sort"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
 
-// Create a tree storing a set of integers
+// Create a tree storing a set of integers.
 func testNewIntSet() *RBTree {
 	return NewRBTree(NewAllocator())
 }
@@ -43,7 +44,7 @@ func TestFindGE(t *testing.T) {
 	testAssert(t, tree.Len() == 1, "len==1")
 	testAssert(t, tree.FindGE(10).Item().Key == 10, "FindGE 10")
 	testAssert(t, tree.FindGE(11).Limit(), "FindGE 11")
-	assert.Equal(t, tree.FindGE(9).Item().Key, uint32(10), "FindGE 10")
+	assert.Equal(t, uint32(10), tree.FindGE(9).Item().Key, "FindGE 10")
 }
 
 func TestFindLE(t *testing.T) {
@@ -57,7 +58,7 @@ func TestFindLE(t *testing.T) {
 func TestGet(t *testing.T) {
 	tree := testNewIntSet()
 	testAssert(t, boolInsert(tree, 10), "insert1")
-	assert.Equal(t, *tree.Get(10), uint32(10), "Get 10")
+	assert.Equal(t, uint32(10), *tree.Get(10), "Get 10")
 	testAssert(t, tree.Get(9) == nil, "Get 9")
 	testAssert(t, tree.Get(11) == nil, "Get 11")
 }
@@ -83,7 +84,7 @@ func iterToString(i Iterator) string {
 		if s != "" {
 			s = s + ","
 		}
-		s = s + fmt.Sprintf("%d", i.Item().Key)
+		s = s + strconv.FormatUint(uint64(i.Item().Key), 10)
 	}
 	return s
 }
@@ -94,7 +95,7 @@ func reverseIterToString(i Iterator) string {
 		if s != "" {
 			s = s + ","
 		}
-		s = s + fmt.Sprintf("%d", i.Item().Key)
+		s = s + strconv.FormatUint(uint64(i.Item().Key), 10)
 	}
 	return s
 }
@@ -104,13 +105,13 @@ func TestIterator(t *testing.T) {
 	for i := 0; i < 10; i = i + 2 {
 		boolInsert(tree, i)
 	}
-	assert.Equal(t, iterToString(tree.FindGE(3)), "4,6,8")
-	assert.Equal(t, iterToString(tree.FindGE(4)), "4,6,8")
-	assert.Equal(t, iterToString(tree.FindGE(8)), "8")
-	assert.Equal(t, iterToString(tree.FindGE(9)), "")
-	assert.Equal(t, reverseIterToString(tree.FindLE(3)), "2,0")
-	assert.Equal(t, reverseIterToString(tree.FindLE(2)), "2,0")
-	assert.Equal(t, reverseIterToString(tree.FindLE(0)), "0")
+	assert.Equal(t, "4,6,8", iterToString(tree.FindGE(3)))
+	assert.Equal(t, "4,6,8", iterToString(tree.FindGE(4)))
+	assert.Equal(t, "8", iterToString(tree.FindGE(8)))
+	assert.Empty(t, iterToString(tree.FindGE(9)))
+	assert.Equal(t, "2,0", reverseIterToString(tree.FindLE(3)))
+	assert.Equal(t, "2,0", reverseIterToString(tree.FindLE(2)))
+	assert.Equal(t, "0", reverseIterToString(tree.FindLE(0)))
 }
 
 //
@@ -118,7 +119,7 @@ func TestIterator(t *testing.T) {
 //
 
 // oracle stores provides an interface similar to rbtree, but stores
-// data in an sorted array
+// data in an sorted array.
 type oracle struct {
 	data []int
 }
@@ -131,7 +132,7 @@ func (o *oracle) Len() int {
 	return len(o.data)
 }
 
-// interface needed for sorting
+// interface needed for sorting.
 func (o *oracle) Less(i, j int) bool {
 	return o.data[i] < o.data[j]
 }
@@ -143,10 +144,8 @@ func (o *oracle) Swap(i, j int) {
 }
 
 func (o *oracle) Insert(key int) bool {
-	for _, e := range o.data {
-		if e == key {
-			return false
-		}
+	if slices.Contains(o.data, key) {
+		return false
 	}
 
 	n := len(o.data) + 1
@@ -197,7 +196,7 @@ func (o *oracle) Delete(key int) bool {
 	return false
 }
 
-// Test iterator
+// Test iterator.
 type oracleIterator struct {
 	o     *oracle
 	index int
@@ -291,7 +290,7 @@ func TestRandomized(t *testing.T) {
 	o := newOracle()
 	tree := testNewIntSet()
 	r := rand.New(rand.NewSource(0))
-	for i := 0; i < 10000; i++ {
+	for range 10000 {
 		op := r.Int31n(100)
 		if op < 50 {
 			key := r.Int31n(numKeys)
@@ -328,28 +327,28 @@ func TestCloneShallow(t *testing.T) {
 	tree.Insert(Item{7, 7})
 	tree.Insert(Item{8, 8})
 	tree.DeleteWithKey(8)
-	assert.Equal(t, alloc1.storage, []node{{}, {}, {color: black, item: Item{7, 7}}, {color: gap}})
-	assert.Equal(t, tree.minNode, uint32(2))
-	assert.Equal(t, tree.maxNode, uint32(2))
+	assert.Equal(t, []node{{}, {}, {color: black, item: Item{7, 7}}, {color: gap}}, alloc1.storage)
+	assert.Equal(t, uint32(2), tree.minNode)
+	assert.Equal(t, uint32(2), tree.maxNode)
 	alloc2 := alloc1.Clone()
 	clone := tree.CloneShallow(alloc2)
-	assert.Equal(t, alloc2.storage, []node{{}, {}, {color: black, item: Item{7, 7}}, {color: gap}})
-	assert.Equal(t, clone.minNode, uint32(2))
-	assert.Equal(t, clone.maxNode, uint32(2))
-	assert.Equal(t, alloc2.Size(), 4)
+	assert.Equal(t, []node{{}, {}, {color: black, item: Item{7, 7}}, {color: gap}}, alloc2.storage)
+	assert.Equal(t, uint32(2), clone.minNode)
+	assert.Equal(t, uint32(2), clone.maxNode)
+	assert.Equal(t, 4, alloc2.Size())
 	tree.Insert(Item{10, 10})
 	alloc3 := alloc1.Clone()
 	clone = tree.CloneShallow(alloc3)
-	assert.Equal(t, alloc3.storage, []node{
+	assert.Equal(t, []node{
 		{},
 		{},
 		{right: 3, color: black, item: Item{7, 7}},
 		{parent: 2, color: red, item: Item{10, 10}},
-	})
-	assert.Equal(t, clone.minNode, uint32(2))
-	assert.Equal(t, clone.maxNode, uint32(3))
-	assert.Equal(t, alloc3.Size(), 4)
-	assert.Equal(t, alloc2.Size(), 4)
+	}, alloc3.storage)
+	assert.Equal(t, uint32(2), clone.minNode)
+	assert.Equal(t, uint32(3), clone.maxNode)
+	assert.Equal(t, 4, alloc3.Size())
+	assert.Equal(t, 4, alloc2.Size())
 }
 
 func TestCloneDeep(t *testing.T) {
@@ -357,38 +356,38 @@ func TestCloneDeep(t *testing.T) {
 	alloc1.malloc()
 	tree := NewRBTree(alloc1)
 	tree.Insert(Item{7, 7})
-	assert.Equal(t, alloc1.storage, []node{{}, {}, {color: black, item: Item{7, 7}}})
-	assert.Equal(t, tree.minNode, uint32(2))
-	assert.Equal(t, tree.maxNode, uint32(2))
+	assert.Equal(t, []node{{}, {}, {color: black, item: Item{7, 7}}}, alloc1.storage)
+	assert.Equal(t, uint32(2), tree.minNode)
+	assert.Equal(t, uint32(2), tree.maxNode)
 	alloc2 := NewAllocator()
 	clone := tree.CloneDeep(alloc2)
-	assert.Equal(t, alloc2.storage, []node{{}, {color: black, item: Item{7, 7}}})
-	assert.Equal(t, clone.minNode, uint32(1))
-	assert.Equal(t, clone.maxNode, uint32(1))
-	assert.Equal(t, alloc2.Size(), 2)
+	assert.Equal(t, []node{{}, {color: black, item: Item{7, 7}}}, alloc2.storage)
+	assert.Equal(t, uint32(1), clone.minNode)
+	assert.Equal(t, uint32(1), clone.maxNode)
+	assert.Equal(t, 2, alloc2.Size())
 	tree.Insert(Item{10, 10})
 	alloc2 = NewAllocator()
 	clone = tree.CloneDeep(alloc2)
-	assert.Equal(t, alloc2.storage, []node{
+	assert.Equal(t, []node{
 		{},
 		{right: 2, color: black, item: Item{7, 7}},
 		{parent: 1, color: red, item: Item{10, 10}},
-	})
-	assert.Equal(t, clone.minNode, uint32(1))
-	assert.Equal(t, clone.maxNode, uint32(2))
-	assert.Equal(t, alloc2.Size(), 3)
+	}, alloc2.storage)
+	assert.Equal(t, uint32(1), clone.minNode)
+	assert.Equal(t, uint32(2), clone.maxNode)
+	assert.Equal(t, 3, alloc2.Size())
 }
 
 func TestErase(t *testing.T) {
 	alloc := NewAllocator()
 	tree := NewRBTree(alloc)
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		tree.Insert(Item{uint32(i), uint32(i)})
 	}
-	assert.Equal(t, alloc.Used(), 11)
+	assert.Equal(t, 11, alloc.Used())
 	tree.Erase()
-	assert.Equal(t, alloc.Used(), 1)
-	assert.Equal(t, alloc.Size(), 11)
+	assert.Equal(t, 1, alloc.Used())
+	assert.Equal(t, 11, alloc.Size())
 }
 
 func indexColor(i int) color {
@@ -475,12 +474,12 @@ func TestReuseFree(t *testing.T) {
 func TestAllocatorHibernateBootEmpty(t *testing.T) {
 	alloc := NewAllocator()
 	alloc.Hibernate()
-	assert.Equal(t, alloc.Size(), 0)
-	assert.Equal(t, alloc.Used(), 0)
+	assert.Equal(t, 0, alloc.Size())
+	assert.Equal(t, 0, alloc.Used())
 
 	alloc.Boot()
-	assert.Equal(t, alloc.Size(), 0)
-	assert.Equal(t, alloc.Used(), 0)
+	assert.Equal(t, 0, alloc.Size())
+	assert.Equal(t, 0, alloc.Used())
 }
 
 func TestAllocatorHibernateBoot(t *testing.T) {
@@ -507,8 +506,8 @@ func TestAllocatorHibernateBoot(t *testing.T) {
 	alloc.Hibernate()
 	assert.PanicsWithValue(t, "cannot hibernate an already hibernated Allocator", alloc.Hibernate)
 	assert.Nil(t, alloc.storage)
-	assert.Equal(t, alloc.Size(), 0)
-	assert.Equal(t, alloc.hibernatedStorageLen, 102)
+	assert.Equal(t, 0, alloc.Size())
+	assert.Equal(t, 102, alloc.hibernatedStorageLen)
 	assert.PanicsWithValue(t, "hibernated allocators cannot be used", func() { alloc.Used() })
 	assert.PanicsWithValue(t, "hibernated allocators cannot be used", func() { alloc.malloc() })
 	assert.PanicsWithValue(t, "hibernated allocators cannot be used", func() { alloc.free(0) })
@@ -616,14 +615,14 @@ func TestAllocatorHibernateBootThreshold(t *testing.T) {
 	alloc.HibernationThreshold = 3
 	assert.Equal(t, 3, alloc.Clone().HibernationThreshold)
 	alloc.Hibernate()
-	assert.Equal(t, alloc.hibernatedStorageLen, 0)
+	assert.Equal(t, 0, alloc.hibernatedStorageLen)
 	alloc.Boot()
 	alloc.malloc()
 	alloc.Hibernate()
-	assert.Equal(t, alloc.hibernatedStorageLen, 3)
+	assert.Equal(t, 3, alloc.hibernatedStorageLen)
 	alloc.Boot()
-	assert.Equal(t, alloc.Size(), 3)
-	assert.Equal(t, alloc.Used(), 3)
+	assert.Equal(t, 3, alloc.Size())
+	assert.Equal(t, 3, alloc.Used())
 }
 
 func TestAllocatorSerializeDeserialize(t *testing.T) {
@@ -649,26 +648,26 @@ func TestAllocatorSerializeDeserialize(t *testing.T) {
 
 	alloc.Hibernate()
 	file, err := ioutil.TempFile("", "")
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	name := file.Name()
 	defer os.Remove(name)
 
-	assert.Nil(t, file.Close())
-	assert.NotNil(t, alloc.Serialize("/tmp/xxx/yyy"))
-	assert.Nil(t, alloc.Serialize(name))
+	assert.NoError(t, file.Close())
+	assert.Error(t, alloc.Serialize("/tmp/xxx/yyy"))
+	assert.NoError(t, alloc.Serialize(name))
 	assert.Nil(t, alloc.storage)
 	for _, d := range alloc.hibernatedData {
 		assert.Nil(t, d)
 	}
-	assert.Equal(t, alloc.hibernatedStorageLen, 101)
+	assert.Equal(t, 101, alloc.hibernatedStorageLen)
 	assert.PanicsWithValue(t, "cannot boot a serialized Allocator", alloc.Boot)
-	assert.NotNil(t, alloc.Deserialize("/tmp/xxx/yyy"))
-	assert.Nil(t, alloc.Deserialize(name))
+	assert.Error(t, alloc.Deserialize("/tmp/xxx/yyy"))
+	assert.NoError(t, alloc.Deserialize(name))
 	for _, d := range alloc.hibernatedData {
-		assert.True(t, len(d) > 0)
+		assert.NotEmpty(t, d)
 	}
 	alloc.Boot()
-	assert.Equal(t, alloc.hibernatedStorageLen, 0)
+	assert.Equal(t, 0, alloc.hibernatedStorageLen)
 	for _, d := range alloc.hibernatedData {
 		assert.Nil(t, d)
 	}

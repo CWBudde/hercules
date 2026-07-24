@@ -1,5 +1,4 @@
 //go:build !tensorflow
-// +build !tensorflow
 
 package leaves
 
@@ -27,6 +26,7 @@ var errTensorflowRequired = errors.New(
 // CommentSentimentAnalysis is a placeholder in non-tensorflow builds.
 type CommentSentimentAnalysis struct {
 	core.NoopMerger
+
 	MinCommentLength int
 	Gap              float32
 
@@ -68,27 +68,30 @@ func (sent *CommentSentimentAnalysis) Description() string {
 	return "[EXPERIMENTAL] Unavailable in this build. Rebuild with -tags tensorflow."
 }
 
-func (sent *CommentSentimentAnalysis) Configure(facts map[string]interface{}) error {
+func (sent *CommentSentimentAnalysis) Configure(facts map[string]any) error {
 	if l, exists := facts[core.ConfigLogger].(core.Logger); exists {
 		sent.l = l
 	}
+
 	if val, exists := facts[ConfigCommentSentimentGap]; exists {
 		sent.Gap = val.(float32)
 	}
+
 	if val, exists := facts[ConfigCommentSentimentMinLength]; exists {
 		sent.MinCommentLength = val.(int)
 	}
+
 	return nil
 }
 
-func (*CommentSentimentAnalysis) ConfigureUpstream(facts map[string]interface{}) error { return nil }
+func (*CommentSentimentAnalysis) ConfigureUpstream(facts map[string]any) error { return nil }
 
 func (sent *CommentSentimentAnalysis) Initialize(repository *git.Repository) error {
 	sent.l = core.NewLogger()
 	return errTensorflowRequired
 }
 
-func (sent *CommentSentimentAnalysis) Consume(deps map[string]interface{}) (map[string]interface{}, error) {
+func (sent *CommentSentimentAnalysis) Consume(deps map[string]any) (map[string]any, error) {
 	return nil, nil
 }
 
@@ -96,9 +99,9 @@ func (sent *CommentSentimentAnalysis) Fork(n int) []core.PipelineItem {
 	return core.ForkSamePipelineItem(sent, n)
 }
 
-func (sent *CommentSentimentAnalysis) Finalize() interface{} { return CommentSentimentResult{} }
+func (sent *CommentSentimentAnalysis) Finalize() any { return CommentSentimentResult{} }
 
-func (sent *CommentSentimentAnalysis) Serialize(result interface{}, binary bool, writer io.Writer) error {
+func (sent *CommentSentimentAnalysis) Serialize(result any, binary bool, writer io.Writer) error {
 	return errTensorflowRequired
 }
 

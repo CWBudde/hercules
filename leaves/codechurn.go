@@ -3,6 +3,7 @@ package leaves
 import (
 	"fmt"
 	"io"
+	"maps"
 	"math"
 	"os"
 	"sort"
@@ -23,6 +24,7 @@ import (
 // It is a LeafPipelineItem.
 type CodeChurnAnalysis struct {
 	core.NoopMerger
+
 	// Granularity sets the size of each band - the number of ticks it spans.
 	// Smaller values provide better resolution but require more work and eat more
 	// memory. 30 ticks is usually enough.
@@ -94,6 +96,7 @@ func (p *personChurnStats) getFileEntry(id core.FileId) (entry churnFileEntry) {
 	} else {
 		p.files = map[core.FileId]churnFileEntry{}
 	}
+
 	entry.deleteHistory = map[core.AuthorId]sparseHistory{}
 
 	return entry
@@ -132,7 +135,7 @@ func (analyser *CodeChurnAnalysis) ListConfigurationOptions() []core.Configurati
 }
 
 // Configure sets the properties previously published by ListConfigurationOptions().
-func (analyser *CodeChurnAnalysis) Configure(facts map[string]interface{}) error {
+func (analyser *CodeChurnAnalysis) Configure(facts map[string]any) error {
 	if l, exists := facts[core.ConfigLogger].(core.Logger); exists {
 		analyser.l = l
 	} else {
@@ -142,15 +145,19 @@ func (analyser *CodeChurnAnalysis) Configure(facts map[string]interface{}) error
 	if val, exists := facts[items.FactTickSize].(time.Duration); exists {
 		analyser.tickSize = val
 	}
+
 	if val, exists := facts[ConfigBurndownGranularity].(int); exists {
 		analyser.Granularity = val
 	}
+
 	if val, exists := facts[ConfigBurndownSampling].(int); exists {
 		analyser.Sampling = val
 	}
+
 	if val, exists := facts[ConfigBurndownTrackFiles].(bool); exists {
 		analyser.TrackFiles = val
 	}
+
 	if val, ok := facts[core.FactIdentityResolver].(core.IdentityResolver); ok {
 		analyser.peopleResolver = val
 	}
@@ -158,7 +165,7 @@ func (analyser *CodeChurnAnalysis) Configure(facts map[string]interface{}) error
 	return nil
 }
 
-func (analyser *CodeChurnAnalysis) ConfigureUpstream(_ map[string]interface{}) error {
+func (analyser *CodeChurnAnalysis) ConfigureUpstream(_ map[string]any) error {
 	return nil
 }
 
@@ -183,21 +190,25 @@ func (analyser *CodeChurnAnalysis) Initialize(repository *git.Repository) error 
 			DefaultBurndownGranularity)
 		analyser.Granularity = DefaultBurndownGranularity
 	}
+
 	if analyser.Sampling <= 0 {
 		analyser.l.Warnf("adjusted the sampling to %d ticks\n",
 			DefaultBurndownGranularity)
 		analyser.Sampling = DefaultBurndownGranularity
 	}
+
 	if analyser.Sampling > analyser.Granularity {
 		analyser.l.Warnf("granularity may not be less than sampling, adjusted to %d\n",
 			analyser.Granularity)
 		analyser.Sampling = analyser.Granularity
 	}
+
 	analyser.repository = repository
 
 	if analyser.peopleResolver == nil {
 		analyser.peopleResolver = core.NewIdentityResolver(nil, nil)
 	}
+
 	peopleCount := analyser.peopleResolver.MaxCount()
 
 	analyser.codeChurns = make([]personChurnStats, peopleCount)
@@ -215,7 +226,7 @@ func (analyser *CodeChurnAnalysis) Fork(n int) []core.PipelineItem {
 // Additionally, DependencyCommit is always present there and represents the analysed *object.Commit.
 // This function returns the mapping with analysis results. The keys must be the same as
 // in Provides(). If there was an error, nil is returned.
-func (analyser *CodeChurnAnalysis) Consume(deps map[string]interface{}) (map[string]interface{}, error) {
+func (analyser *CodeChurnAnalysis) Consume(deps map[string]any) (map[string]any, error) {
 	changes := deps[linehistory.DependencyLineHistory].(core.LineHistoryChanges)
 	analyser.fileResolver = changes.Resolver
 	peopleCount := analyser.peopleResolver.MaxCount()
@@ -224,9 +235,11 @@ func (analyser *CodeChurnAnalysis) Consume(deps map[string]interface{}) (map[str
 		if change.IsDelete() {
 			continue
 		}
+
 		if int(change.PrevAuthor) >= peopleCount && change.PrevAuthor != core.AuthorMissing {
 			change.PrevAuthor = core.AuthorMissing
 		}
+
 		if int(change.CurrAuthor) >= peopleCount && change.CurrAuthor != core.AuthorMissing {
 			change.CurrAuthor = core.AuthorMissing
 		}
@@ -275,9 +288,11 @@ func (analyser *CodeChurnAnalysis) updateAwareness(change core.LineHistoryChange
 				delta.deletedByOthers -= lineDelta
 				lineDelta = 0
 			}
+
 			awareness, memorability := analyser.calculateAwareness(*fileEntry, change, delta.lastTouch, delta.churnLines)
 			fileEntry.awareness, fileEntry.memorability = float32(awareness), float32(memorability)
 		}
+
 		if lineDelta == 0 {
 			delete(analyser.churnDeltas, deltaKey)
 			return
@@ -297,6 +312,7 @@ func (analyser *CodeChurnAnalysis) updateAwareness(change core.LineHistoryChange
 			delta.deletedBySelf -= lineDelta
 		}
 	}
+
 	analyser.churnDeltas[deltaKey] = delta
 }
 
@@ -310,6 +326,7 @@ func (analyser *CodeChurnAnalysis) updateAuthor(change core.LineHistoryChange) {
 	analyser.updateAwareness(change, &fileEntry)
 
 	lineDelta := int32(change.Delta)
+
 	fileEntry.ownedLines += lineDelta
 	if change.Delta > 0 {
 		// PrevAuthor == CurrAuthor
@@ -320,6 +337,7 @@ func (analyser *CodeChurnAnalysis) updateAuthor(change core.LineHistoryChange) {
 			history = sparseHistory{}
 			fileEntry.deleteHistory[change.CurrAuthor] = history
 		}
+
 		history.updateDelta(int(change.PrevTick), int(change.CurrTick), change.Delta)
 	}
 
@@ -327,7 +345,7 @@ func (analyser *CodeChurnAnalysis) updateAuthor(change core.LineHistoryChange) {
 }
 
 // Finalize returns the result of the analysis. Further calls to Consume() are not expected.
-func (analyser *CodeChurnAnalysis) Finalize() interface{} {
+func (analyser *CodeChurnAnalysis) Finalize() any {
 	result := CodeChurnResult{
 		Authors:     make([]CodeChurnAuthorResult, len(analyser.codeChurns)),
 		people:      analyser.peopleResolver.CopyNames(false),
@@ -337,6 +355,7 @@ func (analyser *CodeChurnAnalysis) Finalize() interface{} {
 	}
 
 	fmt.Fprintln(os.Stderr)
+
 	for pId, person := range analyser.codeChurns {
 		inserted := int32(0)
 		deletedBySelf := int32(0)
@@ -345,13 +364,16 @@ func (analyser *CodeChurnAnalysis) Finalize() interface{} {
 
 		for fileID, entry := range person.files {
 			inserted += entry.insertedLines
+
 			fileName := ""
 			if analyser.fileResolver != nil {
 				fileName = analyser.fileResolver.NameOf(fileID)
 			}
+
 			if fileName == "" {
 				fileName = fmt.Sprintf("#%d", fileID)
 			}
+
 			authorFiles[fileName] = CodeChurnFileResult{
 				InsertedLines: entry.insertedLines,
 				OwnedLines:    entry.ownedLines,
@@ -360,12 +382,14 @@ func (analyser *CodeChurnAnalysis) Finalize() interface{} {
 				DeleteHistory: convertDeleteHistory(entry.deleteHistory),
 			}
 		}
+
 		result.Authors[pId] = CodeChurnAuthorResult{Files: authorFiles}
 
 		name := analyser.peopleResolver.FriendlyNameOf(core.AuthorId(pId))
 		fmt.Fprintf(os.Stderr, "%s (%d):\t\t%d\t%d\t%d = %d\n", name, pId, inserted, deletedBySelf, deletedByOthers,
 			inserted+deletedBySelf+deletedByOthers)
 	}
+
 	fmt.Fprintln(os.Stderr)
 
 	return result
@@ -373,67 +397,78 @@ func (analyser *CodeChurnAnalysis) Finalize() interface{} {
 
 // Serialize converts the analysis result as returned by Finalize() to text or bytes.
 // The text format is YAML and the bytes format is Protocol Buffers.
-func (analyser *CodeChurnAnalysis) Serialize(result interface{}, binary bool, writer io.Writer) error {
+func (analyser *CodeChurnAnalysis) Serialize(result any, binary bool, writer io.Writer) error {
 	churnResult, ok := result.(CodeChurnResult)
 	if !ok {
 		return fmt.Errorf("result is not a CodeChurnResult: '%v'", result)
 	}
+
 	if binary {
 		return analyser.serializeBinary(&churnResult, writer)
 	}
+
 	analyser.serializeText(&churnResult, writer)
+
 	return nil
 }
 
 // Deserialize converts the specified protobuf bytes to BurndownResult.
-func (analyser *CodeChurnAnalysis) Deserialize(message []byte) (interface{}, error) {
+func (analyser *CodeChurnAnalysis) Deserialize(message []byte) (any, error) {
 	payload := pb.CodeChurnAnalysisResults{}
-	if err := proto.Unmarshal(message, &payload); err != nil {
+
+	err := proto.Unmarshal(message, &payload)
+	if err != nil {
 		return nil, err
 	}
 
 	result := CodeChurnResult{
-		Authors:     make([]CodeChurnAuthorResult, len(payload.Authors)),
-		people:      append([]string(nil), payload.People...),
-		tickSize:    time.Duration(payload.TickSize),
-		sampling:    int(payload.Sampling),
-		granularity: int(payload.Granularity),
+		Authors:     make([]CodeChurnAuthorResult, len(payload.GetAuthors())),
+		people:      append([]string(nil), payload.GetPeople()...),
+		tickSize:    time.Duration(payload.GetTickSize()),
+		sampling:    int(payload.GetSampling()),
+		granularity: int(payload.GetGranularity()),
 	}
-	for authorID, author := range payload.Authors {
-		files := make(map[string]CodeChurnFileResult, len(author.Files))
-		for _, file := range author.Files {
-			files[file.File] = CodeChurnFileResult{
-				InsertedLines: file.InsertedLines,
-				OwnedLines:    file.OwnedLines,
-				Memorability:  file.Memorability,
-				Awareness:     file.Awareness,
-				DeleteHistory: deserializeDeleteHistory(file.DeleteHistory),
+	for authorID, author := range payload.GetAuthors() {
+		files := make(map[string]CodeChurnFileResult, len(author.GetFiles()))
+		for _, file := range author.GetFiles() {
+			files[file.GetFile()] = CodeChurnFileResult{
+				InsertedLines: file.GetInsertedLines(),
+				OwnedLines:    file.GetOwnedLines(),
+				Memorability:  file.GetMemorability(),
+				Awareness:     file.GetAwareness(),
+				DeleteHistory: deserializeDeleteHistory(file.GetDeleteHistory()),
 			}
 		}
+
 		result.Authors[authorID] = CodeChurnAuthorResult{Files: files}
 	}
+
 	return result, nil
 }
 
 // MergeResults combines two BurndownResult-s together.
 func (analyser *CodeChurnAnalysis) MergeResults(
-	r1, r2 interface{}, c1, c2 *core.CommonAnalysisResult,
-) interface{} {
+	r1, r2 any, c1, c2 *core.CommonAnalysisResult,
+) any {
 	cr1 := r1.(CodeChurnResult)
+
 	cr2 := r2.(CodeChurnResult)
 	if cr1.tickSize != cr2.tickSize {
 		panic("cannot merge CodeChurn results with different tick sizes")
 	}
 
 	mergedPeople := append([]string(nil), cr1.people...)
+
 	peopleIndex := make(map[string]int, len(mergedPeople))
 	for i, name := range mergedPeople {
 		peopleIndex[name] = i
 	}
+
 	for _, name := range cr2.people {
 		if _, exists := peopleIndex[name]; exists {
 			continue
 		}
+
 		peopleIndex[name] = len(mergedPeople)
 		mergedPeople = append(mergedPeople, name)
 	}
@@ -454,7 +489,9 @@ func (analyser *CodeChurnAnalysis) MergeResults(
 			if authorID >= len(result.people) {
 				continue
 			}
+
 			targetID := peopleIndex[result.people[authorID]]
+
 			targetFiles := merged.Authors[targetID].Files
 			for fileName, stats := range author.Files {
 				current, exists := targetFiles[fileName]
@@ -462,6 +499,7 @@ func (analyser *CodeChurnAnalysis) MergeResults(
 					targetFiles[fileName] = cloneCodeChurnFileResult(stats)
 					continue
 				}
+
 				current.InsertedLines += stats.InsertedLines
 				current.OwnedLines += stats.OwnedLines
 				current.Memorability = maxFloat32(current.Memorability, stats.Memorability)
@@ -474,26 +512,32 @@ func (analyser *CodeChurnAnalysis) MergeResults(
 
 	mergeAuthor(cr1)
 	mergeAuthor(cr2)
+
 	return merged
 }
 
 func (analyser *CodeChurnAnalysis) serializeText(result *CodeChurnResult, writer io.Writer) {
 	fmt.Fprintln(writer, "  people:")
+
 	for _, person := range result.people {
 		fmt.Fprintf(writer, "    - %s\n", yaml.SafeString(person))
 	}
+
 	fmt.Fprintln(writer, "  tick_size:", int(result.tickSize.Seconds()))
 	fmt.Fprintln(writer, "  granularity:", result.granularity)
 	fmt.Fprintln(writer, "  sampling:", result.sampling)
 	fmt.Fprintln(writer, "  authors:")
+
 	for authorID, author := range result.Authors {
 		name := core.AuthorMissingName
 		if authorID < len(result.people) {
 			name = result.people[authorID]
 		}
+
 		fmt.Fprintf(writer, "    %d:\n", authorID)
 		fmt.Fprintf(writer, "      name: %s\n", yaml.SafeString(name))
 		fmt.Fprintln(writer, "      files:")
+
 		fileNames := sortedCodeChurnFiles(author.Files)
 		for _, fileName := range fileNames {
 			stats := author.Files[fileName]
@@ -517,6 +561,7 @@ func (analyser *CodeChurnAnalysis) serializeBinary(result *CodeChurnResult, writ
 
 	for authorID, author := range result.Authors {
 		fileNames := sortedCodeChurnFiles(author.Files)
+
 		pbAuthor := &pb.CodeChurnAuthorStat{
 			Files: make([]*pb.CodeChurnFileStat, 0, len(fileNames)),
 		}
@@ -531,6 +576,7 @@ func (analyser *CodeChurnAnalysis) serializeBinary(result *CodeChurnResult, writ
 				DeleteHistory: serializeDeleteHistory(stats.DeleteHistory),
 			})
 		}
+
 		message.Authors[authorID] = pbAuthor
 	}
 
@@ -538,7 +584,9 @@ func (analyser *CodeChurnAnalysis) serializeBinary(result *CodeChurnResult, writ
 	if err != nil {
 		return err
 	}
+
 	_, err = writer.Write(serialized)
+
 	return err
 }
 
@@ -546,10 +594,12 @@ func convertDeleteHistory(history map[core.AuthorId]sparseHistory) map[int]spars
 	if len(history) == 0 {
 		return nil
 	}
+
 	result := make(map[int]sparseHistory, len(history))
 	for author, entries := range history {
 		result[int(author)] = cloneSparseHistory(entries)
 	}
+
 	return result
 }
 
@@ -557,14 +607,15 @@ func cloneSparseHistory(history sparseHistory) sparseHistory {
 	if len(history) == 0 {
 		return nil
 	}
+
 	result := make(sparseHistory, len(history))
 	for currentTick, entry := range history {
 		deltas := make(map[int]int64, len(entry.deltas))
-		for previousTick, delta := range entry.deltas {
-			deltas[previousTick] = delta
-		}
+		maps.Copy(deltas, entry.deltas)
+
 		result[currentTick] = sparseHistoryEntry{deltas: deltas}
 	}
+
 	return result
 }
 
@@ -582,27 +633,33 @@ func mergeDeleteHistory(left, right map[int]sparseHistory) map[int]sparseHistory
 	if len(left) == 0 && len(right) == 0 {
 		return nil
 	}
+
 	result := make(map[int]sparseHistory, len(left)+len(right))
 	for author, history := range left {
 		result[author] = cloneSparseHistory(history)
 	}
+
 	for author, history := range right {
 		target := result[author]
 		if target == nil {
 			result[author] = cloneSparseHistory(history)
 			continue
 		}
+
 		for currentTick, entry := range history {
 			targetEntry := target[currentTick]
 			if targetEntry.deltas == nil {
 				targetEntry = newSparseHistoryEntry()
 			}
+
 			for previousTick, delta := range entry.deltas {
 				targetEntry.deltas[previousTick] += delta
 			}
+
 			target[currentTick] = targetEntry
 		}
 	}
+
 	return result
 }
 
@@ -610,10 +667,12 @@ func serializeDeleteHistory(history map[int]sparseHistory) []*pb.CodeChurnDelete
 	if len(history) == 0 {
 		return nil
 	}
+
 	authors := make([]int, 0, len(history))
 	for author := range history {
 		authors = append(authors, author)
 	}
+
 	sort.Ints(authors)
 
 	result := make([]*pb.CodeChurnDeleteHistory, 0, len(authors))
@@ -622,14 +681,19 @@ func serializeDeleteHistory(history map[int]sparseHistory) []*pb.CodeChurnDelete
 		for currentTick := range history[author] {
 			currentTicks = append(currentTicks, currentTick)
 		}
+
 		sort.Ints(currentTicks)
+
 		for _, currentTick := range currentTicks {
 			entry := history[author][currentTick]
+
 			previousTicks := make([]int, 0, len(entry.deltas))
 			for previousTick := range entry.deltas {
 				previousTicks = append(previousTicks, previousTick)
 			}
+
 			sort.Ints(previousTicks)
+
 			pbEntry := &pb.CodeChurnDeleteHistory{
 				Author:      int32(author),
 				CurrentTick: int32(currentTick),
@@ -641,9 +705,11 @@ func serializeDeleteHistory(history map[int]sparseHistory) []*pb.CodeChurnDelete
 					Delta:        entry.deltas[previousTick],
 				})
 			}
+
 			result = append(result, pbEntry)
 		}
 	}
+
 	return result
 }
 
@@ -651,20 +717,26 @@ func deserializeDeleteHistory(entries []*pb.CodeChurnDeleteHistory) map[int]spar
 	if len(entries) == 0 {
 		return nil
 	}
+
 	result := map[int]sparseHistory{}
+
 	for _, entry := range entries {
-		author := int(entry.Author)
+		author := int(entry.GetAuthor())
+
 		history := result[author]
 		if history == nil {
 			history = sparseHistory{}
 			result[author] = history
 		}
-		deltas := make(map[int]int64, len(entry.Entries))
-		for _, delta := range entry.Entries {
-			deltas[int(delta.PreviousTick)] = delta.Delta
+
+		deltas := make(map[int]int64, len(entry.GetEntries()))
+		for _, delta := range entry.GetEntries() {
+			deltas[int(delta.GetPreviousTick())] = delta.GetDelta()
 		}
-		history[int(entry.CurrentTick)] = sparseHistoryEntry{deltas: deltas}
+
+		history[int(entry.GetCurrentTick())] = sparseHistoryEntry{deltas: deltas}
 	}
+
 	return result
 }
 
@@ -673,7 +745,9 @@ func sortedCodeChurnFiles(files map[string]CodeChurnFileResult) []string {
 	for name := range files {
 		names = append(names, name)
 	}
+
 	sort.Strings(names)
+
 	return names
 }
 
@@ -681,6 +755,7 @@ func maxInt(left, right int) int {
 	if left > right {
 		return left
 	}
+
 	return right
 }
 
@@ -688,6 +763,7 @@ func maxFloat32(left, right float32) float32 {
 	if left > right {
 		return left
 	}
+
 	return right
 }
 
@@ -706,6 +782,7 @@ func (analyser *CodeChurnAnalysis) calculateAwareness(entry churnFileEntry, chan
 		// initial
 		return 0, memorabilityMin
 	}
+
 	awareness, memorability = float64(entry.awareness), float64(entry.memorability)
 	if lastTouch >= change.CurrTick {
 		return awareness, memorability
@@ -717,6 +794,7 @@ func (analyser *CodeChurnAnalysis) calculateAwareness(entry churnFileEntry, chan
 		awareness = math.Max(0, awareness*
 			float64(entry.ownedLines-delta.deletedByOthers-delta.deletedBySelf)/ownedLines)
 	}
+
 	awareness += float64(delta.inserted)
 
 	timeDelta := float64(int(change.CurrTick - lastTouch))
@@ -735,6 +813,7 @@ func (analyser *CodeChurnAnalysis) calculateAwareness(entry churnFileEntry, chan
 			return awareness, memorability
 		}
 	}
+
 	return 0, 0
 
 	// memory halflife = min 30d max 180d

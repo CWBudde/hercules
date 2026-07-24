@@ -1,6 +1,7 @@
 package plumbing
 
 import (
+	"errors"
 	"sort"
 	"strings"
 	"time"
@@ -56,6 +57,7 @@ const (
 // It is a PipelineItem.
 type FileDiff struct {
 	core.NoopMerger
+
 	CleanupDisabled   bool
 	WhitespaceIgnore  bool
 	RefineDisabled    bool
@@ -77,7 +79,7 @@ const (
 	DependencyFileDiff = "file_diff"
 
 	// ConfigFileWhitespaceIgnore is the name of the configuration option (FileDiff.Configure())
-	// to suppress whitespace changes which can pollute the core diff of the files
+	// to suppress whitespace changes which can pollute the core diff of the files.
 	ConfigFileWhitespaceIgnore = "FileDiff.WhitespaceIgnore"
 
 	// ConfigFileDiffTimeout is the number of milliseconds a single diff calculation may elapse.
@@ -195,36 +197,45 @@ func (diff *FileDiff) ListConfigurationOptions() []core.ConfigurationOption {
 }
 
 // Configure sets the properties previously published by ListConfigurationOptions().
-func (diff *FileDiff) Configure(facts map[string]interface{}) error {
+func (diff *FileDiff) Configure(facts map[string]any) error {
 	if l, exists := facts[core.ConfigLogger].(core.Logger); exists {
 		diff.l = l
 	}
+
 	if val, exists := facts[ConfigFileDiffDisableCleanup].(bool); exists {
 		diff.CleanupDisabled = val
 	}
+
 	if val, exists := facts[ConfigFileWhitespaceIgnore].(bool); exists {
 		diff.WhitespaceIgnore = val
 	}
+
 	if val, exists := facts[ConfigFileDiffTimeout].(int); exists {
 		if val <= 0 {
 			diff.l.Warnf("invalid timeout value: %d", val)
 		}
+
 		diff.Timeout = time.Duration(val) * time.Millisecond
 	}
+
 	if val, exists := facts[ConfigFileDiffDisableRefine].(bool); exists {
 		diff.RefineDisabled = val
 	}
+
 	if val, exists := facts[ConfigFileDiffRefineMaxFileSize].(int); exists {
 		diff.RefineMaxFileSize = val
 	} else {
 		diff.RefineMaxFileSize = DefaultFileDiffRefineMaxFileSize
 	}
+
 	if val, exists := facts[ConfigFileDiffRefineMaxLines].(int); exists {
 		diff.RefineMaxLines = val
 	} else {
 		diff.RefineMaxLines = DefaultFileDiffRefineMaxLines
 	}
+
 	diff.RefineMode = RefineModeAuto
+
 	if val, exists := facts[ConfigFileDiffRefineMode].(string); exists && val != "" {
 		switch val {
 		case RefineModeAuto, RefineModeFull, RefineModeRange:
@@ -233,10 +244,11 @@ func (diff *FileDiff) Configure(facts map[string]interface{}) error {
 			diff.l.Warnf("invalid diff-refine-mode %q; using %q", val, RefineModeAuto)
 		}
 	}
+
 	return nil
 }
 
-func (*FileDiff) ConfigureUpstream(facts map[string]interface{}) error {
+func (*FileDiff) ConfigureUpstream(facts map[string]any) error {
 	return nil
 }
 
@@ -249,9 +261,10 @@ func (diff *FileDiff) Initialize(repository *git.Repository) error {
 
 func stripWhitespace(str string, ignoreWhitespace bool) string {
 	if ignoreWhitespace {
-		response := strings.Replace(str, " ", "", -1)
+		response := strings.ReplaceAll(str, " ", "")
 		return response
 	}
+
 	return str
 }
 
@@ -260,27 +273,30 @@ func stripWhitespace(str string, ignoreWhitespace bool) string {
 // Additionally, DependencyCommit is always present there and represents the analysed *object.Commit.
 // This function returns the mapping with analysis results. The keys must be the same as
 // in Provides(). If there was an error, nil is returned.
-func (diff *FileDiff) Consume(deps map[string]interface{}) (map[string]interface{}, error) {
+func (diff *FileDiff) Consume(deps map[string]any) (map[string]any, error) {
 	result := map[string]FileDiffData{}
 	cache := deps[DependencyBlobCache].(map[plumbing.Hash]*CachedBlob)
+
 	treeDiff := deps[DependencyTreeChanges].(object.Changes)
 	for _, change := range treeDiff {
 		action, err := change.Action()
 		if err != nil {
 			return nil, err
 		}
+
 		switch action {
 		case merkletrie.Modify:
 			blobFrom := cache[change.From.TreeEntry.Hash]
 			blobTo := cache[change.To.TreeEntry.Hash]
 
 			// Skip binary files; diffmatchpatch treats them as text and would produce noisy line counts.
-			if _, err := blobFrom.CountLines(); err == ErrorBinary {
+			if _, err := blobFrom.CountLines(); errors.Is(err, ErrorBinary) {
 				continue
 			} else if err != nil {
 				return nil, err
 			}
-			if _, err := blobTo.CountLines(); err == ErrorBinary {
+
+			if _, err := blobTo.CountLines(); errors.Is(err, ErrorBinary) {
 				continue
 			} else if err != nil {
 				return nil, err
@@ -292,10 +308,12 @@ func (diff *FileDiff) Consume(deps map[string]interface{}) (map[string]interface
 			dmp := diffmatchpatch.New()
 			dmp.DiffTimeout = diff.Timeout
 			src, dst, _ := dmp.DiffLinesToRunes(stripWhitespace(strFrom, diff.WhitespaceIgnore), stripWhitespace(strTo, diff.WhitespaceIgnore))
+
 			diffs := dmp.DiffMainRunes(src, dst, false)
 			if !diff.CleanupDisabled {
 				diffs = dmp.DiffCleanupMerge(dmp.DiffCleanupSemanticLossless(diffs))
 			}
+
 			fileDiffData := FileDiffData{
 				OldLinesOfCode: len(src),
 				NewLinesOfCode: len(dst),
@@ -306,34 +324,42 @@ func (diff *FileDiff) Consume(deps map[string]interface{}) (map[string]interface
 				(diff.RefineMaxLines == 0 || fileDiffData.NewLinesOfCode <= diff.RefineMaxLines) {
 				fileDiffData = diff.refineWithTreeSitter(change.To.Name, blobTo.Data, fileDiffData)
 			}
+
 			result[change.To.Name] = fileDiffData
 		default:
 			continue
 		}
 	}
-	return map[string]interface{}{DependencyFileDiff: result}, nil
+
+	return map[string]any{DependencyFileDiff: result}, nil
 }
 
 func (diff *FileDiff) refineWithTreeSitter(path string, source []byte, original FileDiffData) FileDiffData {
 	if original.NewLinesOfCode <= 0 || len(original.Diffs) < 2 {
 		return original
 	}
+
 	boundaries := collectSuspiciousBoundaries(original.Diffs)
 	if len(boundaries) == 0 {
 		return original
 	}
+
 	ranges := boundariesToRanges(boundaries, original.NewLinesOfCode)
+
 	nodes, err := extractNodesForRefinement(path, source, ranges, original.NewLinesOfCode, diff.RefineMode)
 	if err != nil {
 		diff.l.Warnf("FileDiff: failed to refine %s: %v", path, err)
 		return original
 	}
+
 	if len(nodes) == 0 {
 		return original
 	}
+
 	line2node := buildLineToNodeIndex(nodes, original.NewLinesOfCode)
 	refined := refineDiffByNodeDensityWithBoundaries(original, line2node, boundaries)
 	refined.Diffs = normalizeDiffs(refined.Diffs)
+
 	return refined
 }
 
@@ -359,15 +385,18 @@ func extractNodesForRefinement(path string, source []byte, ranges []ast_items.Li
 		if len(ranges) == 0 {
 			return ast_items.ExtractNamedNodes(path, source)
 		}
+
 		return ast_items.ExtractNamedNodesInRanges(path, source, padRanges(ranges, newLOC, refineRangePadding))
 	default: // RefineModeAuto and anything unrecognized
 		if len(ranges) == 0 || newLOC < refineRangeMinLines {
 			return ast_items.ExtractNamedNodes(path, source)
 		}
+
 		padded := padRanges(ranges, newLOC, refineRangePadding)
 		if coverageRatio(padded, newLOC) >= refineCoverageThreshold {
 			return ast_items.ExtractNamedNodes(path, source)
 		}
+
 		return ast_items.ExtractNamedNodesInRanges(path, source, padded)
 	}
 }
@@ -380,21 +409,20 @@ func padRanges(ranges []ast_items.LineRange, newLOC, pad int) []ast_items.LineRa
 	if pad <= 0 || len(ranges) == 0 {
 		return ranges
 	}
+
 	out := make([]ast_items.LineRange, 0, len(ranges))
 	for _, r := range ranges {
-		start := r.Start - pad
-		if start < 1 {
-			start = 1
-		}
-		end := r.End + pad
-		if end > newLOC {
-			end = newLOC
-		}
+		start := max(r.Start-pad, 1)
+
+		end := min(r.End+pad, newLOC)
+
 		if start > end {
 			continue
 		}
+
 		out = append(out, ast_items.LineRange{Start: start, End: end})
 	}
+
 	return out
 }
 
@@ -403,25 +431,32 @@ func padRanges(ranges []ast_items.LineRange, newLOC, pad int) []ast_items.LineRa
 // outside the [1, newLOC] window are silently dropped.
 func buildLineToNodeIndex(nodes []ast_items.Node, newLOC int) [][]ast_items.Node {
 	line2node := make([][]ast_items.Node, newLOC)
+
 	for _, node := range nodes {
 		startLine := node.StartLine
 		endLine := node.EndLine
+
 		if startLine < 1 {
 			startLine = 1
 		}
+
 		if endLine < startLine {
 			endLine = startLine
 		}
+
 		if startLine > len(line2node) {
 			continue
 		}
+
 		if endLine > len(line2node) {
 			endLine = len(line2node)
 		}
+
 		for line := startLine; line <= endLine; line++ {
 			line2node[line-1] = append(line2node[line-1], node)
 		}
 	}
+
 	return line2node
 }
 
@@ -455,10 +490,12 @@ func collectSuspiciousBoundaries(diffs []diffmatchpatch.Diff) []suspiciousBounda
 	}
 	var out []suspiciousBoundary
 	line := 0
+
 	for i, edit := range diffs {
 		if i == len(diffs)-1 {
 			break
 		}
+
 		size := utf8.RuneCountInString(edit.Text)
 		if edit.Type == diffmatchpatch.DiffInsert &&
 			diffs[i+1].Type == diffmatchpatch.DiffEqual {
@@ -472,10 +509,12 @@ func collectSuspiciousBoundaries(diffs []diffmatchpatch.Diff) []suspiciousBounda
 				})
 			}
 		}
+
 		if edit.Type != diffmatchpatch.DiffDelete {
 			line += size
 		}
 	}
+
 	return out
 }
 
@@ -488,24 +527,23 @@ func boundariesToRanges(boundaries []suspiciousBoundary, newLOC int) []ast_items
 	if len(boundaries) == 0 || newLOC <= 0 {
 		return nil
 	}
+
 	out := make([]ast_items.LineRange, 0, len(boundaries))
 	for _, b := range boundaries {
 		// The heuristic reads countNodesInInterval(line2node, b.line, b.line+size)
 		// and (b.line+matched, b.line+size+matched). Their union, expressed in
 		// 1-indexed inclusive line numbers, is [b.line+1, b.line+size+matched].
 		start := b.line + 1
-		end := b.line + b.size + b.matched
-		if end < start {
-			end = start
-		}
-		if end > newLOC {
-			end = newLOC
-		}
+
+		end := min(max(b.line+b.size+b.matched, start), newLOC)
+
 		if start > newLOC {
 			continue
 		}
+
 		out = append(out, ast_items.LineRange{Start: start, End: end})
 	}
+
 	return out
 }
 
@@ -515,25 +553,32 @@ func coverageRatio(ranges []ast_items.LineRange, newLOC int) float64 {
 	if newLOC <= 0 || len(ranges) == 0 {
 		return 0
 	}
+
 	sorted := make([]ast_items.LineRange, len(ranges))
 	copy(sorted, ranges)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Start < sorted[j].Start })
+
 	total := 0
+
 	curStart, curEnd := sorted[0].Start, sorted[0].End
 	for _, r := range sorted[1:] {
 		if r.Start <= curEnd+1 {
 			if r.End > curEnd {
 				curEnd = r.End
 			}
+
 			continue
 		}
+
 		total += curEnd - curStart + 1
 		curStart, curEnd = r.Start, r.End
 	}
+
 	total += curEnd - curStart + 1
 	if total > newLOC {
 		total = newLOC
 	}
+
 	return float64(total) / float64(newLOC)
 }
 
@@ -545,6 +590,7 @@ func refineDiffByNodeDensityWithBoundaries(original FileDiffData, line2node [][]
 	if len(boundaries) == 0 {
 		return original
 	}
+
 	suspicious := make(map[int]suspiciousBoundary, len(boundaries))
 	for _, b := range boundaries {
 		suspicious[b.diffIndex] = b
@@ -555,21 +601,25 @@ func refineDiffByNodeDensityWithBoundaries(original FileDiffData, line2node [][]
 		NewLinesOfCode: original.NewLinesOfCode,
 		Diffs:          make([]diffmatchpatch.Diff, 0, len(original.Diffs)+len(suspicious)),
 	}
+
 	skipNext := false
 	for i, edit := range original.Diffs {
 		if skipNext {
 			skipNext = false
 			continue
 		}
+
 		info, ok := suspicious[i]
 		if !ok {
 			refined.Diffs = append(refined.Diffs, edit)
 			continue
 		}
+
 		baseLine := info.line
 		matched := info.matched
 		size := utf8.RuneCountInString(edit.Text)
 		n1 := countNodesInInterval(line2node, baseLine, baseLine+size)
+
 		n2 := countNodesInInterval(line2node, baseLine+matched, baseLine+size+matched)
 		if n1 <= n2 {
 			refined.Diffs = append(refined.Diffs, edit)
@@ -586,6 +636,7 @@ func refineDiffByNodeDensityWithBoundaries(original FileDiffData, line2node [][]
 			Type: diffmatchpatch.DiffInsert,
 			Text: string(runes[matched:]) + string(runes[:matched]),
 		})
+
 		nextEqual := []rune(original.Diffs[i+1].Text)
 		if len(nextEqual) > matched {
 			refined.Diffs = append(refined.Diffs, diffmatchpatch.Diff{
@@ -594,16 +645,19 @@ func refineDiffByNodeDensityWithBoundaries(original FileDiffData, line2node [][]
 			})
 		}
 	}
+
 	return refined
 }
 
 func commonPrefixRunes(left, right string) int {
 	lr := []rune(left)
 	rr := []rune(right)
+
 	matched := 0
 	for matched < len(lr) && matched < len(rr) && lr[matched] == rr[matched] {
 		matched++
 	}
+
 	return matched
 }
 
@@ -611,18 +665,23 @@ func countNodesInInterval(line2node [][]ast_items.Node, start, end int) int {
 	if start < 0 {
 		start = 0
 	}
+
 	if end > len(line2node) {
 		end = len(line2node)
 	}
+
 	if start >= end {
 		return 0
 	}
+
 	seen := map[string]struct{}{}
+
 	for i := start; i < end; i++ {
 		for _, node := range line2node[i] {
 			seen[node.ID] = struct{}{}
 		}
 	}
+
 	return len(seen)
 }
 

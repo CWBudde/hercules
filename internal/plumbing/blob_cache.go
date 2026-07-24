@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"maps"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
@@ -23,11 +24,12 @@ var ErrorBinary = errors.New("binary")
 // CachedBlob allows to explicitly cache the binary data associated with the Blob object.
 type CachedBlob struct {
 	object.Blob
+
 	// Data is the read contents of the blob object.
 	Data []byte
 }
 
-// Reader returns a reader allow the access to the content of the blob
+// Reader returns a reader allow the access to the content of the blob.
 func (b *CachedBlob) Reader() (io.ReadCloser, error) {
 	return ioutil.NopCloser(bytes.NewReader(b.Data)), nil
 }
@@ -39,17 +41,22 @@ func (b *CachedBlob) Cache() error {
 		return err
 	}
 	defer reader.Close()
+
 	buf := new(bytes.Buffer)
 	buf.Grow(int(b.Size))
+
 	size, err := buf.ReadFrom(reader)
 	if err != nil {
 		return err
 	}
+
 	if size != b.Size {
 		return fmt.Errorf("incomplete read of %s: %d while the declared size is %d",
 			b.Hash.String(), size, b.Size)
 	}
+
 	b.Data = buf.Bytes()
+
 	return nil
 }
 
@@ -60,17 +67,21 @@ func (b *CachedBlob) CountLines() (int, error) {
 	}
 	// 8000 was taken from go-git's utils/binary.IsBinary()
 	sniffLen := 8000
+
 	sniff := b.Data
 	if len(sniff) > sniffLen {
 		sniff = sniff[:sniffLen]
 	}
+
 	if bytes.IndexByte(sniff, 0) >= 0 {
 		return 0, ErrorBinary
 	}
+
 	lines := bytes.Count(b.Data, []byte{'\n'})
 	if b.Data[len(b.Data)-1] != '\n' {
 		lines++
 	}
+
 	return lines, nil
 }
 
@@ -80,6 +91,7 @@ func (b *CachedBlob) CountLines() (int, error) {
 // the same blobs twice. Outdated objects are removed so "blobCache" never grows big.
 type BlobCache struct {
 	core.NoopMerger
+
 	// Specifies how to handle the situation when we encounter a git submodule - an object
 	// without the blob. If true, we look inside .gitmodules and if we don't find it,
 	// raise an error. If false, we do not look inside .gitmodules and always succeed.
@@ -129,23 +141,26 @@ func (blobCache *BlobCache) ListConfigurationOptions() []core.ConfigurationOptio
 		Type:    core.BoolConfigurationOption,
 		Default: false,
 	}}
+
 	return options[:]
 }
 
 // Configure sets the properties previously published by ListConfigurationOptions().
-func (blobCache *BlobCache) Configure(facts map[string]interface{}) error {
+func (blobCache *BlobCache) Configure(facts map[string]any) error {
 	if l, exists := facts[core.ConfigLogger].(core.Logger); exists {
 		blobCache.l = l
 	} else {
 		blobCache.l = core.NewLogger()
 	}
+
 	if val, exists := facts[ConfigBlobCacheFailOnMissingSubmodules].(bool); exists {
 		blobCache.FailOnMissingSubmodules = val
 	}
+
 	return nil
 }
 
-func (*BlobCache) ConfigureUpstream(facts map[string]interface{}) error {
+func (*BlobCache) ConfigureUpstream(facts map[string]any) error {
 	return nil
 }
 
@@ -155,6 +170,7 @@ func (blobCache *BlobCache) Initialize(repository *git.Repository) error {
 	blobCache.l = core.NewLogger()
 	blobCache.repository = repository
 	blobCache.cache = map[plumbing.Hash]*CachedBlob{}
+
 	return nil
 }
 
@@ -164,11 +180,12 @@ func (blobCache *BlobCache) Initialize(repository *git.Repository) error {
 // the analysed *object.Commit. This function returns the mapping with analysis
 // results. The keys must be the same as in Provides(). If there was an error,
 // nil is returned.
-func (blobCache *BlobCache) Consume(deps map[string]interface{}) (map[string]interface{}, error) {
+func (blobCache *BlobCache) Consume(deps map[string]any) (map[string]any, error) {
 	commit := deps[core.DependencyCommit].(*object.Commit)
 	changes := deps[DependencyTreeChanges].(object.Changes)
 	cache := map[plumbing.Hash]*CachedBlob{}
 	newCache := map[plumbing.Hash]*CachedBlob{}
+
 	for _, change := range changes {
 		action, err := change.Action()
 		if err != nil {
@@ -177,15 +194,18 @@ func (blobCache *BlobCache) Consume(deps map[string]interface{}) (map[string]int
 		}
 		var exists bool
 		var blob *object.Blob
+
 		switch action {
 		case merkletrie.Insert:
 			cache[change.To.TreeEntry.Hash] = &CachedBlob{}
 			newCache[change.To.TreeEntry.Hash] = &CachedBlob{}
+
 			blob, err = blobCache.getBlob(&change.To, commit.File)
 			if err != nil {
 				blobCache.l.Errorf("file to %s %s: %v\n", change.To.Name, change.To.TreeEntry.Hash, err)
 			} else {
 				cb := &CachedBlob{Blob: *blob}
+
 				err = cb.Cache()
 				if err == nil {
 					cache[change.To.TreeEntry.Hash] = cb
@@ -198,6 +218,7 @@ func (blobCache *BlobCache) Consume(deps map[string]interface{}) (map[string]int
 			cache[change.From.TreeEntry.Hash], exists = blobCache.cache[change.From.TreeEntry.Hash]
 			if !exists {
 				cache[change.From.TreeEntry.Hash] = &CachedBlob{}
+
 				blob, err = blobCache.getBlob(&change.From, commit.File)
 				if err != nil {
 					if err.Error() != plumbing.ErrObjectNotFound.Error() {
@@ -209,6 +230,7 @@ func (blobCache *BlobCache) Consume(deps map[string]interface{}) (map[string]int
 					}
 				} else {
 					cb := &CachedBlob{Blob: *blob}
+
 					err = cb.Cache()
 					if err == nil {
 						cache[change.From.TreeEntry.Hash] = cb
@@ -221,11 +243,13 @@ func (blobCache *BlobCache) Consume(deps map[string]interface{}) (map[string]int
 		case merkletrie.Modify:
 			blob, err = blobCache.getBlob(&change.To, commit.File)
 			cache[change.To.TreeEntry.Hash] = &CachedBlob{}
+
 			newCache[change.To.TreeEntry.Hash] = &CachedBlob{}
 			if err != nil {
 				blobCache.l.Errorf("file to %s: %v\n", change.To.Name, err)
 			} else {
 				cb := &CachedBlob{Blob: *blob}
+
 				err = cb.Cache()
 				if err == nil {
 					cache[change.To.TreeEntry.Hash] = cb
@@ -234,14 +258,17 @@ func (blobCache *BlobCache) Consume(deps map[string]interface{}) (map[string]int
 					blobCache.l.Errorf("file to %s: %v\n", change.To.Name, err)
 				}
 			}
+
 			cache[change.From.TreeEntry.Hash], exists = blobCache.cache[change.From.TreeEntry.Hash]
 			if !exists {
 				cache[change.From.TreeEntry.Hash] = &CachedBlob{}
+
 				blob, err = blobCache.getBlob(&change.From, commit.File)
 				if err != nil {
 					blobCache.l.Errorf("file from %s: %v\n", change.From.Name, err)
 				} else {
 					cb := &CachedBlob{Blob: *blob}
+
 					err = cb.Cache()
 					if err == nil {
 						cache[change.From.TreeEntry.Hash] = cb
@@ -251,28 +278,31 @@ func (blobCache *BlobCache) Consume(deps map[string]interface{}) (map[string]int
 				}
 			}
 		}
+
 		if err != nil {
 			return nil, err
 		}
 	}
+
 	blobCache.cache = newCache
-	return map[string]interface{}{DependencyBlobCache: cache}, nil
+
+	return map[string]any{DependencyBlobCache: cache}, nil
 }
 
 // Fork clones this PipelineItem.
 func (blobCache *BlobCache) Fork(n int) []core.PipelineItem {
 	caches := make([]core.PipelineItem, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		cache := map[plumbing.Hash]*CachedBlob{}
-		for k, v := range blobCache.cache {
-			cache[k] = v
-		}
+		maps.Copy(cache, blobCache.cache)
+
 		caches[i] = &BlobCache{
 			FailOnMissingSubmodules: blobCache.FailOnMissingSubmodules,
 			repository:              blobCache.repository,
 			cache:                   cache,
 		}
 	}
+
 	return caches
 }
 
@@ -291,32 +321,40 @@ func (blobCache *BlobCache) getBlob(entry *object.ChangeEntry, fileGetter FileGe
 			blobCache.l.Errorf("getBlob(%s)\n", entry.TreeEntry.Hash.String())
 			return nil, err
 		}
+
 		if entry.TreeEntry.Mode != 0o160000 {
 			// this is not a submodule
 			return nil, err
 		} else if !blobCache.FailOnMissingSubmodules {
 			return internal.CreateDummyBlob(entry.TreeEntry.Hash)
 		}
+
 		file, errModules := fileGetter(".gitmodules")
 		if errModules != nil {
 			return nil, errModules
 		}
+
 		contents, errModules := file.Contents()
 		if errModules != nil {
 			return nil, errModules
 		}
+
 		modules := config.NewModules()
+
 		errModules = modules.Unmarshal([]byte(contents))
 		if errModules != nil {
 			return nil, errModules
 		}
+
 		_, exists := modules.Submodules[entry.Name]
 		if exists {
 			// we found that this is a submodule
 			return internal.CreateDummyBlob(entry.TreeEntry.Hash)
 		}
+
 		return nil, err
 	}
+
 	return blob, nil
 }
 

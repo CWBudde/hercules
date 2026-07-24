@@ -17,7 +17,7 @@ import (
 func TestCodeChurnMeta(t *testing.T) {
 	cc := CodeChurnAnalysis{}
 	assert.Equal(t, "CodeChurn", cc.Name())
-	assert.Len(t, cc.Provides(), 0)
+	assert.Empty(t, cc.Provides())
 	assert.Contains(t, cc.Requires(), linehistory.DependencyLineHistory)
 	assert.Contains(t, cc.Requires(), identity.DependencyAuthor)
 	assert.Equal(t, "codechurn", cc.Flag())
@@ -42,12 +42,12 @@ func TestCodeChurnRegistration(t *testing.T) {
 func TestCodeChurnListConfigurationOptions(t *testing.T) {
 	cc := CodeChurnAnalysis{}
 	opts := cc.ListConfigurationOptions()
-	assert.Equal(t, len(BurndownSharedOptions), len(opts))
+	assert.Len(t, opts, len(BurndownSharedOptions))
 }
 
 func TestCodeChurnConfigure(t *testing.T) {
 	cc := CodeChurnAnalysis{}
-	facts := map[string]interface{}{}
+	facts := map[string]any{}
 	facts[items.FactTickSize] = 24 * time.Hour
 	facts[ConfigBurndownGranularity] = 15
 	facts[ConfigBurndownSampling] = 10
@@ -58,7 +58,7 @@ func TestCodeChurnConfigure(t *testing.T) {
 	resolver := core.NewIdentityResolver([]string{"Alice", "Bob"}, nil)
 	facts[core.FactIdentityResolver] = resolver
 
-	assert.Nil(t, cc.Configure(facts))
+	assert.NoError(t, cc.Configure(facts))
 	assert.Equal(t, 24*time.Hour, cc.tickSize)
 	assert.Equal(t, 15, cc.Granularity)
 	assert.Equal(t, 10, cc.Sampling)
@@ -69,19 +69,19 @@ func TestCodeChurnConfigure(t *testing.T) {
 
 func TestCodeChurnConfigureDefaults(t *testing.T) {
 	cc := CodeChurnAnalysis{}
-	facts := map[string]interface{}{}
-	assert.Nil(t, cc.Configure(facts))
+	facts := map[string]any{}
+	assert.NoError(t, cc.Configure(facts))
 	assert.NotNil(t, cc.l)
 }
 
 func TestCodeChurnConfigureUpstream(t *testing.T) {
 	cc := CodeChurnAnalysis{}
-	assert.Nil(t, cc.ConfigureUpstream(map[string]interface{}{}))
+	assert.NoError(t, cc.ConfigureUpstream(map[string]any{}))
 }
 
 func TestCodeChurnInitialize(t *testing.T) {
 	cc := CodeChurnAnalysis{}
-	assert.Nil(t, cc.Initialize(test.Repository))
+	assert.NoError(t, cc.Initialize(test.Repository))
 	assert.NotNil(t, cc.codeChurns)
 	assert.NotNil(t, cc.churnDeltas)
 	assert.Equal(t, DefaultBurndownGranularity, cc.Granularity)
@@ -92,7 +92,7 @@ func TestCodeChurnInitializeWithValues(t *testing.T) {
 	cc := CodeChurnAnalysis{}
 	cc.Granularity = 20
 	cc.Sampling = 10
-	assert.Nil(t, cc.Initialize(test.Repository))
+	assert.NoError(t, cc.Initialize(test.Repository))
 	assert.Equal(t, 20, cc.Granularity)
 	assert.Equal(t, 10, cc.Sampling)
 }
@@ -101,7 +101,7 @@ func TestCodeChurnInitializeSamplingGreaterThanGranularity(t *testing.T) {
 	cc := CodeChurnAnalysis{}
 	cc.Granularity = 10
 	cc.Sampling = 20
-	assert.Nil(t, cc.Initialize(test.Repository))
+	assert.NoError(t, cc.Initialize(test.Repository))
 	assert.Equal(t, cc.Granularity, cc.Sampling)
 }
 
@@ -109,7 +109,7 @@ func TestCodeChurnInitializeZeroValues(t *testing.T) {
 	cc := CodeChurnAnalysis{}
 	cc.Granularity = 0
 	cc.Sampling = 0
-	assert.Nil(t, cc.Initialize(test.Repository))
+	assert.NoError(t, cc.Initialize(test.Repository))
 	assert.Equal(t, DefaultBurndownGranularity, cc.Granularity)
 	assert.Equal(t, DefaultBurndownGranularity, cc.Sampling)
 }
@@ -118,7 +118,7 @@ func TestCodeChurnInitializeNegativeValues(t *testing.T) {
 	cc := CodeChurnAnalysis{}
 	cc.Granularity = -5
 	cc.Sampling = -3
-	assert.Nil(t, cc.Initialize(test.Repository))
+	assert.NoError(t, cc.Initialize(test.Repository))
 	assert.Equal(t, DefaultBurndownGranularity, cc.Granularity)
 	assert.Equal(t, DefaultBurndownGranularity, cc.Sampling)
 }
@@ -126,13 +126,13 @@ func TestCodeChurnInitializeNegativeValues(t *testing.T) {
 func TestCodeChurnInitializeWithPeopleResolver(t *testing.T) {
 	cc := CodeChurnAnalysis{}
 	cc.peopleResolver = core.NewIdentityResolver([]string{"Alice", "Bob"}, nil)
-	assert.Nil(t, cc.Initialize(test.Repository))
+	assert.NoError(t, cc.Initialize(test.Repository))
 	assert.Len(t, cc.codeChurns, 2)
 }
 
 func TestCodeChurnFork(t *testing.T) {
 	cc := CodeChurnAnalysis{}
-	assert.Nil(t, cc.Initialize(test.Repository))
+	assert.NoError(t, cc.Initialize(test.Repository))
 
 	forks := cc.Fork(2)
 	assert.Len(t, forks, 2)
@@ -146,7 +146,7 @@ func TestCodeChurnFork(t *testing.T) {
 func TestCodeChurnConsumeSkipsDeletes(t *testing.T) {
 	cc := CodeChurnAnalysis{}
 	cc.peopleResolver = core.NewIdentityResolver([]string{"Alice"}, nil)
-	assert.Nil(t, cc.Initialize(test.Repository))
+	assert.NoError(t, cc.Initialize(test.Repository))
 
 	changes := core.LineHistoryChanges{
 		Changes: []core.LineHistoryChange{
@@ -154,19 +154,19 @@ func TestCodeChurnConsumeSkipsDeletes(t *testing.T) {
 		},
 	}
 
-	deps := map[string]interface{}{
+	deps := map[string]any{
 		linehistory.DependencyLineHistory: changes,
 	}
 
 	result, err := cc.Consume(deps)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Nil(t, result)
 }
 
 func TestCodeChurnConsumeBasicInsert(t *testing.T) {
 	cc := CodeChurnAnalysis{}
 	cc.peopleResolver = core.NewIdentityResolver([]string{"Alice"}, nil)
-	assert.Nil(t, cc.Initialize(test.Repository))
+	assert.NoError(t, cc.Initialize(test.Repository))
 
 	changes := core.LineHistoryChanges{
 		Changes: []core.LineHistoryChange{
@@ -181,12 +181,12 @@ func TestCodeChurnConsumeBasicInsert(t *testing.T) {
 		},
 	}
 
-	deps := map[string]interface{}{
+	deps := map[string]any{
 		linehistory.DependencyLineHistory: changes,
 	}
 
 	result, err := cc.Consume(deps)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Nil(t, result)
 
 	// Verify the author's file entry was updated
@@ -198,7 +198,7 @@ func TestCodeChurnConsumeBasicInsert(t *testing.T) {
 func TestCodeChurnConsumeDeleteByOther(t *testing.T) {
 	cc := CodeChurnAnalysis{}
 	cc.peopleResolver = core.NewIdentityResolver([]string{"Alice", "Bob"}, nil)
-	assert.Nil(t, cc.Initialize(test.Repository))
+	assert.NoError(t, cc.Initialize(test.Repository))
 
 	// First: Alice inserts lines
 	changes1 := core.LineHistoryChanges{
@@ -213,11 +213,11 @@ func TestCodeChurnConsumeDeleteByOther(t *testing.T) {
 			},
 		},
 	}
-	deps1 := map[string]interface{}{
+	deps1 := map[string]any{
 		linehistory.DependencyLineHistory: changes1,
 	}
 	_, err := cc.Consume(deps1)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	// Then: Bob deletes some of Alice's lines
 	changes2 := core.LineHistoryChanges{
@@ -232,11 +232,11 @@ func TestCodeChurnConsumeDeleteByOther(t *testing.T) {
 			},
 		},
 	}
-	deps2 := map[string]interface{}{
+	deps2 := map[string]any{
 		linehistory.DependencyLineHistory: changes2,
 	}
 	_, err = cc.Consume(deps2)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	// Alice's owned lines should have decreased
 	entry := cc.codeChurns[0].files[core.FileId(0)]
@@ -247,7 +247,7 @@ func TestCodeChurnConsumeDeleteByOther(t *testing.T) {
 func TestCodeChurnConsumeDeleteBySelf(t *testing.T) {
 	cc := CodeChurnAnalysis{}
 	cc.peopleResolver = core.NewIdentityResolver([]string{"Alice"}, nil)
-	assert.Nil(t, cc.Initialize(test.Repository))
+	assert.NoError(t, cc.Initialize(test.Repository))
 
 	// Alice inserts lines
 	changes1 := core.LineHistoryChanges{
@@ -262,11 +262,11 @@ func TestCodeChurnConsumeDeleteBySelf(t *testing.T) {
 			},
 		},
 	}
-	deps1 := map[string]interface{}{
+	deps1 := map[string]any{
 		linehistory.DependencyLineHistory: changes1,
 	}
 	_, err := cc.Consume(deps1)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	// Alice deletes some of her own lines
 	changes2 := core.LineHistoryChanges{
@@ -281,11 +281,11 @@ func TestCodeChurnConsumeDeleteBySelf(t *testing.T) {
 			},
 		},
 	}
-	deps2 := map[string]interface{}{
+	deps2 := map[string]any{
 		linehistory.DependencyLineHistory: changes2,
 	}
 	_, err = cc.Consume(deps2)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	entry := cc.codeChurns[0].files[core.FileId(0)]
 	assert.Equal(t, int32(10), entry.insertedLines)
@@ -295,7 +295,7 @@ func TestCodeChurnConsumeDeleteBySelf(t *testing.T) {
 func TestCodeChurnConsumeSkipsMissingAuthor(t *testing.T) {
 	cc := CodeChurnAnalysis{}
 	cc.peopleResolver = core.NewIdentityResolver([]string{"Alice"}, nil)
-	assert.Nil(t, cc.Initialize(test.Repository))
+	assert.NoError(t, cc.Initialize(test.Repository))
 
 	// Change from AuthorMissing (should be skipped in updateAuthor)
 	changes := core.LineHistoryChanges{
@@ -310,12 +310,12 @@ func TestCodeChurnConsumeSkipsMissingAuthor(t *testing.T) {
 			},
 		},
 	}
-	deps := map[string]interface{}{
+	deps := map[string]any{
 		linehistory.DependencyLineHistory: changes,
 	}
 
 	result, err := cc.Consume(deps)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Nil(t, result)
 
 	// No file entry should have been created for author 0 since PrevAuthor is missing
@@ -325,7 +325,7 @@ func TestCodeChurnConsumeSkipsMissingAuthor(t *testing.T) {
 func TestCodeChurnConsumeSkipsZeroDelta(t *testing.T) {
 	cc := CodeChurnAnalysis{}
 	cc.peopleResolver = core.NewIdentityResolver([]string{"Alice"}, nil)
-	assert.Nil(t, cc.Initialize(test.Repository))
+	assert.NoError(t, cc.Initialize(test.Repository))
 
 	changes := core.LineHistoryChanges{
 		Changes: []core.LineHistoryChange{
@@ -339,12 +339,12 @@ func TestCodeChurnConsumeSkipsZeroDelta(t *testing.T) {
 			},
 		},
 	}
-	deps := map[string]interface{}{
+	deps := map[string]any{
 		linehistory.DependencyLineHistory: changes,
 	}
 
 	result, err := cc.Consume(deps)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Nil(t, result)
 
 	assert.Nil(t, cc.codeChurns[0].files)
@@ -353,7 +353,7 @@ func TestCodeChurnConsumeSkipsZeroDelta(t *testing.T) {
 func TestCodeChurnConsumeAuthorOutOfRange(t *testing.T) {
 	cc := CodeChurnAnalysis{}
 	cc.peopleResolver = core.NewIdentityResolver([]string{"Alice"}, nil)
-	assert.Nil(t, cc.Initialize(test.Repository))
+	assert.NoError(t, cc.Initialize(test.Repository))
 
 	// PrevAuthor is out of range (not AuthorMissing), should be remapped to AuthorMissing
 	changes := core.LineHistoryChanges{
@@ -368,12 +368,12 @@ func TestCodeChurnConsumeAuthorOutOfRange(t *testing.T) {
 			},
 		},
 	}
-	deps := map[string]interface{}{
+	deps := map[string]any{
 		linehistory.DependencyLineHistory: changes,
 	}
 
 	result, err := cc.Consume(deps)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Nil(t, result)
 
 	// PrevAuthor was remapped to AuthorMissing, so updateAuthor skips it
@@ -383,7 +383,7 @@ func TestCodeChurnConsumeAuthorOutOfRange(t *testing.T) {
 func TestCodeChurnConsumeMultipleFiles(t *testing.T) {
 	cc := CodeChurnAnalysis{}
 	cc.peopleResolver = core.NewIdentityResolver([]string{"Alice"}, nil)
-	assert.Nil(t, cc.Initialize(test.Repository))
+	assert.NoError(t, cc.Initialize(test.Repository))
 
 	changes := core.LineHistoryChanges{
 		Changes: []core.LineHistoryChange{
@@ -405,12 +405,12 @@ func TestCodeChurnConsumeMultipleFiles(t *testing.T) {
 			},
 		},
 	}
-	deps := map[string]interface{}{
+	deps := map[string]any{
 		linehistory.DependencyLineHistory: changes,
 	}
 
 	_, err := cc.Consume(deps)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	assert.Equal(t, int32(10), cc.codeChurns[0].files[core.FileId(0)].insertedLines)
 	assert.Equal(t, int32(20), cc.codeChurns[0].files[core.FileId(1)].insertedLines)
@@ -419,7 +419,7 @@ func TestCodeChurnConsumeMultipleFiles(t *testing.T) {
 func TestCodeChurnFinalize(t *testing.T) {
 	cc := CodeChurnAnalysis{}
 	cc.peopleResolver = core.NewIdentityResolver([]string{"Alice", "Bob"}, nil)
-	assert.Nil(t, cc.Initialize(test.Repository))
+	assert.NoError(t, cc.Initialize(test.Repository))
 
 	// Populate some data
 	cc.codeChurns[0].files = map[core.FileId]churnFileEntry{
@@ -455,11 +455,11 @@ func TestCodeChurnSerialize(t *testing.T) {
 		granularity: 30,
 	}
 	var text bytes.Buffer
-	assert.Nil(t, cc.Serialize(result, false, &text))
+	assert.NoError(t, cc.Serialize(result, false, &text))
 	assert.Contains(t, text.String(), "main.go")
 
 	var binary bytes.Buffer
-	assert.Nil(t, cc.Serialize(result, true, &binary))
+	assert.NoError(t, cc.Serialize(result, true, &binary))
 	assert.NotEmpty(t, binary.Bytes())
 }
 
@@ -487,10 +487,10 @@ func TestCodeChurnDeserialize(t *testing.T) {
 		granularity: 30,
 	}
 	var binary bytes.Buffer
-	assert.Nil(t, cc.Serialize(original, true, &binary))
+	assert.NoError(t, cc.Serialize(original, true, &binary))
 
 	result, err := cc.Deserialize(binary.Bytes())
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	decoded := result.(CodeChurnResult)
 	assert.Equal(t, original.GetIdentities(), decoded.GetIdentities())
 	assert.Equal(t, original.Authors[0].Files["main.go"].InsertedLines, decoded.Authors[0].Files["main.go"].InsertedLines)
@@ -648,7 +648,7 @@ func TestCodeChurnCalculateAwareness(t *testing.T) {
 func TestCodeChurnUpdateAwareness(t *testing.T) {
 	cc := CodeChurnAnalysis{}
 	cc.peopleResolver = core.NewIdentityResolver([]string{"Alice", "Bob"}, nil)
-	assert.Nil(t, cc.Initialize(test.Repository))
+	assert.NoError(t, cc.Initialize(test.Repository))
 
 	t.Run("new delta key is created", func(t *testing.T) {
 		entry := churnFileEntry{
@@ -673,7 +673,7 @@ func TestCodeChurnUpdateAwareness(t *testing.T) {
 	t.Run("delete by others tracks deletedByOthers", func(t *testing.T) {
 		cc2 := CodeChurnAnalysis{}
 		cc2.peopleResolver = core.NewIdentityResolver([]string{"Alice", "Bob"}, nil)
-		assert.Nil(t, cc2.Initialize(test.Repository))
+		assert.NoError(t, cc2.Initialize(test.Repository))
 
 		entry := churnFileEntry{
 			deleteHistory: map[core.AuthorId]sparseHistory{},
@@ -697,7 +697,7 @@ func TestCodeChurnUpdateAwareness(t *testing.T) {
 func TestCodeChurnConsumeIntegration(t *testing.T) {
 	cc := CodeChurnAnalysis{}
 	cc.peopleResolver = core.NewIdentityResolver([]string{"Alice", "Bob"}, nil)
-	assert.Nil(t, cc.Initialize(test.Repository))
+	assert.NoError(t, cc.Initialize(test.Repository))
 
 	// Simulate a series of changes across ticks
 	// Tick 1: Alice inserts 20 lines in file 0
@@ -706,8 +706,8 @@ func TestCodeChurnConsumeIntegration(t *testing.T) {
 			{FileId: 0, CurrTick: 1, PrevTick: 0, CurrAuthor: 0, PrevAuthor: 0, Delta: 20},
 		},
 	}
-	_, err := cc.Consume(map[string]interface{}{linehistory.DependencyLineHistory: changes1})
-	assert.Nil(t, err)
+	_, err := cc.Consume(map[string]any{linehistory.DependencyLineHistory: changes1})
+	assert.NoError(t, err)
 
 	// Tick 2: Bob inserts 15 lines in file 0 and deletes 5 of Alice's lines
 	changes2 := core.LineHistoryChanges{
@@ -716,8 +716,8 @@ func TestCodeChurnConsumeIntegration(t *testing.T) {
 			{FileId: 0, CurrTick: 2, PrevTick: 1, CurrAuthor: 1, PrevAuthor: 0, Delta: -5},
 		},
 	}
-	_, err = cc.Consume(map[string]interface{}{linehistory.DependencyLineHistory: changes2})
-	assert.Nil(t, err)
+	_, err = cc.Consume(map[string]any{linehistory.DependencyLineHistory: changes2})
+	assert.NoError(t, err)
 
 	// Check Alice's stats
 	aliceEntry := cc.codeChurns[0].files[core.FileId(0)]

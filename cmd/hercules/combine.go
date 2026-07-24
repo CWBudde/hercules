@@ -22,7 +22,7 @@ import (
 	"github.com/cwbudde/hercules/leaves"
 )
 
-// combineCmd represents the combine command
+// combineCmd represents the combine command.
 var combineCmd = &cobra.Command{
 	Use:   "combine",
 	Short: "Merge several binary analysis results together.",
@@ -187,7 +187,7 @@ func serializeCombinedContents(contents map[string][]byte, results map[string]an
 }
 
 func loadMessage(fileName string, repos *[]string) (
-	map[string]interface{}, *hercules.CommonAnalysisResult, string, []string,
+	map[string]any, *hercules.CommonAnalysisResult, string, []string,
 ) {
 	var errs []string
 	fi, err := os.Stat(fileName)
@@ -210,14 +210,14 @@ func loadMessage(fileName string, repos *[]string) (
 		errs = append(errs, "Cannot parse "+fileName+": "+err.Error())
 		return nil, nil, "", errs
 	}
-	if message.Header == nil {
+	if message.GetHeader() == nil {
 		errs = append(errs, "Cannot parse "+fileName+": corrupted header")
 		return nil, nil, "", errs
 	}
-	repoName := message.Header.Repository
+	repoName := message.GetHeader().GetRepository()
 	*repos = append(*repos, repoName)
-	results := map[string]interface{}{}
-	for key, val := range message.Contents {
+	results := map[string]any{}
+	for key, val := range message.GetContents() {
 		summoned := hercules.Registry.Summon(key)
 		if len(summoned) == 0 {
 			errs = append(errs, fileName+": item not found: "+key)
@@ -235,7 +235,7 @@ func loadMessage(fileName string, repos *[]string) (
 		}
 		results[key] = msg
 	}
-	return results, hercules.MetadataToCommonAnalysisResult(message.Header), repoName, errs
+	return results, hercules.MetadataToCommonAnalysisResult(message.GetHeader()), repoName, errs
 }
 
 func printErrors(allErrors map[string][]string) {
@@ -260,9 +260,9 @@ func printErrors(allErrors map[string][]string) {
 	}
 }
 
-func mergeResults(mergedResults map[string]interface{},
+func mergeResults(mergedResults map[string]any,
 	mergedCommons *hercules.CommonAnalysisResult,
-	anotherResults map[string]interface{},
+	anotherResults map[string]any,
 	anotherCommons *hercules.CommonAnalysisResult,
 	only string,
 ) []error {
@@ -279,7 +279,7 @@ func mergeResults(mergedResults map[string]interface{},
 		item := hercules.Registry.Summon(key)[0].(hercules.ResultMergeablePipelineItem)
 		mergedResult = item.MergeResults(mergedResult, val, mergedCommons, anotherCommons)
 		if err, isErr := mergedResult.(error); isErr {
-			errors = append(errors, fmt.Errorf("could not merge %s: %v", item.Name(), err))
+			errors = append(errors, fmt.Errorf("could not merge %s: %w", item.Name(), err))
 		} else {
 			mergedResults[key] = mergedResult
 		}

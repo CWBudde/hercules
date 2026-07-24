@@ -31,11 +31,13 @@ func AddBurndownMatrix(matrix DenseHistory, granularity, sampling int, accPerTic
 			maxCols = len(row)
 		}
 	}
+
 	neededRows := len(matrix)*sampling + offset
 	if len(accPerTick) < neededRows {
 		log.Panicf("merge bug: too few per-tick rows: required %d, have %d",
 			neededRows, len(accPerTick))
 	}
+
 	if len(accPerTick[0]) < maxCols {
 		log.Panicf("merge bug: too few per-tick cols: required %d, have %d",
 			maxCols, len(accPerTick[0]))
@@ -51,17 +53,20 @@ func AddBurndownMatrix(matrix DenseHistory, granularity, sampling int, accPerTic
 
 	//	print("AddBurndownMatrix Allocating: ", len(accPerTick), " x ", len(perTick[0]), " = ", len(accPerTick)*len(perTick[0])*4/1024/1024, ", total ", m.Alloc/1024/1024, "\n")
 
-	for x := 0; x < maxCols; x++ {
-		for y := 0; y < len(matrix); y++ {
+	for x := range maxCols {
+		for y := range matrix {
 			if x*granularity > (y+1)*sampling {
 				// the future is zeros
 				continue
 			}
+
 			decay := func(startIndex int, startVal float32) {
 				if startVal == 0 {
 					return
 				}
+
 				k := float32(matrix[y][x]) / startVal // <= 1
+
 				scale := float32((y+1)*sampling - startIndex)
 				for i := x * granularity; i < (x+1)*granularity; i++ {
 					initial := perTick[startIndex-1+offset][i+offset]
@@ -75,13 +80,13 @@ func AddBurndownMatrix(matrix DenseHistory, granularity, sampling int, accPerTic
 				if y > 0 {
 					initial = float32(matrix[y-1][x])
 				}
-				startIndex := y * sampling
-				if startIndex < x*granularity {
-					startIndex = x * granularity
-				}
+
+				startIndex := max(y*sampling, x*granularity)
+
 				if startIndex == finishIndex {
 					return
 				}
+
 				avg := (finishVal - initial) / float32(finishIndex-startIndex)
 				for j := y * sampling; j < finishIndex; j++ {
 					for i := startIndex; i <= j; i++ {
@@ -95,6 +100,7 @@ func AddBurndownMatrix(matrix DenseHistory, granularity, sampling int, accPerTic
 					}
 				}
 			}
+
 			if (x+1)*granularity >= (y+1)*sampling {
 				// x*granularity <= (y+1)*sampling
 				// 1. x*granularity <= y*sampling
@@ -124,6 +130,7 @@ func AddBurndownMatrix(matrix DenseHistory, granularity, sampling int, accPerTic
 					raise((y+1)*sampling, float32(matrix[y][x]))
 				} else if (y+1)*sampling > x*granularity {
 					raise((y+1)*sampling, float32(matrix[y][x]))
+
 					avg := float32(matrix[y][x]) / float32((y+1)*sampling-x*granularity)
 					for j := x * granularity; j < (y+1)*sampling; j++ {
 						for i := x * granularity; i <= j; i++ {
@@ -148,12 +155,14 @@ func AddBurndownMatrix(matrix DenseHistory, granularity, sampling int, accPerTic
 				delta := float32((x+1)*granularity - y*sampling)
 				var scale float32
 				var previous float32
+
 				if y > 0 && (y-1)*sampling >= x*granularity {
 					// x*g <= (y-1)*s <= y*s <= (x+1)*g <= (y+1)*s
 					//           |________|.......^
 					if y > 1 {
 						previous = float32(matrix[y-2][x])
 					}
+
 					scale = float32(sampling)
 				} else {
 					// (y-1)*s < x*g <= y*s <= (x+1)*g <= (y+1)*s
@@ -164,6 +173,7 @@ func AddBurndownMatrix(matrix DenseHistory, granularity, sampling int, accPerTic
 						scale = float32(y*sampling - x*granularity)
 					}
 				}
+
 				peak = v1 + (v1-previous)/scale*delta
 				if v2 > peak {
 					// we need to adjust the peak, it may not be less than the decayed value
@@ -178,6 +188,7 @@ func AddBurndownMatrix(matrix DenseHistory, granularity, sampling int, accPerTic
 						// not enough data to interpolate; this is at least not restricted
 					}
 				}
+
 				raise((x+1)*granularity, peak)
 				decay((x+1)*granularity, peak)
 			} else {
@@ -187,6 +198,7 @@ func AddBurndownMatrix(matrix DenseHistory, granularity, sampling int, accPerTic
 			}
 		}
 	}
+
 	for y := len(matrix) * sampling; y+offset < len(perTick); y++ {
 		copy(perTick[y+offset], perTick[len(matrix)*sampling-1+offset])
 	}
@@ -199,10 +211,13 @@ func AddBurndownMatrix(matrix DenseHistory, granularity, sampling int, accPerTic
 	}
 
 	runtime.ReadMemStats(&m)
+
 	for i := range perTick {
 		perTick[i] = nil
 	}
+
 	perTick = nil
+
 	runtime.GC()
 	var a runtime.MemStats
 	runtime.ReadMemStats(&a)
@@ -214,10 +229,12 @@ func roundTime(t time.Time, d time.Duration, dir bool) int {
 	if !dir {
 		t = plumbing.FloorTime(t, d)
 	}
+
 	ticks := float64(t.Unix()) / d.Seconds()
 	if dir {
 		return int(math.Ceil(ticks))
 	}
+
 	return int(math.Floor(ticks))
 }
 
@@ -230,21 +247,13 @@ func MergeBurndownMatrices(
 ) DenseHistory {
 	//	defer print("MergeBurndownMatrices exit\n\n\n")
 	//	print("MergeBurndownMatrices enter\n\n\n")
-
 	commonMerged := c1.Copy()
 	commonMerged.Merge(c2)
 
 	var granularity, sampling int
-	if sampling1 < sampling2 {
-		sampling = sampling1
-	} else {
-		sampling = sampling2
-	}
-	if granularity1 < granularity2 {
-		granularity = granularity1
-	} else {
-		granularity = granularity2
-	}
+	sampling = min(sampling1, sampling2)
+
+	granularity = min(granularity1, granularity2)
 
 	size := roundTime(commonMerged.EndTimeAsTime(), tickSize, true) -
 		roundTime(commonMerged.BeginTimeAsTime(), tickSize, false)
@@ -263,6 +272,7 @@ func MergeBurndownMatrices(
 		AddBurndownMatrix(m1, granularity1, sampling1, perTick,
 			roundTime(c1.BeginTimeAsTime(), tickSize, false)-roundTime(commonMerged.BeginTimeAsTime(), tickSize, false))
 	}
+
 	if len(m2) > 0 {
 		AddBurndownMatrix(m2, granularity2, sampling2, perTick,
 			roundTime(c2.BeginTimeAsTime(), tickSize, false)-roundTime(commonMerged.BeginTimeAsTime(), tickSize, false))
@@ -272,12 +282,14 @@ func MergeBurndownMatrices(
 	result := make(DenseHistory, (size+sampling-1)/sampling)
 	for i := range result {
 		result[i] = make([]int64, (size+granularity-1)/granularity)
+
 		sampledIndex := (i+1)*sampling - 1
-		for j := 0; j < len(result[i]); j++ {
+		for j := range len(result[i]) {
 			accum := float32(0)
 			for k := j * granularity; k < (j+1)*granularity; k++ {
 				accum += perTick[sampledIndex][k]
 			}
+
 			result[i][j] = int64(accum)
 		}
 	}
@@ -287,6 +299,7 @@ func MergeBurndownMatrices(
 	for i := range perTick {
 		perTick[i] = nil
 	}
+
 	perTick = nil
 
 	runtime.GC()

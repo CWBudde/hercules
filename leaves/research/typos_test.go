@@ -29,7 +29,8 @@ func testDiff(before, after string) items.FileDiffData {
 
 func TestTyposTreeSitterMeta(t *testing.T) {
 	tdb := &TyposDatasetBuilder{}
-	if err := tdb.Initialize(test.Repository); err != nil {
+	err := tdb.Initialize(test.Repository)
+	if err != nil {
 		t.Fatalf("initialize failed: %v", err)
 	}
 	if got := tdb.Name(); got != "TyposDataset" {
@@ -50,7 +51,7 @@ func TestTyposTreeSitterConsume(t *testing.T) {
 	beforeHash := plumbing.NewHash("1111111111111111111111111111111111111111")
 	afterHash := plumbing.NewHash("2222222222222222222222222222222222222222")
 	diff := testDiff(before, after)
-	deps := map[string]interface{}{
+	deps := map[string]any{
 		core.DependencyCommit: &object.Commit{Hash: plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")},
 		items.DependencyTreeChanges: object.Changes{
 			&object.Change{
@@ -83,21 +84,24 @@ func TestTyposTreeSitterSerialize(t *testing.T) {
 	tdb := &TyposDatasetBuilder{}
 	result := TyposResult{Typos: []Typo{{Wrong: "cnt", Correct: "count", Commit: plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"), File: "demo.go", Line: 3}}}
 	text := &bytes.Buffer{}
-	if err := tdb.Serialize(result, false, text); err != nil {
+	err := tdb.Serialize(result, false, text)
+	if err != nil {
 		t.Fatalf("serialize text failed: %v", err)
 	}
 	if text.Len() == 0 {
 		t.Fatal("expected text payload")
 	}
 	bin := &bytes.Buffer{}
-	if err := tdb.Serialize(result, true, bin); err != nil {
+	err = tdb.Serialize(result, true, bin)
+	if err != nil {
 		t.Fatalf("serialize binary failed: %v", err)
 	}
 	msg := &pb.TyposDataset{}
-	if err := proto.Unmarshal(bin.Bytes(), msg); err != nil {
+	err = proto.Unmarshal(bin.Bytes(), msg)
+	if err != nil {
 		t.Fatalf("unmarshal failed: %v", err)
 	}
-	if len(msg.Typos) != 1 || msg.Typos[0].Wrong != "cnt" {
-		t.Fatalf("unexpected protobuf payload: %+v", msg.Typos)
+	if len(msg.GetTypos()) != 1 || msg.GetTypos()[0].GetWrong() != "cnt" {
+		t.Fatalf("unexpected protobuf payload: %+v", msg.GetTypos())
 	}
 }

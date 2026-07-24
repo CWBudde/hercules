@@ -36,6 +36,7 @@ func Compare(old, new Snapshot) []Change {
 			add(true, "message %s removed", name)
 		}
 	}
+
 	for _, name := range sortedKeys(newMessages) {
 		if _, ok := oldMessages[name]; !ok {
 			add(false, "message %s added", name)
@@ -47,6 +48,7 @@ func Compare(old, new Snapshot) []Change {
 		if !ok {
 			continue
 		}
+
 		compareMessage(oldMessages[name], newMessage, add)
 	}
 
@@ -63,6 +65,7 @@ func compareMessage(old, new Message, add func(bool, string, ...any)) {
 
 	for _, number := range sortedIntKeys(oldFields) {
 		oldField := oldFields[number]
+
 		newField, ok := newFields[number]
 		if !ok {
 			if newReservedNumbers[number] && newReservedNames[oldField.Name] {
@@ -71,16 +74,20 @@ func compareMessage(old, new Message, add func(bool, string, ...any)) {
 				add(true, "field %s.%s (%d) removed without reserving its number and name",
 					old.Name, oldField.Name, number)
 			}
+
 			continue
 		}
+
 		if oldField.Name != newField.Name {
 			add(true, "field %s.%s (%d) renamed to %s", old.Name, oldField.Name, number, newField.Name)
 			continue
 		}
+
 		if oldField.Type != newField.Type || oldField.Key != newField.Key || oldField.Value != newField.Value {
 			add(true, "field %s.%s (%d) changed type from %s to %s",
 				old.Name, oldField.Name, number, fieldType(oldField), fieldType(newField))
 		}
+
 		if oldField.Label != newField.Label {
 			add(true, "field %s.%s (%d) changed label from %q to %q",
 				old.Name, oldField.Name, number, oldField.Label, newField.Label)
@@ -92,6 +99,7 @@ func compareMessage(old, new Message, add func(bool, string, ...any)) {
 		if _, ok := oldFields[number]; ok {
 			continue
 		}
+
 		switch {
 		case oldReservedNumbers[number]:
 			add(true, "field %s.%s (%d) reuses reserved number %d", new.Name, newField.Name, number, number)
@@ -107,16 +115,19 @@ func compareMessage(old, new Message, add func(bool, string, ...any)) {
 			add(true, "message %s un-reserved number %d", old.Name, number)
 		}
 	}
+
 	for _, number := range sortedIntSet(newReservedNumbers) {
 		if !oldReservedNumbers[number] {
 			add(false, "message %s: reserved number %d added", new.Name, number)
 		}
 	}
+
 	for _, name := range sortedStringSet(oldReservedNames) {
 		if !newReservedNames[name] {
 			add(true, "message %s un-reserved name %q", old.Name, name)
 		}
 	}
+
 	for _, name := range sortedStringSet(newReservedNames) {
 		if !oldReservedNames[name] {
 			add(false, "message %s: reserved name %q added", new.Name, name)
@@ -139,12 +150,14 @@ func Evaluate(old, new Snapshot, changelogUpdated bool) Result {
 		result.Errors = append(result.Errors,
 			"the PB schema changed but docs/SCHEMA_CHANGELOG.md was not updated in the same change")
 	}
+
 	if result.Breaking && new.Version <= old.Version {
 		result.Errors = append(result.Errors, fmt.Sprintf(
 			"breaking PB schema change requires a version bump: pb.SchemaVersion is still %d (was %d)",
 			new.Version, old.Version,
 		))
 	}
+
 	return result
 }
 
@@ -152,6 +165,7 @@ func fieldType(field Field) string {
 	if field.Type == "map" {
 		return fmt.Sprintf("map<%s, %s>", field.Key, field.Value)
 	}
+
 	return field.Type
 }
 
@@ -160,6 +174,7 @@ func messageIndex(snapshot Snapshot) map[string]Message {
 	for _, message := range snapshot.Messages {
 		index[message.Name] = message
 	}
+
 	return index
 }
 
@@ -168,6 +183,7 @@ func fieldIndex(message Message) map[int]Field {
 	for _, field := range message.Fields {
 		index[field.Number] = field
 	}
+
 	return index
 }
 
@@ -176,6 +192,7 @@ func intSet(values []int) map[int]bool {
 	for _, v := range values {
 		set[v] = true
 	}
+
 	return set
 }
 
@@ -184,6 +201,7 @@ func stringSet(values []string) map[string]bool {
 	for _, v := range values {
 		set[v] = true
 	}
+
 	return set
 }
 
@@ -192,7 +210,9 @@ func sortedKeys(m map[string]Message) []string {
 	for k := range m {
 		keys = append(keys, k)
 	}
+
 	sort.Strings(keys)
+
 	return keys
 }
 
@@ -201,7 +221,9 @@ func sortedIntKeys(m map[int]Field) []int {
 	for k := range m {
 		keys = append(keys, k)
 	}
+
 	sort.Ints(keys)
+
 	return keys
 }
 
@@ -210,7 +232,9 @@ func sortedIntSet(m map[int]bool) []int {
 	for k := range m {
 		keys = append(keys, k)
 	}
+
 	sort.Ints(keys)
+
 	return keys
 }
 
@@ -219,6 +243,8 @@ func sortedStringSet(m map[string]bool) []string {
 	for k := range m {
 		keys = append(keys, k)
 	}
+
 	sort.Strings(keys)
+
 	return keys
 }

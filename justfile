@@ -70,6 +70,14 @@ lint:
     # Force module mode because vendor/ is ignored and may be stale locally.
     CGO_ENABLED=0 golangci-lint run --config ./.golangci.toml --timeout 2m --modules-download-mode=mod --new
 
+# Audit structural complexity across an entire package scope, including
+# pre-existing issues. Pass a narrower scope while paying down legacy debt,
+# for example: `just lint-complexity ./internal/join`.
+lint-complexity scope="./...":
+    CGO_ENABLED=0 golangci-lint run --config ./.golangci.toml --timeout 2m \
+        --modules-download-mode=mod --enable-only cyclop,funlen,gocognit,nestif \
+        --tests=false --uniq-by-line=false "{{scope}}"
+
 # Run linter with fix
 lint-fix:
     CGO_ENABLED=0 golangci-lint run --config ./.golangci.toml --timeout 2m --modules-download-mode=mod --new --fix

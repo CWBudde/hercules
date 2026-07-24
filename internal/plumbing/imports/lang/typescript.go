@@ -26,6 +26,7 @@ func (tsExtractor) Imports(content []byte) ([]string, error) {
 		return nil, nil
 	}
 	var out []string
+
 	eachNodeOfTypes(root, tsLang, func(n *sitter.Node) bool {
 		if n.Type(tsLang) == "export_statement" {
 			for i := 0; i < n.ChildCount(); i++ {
@@ -33,8 +34,10 @@ func (tsExtractor) Imports(content []byte) ([]string, error) {
 				if child.Type(tsLang) != "string" {
 					continue
 				}
+
 				out = append(out, stripStringQuotes(child, content))
 			}
+
 			return false
 		}
 		// import_statement
@@ -49,12 +52,15 @@ func (tsExtractor) Imports(content []byte) ([]string, error) {
 					if inner.Type(tsLang) != "string" {
 						continue
 					}
+
 					out = append(out, stripStringQuotes(inner, content))
 				}
 			}
 		}
+
 		return false
 	}, "import_statement", "export_statement")
+
 	return out, nil
 }
 
@@ -65,5 +71,6 @@ func stripStringQuotes(node *sitter.Node, content []byte) string {
 	if node.EndByte()-node.StartByte() < 2 {
 		return ""
 	}
+
 	return string(content[node.StartByte()+1 : node.EndByte()-1])
 }

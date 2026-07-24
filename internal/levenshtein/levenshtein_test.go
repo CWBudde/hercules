@@ -48,7 +48,7 @@ func BenchmarkDistance(b *testing.B) {
 
 	c := &Context{}
 
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		total += c.Distance(s1, s2)
 	}
 
@@ -66,7 +66,7 @@ func BenchmarkDistanceOriginal(b *testing.B) {
 	b.ResetTimer()
 
 	ctx := Context{}
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		total += ctx.Distance(s1, s2)
 	}
 

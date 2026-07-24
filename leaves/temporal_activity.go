@@ -109,21 +109,24 @@ func (ta *TemporalActivityAnalysis) ListConfigurationOptions() []core.Configurat
 }
 
 // Configure sets the properties previously published by ListConfigurationOptions().
-func (ta *TemporalActivityAnalysis) Configure(facts map[string]interface{}) error {
+func (ta *TemporalActivityAnalysis) Configure(facts map[string]any) error {
 	if l, exists := facts[core.ConfigLogger].(core.Logger); exists {
 		ta.l = l
 	}
+
 	if val, exists := facts[identity.FactIdentityDetectorReversedPeopleDict].([]string); exists {
 		ta.reversedPeopleDict = val
 	}
+
 	if val, exists := facts[items.FactTickSize].(time.Duration); exists {
 		ta.tickSize = val
 	}
+
 	return nil
 }
 
 // ConfigureUpstream configures the upstream dependencies.
-func (*TemporalActivityAnalysis) ConfigureUpstream(facts map[string]interface{}) error {
+func (*TemporalActivityAnalysis) ConfigureUpstream(facts map[string]any) error {
 	return nil
 }
 
@@ -152,11 +155,12 @@ func (ta *TemporalActivityAnalysis) Initialize(repository *git.Repository) error
 	ta.activities = map[int]*DeveloperTemporalActivity{}
 	ta.ticks = map[int]map[int]*TemporalActivityTick{}
 	ta.OneShotMergeProcessor.Initialize()
+
 	return nil
 }
 
 // Consume runs this PipelineItem on the next commit data.
-func (ta *TemporalActivityAnalysis) Consume(deps map[string]interface{}) (map[string]interface{}, error) {
+func (ta *TemporalActivityAnalysis) Consume(deps map[string]any) (map[string]any, error) {
 	if !ta.ShouldConsumeCommit(deps) {
 		return nil, nil
 	}
@@ -194,6 +198,7 @@ func (ta *TemporalActivityAnalysis) Consume(deps map[string]interface{}) (map[st
 
 	// Calculate line changes
 	lineStats := deps[items.DependencyLineStats].(map[object.ChangeEntry]items.LineStats)
+
 	totalLines := 0
 	for _, stats := range lineStats {
 		totalLines += stats.Added + stats.Removed
@@ -229,6 +234,7 @@ func (ta *TemporalActivityAnalysis) Consume(deps map[string]interface{}) (map[st
 		}
 		tickDevs[author] = tickActivity
 	}
+
 	tickActivity.Commits += 1
 	tickActivity.Lines += totalLines
 
@@ -236,7 +242,7 @@ func (ta *TemporalActivityAnalysis) Consume(deps map[string]interface{}) (map[st
 }
 
 // Finalize returns the result of the analysis. Further Consume() calls are not expected.
-func (ta *TemporalActivityAnalysis) Finalize() interface{} {
+func (ta *TemporalActivityAnalysis) Finalize() any {
 	return TemporalActivityResult{
 		Activities:         ta.activities,
 		Ticks:              ta.ticks,
@@ -252,25 +258,29 @@ func (ta *TemporalActivityAnalysis) Fork(n int) []core.PipelineItem {
 
 // Serialize converts the analysis result as returned by Finalize() to text or bytes.
 // The text format is YAML and the bytes format is Protocol Buffers.
-func (ta *TemporalActivityAnalysis) Serialize(result interface{}, binary bool, writer io.Writer) error {
+func (ta *TemporalActivityAnalysis) Serialize(result any, binary bool, writer io.Writer) error {
 	temporalResult := result.(TemporalActivityResult)
 	if binary {
 		return ta.serializeBinary(&temporalResult, writer)
 	}
+
 	ta.serializeText(&temporalResult, writer)
+
 	return nil
 }
 
 // Deserialize loads the result from Protocol Buffers blob.
-func (ta *TemporalActivityAnalysis) Deserialize(pbmessage []byte) (interface{}, error) {
+func (ta *TemporalActivityAnalysis) Deserialize(pbmessage []byte) (any, error) {
 	message := pb.TemporalActivityResults{}
+
 	err := proto.Unmarshal(pbmessage, &message)
 	if err != nil {
 		return nil, err
 	}
 
 	activities := map[int]*DeveloperTemporalActivity{}
-	for devID, pbActivity := range message.Activities {
+
+	for devID, pbActivity := range message.GetActivities() {
 		// Handle AuthorMissing special case
 		dev := int(devID)
 		if devID == -1 {
@@ -286,42 +296,46 @@ func (ta *TemporalActivityAnalysis) Deserialize(pbmessage []byte) (interface{}, 
 		}
 
 		// Copy weekdays
-		if pbActivity.Weekdays != nil {
-			for i := 0; i < 7 && i < len(pbActivity.Weekdays.Commits); i++ {
-				activity.Weekdays.Commits[i] = int(pbActivity.Weekdays.Commits[i])
+		if pbActivity.GetWeekdays() != nil {
+			for i := 0; i < 7 && i < len(pbActivity.GetWeekdays().GetCommits()); i++ {
+				activity.Weekdays.Commits[i] = int(pbActivity.GetWeekdays().GetCommits()[i])
 			}
-			for i := 0; i < 7 && i < len(pbActivity.Weekdays.Lines); i++ {
-				activity.Weekdays.Lines[i] = int(pbActivity.Weekdays.Lines[i])
+
+			for i := 0; i < 7 && i < len(pbActivity.GetWeekdays().GetLines()); i++ {
+				activity.Weekdays.Lines[i] = int(pbActivity.GetWeekdays().GetLines()[i])
 			}
 		}
 
 		// Copy hours
-		if pbActivity.Hours != nil {
-			for i := 0; i < 24 && i < len(pbActivity.Hours.Commits); i++ {
-				activity.Hours.Commits[i] = int(pbActivity.Hours.Commits[i])
+		if pbActivity.GetHours() != nil {
+			for i := 0; i < 24 && i < len(pbActivity.GetHours().GetCommits()); i++ {
+				activity.Hours.Commits[i] = int(pbActivity.GetHours().GetCommits()[i])
 			}
-			for i := 0; i < 24 && i < len(pbActivity.Hours.Lines); i++ {
-				activity.Hours.Lines[i] = int(pbActivity.Hours.Lines[i])
+
+			for i := 0; i < 24 && i < len(pbActivity.GetHours().GetLines()); i++ {
+				activity.Hours.Lines[i] = int(pbActivity.GetHours().GetLines()[i])
 			}
 		}
 
 		// Copy months
-		if pbActivity.Months != nil {
-			for i := 0; i < 12 && i < len(pbActivity.Months.Commits); i++ {
-				activity.Months.Commits[i] = int(pbActivity.Months.Commits[i])
+		if pbActivity.GetMonths() != nil {
+			for i := 0; i < 12 && i < len(pbActivity.GetMonths().GetCommits()); i++ {
+				activity.Months.Commits[i] = int(pbActivity.GetMonths().GetCommits()[i])
 			}
-			for i := 0; i < 12 && i < len(pbActivity.Months.Lines); i++ {
-				activity.Months.Lines[i] = int(pbActivity.Months.Lines[i])
+
+			for i := 0; i < 12 && i < len(pbActivity.GetMonths().GetLines()); i++ {
+				activity.Months.Lines[i] = int(pbActivity.GetMonths().GetLines()[i])
 			}
 		}
 
 		// Copy weeks
-		if pbActivity.Weeks != nil {
-			for i := 0; i < 53 && i < len(pbActivity.Weeks.Commits); i++ {
-				activity.Weeks.Commits[i] = int(pbActivity.Weeks.Commits[i])
+		if pbActivity.GetWeeks() != nil {
+			for i := 0; i < 53 && i < len(pbActivity.GetWeeks().GetCommits()); i++ {
+				activity.Weeks.Commits[i] = int(pbActivity.GetWeeks().GetCommits()[i])
 			}
-			for i := 0; i < 53 && i < len(pbActivity.Weeks.Lines); i++ {
-				activity.Weeks.Lines[i] = int(pbActivity.Weeks.Lines[i])
+
+			for i := 0; i < 53 && i < len(pbActivity.GetWeeks().GetLines()); i++ {
+				activity.Weeks.Lines[i] = int(pbActivity.GetWeeks().GetLines()[i])
 			}
 		}
 
@@ -330,31 +344,36 @@ func (ta *TemporalActivityAnalysis) Deserialize(pbmessage []byte) (interface{}, 
 
 	// Deserialize ticks
 	ticks := map[int]map[int]*TemporalActivityTick{}
-	for tickID, pbTickDevs := range message.Ticks {
+
+	for tickID, pbTickDevs := range message.GetTicks() {
 		tickDevs := map[int]*TemporalActivityTick{}
-		for devID, pbTick := range pbTickDevs.Devs {
+
+		for devID, pbTick := range pbTickDevs.GetDevs() {
 			dev := int(devID)
 			if devID == -1 {
 				dev = core.AuthorMissing
 			}
+
 			tickDevs[dev] = &TemporalActivityTick{
-				Commits: int(pbTick.Commits),
-				Lines:   int(pbTick.Lines),
-				Weekday: int(pbTick.Weekday),
-				Hour:    int(pbTick.Hour),
-				Month:   int(pbTick.Month),
-				Week:    int(pbTick.Week),
+				Commits: int(pbTick.GetCommits()),
+				Lines:   int(pbTick.GetLines()),
+				Weekday: int(pbTick.GetWeekday()),
+				Hour:    int(pbTick.GetHour()),
+				Month:   int(pbTick.GetMonth()),
+				Week:    int(pbTick.GetWeek()),
 			}
 		}
+
 		ticks[int(tickID)] = tickDevs
 	}
 
 	result := TemporalActivityResult{
 		Activities:         activities,
 		Ticks:              ticks,
-		reversedPeopleDict: message.DevIndex,
-		tickSize:           time.Duration(message.TickSize),
+		reversedPeopleDict: message.GetDevIndex(),
+		tickSize:           time.Duration(message.GetTickSize()),
 	}
+
 	return result, nil
 }
 
@@ -367,10 +386,12 @@ func (ta *TemporalActivityAnalysis) serializeText(result *TemporalActivityResult
 	for dev := range result.Activities {
 		devs = append(devs, dev)
 	}
+
 	sort.Ints(devs)
 
 	for _, dev := range devs {
 		activity := result.Activities[dev]
+
 		devID := dev
 		if dev == core.AuthorMissing {
 			devID = -1
@@ -380,79 +401,104 @@ func (ta *TemporalActivityAnalysis) serializeText(result *TemporalActivityResult
 
 		// Weekdays
 		fmt.Fprintf(writer, "        weekdays_commits: [")
+
 		for i, count := range activity.Weekdays.Commits {
 			if i > 0 {
 				fmt.Fprint(writer, ", ")
 			}
+
 			fmt.Fprintf(writer, "%d", count)
 		}
+
 		fmt.Fprintln(writer, "]")
 		fmt.Fprintf(writer, "        weekdays_lines: [")
+
 		for i, count := range activity.Weekdays.Lines {
 			if i > 0 {
 				fmt.Fprint(writer, ", ")
 			}
+
 			fmt.Fprintf(writer, "%d", count)
 		}
+
 		fmt.Fprintln(writer, "]")
 
 		// Hours
 		fmt.Fprintf(writer, "        hours_commits: [")
+
 		for i, count := range activity.Hours.Commits {
 			if i > 0 {
 				fmt.Fprint(writer, ", ")
 			}
+
 			fmt.Fprintf(writer, "%d", count)
 		}
+
 		fmt.Fprintln(writer, "]")
 		fmt.Fprintf(writer, "        hours_lines: [")
+
 		for i, count := range activity.Hours.Lines {
 			if i > 0 {
 				fmt.Fprint(writer, ", ")
 			}
+
 			fmt.Fprintf(writer, "%d", count)
 		}
+
 		fmt.Fprintln(writer, "]")
 
 		// Months
 		fmt.Fprintf(writer, "        months_commits: [")
+
 		for i, count := range activity.Months.Commits {
 			if i > 0 {
 				fmt.Fprint(writer, ", ")
 			}
+
 			fmt.Fprintf(writer, "%d", count)
 		}
+
 		fmt.Fprintln(writer, "]")
 		fmt.Fprintf(writer, "        months_lines: [")
+
 		for i, count := range activity.Months.Lines {
 			if i > 0 {
 				fmt.Fprint(writer, ", ")
 			}
+
 			fmt.Fprintf(writer, "%d", count)
 		}
+
 		fmt.Fprintln(writer, "]")
 
 		// Weeks
 		fmt.Fprintf(writer, "        weeks_commits: [")
+
 		for i, count := range activity.Weeks.Commits {
 			if i > 0 {
 				fmt.Fprint(writer, ", ")
 			}
+
 			fmt.Fprintf(writer, "%d", count)
 		}
+
 		fmt.Fprintln(writer, "]")
 		fmt.Fprintf(writer, "        weeks_lines: [")
+
 		for i, count := range activity.Weeks.Lines {
 			if i > 0 {
 				fmt.Fprint(writer, ", ")
 			}
+
 			fmt.Fprintf(writer, "%d", count)
 		}
+
 		fmt.Fprintln(writer, "]")
 	}
 
 	// Output people dictionary
 	fmt.Fprintln(writer, "    people:")
+
 	for _, person := range result.reversedPeopleDict {
 		fmt.Fprintf(writer, "    - %s\n", yaml.SafeString(person))
 	}
@@ -492,6 +538,7 @@ func (ta *TemporalActivityAnalysis) serializeBinary(result *TemporalActivityResu
 		for i, count := range activity.Weekdays.Commits {
 			pbActivity.Weekdays.Commits[i] = int32(count)
 		}
+
 		for i, count := range activity.Weekdays.Lines {
 			pbActivity.Weekdays.Lines[i] = int32(count)
 		}
@@ -500,6 +547,7 @@ func (ta *TemporalActivityAnalysis) serializeBinary(result *TemporalActivityResu
 		for i, count := range activity.Hours.Commits {
 			pbActivity.Hours.Commits[i] = int32(count)
 		}
+
 		for i, count := range activity.Hours.Lines {
 			pbActivity.Hours.Lines[i] = int32(count)
 		}
@@ -508,6 +556,7 @@ func (ta *TemporalActivityAnalysis) serializeBinary(result *TemporalActivityResu
 		for i, count := range activity.Months.Commits {
 			pbActivity.Months.Commits[i] = int32(count)
 		}
+
 		for i, count := range activity.Months.Lines {
 			pbActivity.Months.Lines[i] = int32(count)
 		}
@@ -516,6 +565,7 @@ func (ta *TemporalActivityAnalysis) serializeBinary(result *TemporalActivityResu
 		for i, count := range activity.Weeks.Commits {
 			pbActivity.Weeks.Commits[i] = int32(count)
 		}
+
 		for i, count := range activity.Weeks.Lines {
 			pbActivity.Weeks.Lines[i] = int32(count)
 		}
@@ -525,16 +575,19 @@ func (ta *TemporalActivityAnalysis) serializeBinary(result *TemporalActivityResu
 
 	// Serialize ticks
 	message.Ticks = make(map[int32]*pb.TemporalActivityTickDevs)
+
 	message.TickSize = int64(result.tickSize)
 	for tick, tickDevs := range result.Ticks {
 		pbTickDevs := &pb.TemporalActivityTickDevs{
 			Devs: make(map[int32]*pb.TemporalActivityTick),
 		}
+
 		for dev, tickActivity := range tickDevs {
 			devID := int32(dev)
 			if dev == core.AuthorMissing {
 				devID = -1
 			}
+
 			pbTickDevs.Devs[devID] = &pb.TemporalActivityTick{
 				Commits: int32(tickActivity.Commits),
 				Lines:   int32(tickActivity.Lines),
@@ -544,6 +597,7 @@ func (ta *TemporalActivityAnalysis) serializeBinary(result *TemporalActivityResu
 				Week:    int32(tickActivity.Week),
 			}
 		}
+
 		message.Ticks[int32(tick)] = pbTickDevs
 	}
 
@@ -551,7 +605,9 @@ func (ta *TemporalActivityAnalysis) serializeBinary(result *TemporalActivityResu
 	if err != nil {
 		return err
 	}
+
 	_, err = writer.Write(serialized)
+
 	return err
 }
 
@@ -561,8 +617,8 @@ func init() {
 
 // MergeResults combines two TemporalActivityResult-s together.
 func (ta *TemporalActivityAnalysis) MergeResults(
-	r1, r2 interface{}, c1, c2 *core.CommonAnalysisResult,
-) interface{} {
+	r1, r2 any, c1, c2 *core.CommonAnalysisResult,
+) any {
 	tar1 := r1.(TemporalActivityResult)
 	tar2 := r2.(TemporalActivityResult)
 
@@ -578,6 +634,7 @@ func (ta *TemporalActivityAnalysis) MergeResults(
 	for dev := range tar1.Activities {
 		allDevs[dev] = true
 	}
+
 	for dev := range tar2.Activities {
 		allDevs[dev] = true
 	}
@@ -596,14 +653,17 @@ func (ta *TemporalActivityAnalysis) MergeResults(
 				mergedActivity.Weekdays.Commits[i] += activity1.Weekdays.Commits[i]
 				mergedActivity.Weekdays.Lines[i] += activity1.Weekdays.Lines[i]
 			}
+
 			for i := range mergedActivity.Hours.Commits {
 				mergedActivity.Hours.Commits[i] += activity1.Hours.Commits[i]
 				mergedActivity.Hours.Lines[i] += activity1.Hours.Lines[i]
 			}
+
 			for i := range mergedActivity.Months.Commits {
 				mergedActivity.Months.Commits[i] += activity1.Months.Commits[i]
 				mergedActivity.Months.Lines[i] += activity1.Months.Lines[i]
 			}
+
 			for i := range mergedActivity.Weeks.Commits {
 				mergedActivity.Weeks.Commits[i] += activity1.Weeks.Commits[i]
 				mergedActivity.Weeks.Lines[i] += activity1.Weeks.Lines[i]
@@ -616,14 +676,17 @@ func (ta *TemporalActivityAnalysis) MergeResults(
 				mergedActivity.Weekdays.Commits[i] += activity2.Weekdays.Commits[i]
 				mergedActivity.Weekdays.Lines[i] += activity2.Weekdays.Lines[i]
 			}
+
 			for i := range mergedActivity.Hours.Commits {
 				mergedActivity.Hours.Commits[i] += activity2.Hours.Commits[i]
 				mergedActivity.Hours.Lines[i] += activity2.Hours.Lines[i]
 			}
+
 			for i := range mergedActivity.Months.Commits {
 				mergedActivity.Months.Commits[i] += activity2.Months.Commits[i]
 				mergedActivity.Months.Lines[i] += activity2.Months.Lines[i]
 			}
+
 			for i := range mergedActivity.Weeks.Commits {
 				mergedActivity.Weeks.Commits[i] += activity2.Weeks.Commits[i]
 				mergedActivity.Weeks.Lines[i] += activity2.Weeks.Lines[i]
@@ -647,10 +710,12 @@ func (ta *TemporalActivityAnalysis) MergeResults(
 			}
 		}
 	}
+
 	for tick, tickDevs := range tar2.Ticks {
 		if merged.Ticks[tick] == nil {
 			merged.Ticks[tick] = make(map[int]*TemporalActivityTick)
 		}
+
 		for dev, tickActivity := range tickDevs {
 			if existing, exists := merged.Ticks[tick][dev]; exists {
 				existing.Commits += tickActivity.Commits

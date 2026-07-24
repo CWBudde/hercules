@@ -9,7 +9,7 @@ import (
 	"os"
 )
 
-// SimilarityMetrics holds various similarity comparison results
+// SimilarityMetrics holds various similarity comparison results.
 type SimilarityMetrics struct {
 	HistogramIntersection float64 // 0.0 to 1.0, higher is more similar
 	SSIM                  float64 // Structural Similarity Index
@@ -17,7 +17,7 @@ type SimilarityMetrics struct {
 	OverallSimilarity     float64 // Weighted combination of metrics
 }
 
-// ValidationLevel defines different similarity thresholds
+// ValidationLevel defines different similarity thresholds.
 type ValidationLevel string
 
 const (
@@ -26,14 +26,14 @@ const (
 	ValidationLenient  ValidationLevel = "lenient"  // >85% similarity
 )
 
-// SimilarityThresholds defines the minimum similarity scores for each level
+// SimilarityThresholds defines the minimum similarity scores for each level.
 var SimilarityThresholds = map[ValidationLevel]float64{
 	ValidationStrict:   0.95,
 	ValidationStandard: 0.90,
 	ValidationLenient:  0.85,
 }
 
-// CompareImages performs comprehensive similarity analysis between two images
+// CompareImages performs comprehensive similarity analysis between two images.
 func CompareImages(img1Path, img2Path string) (*SimilarityMetrics, error) {
 	// Load images
 	img1, err := loadImage(img1Path)
@@ -68,19 +68,21 @@ func CompareImages(img1Path, img2Path string) (*SimilarityMetrics, error) {
 	return metrics, nil
 }
 
-// IsValidationPassing checks if the similarity meets the specified validation level
+// IsValidationPassing checks if the similarity meets the specified validation level.
 func (m *SimilarityMetrics) IsValidationPassing(level ValidationLevel) bool {
 	threshold, exists := SimilarityThresholds[level]
 	if !exists {
 		threshold = SimilarityThresholds[ValidationStandard]
 	}
+
 	return m.OverallSimilarity >= threshold
 }
 
-// GetDetailedReport returns a human-readable report of the similarity analysis
+// GetDetailedReport returns a human-readable report of the similarity analysis.
 func (m *SimilarityMetrics) GetDetailedReport(level ValidationLevel) string {
 	threshold := SimilarityThresholds[level]
 	passed := m.IsValidationPassing(level)
+
 	status := "PASS"
 	if !passed {
 		status = "FAIL"
@@ -106,7 +108,7 @@ Assessment: %s
 		getAssessment(m, passed))
 }
 
-// loadImage loads an image from file path
+// loadImage loads an image from file path.
 func loadImage(path string) (image.Image, error) {
 	file, err := os.Open(path) // #nosec G304 - visual test path is provided by test setup.
 	if err != nil {
@@ -122,7 +124,7 @@ func loadImage(path string) (image.Image, error) {
 	return img, nil
 }
 
-// calculateHistogramIntersection computes the intersection of color histograms
+// calculateHistogramIntersection computes the intersection of color histograms.
 func calculateHistogramIntersection(img1, img2 image.Image) float64 {
 	hist1 := buildColorHistogram(img1)
 	hist2 := buildColorHistogram(img2)
@@ -155,7 +157,7 @@ func calculateHistogramIntersection(img1, img2 image.Image) float64 {
 	return intersection / totalMin
 }
 
-// buildColorHistogram creates a color histogram from an image
+// buildColorHistogram creates a color histogram from an image.
 func buildColorHistogram(img image.Image) map[string]float64 {
 	histogram := make(map[string]float64)
 	bounds := img.Bounds()
@@ -184,7 +186,7 @@ func buildColorHistogram(img image.Image) map[string]float64 {
 	return histogram
 }
 
-// calculateSSIM computes Structural Similarity Index between two images
+// calculateSSIM computes Structural Similarity Index between two images.
 func calculateSSIM(img1, img2 image.Image) float64 {
 	bounds := img1.Bounds()
 
@@ -246,10 +248,11 @@ func calculateSSIM(img1, img2 image.Image) float64 {
 	}
 
 	ssim := numerator / denominator
+
 	return math.Max(0, ssim) // Ensure non-negative result
 }
 
-// calculateColorDistanceRMS computes RMS color distance between images
+// calculateColorDistanceRMS computes RMS color distance between images.
 func calculateColorDistanceRMS(img1, img2 image.Image) float64 {
 	bounds := img1.Bounds()
 	var totalDist float64
@@ -274,7 +277,7 @@ func calculateColorDistanceRMS(img1, img2 image.Image) float64 {
 	return math.Sqrt(totalDist / n)
 }
 
-// calculateOverallSimilarity computes a weighted combination of all metrics
+// calculateOverallSimilarity computes a weighted combination of all metrics.
 func calculateOverallSimilarity(m *SimilarityMetrics) float64 {
 	// Weights based on importance for chart validation
 	const (
@@ -294,7 +297,7 @@ func calculateOverallSimilarity(m *SimilarityMetrics) float64 {
 	return math.Min(1.0, overall) // Cap at 1.0
 }
 
-// getAssessment provides human-readable assessment of the similarity result
+// getAssessment provides human-readable assessment of the similarity result.
 func getAssessment(m *SimilarityMetrics, passed bool) string {
 	if passed {
 		switch {

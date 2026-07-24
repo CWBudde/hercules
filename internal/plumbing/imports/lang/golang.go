@@ -28,6 +28,7 @@ func (goExtractor) Imports(content []byte) ([]string, error) {
 		return nil, nil
 	}
 	var out []string
+
 	runQuery(goQuery, root, goLang, content, func(captures []sitter.QueryCapture) {
 		for _, c := range captures {
 			// `interpreted_string_literal` includes the surrounding quotes;
@@ -35,9 +36,11 @@ func (goExtractor) Imports(content []byte) ([]string, error) {
 			if c.Node.EndByte()-c.Node.StartByte() < 2 {
 				continue
 			}
+
 			out = append(out, string(content[c.Node.StartByte()+1:c.Node.EndByte()-1]))
 		}
 	})
+
 	return out, nil
 }
 
@@ -48,5 +51,6 @@ func mustQuery(src string, lang *sitter.Language) *sitter.Query {
 	if err != nil {
 		panic(err)
 	}
+
 	return q
 }

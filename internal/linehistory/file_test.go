@@ -1,7 +1,6 @@
 package linehistory
 
 import (
-	"fmt"
 	"math"
 	"testing"
 
@@ -57,7 +56,7 @@ func TestBullshitFile(t *testing.T) {
 	file.Update(1, 10, 0, 0)
 	assert.Equal(t, int64(100), status[0])
 	assert.Equal(t, int64(0), status[1])
-	assert.Equal(t, alloc.Size(), 3) // 1 + 2 nodes
+	assert.Equal(t, 3, alloc.Size()) // 1 + 2 nodes
 }
 
 func TestCloneFileShallow(t *testing.T) {
@@ -71,7 +70,7 @@ func TestCloneFileShallow(t *testing.T) {
 	// 0 0 | 20 1 | 40 0 | 120 -1               [0]: 100, [1]: 20
 	file.Update(4, 20, 10, 0)
 	// 0 0 | 20 4 | 30 1 | 50 0 | 130 -1        [0]: 100, [1]: 20, [4]: 10
-	assert.Equal(t, alloc.Size(), 6)
+	assert.Equal(t, 6, alloc.Size())
 	clone := file.CloneShallow(alloc.Clone())
 	clone.Update(5, 45, 0, 10)
 	// 0 0 | 20 4 | 30 1 | 45 0 | 120 -1        [0]: 95, [1]: 15, [4]: 10
@@ -114,7 +113,7 @@ func TestCloneFileDeep(t *testing.T) {
 	// 0 0 | 20 1 | 40 0 | 120 -1               [0]: 100, [1]: 20
 	file.Update(4, 20, 10, 0)
 	// 0 0 | 20 4 | 30 1 | 50 0 | 130 -1        [0]: 100, [1]: 20, [4]: 10
-	assert.Equal(t, alloc.Size(), 6)
+	assert.Equal(t, 6, alloc.Size())
 	clone := file.CloneDeep(rbtree.NewAllocator())
 	clone.Update(5, 45, 0, 10)
 	// 0 0 | 20 4 | 30 1 | 45 0 | 120 -1        [0]: 95, [1]: 15, [4]: 10
@@ -194,7 +193,7 @@ func TestDeleteFile(t *testing.T) {
 	assert.Equal(t, "0 0\n90 -1\n", dump)
 	assert.Equal(t, int64(90), status[0])
 	assert.Equal(t, int64(0), status[1])
-	assert.Equal(t, alloc.Size(), 3)
+	assert.Equal(t, 3, alloc.Size())
 }
 
 func TestFusedFile(t *testing.T) {
@@ -212,11 +211,11 @@ func TestFusedFile(t *testing.T) {
 	file.Update(3, 10, 0, 6)
 	dump = file.Dump()
 	assert.Equal(t, "0 0\n93 -1\n", dump)
-	assert.Equal(t, alloc.Size(), 5)
+	assert.Equal(t, 5, alloc.Size())
 	file.Update(3, 10, 6, 0)         // +2 nodes
-	assert.Equal(t, alloc.Size(), 5) // using gaps
+	assert.Equal(t, 5, alloc.Size()) // using gaps
 	file.Update(4, 10, 6, 0)
-	assert.Equal(t, alloc.Size(), 6)
+	assert.Equal(t, 6, alloc.Size())
 }
 
 func TestDeleteSameBeginning(t *testing.T) {
@@ -581,17 +580,17 @@ func TestFileFlatten(t *testing.T) {
 	file.Update(4, 20, 10, 0)
 	// 0 0 | 20 4 | 30 1 | 50 0 | 130 -1        [0]: 100, [1]: 20, [4]: 10
 	lines := file.flatten()
-	for i := 0; i < 20; i++ {
-		assert.Equal(t, 0, lines[i], fmt.Sprintf("line %d", i))
+	for i := range 20 {
+		assert.Equal(t, 0, lines[i], "line %d", i)
 	}
 	for i := 20; i < 30; i++ {
-		assert.Equal(t, 4, lines[i], fmt.Sprintf("line %d", i))
+		assert.Equal(t, 4, lines[i], "line %d", i)
 	}
 	for i := 30; i < 50; i++ {
-		assert.Equal(t, 1, lines[i], fmt.Sprintf("line %d", i))
+		assert.Equal(t, 1, lines[i], "line %d", i)
 	}
 	for i := 50; i < 130; i++ {
-		assert.Equal(t, 0, lines[i], fmt.Sprintf("line %d", i))
+		assert.Equal(t, 0, lines[i], "line %d", i)
 	}
 	assert.Len(t, lines, 130)
 }

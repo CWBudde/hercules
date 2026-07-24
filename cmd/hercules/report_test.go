@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"testing"
 )
 
@@ -45,13 +46,7 @@ func TestSelectReportModesDefaultIncludesMilestoneFourEasyPath(t *testing.T) {
 	}
 
 	for _, expected := range []string{"knowledge-diffusion", "refactoring-proxy", "hotspot-risk"} {
-		found := false
-		for _, mode := range modes {
-			if mode == expected {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(modes, expected)
 		if !found {
 			t.Fatalf("default report modes do not include %q: %v", expected, modes)
 		}

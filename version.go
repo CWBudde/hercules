@@ -15,6 +15,6 @@ var BinaryVersion = 0
 type versionProbe struct{}
 
 func init() {
-	parts := strings.Split(reflect.TypeOf(versionProbe{}).PkgPath(), ".")
+	parts := strings.Split(reflect.TypeFor[versionProbe]().PkgPath(), ".")
 	BinaryVersion, _ = strconv.Atoi(parts[len(parts)-1][1:])
 }

@@ -2,6 +2,7 @@ package leaves
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -83,17 +84,19 @@ func (saver *UASTChangesSaver) Description() string {
 }
 
 // Configure sets the properties previously published by ListConfigurationOptions().
-func (saver *UASTChangesSaver) Configure(facts map[string]interface{}) error {
+func (saver *UASTChangesSaver) Configure(facts map[string]any) error {
 	if l, exists := facts[core.ConfigLogger].(core.Logger); exists {
 		saver.l = l
 	}
+
 	if val, exists := facts[ConfigUASTChangesSaverOutputPath].(string); exists {
 		saver.OutputPath = val
 	}
+
 	return nil
 }
 
-func (*UASTChangesSaver) ConfigureUpstream(facts map[string]interface{}) error {
+func (*UASTChangesSaver) ConfigureUpstream(facts map[string]any) error {
 	return nil
 }
 
@@ -102,39 +105,48 @@ func (saver *UASTChangesSaver) Initialize(repository *git.Repository) error {
 	saver.l = core.NewLogger()
 	saver.result = nil
 	saver.OneShotMergeProcessor.Initialize()
+
 	if saver.OutputPath == "" {
 		saver.OutputPath = "."
 	}
+
 	return os.MkdirAll(saver.OutputPath, 0o755)
 }
 
 // Consume runs this PipelineItem on the next commit data.
-func (saver *UASTChangesSaver) Consume(deps map[string]interface{}) (map[string]interface{}, error) {
+func (saver *UASTChangesSaver) Consume(deps map[string]any) (map[string]any, error) {
 	if !saver.ShouldConsumeCommit(deps) {
 		return nil, nil
 	}
+
 	commit := deps[core.DependencyCommit].(*object.Commit)
 	changes := deps[items.DependencyTreeChanges].(object.Changes)
 	cache := deps[items.DependencyBlobCache].(map[plumbing.Hash]*items.CachedBlob)
+
 	for i, change := range changes {
 		action, err := change.Action()
 		if err != nil {
 			return nil, err
 		}
+
 		if action != merkletrie.Modify {
 			continue
 		}
+
 		fromBlob := cache[change.From.TreeEntry.Hash]
+
 		toBlob := cache[change.To.TreeEntry.Hash]
 		if fromBlob == nil || toBlob == nil {
 			continue
 		}
-		if _, err = fromBlob.CountLines(); err == items.ErrorBinary {
+
+		if _, err = fromBlob.CountLines(); errors.Is(err, items.ErrorBinary) {
 			continue
 		} else if err != nil {
 			return nil, err
 		}
-		if _, err = toBlob.CountLines(); err == items.ErrorBinary {
+
+		if _, err = toBlob.CountLines(); errors.Is(err, items.ErrorBinary) {
 			continue
 		} else if err != nil {
 			return nil, err
@@ -144,14 +156,18 @@ func (saver *UASTChangesSaver) Consume(deps map[string]interface{}) (map[string]
 		if err != nil {
 			saver.l.Warnf("UASTChangesSaver: commit %s file %s before-parse failed: %v",
 				commit.Hash.String(), change.From.Name, err)
+
 			continue
 		}
+
 		afterNodes, err := ast_items.ExtractNamedNodes(change.To.Name, toBlob.Data)
 		if err != nil {
 			saver.l.Warnf("UASTChangesSaver: commit %s file %s after-parse failed: %v",
 				commit.Hash.String(), change.To.Name, err)
+
 			continue
 		}
+
 		if len(beforeNodes) == 0 && len(afterNodes) == 0 {
 			continue
 		}
@@ -164,8 +180,10 @@ func (saver *UASTChangesSaver) Consume(deps map[string]interface{}) (map[string]
 		if err != nil {
 			return nil, err
 		}
+
 		saver.result = append(saver.result, record)
 	}
+
 	return nil, nil
 }
 
@@ -174,6 +192,7 @@ func shortHash(hash plumbing.Hash) string {
 	if len(raw) > 12 {
 		return raw[:12]
 	}
+
 	return raw
 }
 
@@ -197,23 +216,29 @@ func (saver *UASTChangesSaver) dumpChangeFiles(
 	if err := os.WriteFile(srcBeforePath, srcBefore, 0o644); err != nil {
 		return UASTChangeRecord{}, err
 	}
+
 	if err := os.WriteFile(srcAfterPath, srcAfter, 0o644); err != nil {
 		return UASTChangeRecord{}, err
 	}
+
 	beforeJSON, err := json.MarshalIndent(nodesBefore, "", "  ")
 	if err != nil {
 		return UASTChangeRecord{}, err
 	}
+
 	afterJSON, err := json.MarshalIndent(nodesAfter, "", "  ")
 	if err != nil {
 		return UASTChangeRecord{}, err
 	}
+
 	if err := os.WriteFile(uastBeforePath, beforeJSON, 0o644); err != nil {
 		return UASTChangeRecord{}, err
 	}
+
 	if err := os.WriteFile(uastAfterPath, afterJSON, 0o644); err != nil {
 		return UASTChangeRecord{}, err
 	}
+
 	return UASTChangeRecord{
 		FileName:   fileName,
 		SrcBefore:  srcBeforePath,
@@ -229,24 +254,27 @@ func (saver *UASTChangesSaver) Fork(n int) []core.PipelineItem {
 }
 
 // Finalize returns the result of the analysis.
-func (saver *UASTChangesSaver) Finalize() interface{} {
+func (saver *UASTChangesSaver) Finalize() any {
 	return saver.result
 }
 
 // Serialize converts the analysis result as returned by Finalize() to text or bytes.
-func (saver *UASTChangesSaver) Serialize(result interface{}, binary bool, writer io.Writer) error {
+func (saver *UASTChangesSaver) Serialize(result any, binary bool, writer io.Writer) error {
 	records, ok := result.([]UASTChangeRecord)
 	if !ok {
 		return fmt.Errorf("result is not []UASTChangeRecord: %T", result)
 	}
+
 	if binary {
-		payload := map[string]interface{}{"changes": records}
+		payload := map[string]any{"changes": records}
 		return json.NewEncoder(writer).Encode(payload)
 	}
+
 	for _, sc := range records {
 		fmt.Fprintf(writer, "  - {file: %s, src0: %s, src1: %s, uast0: %s, uast1: %s}\n",
 			sc.FileName, sc.SrcBefore, sc.SrcAfter, sc.UASTBefore, sc.UASTAfter)
 	}
+
 	return nil
 }
 

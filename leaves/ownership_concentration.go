@@ -3,8 +3,10 @@ package leaves
 import (
 	"fmt"
 	"io"
+	"maps"
 	"math"
 	"path"
+	"slices"
 	"sort"
 	"time"
 
@@ -100,24 +102,28 @@ func (oc *OwnershipConcentrationAnalysis) ListConfigurationOptions() []core.Conf
 }
 
 // Configure sets the properties previously published by ListConfigurationOptions().
-func (oc *OwnershipConcentrationAnalysis) Configure(facts map[string]interface{}) error {
+func (oc *OwnershipConcentrationAnalysis) Configure(facts map[string]any) error {
 	if l, exists := facts[core.ConfigLogger].(core.Logger); exists {
 		oc.l = l
 	}
+
 	if val, exists := facts[identity.FactIdentityDetectorReversedPeopleDict].([]string); exists {
 		oc.reversedPeopleDict = val
 	}
+
 	if val, exists := facts[items.FactTickSize].(time.Duration); exists {
 		oc.tickSize = val
 	}
+
 	if val, ok := facts[core.FactIdentityResolver].(core.IdentityResolver); ok {
 		oc.peopleResolver = val
 	}
+
 	return nil
 }
 
 // ConfigureUpstream configures the upstream dependencies.
-func (*OwnershipConcentrationAnalysis) ConfigureUpstream(facts map[string]interface{}) error {
+func (*OwnershipConcentrationAnalysis) ConfigureUpstream(facts map[string]any) error {
 	return nil
 }
 
@@ -137,11 +143,12 @@ func (oc *OwnershipConcentrationAnalysis) Initialize(repository *git.Repository)
 	oc.l = core.NewLogger()
 	oc.snapshots = map[int]*OwnershipConcentrationSnapshot{}
 	oc.lastTick = -1
+
 	return nil
 }
 
 // Consume runs this PipelineItem on the next commit data.
-func (oc *OwnershipConcentrationAnalysis) Consume(deps map[string]interface{}) (map[string]interface{}, error) {
+func (oc *OwnershipConcentrationAnalysis) Consume(deps map[string]any) (map[string]any, error) {
 	changes := deps[linehistory.DependencyLineHistory].(core.LineHistoryChanges)
 	tick := deps[items.DependencyTick].(int)
 	oc.fileResolver = changes.Resolver
@@ -150,6 +157,7 @@ func (oc *OwnershipConcentrationAnalysis) Consume(deps map[string]interface{}) (
 		if oc.lastTick >= 0 {
 			oc.takeSnapshot(oc.lastTick)
 		}
+
 		oc.lastTick = tick
 	}
 
@@ -163,6 +171,7 @@ func (oc *OwnershipConcentrationAnalysis) takeSnapshot(tick int) {
 	}
 
 	authorLines := map[int]int64{}
+
 	oc.fileResolver.ForEachFile(func(fileId core.FileId, fileName string) {
 		previousLine := 0
 		previousAuthor := int(core.AuthorMissing)
@@ -173,7 +182,9 @@ func (oc *OwnershipConcentrationAnalysis) takeSnapshot(tick int) {
 				if length > 0 && previousAuthor != int(core.AuthorMissing) {
 					authorLines[previousAuthor] += int64(length)
 				}
+
 				previousLine = line
+
 				if author >= core.AuthorMissing {
 					previousAuthor = int(core.AuthorMissing)
 				} else {
@@ -191,9 +202,7 @@ func (oc *OwnershipConcentrationAnalysis) takeSnapshot(tick int) {
 	hhi := computeHHI(authorLines, totalLines)
 
 	snapshotLines := make(map[int]int64, len(authorLines))
-	for k, v := range authorLines {
-		snapshotLines[k] = v
-	}
+	maps.Copy(snapshotLines, authorLines)
 
 	oc.snapshots[tick] = &OwnershipConcentrationSnapshot{
 		Gini:        gini,
@@ -218,15 +227,15 @@ func computeGini(authorLines map[int]int64, totalLines int64) float64 {
 	for _, lines := range authorLines {
 		counts = append(counts, lines)
 	}
-	sort.Slice(counts, func(i, j int) bool {
-		return counts[i] < counts[j]
-	})
+
+	slices.Sort(counts)
 
 	// G = (2 * Sum_{i=1}^{n} i * x_i) / (n * S) - (n+1)/n
 	var weightedSum float64
 	for i, c := range counts {
 		weightedSum += float64(i+1) * float64(c)
 	}
+
 	nf := float64(n)
 	gini := (2.0*weightedSum)/(nf*float64(totalLines)) - (nf+1.0)/nf
 	// Clamp to [0,1] to handle floating point imprecision
@@ -241,10 +250,12 @@ func computeHHI(authorLines map[int]int64, totalLines int64) float64 {
 	}
 
 	var hhi float64
+
 	for _, lines := range authorLines {
 		share := float64(lines) / float64(totalLines)
 		hhi += share * share
 	}
+
 	return hhi
 }
 
@@ -255,6 +266,7 @@ func (oc *OwnershipConcentrationAnalysis) computeSubsystemConcentration() map[st
 	}
 
 	subsystems := map[string]map[int]int64{} // dir -> author -> lines
+
 	oc.fileResolver.ForEachFile(func(fileId core.FileId, fileName string) {
 		dir := path.Dir(fileName)
 		if dir == "." {
@@ -273,9 +285,12 @@ func (oc *OwnershipConcentrationAnalysis) computeSubsystemConcentration() map[st
 						dirAuthors = map[int]int64{}
 						subsystems[dir] = dirAuthors
 					}
+
 					dirAuthors[previousAuthor] += int64(length)
 				}
+
 				previousLine = line
+
 				if author >= core.AuthorMissing {
 					previousAuthor = int(core.AuthorMissing)
 				} else {
@@ -290,16 +305,18 @@ func (oc *OwnershipConcentrationAnalysis) computeSubsystemConcentration() map[st
 		for _, lines := range authorLines {
 			totalLines += lines
 		}
+
 		result[dir] = &SubsystemConcentration{
 			Gini: computeGini(authorLines, totalLines),
 			HHI:  computeHHI(authorLines, totalLines),
 		}
 	}
+
 	return result
 }
 
 // Finalize returns the result of the analysis. Further Consume() calls are not expected.
-func (oc *OwnershipConcentrationAnalysis) Finalize() interface{} {
+func (oc *OwnershipConcentrationAnalysis) Finalize() any {
 	if oc.lastTick >= 0 {
 		oc.takeSnapshot(oc.lastTick)
 	}
@@ -318,55 +335,61 @@ func (oc *OwnershipConcentrationAnalysis) Fork(n int) []core.PipelineItem {
 }
 
 // Serialize converts the analysis result as returned by Finalize() to text or bytes.
-func (oc *OwnershipConcentrationAnalysis) Serialize(result interface{}, binary bool, writer io.Writer) error {
+func (oc *OwnershipConcentrationAnalysis) Serialize(result any, binary bool, writer io.Writer) error {
 	ocResult := result.(OwnershipConcentrationResult)
 	if binary {
 		return oc.serializeBinary(&ocResult, writer)
 	}
+
 	oc.serializeText(&ocResult, writer)
+
 	return nil
 }
 
 // Deserialize loads the result from Protocol Buffers blob.
-func (oc *OwnershipConcentrationAnalysis) Deserialize(pbmessage []byte) (interface{}, error) {
+func (oc *OwnershipConcentrationAnalysis) Deserialize(pbmessage []byte) (any, error) {
 	message := pb.OwnershipConcentrationResults{}
+
 	err := proto.Unmarshal(pbmessage, &message)
 	if err != nil {
 		return nil, err
 	}
 
-	snapshots := make(map[int]*OwnershipConcentrationSnapshot, len(message.Snapshots))
-	for tick, pbSnapshot := range message.Snapshots {
-		authorLines := make(map[int]int64, len(pbSnapshot.AuthorLines))
-		for authorID, lines := range pbSnapshot.AuthorLines {
+	snapshots := make(map[int]*OwnershipConcentrationSnapshot, len(message.GetSnapshots()))
+	for tick, pbSnapshot := range message.GetSnapshots() {
+		authorLines := make(map[int]int64, len(pbSnapshot.GetAuthorLines()))
+		for authorID, lines := range pbSnapshot.GetAuthorLines() {
 			dev := int(authorID)
 			if authorID == -1 {
 				dev = core.AuthorMissing
 			}
+
 			authorLines[dev] = lines
 		}
+
 		snapshots[int(tick)] = &OwnershipConcentrationSnapshot{
-			Gini:        pbSnapshot.Gini,
-			HHI:         pbSnapshot.Hhi,
-			TotalLines:  pbSnapshot.TotalLines,
+			Gini:        pbSnapshot.GetGini(),
+			HHI:         pbSnapshot.GetHhi(),
+			TotalLines:  pbSnapshot.GetTotalLines(),
 			AuthorLines: authorLines,
 		}
 	}
 
 	subsystemConc := make(map[string]*SubsystemConcentration)
-	for dir := range message.SubsystemGini {
+	for dir := range message.GetSubsystemGini() {
 		subsystemConc[dir] = &SubsystemConcentration{
-			Gini: message.SubsystemGini[dir],
-			HHI:  message.SubsystemHhi[dir],
+			Gini: message.GetSubsystemGini()[dir],
+			HHI:  message.GetSubsystemHhi()[dir],
 		}
 	}
 
 	result := OwnershipConcentrationResult{
 		Snapshots:              snapshots,
 		SubsystemConcentration: subsystemConc,
-		reversedPeopleDict:     message.DevIndex,
-		tickSize:               time.Duration(message.TickSize),
+		reversedPeopleDict:     message.GetDevIndex(),
+		tickSize:               time.Duration(message.GetTickSize()),
 	}
+
 	return result, nil
 }
 
@@ -377,9 +400,11 @@ func (oc *OwnershipConcentrationAnalysis) serializeText(result *OwnershipConcent
 	for tick := range result.Snapshots {
 		ticks = append(ticks, tick)
 	}
+
 	sort.Ints(ticks)
 
 	fmt.Fprintln(writer, "    per_tick:")
+
 	for _, tick := range ticks {
 		snapshot := result.Snapshots[tick]
 		fmt.Fprintf(writer, "      %d: {gini: %.4f, hhi: %.4f, total_lines: %d}\n",
@@ -388,11 +413,14 @@ func (oc *OwnershipConcentrationAnalysis) serializeText(result *OwnershipConcent
 
 	if len(result.SubsystemConcentration) > 0 {
 		fmt.Fprintln(writer, "    per_subsystem:")
+
 		dirs := make([]string, 0, len(result.SubsystemConcentration))
 		for dir := range result.SubsystemConcentration {
 			dirs = append(dirs, dir)
 		}
+
 		sort.Strings(dirs)
+
 		for _, dir := range dirs {
 			sc := result.SubsystemConcentration[dir]
 			fmt.Fprintf(writer, "      %s: {gini: %.4f, hhi: %.4f}\n", yaml.SafeString(dir), sc.Gini, sc.HHI)
@@ -400,9 +428,11 @@ func (oc *OwnershipConcentrationAnalysis) serializeText(result *OwnershipConcent
 	}
 
 	fmt.Fprintln(writer, "    people:")
+
 	for _, person := range result.reversedPeopleDict {
 		fmt.Fprintf(writer, "    - %s\n", yaml.SafeString(person))
 	}
+
 	fmt.Fprintln(writer, "    tick_size:", int(result.tickSize.Seconds()))
 }
 
@@ -425,12 +455,15 @@ func (oc *OwnershipConcentrationAnalysis) serializeBinary(result *OwnershipConce
 			if author == core.AuthorMissing {
 				authorID = -1
 			}
+
 			pbSnapshot.AuthorLines[authorID] = lines
 		}
+
 		message.Snapshots[int32(tick)] = pbSnapshot
 	}
 
 	message.SubsystemGini = make(map[string]float64, len(result.SubsystemConcentration))
+
 	message.SubsystemHhi = make(map[string]float64, len(result.SubsystemConcentration))
 	for dir, sc := range result.SubsystemConcentration {
 		message.SubsystemGini[dir] = sc.Gini
@@ -441,14 +474,16 @@ func (oc *OwnershipConcentrationAnalysis) serializeBinary(result *OwnershipConce
 	if err != nil {
 		return err
 	}
+
 	_, err = writer.Write(serialized)
+
 	return err
 }
 
 // MergeResults combines two OwnershipConcentrationResult-s together.
 func (oc *OwnershipConcentrationAnalysis) MergeResults(
-	r1, r2 interface{}, c1, c2 *core.CommonAnalysisResult,
-) interface{} {
+	r1, r2 any, c1, c2 *core.CommonAnalysisResult,
+) any {
 	ocr1 := r1.(OwnershipConcentrationResult)
 	ocr2 := r2.(OwnershipConcentrationResult)
 
@@ -460,9 +495,8 @@ func (oc *OwnershipConcentrationAnalysis) MergeResults(
 	}
 
 	// Merge snapshots: take the snapshot with the larger total lines for overlapping ticks
-	for tick, snapshot := range ocr1.Snapshots {
-		merged.Snapshots[tick] = snapshot
-	}
+	maps.Copy(merged.Snapshots, ocr1.Snapshots)
+
 	for tick, snapshot := range ocr2.Snapshots {
 		if existing, ok := merged.Snapshots[tick]; !ok || snapshot.TotalLines > existing.TotalLines {
 			merged.Snapshots[tick] = snapshot
@@ -470,9 +504,8 @@ func (oc *OwnershipConcentrationAnalysis) MergeResults(
 	}
 
 	// Merge subsystem concentration: take from the result with more data (higher Gini as tiebreaker)
-	for dir, sc := range ocr1.SubsystemConcentration {
-		merged.SubsystemConcentration[dir] = sc
-	}
+	maps.Copy(merged.SubsystemConcentration, ocr1.SubsystemConcentration)
+
 	for dir, sc := range ocr2.SubsystemConcentration {
 		if _, ok := merged.SubsystemConcentration[dir]; !ok {
 			merged.SubsystemConcentration[dir] = sc

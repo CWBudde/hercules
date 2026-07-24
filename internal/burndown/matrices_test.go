@@ -1,7 +1,6 @@
 package burndown
 
 import (
-	"fmt"
 	"testing"
 	"time"
 
@@ -72,8 +71,8 @@ func TestBurndownAddMatrix(t *testing.T) {
 		fmt.Println(row)
 	}*/
 	// check pinned points
-	for y := 0; y < 5; y++ {
-		for x := 0; x < 3; x++ {
+	for y := range 5 {
+		for x := range 3 {
 			var sum float32
 			for i := x * 5; i < (x+1)*5; i++ {
 				sum += daily[(y+1)*3][i+1]
@@ -82,8 +81,8 @@ func TestBurndownAddMatrix(t *testing.T) {
 		}
 	}
 	// check overall trend: 0 -> const -> peak -> decay
-	for x := 0; x < 15; x++ {
-		for y := 0; y < x; y++ {
+	for x := range 15 {
+		for y := range x {
 			assert.Zero(t, daily[y+1][x+1])
 		}
 		var prev float32
@@ -97,7 +96,7 @@ func TestBurndownAddMatrix(t *testing.T) {
 			if prev == 0 {
 				prev = daily[y+1][x+1]
 			}
-			assert.True(t, daily[y+1][x+1] <= prev)
+			assert.LessOrEqual(t, daily[y+1][x+1], prev)
 			prev = daily[y+1][x+1]
 		}
 	}
@@ -150,8 +149,8 @@ func TestBurndownAddMatrixCrazy(t *testing.T) {
 		}
 	*/
 	// check pinned points
-	for y := 0; y < 5; y++ {
-		for x := 0; x < 3; x++ {
+	for y := range 5 {
+		for x := range 3 {
 			var sum float32
 			for i := x * 5; i < (x+1)*5; i++ {
 				sum += daily[(y+1)*3-1][i]
@@ -160,8 +159,8 @@ func TestBurndownAddMatrixCrazy(t *testing.T) {
 		}
 	}
 	// check overall trend: 0 -> const -> peak -> decay
-	for x := 0; x < 15; x++ {
-		for y := 0; y < x; y++ {
+	for x := range 15 {
+		for y := range x {
 			assert.Zero(t, daily[y][x])
 		}
 		var prev float32
@@ -175,7 +174,7 @@ func TestBurndownAddMatrixCrazy(t *testing.T) {
 			if prev == 0 {
 				prev = daily[y][x]
 			}
-			assert.True(t, daily[y][x] <= prev)
+			assert.LessOrEqual(t, daily[y][x], prev)
 			prev = daily[y][x]
 		}
 	}
@@ -225,8 +224,8 @@ func TestBurndownAddMatrixNaNs(t *testing.T) {
 		}
 	*/
 	// check pinned points
-	for y := 0; y < 4; y++ {
-		for x := 0; x < 4; x++ {
+	for y := range 4 {
+		for x := range 4 {
 			var sum float32
 			for i := x * 4; i < (x+1)*4; i++ {
 				sum += daily[(y+1)*4-1][i]
@@ -235,8 +234,8 @@ func TestBurndownAddMatrixNaNs(t *testing.T) {
 		}
 	}
 	// check overall trend: 0 -> const -> peak -> decay
-	for x := 0; x < 16; x++ {
-		for y := 0; y < x; y++ {
+	for x := range 16 {
+		for y := range x {
 			assert.Zero(t, daily[y][x])
 		}
 		var prev float32
@@ -253,7 +252,7 @@ func TestBurndownAddMatrixNaNs(t *testing.T) {
 			if prev == 0 {
 				prev = daily[y][x]
 			}
-			assert.True(t, daily[y][x] <= prev)
+			assert.LessOrEqual(t, daily[y][x], prev)
 			prev = daily[y][x]
 		}
 	}
@@ -333,13 +332,13 @@ func TestBurndownMergeMatrices(t *testing.T) {
 	nh := MergeBurndownMatrices(h, nil, 30, 30, 30, 30, 24*time.Hour, cr, cr)
 	for y, row := range nh {
 		for x, v := range row {
-			assert.InDelta(t, v, h[y][x], 1, fmt.Sprintf("y=%d x=%d", y, x))
+			assert.InDelta(t, v, h[y][x], 1, "y=%d x=%d", y, x)
 		}
 	}
 	nh = MergeBurndownMatrices(h, h, 30, 30, 30, 30, 24*time.Hour, cr, cr)
 	for y, row := range nh {
 		for x, v := range row {
-			assert.InDelta(t, v, h[y][x]*2, 1, fmt.Sprintf("y=%d x=%d", y, x))
+			assert.InDelta(t, v, h[y][x]*2, 1, "y=%d x=%d", y, x)
 		}
 	}
 }

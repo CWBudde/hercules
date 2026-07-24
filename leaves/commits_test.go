@@ -20,17 +20,17 @@ import (
 
 func TestCommitsMeta(t *testing.T) {
 	ca := CommitsAnalysis{}
-	assert.Equal(t, ca.Name(), "CommitsStat")
-	assert.Len(t, ca.Provides(), 0)
+	assert.Equal(t, "CommitsStat", ca.Name())
+	assert.Empty(t, ca.Provides())
 	required := [...]string{identity.DependencyAuthor, items.DependencyLanguages, items.DependencyLineStats}
 	for _, name := range required {
 		assert.Contains(t, ca.Requires(), name)
 	}
 	opts := ca.ListConfigurationOptions()
-	assert.Len(t, opts, 0)
-	assert.Equal(t, ca.Flag(), "commits-stat")
+	assert.Empty(t, opts)
+	assert.Equal(t, "commits-stat", ca.Flag())
 	logger := core.NewLogger()
-	assert.NoError(t, ca.Configure(map[string]interface{}{
+	assert.NoError(t, ca.Configure(map[string]any{
 		core.ConfigLogger: logger,
 	}))
 	assert.Equal(t, logger, ca.l)
@@ -39,7 +39,7 @@ func TestCommitsMeta(t *testing.T) {
 func TestCommitsRegistration(t *testing.T) {
 	summoned := core.Registry.Summon((&CommitsAnalysis{}).Name())
 	assert.Len(t, summoned, 1)
-	assert.Equal(t, summoned[0].Name(), "CommitsStat")
+	assert.Equal(t, "CommitsStat", summoned[0].Name())
 	leaves := core.Registry.GetLeaves()
 	matched := false
 	for _, tp := range leaves {
@@ -53,16 +53,16 @@ func TestCommitsRegistration(t *testing.T) {
 
 func TestCommitsConfigure(t *testing.T) {
 	ca := CommitsAnalysis{}
-	facts := map[string]interface{}{}
+	facts := map[string]any{}
 	facts[identity.FactIdentityDetectorReversedPeopleDict] = ca.Requires()
-	assert.Nil(t, ca.Configure(facts))
+	assert.NoError(t, ca.Configure(facts))
 	assert.Equal(t, ca.reversedPeopleDict, ca.Requires())
 }
 
 func TestCommitsConsume(t *testing.T) {
 	ca := CommitsAnalysis{}
-	assert.Nil(t, ca.Initialize(test.Repository))
-	deps := map[string]interface{}{}
+	assert.NoError(t, ca.Initialize(test.Repository))
+	deps := map[string]any{}
 
 	// stage 1
 	deps[identity.DependencyAuthor] = 0
@@ -127,19 +127,19 @@ func TestCommitsConsume(t *testing.T) {
 	deps[items.DependencyTreeChanges] = changes
 	fd := fixtures.FileDiff()
 	result, err := fd.Consume(deps)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	deps[items.DependencyFileDiff] = result[items.DependencyFileDiff]
 	deps[core.DependencyCommit], _ = test.Repository.CommitObject(plumbing.NewHash(
 		"cce947b98a050c6d356bc6ba95030254914027b1",
 	))
 	lsc := &items.LinesStatsCalculator{}
 	lscres, err := lsc.Consume(deps)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	deps[items.DependencyLineStats] = lscres[items.DependencyLineStats]
 
 	result, err = ca.Consume(deps)
 	assert.Nil(t, result)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Len(t, ca.commits, 1)
 	c := ca.commits[0]
 	assert.Equal(t, "cce947b98a050c6d356bc6ba95030254914027b1", c.Hash)
@@ -228,7 +228,7 @@ func TestCommitsSerialize(t *testing.T) {
 	res := ca.Finalize().(CommitsResult)
 	buffer := &bytes.Buffer{}
 	err := ca.Serialize(res, false, buffer)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, `  commits:
     - hash: cce947b98a050c6d356bc6ba95030254914027b1
       when: 1481563829
@@ -254,32 +254,32 @@ func TestCommitsSerialize(t *testing.T) {
 
 	buffer = &bytes.Buffer{}
 	err = ca.Serialize(res, true, buffer)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	msg := pb.CommitsAnalysisResults{}
-	assert.Nil(t, proto.Unmarshal(buffer.Bytes(), &msg))
-	assert.Equal(t, msg.AuthorIndex, ca.reversedPeopleDict)
-	assert.Len(t, msg.Commits, 2)
-	assert.Equal(t, msg.Commits[0].Hash, "cce947b98a050c6d356bc6ba95030254914027b1")
-	assert.Equal(t, msg.Commits[0].WhenUnixTime, int64(1481563829))
-	assert.Equal(t, msg.Commits[0].Author, int32(0))
-	assert.Len(t, msg.Commits[0].Files, 2)
-	assert.Equal(t, msg.Commits[0].Files[0], &pb.CommitFile{
+	assert.NoError(t, proto.Unmarshal(buffer.Bytes(), &msg))
+	assert.Equal(t, msg.GetAuthorIndex(), ca.reversedPeopleDict)
+	assert.Len(t, msg.GetCommits(), 2)
+	assert.Equal(t, "cce947b98a050c6d356bc6ba95030254914027b1", msg.GetCommits()[0].GetHash())
+	assert.Equal(t, int64(1481563829), msg.GetCommits()[0].GetWhenUnixTime())
+	assert.Equal(t, int32(0), msg.GetCommits()[0].GetAuthor())
+	assert.Len(t, msg.GetCommits()[0].GetFiles(), 2)
+	assert.Equal(t, &pb.CommitFile{
 		Name:     ".travis.yml",
 		Stats:    &pb.LineStats{Added: 12, Removed: 0, Changed: 0},
 		Language: "Yaml",
-	})
-	assert.Equal(t, msg.Commits[0].Files[1], &pb.CommitFile{
+	}, msg.GetCommits()[0].GetFiles()[0])
+	assert.Equal(t, &pb.CommitFile{
 		Name:     "analyser.go",
 		Stats:    &pb.LineStats{Added: 628, Removed: 9, Changed: 67},
 		Language: "Go",
-	})
-	assert.Equal(t, msg.Commits[1].Hash, "c29112dbd697ad9b401333b80c18a63951bc18d9")
-	assert.Equal(t, msg.Commits[1].WhenUnixTime, int64(1481563999))
-	assert.Equal(t, msg.Commits[1].Author, int32(1))
-	assert.Len(t, msg.Commits[1].Files, 1)
-	assert.Equal(t, msg.Commits[1].Files[0], &pb.CommitFile{
+	}, msg.GetCommits()[0].GetFiles()[1])
+	assert.Equal(t, "c29112dbd697ad9b401333b80c18a63951bc18d9", msg.GetCommits()[1].GetHash())
+	assert.Equal(t, int64(1481563999), msg.GetCommits()[1].GetWhenUnixTime())
+	assert.Equal(t, int32(1), msg.GetCommits()[1].GetAuthor())
+	assert.Len(t, msg.GetCommits()[1].GetFiles(), 1)
+	assert.Equal(t, &pb.CommitFile{
 		Name:     "cmd/hercules/main.go",
 		Stats:    &pb.LineStats{Added: 1, Removed: 0, Changed: 0},
 		Language: "Go",
-	})
+	}, msg.GetCommits()[1].GetFiles()[0])
 }

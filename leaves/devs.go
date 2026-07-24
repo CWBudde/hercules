@@ -27,6 +27,7 @@ import (
 type DevsAnalysis struct {
 	core.NoopMerger
 	core.OneShotMergeProcessor
+
 	// ConsiderEmptyCommits indicates whether empty commits (e.g., merges) should be taken
 	// into account.
 	ConsiderEmptyCommits bool
@@ -98,27 +99,32 @@ func (devs *DevsAnalysis) ListConfigurationOptions() []core.ConfigurationOption 
 		Type:        core.BoolConfigurationOption,
 		Default:     false,
 	}}
+
 	return options[:]
 }
 
 // Configure sets the properties previously published by ListConfigurationOptions().
-func (devs *DevsAnalysis) Configure(facts map[string]interface{}) error {
+func (devs *DevsAnalysis) Configure(facts map[string]any) error {
 	if l, exists := facts[core.ConfigLogger].(core.Logger); exists {
 		devs.l = l
 	}
+
 	if val, exists := facts[ConfigDevsConsiderEmptyCommits].(bool); exists {
 		devs.ConsiderEmptyCommits = val
 	}
+
 	if val, exists := facts[identity.FactIdentityDetectorReversedPeopleDict].([]string); exists {
 		devs.reversedPeopleDict = val
 	}
+
 	if val, exists := facts[items.FactTickSize].(time.Duration); exists {
 		devs.tickSize = val
 	}
+
 	return nil
 }
 
-func (*DevsAnalysis) ConfigureUpstream(facts map[string]interface{}) error {
+func (*DevsAnalysis) ConfigureUpstream(facts map[string]any) error {
 	return nil
 }
 
@@ -138,9 +144,11 @@ func (devs *DevsAnalysis) Initialize(repository *git.Repository) error {
 	if devs.tickSize == 0 {
 		return errors.New("tick size must be specified")
 	}
+
 	devs.l = core.NewLogger()
 	devs.ticks = map[int]map[int]*DevTick{}
 	devs.OneShotMergeProcessor.Initialize()
+
 	return nil
 }
 
@@ -149,28 +157,35 @@ func (devs *DevsAnalysis) Initialize(repository *git.Repository) error {
 // Additionally, DependencyCommit is always present there and represents the analysed *object.Commit.
 // This function returns the mapping with analysis results. The keys must be the same as
 // in Provides(). If there was an error, nil is returned.
-func (devs *DevsAnalysis) Consume(deps map[string]interface{}) (map[string]interface{}, error) {
+func (devs *DevsAnalysis) Consume(deps map[string]any) (map[string]any, error) {
 	if !devs.ShouldConsumeCommit(deps) {
 		return nil, nil
 	}
+
 	author := deps[identity.DependencyAuthor].(int)
+
 	treeDiff := deps[items.DependencyTreeChanges].(object.Changes)
 	if len(treeDiff) == 0 && !devs.ConsiderEmptyCommits {
 		return nil, nil
 	}
+
 	tick := deps[items.DependencyTick].(int)
+
 	devstick, exists := devs.ticks[tick]
 	if !exists {
 		devstick = map[int]*DevTick{}
 		devs.ticks[tick] = devstick
 	}
+
 	dd, exists := devstick[author]
 	if !exists {
 		dd = &DevTick{Languages: map[string]items.LineStats{}}
 		devstick[author] = dd
 	}
+
 	dd.Commits++
 	langs := deps[items.DependencyLanguages].(map[plumbing.Hash]string)
+
 	lineStats := deps[items.DependencyLineStats].(map[object.ChangeEntry]items.LineStats)
 	for changeEntry, stats := range lineStats {
 		dd.Added += stats.Added
@@ -184,11 +199,12 @@ func (devs *DevsAnalysis) Consume(deps map[string]interface{}) (map[string]inter
 			Changed: langStats.Changed + stats.Changed,
 		}
 	}
+
 	return nil, nil
 }
 
 // Finalize returns the result of the analysis. Further Consume() calls are not expected.
-func (devs *DevsAnalysis) Finalize() interface{} {
+func (devs *DevsAnalysis) Finalize() any {
 	return DevsResult{
 		Ticks:              devs.ticks,
 		reversedPeopleDict: devs.reversedPeopleDict,
@@ -203,71 +219,85 @@ func (devs *DevsAnalysis) Fork(n int) []core.PipelineItem {
 
 // Serialize converts the analysis result as returned by Finalize() to text or bytes.
 // The text format is YAML and the bytes format is Protocol Buffers.
-func (devs *DevsAnalysis) Serialize(result interface{}, binary bool, writer io.Writer) error {
+func (devs *DevsAnalysis) Serialize(result any, binary bool, writer io.Writer) error {
 	devsResult := result.(DevsResult)
 	if binary {
 		return devs.serializeBinary(&devsResult, writer)
 	}
+
 	devs.serializeText(&devsResult, writer)
+
 	return nil
 }
 
 // Deserialize converts the specified protobuf bytes to DevsResult.
-func (devs *DevsAnalysis) Deserialize(pbmessage []byte) (interface{}, error) {
+func (devs *DevsAnalysis) Deserialize(pbmessage []byte) (any, error) {
 	message := pb.DevsAnalysisResults{}
+
 	err := proto.Unmarshal(pbmessage, &message)
 	if err != nil {
 		return nil, err
 	}
+
 	ticks := map[int]map[int]*DevTick{}
-	for tick, dd := range message.Ticks {
+
+	for tick, dd := range message.GetTicks() {
 		rdd := map[int]*DevTick{}
 		ticks[int(tick)] = rdd
-		for dev, stats := range dd.Devs {
+
+		for dev, stats := range dd.GetDevs() {
 			if dev == -1 {
 				dev = core.AuthorMissing
 			}
+
 			languages := map[string]items.LineStats{}
+
 			rdd[int(dev)] = &DevTick{
-				Commits: int(stats.Commits),
+				Commits: int(stats.GetCommits()),
 				LineStats: items.LineStats{
-					Added:   int(stats.Stats.Added),
-					Removed: int(stats.Stats.Removed),
-					Changed: int(stats.Stats.Changed),
+					Added:   int(stats.GetStats().GetAdded()),
+					Removed: int(stats.GetStats().GetRemoved()),
+					Changed: int(stats.GetStats().GetChanged()),
 				},
 				Languages: languages,
 			}
-			for lang, ls := range stats.Languages {
+			for lang, ls := range stats.GetLanguages() {
 				languages[lang] = items.LineStats{
-					Added:   int(ls.Added),
-					Removed: int(ls.Removed),
-					Changed: int(ls.Changed),
+					Added:   int(ls.GetAdded()),
+					Removed: int(ls.GetRemoved()),
+					Changed: int(ls.GetChanged()),
 				}
 			}
 		}
 	}
+
 	result := DevsResult{
 		Ticks:              ticks,
-		reversedPeopleDict: message.DevIndex,
-		tickSize:           time.Duration(message.TickSize),
+		reversedPeopleDict: message.GetDevIndex(),
+		tickSize:           time.Duration(message.GetTickSize()),
 	}
+
 	return result, nil
 }
 
 // MergeResults combines two DevsAnalysis-es together.
-func (devs *DevsAnalysis) MergeResults(r1, r2 interface{}, c1, c2 *core.CommonAnalysisResult) interface{} {
+func (devs *DevsAnalysis) MergeResults(r1, r2 any, c1, c2 *core.CommonAnalysisResult) any {
 	cr1 := r1.(DevsResult)
+
 	cr2 := r2.(DevsResult)
 	if cr1.tickSize != cr2.tickSize {
 		return fmt.Errorf("mismatching tick sizes (r1: %d, r2: %d) received",
 			cr1.tickSize, cr2.tickSize)
 	}
+
 	t01 := items.FloorTime(c1.BeginTimeAsTime(), cr1.tickSize)
 	t02 := items.FloorTime(c2.BeginTimeAsTime(), cr2.tickSize)
+
 	t0 := t01
 	if t02.Before(t0) {
 		t0 = t02
 	}
+
 	offset1 := int(t01.Sub(t0) / cr1.tickSize)
 	offset2 := int(t02.Sub(t0) / cr2.tickSize)
 
@@ -277,27 +307,33 @@ func (devs *DevsAnalysis) MergeResults(r1, r2 interface{}, c1, c2 *core.CommonAn
 		cr1.reversedPeopleDict, cr2.reversedPeopleDict,
 	)
 	newticks := map[int]map[int]*DevTick{}
+
 	merged.Ticks = newticks
 	for tick, dd := range cr1.Ticks {
 		tick += offset1
+
 		newdd, exists := newticks[tick]
 		if !exists {
 			newdd = map[int]*DevTick{}
 			newticks[tick] = newdd
 		}
+
 		for dev, stats := range dd {
 			newdev := dev
 			if newdev != core.AuthorMissing {
 				newdev = mergedIndex[cr1.reversedPeopleDict[dev]].Final
 			}
+
 			newstats, exists := newdd[newdev]
 			if !exists {
 				newstats = &DevTick{Languages: map[string]items.LineStats{}}
 				newdd[newdev] = newstats
 			}
+
 			newstats.Commits += stats.Commits
 			newstats.Added += stats.Added
 			newstats.Removed += stats.Removed
+
 			newstats.Changed += stats.Changed
 			for lang, ls := range stats.Languages {
 				prev := newstats.Languages[lang]
@@ -309,26 +345,32 @@ func (devs *DevsAnalysis) MergeResults(r1, r2 interface{}, c1, c2 *core.CommonAn
 			}
 		}
 	}
+
 	for tick, dd := range cr2.Ticks {
 		tick += offset2
+
 		newdd, exists := newticks[tick]
 		if !exists {
 			newdd = map[int]*DevTick{}
 			newticks[tick] = newdd
 		}
+
 		for dev, stats := range dd {
 			newdev := dev
 			if newdev != core.AuthorMissing {
 				newdev = mergedIndex[cr2.reversedPeopleDict[dev]].Final
 			}
+
 			newstats, exists := newdd[newdev]
 			if !exists {
 				newstats = &DevTick{Languages: map[string]items.LineStats{}}
 				newdd[newdev] = newstats
 			}
+
 			newstats.Commits += stats.Commits
 			newstats.Added += stats.Added
 			newstats.Removed += stats.Removed
+
 			newstats.Changed += stats.Changed
 			for lang, ls := range stats.Languages {
 				prev := newstats.Languages[lang]
@@ -340,11 +382,13 @@ func (devs *DevsAnalysis) MergeResults(r1, r2 interface{}, c1, c2 *core.CommonAn
 			}
 		}
 	}
+
 	return merged
 }
 
 func (devs *DevsAnalysis) serializeText(result *DevsResult, writer io.Writer) {
 	fmt.Fprintln(writer, "  ticks:")
+
 	ticks := make([]int, len(result.Ticks))
 	{
 		i := 0
@@ -353,7 +397,9 @@ func (devs *DevsAnalysis) serializeText(result *DevsResult, writer io.Writer) {
 			i++
 		}
 	}
+
 	sort.Ints(ticks)
+
 	for _, tick := range ticks {
 		fmt.Fprintf(writer, "    %d:\n", tick)
 		rtick := result.Ticks[tick]
@@ -365,30 +411,38 @@ func (devs *DevsAnalysis) serializeText(result *DevsResult, writer io.Writer) {
 				i++
 			}
 		}
+
 		sort.Ints(devseq)
+
 		for _, dev := range devseq {
 			stats := rtick[dev]
 			if dev == core.AuthorMissing {
 				dev = -1
 			}
 			var langs []string
+
 			for lang, ls := range stats.Languages {
 				if lang == "" {
 					lang = "none"
 				}
+
 				langs = append(langs,
 					fmt.Sprintf("%s: [%d, %d, %d]", lang, ls.Added, ls.Removed, ls.Changed))
 			}
+
 			sort.Strings(langs)
 			fmt.Fprintf(writer, "      %d: [%d, %d, %d, %d, {%s}]\n",
 				dev, stats.Commits, stats.Added, stats.Removed, stats.Changed,
 				strings.Join(langs, ", "))
 		}
 	}
+
 	fmt.Fprintln(writer, "  people:")
+
 	for _, person := range result.reversedPeopleDict {
 		fmt.Fprintf(writer, "  - %s\n", yaml.SafeString(person))
 	}
+
 	fmt.Fprintln(writer, "  tick_size:", int(result.tickSize.Seconds()))
 }
 
@@ -396,16 +450,20 @@ func (devs *DevsAnalysis) serializeBinary(result *DevsResult, writer io.Writer) 
 	message := pb.DevsAnalysisResults{}
 	message.DevIndex = result.reversedPeopleDict
 	message.TickSize = int64(result.tickSize)
+
 	message.Ticks = map[int32]*pb.TickDevs{}
 	for tick, devs := range result.Ticks {
 		dd := &pb.TickDevs{}
 		message.Ticks[int32(tick)] = dd
 		dd.Devs = map[int32]*pb.DevTick{}
+
 		for dev, stats := range devs {
 			if dev == core.AuthorMissing {
 				dev = -1
 			}
+
 			languages := map[string]*pb.LineStats{}
+
 			dd.Devs[int32(dev)] = &pb.DevTick{
 				Commits: int32(stats.Commits),
 				Stats: &pb.LineStats{
@@ -424,11 +482,14 @@ func (devs *DevsAnalysis) serializeBinary(result *DevsResult, writer io.Writer) 
 			}
 		}
 	}
+
 	serialized, err := proto.Marshal(&message)
 	if err != nil {
 		return err
 	}
+
 	_, err = writer.Write(serialized)
+
 	return err
 }
 

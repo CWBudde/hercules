@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"unicode"
@@ -21,6 +22,7 @@ import (
 // It is a PipelineItem.
 type PeopleDetector struct {
 	core.NoopMerger
+
 	// PeopleDict maps email || name  -> developer id
 	PeopleDict map[string]int
 	// ReversedPeopleDict maps developer id -> description
@@ -106,6 +108,7 @@ func (v peopleResolver) MaxCount() int {
 	if v.identities == nil {
 		return 0
 	}
+
 	return len(v.identities.ReversedPeopleDict)
 }
 
@@ -113,6 +116,7 @@ func (v peopleResolver) Count() int {
 	if v.identities == nil {
 		return 0
 	}
+
 	return len(v.identities.ReversedPeopleDict)
 }
 
@@ -120,9 +124,11 @@ func (v peopleResolver) nameOf(id core.AuthorId, anonymity bool) string {
 	if id == core.AuthorMissing || id < 0 || v.identities == nil || int(id) >= len(v.identities.ReversedPeopleDict) {
 		return core.AuthorMissingName
 	}
+
 	if !anonymity {
 		return v.identities.ReversedPeopleDict[id]
 	}
+
 	return v.anonymizeName(id)
 }
 
@@ -142,12 +148,15 @@ func (v peopleResolver) ForEachIdentity(callback func(core.AuthorId, string)) bo
 	if v.identities == nil {
 		return false
 	}
+
 	for id, name := range v.identities.ReversedPeopleDict {
 		if v.identities.Anonymity {
 			name = v.anonymizeName(core.AuthorId(id))
 		}
+
 		callback(core.AuthorId(id), name)
 	}
+
 	return true
 }
 
@@ -155,6 +164,7 @@ func (v peopleResolver) CopyNames(privateNames bool) []string {
 	if v.identities == nil {
 		return nil
 	}
+
 	if privateNames || !v.identities.Anonymity {
 		return append([]string(nil), v.identities.ReversedPeopleDict...)
 	}
@@ -163,6 +173,7 @@ func (v peopleResolver) CopyNames(privateNames bool) []string {
 	for i := range names {
 		names[i] = v.anonymizeName(core.AuthorId(i))
 	}
+
 	return names
 }
 
@@ -200,7 +211,7 @@ func (detector *PeopleDetector) ListConfigurationOptions() []core.ConfigurationO
 			Default:     "",
 		}, {
 			Name: ConfigIdentityDetectorExactSignatures,
-			Description: "Disable separate name/email matching. This will lead to considerbly more " +
+			Description: "Disable separate name/email matching. This will lead to considerably more " +
 				"identities and should not be normally used.",
 			Flag:    "exact-signatures",
 			Type:    core.BoolConfigurationOption,
@@ -223,7 +234,7 @@ func (detector *PeopleDetector) ListConfigurationOptions() []core.ConfigurationO
 }
 
 // Configure sets the properties previously published by ListConfigurationOptions().
-func (detector *PeopleDetector) Configure(facts map[string]interface{}) error {
+func (detector *PeopleDetector) Configure(facts map[string]any) error {
 	if l, exists := facts[core.ConfigLogger].(core.Logger); exists {
 		detector.l = l
 	} else {
@@ -247,6 +258,7 @@ func (detector *PeopleDetector) Configure(facts map[string]interface{}) error {
 		if val < 0 || val > 1 {
 			return errors.Errorf("%s must be between 0 and 1: %f", ConfigIdentityDetectorMergeThreshold, val)
 		}
+
 		detector.MergeThreshold = val
 		detector.mergeThresholdConfigured = true
 	}
@@ -262,8 +274,10 @@ func (detector *PeopleDetector) Configure(facts map[string]interface{}) error {
 		if _, exists := facts[core.ConfigPipelineCommits]; !exists {
 			panic("PeopleDetector needs a list of commits to initialize.")
 		}
+
 		detector.GeneratePeopleDict(facts[core.ConfigPipelineCommits].([]*object.Commit))
 	}
+
 	facts[FactIdentityDetectorReversedPeopleDict] = detector.ReversedPeopleDict
 
 	if detector.PeopleDict == nil {
@@ -272,6 +286,7 @@ func (detector *PeopleDetector) Configure(facts map[string]interface{}) error {
 			detector.PeopleDict[v] = k
 		}
 	}
+
 	if len(detector.audit.Identities) == 0 && len(detector.ReversedPeopleDict) > 0 {
 		detector.ensureMergeThreshold()
 		detector.rebuildAuditFromState(nil, nil, nil)
@@ -279,10 +294,11 @@ func (detector *PeopleDetector) Configure(facts map[string]interface{}) error {
 
 	var resolver core.IdentityResolver = peopleResolver{detector}
 	facts[core.FactIdentityResolver] = resolver
+
 	return nil
 }
 
-func (*PeopleDetector) ConfigureUpstream(map[string]interface{}) error {
+func (*PeopleDetector) ConfigureUpstream(map[string]any) error {
 	return nil
 }
 
@@ -298,10 +314,11 @@ func (detector *PeopleDetector) Initialize(*git.Repository) error {
 // Additionally, DependencyCommit is always present there and represents the analysed *object.Commit.
 // This function returns the mapping with analysis results. The keys must be the same as
 // in Provides(). If there was an error, nil is returned.
-func (detector *PeopleDetector) Consume(deps map[string]interface{}) (map[string]interface{}, error) {
+func (detector *PeopleDetector) Consume(deps map[string]any) (map[string]any, error) {
 	commit := deps[core.DependencyCommit].(*object.Commit)
 	var authorID int
 	var exists bool
+
 	signature := commit.Author
 	if !detector.ExactSignatures {
 		authorID, exists = detector.PeopleDict[strings.ToLower(signature.Email)]
@@ -311,10 +328,12 @@ func (detector *PeopleDetector) Consume(deps map[string]interface{}) (map[string
 	} else {
 		authorID, exists = detector.PeopleDict[strings.ToLower(signature.String())]
 	}
+
 	if !exists {
 		authorID = core.AuthorMissing
 	}
-	return map[string]interface{}{DependencyAuthor: authorID}, nil
+
+	return map[string]any{DependencyAuthor: authorID}, nil
 }
 
 // Fork clones this PipelineItem.
@@ -327,15 +346,19 @@ func (detector *PeopleDetector) Fork(n int) []core.PipelineItem {
 // keys separated by "|". The first key is the main one and used to reference all the rest.
 func (detector *PeopleDetector) LoadPeopleDict(path string) error {
 	detector.ensureMergeThreshold()
+
 	file, err := os.Open(path)
 	if err != nil {
 		return err
 	}
+
 	defer func() { _ = file.Close() }()
+
 	scanner := bufio.NewScanner(file)
 	dict := make(map[string]int)
 	var reverseDict []string
 	size := 0
+
 	for scanner.Scan() {
 		ids := strings.Split(scanner.Text(), "|")
 		canon := ids[0]
@@ -347,19 +370,23 @@ func (detector *PeopleDetector) LoadPeopleDict(path string) error {
 			canonIndex = size
 			size++
 		}
+
 		for _, id := range ids {
 			dict[strings.ToLower(id)] = canonIndex
 		}
 	}
+
 	detector.PeopleDict = dict
 	detector.ReversedPeopleDict = reverseDict
 	detector.rebuildAuditFromState(nil, nil, nil)
+
 	return nil
 }
 
 // GeneratePeopleDict loads author signatures from the specified list of Git commits.
 func (detector *PeopleDetector) GeneratePeopleDict(commits []*object.Commit) {
 	detector.ensureMergeThreshold()
+
 	dict := map[string]int{}
 	emails := map[int][]string{}
 	names := map[int][]string{}
@@ -376,44 +403,40 @@ func (detector *PeopleDetector) GeneratePeopleDict(commits []*object.Commit) {
 				key = strings.ToLower(key)
 				toEmail := strings.ToLower(val.Email)
 				toName := strings.ToLower(val.Name)
+
 				id, exists := dict[toEmail]
 				if !exists {
 					id, exists = dict[toName]
 				}
+
 				if exists {
 					dict[key] = id
 				} else {
 					id = size
 					size++
+
 					if toEmail != "" {
 						dict[toEmail] = id
 						emails[id] = append(emails[id], toEmail)
 					}
+
 					if toName != "" {
 						dict[toName] = id
 						names[id] = append(names[id], toName)
 					}
+
 					dict[key] = id
 				}
+
 				if strings.Contains(key, "@") {
-					exists := false
-					for _, val := range emails[id] {
-						if key == val {
-							exists = true
-							break
-						}
-					}
+					exists := slices.Contains(emails[id], key)
+
 					if !exists {
 						emails[id] = append(emails[id], key)
 					}
 				} else {
-					exists := false
-					for _, val := range names[id] {
-						if key == val {
-							exists = true
-							break
-						}
-					}
+					exists := slices.Contains(names[id], key)
+
 					if !exists {
 						names[id] = append(names[id], key)
 					}
@@ -430,6 +453,7 @@ func (detector *PeopleDetector) GeneratePeopleDict(commits []*object.Commit) {
 			if addedDecision != nil {
 				decisions = append(decisions, *addedDecision)
 			}
+
 			for _, signature := range parseCoAuthors(commit.Message) {
 				_, addedDecision = detector.addSignature(
 					signature.Name, signature.Email, "co-authored-by", &size, dict, names, emails, sourceCounts, &ambiguous,
@@ -449,7 +473,9 @@ func (detector *PeopleDetector) GeneratePeopleDict(commits []*object.Commit) {
 			}
 		}
 	}
+
 	reverseDict := make([]string, size)
+
 	if !detector.ExactSignatures {
 		for _, val := range dict {
 			sort.Strings(names[val])
@@ -461,6 +487,7 @@ func (detector *PeopleDetector) GeneratePeopleDict(commits []*object.Commit) {
 			reverseDict[val] = key
 		}
 	}
+
 	detector.PeopleDict = dict
 	detector.ReversedPeopleDict = reverseDict
 	detector.rebuildAuditFromState(names, emails, sourceCounts, decisions, ambiguous)
@@ -472,7 +499,7 @@ func (detector *PeopleDetector) ensureMergeThreshold() {
 	}
 }
 
-func identityMergeThresholdFromFacts(facts map[string]interface{}) (float64, bool) {
+func identityMergeThresholdFromFacts(facts map[string]any) (float64, bool) {
 	switch val := facts[ConfigIdentityDetectorMergeThreshold].(type) {
 	case float64:
 		return val, true
@@ -488,23 +515,28 @@ func (detector *PeopleDetector) addSignature(name, email, reason string, size *i
 	ambiguous *[]IdentityMergeSuggestion,
 ) (int, *IdentityMergeDecision) {
 	name = normalizeIdentityKey(name)
+
 	email = normalizeIdentityKey(email)
 	if name == "" && email == "" {
 		return core.AuthorMissing, nil
 	}
+
 	if email != "" {
 		if id, exists := dict[email]; exists {
 			sourceCounts[id]++
 			to := peopleDictLine(names[id], emails[id])
 			addIdentityKey(id, name, false, dict, names, emails)
+
 			return id, mergeDecisionForReason(id, name, email, reason, to, 1)
 		}
 	}
+
 	if name != "" {
 		if id, exists := dict[name]; exists {
 			sourceCounts[id]++
 			to := peopleDictLine(names[id], emails[id])
 			addIdentityKey(id, email, true, dict, names, emails)
+
 			return id, mergeDecisionForReason(id, name, email, reason, to, 1)
 		}
 	}
@@ -521,6 +553,7 @@ func (detector *PeopleDetector) addSignature(name, email, reason string, size *i
 				sourceCounts[candidate]++
 				addIdentityKey(candidate, name, false, dict, names, emails)
 				addIdentityKey(candidate, email, true, dict, names, emails)
+
 				return candidate, &IdentityMergeDecision{
 					Identity:   candidate,
 					From:       suggestion.Right,
@@ -529,6 +562,7 @@ func (detector *PeopleDetector) addSignature(name, email, reason string, size *i
 					Confidence: confidence,
 				}
 			}
+
 			*ambiguous = append(*ambiguous, suggestion)
 		}
 	}
@@ -538,6 +572,7 @@ func (detector *PeopleDetector) addSignature(name, email, reason string, size *i
 	sourceCounts[id]++
 	addIdentityKey(id, name, false, dict, names, emails)
 	addIdentityKey(id, email, true, dict, names, emails)
+
 	return id, nil
 }
 
@@ -545,6 +580,7 @@ func mergeDecisionForReason(id int, name, email, reason, to string, confidence f
 	if reason != "co-authored-by" {
 		return nil
 	}
+
 	return &IdentityMergeDecision{
 		Identity:   id,
 		From:       peopleDictLine([]string{name}, []string{email}),
@@ -560,23 +596,29 @@ func (detector *PeopleDetector) bestFuzzyCandidate(name, email string, names map
 	if name == "" {
 		return core.AuthorMissing, 0, false
 	}
+
 	ids := make([]int, 0, len(names))
 	for id := range names {
 		ids = append(ids, id)
 	}
+
 	sort.Ints(ids)
+
 	bestID := core.AuthorMissing
 	bestScore := 0.0
 	tied := false
+
 	for _, id := range ids {
 		if !sameEmailDomain(email, emails[id]) {
 			continue
 		}
+
 		for _, candidateName := range names[id] {
 			score := jaroWinkler(name, candidateName)
 			if score < ambiguousIdentityThreshold {
 				continue
 			}
+
 			if score > bestScore {
 				bestScore = score
 				bestID = id
@@ -586,6 +628,7 @@ func (detector *PeopleDetector) bestFuzzyCandidate(name, email string, names map
 			}
 		}
 	}
+
 	return bestID, bestScore, tied
 }
 
@@ -595,20 +638,21 @@ func addIdentityKey(id int, key string, isEmail bool, dict map[string]int, names
 	if key == "" {
 		return
 	}
+
 	dict[key] = id
 	if isEmail {
 		emails[id] = appendUnique(emails[id], key)
 		return
 	}
+
 	names[id] = appendUnique(names[id], key)
 }
 
 func appendUnique(values []string, value string) []string {
-	for _, existing := range values {
-		if existing == value {
-			return values
-		}
+	if slices.Contains(values, value) {
+		return values
 	}
+
 	return append(values, value)
 }
 
@@ -619,6 +663,7 @@ func normalizeIdentityKey(value string) string {
 
 func parseCoAuthors(message string) []object.Signature {
 	matches := coAuthorTrailerRE.FindAllStringSubmatch(message, -1)
+
 	signatures := make([]object.Signature, 0, len(matches))
 	for _, match := range matches {
 		signatures = append(signatures, object.Signature{
@@ -626,6 +671,7 @@ func parseCoAuthors(message string) []object.Signature {
 			Email: strings.TrimSpace(match[2]),
 		})
 	}
+
 	return signatures
 }
 
@@ -633,35 +679,42 @@ func lastCommitMailmapContents(commits []*object.Commit) (contents string, ok bo
 	if len(commits) == 0 {
 		return "", false
 	}
+
 	defer func() {
 		if recover() != nil {
 			contents = ""
 			ok = false
 		}
 	}()
+
 	mailmapFile, err := commits[len(commits)-1].File(".mailmap")
 	if err != nil {
 		return "", false
 	}
+
 	contents, err = mailmapFile.Contents()
 	if err != nil {
 		return "", false
 	}
+
 	return contents, true
 }
 
 func peopleDictLine(names, emails []string) string {
 	names = append([]string(nil), names...)
 	emails = append([]string(nil), emails...)
+
 	sort.Strings(names)
 	sort.Strings(emails)
 	parts := append(names, emails...)
+
 	compact := parts[:0]
 	for _, part := range parts {
 		if part != "" {
 			compact = append(compact, part)
 		}
 	}
+
 	return strings.Join(compact, "|")
 }
 
@@ -670,11 +723,13 @@ func sameEmailDomain(email string, existing []string) bool {
 	if domain == "" {
 		return false
 	}
+
 	for _, candidate := range existing {
 		if emailDomain(candidate) == domain {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -683,34 +738,42 @@ func emailDomain(email string) string {
 	if len(parts) != 2 {
 		return ""
 	}
+
 	return parts[1]
 }
 
 func jaroWinkler(a, b string) float64 {
 	a = normalizeForSimilarity(a)
+
 	b = normalizeForSimilarity(b)
 	if a == b {
 		return 1
 	}
+
 	if a == "" || b == "" {
 		return 0
 	}
+
 	jaro := jaroSimilarity(a, b)
 	prefix := 0
+
 	maxPrefix := minInt(4, minInt(len(a), len(b)))
 	for prefix < maxPrefix && a[prefix] == b[prefix] {
 		prefix++
 	}
+
 	return jaro + float64(prefix)*0.1*(1-jaro)
 }
 
 func normalizeForSimilarity(value string) string {
 	var b strings.Builder
+
 	for _, r := range value {
 		if unicode.IsLetter(r) || unicode.IsNumber(r) {
 			b.WriteRune(unicode.ToLower(r))
 		}
 	}
+
 	return b.String()
 }
 
@@ -718,41 +781,54 @@ func jaroSimilarity(a, b string) float64 {
 	if len(a) > len(b) {
 		a, b = b, a
 	}
+
 	matchDistance := maxInt(len(b)/2-1, 0)
 	aMatches := make([]bool, len(a))
 	bMatches := make([]bool, len(b))
 	matches := 0
+
 	for i := range a {
 		start := maxInt(i-matchDistance, 0)
+
 		end := minInt(i+matchDistance+1, len(b))
 		for j := start; j < end; j++ {
 			if bMatches[j] || a[i] != b[j] {
 				continue
 			}
+
 			aMatches[i] = true
 			bMatches[j] = true
 			matches++
+
 			break
 		}
 	}
+
 	if matches == 0 {
 		return 0
 	}
+
 	transpositions := 0
 	k := 0
+
 	for i := range a {
 		if !aMatches[i] {
 			continue
 		}
+
 		for !bMatches[k] {
 			k++
 		}
+
 		if a[i] != b[k] {
 			transpositions++
 		}
+
 		k++
 	}
+
 	m := float64(matches)
+
 	return (m/float64(len(a)) + m/float64(len(b)) + (m-float64(transpositions)/2)/m) / 3
 }
 
@@ -760,6 +836,7 @@ func minInt(a, b int) int {
 	if a < b {
 		return a
 	}
+
 	return b
 }
 
@@ -767,6 +844,7 @@ func maxInt(a, b int) int {
 	if a > b {
 		return a
 	}
+
 	return b
 }
 
@@ -776,6 +854,7 @@ func (detector *PeopleDetector) IdentityAudit() IdentityAudit {
 	audit.Identities = append([]IdentityAuditIdentity(nil), detector.audit.Identities...)
 	audit.MergeDecisions = append([]IdentityMergeDecision(nil), detector.audit.MergeDecisions...)
 	audit.Ambiguous = append([]IdentityMergeSuggestion(nil), detector.audit.Ambiguous...)
+
 	return audit
 }
 
@@ -784,11 +863,13 @@ func (detector *PeopleDetector) GeneratePeopleDictTemplate() string {
 	if len(detector.audit.Identities) == 0 && len(detector.ReversedPeopleDict) > 0 {
 		detector.rebuildAuditFromState(nil, nil, nil)
 	}
+
 	var builder strings.Builder
 	for _, identity := range detector.audit.Identities {
 		builder.WriteString(identity.PeopleDictLine)
 		builder.WriteByte('\n')
 	}
+
 	return builder.String()
 }
 
@@ -797,7 +878,7 @@ func (detector *PeopleDetector) identityLine(id int, names, emails map[int][]str
 }
 
 func (detector *PeopleDetector) rebuildAuditFromState(names, emails map[int][]string,
-	sourceCounts map[int]int, decisions ...interface{},
+	sourceCounts map[int]int, decisions ...any,
 ) {
 	mergeDecisions, ambiguous := identityAuditDecisions(decisions)
 	names, emails = detector.identityAuditMaps(names, emails)
@@ -815,9 +896,11 @@ func (detector *PeopleDetector) rebuildAuditFromState(names, emails map[int][]st
 func identityAuditDecisions(decisions []any) ([]IdentityMergeDecision, []IdentityMergeSuggestion) {
 	var mergeDecisions []IdentityMergeDecision
 	var ambiguous []IdentityMergeSuggestion
+
 	if len(decisions) > 0 {
 		mergeDecisions, _ = decisions[0].([]IdentityMergeDecision)
 	}
+
 	if len(decisions) > 1 {
 		ambiguous, _ = decisions[1].([]IdentityMergeSuggestion)
 	}
@@ -855,6 +938,7 @@ func (detector *PeopleDetector) identityAuditIdentities(names, emails map[int][]
 		line := peopleDictLine(names[id], emails[id])
 		identityNames := append([]string(nil), names[id]...)
 		identityEmails := append([]string(nil), emails[id]...)
+
 		sort.Strings(identityNames)
 		sort.Strings(identityEmails)
 		identities = append(identities, IdentityAuditIdentity{
@@ -877,18 +961,22 @@ func sortIdentityAuditDecisions(mergeDecisions []IdentityMergeDecision,
 		if mergeDecisions[i].Identity != mergeDecisions[j].Identity {
 			return mergeDecisions[i].Identity < mergeDecisions[j].Identity
 		}
+
 		if mergeDecisions[i].Reason != mergeDecisions[j].Reason {
 			return mergeDecisions[i].Reason < mergeDecisions[j].Reason
 		}
+
 		return mergeDecisions[i].From < mergeDecisions[j].From
 	})
 	sort.Slice(ambiguous, func(i, j int) bool {
 		if ambiguous[i].Confidence != ambiguous[j].Confidence {
 			return ambiguous[i].Confidence > ambiguous[j].Confidence
 		}
+
 		if ambiguous[i].Left != ambiguous[j].Left {
 			return ambiguous[i].Left < ambiguous[j].Left
 		}
+
 		return ambiguous[i].Right < ambiguous[j].Right
 	})
 }
@@ -897,9 +985,11 @@ func primaryIdentityValue(names, emails []string) string {
 	if len(names) > 0 {
 		return names[0]
 	}
+
 	if len(emails) > 0 {
 		return emails[0]
 	}
+
 	return ""
 }
 

@@ -49,6 +49,7 @@ func (obj dummyEncodedObject) Reader() (io.ReadCloser, error) {
 	if !obj.Fails {
 		return dummyIO{}, nil
 	}
+
 	return nil, errors.New("dummy failure")
 }
 
@@ -56,6 +57,7 @@ func (obj dummyEncodedObject) Writer() (io.WriteCloser, error) {
 	if !obj.Fails {
 		return dummyIO{}, nil
 	}
+
 	return nil, errors.New("dummy failure")
 }
 
@@ -65,9 +67,11 @@ func CreateDummyBlob(hash plumbing.Hash, fails ...bool) (*object.Blob, error) {
 	if len(fails) > 1 {
 		panic("invalid usage of CreateDummyBlob() - this is a bug")
 	}
+
 	var realFails bool
 	if len(fails) == 1 {
 		realFails = fails[0]
 	}
+
 	return object.DecodeBlob(dummyEncodedObject{FakeHash: hash, Fails: realFails})
 }

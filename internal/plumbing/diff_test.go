@@ -20,21 +20,21 @@ import (
 
 func TestFileDiffMeta(t *testing.T) {
 	fd := fixtures.FileDiff()
-	assert.Equal(t, fd.Name(), "FileDiff")
-	assert.Equal(t, len(fd.Provides()), 1)
-	assert.Equal(t, fd.Provides()[0], items.DependencyFileDiff)
-	assert.Equal(t, len(fd.Requires()), 2)
-	assert.Equal(t, fd.Requires()[0], items.DependencyTreeChanges)
-	assert.Equal(t, fd.Requires()[1], items.DependencyBlobCache)
+	assert.Equal(t, "FileDiff", fd.Name())
+	assert.Len(t, fd.Provides(), 1)
+	assert.Equal(t, items.DependencyFileDiff, fd.Provides()[0])
+	assert.Len(t, fd.Requires(), 2)
+	assert.Equal(t, items.DependencyTreeChanges, fd.Requires()[0])
+	assert.Equal(t, items.DependencyBlobCache, fd.Requires()[1])
 	assert.Len(t, fd.ListConfigurationOptions(), 7)
-	assert.Equal(t, fd.ListConfigurationOptions()[0].Name, items.ConfigFileDiffDisableCleanup)
-	assert.Equal(t, fd.ListConfigurationOptions()[1].Name, items.ConfigFileWhitespaceIgnore)
-	assert.Equal(t, fd.ListConfigurationOptions()[2].Name, items.ConfigFileDiffTimeout)
-	assert.Equal(t, fd.ListConfigurationOptions()[3].Name, items.ConfigFileDiffDisableRefine)
-	assert.Equal(t, fd.ListConfigurationOptions()[4].Name, items.ConfigFileDiffRefineMaxFileSize)
-	assert.Equal(t, fd.ListConfigurationOptions()[5].Name, items.ConfigFileDiffRefineMaxLines)
-	assert.Equal(t, fd.ListConfigurationOptions()[6].Name, items.ConfigFileDiffRefineMode)
-	assert.NoError(t, fd.Configure(map[string]interface{}{
+	assert.Equal(t, items.ConfigFileDiffDisableCleanup, fd.ListConfigurationOptions()[0].Name)
+	assert.Equal(t, items.ConfigFileWhitespaceIgnore, fd.ListConfigurationOptions()[1].Name)
+	assert.Equal(t, items.ConfigFileDiffTimeout, fd.ListConfigurationOptions()[2].Name)
+	assert.Equal(t, items.ConfigFileDiffDisableRefine, fd.ListConfigurationOptions()[3].Name)
+	assert.Equal(t, items.ConfigFileDiffRefineMaxFileSize, fd.ListConfigurationOptions()[4].Name)
+	assert.Equal(t, items.ConfigFileDiffRefineMaxLines, fd.ListConfigurationOptions()[5].Name)
+	assert.Equal(t, items.ConfigFileDiffRefineMode, fd.ListConfigurationOptions()[6].Name)
+	assert.NoError(t, fd.Configure(map[string]any{
 		core.ConfigLogger:                     core.NewLogger(),
 		items.ConfigFileDiffDisableCleanup:    true,
 		items.ConfigFileWhitespaceIgnore:      true,
@@ -54,9 +54,9 @@ func TestFileDiffMeta(t *testing.T) {
 func TestFileDiffRegistration(t *testing.T) {
 	summoned := core.Registry.Summon((&items.FileDiff{}).Name())
 	assert.Len(t, summoned, 1)
-	assert.Equal(t, summoned[0].Name(), "FileDiff")
+	assert.Equal(t, "FileDiff", summoned[0].Name())
 	summoned = core.Registry.Summon((&items.FileDiff{}).Provides()[0])
-	assert.True(t, len(summoned) >= 1)
+	assert.GreaterOrEqual(t, len(summoned), 1)
 	matched := false
 	for _, tp := range summoned {
 		matched = matched || tp.Name() == "FileDiff"
@@ -66,7 +66,7 @@ func TestFileDiffRegistration(t *testing.T) {
 
 func TestFileDiffConsume(t *testing.T) {
 	fd := fixtures.FileDiff()
-	deps := map[string]interface{}{}
+	deps := map[string]any{}
 	cache := map[plumbing.Hash]*items.CachedBlob{}
 	items.AddHash(t, cache, "291286b4ac41952cbd1389fda66420ec03c1a9fe")
 	items.AddHash(t, cache, "334cde09da4afcb74f8d2b3e6fd6cce61228b485")
@@ -120,12 +120,12 @@ func TestFileDiffConsume(t *testing.T) {
 	}
 	deps[items.DependencyTreeChanges] = changes
 	res, err := fd.Consume(deps)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	diffs := res[items.DependencyFileDiff].(map[string]items.FileDiffData)
-	assert.Equal(t, len(diffs), 1)
+	assert.Len(t, diffs, 1)
 	diff := diffs["analyser.go"]
-	assert.Equal(t, diff.OldLinesOfCode, 307)
-	assert.Equal(t, diff.NewLinesOfCode, 309)
+	assert.Equal(t, 307, diff.OldLinesOfCode)
+	assert.Equal(t, 309, diff.NewLinesOfCode)
 	deletions := 0
 	insertions := 0
 	for _, edit := range diff.Diffs {
@@ -138,13 +138,13 @@ func TestFileDiffConsume(t *testing.T) {
 			deletions += utf8.RuneCountInString(edit.Text)
 		}
 	}
-	assert.Equal(t, deletions, 13)
-	assert.Equal(t, insertions, 15)
+	assert.Equal(t, 13, deletions)
+	assert.Equal(t, 15, insertions)
 }
 
 func TestFileDiffConsumeInvalidBlob(t *testing.T) {
 	fd := fixtures.FileDiff()
-	deps := map[string]interface{}{}
+	deps := map[string]any{}
 	cache := map[plumbing.Hash]*items.CachedBlob{}
 	items.AddHash(t, cache, "291286b4ac41952cbd1389fda66420ec03c1a9fe")
 	items.AddHash(t, cache, "334cde09da4afcb74f8d2b3e6fd6cce61228b485")
@@ -178,7 +178,7 @@ func TestFileDiffConsumeInvalidBlob(t *testing.T) {
 	deps[items.DependencyTreeChanges] = changes
 	res, err := fd.Consume(deps)
 	assert.Len(t, res[hercules.DependencyFileDiff].(map[string]items.FileDiffData), 1)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	changes[0] = &object.Change{From: object.ChangeEntry{
 		Name: "analyser.go",
 		Tree: treeFrom,
@@ -198,36 +198,36 @@ func TestFileDiffConsumeInvalidBlob(t *testing.T) {
 	}}
 	res, err = fd.Consume(deps)
 	assert.Len(t, res[hercules.DependencyFileDiff].(map[string]items.FileDiffData), 1)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 }
 
 func TestCountLines(t *testing.T) {
 	blob, err := test.Repository.BlobObject(
 		plumbing.NewHash("291286b4ac41952cbd1389fda66420ec03c1a9fe"),
 	)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	cb := &items.CachedBlob{Blob: *blob}
 	cb.Cache()
 	lines, err := cb.CountLines()
-	assert.Equal(t, lines, 12)
-	assert.Nil(t, err)
+	assert.Equal(t, 12, lines)
+	assert.NoError(t, err)
 	blob, err = internal.CreateDummyBlob(
 		plumbing.NewHash("291286b4ac41952cbd1389fda66420ec03c1a9fe"), true,
 	)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	cb = &items.CachedBlob{Blob: *blob}
 	err = cb.Cache()
-	assert.Equal(t, err.Error(), "dummy failure")
+	assert.Equal(t, "dummy failure", err.Error())
 	// test_data/blob
 	blob, err = test.Repository.BlobObject(
 		plumbing.NewHash("c86626638e0bc8cf47ca49bb1525b40e9737ee64"),
 	)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	cb = &items.CachedBlob{Blob: *blob}
 	cb.Cache()
 	lines, err = cb.CountLines()
-	assert.Equal(t, lines, 0)
-	assert.NotNil(t, err)
+	assert.Equal(t, 0, lines)
+	assert.Error(t, err)
 	assert.Equal(t, err.Error(), items.ErrorBinary.Error())
 }
 
@@ -237,9 +237,9 @@ func TestBlobToString(t *testing.T) {
 	)
 	cb := &items.CachedBlob{Blob: *blob}
 	err := cb.Cache()
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	str := string(cb.Data)
-	assert.Equal(t, str, `language: go
+	assert.Equal(t, `language: go
 
 go:
   - 1.7
@@ -251,13 +251,13 @@ script:
 
 notifications:
   email: false
-`)
+`, str)
 	blob, _ = internal.CreateDummyBlob(
 		plumbing.NewHash("291286b4ac41952cbd1389fda66420ec03c1a9fe"), true,
 	)
 	cb = &items.CachedBlob{Blob: *blob}
 	err = cb.Cache()
-	assert.NotNil(t, err)
+	assert.Error(t, err)
 }
 
 func TestFileDiffDarkMagic(t *testing.T) {
@@ -266,7 +266,7 @@ func TestFileDiffDarkMagic(t *testing.T) {
 	// Refinement post-processes both paths and would normalise the diffs, masking
 	// the effect of DiffCleanupSemanticLossless that this test is verifying.
 	fd.RefineDisabled = true
-	deps := map[string]interface{}{}
+	deps := map[string]any{}
 	cache := map[plumbing.Hash]*items.CachedBlob{}
 	items.AddHash(t, cache, "448eb3f312849b0ca766063d06b09481c987b309") // 1.java
 	items.AddHash(t, cache, "3312c92f3e8bdfbbdb30bccb6acd1b85bc338dfc") // 2.java
@@ -297,11 +297,11 @@ func TestFileDiffDarkMagic(t *testing.T) {
 	}}
 	deps[items.DependencyTreeChanges] = changes
 	res, err := fd.Consume(deps)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	magicDiffs := res[items.DependencyFileDiff].(map[string]items.FileDiffData)["test.java"]
 	fd.CleanupDisabled = true
 	res, err = fd.Consume(deps)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	plainDiffs := res[items.DependencyFileDiff].(map[string]items.FileDiffData)["test.java"]
 	assert.NotEqual(t, magicDiffs.Diffs, plainDiffs.Diffs)
 	assert.Equal(t, magicDiffs.OldLinesOfCode, plainDiffs.OldLinesOfCode)
@@ -312,17 +312,17 @@ func TestFileDiffRefineMaxLines(t *testing.T) {
 	fd := fixtures.FileDiff()
 
 	// default after Configure (no explicit value)
-	assert.NoError(t, fd.Configure(map[string]interface{}{}))
+	assert.NoError(t, fd.Configure(map[string]any{}))
 	assert.Equal(t, items.DefaultFileDiffRefineMaxLines, fd.RefineMaxLines)
 
 	// explicit value
-	assert.NoError(t, fd.Configure(map[string]interface{}{
+	assert.NoError(t, fd.Configure(map[string]any{
 		items.ConfigFileDiffRefineMaxLines: 3000,
 	}))
 	assert.Equal(t, 3000, fd.RefineMaxLines)
 
 	// 0 means unlimited
-	assert.NoError(t, fd.Configure(map[string]interface{}{
+	assert.NoError(t, fd.Configure(map[string]any{
 		items.ConfigFileDiffRefineMaxLines: 0,
 	}))
 	assert.Equal(t, 0, fd.RefineMaxLines)
@@ -346,7 +346,7 @@ func TestFileDiffRefineMaxLinesSkips(t *testing.T) {
 			Hash: plumbing.NewHash("3312c92f3e8bdfbbdb30bccb6acd1b85bc338dfc"),
 		}},
 	}
-	deps := map[string]interface{}{
+	deps := map[string]any{
 		items.DependencyBlobCache:   cache,
 		items.DependencyTreeChanges: object.Changes{change},
 	}
@@ -368,7 +368,7 @@ func TestFileDiffRefineMaxLinesSkips(t *testing.T) {
 
 func TestFileDiffWhitespaceDarkMagic(t *testing.T) {
 	fd := fixtures.FileDiff()
-	deps := map[string]interface{}{}
+	deps := map[string]any{}
 	cache := map[plumbing.Hash]*items.CachedBlob{}
 	items.AddHash(t, cache, "448eb3f312849b0ca766063d06b09481c987b309") // 1.java
 	items.AddHash(t, cache, "3312c92f3e8bdfbbdb30bccb6acd1b85bc338dfc") // 2.java
@@ -399,11 +399,11 @@ func TestFileDiffWhitespaceDarkMagic(t *testing.T) {
 	}}
 	deps[items.DependencyTreeChanges] = changes
 	res, err := fd.Consume(deps)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	magicDiffs := res[items.DependencyFileDiff].(map[string]items.FileDiffData)["test.java"]
 	fd.WhitespaceIgnore = true
 	res, err = fd.Consume(deps)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	plainDiffs := res[items.DependencyFileDiff].(map[string]items.FileDiffData)["test.java"]
 	assert.NotEqual(t, magicDiffs.Diffs, plainDiffs.Diffs)
 	assert.Equal(t, magicDiffs.OldLinesOfCode, plainDiffs.OldLinesOfCode)
@@ -415,6 +415,6 @@ func TestFileDiffFork(t *testing.T) {
 	clones := fd1.Fork(1)
 	assert.Len(t, clones, 1)
 	fd2 := clones[0].(*items.FileDiff)
-	assert.True(t, fd1 == fd2)
+	assert.Same(t, fd1, fd2)
 	fd1.Merge([]core.PipelineItem{fd2})
 }

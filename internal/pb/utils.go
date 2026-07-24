@@ -10,6 +10,7 @@ func ToBurndownSparseMatrix(matrix [][]int64, name string) *BurndownSparseMatrix
 	if len(matrix) == 0 {
 		panic("matrix may not be nil or empty")
 	}
+
 	r := BurndownSparseMatrix{
 		Name:            name,
 		NumberOfRows:    int32(len(matrix)),
@@ -19,18 +20,19 @@ func ToBurndownSparseMatrix(matrix [][]int64, name string) *BurndownSparseMatrix
 	for i, status := range matrix {
 		nnz := make([]uint32, 0, len(status))
 		changed := false
+
 		for j := range status {
-			v := status[len(status)-1-j]
-			if v < 0 {
-				v = 0
-			}
+			v := max(status[len(status)-1-j], 0)
+
 			if !changed {
 				changed = v != 0
 			}
+
 			if changed {
 				nnz = append(nnz, uint32(v))
 			}
 		}
+
 		r.Rows[i] = &BurndownSparseMatrixRow{
 			Columns: make([]uint32, len(nnz)),
 		}
@@ -38,6 +40,7 @@ func ToBurndownSparseMatrix(matrix [][]int64, name string) *BurndownSparseMatrix
 			r.Rows[i].Columns[j] = nnz[len(nnz)-1-j]
 		}
 	}
+
 	return &r
 }
 
@@ -52,8 +55,10 @@ func DenseToCompressedSparseRowMatrix(matrix [][]int64) *CompressedSparseRowMatr
 		Indptr:          make([]int64, 1),
 	}
 	r.Indptr[0] = 0
+
 	for _, row := range matrix {
 		nnz := 0
+
 		for x, col := range row {
 			if col != 0 {
 				r.Data = append(r.Data, col)
@@ -61,8 +66,10 @@ func DenseToCompressedSparseRowMatrix(matrix [][]int64) *CompressedSparseRowMatr
 				nnz++
 			}
 		}
-		r.Indptr = append(r.Indptr, r.Indptr[len(r.Indptr)-1]+int64(nnz))
+
+		r.Indptr = append(r.Indptr, r.GetIndptr()[len(r.GetIndptr())-1]+int64(nnz))
 	}
+
 	return &r
 }
 
@@ -78,20 +85,26 @@ func MapToCompressedSparseRowMatrix(matrix []map[int]int64) *CompressedSparseRow
 		Indptr:          make([]int64, 1),
 	}
 	r.Indptr[0] = 0
+
 	for _, row := range matrix {
 		order := make([]int, len(row))
+
 		i := 0
 		for col := range row {
 			order[i] = col
 			i++
 		}
+
 		sort.Ints(order)
+
 		for _, col := range order {
 			val := row[col]
 			r.Data = append(r.Data, val)
 			r.Indices = append(r.Indices, int32(col))
 		}
-		r.Indptr = append(r.Indptr, r.Indptr[len(r.Indptr)-1]+int64(len(row)))
+
+		r.Indptr = append(r.Indptr, r.GetIndptr()[len(r.GetIndptr())-1]+int64(len(row)))
 	}
+
 	return &r
 }

@@ -17,18 +17,18 @@ import (
 func AddHash(t *testing.T, cache map[plumbing.Hash]*items.CachedBlob, hash string) {
 	objHash := plumbing.NewHash(hash)
 	blob, err := test.Repository.BlobObject(objHash)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	cb := &items.CachedBlob{Blob: *blob}
 	err = cb.Cache()
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	cache[objHash] = cb
 }
 
 func TestLinesMeta(t *testing.T) {
 	bd := &LineHistoryAnalyser{}
-	assert.Equal(t, bd.Name(), "LineHistory")
+	assert.Equal(t, "LineHistory", bd.Name())
 	assert.Len(t, bd.Provides(), 1)
-	assert.Equal(t, bd.Provides()[0], DependencyLineHistory)
+	assert.Equal(t, DependencyLineHistory, bd.Provides()[0])
 	required := [...]string{
 		items.DependencyFileDiff, items.DependencyTreeChanges, items.DependencyBlobCache,
 		items.DependencyTick, identity.DependencyAuthor,
@@ -49,7 +49,7 @@ func TestLinesMeta(t *testing.T) {
 	}
 	assert.Len(t, opts, matches)
 	logger := core.NewLogger()
-	assert.NoError(t, bd.Configure(map[string]interface{}{
+	assert.NoError(t, bd.Configure(map[string]any{
 		core.ConfigLogger: logger,
 	}))
 	assert.Equal(t, logger, bd.l)
@@ -57,36 +57,36 @@ func TestLinesMeta(t *testing.T) {
 
 func TestLinesConfigure(t *testing.T) {
 	bd := &LineHistoryAnalyser{}
-	facts := map[string]interface{}{}
+	facts := map[string]any{}
 	facts[ConfigLinesDebug] = true
 	facts[ConfigLinesHibernationThreshold] = 100
 	facts[ConfigLinesHibernationToDisk] = true
 	facts[ConfigLinesHibernationDirectory] = "xxx"
-	assert.Nil(t, bd.Configure(facts))
-	assert.Equal(t, bd.HibernationThreshold, 100)
+	assert.NoError(t, bd.Configure(facts))
+	assert.Equal(t, 100, bd.HibernationThreshold)
 	assert.True(t, bd.HibernationToDisk)
-	assert.Equal(t, bd.HibernationDirectory, "xxx")
-	assert.Equal(t, bd.Debug, true)
+	assert.Equal(t, "xxx", bd.HibernationDirectory)
+	assert.True(t, bd.Debug)
 
-	assert.Nil(t, bd.Configure(map[string]interface{}{}))
-	assert.Equal(t, bd.Debug, true)
+	assert.NoError(t, bd.Configure(map[string]any{}))
+	assert.True(t, bd.Debug)
 }
 
 func TestLinesRegistration(t *testing.T) {
 	summoned := core.Registry.Summon((&LineHistoryAnalyser{}).Name())
 	assert.Len(t, summoned, 1)
-	assert.Equal(t, summoned[0].Name(), "LineHistory")
+	assert.Equal(t, "LineHistory", summoned[0].Name())
 }
 
 func TestLinesInitialize(t *testing.T) {
 	bd := &LineHistoryAnalyser{}
 	bd.HibernationThreshold = 10
-	assert.Nil(t, bd.Initialize(test.Repository))
-	assert.Equal(t, bd.fileAllocator.HibernationThreshold, 10)
+	assert.NoError(t, bd.Initialize(test.Repository))
+	assert.Equal(t, 10, bd.fileAllocator.HibernationThreshold)
 }
 
 func TestLinesConsume(t *testing.T) {
-	deps := map[string]interface{}{}
+	deps := map[string]any{}
 
 	// stage 1
 	deps[identity.DependencyAuthor] = 0
@@ -146,7 +146,7 @@ func TestLinesConsume(t *testing.T) {
 	deps[items.DependencyTreeChanges] = changes
 	fd := fixtures.FileDiff()
 	result, err := fd.Consume(deps)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	deps[items.DependencyFileDiff] = result[items.DependencyFileDiff]
 	deps[core.DependencyCommit], _ = test.Repository.CommitObject(plumbing.NewHash(
 		"cce947b98a050c6d356bc6ba95030254914027b1",
@@ -167,9 +167,9 @@ func TestLinesConsume(t *testing.T) {
 
 	bd := &LineHistoryAnalyser{}
 
-	assert.Nil(t, bd.Initialize(test.Repository))
+	assert.NoError(t, bd.Initialize(test.Repository))
 	result, err = bd.Consume(deps)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	assert.Equal(t, core.TickNumber(0), bd.previousTick)
 
@@ -177,12 +177,12 @@ func TestLinesConsume(t *testing.T) {
 	resultChanges := result[DependencyLineHistory].(core.LineHistoryChanges)
 	{
 		resolver := resultChanges.Resolver
-		assert.Equal(t, "", resolver.NameOf(0))
-		assert.Equal(t, "", resolver.NameOf(0))
+		assert.Empty(t, resolver.NameOf(0))
+		assert.Empty(t, resolver.NameOf(0))
 		assert.Equal(t, "analyser.go", resolver.NameOf(1))
 		assert.Equal(t, "cmd/hercules/main.go", resolver.NameOf(2))
 		assert.Equal(t, ".travis.yml", resolver.NameOf(3))
-		assert.Equal(t, "", resolver.NameOf(4))
+		assert.Empty(t, resolver.NameOf(4))
 
 		id, name, present := resolver.MergedWith(4)
 		assert.Zero(t, id)
@@ -196,7 +196,7 @@ func TestLinesConsume(t *testing.T) {
 
 		assert.Len(t, bd.files, len(expectedChanges))
 	}
-	assert.Equal(t, resultChanges.Changes, expectedChanges)
+	assert.Equal(t, expectedChanges, resultChanges.Changes)
 
 	// stage 2
 	// 2b1ed978194a94edeabbca6de7ff3b5771d4d665
@@ -268,10 +268,10 @@ func TestLinesConsume(t *testing.T) {
 	deps[items.DependencyTreeChanges] = changes
 	fd = fixtures.FileDiff()
 	result, err = fd.Consume(deps)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	deps[items.DependencyFileDiff] = result[items.DependencyFileDiff]
 	result, err = bd.Consume(deps)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, core.TickNumber(30), bd.previousTick)
 
 	assert.Len(t, result, 1)
@@ -282,11 +282,11 @@ func TestLinesConsume(t *testing.T) {
 		assert.Len(t, bd.fileAbandonedNames, 1)
 
 		resolver := resultChanges.Resolver
-		assert.Equal(t, "", resolver.NameOf(0))
+		assert.Empty(t, resolver.NameOf(0))
 		assert.Equal(t, "burndown.go", resolver.NameOf(1))
 		assert.Equal(t, "cmd/hercules/main.go", resolver.NameOf(2))
 		assert.Equal(t, ".travis.yml", resolver.NameOf(3))
-		assert.Equal(t, "", resolver.NameOf(4))
+		assert.Empty(t, resolver.NameOf(4))
 
 		id, name, present := resolver.MergedWith(3)
 		assert.Zero(t, id)
@@ -328,8 +328,8 @@ func TestLinesConsume(t *testing.T) {
 
 func bakeBurndownForSerialization(t *testing.T, firstAuthor, secondAuthor int) *LineHistoryAnalyser {
 	bd := &LineHistoryAnalyser{}
-	assert.Nil(t, bd.Initialize(test.Repository))
-	deps := map[string]interface{}{}
+	assert.NoError(t, bd.Initialize(test.Repository))
+	deps := map[string]any{}
 	// stage 1
 	deps[identity.DependencyAuthor] = firstAuthor
 	deps[items.DependencyTick] = 0
@@ -471,29 +471,29 @@ func bakeBurndownForSerialization(t *testing.T, firstAuthor, secondAuthor int) *
 
 func TestLinesHibernateBoot(t *testing.T) {
 	bd := bakeBurndownForSerialization(t, 0, 1)
-	assert.Equal(t, bd.fileAllocator.Size(), 157)
-	assert.Equal(t, bd.fileAllocator.Used(), 155)
-	assert.Nil(t, bd.Hibernate())
+	assert.Equal(t, 157, bd.fileAllocator.Size())
+	assert.Equal(t, 155, bd.fileAllocator.Used())
+	assert.NoError(t, bd.Hibernate())
 	assert.PanicsWithValue(t, "LineHistoryAnalyser.Consume() was called on a hibernated instance",
 		func() { _, _ = bd.Consume(nil) })
-	assert.Equal(t, bd.fileAllocator.Size(), 0)
-	assert.Nil(t, bd.Boot())
-	assert.Equal(t, bd.fileAllocator.Size(), 157)
-	assert.Equal(t, bd.fileAllocator.Used(), 155)
+	assert.Equal(t, 0, bd.fileAllocator.Size())
+	assert.NoError(t, bd.Boot())
+	assert.Equal(t, 157, bd.fileAllocator.Size())
+	assert.Equal(t, 155, bd.fileAllocator.Used())
 }
 
 func TestLinesHibernateBootSerialize(t *testing.T) {
 	bd := bakeBurndownForSerialization(t, 0, 1)
-	assert.Equal(t, bd.fileAllocator.Size(), 157)
-	assert.Equal(t, bd.fileAllocator.Used(), 155)
+	assert.Equal(t, 157, bd.fileAllocator.Size())
+	assert.Equal(t, 155, bd.fileAllocator.Used())
 	bd.HibernationToDisk = true
-	assert.Nil(t, bd.Hibernate())
+	assert.NoError(t, bd.Hibernate())
 	assert.NotEmpty(t, bd.hibernatedFileName)
 	assert.PanicsWithValue(t, "LineHistoryAnalyser.Consume() was called on a hibernated instance",
 		func() { _, _ = bd.Consume(nil) })
-	assert.Equal(t, bd.fileAllocator.Size(), 0)
-	assert.Nil(t, bd.Boot())
-	assert.Equal(t, bd.fileAllocator.Size(), 157)
-	assert.Equal(t, bd.fileAllocator.Used(), 155)
+	assert.Equal(t, 0, bd.fileAllocator.Size())
+	assert.NoError(t, bd.Boot())
+	assert.Equal(t, 157, bd.fileAllocator.Size())
+	assert.Equal(t, 155, bd.fileAllocator.Used())
 	assert.Empty(t, bd.hibernatedFileName)
 }

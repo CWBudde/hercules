@@ -29,23 +29,23 @@ func fixtureDevs() *DevsAnalysis {
 
 func TestDevsMeta(t *testing.T) {
 	d := fixtureDevs()
-	assert.Equal(t, d.Name(), "Devs")
-	assert.Equal(t, len(d.Provides()), 0)
-	assert.Equal(t, len(d.Requires()), 5)
-	assert.Equal(t, d.Requires()[0], identity.DependencyAuthor)
-	assert.Equal(t, d.Requires()[1], items.DependencyTreeChanges)
-	assert.Equal(t, d.Requires()[2], items.DependencyTick)
-	assert.Equal(t, d.Requires()[3], items.DependencyLanguages)
-	assert.Equal(t, d.Requires()[4], items.DependencyLineStats)
-	assert.Equal(t, d.Flag(), "devs")
+	assert.Equal(t, "Devs", d.Name())
+	assert.Empty(t, d.Provides())
+	assert.Len(t, d.Requires(), 5)
+	assert.Equal(t, identity.DependencyAuthor, d.Requires()[0])
+	assert.Equal(t, items.DependencyTreeChanges, d.Requires()[1])
+	assert.Equal(t, items.DependencyTick, d.Requires()[2])
+	assert.Equal(t, items.DependencyLanguages, d.Requires()[3])
+	assert.Equal(t, items.DependencyLineStats, d.Requires()[4])
+	assert.Equal(t, "devs", d.Flag())
 	assert.Len(t, d.ListConfigurationOptions(), 1)
-	assert.Equal(t, d.ListConfigurationOptions()[0].Name, ConfigDevsConsiderEmptyCommits)
-	assert.Equal(t, d.ListConfigurationOptions()[0].Flag, "empty-commits")
-	assert.Equal(t, d.ListConfigurationOptions()[0].Type, core.BoolConfigurationOption)
-	assert.Equal(t, d.ListConfigurationOptions()[0].Default, false)
-	assert.True(t, len(d.Description()) > 0)
+	assert.Equal(t, ConfigDevsConsiderEmptyCommits, d.ListConfigurationOptions()[0].Name)
+	assert.Equal(t, "empty-commits", d.ListConfigurationOptions()[0].Flag)
+	assert.Equal(t, core.BoolConfigurationOption, d.ListConfigurationOptions()[0].Type)
+	assert.Equal(t, false, d.ListConfigurationOptions()[0].Default)
+	assert.NotEmpty(t, d.Description())
 	logger := core.NewLogger()
-	assert.NoError(t, d.Configure(map[string]interface{}{
+	assert.NoError(t, d.Configure(map[string]any{
 		core.ConfigLogger: logger,
 	}))
 	assert.Equal(t, logger, d.l)
@@ -54,7 +54,7 @@ func TestDevsMeta(t *testing.T) {
 func TestDevsRegistration(t *testing.T) {
 	summoned := core.Registry.Summon((&DevsAnalysis{}).Name())
 	assert.Len(t, summoned, 1)
-	assert.Equal(t, summoned[0].Name(), "Devs")
+	assert.Equal(t, "Devs", summoned[0].Name())
 	leaves := core.Registry.GetLeaves()
 	matched := false
 	for _, tp := range leaves {
@@ -68,7 +68,7 @@ func TestDevsRegistration(t *testing.T) {
 
 func TestDevsConfigure(t *testing.T) {
 	devs := DevsAnalysis{}
-	facts := map[string]interface{}{}
+	facts := map[string]any{}
 	facts[ConfigDevsConsiderEmptyCommits] = true
 	facts[items.FactTickSize] = 3 * time.Hour
 	assert.NoError(t, devs.Configure(facts))
@@ -85,7 +85,7 @@ func TestDevsInitialize(t *testing.T) {
 
 func TestDevsConsumeFinalize(t *testing.T) {
 	devs := fixtureDevs()
-	deps := map[string]interface{}{}
+	deps := map[string]any{}
 
 	// stage 1
 	deps[identity.DependencyAuthor] = 0
@@ -151,108 +151,108 @@ func TestDevsConsumeFinalize(t *testing.T) {
 	deps[items.DependencyTreeChanges] = changes
 	fd := fixtures.FileDiff()
 	result, err := fd.Consume(deps)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	deps[items.DependencyFileDiff] = result[items.DependencyFileDiff]
 	deps[core.DependencyCommit], _ = test.Repository.CommitObject(plumbing.NewHash(
 		"cce947b98a050c6d356bc6ba95030254914027b1",
 	))
 	lsc := &items.LinesStatsCalculator{}
 	lscres, err := lsc.Consume(deps)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	deps[items.DependencyLineStats] = lscres[items.DependencyLineStats]
 
 	result, err = devs.Consume(deps)
 	assert.Nil(t, result)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Len(t, devs.ticks, 1)
 	day := devs.ticks[0]
 	assert.Len(t, day, 1)
 	dev := day[0]
-	assert.Equal(t, dev.Commits, 1)
-	assert.Equal(t, dev.Added, 847)
-	assert.Equal(t, dev.Removed, 9)
-	assert.Equal(t, dev.Changed, 67)
-	assert.Equal(t, dev.Languages["Go"].Added, 847)
-	assert.Equal(t, dev.Languages["Go"].Removed, 9)
-	assert.Equal(t, dev.Languages["Go"].Changed, 67)
+	assert.Equal(t, 1, dev.Commits)
+	assert.Equal(t, 847, dev.Added)
+	assert.Equal(t, 9, dev.Removed)
+	assert.Equal(t, 67, dev.Changed)
+	assert.Equal(t, 847, dev.Languages["Go"].Added)
+	assert.Equal(t, 9, dev.Languages["Go"].Removed)
+	assert.Equal(t, 67, dev.Languages["Go"].Changed)
 
 	deps[identity.DependencyAuthor] = 1
 	lscres, err = lsc.Consume(deps)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	deps[items.DependencyLineStats] = lscres[items.DependencyLineStats]
 	result, err = devs.Consume(deps)
 	assert.Nil(t, result)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Len(t, devs.ticks, 1)
 	day = devs.ticks[0]
 	assert.Len(t, day, 2)
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		dev = day[i]
-		assert.Equal(t, dev.Commits, 1)
-		assert.Equal(t, dev.Added, 847)
-		assert.Equal(t, dev.Removed, 9)
-		assert.Equal(t, dev.Changed, 67)
-		assert.Equal(t, dev.Languages["Go"].Added, 847)
-		assert.Equal(t, dev.Languages["Go"].Removed, 9)
-		assert.Equal(t, dev.Languages["Go"].Changed, 67)
+		assert.Equal(t, 1, dev.Commits)
+		assert.Equal(t, 847, dev.Added)
+		assert.Equal(t, 9, dev.Removed)
+		assert.Equal(t, 67, dev.Changed)
+		assert.Equal(t, 847, dev.Languages["Go"].Added)
+		assert.Equal(t, 9, dev.Languages["Go"].Removed)
+		assert.Equal(t, 67, dev.Languages["Go"].Changed)
 	}
 
 	result, err = devs.Consume(deps)
 	assert.Nil(t, result)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Len(t, devs.ticks, 1)
 	day = devs.ticks[0]
 	assert.Len(t, day, 2)
 	dev = day[0]
-	assert.Equal(t, dev.Commits, 1)
-	assert.Equal(t, dev.Added, 847)
-	assert.Equal(t, dev.Removed, 9)
-	assert.Equal(t, dev.Changed, 67)
-	assert.Equal(t, dev.Languages["Go"].Added, 847)
-	assert.Equal(t, dev.Languages["Go"].Removed, 9)
-	assert.Equal(t, dev.Languages["Go"].Changed, 67)
+	assert.Equal(t, 1, dev.Commits)
+	assert.Equal(t, 847, dev.Added)
+	assert.Equal(t, 9, dev.Removed)
+	assert.Equal(t, 67, dev.Changed)
+	assert.Equal(t, 847, dev.Languages["Go"].Added)
+	assert.Equal(t, 9, dev.Languages["Go"].Removed)
+	assert.Equal(t, 67, dev.Languages["Go"].Changed)
 	dev = day[1]
-	assert.Equal(t, dev.Commits, 2)
-	assert.Equal(t, dev.Added, 847*2)
-	assert.Equal(t, dev.Removed, 9*2)
-	assert.Equal(t, dev.Changed, 67*2)
-	assert.Equal(t, dev.Languages["Go"].Added, 847*2)
-	assert.Equal(t, dev.Languages["Go"].Removed, 9*2)
-	assert.Equal(t, dev.Languages["Go"].Changed, 67*2)
+	assert.Equal(t, 2, dev.Commits)
+	assert.Equal(t, 847*2, dev.Added)
+	assert.Equal(t, 9*2, dev.Removed)
+	assert.Equal(t, 67*2, dev.Changed)
+	assert.Equal(t, 847*2, dev.Languages["Go"].Added)
+	assert.Equal(t, 9*2, dev.Languages["Go"].Removed)
+	assert.Equal(t, 67*2, dev.Languages["Go"].Changed)
 
 	deps[items.DependencyTick] = 1
 	result, err = devs.Consume(deps)
 	assert.Nil(t, result)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Len(t, devs.ticks, 2)
 	day = devs.ticks[0]
 	assert.Len(t, day, 2)
 	dev = day[0]
-	assert.Equal(t, dev.Commits, 1)
-	assert.Equal(t, dev.Added, 847)
-	assert.Equal(t, dev.Removed, 9)
-	assert.Equal(t, dev.Changed, 67)
-	assert.Equal(t, dev.Languages["Go"].Added, 847)
-	assert.Equal(t, dev.Languages["Go"].Removed, 9)
-	assert.Equal(t, dev.Languages["Go"].Changed, 67)
+	assert.Equal(t, 1, dev.Commits)
+	assert.Equal(t, 847, dev.Added)
+	assert.Equal(t, 9, dev.Removed)
+	assert.Equal(t, 67, dev.Changed)
+	assert.Equal(t, 847, dev.Languages["Go"].Added)
+	assert.Equal(t, 9, dev.Languages["Go"].Removed)
+	assert.Equal(t, 67, dev.Languages["Go"].Changed)
 	dev = day[1]
-	assert.Equal(t, dev.Commits, 2)
-	assert.Equal(t, dev.Added, 847*2)
-	assert.Equal(t, dev.Removed, 9*2)
-	assert.Equal(t, dev.Changed, 67*2)
-	assert.Equal(t, dev.Languages["Go"].Added, 847*2)
-	assert.Equal(t, dev.Languages["Go"].Removed, 9*2)
-	assert.Equal(t, dev.Languages["Go"].Changed, 67*2)
+	assert.Equal(t, 2, dev.Commits)
+	assert.Equal(t, 847*2, dev.Added)
+	assert.Equal(t, 9*2, dev.Removed)
+	assert.Equal(t, 67*2, dev.Changed)
+	assert.Equal(t, 847*2, dev.Languages["Go"].Added)
+	assert.Equal(t, 9*2, dev.Languages["Go"].Removed)
+	assert.Equal(t, 67*2, dev.Languages["Go"].Changed)
 	day = devs.ticks[1]
 	assert.Len(t, day, 1)
 	dev = day[1]
-	assert.Equal(t, dev.Commits, 1)
-	assert.Equal(t, dev.Added, 847)
-	assert.Equal(t, dev.Removed, 9)
-	assert.Equal(t, dev.Changed, 67)
-	assert.Equal(t, dev.Languages["Go"].Added, 847)
-	assert.Equal(t, dev.Languages["Go"].Removed, 9)
-	assert.Equal(t, dev.Languages["Go"].Changed, 67)
+	assert.Equal(t, 1, dev.Commits)
+	assert.Equal(t, 847, dev.Added)
+	assert.Equal(t, 9, dev.Removed)
+	assert.Equal(t, 67, dev.Changed)
+	assert.Equal(t, 847, dev.Languages["Go"].Added)
+	assert.Equal(t, 9, dev.Languages["Go"].Removed)
+	assert.Equal(t, 67, dev.Languages["Go"].Changed)
 }
 
 func ls(added, removed, changed int) items.LineStats {
@@ -272,7 +272,7 @@ func TestDevsFinalize(t *testing.T) {
 func TestDevsFork(t *testing.T) {
 	devs := fixtureDevs()
 	clone := devs.Fork(1)[0].(*DevsAnalysis)
-	assert.True(t, devs == clone)
+	assert.Same(t, devs, clone)
 }
 
 func TestDevsSerialize(t *testing.T) {
@@ -288,7 +288,7 @@ func TestDevsSerialize(t *testing.T) {
 	res := devs.Finalize().(DevsResult)
 	buffer := &bytes.Buffer{}
 	err := devs.Serialize(res, false, buffer)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, `  ticks:
     1:
       0: [10, 20, 30, 40, {Go: [2, 3, 4]}]
@@ -304,30 +304,30 @@ func TestDevsSerialize(t *testing.T) {
 
 	buffer = &bytes.Buffer{}
 	err = devs.Serialize(res, true, buffer)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	msg := pb.DevsAnalysisResults{}
-	assert.Nil(t, proto.Unmarshal(buffer.Bytes(), &msg))
-	assert.Equal(t, msg.DevIndex, devs.reversedPeopleDict)
-	assert.Equal(t, int64(24*time.Hour), msg.TickSize)
-	assert.Len(t, msg.Ticks, 2)
-	assert.Len(t, msg.Ticks[1].Devs, 2)
-	assert.Equal(t, msg.Ticks[1].Devs[0], &pb.DevTick{
+	assert.NoError(t, proto.Unmarshal(buffer.Bytes(), &msg))
+	assert.Equal(t, msg.GetDevIndex(), devs.reversedPeopleDict)
+	assert.Equal(t, int64(24*time.Hour), msg.GetTickSize())
+	assert.Len(t, msg.GetTicks(), 2)
+	assert.Len(t, msg.GetTicks()[1].GetDevs(), 2)
+	assert.Equal(t, &pb.DevTick{
 		Commits: 10, Stats: &pb.LineStats{Added: 20, Removed: 30, Changed: 40},
 		Languages: map[string]*pb.LineStats{"Go": {Added: 2, Removed: 3, Changed: 4}},
-	})
-	assert.Equal(t, msg.Ticks[1].Devs[1], &pb.DevTick{
+	}, msg.GetTicks()[1].GetDevs()[0])
+	assert.Equal(t, &pb.DevTick{
 		Commits: 1, Stats: &pb.LineStats{Added: 2, Removed: 3, Changed: 4},
 		Languages: map[string]*pb.LineStats{"Go": {Added: 25, Removed: 35, Changed: 45}},
-	})
-	assert.Len(t, msg.Ticks[10].Devs, 2)
-	assert.Equal(t, msg.Ticks[10].Devs[0], &pb.DevTick{
+	}, msg.GetTicks()[1].GetDevs()[1])
+	assert.Len(t, msg.GetTicks()[10].GetDevs(), 2)
+	assert.Equal(t, &pb.DevTick{
 		Commits: 11, Stats: &pb.LineStats{Added: 21, Removed: 31, Changed: 41},
 		Languages: map[string]*pb.LineStats{"": {Added: 12, Removed: 13, Changed: 14}},
-	})
-	assert.Equal(t, msg.Ticks[10].Devs[-1], &pb.DevTick{
+	}, msg.GetTicks()[10].GetDevs()[0])
+	assert.Equal(t, &pb.DevTick{
 		Commits: 100, Stats: &pb.LineStats{Added: 200, Removed: 300, Changed: 400},
 		Languages: map[string]*pb.LineStats{"Go": {Added: 32, Removed: 33, Changed: 34}},
-	})
+	}, msg.GetTicks()[10].GetDevs()[-1])
 }
 
 func TestDevsDeserialize(t *testing.T) {
@@ -343,9 +343,9 @@ func TestDevsDeserialize(t *testing.T) {
 	res := devs.Finalize().(DevsResult)
 	buffer := &bytes.Buffer{}
 	err := devs.Serialize(res, true, buffer)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	rawres2, err := devs.Deserialize(buffer.Bytes())
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	res2 := rawres2.(DevsResult)
 	assert.Equal(t, res, res2)
 }
@@ -395,50 +395,50 @@ func TestDevsMergeResults(t *testing.T) {
 	peoplerm := [...]string{"1@srcd", "2@srcd", "3@srcd"}
 	assert.Equal(t, rm.reversedPeopleDict, peoplerm[:])
 	assert.Len(t, rm.Ticks, 4)
-	assert.Equal(t, rm.Ticks[11], map[int]*DevTick{
+	assert.Equal(t, map[int]*DevTick{
 		1: {10, ls(20, 30, 40), map[string]items.LineStats{"Go": ls(42, 43, 44)}},
-	})
-	assert.Equal(t, rm.Ticks[2], map[int]*DevTick{
+	}, rm.Ticks[11])
+	assert.Equal(t, map[int]*DevTick{
 		core.AuthorMissing: {100, ls(200, 300, 400), map[string]items.LineStats{"Go": ls(42, 43, 44)}},
 		2:                  {11, ls(21, 31, 41), map[string]items.LineStats{"Go": ls(32, 33, 34)}},
-	})
-	assert.Equal(t, rm.Ticks[1], map[int]*DevTick{
+	}, rm.Ticks[2])
+	assert.Equal(t, map[int]*DevTick{
 		0: {11, ls(22, 33, 44), map[string]items.LineStats{"Go": ls(34, 36, 38)}},
 		1: {1, ls(2, 3, 4), map[string]items.LineStats{"Go": ls(22, 23, 24)}},
 		2: {10, ls(20, 30, 40), map[string]items.LineStats{"Go": ls(12, 13, 14)}},
-	})
-	assert.Equal(t, rm.Ticks[10], map[int]*DevTick{
+	}, rm.Ticks[1])
+	assert.Equal(t, map[int]*DevTick{
 		0: {11, ls(21, 31, 41), map[string]items.LineStats{}},
 		2: {11, ls(21, 31, 41), map[string]items.LineStats{"Go": ls(52, 53, 54)}},
 		core.AuthorMissing: {
 			100 * 2, ls(200*2, 300*2, 400*2), map[string]items.LineStats{"Go": ls(94, 96, 98)},
 		},
-	})
+	}, rm.Ticks[10])
 
 	c2 := core.CommonAnalysisResult{BeginTime: 1556224895 + 24*3600}
 	rm = devs.MergeResults(r1, r2, &c1, &c2).(DevsResult)
 	assert.Len(t, rm.Ticks, 5)
-	assert.Equal(t, rm.Ticks[1], map[int]*DevTick{
+	assert.Equal(t, map[int]*DevTick{
 		0: {10, ls(20, 30, 40), map[string]items.LineStats{"Go": ls(12, 13, 14)}},
 		1: {1, ls(2, 3, 4), map[string]items.LineStats{"Go": ls(22, 23, 24)}},
-	})
-	assert.Equal(t, rm.Ticks[2], map[int]*DevTick{
+	}, rm.Ticks[1])
+	assert.Equal(t, map[int]*DevTick{
 		2: {10, ls(20, 30, 40), map[string]items.LineStats{"Go": ls(12, 13, 14)}},
 		0: {1, ls(2, 3, 4), map[string]items.LineStats{"Go": ls(22, 23, 24)}},
-	})
-	assert.Equal(t, rm.Ticks[3], map[int]*DevTick{
+	}, rm.Ticks[2])
+	assert.Equal(t, map[int]*DevTick{
 		2:                  {11, ls(21, 31, 41), map[string]items.LineStats{"Go": ls(32, 33, 34)}},
 		core.AuthorMissing: {100, ls(200, 300, 400), map[string]items.LineStats{"Go": ls(42, 43, 44)}},
-	})
-	assert.Equal(t, rm.Ticks[10], map[int]*DevTick{
+	}, rm.Ticks[3])
+	assert.Equal(t, map[int]*DevTick{
 		0:                  {11, ls(21, 31, 41), map[string]items.LineStats{}},
 		core.AuthorMissing: {100, ls(200, 300, 400), map[string]items.LineStats{"Go": ls(32, 33, 34)}},
-	})
-	assert.Equal(t, rm.Ticks[11], map[int]*DevTick{
+	}, rm.Ticks[10])
+	assert.Equal(t, map[int]*DevTick{
 		1:                  {10, ls(20, 30, 40), map[string]items.LineStats{"Go": ls(42, 43, 44)}},
 		2:                  {11, ls(21, 31, 41), map[string]items.LineStats{"Go": ls(52, 53, 54)}},
 		core.AuthorMissing: {100, ls(200, 300, 400), map[string]items.LineStats{"Go": ls(62, 63, 64)}},
-	})
+	}, rm.Ticks[11])
 }
 
 func TestDevsResultGetters(t *testing.T) {

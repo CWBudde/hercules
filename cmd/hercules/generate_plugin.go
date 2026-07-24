@@ -23,7 +23,7 @@ var ShlibExts = map[string]string{
 	"freebsd": "dylib",
 }
 
-// generatePluginCmd represents the generatePlugin command
+// generatePluginCmd represents the generatePlugin command.
 var generatePluginCmd = &cobra.Command{
 	Use:   "generate-plugin",
 	Short: "Write the plugin source skeleton.",

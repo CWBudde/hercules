@@ -41,7 +41,7 @@ func benchmarkCompress(b *testing.B, n int, kind string) {
 	b.ResetTimer()
 	b.ReportAllocs()
 	var sink []byte
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		sink = CompressUInt32Slice(data)
 	}
 	_ = sink
@@ -54,7 +54,7 @@ func benchmarkRoundtrip(b *testing.B, n int, kind string) {
 	result := make([]uint32, n)
 	b.ResetTimer()
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		DecompressUInt32Slice(compressed, result)
 	}
 	_ = result

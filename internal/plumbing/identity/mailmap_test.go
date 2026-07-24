@@ -271,33 +271,33 @@ anonymous <linux@horizon.com>
 anonymous <linux@horizon.net>
 İsmail Dönmez <ismail@pardus.org.tr>`
 	mm := ParseMailmap(contents)
-	assert.Equal(t, mm["ismail@pardus.org.tr"].Name, "İsmail Dönmez")
-	assert.Equal(t, mm["ismail@pardus.org.tr"].Email, "")
+	assert.Equal(t, "İsmail Dönmez", mm["ismail@pardus.org.tr"].Name)
+	assert.Empty(t, mm["ismail@pardus.org.tr"].Email)
 
-	assert.Equal(t, mm["linux@horizon.com"].Name, "anonymous")
-	assert.Equal(t, mm["linux@horizon.com"].Email, "")
+	assert.Equal(t, "anonymous", mm["linux@horizon.com"].Name)
+	assert.Empty(t, mm["linux@horizon.com"].Email)
 
-	assert.Equal(t, mm["y0netan1@dragonflybsd.org"].Name, "YONETANI Tomokazu")
-	assert.Equal(t, mm["y0netan1@dragonflybsd.org"].Email, "y0n3t4n1@gmail.com")
+	assert.Equal(t, "YONETANI Tomokazu", mm["y0netan1@dragonflybsd.org"].Name)
+	assert.Equal(t, "y0n3t4n1@gmail.com", mm["y0netan1@dragonflybsd.org"].Email)
 
-	assert.Equal(t, mm["qhwt+git@les.ath.cx"].Name, "YONETANI Tomokazu")
-	assert.Equal(t, mm["qhwt+git@les.ath.cx"].Email, "y0n3t4n1@gmail.com")
+	assert.Equal(t, "YONETANI Tomokazu", mm["qhwt+git@les.ath.cx"].Name)
+	assert.Equal(t, "y0n3t4n1@gmail.com", mm["qhwt+git@les.ath.cx"].Email)
 
-	assert.Equal(t, mm["vnwildman@gmail.com"].Name, "Trần Ngọc Quân")
-	assert.Equal(t, mm["vnwildman@gmail.com"].Email, "vnwildman@gmail.com")
+	assert.Equal(t, "Trần Ngọc Quân", mm["vnwildman@gmail.com"].Name)
+	assert.Equal(t, "vnwildman@gmail.com", mm["vnwildman@gmail.com"].Email)
 
-	assert.Equal(t, mm["Tran Ngoc Quan"].Name, "Trần Ngọc Quân")
-	assert.Equal(t, mm["Tran Ngoc Quan"].Email, "vnwildman@gmail.com")
+	assert.Equal(t, "Trần Ngọc Quân", mm["Tran Ngoc Quan"].Name)
+	assert.Equal(t, "vnwildman@gmail.com", mm["Tran Ngoc Quan"].Email)
 
-	assert.Equal(t, mm["nico@cam.org"].Name, "")
-	assert.Equal(t, mm["nico@cam.org"].Email, "nico@fluxnic.net")
+	assert.Empty(t, mm["nico@cam.org"].Name)
+	assert.Equal(t, "nico@fluxnic.net", mm["nico@cam.org"].Email)
 }
 
 func TestParseMailmapBadFormat(t *testing.T) {
 	contents := `Denis Engemann <denis-alexander.engemann@inria.fr> <dengemann <denis.engemann@gmail.com>`
 	mm := ParseMailmap(contents)
-	assert.Equal(t, mm["denis.engemann@gmail.com"].Name, "Denis Engemann")
-	assert.Equal(t, mm["denis.engemann@gmail.com"].Email, "denis-alexander.engemann@inria.fr")
-	assert.Equal(t, mm["<dengemann"].Name, "Denis Engemann")
-	assert.Equal(t, mm["<dengemann"].Email, "denis-alexander.engemann@inria.fr")
+	assert.Equal(t, "Denis Engemann", mm["denis.engemann@gmail.com"].Name)
+	assert.Equal(t, "denis-alexander.engemann@inria.fr", mm["denis.engemann@gmail.com"].Email)
+	assert.Equal(t, "Denis Engemann", mm["<dengemann"].Name)
+	assert.Equal(t, "denis-alexander.engemann@inria.fr", mm["<dengemann"].Email)
 }

@@ -41,7 +41,7 @@ type HotspotRiskAnalysis struct {
 	l core.Logger
 }
 
-// fileRiskMetrics tracks all metrics needed to calculate risk score for a file
+// fileRiskMetrics tracks all metrics needed to calculate risk score for a file.
 type fileRiskMetrics struct {
 	CurrentSize   int             // Current number of lines
 	ChurnInWindow int             // Number of changes within time window
@@ -50,13 +50,13 @@ type fileRiskMetrics struct {
 	AuthorLines   map[int]int     // Lines contributed by each author
 }
 
-// HotspotRiskResult is returned by Finalize()
+// HotspotRiskResult is returned by Finalize().
 type HotspotRiskResult struct {
 	Files      []FileRisk // Top-N risky files, sorted by score descending
 	WindowDays int        // Time window used for churn calculation
 }
 
-// FileRisk contains the risk assessment for a single file
+// FileRisk contains the risk assessment for a single file.
 type FileRisk struct {
 	Path                string  // File path
 	RiskScore           float64 // Composite risk score
@@ -71,24 +71,24 @@ type FileRisk struct {
 }
 
 const (
-	// ConfigHotspotRiskTopN sets the number of top risky files to report
+	// ConfigHotspotRiskTopN sets the number of top risky files to report.
 	ConfigHotspotRiskTopN = "HotspotRisk.TopN"
-	// ConfigHotspotRiskWindow sets the time window in days for churn calculation
+	// ConfigHotspotRiskWindow sets the time window in days for churn calculation.
 	ConfigHotspotRiskWindow = "HotspotRisk.WindowDays"
-	// ConfigHotspotRiskWeightSize sets the weight for size factor
+	// ConfigHotspotRiskWeightSize sets the weight for size factor.
 	ConfigHotspotRiskWeightSize = "HotspotRisk.WeightSize"
-	// ConfigHotspotRiskWeightChurn sets the weight for churn factor
+	// ConfigHotspotRiskWeightChurn sets the weight for churn factor.
 	ConfigHotspotRiskWeightChurn = "HotspotRisk.WeightChurn"
-	// ConfigHotspotRiskWeightCoupling sets the weight for coupling factor
+	// ConfigHotspotRiskWeightCoupling sets the weight for coupling factor.
 	ConfigHotspotRiskWeightCoupling = "HotspotRisk.WeightCoupling"
-	// ConfigHotspotRiskWeightOwnership sets the weight for ownership concentration factor
+	// ConfigHotspotRiskWeightOwnership sets the weight for ownership concentration factor.
 	ConfigHotspotRiskWeightOwnership = "HotspotRisk.WeightOwnership"
 
-	// DefaultTopN is the default number of files to report
+	// DefaultTopN is the default number of files to report.
 	DefaultTopN = 20
-	// DefaultWindowDays is the default time window in days
+	// DefaultWindowDays is the default time window in days.
 	DefaultWindowDays = 90
-	// DefaultWeight is the default weight for all factors
+	// DefaultWeight is the default weight for all factors.
 	DefaultWeight = float32(1.0)
 )
 
@@ -161,35 +161,43 @@ func (hra *HotspotRiskAnalysis) ListConfigurationOptions() []core.ConfigurationO
 }
 
 // Configure sets the properties.
-func (hra *HotspotRiskAnalysis) Configure(facts map[string]interface{}) error {
+func (hra *HotspotRiskAnalysis) Configure(facts map[string]any) error {
 	if l, exists := facts[core.ConfigLogger].(core.Logger); exists {
 		hra.l = l
 	}
+
 	if val, exists := facts[ConfigHotspotRiskTopN].(int); exists {
 		hra.TopN = val
 	}
+
 	if val, exists := facts[ConfigHotspotRiskWindow].(int); exists {
 		hra.WindowDays = val
 	}
+
 	if val, exists := facts[ConfigHotspotRiskWeightSize].(float32); exists {
 		hra.WeightSize = val
 	}
+
 	if val, exists := facts[ConfigHotspotRiskWeightChurn].(float32); exists {
 		hra.WeightChurn = val
 	}
+
 	if val, exists := facts[ConfigHotspotRiskWeightCoupling].(float32); exists {
 		hra.WeightCoupling = val
 	}
+
 	if val, exists := facts[ConfigHotspotRiskWeightOwnership].(float32); exists {
 		hra.WeightOwnership = val
 	}
+
 	if val, exists := facts[items.FactTickSize].(int64); exists {
 		hra.tickSize = val
 	}
+
 	return nil
 }
 
-func (*HotspotRiskAnalysis) ConfigureUpstream(facts map[string]interface{}) error {
+func (*HotspotRiskAnalysis) ConfigureUpstream(facts map[string]any) error {
 	return nil
 }
 
@@ -209,29 +217,36 @@ func (hra *HotspotRiskAnalysis) Initialize(repository *git.Repository) error {
 	if hra.TopN == 0 {
 		hra.TopN = DefaultTopN
 	}
+
 	if hra.WindowDays == 0 {
 		hra.WindowDays = DefaultWindowDays
 	}
+
 	if hra.WeightSize == 0 {
 		hra.WeightSize = DefaultWeight
 	}
+
 	if hra.WeightChurn == 0 {
 		hra.WeightChurn = DefaultWeight
 	}
+
 	if hra.WeightCoupling == 0 {
 		hra.WeightCoupling = DefaultWeight
 	}
+
 	if hra.WeightOwnership == 0 {
 		hra.WeightOwnership = DefaultWeight
 	}
+
 	hra.fileMetrics = make(map[string]*fileRiskMetrics)
 	hra.currentTick = 0
 	hra.OneShotMergeProcessor.Initialize()
+
 	return nil
 }
 
 // Consume processes the next commit.
-func (hra *HotspotRiskAnalysis) Consume(deps map[string]interface{}) (map[string]interface{}, error) {
+func (hra *HotspotRiskAnalysis) Consume(deps map[string]any) (map[string]any, error) {
 	if !hra.ShouldConsumeCommit(deps) {
 		return nil, nil
 	}
@@ -253,6 +268,7 @@ func (hra *HotspotRiskAnalysis) Consume(deps map[string]interface{}) (map[string
 		}
 
 		var fileName string
+
 		switch action {
 		case merkletrie.Insert:
 			fileName = change.To.Name
@@ -267,6 +283,7 @@ func (hra *HotspotRiskAnalysis) Consume(deps map[string]interface{}) (map[string
 					delete(hra.fileMetrics, change.From.Name)
 				}
 			}
+
 			fileName = change.To.Name
 		}
 
@@ -311,7 +328,7 @@ func (hra *HotspotRiskAnalysis) Consume(deps map[string]interface{}) (map[string
 }
 
 // Finalize returns the result of the analysis.
-func (hra *HotspotRiskAnalysis) Finalize() interface{} {
+func (hra *HotspotRiskAnalysis) Finalize() any {
 	if hra.lastCommit == nil {
 		return HotspotRiskResult{Files: []FileRisk{}, WindowDays: hra.WindowDays}
 	}
@@ -321,13 +338,12 @@ func (hra *HotspotRiskAnalysis) Finalize() interface{} {
 	if hra.tickSize > 0 {
 		windowTicks = (hra.WindowDays * 24 * 3600) / int(hra.tickSize)
 	}
-	startTick := hra.currentTick - windowTicks
-	if startTick < 0 {
-		startTick = 0
-	}
+
+	startTick := max(hra.currentTick-windowTicks, 0)
 
 	// Get current file sizes and calculate metrics for existing files
 	var risks []FileRisk
+
 	tree, err := hra.lastCommit.Tree()
 	if err != nil {
 		hra.l.Errorf("Failed to get tree: %v", err)
@@ -336,6 +352,7 @@ func (hra *HotspotRiskAnalysis) Finalize() interface{} {
 
 	err = tree.Files().ForEach(func(file *object.File) error {
 		fileName := file.Name
+
 		metrics, exists := hra.fileMetrics[fileName]
 		if !exists {
 			// File exists but was never changed in our analysis - skip
@@ -347,14 +364,17 @@ func (hra *HotspotRiskAnalysis) Finalize() interface{} {
 		if err := blob.Cache(); err != nil {
 			return nil // Skip binary/unreadable files
 		}
+
 		size, err := blob.CountLines()
 		if err != nil {
 			return nil // Skip binary files
 		}
+
 		metrics.CurrentSize = size
 
 		// Calculate churn within window
 		churnInWindow := 0
+
 		for tick, count := range metrics.ChurnByTick {
 			if tick >= startTick {
 				churnInWindow += count
@@ -397,7 +417,7 @@ func (hra *HotspotRiskAnalysis) Finalize() interface{} {
 	}
 }
 
-// normalizeAndScore normalizes all factors to [0,1] and calculates risk scores
+// normalizeAndScore normalizes all factors to [0,1] and calculates risk scores.
 func (hra *HotspotRiskAnalysis) normalizeAndScore(risks []FileRisk) {
 	if len(risks) == 0 {
 		return
@@ -410,9 +430,11 @@ func (hra *HotspotRiskAnalysis) normalizeAndScore(risks []FileRisk) {
 		if float64(risk.Size) > maxSize {
 			maxSize = float64(risk.Size)
 		}
+
 		if float64(risk.Churn) > maxChurn {
 			maxChurn = float64(risk.Churn)
 		}
+
 		if float64(risk.CouplingDegree) > maxCoupling {
 			maxCoupling = float64(risk.CouplingDegree)
 		}
@@ -422,6 +444,7 @@ func (hra *HotspotRiskAnalysis) normalizeAndScore(risks []FileRisk) {
 	for i := range risks {
 		// Size: use log scale, then normalize
 		var sizeNorm float64
+
 		if risks[i].Size > 0 && maxSize > 0 {
 			logSize := math.Log(float64(risks[i].Size) + 1)
 			logMaxSize := math.Log(maxSize + 1)
@@ -465,16 +488,18 @@ func sortFileRisks(risks []FileRisk) {
 		if risks[i].RiskScore == risks[j].RiskScore {
 			return risks[i].Path < risks[j].Path
 		}
+
 		return risks[i].RiskScore > risks[j].RiskScore
 	})
 }
 
 // calculateGini computes the Gini coefficient for line ownership distribution
-// Returns value in [0,1] where 0 = perfectly equal, 1 = one person owns everything
+// Returns value in [0,1] where 0 = perfectly equal, 1 = one person owns everything.
 func calculateGini(authorLines map[int]int) float64 {
 	if len(authorLines) == 0 {
 		return 0
 	}
+
 	if len(authorLines) == 1 {
 		return 1.0 // Single owner = maximum concentration
 	}
@@ -482,6 +507,7 @@ func calculateGini(authorLines map[int]int) float64 {
 	// Get line counts, filtering out negative values (deleted lines)
 	var values []int
 	totalLines := 0
+
 	for _, lines := range authorLines {
 		if lines > 0 {
 			values = append(values, lines)
@@ -492,6 +518,7 @@ func calculateGini(authorLines map[int]int) float64 {
 	if len(values) == 0 || totalLines == 0 {
 		return 0
 	}
+
 	if len(values) == 1 {
 		return 1.0
 	}
@@ -502,6 +529,7 @@ func calculateGini(authorLines map[int]int) float64 {
 	// Calculate Gini coefficient using formula:
 	// G = (2 * sum(i * values[i])) / (n * sum(values)) - (n + 1) / n
 	n := len(values)
+
 	var weightedSum int64
 	for i, val := range values {
 		weightedSum += int64(i+1) * int64(val)
@@ -513,6 +541,7 @@ func calculateGini(authorLines map[int]int) float64 {
 	if gini < 0 {
 		gini = 0
 	}
+
 	if gini > 1 {
 		gini = 1
 	}
@@ -526,18 +555,21 @@ func (hra *HotspotRiskAnalysis) Fork(n int) []core.PipelineItem {
 }
 
 // Serialize converts the analysis result to text or bytes.
-func (hra *HotspotRiskAnalysis) Serialize(result interface{}, binary bool, writer io.Writer) error {
+func (hra *HotspotRiskAnalysis) Serialize(result any, binary bool, writer io.Writer) error {
 	riskResult := result.(HotspotRiskResult)
 	if binary {
 		return hra.serializeBinary(&riskResult, writer)
 	}
+
 	hra.serializeText(&riskResult, writer)
+
 	return nil
 }
 
 func (hra *HotspotRiskAnalysis) serializeText(result *HotspotRiskResult, writer io.Writer) {
 	fmt.Fprintln(writer, "  window_days:", result.WindowDays)
 	fmt.Fprintln(writer, "  files:")
+
 	for _, file := range result.Files {
 		fmt.Fprintf(writer, "    - path: %s\n", yaml.SafeString(file.Path))
 		fmt.Fprintf(writer, "      risk_score: %.6f\n", file.RiskScore)
@@ -578,35 +610,38 @@ func (hra *HotspotRiskAnalysis) serializeBinary(result *HotspotRiskResult, write
 	if err != nil {
 		return err
 	}
+
 	_, err = writer.Write(serialized)
+
 	return err
 }
 
 // Deserialize converts protobuf bytes to HotspotRiskResult.
-func (hra *HotspotRiskAnalysis) Deserialize(pbmessage []byte) (interface{}, error) {
+func (hra *HotspotRiskAnalysis) Deserialize(pbmessage []byte) (any, error) {
 	message := pb.HotspotRiskResults{}
+
 	err := proto.Unmarshal(pbmessage, &message)
 	if err != nil {
 		return nil, err
 	}
 
 	result := HotspotRiskResult{
-		WindowDays: int(message.WindowDays),
-		Files:      make([]FileRisk, len(message.Files)),
+		WindowDays: int(message.GetWindowDays()),
+		Files:      make([]FileRisk, len(message.GetFiles())),
 	}
 
-	for i, file := range message.Files {
+	for i, file := range message.GetFiles() {
 		result.Files[i] = FileRisk{
-			Path:                file.Path,
-			RiskScore:           file.RiskScore,
-			Size:                int(file.Size_),
-			Churn:               int(file.Churn),
-			CouplingDegree:      int(file.CouplingDegree),
-			OwnershipGini:       file.OwnershipGini,
-			SizeNormalized:      file.SizeNormalized,
-			ChurnNormalized:     file.ChurnNormalized,
-			CouplingNormalized:  file.CouplingNormalized,
-			OwnershipNormalized: file.OwnershipNormalized,
+			Path:                file.GetPath(),
+			RiskScore:           file.GetRiskScore(),
+			Size:                int(file.GetSize_()),
+			Churn:               int(file.GetChurn()),
+			CouplingDegree:      int(file.GetCouplingDegree()),
+			OwnershipGini:       file.GetOwnershipGini(),
+			SizeNormalized:      file.GetSizeNormalized(),
+			ChurnNormalized:     file.GetChurnNormalized(),
+			CouplingNormalized:  file.GetCouplingNormalized(),
+			OwnershipNormalized: file.GetOwnershipNormalized(),
 		}
 	}
 
@@ -614,7 +649,7 @@ func (hra *HotspotRiskAnalysis) Deserialize(pbmessage []byte) (interface{}, erro
 }
 
 // MergeResults combines two HotspotRisk results (not really meaningful, but required by interface).
-func (hra *HotspotRiskAnalysis) MergeResults(r1, r2 interface{}, c1, c2 *core.CommonAnalysisResult) interface{} {
+func (hra *HotspotRiskAnalysis) MergeResults(r1, r2 any, c1, c2 *core.CommonAnalysisResult) any {
 	// Merging hotspot risk across repositories doesn't make semantic sense,
 	// but we implement it by concatenating and re-sorting
 	cr1 := r1.(HotspotRiskResult)

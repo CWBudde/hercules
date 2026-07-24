@@ -23,26 +23,26 @@ import (
 func TestLoadGitRepository(t *testing.T) {
 	repo, repoUri, repoFeature := loadRepository("https://github.com/src-d/hercules", "", true, "")
 	assert.NotNil(t, repo)
-	assert.Equal(t, repoFeature, core.FeatureGitCommits)
-	assert.Equal(t, repoUri, "https://github.com/src-d/hercules")
+	assert.Equal(t, core.FeatureGitCommits, repoFeature)
+	assert.Equal(t, "https://github.com/src-d/hercules", repoUri)
 }
 
 func TestLoadGitRepositoryWithCreds(t *testing.T) {
 	_, repoUri, repoFeature, err := loadRepositoryWithError("https://user:user@github.com/src-d/hercules", "", true, "")
-	assert.NotNil(t, err)
-	assert.Equal(t, repoFeature, core.FeatureGitCommits)
-	assert.Equal(t, repoUri, "https://github.com/src-d/hercules")
+	assert.Error(t, err)
+	assert.Equal(t, core.FeatureGitCommits, repoFeature)
+	assert.Equal(t, "https://github.com/src-d/hercules", repoUri)
 }
 
 func TestLoadLocalRepository(t *testing.T) {
 	tempdir, err := ioutil.TempDir("", "hercules-")
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	defer func() { _ = os.RemoveAll(tempdir) }()
 
 	backend := filesystem.NewStorage(osfs.New(tempdir), cache.NewObjectLRUDefault())
 	cloneOptions := &git.CloneOptions{URL: "https://github.com/src-d/hercules"}
 	_, err = git.Clone(backend, nil, cloneOptions)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	if err != nil {
 		assert.FailNow(t, "filesystem.NewStorage")
 	}
@@ -50,7 +50,7 @@ func TestLoadLocalRepository(t *testing.T) {
 	repo, repoUri, repoFeature := loadRepository(tempdir, "", true, "")
 	assert.NotNil(t, repo)
 	assert.Equal(t, repoUri, tempdir)
-	assert.Equal(t, repoFeature, core.FeatureGitCommits)
+	assert.Equal(t, core.FeatureGitCommits, repoFeature)
 }
 
 func TestLoadSivaRepository(t *testing.T) {
@@ -58,7 +58,7 @@ func TestLoadSivaRepository(t *testing.T) {
 	sivafile := filepath.Join(filepath.Dir(filename), "test_data", "hercules.siva")
 	repo, _, repoFeature := loadRepository(sivafile, "", true, "")
 	assert.NotNil(t, repo)
-	assert.Equal(t, repoFeature, core.FeatureGitCommits)
+	assert.Equal(t, core.FeatureGitCommits, repoFeature)
 
 	assert.Panics(t, func() { loadRepository("https://github.com/src-d/porn", "", true, "") })
 	assert.Panics(t, func() { loadRepository(filepath.Dir(filename), "", true, "") })
@@ -68,8 +68,8 @@ func TestLoadSivaRepository(t *testing.T) {
 func TestLoadStubRepository(t *testing.T) {
 	repo, repoUri, repoFeature := loadRepository("-", "", true, "")
 	assert.NotNil(t, repo)
-	assert.Equal(t, repoUri, "-")
-	assert.Equal(t, repoFeature, core.FeatureGitStub)
+	assert.Equal(t, "-", repoUri)
+	assert.Equal(t, core.FeatureGitStub, repoFeature)
 }
 
 func TestFormatProgressEventLines(t *testing.T) {
@@ -117,7 +117,7 @@ func TestIdentityAuditWorkflowWritesJSON(t *testing.T) {
 				Message: "Pairing\n\nCo-authored-by: Alice Example <alice@example.com>",
 			},
 		},
-		Facts: map[string]interface{}{},
+		Facts: map[string]any{},
 		Audit: true,
 		Out:   &out,
 	})
@@ -142,7 +142,7 @@ func TestIdentityTemplateWorkflowWritesPeopleDictFile(t *testing.T) {
 				Message: "Initial",
 			},
 		},
-		Facts:        map[string]interface{}{},
+		Facts:        map[string]any{},
 		TemplatePath: templatePath,
 	})
 

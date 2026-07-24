@@ -74,7 +74,7 @@ func makeDeleteChange(name string) *object.Change {
 func TestKnowledgeDiffusionMeta(t *testing.T) {
 	kd := KnowledgeDiffusionAnalysis{}
 	assert.Equal(t, "KnowledgeDiffusion", kd.Name())
-	assert.Len(t, kd.Provides(), 0)
+	assert.Empty(t, kd.Provides())
 	assert.Contains(t, kd.Requires(), identity.DependencyAuthor)
 	assert.Contains(t, kd.Requires(), items.DependencyTreeChanges)
 	assert.Contains(t, kd.Requires(), items.DependencyTick)
@@ -107,13 +107,13 @@ func TestKnowledgeDiffusionListConfigurationOptions(t *testing.T) {
 
 func TestKnowledgeDiffusionConfigure(t *testing.T) {
 	kd := KnowledgeDiffusionAnalysis{}
-	facts := map[string]interface{}{
+	facts := map[string]any{
 		identity.FactIdentityDetectorReversedPeopleDict: []string{"Alice", "Bob", "Charlie"},
 		items.FactTickSize:                   24 * time.Hour,
 		ConfigKnowledgeDiffusionWindowMonths: 12,
 		core.ConfigLogger:                    core.NewLogger(),
 	}
-	assert.Nil(t, kd.Configure(facts))
+	assert.NoError(t, kd.Configure(facts))
 	assert.Equal(t, []string{"Alice", "Bob", "Charlie"}, kd.reversedPeopleDict)
 	assert.Equal(t, 24*time.Hour, kd.tickSize)
 	assert.Equal(t, 12, kd.WindowMonths)
@@ -121,14 +121,14 @@ func TestKnowledgeDiffusionConfigure(t *testing.T) {
 
 func TestKnowledgeDiffusionConfigureDefaults(t *testing.T) {
 	kd := KnowledgeDiffusionAnalysis{}
-	assert.Nil(t, kd.Configure(map[string]interface{}{}))
-	assert.Nil(t, kd.Initialize(test.Repository))
+	assert.NoError(t, kd.Configure(map[string]any{}))
+	assert.NoError(t, kd.Initialize(test.Repository))
 	assert.Equal(t, 6, kd.WindowMonths)
 }
 
 func TestKnowledgeDiffusionInitialize(t *testing.T) {
 	kd := KnowledgeDiffusionAnalysis{}
-	assert.Nil(t, kd.Initialize(test.Repository))
+	assert.NoError(t, kd.Initialize(test.Repository))
 	assert.NotNil(t, kd.fileAuthors)
 	assert.Equal(t, -1, kd.lastTick)
 	assert.Equal(t, 6, kd.WindowMonths)
@@ -136,7 +136,7 @@ func TestKnowledgeDiffusionInitialize(t *testing.T) {
 
 func TestKnowledgeDiffusionConfigureUpstream(t *testing.T) {
 	kd := KnowledgeDiffusionAnalysis{}
-	assert.Nil(t, kd.ConfigureUpstream(map[string]interface{}{}))
+	assert.NoError(t, kd.ConfigureUpstream(map[string]any{}))
 }
 
 func TestKnowledgeDiffusionConsumeBasic(t *testing.T) {
@@ -146,14 +146,14 @@ func TestKnowledgeDiffusionConsumeBasic(t *testing.T) {
 
 	// Tick 0: Alice inserts file.go
 	changes := object.Changes{makeInsertChange("file.go")}
-	deps := map[string]interface{}{
+	deps := map[string]any{
 		items.DependencyTreeChanges: changes,
 		identity.DependencyAuthor:   0,
 		items.DependencyTick:        0,
 	}
 	res, err := kd.Consume(deps)
 	assert.Nil(t, res)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	assert.Len(t, kd.fileAuthors, 1)
 	assert.Len(t, kd.fileAuthors["file.go"], 1)
@@ -167,7 +167,7 @@ func TestKnowledgeDiffusionConsumeMultipleAuthors(t *testing.T) {
 	kd.tickSize = 24 * time.Hour
 
 	// Tick 0: Author 0 inserts file.go
-	deps := map[string]interface{}{
+	deps := map[string]any{
 		items.DependencyTreeChanges: object.Changes{makeInsertChange("file.go")},
 		identity.DependencyAuthor:   0,
 		items.DependencyTick:        0,
@@ -175,7 +175,7 @@ func TestKnowledgeDiffusionConsumeMultipleAuthors(t *testing.T) {
 	kd.Consume(deps)
 
 	// Tick 5: Author 1 modifies file.go
-	deps = map[string]interface{}{
+	deps = map[string]any{
 		items.DependencyTreeChanges: object.Changes{makeModifyChange("file.go")},
 		identity.DependencyAuthor:   1,
 		items.DependencyTick:        5,
@@ -183,7 +183,7 @@ func TestKnowledgeDiffusionConsumeMultipleAuthors(t *testing.T) {
 	kd.Consume(deps)
 
 	// Tick 10: Author 2 modifies file.go
-	deps = map[string]interface{}{
+	deps = map[string]any{
 		items.DependencyTreeChanges: object.Changes{makeModifyChange("file.go")},
 		identity.DependencyAuthor:   2,
 		items.DependencyTick:        10,
@@ -202,7 +202,7 @@ func TestKnowledgeDiffusionConsumeDelete(t *testing.T) {
 	kd.tickSize = 24 * time.Hour
 
 	// Insert file
-	deps := map[string]interface{}{
+	deps := map[string]any{
 		items.DependencyTreeChanges: object.Changes{makeInsertChange("deleted.go")},
 		identity.DependencyAuthor:   0,
 		items.DependencyTick:        0,
@@ -210,7 +210,7 @@ func TestKnowledgeDiffusionConsumeDelete(t *testing.T) {
 	kd.Consume(deps)
 
 	// Delete file - should NOT add author 1 as editor
-	deps = map[string]interface{}{
+	deps = map[string]any{
 		items.DependencyTreeChanges: object.Changes{makeDeleteChange("deleted.go")},
 		identity.DependencyAuthor:   1,
 		items.DependencyTick:        5,
@@ -228,7 +228,7 @@ func TestKnowledgeDiffusionConsumeRename(t *testing.T) {
 	kd.tickSize = 24 * time.Hour
 
 	// Insert old.go by author 0
-	deps := map[string]interface{}{
+	deps := map[string]any{
 		items.DependencyTreeChanges: object.Changes{makeInsertChange("old.go")},
 		identity.DependencyAuthor:   0,
 		items.DependencyTick:        0,
@@ -236,7 +236,7 @@ func TestKnowledgeDiffusionConsumeRename(t *testing.T) {
 	kd.Consume(deps)
 
 	// Rename old.go -> new.go by author 1
-	deps = map[string]interface{}{
+	deps = map[string]any{
 		items.DependencyTreeChanges: object.Changes{makeRenameChange("old.go", "new.go")},
 		identity.DependencyAuthor:   1,
 		items.DependencyTick:        5,
@@ -257,12 +257,12 @@ func TestKnowledgeDiffusionConsumeSameAuthorMultipleTicks(t *testing.T) {
 	kd.tickSize = 24 * time.Hour
 
 	// Same author edits same file at different ticks
-	for tick := 0; tick < 5; tick++ {
+	for tick := range 5 {
 		action := makeModifyChange("file.go")
 		if tick == 0 {
 			action = makeInsertChange("file.go")
 		}
-		deps := map[string]interface{}{
+		deps := map[string]any{
 			items.DependencyTreeChanges: object.Changes{action},
 			identity.DependencyAuthor:   0,
 			items.DependencyTick:        tick,
@@ -283,14 +283,14 @@ func TestKnowledgeDiffusionFinalize(t *testing.T) {
 	kd.reversedPeopleDict = []string{"Alice", "Bob", "Charlie"}
 
 	// file1.go: touched by Alice at tick 0, Bob at tick 5
-	deps := map[string]interface{}{
+	deps := map[string]any{
 		items.DependencyTreeChanges: object.Changes{makeInsertChange("file1.go")},
 		identity.DependencyAuthor:   0,
 		items.DependencyTick:        0,
 	}
 	kd.Consume(deps)
 
-	deps = map[string]interface{}{
+	deps = map[string]any{
 		items.DependencyTreeChanges: object.Changes{makeModifyChange("file1.go")},
 		identity.DependencyAuthor:   1,
 		items.DependencyTick:        5,
@@ -298,7 +298,7 @@ func TestKnowledgeDiffusionFinalize(t *testing.T) {
 	kd.Consume(deps)
 
 	// file2.go: touched only by Charlie at tick 3
-	deps = map[string]interface{}{
+	deps = map[string]any{
 		items.DependencyTreeChanges: object.Changes{makeInsertChange("file2.go")},
 		identity.DependencyAuthor:   2,
 		items.DependencyTick:        3,
@@ -337,7 +337,7 @@ func TestKnowledgeDiffusionFinalizeRecentEditors(t *testing.T) {
 	kd.WindowMonths = 6
 
 	// Author 0 edits file at tick 0 (long ago)
-	deps := map[string]interface{}{
+	deps := map[string]any{
 		items.DependencyTreeChanges: object.Changes{makeInsertChange("file.go")},
 		identity.DependencyAuthor:   0,
 		items.DependencyTick:        0,
@@ -345,7 +345,7 @@ func TestKnowledgeDiffusionFinalizeRecentEditors(t *testing.T) {
 	kd.Consume(deps)
 
 	// Author 1 edits file at tick 200 (recent, within 6 months ≈ 183 ticks at 1 day/tick)
-	deps = map[string]interface{}{
+	deps = map[string]any{
 		items.DependencyTreeChanges: object.Changes{makeModifyChange("file.go")},
 		identity.DependencyAuthor:   1,
 		items.DependencyTick:        200,
@@ -369,14 +369,14 @@ func TestKnowledgeDiffusionFinalizeAllRecent(t *testing.T) {
 	kd.WindowMonths = 6
 
 	// Both authors edit recently
-	deps := map[string]interface{}{
+	deps := map[string]any{
 		items.DependencyTreeChanges: object.Changes{makeInsertChange("file.go")},
 		identity.DependencyAuthor:   0,
 		items.DependencyTick:        10,
 	}
 	kd.Consume(deps)
 
-	deps = map[string]interface{}{
+	deps = map[string]any{
 		items.DependencyTreeChanges: object.Changes{makeModifyChange("file.go")},
 		identity.DependencyAuthor:   1,
 		items.DependencyTick:        12,
@@ -410,7 +410,7 @@ func TestKnowledgeDiffusionSerializeText(t *testing.T) {
 
 	var buf bytes.Buffer
 	err := kd.Serialize(result, false, &buf)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	output := buf.String()
 	assert.Contains(t, output, "knowledge_diffusion:")
@@ -451,12 +451,12 @@ func TestKnowledgeDiffusionSerializeBinaryRoundtrip(t *testing.T) {
 	// Serialize to binary
 	var buf bytes.Buffer
 	err := kd.Serialize(result, true, &buf)
-	assert.Nil(t, err)
-	assert.Greater(t, buf.Len(), 0)
+	assert.NoError(t, err)
+	assert.Positive(t, buf.Len())
 
 	// Deserialize
 	rawResult2, err := kd.Deserialize(buf.Bytes())
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	result2 := rawResult2.(KnowledgeDiffusionResult)
 
 	// Compare
@@ -584,7 +584,7 @@ func TestKnowledgeDiffusionConsumeMultipleFiles(t *testing.T) {
 		makeInsertChange("b.go"),
 		makeInsertChange("c.go"),
 	}
-	deps := map[string]interface{}{
+	deps := map[string]any{
 		items.DependencyTreeChanges: changes,
 		identity.DependencyAuthor:   0,
 		items.DependencyTick:        0,
@@ -603,12 +603,12 @@ func TestKnowledgeDiffusionFinalizeEmpty(t *testing.T) {
 	kd.tickSize = 24 * time.Hour
 
 	result := kd.Finalize().(KnowledgeDiffusionResult)
-	assert.Len(t, result.Files, 0)
-	assert.Len(t, result.Distribution, 0)
+	assert.Empty(t, result.Files)
+	assert.Empty(t, result.Distribution)
 }
 
 func TestKnowledgeDiffusionDeserializeError(t *testing.T) {
 	kd := KnowledgeDiffusionAnalysis{}
 	_, err := kd.Deserialize([]byte("invalid protobuf"))
-	assert.NotNil(t, err)
+	assert.Error(t, err)
 }

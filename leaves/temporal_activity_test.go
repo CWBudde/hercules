@@ -16,22 +16,22 @@ import (
 
 func TestTemporalActivityMeta(t *testing.T) {
 	ta := TemporalActivityAnalysis{}
-	assert.Equal(t, ta.Name(), "TemporalActivity")
-	assert.Len(t, ta.Provides(), 0)
+	assert.Equal(t, "TemporalActivity", ta.Name())
+	assert.Empty(t, ta.Provides())
 	required := [...]string{identity.DependencyAuthor, items.DependencyLineStats, items.DependencyTick}
 	for _, name := range required {
 		assert.Contains(t, ta.Requires(), name)
 	}
 	opts := ta.ListConfigurationOptions()
-	assert.Len(t, opts, 0)
-	assert.Equal(t, ta.Flag(), "temporal-activity")
-	assert.Equal(t, ta.Description(), "Calculates commit and line change activity by weekday, hour, month, and ISO week.")
+	assert.Empty(t, opts)
+	assert.Equal(t, "temporal-activity", ta.Flag())
+	assert.Equal(t, "Calculates commit and line change activity by weekday, hour, month, and ISO week.", ta.Description())
 }
 
 func TestTemporalActivityRegistration(t *testing.T) {
 	summoned := core.Registry.Summon((&TemporalActivityAnalysis{}).Name())
 	assert.Len(t, summoned, 1)
-	assert.Equal(t, summoned[0].Name(), "TemporalActivity")
+	assert.Equal(t, "TemporalActivity", summoned[0].Name())
 	leaves := core.Registry.GetLeaves()
 	matched := false
 	for _, tp := range leaves {
@@ -45,30 +45,30 @@ func TestTemporalActivityRegistration(t *testing.T) {
 
 func TestTemporalActivityConfigure(t *testing.T) {
 	ta := TemporalActivityAnalysis{}
-	facts := map[string]interface{}{}
+	facts := map[string]any{}
 	facts[identity.FactIdentityDetectorReversedPeopleDict] = []string{"Alice", "Bob"}
 	facts[items.FactTickSize] = 24 * time.Hour
 	logger := core.NewLogger()
 	facts[core.ConfigLogger] = logger
 
-	assert.Nil(t, ta.Configure(facts))
-	assert.Equal(t, ta.reversedPeopleDict, []string{"Alice", "Bob"})
+	assert.NoError(t, ta.Configure(facts))
+	assert.Equal(t, []string{"Alice", "Bob"}, ta.reversedPeopleDict)
 	assert.Equal(t, 24*time.Hour, ta.tickSize)
 	assert.Equal(t, logger, ta.l)
 }
 
 func TestTemporalActivityInitialize(t *testing.T) {
 	ta := TemporalActivityAnalysis{}
-	assert.Nil(t, ta.Initialize(test.Repository))
+	assert.NoError(t, ta.Initialize(test.Repository))
 	assert.NotNil(t, ta.activities)
 	assert.NotNil(t, ta.ticks)
 }
 
 func TestTemporalActivityConsume(t *testing.T) {
 	ta := TemporalActivityAnalysis{}
-	assert.Nil(t, ta.Initialize(test.Repository))
+	assert.NoError(t, ta.Initialize(test.Repository))
 
-	deps := map[string]interface{}{}
+	deps := map[string]any{}
 	deps[core.DependencyIsMerge] = false
 	deps[identity.DependencyAuthor] = 0
 	deps[items.DependencyTick] = 0
@@ -90,7 +90,7 @@ func TestTemporalActivityConsume(t *testing.T) {
 	deps[items.DependencyLineStats] = lineStats
 
 	result, err := ta.Consume(deps)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Nil(t, result)
 
 	// Verify activity was recorded
@@ -125,7 +125,7 @@ func TestTemporalActivityConsume(t *testing.T) {
 
 func TestTemporalActivityMultipleCommits(t *testing.T) {
 	ta := TemporalActivityAnalysis{}
-	assert.Nil(t, ta.Initialize(test.Repository))
+	assert.NoError(t, ta.Initialize(test.Repository))
 
 	// Simulate multiple commits from same developer on different days/times
 	commits := []struct {
@@ -141,7 +141,7 @@ func TestTemporalActivityMultipleCommits(t *testing.T) {
 	}
 
 	for _, c := range commits {
-		deps := map[string]interface{}{}
+		deps := map[string]any{}
 		deps[core.DependencyIsMerge] = false
 		deps[identity.DependencyAuthor] = c.author
 		deps[items.DependencyTick] = c.tick
@@ -153,7 +153,7 @@ func TestTemporalActivityMultipleCommits(t *testing.T) {
 		}
 
 		result, err := ta.Consume(deps)
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 		assert.Nil(t, result)
 	}
 
@@ -178,7 +178,7 @@ func TestTemporalActivityMultipleCommits(t *testing.T) {
 
 func TestTemporalActivityWeekdayBoundaries(t *testing.T) {
 	ta := TemporalActivityAnalysis{}
-	assert.Nil(t, ta.Initialize(test.Repository))
+	assert.NoError(t, ta.Initialize(test.Repository))
 
 	// Test all 7 weekdays
 	weekdays := []time.Time{
@@ -192,7 +192,7 @@ func TestTemporalActivityWeekdayBoundaries(t *testing.T) {
 	}
 
 	for i, commitTime := range weekdays {
-		deps := map[string]interface{}{}
+		deps := map[string]any{}
 		deps[core.DependencyIsMerge] = false
 		deps[identity.DependencyAuthor] = 0
 		deps[items.DependencyTick] = i
@@ -202,26 +202,26 @@ func TestTemporalActivityWeekdayBoundaries(t *testing.T) {
 		deps[items.DependencyLineStats] = map[object.ChangeEntry]items.LineStats{}
 
 		result, err := ta.Consume(deps)
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 		assert.Nil(t, result)
 	}
 
 	// Verify all weekdays have 1 commit
 	activity := ta.activities[0]
-	for i := 0; i < 7; i++ {
+	for i := range 7 {
 		assert.Equal(t, 1, activity.Weekdays.Commits[i], "Weekday %d should have 1 commit", i)
 	}
 }
 
 func TestTemporalActivityHourBoundaries(t *testing.T) {
 	ta := TemporalActivityAnalysis{}
-	assert.Nil(t, ta.Initialize(test.Repository))
+	assert.NoError(t, ta.Initialize(test.Repository))
 
 	// Test boundary hours: 0 (midnight) and 23 (11pm)
 	hours := []int{0, 1, 12, 22, 23}
 	for i, hour := range hours {
 		commitTime := time.Date(2023, time.January, 1, hour, 0, 0, 0, time.UTC)
-		deps := map[string]interface{}{}
+		deps := map[string]any{}
 		deps[core.DependencyIsMerge] = false
 		deps[identity.DependencyAuthor] = 0
 		deps[items.DependencyTick] = i
@@ -231,7 +231,7 @@ func TestTemporalActivityHourBoundaries(t *testing.T) {
 		deps[items.DependencyLineStats] = map[object.ChangeEntry]items.LineStats{}
 
 		result, err := ta.Consume(deps)
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 		assert.Nil(t, result)
 	}
 
@@ -246,13 +246,13 @@ func TestTemporalActivityHourBoundaries(t *testing.T) {
 
 func TestTemporalActivityMonthBoundaries(t *testing.T) {
 	ta := TemporalActivityAnalysis{}
-	assert.Nil(t, ta.Initialize(test.Repository))
+	assert.NoError(t, ta.Initialize(test.Repository))
 
 	// Test all 12 months
 	tick := 0
 	for month := time.January; month <= time.December; month++ {
 		commitTime := time.Date(2023, month, 15, 12, 0, 0, 0, time.UTC)
-		deps := map[string]interface{}{}
+		deps := map[string]any{}
 		deps[core.DependencyIsMerge] = false
 		deps[identity.DependencyAuthor] = 0
 		deps[items.DependencyTick] = tick
@@ -262,21 +262,21 @@ func TestTemporalActivityMonthBoundaries(t *testing.T) {
 		deps[items.DependencyLineStats] = map[object.ChangeEntry]items.LineStats{}
 
 		result, err := ta.Consume(deps)
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 		assert.Nil(t, result)
 		tick++
 	}
 
 	// Verify all months have 1 commit
 	activity := ta.activities[0]
-	for i := 0; i < 12; i++ {
+	for i := range 12 {
 		assert.Equal(t, 1, activity.Months.Commits[i], "Month %d should have 1 commit", i)
 	}
 }
 
 func TestTemporalActivityISOWeekEdgeCases(t *testing.T) {
 	ta := TemporalActivityAnalysis{}
-	assert.Nil(t, ta.Initialize(test.Repository))
+	assert.NoError(t, ta.Initialize(test.Repository))
 
 	// Test week 1 and week 53 (leap week year)
 	// 2020 is a leap week year (has week 53)
@@ -286,7 +286,7 @@ func TestTemporalActivityISOWeekEdgeCases(t *testing.T) {
 	}
 
 	for i, commitTime := range testCases {
-		deps := map[string]interface{}{}
+		deps := map[string]any{}
 		deps[core.DependencyIsMerge] = false
 		deps[identity.DependencyAuthor] = 0
 		deps[items.DependencyTick] = i
@@ -296,7 +296,7 @@ func TestTemporalActivityISOWeekEdgeCases(t *testing.T) {
 		deps[items.DependencyLineStats] = map[object.ChangeEntry]items.LineStats{}
 
 		result, err := ta.Consume(deps)
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 		assert.Nil(t, result)
 	}
 
@@ -313,7 +313,7 @@ func TestTemporalActivityFinalize(t *testing.T) {
 	ta := TemporalActivityAnalysis{}
 	ta.reversedPeopleDict = []string{"Alice", "Bob"}
 	ta.tickSize = 24 * time.Hour
-	assert.Nil(t, ta.Initialize(test.Repository))
+	assert.NoError(t, ta.Initialize(test.Repository))
 
 	// Add some activity
 	ta.activities[0] = &DeveloperTemporalActivity{
@@ -366,7 +366,7 @@ func TestTemporalActivitySerializeText(t *testing.T) {
 
 	var buf bytes.Buffer
 	err := ta.Serialize(result, false, &buf)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	output := buf.String()
 	assert.Contains(t, output, "temporal_activity:")
@@ -416,8 +416,8 @@ func TestTemporalActivitySerializeBinary(t *testing.T) {
 
 	var buf bytes.Buffer
 	err := ta.Serialize(result, true, &buf)
-	assert.Nil(t, err)
-	assert.Greater(t, buf.Len(), 0)
+	assert.NoError(t, err)
+	assert.Positive(t, buf.Len())
 }
 
 func TestTemporalActivityFork(t *testing.T) {
@@ -494,12 +494,12 @@ func TestTemporalActivityDeserialize(t *testing.T) {
 	// Serialize to binary
 	buffer := &bytes.Buffer{}
 	err := ta.Serialize(result, true, buffer)
-	assert.Nil(t, err)
-	assert.Greater(t, buffer.Len(), 0)
+	assert.NoError(t, err)
+	assert.Positive(t, buffer.Len())
 
 	// Deserialize
 	rawResult2, err := ta.Deserialize(buffer.Bytes())
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	result2 := rawResult2.(TemporalActivityResult)
 
 	// Compare results

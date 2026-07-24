@@ -2,9 +2,9 @@ package leaves
 
 import (
 	"bytes"
-	"fmt"
 	"io/ioutil"
 	"path"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -28,15 +28,15 @@ func fixtureCouples() *CouplesAnalysis {
 
 func TestCouplesMeta(t *testing.T) {
 	c := fixtureCouples()
-	assert.Equal(t, c.Name(), "Couples")
-	assert.Equal(t, len(c.Provides()), 0)
-	assert.Equal(t, len(c.Requires()), 2)
-	assert.Equal(t, c.Requires()[0], identity.DependencyAuthor)
-	assert.Equal(t, c.Requires()[1], plumbing.DependencyTreeChanges)
-	assert.Equal(t, c.Flag(), "couples")
-	assert.Len(t, c.ListConfigurationOptions(), 0)
+	assert.Equal(t, "Couples", c.Name())
+	assert.Empty(t, c.Provides())
+	assert.Len(t, c.Requires(), 2)
+	assert.Equal(t, identity.DependencyAuthor, c.Requires()[0])
+	assert.Equal(t, plumbing.DependencyTreeChanges, c.Requires()[1])
+	assert.Equal(t, "couples", c.Flag())
+	assert.Empty(t, c.ListConfigurationOptions())
 	logger := core.NewLogger()
-	assert.NoError(t, c.Configure(map[string]interface{}{
+	assert.NoError(t, c.Configure(map[string]any{
 		core.ConfigLogger: logger,
 	}))
 	assert.Equal(t, logger, c.l)
@@ -45,7 +45,7 @@ func TestCouplesMeta(t *testing.T) {
 func TestCouplesRegistration(t *testing.T) {
 	summoned := core.Registry.Summon((&CouplesAnalysis{}).Name())
 	assert.Len(t, summoned, 1)
-	assert.Equal(t, summoned[0].Name(), "Couples")
+	assert.Equal(t, "Couples", summoned[0].Name())
 	leaves := core.Registry.GetLeaves()
 	matched := false
 	for _, tp := range leaves {
@@ -63,22 +63,23 @@ func generateChanges(names ...string) object.Changes {
 		action := name[:1]
 		name = name[1:]
 		var change object.Change
-		if action == "+" {
+		switch action {
+		case "+":
 			change = object.Change{
 				From: object.ChangeEntry{},
 				To:   object.ChangeEntry{Name: name},
 			}
-		} else if action == "-" {
+		case "-":
 			change = object.Change{
 				From: object.ChangeEntry{Name: name},
 				To:   object.ChangeEntry{},
 			}
-		} else if action == "=" {
+		case "=":
 			change = object.Change{
 				From: object.ChangeEntry{Name: name},
 				To:   object.ChangeEntry{Name: name},
 			}
-		} else {
+		default:
 			if action != ">" {
 				panic("Invalid action.")
 			}
@@ -95,7 +96,7 @@ func generateChanges(names ...string) object.Changes {
 
 func TestCouplesConsumeFinalize(t *testing.T) {
 	c := fixtureCouples()
-	deps := map[string]interface{}{}
+	deps := map[string]any{}
 	deps[identity.DependencyAuthor] = 0
 	deps[core.DependencyCommit], _ = test.Repository.CommitObject(gitplumbing.NewHash(
 		"a3ee37f91f0d705ec9c41ae88426f0ae44b2fbc3",
@@ -110,99 +111,99 @@ func TestCouplesConsumeFinalize(t *testing.T) {
 	deps[identity.DependencyAuthor] = 2
 	deps[plumbing.DependencyTreeChanges] = generateChanges("=file_test.go")
 	c.Consume(deps)
-	assert.Equal(t, len(c.people[0]), 6)
-	assert.Equal(t, c.people[0]["README.md"], 1)
-	assert.Equal(t, c.people[0]["LICENSE2"], 2)
-	assert.Equal(t, c.people[0]["analyser.go"], 1)
-	assert.Equal(t, c.people[0]["file2.go"], 1)
-	assert.Equal(t, c.people[0]["file_test.go"], 1)
-	assert.Equal(t, c.people[0]["rbtree2.go"], 1)
-	assert.Equal(t, len(c.people[1]), 3)
-	assert.Equal(t, c.people[1]["README.md"], 1)
-	assert.Equal(t, c.people[1]["analyser.go"], 1)
-	assert.Equal(t, c.people[1]["rbtree2.go"], 1)
-	assert.Equal(t, len(c.people[2]), 1)
-	assert.Equal(t, c.people[2]["file_test.go"], 1)
-	assert.Equal(t, len(c.files["README.md"]), 3)
-	assert.Equal(t, c.files["README.md"], map[string]int{
+	assert.Len(t, c.people[0], 6)
+	assert.Equal(t, 1, c.people[0]["README.md"])
+	assert.Equal(t, 2, c.people[0]["LICENSE2"])
+	assert.Equal(t, 1, c.people[0]["analyser.go"])
+	assert.Equal(t, 1, c.people[0]["file2.go"])
+	assert.Equal(t, 1, c.people[0]["file_test.go"])
+	assert.Equal(t, 1, c.people[0]["rbtree2.go"])
+	assert.Len(t, c.people[1], 3)
+	assert.Equal(t, 1, c.people[1]["README.md"])
+	assert.Equal(t, 1, c.people[1]["analyser.go"])
+	assert.Equal(t, 1, c.people[1]["rbtree2.go"])
+	assert.Len(t, c.people[2], 1)
+	assert.Equal(t, 1, c.people[2]["file_test.go"])
+	assert.Len(t, c.files["README.md"], 3)
+	assert.Equal(t, map[string]int{
 		"README.md":    2,
 		"analyser.go":  2,
 		"file_test.go": 1,
-	})
-	assert.Equal(t, c.files["LICENSE2"], map[string]int{
+	}, c.files["README.md"])
+	assert.Equal(t, map[string]int{
 		"LICENSE2":   1,
 		"file2.go":   1,
 		"rbtree2.go": 1,
-	})
-	assert.Equal(t, c.files["file2.go"], map[string]int{
+	}, c.files["LICENSE2"])
+	assert.Equal(t, map[string]int{
 		"LICENSE2":   1,
 		"file2.go":   1,
 		"rbtree2.go": 1,
-	})
-	assert.Equal(t, c.files["rbtree2.go"], map[string]int{
+	}, c.files["file2.go"])
+	assert.Equal(t, map[string]int{
 		"LICENSE2":   1,
 		"file2.go":   1,
 		"rbtree2.go": 1,
-	})
-	assert.Equal(t, c.files["analyser.go"], map[string]int{
+	}, c.files["rbtree2.go"])
+	assert.Equal(t, map[string]int{
 		"analyser.go":  2,
 		"README.md":    2,
 		"file_test.go": 1,
-	})
-	assert.Equal(t, c.files["file_test.go"], map[string]int{
+	}, c.files["analyser.go"])
+	assert.Equal(t, map[string]int{
 		"file_test.go": 2,
 		"README.md":    1,
 		"analyser.go":  1,
-	})
-	assert.Equal(t, c.peopleCommits[0], 2)
-	assert.Equal(t, c.peopleCommits[1], 1)
-	assert.Equal(t, c.peopleCommits[2], 1)
+	}, c.files["file_test.go"])
+	assert.Equal(t, 2, c.peopleCommits[0])
+	assert.Equal(t, 1, c.peopleCommits[1])
+	assert.Equal(t, 1, c.peopleCommits[2])
 	cr := c.Finalize().(CouplesResult)
-	assert.Equal(t, len(cr.Files), 3)
-	assert.Equal(t, cr.Files[0], "README.md")
-	assert.Equal(t, cr.Files[1], "analyser.go")
-	assert.Equal(t, cr.Files[2], "file_test.go")
-	assert.Equal(t, len(cr.FilesLines), 3)
-	assert.Equal(t, cr.FilesLines[0], 15)
-	assert.Equal(t, cr.FilesLines[1], 252)
-	assert.Equal(t, cr.FilesLines[2], 238)
-	assert.Equal(t, len(cr.PeopleFiles[0]), 3)
-	assert.Equal(t, cr.PeopleFiles[0][0], 0)
-	assert.Equal(t, cr.PeopleFiles[0][1], 1)
-	assert.Equal(t, cr.PeopleFiles[0][2], 2)
-	assert.Equal(t, len(cr.PeopleFiles[1]), 2)
-	assert.Equal(t, cr.PeopleFiles[1][0], 0)
-	assert.Equal(t, cr.PeopleFiles[1][1], 1)
-	assert.Equal(t, len(cr.PeopleFiles[2]), 1)
-	assert.Equal(t, cr.PeopleFiles[2][0], 2)
-	assert.Equal(t, len(cr.PeopleMatrix[0]), 3)
-	assert.Equal(t, cr.PeopleMatrix[0][0], int64(7))
-	assert.Equal(t, cr.PeopleMatrix[0][1], int64(3))
-	assert.Equal(t, cr.PeopleMatrix[0][2], int64(1))
-	assert.Equal(t, len(cr.PeopleMatrix[1]), 2)
-	assert.Equal(t, cr.PeopleMatrix[1][0], int64(3))
-	assert.Equal(t, cr.PeopleMatrix[1][1], int64(3))
-	assert.Equal(t, len(cr.PeopleMatrix[2]), 2)
-	assert.Equal(t, cr.PeopleMatrix[2][0], int64(1))
-	assert.Equal(t, cr.PeopleMatrix[2][2], int64(1))
-	assert.Equal(t, len(cr.FilesMatrix), 3)
-	assert.Equal(t, len(cr.FilesMatrix[0]), 3)
-	assert.Equal(t, cr.FilesMatrix[0][2], int64(1))
-	assert.Equal(t, cr.FilesMatrix[0][0], int64(2))
-	assert.Equal(t, cr.FilesMatrix[0][1], int64(2))
-	assert.Equal(t, len(cr.FilesMatrix[1]), 3)
-	assert.Equal(t, cr.FilesMatrix[1][2], int64(1))
-	assert.Equal(t, cr.FilesMatrix[1][0], int64(2))
-	assert.Equal(t, cr.FilesMatrix[1][1], int64(2))
-	assert.Equal(t, len(cr.FilesMatrix[2]), 3)
-	assert.Equal(t, cr.FilesMatrix[2][0], int64(1))
-	assert.Equal(t, cr.FilesMatrix[2][1], int64(1))
-	assert.Equal(t, cr.FilesMatrix[2][2], int64(3))
+	assert.Len(t, cr.Files, 3)
+	assert.Equal(t, "README.md", cr.Files[0])
+	assert.Equal(t, "analyser.go", cr.Files[1])
+	assert.Equal(t, "file_test.go", cr.Files[2])
+	assert.Len(t, cr.FilesLines, 3)
+	assert.Equal(t, 15, cr.FilesLines[0])
+	assert.Equal(t, 252, cr.FilesLines[1])
+	assert.Equal(t, 238, cr.FilesLines[2])
+	assert.Len(t, cr.PeopleFiles[0], 3)
+	assert.Equal(t, 0, cr.PeopleFiles[0][0])
+	assert.Equal(t, 1, cr.PeopleFiles[0][1])
+	assert.Equal(t, 2, cr.PeopleFiles[0][2])
+	assert.Len(t, cr.PeopleFiles[1], 2)
+	assert.Equal(t, 0, cr.PeopleFiles[1][0])
+	assert.Equal(t, 1, cr.PeopleFiles[1][1])
+	assert.Len(t, cr.PeopleFiles[2], 1)
+	assert.Equal(t, 2, cr.PeopleFiles[2][0])
+	assert.Len(t, cr.PeopleMatrix[0], 3)
+	assert.Equal(t, int64(7), cr.PeopleMatrix[0][0])
+	assert.Equal(t, int64(3), cr.PeopleMatrix[0][1])
+	assert.Equal(t, int64(1), cr.PeopleMatrix[0][2])
+	assert.Len(t, cr.PeopleMatrix[1], 2)
+	assert.Equal(t, int64(3), cr.PeopleMatrix[1][0])
+	assert.Equal(t, int64(3), cr.PeopleMatrix[1][1])
+	assert.Len(t, cr.PeopleMatrix[2], 2)
+	assert.Equal(t, int64(1), cr.PeopleMatrix[2][0])
+	assert.Equal(t, int64(1), cr.PeopleMatrix[2][2])
+	assert.Len(t, cr.FilesMatrix, 3)
+	assert.Len(t, cr.FilesMatrix[0], 3)
+	assert.Equal(t, int64(1), cr.FilesMatrix[0][2])
+	assert.Equal(t, int64(2), cr.FilesMatrix[0][0])
+	assert.Equal(t, int64(2), cr.FilesMatrix[0][1])
+	assert.Len(t, cr.FilesMatrix[1], 3)
+	assert.Equal(t, int64(1), cr.FilesMatrix[1][2])
+	assert.Equal(t, int64(2), cr.FilesMatrix[1][0])
+	assert.Equal(t, int64(2), cr.FilesMatrix[1][1])
+	assert.Len(t, cr.FilesMatrix[2], 3)
+	assert.Equal(t, int64(1), cr.FilesMatrix[2][0])
+	assert.Equal(t, int64(1), cr.FilesMatrix[2][1])
+	assert.Equal(t, int64(3), cr.FilesMatrix[2][2])
 }
 
 func TestCouplesConsumeFinalizeAuthorMissing(t *testing.T) {
 	c := fixtureCouples()
-	deps := map[string]interface{}{}
+	deps := map[string]any{}
 	deps[identity.DependencyAuthor] = 0
 	deps[core.DependencyCommit], _ = test.Repository.CommitObject(gitplumbing.NewHash(
 		"a3ee37f91f0d705ec9c41ae88426f0ae44b2fbc3",
@@ -217,111 +218,111 @@ func TestCouplesConsumeFinalizeAuthorMissing(t *testing.T) {
 	deps[identity.DependencyAuthor] = core.AuthorMissing
 	deps[plumbing.DependencyTreeChanges] = generateChanges("=file_test.go")
 	c.Consume(deps)
-	assert.Equal(t, len(c.people[0]), 6)
-	assert.Equal(t, c.people[0]["README.md"], 1)
-	assert.Equal(t, c.people[0]["LICENSE2"], 2)
-	assert.Equal(t, c.people[0]["analyser.go"], 1)
-	assert.Equal(t, c.people[0]["file2.go"], 1)
-	assert.Equal(t, c.people[0]["file_test.go"], 1)
-	assert.Equal(t, c.people[0]["rbtree2.go"], 1)
-	assert.Equal(t, len(c.people[1]), 3)
-	assert.Equal(t, c.people[1]["README.md"], 1)
-	assert.Equal(t, c.people[1]["analyser.go"], 1)
-	assert.Equal(t, c.people[1]["rbtree2.go"], 1)
-	assert.Equal(t, len(c.people[2]), 0)
-	assert.Equal(t, len(c.files["README.md"]), 3)
-	assert.Equal(t, c.files["README.md"], map[string]int{
+	assert.Len(t, c.people[0], 6)
+	assert.Equal(t, 1, c.people[0]["README.md"])
+	assert.Equal(t, 2, c.people[0]["LICENSE2"])
+	assert.Equal(t, 1, c.people[0]["analyser.go"])
+	assert.Equal(t, 1, c.people[0]["file2.go"])
+	assert.Equal(t, 1, c.people[0]["file_test.go"])
+	assert.Equal(t, 1, c.people[0]["rbtree2.go"])
+	assert.Len(t, c.people[1], 3)
+	assert.Equal(t, 1, c.people[1]["README.md"])
+	assert.Equal(t, 1, c.people[1]["analyser.go"])
+	assert.Equal(t, 1, c.people[1]["rbtree2.go"])
+	assert.Empty(t, c.people[2])
+	assert.Len(t, c.files["README.md"], 3)
+	assert.Equal(t, map[string]int{
 		"README.md":    2,
 		"analyser.go":  2,
 		"file_test.go": 1,
-	})
-	assert.Equal(t, c.files["LICENSE2"], map[string]int{
+	}, c.files["README.md"])
+	assert.Equal(t, map[string]int{
 		"LICENSE2":   1,
 		"file2.go":   1,
 		"rbtree2.go": 1,
-	})
-	assert.Equal(t, c.files["file2.go"], map[string]int{
+	}, c.files["LICENSE2"])
+	assert.Equal(t, map[string]int{
 		"LICENSE2":   1,
 		"file2.go":   1,
 		"rbtree2.go": 1,
-	})
-	assert.Equal(t, c.files["rbtree2.go"], map[string]int{
+	}, c.files["file2.go"])
+	assert.Equal(t, map[string]int{
 		"LICENSE2":   1,
 		"file2.go":   1,
 		"rbtree2.go": 1,
-	})
-	assert.Equal(t, c.files["analyser.go"], map[string]int{
+	}, c.files["rbtree2.go"])
+	assert.Equal(t, map[string]int{
 		"analyser.go":  2,
 		"README.md":    2,
 		"file_test.go": 1,
-	})
-	assert.Equal(t, c.files["file_test.go"], map[string]int{
+	}, c.files["analyser.go"])
+	assert.Equal(t, map[string]int{
 		"file_test.go": 2,
 		"README.md":    1,
 		"analyser.go":  1,
-	})
-	assert.Equal(t, c.peopleCommits[0], 2)
-	assert.Equal(t, c.peopleCommits[1], 1)
-	assert.Equal(t, c.peopleCommits[2], 0)
+	}, c.files["file_test.go"])
+	assert.Equal(t, 2, c.peopleCommits[0])
+	assert.Equal(t, 1, c.peopleCommits[1])
+	assert.Equal(t, 0, c.peopleCommits[2])
 	cr := c.Finalize().(CouplesResult)
-	assert.Equal(t, len(cr.Files), 3)
-	assert.Equal(t, cr.Files[0], "README.md")
-	assert.Equal(t, cr.Files[1], "analyser.go")
-	assert.Equal(t, cr.Files[2], "file_test.go")
-	assert.Equal(t, len(cr.FilesLines), 3)
-	assert.Equal(t, cr.FilesLines[0], 15)
-	assert.Equal(t, cr.FilesLines[1], 252)
-	assert.Equal(t, cr.FilesLines[2], 238)
-	assert.Equal(t, len(cr.PeopleFiles[0]), 3)
-	assert.Equal(t, cr.PeopleFiles[0][0], 0)
-	assert.Equal(t, cr.PeopleFiles[0][1], 1)
-	assert.Equal(t, cr.PeopleFiles[0][2], 2)
-	assert.Equal(t, len(cr.PeopleFiles[1]), 2)
-	assert.Equal(t, cr.PeopleFiles[1][0], 0)
-	assert.Equal(t, cr.PeopleFiles[1][1], 1)
-	assert.Equal(t, len(cr.PeopleFiles[2]), 0)
-	assert.Equal(t, len(cr.PeopleMatrix[0]), 3)
-	assert.Equal(t, cr.PeopleMatrix[0][0], int64(7))
-	assert.Equal(t, cr.PeopleMatrix[0][1], int64(3))
-	assert.Equal(t, cr.PeopleMatrix[0][2], int64(0))
-	assert.Equal(t, len(cr.PeopleMatrix[1]), 2)
-	assert.Equal(t, cr.PeopleMatrix[1][0], int64(3))
-	assert.Equal(t, cr.PeopleMatrix[1][1], int64(3))
-	assert.Equal(t, len(cr.PeopleMatrix[2]), 0)
-	assert.Equal(t, len(cr.FilesMatrix), 3)
-	assert.Equal(t, len(cr.FilesMatrix[0]), 3)
-	assert.Equal(t, cr.FilesMatrix[0][2], int64(1))
-	assert.Equal(t, cr.FilesMatrix[0][0], int64(2))
-	assert.Equal(t, cr.FilesMatrix[0][1], int64(2))
-	assert.Equal(t, len(cr.FilesMatrix[1]), 3)
-	assert.Equal(t, cr.FilesMatrix[1][2], int64(1))
-	assert.Equal(t, cr.FilesMatrix[1][0], int64(2))
-	assert.Equal(t, cr.FilesMatrix[1][1], int64(2))
-	assert.Equal(t, len(cr.FilesMatrix[2]), 3)
-	assert.Equal(t, cr.FilesMatrix[2][0], int64(1))
-	assert.Equal(t, cr.FilesMatrix[2][1], int64(1))
-	assert.Equal(t, cr.FilesMatrix[2][2], int64(3))
+	assert.Len(t, cr.Files, 3)
+	assert.Equal(t, "README.md", cr.Files[0])
+	assert.Equal(t, "analyser.go", cr.Files[1])
+	assert.Equal(t, "file_test.go", cr.Files[2])
+	assert.Len(t, cr.FilesLines, 3)
+	assert.Equal(t, 15, cr.FilesLines[0])
+	assert.Equal(t, 252, cr.FilesLines[1])
+	assert.Equal(t, 238, cr.FilesLines[2])
+	assert.Len(t, cr.PeopleFiles[0], 3)
+	assert.Equal(t, 0, cr.PeopleFiles[0][0])
+	assert.Equal(t, 1, cr.PeopleFiles[0][1])
+	assert.Equal(t, 2, cr.PeopleFiles[0][2])
+	assert.Len(t, cr.PeopleFiles[1], 2)
+	assert.Equal(t, 0, cr.PeopleFiles[1][0])
+	assert.Equal(t, 1, cr.PeopleFiles[1][1])
+	assert.Empty(t, cr.PeopleFiles[2])
+	assert.Len(t, cr.PeopleMatrix[0], 3)
+	assert.Equal(t, int64(7), cr.PeopleMatrix[0][0])
+	assert.Equal(t, int64(3), cr.PeopleMatrix[0][1])
+	assert.Equal(t, int64(0), cr.PeopleMatrix[0][2])
+	assert.Len(t, cr.PeopleMatrix[1], 2)
+	assert.Equal(t, int64(3), cr.PeopleMatrix[1][0])
+	assert.Equal(t, int64(3), cr.PeopleMatrix[1][1])
+	assert.Empty(t, cr.PeopleMatrix[2])
+	assert.Len(t, cr.FilesMatrix, 3)
+	assert.Len(t, cr.FilesMatrix[0], 3)
+	assert.Equal(t, int64(1), cr.FilesMatrix[0][2])
+	assert.Equal(t, int64(2), cr.FilesMatrix[0][0])
+	assert.Equal(t, int64(2), cr.FilesMatrix[0][1])
+	assert.Len(t, cr.FilesMatrix[1], 3)
+	assert.Equal(t, int64(1), cr.FilesMatrix[1][2])
+	assert.Equal(t, int64(2), cr.FilesMatrix[1][0])
+	assert.Equal(t, int64(2), cr.FilesMatrix[1][1])
+	assert.Len(t, cr.FilesMatrix[2], 3)
+	assert.Equal(t, int64(1), cr.FilesMatrix[2][0])
+	assert.Equal(t, int64(1), cr.FilesMatrix[2][1])
+	assert.Equal(t, int64(3), cr.FilesMatrix[2][2])
 }
 
 func TestCouplesConsumeManyFiles(t *testing.T) {
 	c := fixtureCouples()
-	deps := map[string]interface{}{}
+	deps := map[string]any{}
 	deps[identity.DependencyAuthor] = 0
 	deps[core.DependencyCommit], _ = test.Repository.CommitObject(gitplumbing.NewHash(
 		"a3ee37f91f0d705ec9c41ae88426f0ae44b2fbc3",
 	))
 	changes := make(object.Changes, CouplesMaximumMeaningfulContextSize+1)
-	for i := 0; i < len(changes); i++ {
+	for i := range changes {
 		changes[i] = &object.Change{
 			From: object.ChangeEntry{},
-			To:   object.ChangeEntry{Name: fmt.Sprintf("%d", i)},
+			To:   object.ChangeEntry{Name: strconv.Itoa(i)},
 		}
 	}
 	deps[plumbing.DependencyTreeChanges] = changes
 	_, err := c.Consume(deps)
-	assert.Nil(t, err)
-	assert.Equal(t, len(c.people[0]), len(changes))
-	assert.Len(t, c.files, 0)
+	assert.NoError(t, err)
+	assert.Len(t, changes, len(c.people[0]))
+	assert.Empty(t, c.files)
 }
 
 func TestCouplesFork(t *testing.T) {
@@ -329,7 +330,7 @@ func TestCouplesFork(t *testing.T) {
 	clones := couples1.Fork(1)
 	assert.Len(t, clones, 1)
 	couples2 := clones[0].(*CouplesAnalysis)
-	assert.True(t, couples1 != couples2)
+	assert.NotSame(t, couples1, couples2)
 	assert.Equal(t, *couples1, *couples2)
 	couples1.Merge([]core.PipelineItem{couples2})
 }
@@ -351,8 +352,8 @@ func TestCouplesSerialize(t *testing.T) {
 		reversedPeopleDict: []string{"p1", "p2", "p3"},
 	}
 	buffer := &bytes.Buffer{}
-	assert.Nil(t, c.Serialize(result, false, buffer))
-	assert.Equal(t, buffer.String(), `  files_coocc:
+	assert.NoError(t, c.Serialize(result, false, buffer))
+	assert.Equal(t, `  files_coocc:
     index:
       - "five"
       - "one"
@@ -385,46 +386,46 @@ func TestCouplesSerialize(t *testing.T) {
         - "five"
         - "one"
         - "three"
-`)
+`, buffer.String())
 	buffer = &bytes.Buffer{}
-	assert.Nil(t, c.Serialize(result, true, buffer))
+	assert.NoError(t, c.Serialize(result, true, buffer))
 	msg := pb.CouplesAnalysisResults{}
-	assert.Nil(t, proto.Unmarshal(buffer.Bytes(), &msg))
-	assert.Equal(t, msg.FilesLines, []int32{9, 8, 7})
-	assert.Len(t, msg.PeopleFiles, 3)
+	assert.NoError(t, proto.Unmarshal(buffer.Bytes(), &msg))
+	assert.Equal(t, []int32{9, 8, 7}, msg.GetFilesLines())
+	assert.Len(t, msg.GetPeopleFiles(), 3)
 	tmp1 := [...]int32{0, 1, 2}
-	assert.Equal(t, msg.PeopleFiles[0].Files, tmp1[:])
+	assert.Equal(t, msg.GetPeopleFiles()[0].GetFiles(), tmp1[:])
 	tmp2 := [...]int32{1, 2}
-	assert.Equal(t, msg.PeopleFiles[1].Files, tmp2[:])
+	assert.Equal(t, msg.GetPeopleFiles()[1].GetFiles(), tmp2[:])
 	tmp3 := [...]int32{0}
-	assert.Equal(t, msg.PeopleFiles[2].Files, tmp3[:])
-	assert.Equal(t, msg.PeopleCouples.Index, result.reversedPeopleDict)
-	assert.Equal(t, msg.PeopleCouples.Matrix.NumberOfRows, int32(4))
-	assert.Equal(t, msg.PeopleCouples.Matrix.NumberOfColumns, int32(4))
+	assert.Equal(t, msg.GetPeopleFiles()[2].GetFiles(), tmp3[:])
+	assert.Equal(t, msg.GetPeopleCouples().GetIndex(), result.reversedPeopleDict)
+	assert.Equal(t, int32(4), msg.GetPeopleCouples().GetMatrix().GetNumberOfRows())
+	assert.Equal(t, int32(4), msg.GetPeopleCouples().GetMatrix().GetNumberOfColumns())
 	data := [...]int64{7, 3, 1, 3, 3, 1, 1}
-	assert.Equal(t, msg.PeopleCouples.Matrix.Data, data[:])
+	assert.Equal(t, msg.GetPeopleCouples().GetMatrix().GetData(), data[:])
 	indices := [...]int32{0, 1, 2, 0, 1, 0, 2}
-	assert.Equal(t, msg.PeopleCouples.Matrix.Indices, indices[:])
+	assert.Equal(t, msg.GetPeopleCouples().GetMatrix().GetIndices(), indices[:])
 	indptr := [...]int64{0, 3, 5, 7, 7}
-	assert.Equal(t, msg.PeopleCouples.Matrix.Indptr, indptr[:])
+	assert.Equal(t, msg.GetPeopleCouples().GetMatrix().GetIndptr(), indptr[:])
 	files := [...]string{"five", "one", "three"}
-	assert.Equal(t, msg.FileCouples.Index, files[:])
-	assert.Equal(t, msg.FileCouples.Matrix.NumberOfRows, int32(3))
-	assert.Equal(t, msg.FileCouples.Matrix.NumberOfColumns, int32(3))
+	assert.Equal(t, msg.GetFileCouples().GetIndex(), files[:])
+	assert.Equal(t, int32(3), msg.GetFileCouples().GetMatrix().GetNumberOfRows())
+	assert.Equal(t, int32(3), msg.GetFileCouples().GetMatrix().GetNumberOfColumns())
 	data2 := [...]int64{3, 1, 1, 1, 2, 2, 1, 2, 2}
-	assert.Equal(t, msg.FileCouples.Matrix.Data, data2[:])
+	assert.Equal(t, msg.GetFileCouples().GetMatrix().GetData(), data2[:])
 	indices2 := [...]int32{0, 1, 2, 0, 1, 2, 0, 1, 2}
-	assert.Equal(t, msg.FileCouples.Matrix.Indices, indices2[:])
+	assert.Equal(t, msg.GetFileCouples().GetMatrix().GetIndices(), indices2[:])
 	indptr2 := [...]int64{0, 3, 6, 9}
-	assert.Equal(t, msg.FileCouples.Matrix.Indptr, indptr2[:])
+	assert.Equal(t, msg.GetFileCouples().GetMatrix().GetIndptr(), indptr2[:])
 }
 
 func TestCouplesDeserialize(t *testing.T) {
 	message, err := ioutil.ReadFile(path.Join("..", "internal", "test_data", "couples.pb"))
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	couples := CouplesAnalysis{}
 	iresult, err := couples.Deserialize(message)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	result := iresult.(CouplesResult)
 	assert.Len(t, result.reversedPeopleDict, 2)
 	assert.Len(t, result.PeopleFiles, 2)
@@ -432,7 +433,7 @@ func TestCouplesDeserialize(t *testing.T) {
 	assert.Len(t, result.Files, 74)
 	assert.Len(t, result.FilesLines, 74)
 	for _, v := range result.FilesLines {
-		assert.True(t, v > 0)
+		assert.Positive(t, v)
 	}
 	assert.Len(t, result.FilesMatrix, 74)
 }
@@ -490,7 +491,7 @@ func TestCouplesMerge(t *testing.T) {
 	mergedPeople := [...]string{"one", "two", "three"}
 	assert.Equal(t, merged.reversedPeopleDict, mergedPeople[:])
 	assert.Equal(t, merged.Files, mergedPeople[:])
-	assert.Equal(t, merged.FilesLines, []int{1, 4, 3})
+	assert.Equal(t, []int{1, 4, 3}, merged.FilesLines)
 	assert.Len(t, merged.PeopleFiles, 3)
 	assert.Equal(t, merged.PeopleFiles[0], getSlice(0, 1))
 	assert.Equal(t, merged.PeopleFiles[1], getSlice(0, 2))
@@ -512,7 +513,7 @@ func TestCouplesCurrentFiles(t *testing.T) {
 		"cce947b98a050c6d356bc6ba95030254914027b1",
 	))
 	files := c.currentFiles()
-	assert.Equal(t, files, map[string]bool{".gitignore": true, "LICENSE": true})
+	assert.Equal(t, map[string]bool{".gitignore": true, "LICENSE": true}, files)
 }
 
 func TestCouplesPropagateRenames(t *testing.T) {
@@ -550,10 +551,10 @@ func TestCouplesPropagateRenames(t *testing.T) {
 	files, people := c.propagateRenames(map[string]bool{"two": true, "three": true, "four": true})
 	assert.Len(t, files, 3)
 	assert.Len(t, people, 1)
-	assert.Equal(t, files["two"], map[string]int{"two": 10, "three": 1, "four": 9})
-	assert.Equal(t, files["three"], map[string]int{"two": 1, "three": 3, "four": 6})
-	assert.Equal(t, files["four"], map[string]int{"two": 9, "three": 6, "four": 2})
-	assert.Equal(t, people[0], map[string]int{"two": 2, "three": 3, "four": 5})
+	assert.Equal(t, map[string]int{"two": 10, "three": 1, "four": 9}, files["two"])
+	assert.Equal(t, map[string]int{"two": 1, "three": 3, "four": 6}, files["three"])
+	assert.Equal(t, map[string]int{"two": 9, "three": 6, "four": 2}, files["four"])
+	assert.Equal(t, map[string]int{"two": 2, "three": 3, "four": 5}, people[0])
 }
 
 func getSlice(vals ...int) []int {

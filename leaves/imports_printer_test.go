@@ -27,17 +27,17 @@ func fixtureImportsPerDev() *ImportsPerDeveloper {
 func TestImportsPerDeveloperMeta(t *testing.T) {
 	ipd := fixtureImportsPerDev()
 	ass := assert.New(t)
-	ass.Equal(ipd.Name(), "ImportsPerDeveloper")
-	ass.Equal(len(ipd.Provides()), 0)
-	ass.Equal(len(ipd.Requires()), 3)
-	ass.Equal(ipd.Requires()[0], imports.DependencyImports)
-	ass.Equal(ipd.Requires()[1], identity.DependencyAuthor)
-	ass.Equal(ipd.Requires()[2], plumbing.DependencyTick)
-	ass.Equal(ipd.Flag(), "imports-per-dev")
-	assert.Len(t, ipd.ListConfigurationOptions(), 0)
-	assert.True(t, len(ipd.Description()) > 0)
+	ass.Equal("ImportsPerDeveloper", ipd.Name())
+	ass.Empty(ipd.Provides())
+	ass.Len(ipd.Requires(), 3)
+	ass.Equal(imports.DependencyImports, ipd.Requires()[0])
+	ass.Equal(identity.DependencyAuthor, ipd.Requires()[1])
+	ass.Equal(plumbing.DependencyTick, ipd.Requires()[2])
+	ass.Equal("imports-per-dev", ipd.Flag())
+	assert.Empty(t, ipd.ListConfigurationOptions())
+	assert.NotEmpty(t, ipd.Description())
 	logger := core.NewLogger()
-	assert.NoError(t, ipd.Configure(map[string]interface{}{
+	assert.NoError(t, ipd.Configure(map[string]any{
 		core.ConfigLogger: logger,
 		identity.FactIdentityDetectorReversedPeopleDict: []string{"1", "2"},
 		plumbing.FactTickSize:                           time.Hour,
@@ -50,7 +50,7 @@ func TestImportsPerDeveloperMeta(t *testing.T) {
 func TestImportsPerDeveloperRegistration(t *testing.T) {
 	summoned := core.Registry.Summon((&ImportsPerDeveloper{}).Name())
 	assert.Len(t, summoned, 1)
-	assert.Equal(t, summoned[0].Name(), "ImportsPerDeveloper")
+	assert.Equal(t, "ImportsPerDeveloper", summoned[0].Name())
 	leaves := core.Registry.GetLeaves()
 	matched := false
 	for _, tp := range leaves {
@@ -69,7 +69,7 @@ func TestImportsPerDeveloperInitialize(t *testing.T) {
 }
 
 func TestImportsPerDeveloperConsumeFinalize(t *testing.T) {
-	deps := map[string]interface{}{}
+	deps := map[string]any{}
 	deps[identity.DependencyAuthor] = 0
 	deps[plumbing.DependencyTick] = 1
 	imps := map[gitplumbing.Hash]importslang.File{}

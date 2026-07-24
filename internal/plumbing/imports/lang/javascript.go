@@ -28,13 +28,16 @@ func (jsExtractor) Imports(content []byte) ([]string, error) {
 		return nil, nil
 	}
 	var out []string
+
 	runQuery(jsQuery, root, jsLang, content, func(captures []sitter.QueryCapture) {
 		for _, c := range captures {
 			if c.Node.EndByte()-c.Node.StartByte() < 2 {
 				continue
 			}
+
 			out = append(out, string(content[c.Node.StartByte()+1:c.Node.EndByte()-1]))
 		}
 	})
+
 	return out, nil
 }

@@ -21,6 +21,7 @@ import (
 // It is a PipelineItem.
 type StoryDetector struct {
 	core.NoopMerger
+
 	// PeopleDict maps email || name  -> developer id
 	MergeHashDict map[plumbing.Hash]int
 	// ReversedPeopleDict maps developer id -> description
@@ -52,6 +53,7 @@ func (v storyResolver) MaxCount() int {
 	if v.identities == nil {
 		return 0
 	}
+
 	return v.identities.mergeNameCount
 }
 
@@ -59,6 +61,7 @@ func (v storyResolver) Count() int {
 	if v.identities == nil {
 		return 0
 	}
+
 	return len(v.identities.MergeNames)
 }
 
@@ -70,6 +73,7 @@ func (v storyResolver) FriendlyNameOf(id core.AuthorId) string {
 	if id == core.AuthorMissing || id < 0 || v.identities == nil || int(id) >= len(v.identities.MergeNames) {
 		return core.AuthorMissingName
 	}
+
 	return v.identities.MergeNames[id]
 }
 
@@ -77,9 +81,11 @@ func (v storyResolver) ForEachIdentity(callback func(core.AuthorId, string)) boo
 	if v.identities == nil {
 		return false
 	}
+
 	for id, name := range v.identities.MergeNames {
 		callback(core.AuthorId(id), name)
 	}
+
 	return true
 }
 
@@ -87,6 +93,7 @@ func (v storyResolver) CopyNames(bool) []string {
 	if v.identities == nil {
 		return nil
 	}
+
 	return append([]string(nil), v.identities.MergeNames...)
 }
 
@@ -120,11 +127,12 @@ func (detector *StoryDetector) ListConfigurationOptions() []core.ConfigurationOp
 			Default:     "",
 		},
 	}
+
 	return options[:]
 }
 
 // Configure sets the properties previously published by ListConfigurationOptions().
-func (detector *StoryDetector) Configure(facts map[string]interface{}) error {
+func (detector *StoryDetector) Configure(facts map[string]any) error {
 	if l, exists := facts[core.ConfigLogger].(core.Logger); exists {
 		detector.l = l
 	} else {
@@ -140,6 +148,7 @@ func (detector *StoryDetector) Configure(facts map[string]interface{}) error {
 		if err != nil {
 			return errors.Errorf("failed to load %s: %v", dictPath, err)
 		}
+
 		detector.mergeNameCount = len(detector.MergeNames)
 	} else if mergeCount, ok := facts[core.FactMergeHashCount].(int); ok {
 		detector.MergeHashDict = make(map[plumbing.Hash]int, mergeCount)
@@ -151,11 +160,13 @@ func (detector *StoryDetector) Configure(facts map[string]interface{}) error {
 
 	var resolver core.IdentityResolver = storyResolver{detector}
 	facts[core.FactIdentityResolver] = resolver
+
 	return nil
 }
 
 func splitMergeDict(dict map[plumbing.Hash]string) (hashDict map[plumbing.Hash]int, names []string) {
 	uniqueNames := map[string]int{}
+
 	hashDict = make(map[plumbing.Hash]int, len(dict))
 	for k, v := range dict {
 		id, ok := uniqueNames[v]
@@ -163,8 +174,10 @@ func splitMergeDict(dict map[plumbing.Hash]string) (hashDict map[plumbing.Hash]i
 			id = len(uniqueNames)
 			uniqueNames[v] = id
 		}
+
 		hashDict[k] = id
 	}
+
 	names = make([]string, len(uniqueNames))
 	for k, v := range uniqueNames {
 		names[v] = k
@@ -173,7 +186,7 @@ func splitMergeDict(dict map[plumbing.Hash]string) (hashDict map[plumbing.Hash]i
 	return hashDict, names
 }
 
-func (*StoryDetector) ConfigureUpstream(map[string]interface{}) error {
+func (*StoryDetector) ConfigureUpstream(map[string]any) error {
 	return nil
 }
 
@@ -193,24 +206,28 @@ func (detector *StoryDetector) Features() []string {
 // Additionally, DependencyCommit is always present there and represents the analysed *object.Commit.
 // This function returns the mapping with analysis results. The keys must be the same as
 // in Provides(). If there was an error, nil is returned.
-func (detector *StoryDetector) Consume(deps map[string]interface{}) (map[string]interface{}, error) {
+func (detector *StoryDetector) Consume(deps map[string]any) (map[string]any, error) {
 	author, err := detector.putAuthorId(deps[core.DependencyNextMerge].(*object.Commit))
 	if err != nil {
 		return nil, err
 	}
-	return map[string]interface{}{DependencyAuthor: int(author)}, nil
+
+	return map[string]any{DependencyAuthor: int(author)}, nil
 }
 
 func (detector *StoryDetector) putAuthorId(nextMerge *object.Commit) (core.AuthorId, error) {
 	if nextMerge == nil {
 		return core.AuthorMissing, nil
 	}
+
 	if author, ok := detector.MergeHashDict[nextMerge.Hash]; ok {
 		return core.AuthorId(author), nil
 	}
+
 	if !detector.expandMergeDict {
 		return core.AuthorMissing, nil
 	}
+
 	if len(detector.MergeNames) >= detector.mergeNameCount {
 		return core.AuthorMissing, errors.New("number of merge hashes exceeded")
 	}
@@ -219,6 +236,7 @@ func (detector *StoryDetector) putAuthorId(nextMerge *object.Commit) (core.Autho
 	name := detector.makeMergeName(n, nextMerge)
 	detector.MergeHashDict[nextMerge.Hash] = n
 	detector.MergeNames = append(detector.MergeNames, name)
+
 	return core.AuthorId(n), nil
 }
 
@@ -240,6 +258,7 @@ func (detector *StoryDetector) LoadMergeDict(path string) error {
 	scanner := bufio.NewScanner(file)
 	dict := make(map[plumbing.Hash]int)
 	var reverseDict []string
+
 	for scanner.Scan() {
 		textLine := scanner.Text()
 		values := strings.Split(textLine, "|")
@@ -250,31 +269,40 @@ func (detector *StoryDetector) LoadMergeDict(path string) error {
 			value := values[i]
 			var key plumbing.Hash
 			n := 0
+
 			n, err = hex.Decode(key[:], []byte(value))
 			if err == nil && n != len(key) {
 				err = errors.Errorf("hash must be of %d bytes: %s", len(key), value)
 			}
+
 			if err != nil {
 				if i == len(values)-1 {
 					break
 				}
+
 				return err
 			}
+
 			if id2, found := dict[key]; found {
 				return errors.Errorf("ambigous hash: %s = (%d) %s", value, id2, reverseDict[id2])
 			}
+
 			dict[key] = id
 		}
+
 		name := ""
 		if i == len(values) {
 			name = fmt.Sprintf("Merge #%d", id)
 		} else {
 			name = values[i]
 		}
+
 		reverseDict = append(reverseDict, name)
 	}
+
 	detector.MergeHashDict = dict
 	detector.MergeNames = reverseDict
+
 	return nil
 }
 

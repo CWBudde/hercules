@@ -17,6 +17,7 @@ import (
 // Extractor reports the imports in the changed files.
 type Extractor struct {
 	core.NoopMerger
+
 	// Goroutines is the number of goroutines to run for imports extraction.
 	Goroutines int
 	// MaxFileSize is the file size threshold. Files that exceed it are ignored.
@@ -77,33 +78,40 @@ func (ex *Extractor) ListConfigurationOptions() []core.ConfigurationOption {
 }
 
 // Configure sets the properties previously published by ListConfigurationOptions().
-func (ex *Extractor) Configure(facts map[string]interface{}) error {
+func (ex *Extractor) Configure(facts map[string]any) error {
 	if l, exists := facts[core.ConfigLogger].(core.Logger); exists {
 		ex.l = l
 	}
+
 	if gr, exists := facts[ConfigImportsGoroutines].(int); exists {
 		if gr < 1 {
 			if ex.l != nil {
 				ex.l.Warnf("invalid number of goroutines for the imports extraction: %d. Set to %d.",
 					gr, runtime.NumCPU())
 			}
+
 			gr = runtime.NumCPU()
 		}
+
 		ex.Goroutines = gr
 	}
+
 	if size, exists := facts[ConfigMaxFileSize].(int); exists {
 		if size <= 0 {
 			if ex.l != nil {
 				ex.l.Warnf("invalid maximum file size: %d. Set to %d.", size, DefaultMaxFileSize)
 			}
+
 			size = DefaultMaxFileSize
 		}
+
 		ex.MaxFileSize = size
 	}
+
 	return nil
 }
 
-func (*Extractor) ConfigureUpstream(facts map[string]interface{}) error {
+func (*Extractor) ConfigureUpstream(facts map[string]any) error {
 	return nil
 }
 
@@ -114,9 +122,11 @@ func (ex *Extractor) Initialize(repository *git.Repository) error {
 	if ex.Goroutines < 1 {
 		ex.Goroutines = runtime.NumCPU()
 	}
+
 	if ex.MaxFileSize == 0 {
 		ex.MaxFileSize = DefaultMaxFileSize
 	}
+
 	return nil
 }
 
@@ -125,7 +135,7 @@ func (ex *Extractor) Initialize(repository *git.Repository) error {
 // Additionally, DependencyCommit is always present there and represents the analysed *object.Commit.
 // This function returns the mapping with analysis results. The keys must be the same as
 // in Provides(). If there was an error, nil is returned.
-func (ex *Extractor) Consume(deps map[string]interface{}) (map[string]interface{}, error) {
+func (ex *Extractor) Consume(deps map[string]any) (map[string]any, error) {
 	changes := deps[plumbing.DependencyTreeChanges].(object.Changes)
 	cache := deps[plumbing.DependencyBlobCache].(map[gitplumbing.Hash]*plumbing.CachedBlob)
 	result := map[gitplumbing.Hash]lang.File{}
@@ -133,7 +143,8 @@ func (ex *Extractor) Consume(deps map[string]interface{}) (map[string]interface{
 	resultSync := sync.Mutex{}
 	wg := sync.WaitGroup{}
 	wg.Add(ex.Goroutines)
-	for i := 0; i < ex.Goroutines; i++ {
+
+	for range ex.Goroutines {
 		go func() {
 			for change := range jobs {
 				blob := cache[change.To.TreeEntry.Hash]
@@ -141,8 +152,10 @@ func (ex *Extractor) Consume(deps map[string]interface{}) (map[string]interface{
 					ex.l.Warnf("skipped %s %s: size is too big: %d > %d",
 						change.To.TreeEntry.Name, change.To.TreeEntry.Hash.String(),
 						blob.Size, ex.MaxFileSize)
+
 					continue
 				}
+
 				file, err := lang.Extract(change.To.TreeEntry.Name, blob.Data)
 				if err != nil {
 					ex.l.Errorf("failed to extract imports from %s %s: %v",
@@ -153,14 +166,17 @@ func (ex *Extractor) Consume(deps map[string]interface{}) (map[string]interface{
 					resultSync.Unlock()
 				}
 			}
+
 			wg.Done()
 		}()
 	}
+
 	for _, change := range changes {
 		action, err := change.Action()
 		if err != nil {
 			return nil, err
 		}
+
 		switch action {
 		case merkletrie.Modify, merkletrie.Insert:
 			jobs <- change
@@ -168,9 +184,11 @@ func (ex *Extractor) Consume(deps map[string]interface{}) (map[string]interface{
 			continue
 		}
 	}
+
 	close(jobs)
 	wg.Wait()
-	return map[string]interface{}{DependencyImports: result}, nil
+
+	return map[string]any{DependencyImports: result}, nil
 }
 
 // Fork clones this PipelineItem.

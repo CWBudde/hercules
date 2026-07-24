@@ -80,11 +80,11 @@ func (item *lineageTestItem) ListConfigurationOptions() []ConfigurationOption {
 	return nil
 }
 
-func (item *lineageTestItem) Configure(facts map[string]interface{}) error {
+func (item *lineageTestItem) Configure(facts map[string]any) error {
 	return nil
 }
 
-func (item *lineageTestItem) ConfigureUpstream(facts map[string]interface{}) error {
+func (item *lineageTestItem) ConfigureUpstream(facts map[string]any) error {
 	return nil
 }
 
@@ -101,7 +101,7 @@ func (item *lineageTestItem) Initialize(repository *git.Repository) error {
 	return nil
 }
 
-func (item *lineageTestItem) Consume(deps map[string]interface{}) (map[string]interface{}, error) {
+func (item *lineageTestItem) Consume(deps map[string]any) (map[string]any, error) {
 	commit := deps[DependencyCommit].(*object.Commit)
 	record := lineageConsumeRecord{
 		hash:    commit.Hash,
@@ -114,13 +114,13 @@ func (item *lineageTestItem) Consume(deps map[string]interface{}) (map[string]in
 	}
 	item.recorder.records = append(item.recorder.records, record)
 	item.seen[commit.Hash] = true
-	return map[string]interface{}{}, nil
+	return map[string]any{}, nil
 }
 
 func (item *lineageTestItem) Fork(n int) []PipelineItem {
 	item.recorder.forks++
 	clones := make([]PipelineItem, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		clones[i] = &lineageTestItem{
 			recorder: item.recorder,
 			seen:     copyLineageState(item.seen),
@@ -154,11 +154,11 @@ func (item *lineageTestItem) Boot() error {
 	return nil
 }
 
-func (item *lineageTestItem) Finalize() interface{} {
+func (item *lineageTestItem) Finalize() any {
 	return copyLineageState(item.seen)
 }
 
-func (item *lineageTestItem) Serialize(result interface{}, binary bool, writer io.Writer) error {
+func (item *lineageTestItem) Serialize(result any, binary bool, writer io.Writer) error {
 	return nil
 }
 
@@ -225,7 +225,7 @@ func runLineagePipeline(
 	pipeline := NewPipeline(test.FixtureRepository())
 	item := &lineageTestItem{recorder: &lineageRecorder{}}
 	pipeline.AddItem(item)
-	facts := map[string]interface{}{ConfigPipelineCommits: commits}
+	facts := map[string]any{ConfigPipelineCommits: commits}
 	if hibernationDistance > 0 {
 		facts[ConfigPipelineHibernationDistance] = hibernationDistance
 	}
@@ -541,7 +541,7 @@ func TestMergeTrackingNextMerge(t *testing.T) {
 	item := &lineageTestItem{recorder: &lineageRecorder{}}
 	pipeline.AddItem(item)
 	pipeline.SetFeature(FeatureMergeTracks)
-	facts := map[string]interface{}{ConfigPipelineCommits: commits}
+	facts := map[string]any{ConfigPipelineCommits: commits}
 	require.NoError(t, pipeline.InitializeExt(facts,
 		func(items []PipelineItem) PipelineItem { return items[0] }, true))
 	assert.Equal(t, 1, facts[FactMergeHashCount])
@@ -577,7 +577,7 @@ func TestMergeTrackingNextMergeAfterLastMerge(t *testing.T) {
 	item := &lineageTestItem{recorder: &lineageRecorder{}}
 	pipeline.AddItem(item)
 	pipeline.SetFeature(FeatureMergeTracks)
-	facts := map[string]interface{}{ConfigPipelineCommits: commits}
+	facts := map[string]any{ConfigPipelineCommits: commits}
 	require.NoError(t, pipeline.InitializeExt(facts,
 		func(items []PipelineItem) PipelineItem { return items[0] }, true))
 
@@ -608,7 +608,7 @@ func TestMergeTracksRequiresPreparedPlan(t *testing.T) {
 	pipeline := NewPipeline(test.FixtureRepository())
 	pipeline.AddItem(&lineageTestItem{recorder: &lineageRecorder{}})
 	pipeline.SetFeature(FeatureMergeTracks)
-	err := pipeline.Initialize(map[string]interface{}{ConfigPipelineCommits: commits})
+	err := pipeline.Initialize(map[string]any{ConfigPipelineCommits: commits})
 	assert.Error(t, err)
 }
 
@@ -632,9 +632,9 @@ func TestMergeTrackingStress(t *testing.T) {
 	// Five stacked diamonds with growing branch lengths.
 	for width := 1; width <= 5; width++ {
 		var heads []string
-		for branch := 0; branch < 2; branch++ {
+		for range 2 {
 			parent := tip
-			for length := 0; length < width; length++ {
+			for range width {
 				_, parent = newCommit(nextID(), parent)
 			}
 			heads = append(heads, parent)
@@ -643,13 +643,13 @@ func TestMergeTrackingStress(t *testing.T) {
 	}
 	// One octopus across four branches.
 	var heads []string
-	for branch := 0; branch < 4; branch++ {
+	for range 4 {
 		_, head := newCommit(nextID(), tip)
 		heads = append(heads, head)
 	}
 	_, tip = newCommit(nextID(), heads...)
 	// Linear tail.
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		_, tip = newCommit(nextID(), tip)
 	}
 

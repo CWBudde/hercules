@@ -137,6 +137,7 @@ func (p sparseHistory) updateDelta(prevTick, curTick, delta int) {
 		currentHistory = newSparseHistoryEntry()
 		p[curTick] = currentHistory
 	}
+
 	currentHistory.deltas[prevTick] += int64(delta)
 }
 
@@ -145,12 +146,15 @@ func sortedKeys(m map[string]burndown.DenseHistory) []string {
 	for k := range m {
 		keys = append(keys, k)
 	}
+
 	sort.Strings(keys)
+
 	return keys
 }
 
 func checkClose(c io.Closer) {
-	if err := c.Close(); err != nil {
+	err := c.Close()
+	if err != nil {
 		panic(err)
 	}
 }

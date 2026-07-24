@@ -21,10 +21,10 @@ func fixtureBlobCache() *BlobCache {
 func AddHash(t *testing.T, cache map[plumbing.Hash]*CachedBlob, hash string) {
 	objhash := plumbing.NewHash(hash)
 	blob, err := test.Repository.BlobObject(objhash)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	cb := &CachedBlob{Blob: *blob}
 	err = cb.Cache()
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	cache[objhash] = cb
 }
 
@@ -32,35 +32,35 @@ func TestBlobCacheConfigureInitialize(t *testing.T) {
 	cache := fixtureBlobCache()
 	assert.Equal(t, test.Repository, cache.repository)
 	assert.False(t, cache.FailOnMissingSubmodules)
-	facts := map[string]interface{}{}
+	facts := map[string]any{}
 	facts[ConfigBlobCacheFailOnMissingSubmodules] = true
 	cache.Configure(facts)
 	assert.True(t, cache.FailOnMissingSubmodules)
-	facts = map[string]interface{}{}
+	facts = map[string]any{}
 	cache.Configure(facts)
 	assert.True(t, cache.FailOnMissingSubmodules)
 }
 
 func TestBlobCacheMetadata(t *testing.T) {
 	cache := fixtureBlobCache()
-	assert.Equal(t, cache.Name(), "BlobCache")
-	assert.Equal(t, len(cache.Provides()), 1)
-	assert.Equal(t, cache.Provides()[0], DependencyBlobCache)
-	assert.Equal(t, len(cache.Requires()), 1)
+	assert.Equal(t, "BlobCache", cache.Name())
+	assert.Len(t, cache.Provides(), 1)
+	assert.Equal(t, DependencyBlobCache, cache.Provides()[0])
+	assert.Len(t, cache.Requires(), 1)
 	changes := &TreeDiff{}
 	assert.Equal(t, cache.Requires()[0], changes.Provides()[0])
 	opts := cache.ListConfigurationOptions()
 	assert.Len(t, opts, 1)
-	assert.Equal(t, opts[0].Name, ConfigBlobCacheFailOnMissingSubmodules)
+	assert.Equal(t, ConfigBlobCacheFailOnMissingSubmodules, opts[0].Name)
 }
 
 func TestBlobCacheRegistration(t *testing.T) {
 	summoned := core.Registry.Summon((&BlobCache{}).Name())
 	assert.Len(t, summoned, 1)
-	assert.Equal(t, summoned[0].Name(), "BlobCache")
+	assert.Equal(t, "BlobCache", summoned[0].Name())
 	summoned = core.Registry.Summon((&BlobCache{}).Provides()[0])
 	assert.Len(t, summoned, 1)
-	assert.Equal(t, summoned[0].Name(), "BlobCache")
+	assert.Equal(t, "BlobCache", summoned[0].Name())
 }
 
 func TestBlobCacheConsumeModification(t *testing.T) {
@@ -91,22 +91,22 @@ func TestBlobCacheConsumeModification(t *testing.T) {
 			Hash: plumbing.NewHash("c872b8d2291a5224e2c9f6edd7f46039b96b4742"),
 		},
 	}}
-	deps := map[string]interface{}{}
+	deps := map[string]any{}
 	deps[core.DependencyCommit] = commit
 	deps[DependencyTreeChanges] = changes
 	result, err := fixtureBlobCache().Consume(deps)
-	assert.Nil(t, err)
-	assert.Equal(t, len(result), 1)
+	assert.NoError(t, err)
+	assert.Len(t, result, 1)
 	cacheIface, exists := result[DependencyBlobCache]
 	assert.True(t, exists)
 	cache := cacheIface.(map[plumbing.Hash]*CachedBlob)
-	assert.Equal(t, len(cache), 2)
+	assert.Len(t, cache, 2)
 	blobFrom, exists := cache[plumbing.NewHash("1cacfc1bf0f048eb2f31973750983ae5d8de647a")]
 	assert.True(t, exists)
 	blobTo, exists := cache[plumbing.NewHash("c872b8d2291a5224e2c9f6edd7f46039b96b4742")]
 	assert.True(t, exists)
-	assert.Equal(t, blobFrom.Size, int64(8969))
-	assert.Equal(t, blobTo.Size, int64(9481))
+	assert.Equal(t, int64(8969), blobFrom.Size)
+	assert.Equal(t, int64(9481), blobTo.Size)
 }
 
 func TestBlobCacheConsumeInsertionDeletion(t *testing.T) {
@@ -142,22 +142,22 @@ func TestBlobCacheConsumeInsertionDeletion(t *testing.T) {
 			},
 		},
 	}
-	deps := map[string]interface{}{}
+	deps := map[string]any{}
 	deps[core.DependencyCommit] = commit
 	deps[DependencyTreeChanges] = changes
 	result, err := fixtureBlobCache().Consume(deps)
-	assert.Nil(t, err)
-	assert.Equal(t, len(result), 1)
+	assert.NoError(t, err)
+	assert.Len(t, result, 1)
 	cacheIface, exists := result[DependencyBlobCache]
 	assert.True(t, exists)
 	cache := cacheIface.(map[plumbing.Hash]*CachedBlob)
-	assert.Equal(t, len(cache), 2)
+	assert.Len(t, cache, 2)
 	blobFrom, exists := cache[plumbing.NewHash("baa64828831d174f40140e4b3cfa77d1e917a2c1")]
 	assert.True(t, exists)
 	blobTo, exists := cache[plumbing.NewHash("db99e1890f581ad69e1527fe8302978c661eb473")]
 	assert.True(t, exists)
-	assert.Equal(t, blobFrom.Size, int64(26446))
-	assert.Equal(t, blobTo.Size, int64(5576))
+	assert.Equal(t, int64(26446), blobFrom.Size)
+	assert.Equal(t, int64(5576), blobTo.Size)
 }
 
 func TestBlobCacheConsumeNoAction(t *testing.T) {
@@ -172,12 +172,12 @@ func TestBlobCacheConsumeNoAction(t *testing.T) {
 		"63076fa0dfd93e94b6d2ef0fc8b1fdf9092f83c4",
 	))
 	changes[0] = &object.Change{From: object.ChangeEntry{}, To: object.ChangeEntry{}}
-	deps := map[string]interface{}{}
+	deps := map[string]any{}
 	deps[core.DependencyCommit] = commit
 	deps[DependencyTreeChanges] = changes
 	result, err := fixtureBlobCache().Consume(deps)
 	assert.Nil(t, result)
-	assert.NotNil(t, err)
+	assert.Error(t, err)
 	changes[0] = &object.Change{From: object.ChangeEntry{
 		Name:      "labours.py",
 		Tree:      treeFrom,
@@ -189,7 +189,7 @@ func TestBlobCacheConsumeNoAction(t *testing.T) {
 	}}
 	result, err = fixtureBlobCache().Consume(deps)
 	assert.Nil(t, result)
-	assert.NotNil(t, err)
+	assert.Error(t, err)
 }
 
 func TestBlobCacheConsumeBadHashes(t *testing.T) {
@@ -212,12 +212,12 @@ func TestBlobCacheConsumeBadHashes(t *testing.T) {
 		Tree:      treeTo,
 		TreeEntry: object.TreeEntry{},
 	}}
-	deps := map[string]interface{}{}
+	deps := map[string]any{}
 	deps[core.DependencyCommit] = commit
 	deps[DependencyTreeChanges] = changes
 	result, err := fixtureBlobCache().Consume(deps)
 	assert.Nil(t, result)
-	assert.NotNil(t, err)
+	assert.Error(t, err)
 	changes[0] = &object.Change{From: object.ChangeEntry{
 		Name:      "labours.py",
 		Tree:      treeFrom,
@@ -226,7 +226,7 @@ func TestBlobCacheConsumeBadHashes(t *testing.T) {
 	result, err = fixtureBlobCache().Consume(deps)
 	// Deleting a missing blob is fine
 	assert.NotNil(t, result)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	changes[0] = &object.Change{
 		From: object.ChangeEntry{},
 		To: object.ChangeEntry{
@@ -237,7 +237,7 @@ func TestBlobCacheConsumeBadHashes(t *testing.T) {
 	}
 	result, err = fixtureBlobCache().Consume(deps)
 	assert.Nil(t, result)
-	assert.NotNil(t, err)
+	assert.Error(t, err)
 }
 
 func TestBlobCacheConsumeInvalidHash(t *testing.T) {
@@ -264,12 +264,12 @@ func TestBlobCacheConsumeInvalidHash(t *testing.T) {
 		Tree:      treeTo,
 		TreeEntry: object.TreeEntry{},
 	}}
-	deps := map[string]interface{}{}
+	deps := map[string]any{}
 	deps[core.DependencyCommit] = commit
 	deps[DependencyTreeChanges] = changes
 	result, err := fixtureBlobCache().Consume(deps)
 	assert.Nil(t, result)
-	assert.NotNil(t, err)
+	assert.Error(t, err)
 }
 
 func TestBlobCacheGetBlob(t *testing.T) {
@@ -287,7 +287,7 @@ func TestBlobCacheGetBlob(t *testing.T) {
 		},
 	}
 	getter := func(path string) (*object.File, error) {
-		assert.Equal(t, path, ".gitmodules")
+		assert.Equal(t, ".gitmodules", path)
 		commit, _ := test.Repository.CommitObject(plumbing.NewHash(
 			"13272b66c55e1ba1237a34104f30b84d7f6e4082",
 		))
@@ -295,10 +295,10 @@ func TestBlobCacheGetBlob(t *testing.T) {
 	}
 	blob, err := cache.getBlob(&entry, getter)
 	assert.Nil(t, blob)
-	assert.NotNil(t, err)
+	assert.Error(t, err)
 	assert.Equal(t, err.Error(), plumbing.ErrObjectNotFound.Error())
 	getter = func(path string) (*object.File, error) {
-		assert.Equal(t, path, ".gitmodules")
+		assert.Equal(t, ".gitmodules", path)
 		commit, _ := test.Repository.CommitObject(plumbing.NewHash(
 			"13272b66c55e1ba1237a34104f30b84d7f6e4082",
 		))
@@ -306,7 +306,7 @@ func TestBlobCacheGetBlob(t *testing.T) {
 	}
 	blob, err = cache.getBlob(&entry, getter)
 	assert.Nil(t, blob)
-	assert.NotNil(t, err)
+	assert.Error(t, err)
 	assert.Equal(t, err.Error(), plumbing.ErrObjectNotFound.Error())
 }
 
@@ -329,19 +329,19 @@ func TestBlobCacheDeleteInvalidBlob(t *testing.T) {
 			},
 		}, To: object.ChangeEntry{},
 	}
-	deps := map[string]interface{}{}
+	deps := map[string]any{}
 	deps[core.DependencyCommit] = commit
 	deps[DependencyTreeChanges] = changes
 	result, err := fixtureBlobCache().Consume(deps)
-	assert.Nil(t, err)
-	assert.Equal(t, len(result), 1)
+	assert.NoError(t, err)
+	assert.Len(t, result, 1)
 	cacheIface, exists := result[DependencyBlobCache]
 	assert.True(t, exists)
 	cache := cacheIface.(map[plumbing.Hash]*CachedBlob)
-	assert.Equal(t, len(cache), 1)
+	assert.Len(t, cache, 1)
 	blobFrom, exists := cache[plumbing.NewHash("ffffffffffffffffffffffffffffffffffffffff")]
 	assert.True(t, exists)
-	assert.Equal(t, blobFrom.Size, int64(0))
+	assert.Equal(t, int64(0), blobFrom.Size)
 }
 
 func TestBlobCacheInsertInvalidBlob(t *testing.T) {
@@ -363,12 +363,12 @@ func TestBlobCacheInsertInvalidBlob(t *testing.T) {
 			},
 		},
 	}
-	deps := map[string]interface{}{}
+	deps := map[string]any{}
 	deps[core.DependencyCommit] = commit
 	deps[DependencyTreeChanges] = changes
 	result, err := fixtureBlobCache().Consume(deps)
-	assert.NotNil(t, err)
-	assert.Equal(t, len(result), 0)
+	assert.Error(t, err)
+	assert.Empty(t, result)
 }
 
 func TestBlobCacheGetBlobIgnoreMissing(t *testing.T) {
@@ -391,11 +391,11 @@ func TestBlobCacheGetBlobIgnoreMissing(t *testing.T) {
 	}
 	blob, err := cache.getBlob(&entry, getter)
 	assert.NotNil(t, blob)
-	assert.Nil(t, err)
-	assert.Equal(t, blob.Size, int64(0))
+	assert.NoError(t, err)
+	assert.Equal(t, int64(0), blob.Size)
 	cache.FailOnMissingSubmodules = true
 	getter = func(path string) (*object.File, error) {
-		assert.Equal(t, path, ".gitmodules")
+		assert.Equal(t, ".gitmodules", path)
 		commit, _ := test.Repository.CommitObject(plumbing.NewHash(
 			"13272b66c55e1ba1237a34104f30b84d7f6e4082",
 		))
@@ -403,7 +403,7 @@ func TestBlobCacheGetBlobIgnoreMissing(t *testing.T) {
 	}
 	blob, err = cache.getBlob(&entry, getter)
 	assert.Nil(t, blob)
-	assert.NotNil(t, err)
+	assert.Error(t, err)
 }
 
 func TestBlobCacheGetBlobGitModulesErrors(t *testing.T) {
@@ -422,7 +422,7 @@ func TestBlobCacheGetBlobGitModulesErrors(t *testing.T) {
 	}
 	blob, err := cache.getBlob(&entry, getter)
 	assert.Nil(t, blob)
-	assert.NotNil(t, err)
+	assert.Error(t, err)
 	assert.Equal(t, err.Error(), plumbing.ErrInvalidType.Error())
 	getter = func(path string) (*object.File, error) {
 		blob, _ := internal.CreateDummyBlob(
@@ -432,8 +432,8 @@ func TestBlobCacheGetBlobGitModulesErrors(t *testing.T) {
 	}
 	blob, err = cache.getBlob(&entry, getter)
 	assert.Nil(t, blob)
-	assert.NotNil(t, err)
-	assert.Equal(t, err.Error(), "dummy failure")
+	assert.Error(t, err)
+	assert.Equal(t, "dummy failure", err.Error())
 	getter = func(path string) (*object.File, error) {
 		blob, _ := test.Repository.BlobObject(plumbing.NewHash(
 			"4434197c2b0509d990f09d53a3cabb910bfd34b7",
@@ -442,7 +442,7 @@ func TestBlobCacheGetBlobGitModulesErrors(t *testing.T) {
 	}
 	blob, err = cache.getBlob(&entry, getter)
 	assert.Nil(t, blob)
-	assert.NotNil(t, err)
+	assert.Error(t, err)
 	assert.NotEqual(t, err.Error(), plumbing.ErrObjectNotFound.Error())
 }
 
@@ -464,7 +464,7 @@ func TestBlobCacheFork(t *testing.T) {
 			Hash: hash,
 		},
 	}}
-	deps := map[string]interface{}{}
+	deps := map[string]any{}
 	deps[core.DependencyCommit] = commit
 	deps[DependencyTreeChanges] = changes
 	cache1 := fixtureBlobCache()

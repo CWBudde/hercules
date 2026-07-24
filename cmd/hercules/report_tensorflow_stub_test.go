@@ -1,5 +1,4 @@
 //go:build !tensorflow
-// +build !tensorflow
 
 package main
 

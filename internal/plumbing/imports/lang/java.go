@@ -30,9 +30,11 @@ func (javaExtractor) Imports(content []byte) ([]string, error) {
 		return nil, nil
 	}
 	var out []string
+
 	runQuery(javaQuery, root, javaLang, content, func(captures []sitter.QueryCapture) {
 		for _, c := range captures {
 			n := c.Node
+
 			parts := make([]string, 0, n.ChildCount())
 			for i := 0; i < n.ChildCount(); i++ {
 				child := n.Child(i)
@@ -46,8 +48,10 @@ func (javaExtractor) Imports(content []byte) ([]string, error) {
 					parts = append(parts, "")
 				}
 			}
+
 			out = append(out, strings.Join(parts, "."))
 		}
 	})
+
 	return out, nil
 }

@@ -1,6 +1,7 @@
 package ast
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -217,17 +218,21 @@ func (*TreeSitterExtractor) ExtractComments(path string, source []byte) ([]Node,
 // parseFull parses an entire source file with the given language.
 func parseFull(source []byte, lang *sitter.Language) (*sitter.Node, error) {
 	parser := sitter.NewParser(lang)
+
 	tree, err := parser.Parse(source)
 	if err != nil {
 		return nil, err
 	}
+
 	if tree == nil {
-		return nil, fmt.Errorf("tree-sitter returned nil tree")
+		return nil, errors.New("tree-sitter returned nil tree")
 	}
+
 	root := tree.RootNode()
 	if root == nil {
-		return nil, fmt.Errorf("tree-sitter returned nil root")
+		return nil, errors.New("tree-sitter returned nil root")
 	}
+
 	return root, nil
 }
 
@@ -238,10 +243,12 @@ func ExtractNamedNodes(path string, source []byte) ([]Node, error) {
 	if !ok {
 		return nil, nil
 	}
+
 	root, err := parseFull(source, spec.language)
 	if err != nil {
 		return nil, fmt.Errorf("tree-sitter failed to parse %s: %w", path, err)
 	}
+
 	return collectNamedNodes(root, spec.language), nil
 }
 
@@ -257,28 +264,36 @@ func ExtractNamedNodesInRanges(path string, source []byte, ranges []LineRange) (
 	if !ok {
 		return nil, nil
 	}
+
 	if len(source) == 0 || len(ranges) == 0 {
 		return nil, nil
 	}
+
 	lineStarts := computeLineStarts(source)
 	numLines := len(lineStarts) - 1
+
 	sitterRanges := buildSitterRanges(ranges, lineStarts, numLines)
 	if len(sitterRanges) == 0 {
 		return nil, nil
 	}
+
 	parser := sitter.NewParser(spec.language)
 	parser.SetIncludedRanges(sitterRanges)
+
 	tree, err := parser.Parse(source)
 	if err != nil {
 		return nil, fmt.Errorf("tree-sitter failed to parse %s: %w", path, err)
 	}
+
 	if tree == nil {
 		return nil, fmt.Errorf("tree-sitter returned nil tree for %s", path)
 	}
+
 	root := tree.RootNode()
 	if root == nil {
 		return nil, fmt.Errorf("tree-sitter returned nil root for %s", path)
 	}
+
 	return collectNamedNodes(root, spec.language), nil
 }
 
@@ -292,12 +307,12 @@ func collectNamedNodes(root *sitter.Node, lang *sitter.Language) []Node {
 		if node == nil {
 			return
 		}
+
 		if node.IsNamed() {
 			startLine := int(node.StartPoint().Row) + 1
-			endLine := int(node.EndPoint().Row) + 1
-			if endLine < startLine {
-				endLine = startLine
-			}
+
+			endLine := max(int(node.EndPoint().Row)+1, startLine)
+
 			nodes = append(nodes, Node{
 				ID:        fmt.Sprintf("%d:%d:%s:%d:%d", startLine, endLine, node.Type(lang), node.StartPoint().Column, node.EndPoint().Column),
 				Type:      "ast:" + node.Type(lang),
@@ -311,13 +326,16 @@ func collectNamedNodes(root *sitter.Node, lang *sitter.Language) []Node {
 			for i := 0; i < node.NamedChildCount(); i++ {
 				walk(node.NamedChild(i))
 			}
+
 			return
 		}
+
 		for i := 0; i < node.ChildCount(); i++ {
 			walk(node.Child(i))
 		}
 	}
 	walk(root)
+
 	return nodes
 }
 
@@ -327,14 +345,17 @@ func collectNamedNodes(root *sitter.Node, lang *sitter.Language) []Node {
 func computeLineStarts(source []byte) []int {
 	starts := make([]int, 1, len(source)/40+2)
 	starts[0] = 0
+
 	for i, b := range source {
 		if b == '\n' {
 			starts = append(starts, i+1)
 		}
 	}
+
 	if starts[len(starts)-1] != len(source) {
 		starts = append(starts, len(source))
 	}
+
 	return starts
 }
 
@@ -345,26 +366,33 @@ func buildSitterRanges(ranges []LineRange, lineStarts []int, numLines int) []sit
 	if numLines <= 0 {
 		return nil
 	}
+
 	clamped := make([]LineRange, 0, len(ranges))
 	for _, r := range ranges {
 		a, b := r.Start, r.End
 		if a < 1 {
 			a = 1
 		}
+
 		if b > numLines {
 			b = numLines
 		}
+
 		if a > b {
 			continue
 		}
+
 		clamped = append(clamped, LineRange{Start: a, End: b})
 	}
+
 	if len(clamped) == 0 {
 		return nil
 	}
+
 	sort.Slice(clamped, func(i, j int) bool {
 		return clamped[i].Start < clamped[j].Start
 	})
+
 	merged := clamped[:1]
 	for _, r := range clamped[1:] {
 		last := &merged[len(merged)-1]
@@ -372,10 +400,13 @@ func buildSitterRanges(ranges []LineRange, lineStarts []int, numLines int) []sit
 			if r.End > last.End {
 				last.End = r.End
 			}
+
 			continue
 		}
+
 		merged = append(merged, r)
 	}
+
 	out := make([]sitter.Range, 0, len(merged))
 	for _, r := range merged {
 		startByte := lineStarts[r.Start-1]
@@ -387,16 +418,15 @@ func buildSitterRanges(ranges []LineRange, lineStarts []int, numLines int) []sit
 			EndByte:    uint32(endByte),
 		})
 	}
+
 	return out
 }
 
 // pointAt converts a byte offset into a tree-sitter Point using the precomputed
 // line offset table.
 func pointAt(offset int, lineStarts []int) sitter.Point {
-	r := sort.SearchInts(lineStarts, offset+1) - 1
-	if r < 0 {
-		r = 0
-	}
+	r := max(sort.SearchInts(lineStarts, offset+1)-1, 0)
+
 	return sitter.Point{
 		Row:    uint32(r),
 		Column: uint32(offset - lineStarts[r]),
@@ -414,17 +444,21 @@ func extractByTypes(
 	if !ok {
 		return nil, nil
 	}
+
 	nodeTypes := typeSelector(spec)
+
 	root, err := parseFull(source, spec.language)
 	if err != nil {
 		return nil, fmt.Errorf("tree-sitter failed to parse %s: %w", path, err)
 	}
+
 	nodes := make([]Node, 0, 32)
 	var walk func(*sitter.Node)
 	walk = func(node *sitter.Node) {
 		if node == nil {
 			return
 		}
+
 		if _, ok := nodeTypes[node.Type(spec.language)]; ok {
 			nameNode := node.ChildByFieldName("name", spec.language)
 			if nameNode == nil {
@@ -435,26 +469,30 @@ func extractByTypes(
 						"private_property_identifier":
 						nameNode = child
 					}
+
 					if nameNode != nil {
 						break
 					}
 				}
 			}
+
 			name := ""
 			if nameNode != nil {
 				name = strings.TrimSpace(nameNode.Text(source))
 			}
+
 			if name == "" {
 				name = strings.TrimSpace(node.Text(source))
 			}
+
 			if requireName && name == "" {
 				goto recurse
 			}
+
 			startLine := int(node.StartPoint().Row) + 1
-			endLine := int(node.EndPoint().Row) + 1
-			if endLine < startLine {
-				endLine = startLine
-			}
+
+			endLine := max(int(node.EndPoint().Row)+1, startLine)
+
 			nodes = append(nodes, Node{
 				ID:        fmt.Sprintf("%d:%d:%s:%s", startLine, endLine, node.Type(spec.language), name),
 				Type:      "ast:" + node.Type(spec.language),
@@ -466,17 +504,21 @@ func extractByTypes(
 				EndCol:    int(node.EndPoint().Column),
 			})
 		}
+
 	recurse:
 		if namedOnlyWalk {
 			for i := 0; i < node.NamedChildCount(); i++ {
 				walk(node.NamedChild(i))
 			}
+
 			return
 		}
+
 		for i := 0; i < node.ChildCount(); i++ {
 			walk(node.Child(i))
 		}
 	}
 	walk(root)
+
 	return nodes, nil
 }

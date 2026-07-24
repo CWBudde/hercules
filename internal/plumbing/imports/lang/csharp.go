@@ -48,11 +48,13 @@ func (csharpExtractor) Imports(content []byte) ([]string, error) {
 		return nil, nil
 	}
 	var out []string
+
 	runQuery(csharpQuery, root, csharpLang, content, func(captures []sitter.QueryCapture) {
 		for _, c := range captures {
 			out = append(out, csharpJoinName(c.Node, content))
 		}
 	})
+
 	return out, nil
 }
 
@@ -67,13 +69,16 @@ func csharpJoinName(node *sitter.Node, content []byte) string {
 			b = append(b, content[n.StartByte():n.EndByte()]...)
 			return
 		}
+
 		if _, ok := csharpExcludeTypes[typ]; ok {
 			return
 		}
+
 		for i := 0; i < n.ChildCount(); i++ {
 			walk(n.Child(i))
 		}
 	}
 	walk(node)
+
 	return string(b)
 }

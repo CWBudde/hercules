@@ -3,6 +3,7 @@ package leaves
 import (
 	"fmt"
 	"io"
+	"maps"
 	"path"
 	"sort"
 	"time"
@@ -28,6 +29,7 @@ import (
 // counts and snapshots the bus factor at each tick.
 type BusFactorAnalysis struct {
 	core.NoopMerger
+
 	// Threshold is the ownership fraction that must be covered (default 0.8 = 80%).
 	Threshold float32
 
@@ -104,31 +106,37 @@ func (bf *BusFactorAnalysis) ListConfigurationOptions() []core.ConfigurationOpti
 		Type:        core.FloatConfigurationOption,
 		Default:     float32(0.8),
 	}}
+
 	return options[:]
 }
 
 // Configure sets the properties previously published by ListConfigurationOptions().
-func (bf *BusFactorAnalysis) Configure(facts map[string]interface{}) error {
+func (bf *BusFactorAnalysis) Configure(facts map[string]any) error {
 	if l, exists := facts[core.ConfigLogger].(core.Logger); exists {
 		bf.l = l
 	}
+
 	if val, exists := facts[ConfigBusFactorThreshold]; exists {
 		bf.Threshold = val.(float32)
 	}
+
 	if val, exists := facts[identity.FactIdentityDetectorReversedPeopleDict].([]string); exists {
 		bf.reversedPeopleDict = val
 	}
+
 	if val, exists := facts[items.FactTickSize].(time.Duration); exists {
 		bf.tickSize = val
 	}
+
 	if val, ok := facts[core.FactIdentityResolver].(core.IdentityResolver); ok {
 		bf.peopleResolver = val
 	}
+
 	return nil
 }
 
 // ConfigureUpstream configures the upstream dependencies.
-func (*BusFactorAnalysis) ConfigureUpstream(facts map[string]interface{}) error {
+func (*BusFactorAnalysis) ConfigureUpstream(facts map[string]any) error {
 	return nil
 }
 
@@ -147,17 +155,19 @@ func (bf *BusFactorAnalysis) Description() string {
 func (bf *BusFactorAnalysis) Initialize(repository *git.Repository) error {
 	bf.l = core.NewLogger()
 	bf.snapshots = map[int]*BusFactorSnapshot{}
+
 	bf.lastTick = -1
 	if bf.Threshold <= 0 || bf.Threshold > 1 {
 		bf.Threshold = 0.8
 	}
+
 	return nil
 }
 
 // Consume runs this PipelineItem on the next commit data.
 // It captures the file resolver from LineHistoryChanges and records the current tick.
 // The actual ownership scanning happens at each new tick boundary.
-func (bf *BusFactorAnalysis) Consume(deps map[string]interface{}) (map[string]interface{}, error) {
+func (bf *BusFactorAnalysis) Consume(deps map[string]any) (map[string]any, error) {
 	changes := deps[linehistory.DependencyLineHistory].(core.LineHistoryChanges)
 	tick := deps[items.DependencyTick].(int)
 	bf.fileResolver = changes.Resolver
@@ -167,6 +177,7 @@ func (bf *BusFactorAnalysis) Consume(deps map[string]interface{}) (map[string]in
 		if bf.lastTick >= 0 {
 			bf.takeSnapshot(bf.lastTick)
 		}
+
 		bf.lastTick = tick
 	}
 
@@ -180,6 +191,7 @@ func (bf *BusFactorAnalysis) takeSnapshot(tick int) {
 	}
 
 	authorLines := map[int]int64{}
+
 	bf.fileResolver.ForEachFile(func(fileId core.FileId, fileName string) {
 		previousLine := 0
 		previousAuthor := int(core.AuthorMissing)
@@ -190,7 +202,9 @@ func (bf *BusFactorAnalysis) takeSnapshot(tick int) {
 				if length > 0 && previousAuthor != int(core.AuthorMissing) {
 					authorLines[previousAuthor] += int64(length)
 				}
+
 				previousLine = line
+
 				if author >= core.AuthorMissing {
 					previousAuthor = int(core.AuthorMissing)
 				} else {
@@ -208,9 +222,7 @@ func (bf *BusFactorAnalysis) takeSnapshot(tick int) {
 
 	// Copy the map for the snapshot
 	snapshotLines := make(map[int]int64, len(authorLines))
-	for k, v := range authorLines {
-		snapshotLines[k] = v
-	}
+	maps.Copy(snapshotLines, authorLines)
 
 	bf.snapshots[tick] = &BusFactorSnapshot{
 		BusFactor:   busFactor,
@@ -231,11 +243,13 @@ func computeBusFactor(authorLines map[int]int64, totalLines int64, threshold flo
 	for _, lines := range authorLines {
 		counts = append(counts, lines)
 	}
+
 	sort.Slice(counts, func(i, j int) bool {
 		return counts[i] > counts[j]
 	})
 
 	target := int64(float64(threshold) * float64(totalLines))
+
 	var cumulative int64
 	for k, c := range counts {
 		cumulative += c
@@ -243,6 +257,7 @@ func computeBusFactor(authorLines map[int]int64, totalLines int64, threshold flo
 			return k + 1
 		}
 	}
+
 	return len(counts)
 }
 
@@ -254,6 +269,7 @@ func (bf *BusFactorAnalysis) computeSubsystemBusFactor() map[string]int {
 
 	// Accumulate per-directory, per-author line counts
 	subsystems := map[string]map[int]int64{} // dir -> author -> lines
+
 	bf.fileResolver.ForEachFile(func(fileId core.FileId, fileName string) {
 		dir := path.Dir(fileName)
 		if dir == "." {
@@ -272,9 +288,12 @@ func (bf *BusFactorAnalysis) computeSubsystemBusFactor() map[string]int {
 						dirAuthors = map[int]int64{}
 						subsystems[dir] = dirAuthors
 					}
+
 					dirAuthors[previousAuthor] += int64(length)
 				}
+
 				previousLine = line
+
 				if author >= core.AuthorMissing {
 					previousAuthor = int(core.AuthorMissing)
 				} else {
@@ -289,13 +308,15 @@ func (bf *BusFactorAnalysis) computeSubsystemBusFactor() map[string]int {
 		for _, lines := range authorLines {
 			totalLines += lines
 		}
+
 		result[dir] = computeBusFactor(authorLines, totalLines, bf.Threshold)
 	}
+
 	return result
 }
 
 // Finalize returns the result of the analysis. Further Consume() calls are not expected.
-func (bf *BusFactorAnalysis) Finalize() interface{} {
+func (bf *BusFactorAnalysis) Finalize() any {
 	// Take the final snapshot for the last tick
 	if bf.lastTick >= 0 {
 		bf.takeSnapshot(bf.lastTick)
@@ -317,52 +338,58 @@ func (bf *BusFactorAnalysis) Fork(n int) []core.PipelineItem {
 
 // Serialize converts the analysis result as returned by Finalize() to text or bytes.
 // The text format is YAML and the bytes format is Protocol Buffers.
-func (bf *BusFactorAnalysis) Serialize(result interface{}, binary bool, writer io.Writer) error {
+func (bf *BusFactorAnalysis) Serialize(result any, binary bool, writer io.Writer) error {
 	bfResult := result.(BusFactorResult)
 	if binary {
 		return bf.serializeBinary(&bfResult, writer)
 	}
+
 	bf.serializeText(&bfResult, writer)
+
 	return nil
 }
 
 // Deserialize loads the result from Protocol Buffers blob.
-func (bf *BusFactorAnalysis) Deserialize(pbmessage []byte) (interface{}, error) {
+func (bf *BusFactorAnalysis) Deserialize(pbmessage []byte) (any, error) {
 	message := pb.BusFactorAnalysisResults{}
+
 	err := proto.Unmarshal(pbmessage, &message)
 	if err != nil {
 		return nil, err
 	}
 
-	snapshots := make(map[int]*BusFactorSnapshot, len(message.Snapshots))
-	for tick, pbSnapshot := range message.Snapshots {
-		authorLines := make(map[int]int64, len(pbSnapshot.AuthorLines))
-		for authorID, lines := range pbSnapshot.AuthorLines {
+	snapshots := make(map[int]*BusFactorSnapshot, len(message.GetSnapshots()))
+	for tick, pbSnapshot := range message.GetSnapshots() {
+		authorLines := make(map[int]int64, len(pbSnapshot.GetAuthorLines()))
+		for authorID, lines := range pbSnapshot.GetAuthorLines() {
 			dev := int(authorID)
 			if authorID == -1 {
 				dev = core.AuthorMissing
 			}
+
 			authorLines[dev] = lines
 		}
+
 		snapshots[int(tick)] = &BusFactorSnapshot{
-			BusFactor:   int(pbSnapshot.BusFactor),
-			TotalLines:  pbSnapshot.TotalLines,
+			BusFactor:   int(pbSnapshot.GetBusFactor()),
+			TotalLines:  pbSnapshot.GetTotalLines(),
 			AuthorLines: authorLines,
 		}
 	}
 
-	subsystemBF := make(map[string]int, len(message.SubsystemBusFactor))
-	for dir, bf := range message.SubsystemBusFactor {
+	subsystemBF := make(map[string]int, len(message.GetSubsystemBusFactor()))
+	for dir, bf := range message.GetSubsystemBusFactor() {
 		subsystemBF[dir] = int(bf)
 	}
 
 	result := BusFactorResult{
 		Snapshots:          snapshots,
 		SubsystemBusFactor: subsystemBF,
-		Threshold:          message.Threshold,
-		reversedPeopleDict: message.DevIndex,
-		tickSize:           time.Duration(message.TickSize),
+		Threshold:          message.GetThreshold(),
+		reversedPeopleDict: message.GetDevIndex(),
+		tickSize:           time.Duration(message.GetTickSize()),
 	}
+
 	return result, nil
 }
 
@@ -375,9 +402,11 @@ func (bf *BusFactorAnalysis) serializeText(result *BusFactorResult, writer io.Wr
 	for tick := range result.Snapshots {
 		ticks = append(ticks, tick)
 	}
+
 	sort.Ints(ticks)
 
 	fmt.Fprintln(writer, "    per_tick:")
+
 	for _, tick := range ticks {
 		snapshot := result.Snapshots[tick]
 		fmt.Fprintf(writer, "      %d: {bus_factor: %d, total_lines: %d}\n",
@@ -386,20 +415,25 @@ func (bf *BusFactorAnalysis) serializeText(result *BusFactorResult, writer io.Wr
 
 	if len(result.SubsystemBusFactor) > 0 {
 		fmt.Fprintln(writer, "    per_subsystem:")
+
 		dirs := make([]string, 0, len(result.SubsystemBusFactor))
 		for dir := range result.SubsystemBusFactor {
 			dirs = append(dirs, dir)
 		}
+
 		sort.Strings(dirs)
+
 		for _, dir := range dirs {
 			fmt.Fprintf(writer, "      %s: %d\n", yaml.SafeString(dir), result.SubsystemBusFactor[dir])
 		}
 	}
 
 	fmt.Fprintln(writer, "    people:")
+
 	for _, person := range result.reversedPeopleDict {
 		fmt.Fprintf(writer, "    - %s\n", yaml.SafeString(person))
 	}
+
 	fmt.Fprintln(writer, "    tick_size:", int(result.tickSize.Seconds()))
 }
 
@@ -422,8 +456,10 @@ func (bf *BusFactorAnalysis) serializeBinary(result *BusFactorResult, writer io.
 			if author == core.AuthorMissing {
 				authorID = -1
 			}
+
 			pbSnapshot.AuthorLines[authorID] = lines
 		}
+
 		message.Snapshots[int32(tick)] = pbSnapshot
 	}
 
@@ -436,14 +472,16 @@ func (bf *BusFactorAnalysis) serializeBinary(result *BusFactorResult, writer io.
 	if err != nil {
 		return err
 	}
+
 	_, err = writer.Write(serialized)
+
 	return err
 }
 
 // MergeResults combines two BusFactorResult-s together.
 func (bf *BusFactorAnalysis) MergeResults(
-	r1, r2 interface{}, c1, c2 *core.CommonAnalysisResult,
-) interface{} {
+	r1, r2 any, c1, c2 *core.CommonAnalysisResult,
+) any {
 	bfr1 := r1.(BusFactorResult)
 	bfr2 := r2.(BusFactorResult)
 
@@ -456,9 +494,8 @@ func (bf *BusFactorAnalysis) MergeResults(
 	}
 
 	// Merge snapshots: take the snapshot with the larger total lines for overlapping ticks
-	for tick, snapshot := range bfr1.Snapshots {
-		merged.Snapshots[tick] = snapshot
-	}
+	maps.Copy(merged.Snapshots, bfr1.Snapshots)
+
 	for tick, snapshot := range bfr2.Snapshots {
 		if existing, ok := merged.Snapshots[tick]; !ok || snapshot.TotalLines > existing.TotalLines {
 			merged.Snapshots[tick] = snapshot
@@ -466,9 +503,8 @@ func (bf *BusFactorAnalysis) MergeResults(
 	}
 
 	// Merge subsystem bus factors: take the max (worst case)
-	for dir, bf := range bfr1.SubsystemBusFactor {
-		merged.SubsystemBusFactor[dir] = bf
-	}
+	maps.Copy(merged.SubsystemBusFactor, bfr1.SubsystemBusFactor)
+
 	for dir, bf := range bfr2.SubsystemBusFactor {
 		if existing, ok := merged.SubsystemBusFactor[dir]; !ok || bf > existing {
 			merged.SubsystemBusFactor[dir] = bf

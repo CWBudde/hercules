@@ -33,10 +33,12 @@ var (
 
 func init() {
 	RegisterLanguage(pyExtractor{})
+
 	pyStaticQueries = make([]*sitter.Query, len(pyStaticQuerySources))
 	for i, src := range pyStaticQuerySources {
 		pyStaticQueries[i] = mustQuery(src, pyLang)
 	}
+
 	pyDynamicQ = mustQuery(pyDynamicQuery, pyLang)
 }
 
@@ -49,25 +51,32 @@ func (pyExtractor) Imports(content []byte) ([]string, error) {
 	if root == nil {
 		return nil, nil
 	}
+
 	out := make([]string, 0)
+
 	for _, q := range pyStaticQueries {
 		runQuery(q, root, pyLang, content, func(captures []sitter.QueryCapture) {
 			if len(captures) != 1 {
 				return
 			}
+
 			out = append(out, nodeTextString(captures[0].Node, content))
 		})
 	}
+
 	runQuery(pyDynamicQ, root, pyLang, content, func(captures []sitter.QueryCapture) {
 		if len(captures) != 2 {
 			return
 		}
+
 		fn := nodeTextString(captures[0].Node, content)
 		if _, ok := pyDynamicFns[fn]; !ok {
 			return
 		}
+
 		arg := nodeTextString(captures[1].Node, content)
 		out = append(out, strings.Trim(arg, `'"`))
 	})
+
 	return out, nil
 }

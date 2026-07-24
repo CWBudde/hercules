@@ -41,7 +41,7 @@ func TestStoryDetectorListConfigurationOptions(t *testing.T) {
 	assert.Equal(t, ConfigStoryDetectorMergeDictPath, opts[0].Name)
 	assert.Equal(t, "story-dict", opts[0].Flag)
 	assert.Equal(t, core.PathConfigurationOption, opts[0].Type)
-	assert.Equal(t, "", opts[0].Default)
+	assert.Empty(t, opts[0].Default)
 }
 
 func TestStoryDetectorConfigureWithMergeDict(t *testing.T) {
@@ -54,7 +54,7 @@ func TestStoryDetectorConfigureWithMergeDict(t *testing.T) {
 		plumbing.NewHash("3333333333333333333333333333333333333333"): "Story A", // Same name
 	}
 
-	facts := map[string]interface{}{
+	facts := map[string]any{
 		FactStoryDetectorMergeDict: mergeDict,
 		core.ConfigLogger:          core.NewLogger(),
 	}
@@ -76,7 +76,7 @@ func TestStoryDetectorConfigureWithMergeDict(t *testing.T) {
 func TestStoryDetectorConfigureWithMergeCount(t *testing.T) {
 	sd := &StoryDetector{}
 
-	facts := map[string]interface{}{
+	facts := map[string]any{
 		core.FactMergeHashCount: 10,
 		core.ConfigLogger:       core.NewLogger(),
 	}
@@ -105,7 +105,7 @@ func TestStoryDetectorConfigureWithDictPath(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, tmpf.Close())
 
-	facts := map[string]interface{}{
+	facts := map[string]any{
 		ConfigStoryDetectorMergeDictPath: tmpf.Name(),
 		core.ConfigLogger:                core.NewLogger(),
 	}
@@ -124,7 +124,7 @@ func TestStoryDetectorConfigureError(t *testing.T) {
 	sd := &StoryDetector{}
 
 	// No merge dict or count provided
-	facts := map[string]interface{}{
+	facts := map[string]any{
 		core.ConfigLogger: core.NewLogger(),
 	}
 
@@ -136,7 +136,7 @@ func TestStoryDetectorConfigureError(t *testing.T) {
 func TestStoryDetectorConfigureInvalidPath(t *testing.T) {
 	sd := &StoryDetector{}
 
-	facts := map[string]interface{}{
+	facts := map[string]any{
 		ConfigStoryDetectorMergeDictPath: "/nonexistent/path/to/dict.txt",
 		core.ConfigLogger:                core.NewLogger(),
 	}
@@ -148,7 +148,7 @@ func TestStoryDetectorConfigureInvalidPath(t *testing.T) {
 
 func TestStoryDetectorConfigureUpstream(t *testing.T) {
 	sd := &StoryDetector{}
-	err := sd.ConfigureUpstream(map[string]interface{}{})
+	err := sd.ConfigureUpstream(map[string]any{})
 	assert.NoError(t, err)
 }
 
@@ -180,7 +180,7 @@ func TestStoryDetectorConsume(t *testing.T) {
 		},
 	}
 
-	deps := map[string]interface{}{
+	deps := map[string]any{
 		core.DependencyNextMerge: commit,
 	}
 
@@ -201,7 +201,7 @@ func TestStoryDetectorConsumeNilCommit(t *testing.T) {
 		l:              core.NewLogger(),
 	}
 
-	deps := map[string]interface{}{
+	deps := map[string]any{
 		core.DependencyNextMerge: (*object.Commit)(nil),
 	}
 
@@ -233,7 +233,7 @@ func TestStoryDetectorConsumeExpandDict(t *testing.T) {
 		},
 	}
 
-	deps := map[string]interface{}{
+	deps := map[string]any{
 		core.DependencyNextMerge: commit,
 	}
 
@@ -270,7 +270,7 @@ func TestStoryDetectorConsumeExceedLimit(t *testing.T) {
 		},
 	}
 
-	deps := map[string]interface{}{
+	deps := map[string]any{
 		core.DependencyNextMerge: commit,
 	}
 
@@ -298,7 +298,7 @@ func TestStoryDetectorConsumeUnknownHashNoExpand(t *testing.T) {
 		},
 	}
 
-	deps := map[string]interface{}{
+	deps := map[string]any{
 		core.DependencyNextMerge: commit,
 	}
 
@@ -613,7 +613,7 @@ func TestStoryDetectorIntegration(t *testing.T) {
 	require.NoError(t, tmpf.Close())
 
 	// Configure
-	facts := map[string]interface{}{
+	facts := map[string]any{
 		ConfigStoryDetectorMergeDictPath: tmpf.Name(),
 		core.ConfigLogger:                core.NewLogger(),
 	}
@@ -634,7 +634,7 @@ func TestStoryDetectorIntegration(t *testing.T) {
 		},
 	}
 
-	result, err := sd.Consume(map[string]interface{}{
+	result, err := sd.Consume(map[string]any{
 		core.DependencyNextMerge: commit1,
 	})
 	require.NoError(t, err)
@@ -649,7 +649,7 @@ func TestStoryDetectorIntegration(t *testing.T) {
 		},
 	}
 
-	result, err = sd.Consume(map[string]interface{}{
+	result, err = sd.Consume(map[string]any{
 		core.DependencyNextMerge: commit2,
 	})
 	require.NoError(t, err)

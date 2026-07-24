@@ -37,8 +37,10 @@ func ParseProto(data []byte) (Snapshot, error) {
 			if matches == nil {
 				continue
 			}
+
 			snapshot.Messages = append(snapshot.Messages, Message{Name: matches[1]})
 			current = &snapshot.Messages[len(snapshot.Messages)-1]
+
 			continue
 		}
 
@@ -48,9 +50,11 @@ func ParseProto(data []byte) (Snapshot, error) {
 		}
 
 		if matches := reservedRe.FindStringSubmatch(line); matches != nil {
-			if err := parseReserved(current, matches[1]); err != nil {
+			err := parseReserved(current, matches[1])
+			if err != nil {
 				return Snapshot{}, fmt.Errorf("line %d: %w", lineno+1, err)
 			}
+
 			continue
 		}
 
@@ -59,6 +63,7 @@ func ParseProto(data []byte) (Snapshot, error) {
 			if err != nil {
 				return Snapshot{}, fmt.Errorf("line %d: parse field number %q: %w", lineno+1, matches[4], err)
 			}
+
 			current.Fields = append(current.Fields, Field{
 				Number: number,
 				Name:   matches[3],
@@ -66,6 +71,7 @@ func ParseProto(data []byte) (Snapshot, error) {
 				Key:    matches[1],
 				Value:  matches[2],
 			})
+
 			continue
 		}
 
@@ -74,6 +80,7 @@ func ParseProto(data []byte) (Snapshot, error) {
 			if err != nil {
 				return Snapshot{}, fmt.Errorf("line %d: parse field number %q: %w", lineno+1, matches[4], err)
 			}
+
 			current.Fields = append(current.Fields, Field{
 				Number: number,
 				Name:   matches[3],
@@ -86,6 +93,7 @@ func ParseProto(data []byte) (Snapshot, error) {
 	sort.Slice(snapshot.Messages, func(i, j int) bool {
 		return snapshot.Messages[i].Name < snapshot.Messages[j].Name
 	})
+
 	for i := range snapshot.Messages {
 		message := &snapshot.Messages[i]
 		sort.Slice(message.Fields, func(j, k int) bool {
@@ -94,43 +102,51 @@ func ParseProto(data []byte) (Snapshot, error) {
 		sort.Ints(message.ReservedNumbers)
 		sort.Strings(message.ReservedNames)
 	}
+
 	return snapshot, nil
 }
 
 func parseReserved(message *Message, spec string) error {
-	for _, part := range strings.Split(spec, ",") {
+	for part := range strings.SplitSeq(spec, ",") {
 		part = strings.TrimSpace(part)
 		if matches := reservedNameRe.FindStringSubmatch(part); matches != nil {
 			message.ReservedNames = append(message.ReservedNames, matches[1])
 			continue
 		}
+
 		matches := reservedRangeRe.FindStringSubmatch(part)
 		if matches == nil {
 			return fmt.Errorf("unsupported reserved entry %q in message %s", part, message.Name)
 		}
+
 		lo, err := strconv.Atoi(matches[1])
 		if err != nil {
 			return err
 		}
+
 		hi := lo
 		if matches[2] != "" {
 			if hi, err = strconv.Atoi(matches[2]); err != nil {
 				return err
 			}
 		}
+
 		if hi < lo {
 			return fmt.Errorf("invalid reserved range %q in message %s", part, message.Name)
 		}
+
 		for n := lo; n <= hi; n++ {
 			message.ReservedNumbers = append(message.ReservedNumbers, n)
 		}
 	}
+
 	return nil
 }
 
 func stripLineComment(line string) string {
-	if idx := strings.Index(line, "//"); idx >= 0 {
-		return line[:idx]
+	if before, _, ok := strings.Cut(line, "//"); ok {
+		return before
 	}
+
 	return line
 }

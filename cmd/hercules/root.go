@@ -9,6 +9,7 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"maps"
 	"net/http"
 	_ "net/http/pprof"
 	"net/url"
@@ -24,10 +25,6 @@ import (
 	"unicode"
 
 	"github.com/Masterminds/sprig"
-	"github.com/cwbudde/hercules"
-	"github.com/cwbudde/hercules/internal/core"
-	"github.com/cwbudde/hercules/internal/pb"
-	"github.com/cwbudde/hercules/internal/plumbing/identity"
 	sivafs "github.com/cyraxred/go-billy-siva"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-billy/v5/osfs"
@@ -44,6 +41,11 @@ import (
 	"github.com/spf13/pflag"
 	"golang.org/x/crypto/ssh/terminal"
 	progress "gopkg.in/cheggaaa/pb.v1"
+
+	"github.com/cwbudde/hercules"
+	"github.com/cwbudde/hercules/internal/core"
+	"github.com/cwbudde/hercules/internal/pb"
+	"github.com/cwbudde/hercules/internal/plumbing/identity"
 )
 
 type progressMode string
@@ -126,7 +128,7 @@ func (writer oneLineWriter) Write(p []byte) (n int, err error) {
 	if strings.HasSuffix(strp, "done.") || len(strp) == 0 {
 		strp = "cloning..."
 	} else {
-		strp = strings.Replace(strp, "\n", "\033[2K\r", -1)
+		strp = strings.ReplaceAll(strp, "\n", "\033[2K\r")
 	}
 	_, err = writer.Writer.Write([]byte("\033[2K\r"))
 	if err != nil {
@@ -305,7 +307,7 @@ func loadPlugins() {
 	}
 }
 
-// rootCmd represents the base command when called without any subcommands
+// rootCmd represents the base command when called without any subcommands.
 var rootCmd = &cobra.Command{
 	Use:   "hercules",
 	Short: "Analyse a Git repository.",
@@ -684,17 +686,15 @@ func writeRootResults(
 
 type identityWorkflowOptions struct {
 	Commits      []*object.Commit
-	Facts        map[string]interface{}
+	Facts        map[string]any
 	Audit        bool
 	TemplatePath string
 	Out          io.Writer
 }
 
 func runIdentityWorkflow(options identityWorkflowOptions) error {
-	facts := make(map[string]interface{}, len(options.Facts)+1)
-	for key, value := range options.Facts {
-		facts[key] = value
-	}
+	facts := make(map[string]any, len(options.Facts)+1)
+	maps.Copy(facts, options.Facts)
 	facts[hercules.ConfigPipelineCommits] = options.Commits
 	delete(facts, identity.FactIdentityDetectorReversedPeopleDict)
 
@@ -818,7 +818,7 @@ func (v *flagSorter) weightFlagsOf(item core.PipelineItem, flagSet *pflag.FlagSe
 
 func printResults(
 	uri string, deployed []hercules.LeafPipelineItem,
-	results map[hercules.LeafPipelineItem]interface{},
+	results map[hercules.LeafPipelineItem]any,
 ) error {
 	commonResult := results[nil].(*hercules.CommonAnalysisResult)
 
@@ -873,7 +873,7 @@ func writeResultsHeader(
 
 func protobufResults(
 	uri string, deployed []hercules.LeafPipelineItem,
-	results map[hercules.LeafPipelineItem]interface{},
+	results map[hercules.LeafPipelineItem]any,
 ) error {
 	header := pb.Metadata{
 		Version:    pb.SchemaVersion,
@@ -916,8 +916,8 @@ func rpad(s string, padding int) string {
 	return fmt.Sprintf(fmt.Sprintf("%%-%ds", padding), s)
 }
 
-// tmpl was adapted from cobra/cobra.go
-func tmpl(w io.Writer, text string, data interface{}) error {
+// tmpl was adapted from cobra/cobra.go.
+func tmpl(w io.Writer, text string, data any) error {
 	templateFuncs := template.FuncMap{
 		"trim":                    strings.TrimSpace,
 		"trimRightSpace":          trimRightSpace,
@@ -926,9 +926,7 @@ func tmpl(w io.Writer, text string, data interface{}) error {
 		"gt":                      cobra.Gt,
 		"eq":                      cobra.Eq,
 	}
-	for k, v := range sprig.TxtFuncMap() {
-		templateFuncs[k] = v
-	}
+	maps.Copy(templateFuncs, sprig.TxtFuncMap())
 	t := template.New("top")
 	t.Funcs(templateFuncs)
 	template.Must(t.Parse(text))
@@ -959,7 +957,7 @@ func formatUsage(c *cobra.Command) error {
 	for key := range filter {
 		localFlags.Lookup(key).Hidden = true
 	}
-	args := map[string]interface{}{
+	args := map[string]any{
 		"c":        c,
 		"leaves":   leaves,
 		"plumbing": plumbing,
@@ -1027,7 +1025,7 @@ Use "{{.c.CommandPath}} [command] --help" for more information about a command.{
 	return err
 }
 
-// versionCmd prints the API version and the Git commit hash
+// versionCmd prints the API version and the Git commit hash.
 var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Print version information and exit.",
@@ -1042,7 +1040,7 @@ func runVersion(cmd *cobra.Command, _ []string) {
 }
 
 var (
-	cmdlineFacts      map[string]interface{}
+	cmdlineFacts      map[string]any
 	cmdlineDeployed   map[string]*bool
 	activationByFlags map[string][]string
 )

@@ -61,7 +61,7 @@ func MetadataToCommonAnalysisResult(meta *core.Metadata) *CommonAnalysisResult {
 }
 
 // Pipeline is the core Hercules entity which carries several PipelineItems and executes them.
-// See the extended example of how a Pipeline works in doc.go
+// See the extended example of how a Pipeline works in doc.go.
 type Pipeline = core.Pipeline
 
 const (
@@ -79,7 +79,7 @@ const (
 	// ConfigPipelineCommits is the name of the Pipeline configuration option (Pipeline.Initialize())
 	// which allows to specify the custom commit sequence. By default, Pipeline.Commits() is used.
 	ConfigPipelineCommits = core.ConfigPipelineCommits
-	// ConfigTickSize is the number of hours per 'tick'
+	// ConfigTickSize is the number of hours per 'tick'.
 	ConfigTickSize = plumbing.ConfigTicksSinceStartTickSize
 	// ConfigLogger is used to set the logger in all pipeline items.
 	ConfigLogger = core.ConfigLogger
@@ -165,8 +165,8 @@ func EnablePathFlagTypeMasquerade() {
 	core.EnablePathFlagTypeMasquerade()
 }
 
-// Logger is the Hercules logging interface
+// Logger is the Hercules logging interface.
 type Logger core.Logger
 
-// NewLogger returns an instance of the default Hercules logger
+// NewLogger returns an instance of the default Hercules logger.
 func NewLogger() core.Logger { return core.NewLogger() }

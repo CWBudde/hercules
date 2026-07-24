@@ -42,14 +42,14 @@ func TestLineHistoryLoaderListConfigurationOptions(t *testing.T) {
 	assert.Equal(t, ConfigLinesLoadFrom, opts[0].Name)
 	assert.Equal(t, "history-line-load", opts[0].Flag)
 	assert.Equal(t, core.PathConfigurationOption, opts[0].Type)
-	assert.Equal(t, "", opts[0].Default)
+	assert.Empty(t, opts[0].Default)
 }
 
 func TestLineHistoryLoaderConfigure(t *testing.T) {
 	loader := &LineHistoryLoader{}
 	logger := core.NewLogger()
 
-	facts := map[string]interface{}{
+	facts := map[string]any{
 		core.ConfigLogger: logger,
 	}
 
@@ -72,7 +72,7 @@ func TestLineHistoryLoaderConfigure(t *testing.T) {
 
 func TestLineHistoryLoaderConfigureWithoutLogger(t *testing.T) {
 	loader := &LineHistoryLoader{}
-	facts := map[string]interface{}{}
+	facts := map[string]any{}
 
 	err := loader.Configure(facts)
 	assert.NoError(t, err)
@@ -81,7 +81,7 @@ func TestLineHistoryLoaderConfigureWithoutLogger(t *testing.T) {
 
 func TestLineHistoryLoaderConfigureUpstream(t *testing.T) {
 	loader := &LineHistoryLoader{}
-	err := loader.ConfigureUpstream(map[string]interface{}{})
+	err := loader.ConfigureUpstream(map[string]any{})
 	assert.NoError(t, err)
 }
 
@@ -102,7 +102,7 @@ func TestLineHistoryLoaderConsumeEmpty(t *testing.T) {
 	loader.commits = []commitInfo{}
 	loader.nextCommit = 0
 
-	result, err := loader.Consume(map[string]interface{}{})
+	result, err := loader.Consume(map[string]any{})
 	assert.NoError(t, err)
 	assert.NotNil(t, result)
 
@@ -139,7 +139,7 @@ func TestLineHistoryLoaderConsumeWithCommits(t *testing.T) {
 	loader.nextCommit = 0
 
 	// First consume
-	result, err := loader.Consume(map[string]interface{}{})
+	result, err := loader.Consume(map[string]any{})
 	assert.NoError(t, err)
 	assert.Equal(t, 1, loader.nextCommit)
 	assert.Equal(t, int(core.AuthorId(1)), result[identity.DependencyAuthor])
@@ -151,7 +151,7 @@ func TestLineHistoryLoaderConsumeWithCommits(t *testing.T) {
 	assert.Equal(t, 100, changes.Changes[0].Delta)
 
 	// Second consume
-	result, err = loader.Consume(map[string]interface{}{})
+	result, err = loader.Consume(map[string]any{})
 	assert.NoError(t, err)
 	assert.Equal(t, 2, loader.nextCommit)
 	assert.Equal(t, int(core.AuthorId(2)), result[identity.DependencyAuthor])
@@ -162,7 +162,7 @@ func TestLineHistoryLoaderConsumeWithCommits(t *testing.T) {
 	assert.Equal(t, -10, changes.Changes[0].Delta)
 
 	// Third consume (past end)
-	result, err = loader.Consume(map[string]interface{}{})
+	result, err = loader.Consume(map[string]any{})
 	assert.NoError(t, err)
 	assert.Equal(t, int(core.AuthorMissing), result[identity.DependencyAuthor])
 }
@@ -198,16 +198,16 @@ func TestLoadedFileIdResolverNameOf(t *testing.T) {
 
 	resolver := loadedFileIdResolver{analyser: loader}
 
-	assert.Equal(t, "", resolver.NameOf(0))
+	assert.Empty(t, resolver.NameOf(0))
 	assert.Equal(t, "file1.go", resolver.NameOf(1))
 	assert.Equal(t, "file2.go", resolver.NameOf(2))
 	assert.Equal(t, "dir/file3.go", resolver.NameOf(3))
-	assert.Equal(t, "", resolver.NameOf(999))
+	assert.Empty(t, resolver.NameOf(999))
 }
 
 func TestLoadedFileIdResolverNameOfNil(t *testing.T) {
 	resolver := loadedFileIdResolver{analyser: nil}
-	assert.Equal(t, "", resolver.NameOf(1))
+	assert.Empty(t, resolver.NameOf(1))
 }
 
 func TestLoadedFileIdResolverMergedWith(t *testing.T) {
@@ -228,7 +228,7 @@ func TestLoadedFileIdResolverMergedWith(t *testing.T) {
 	// Non-existing file
 	id, name, present = resolver.MergedWith(999)
 	assert.Equal(t, FileId(0), id)
-	assert.Equal(t, "", name)
+	assert.Empty(t, name)
 	assert.False(t, present)
 }
 
@@ -236,7 +236,7 @@ func TestLoadedFileIdResolverMergedWithNil(t *testing.T) {
 	resolver := loadedFileIdResolver{analyser: nil}
 	id, name, present := resolver.MergedWith(1)
 	assert.Equal(t, FileId(0), id)
-	assert.Equal(t, "", name)
+	assert.Empty(t, name)
 	assert.False(t, present)
 }
 
@@ -607,7 +607,7 @@ LineDumper:
 	require.NoError(t, err)
 
 	loader := &LineHistoryLoader{}
-	facts := map[string]interface{}{
+	facts := map[string]any{
 		ConfigLinesLoadFrom: tmpFile,
 	}
 
@@ -638,27 +638,27 @@ func TestFileInfoForEachPanics(t *testing.T) {
 	})
 }
 
-// testLogger is a minimal logger implementation for testing
+// testLogger is a minimal logger implementation for testing.
 type testLogger struct {
 	criticalCalled bool
 	lastMessage    string
 }
 
-func (l *testLogger) Critical(args ...interface{}) {
+func (l *testLogger) Critical(args ...any) {
 	l.criticalCalled = true
 	if len(args) > 0 {
 		l.lastMessage = args[0].(string)
 	}
 }
 
-func (l *testLogger) Criticalf(format string, args ...interface{}) {
+func (l *testLogger) Criticalf(format string, args ...any) {
 	l.criticalCalled = true
 	l.lastMessage = format
 }
 
-func (l *testLogger) Info(...interface{})           {}
-func (l *testLogger) Infof(string, ...interface{})  {}
-func (l *testLogger) Warn(...interface{})           {}
-func (l *testLogger) Warnf(string, ...interface{})  {}
-func (l *testLogger) Error(...interface{})          {}
-func (l *testLogger) Errorf(string, ...interface{}) {}
+func (l *testLogger) Info(...any)           {}
+func (l *testLogger) Infof(string, ...any)  {}
+func (l *testLogger) Warn(...any)           {}
+func (l *testLogger) Warnf(string, ...any)  {}
+func (l *testLogger) Error(...any)          {}
+func (l *testLogger) Errorf(string, ...any) {}

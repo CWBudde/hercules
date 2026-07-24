@@ -67,6 +67,7 @@ func (v loadedFileIdResolver) MergedWith(id FileId) (FileId, string, bool) {
 	if f, ok := v.analyser.files[id]; ok {
 		return id, f.Name, true
 	}
+
 	return 0, "", false
 }
 
@@ -78,6 +79,7 @@ func (v loadedFileIdResolver) ForEachFile(callback func(id FileId, name string))
 	for id, file := range v.analyser.files {
 		callback(id, file.Name)
 	}
+
 	return true
 }
 
@@ -90,10 +92,12 @@ func (v loadedFileIdResolver) ScanFile(id FileId, callback func(line int, tick c
 	if !ok {
 		return false
 	}
+
 	file.ForEach(func(line, value int) {
 		author, tick := unpackPersonWithTick(value)
 		callback(line, tick, author)
 	})
+
 	return true
 }
 
@@ -107,6 +111,7 @@ func (v authorResolver) MaxCount() int {
 	if v.identities == nil {
 		return 0
 	}
+
 	return len(v.identities.authors)
 }
 
@@ -114,6 +119,7 @@ func (v authorResolver) Count() int {
 	if v.identities == nil {
 		return 0
 	}
+
 	return len(v.identities.authors)
 }
 
@@ -125,6 +131,7 @@ func (v authorResolver) FriendlyNameOf(id core.AuthorId) string {
 	if id == core.AuthorMissing || id < 0 || v.identities == nil || int(id) >= len(v.identities.authors) {
 		return core.AuthorMissingName
 	}
+
 	return v.identities.authors[id]
 }
 
@@ -132,9 +139,11 @@ func (v authorResolver) ForEachIdentity(callback func(core.AuthorId, string)) bo
 	if v.identities == nil {
 		return false
 	}
+
 	for id, name := range v.identities.authors {
 		callback(core.AuthorId(id), name)
 	}
+
 	return true
 }
 
@@ -142,6 +151,7 @@ func (v authorResolver) CopyNames(bool) []string {
 	if v.identities == nil {
 		return nil
 	}
+
 	return append([]string(nil), v.identities.authors...)
 }
 
@@ -179,14 +189,16 @@ func (analyser *LineHistoryLoader) ListConfigurationOptions() []core.Configurati
 }
 
 // Configure sets the properties previously published by ListConfigurationOptions().
-func (analyser *LineHistoryLoader) Configure(facts map[string]interface{}) error {
+func (analyser *LineHistoryLoader) Configure(facts map[string]any) error {
 	if l, exists := facts[core.ConfigLogger].(core.Logger); exists {
 		analyser.l = l
 	} else {
 		analyser.l = core.NewLogger()
 	}
+
 	if val, exists := facts[ConfigLinesLoadFrom].(string); exists {
-		if err := analyser.loadChangesFrom(val); err != nil {
+		err := analyser.loadChangesFrom(val)
+		if err != nil {
 			return err
 		}
 	}
@@ -199,7 +211,7 @@ func (analyser *LineHistoryLoader) Configure(facts map[string]interface{}) error
 	return nil
 }
 
-func (analyser *LineHistoryLoader) ConfigureUpstream(_ map[string]interface{}) error {
+func (analyser *LineHistoryLoader) ConfigureUpstream(_ map[string]any) error {
 	return nil
 }
 
@@ -213,7 +225,7 @@ func (analyser *LineHistoryLoader) Initialize(*git.Repository) error {
 	return nil
 }
 
-func (analyser *LineHistoryLoader) Consume(map[string]interface{}) (map[string]interface{}, error) {
+func (analyser *LineHistoryLoader) Consume(map[string]any) (map[string]any, error) {
 	var commit commitInfo
 	if analyser.nextCommit < len(analyser.commits) {
 		commit = analyser.commits[analyser.nextCommit]
@@ -222,7 +234,7 @@ func (analyser *LineHistoryLoader) Consume(map[string]interface{}) (map[string]i
 		commit.Author = core.AuthorMissing
 	}
 
-	result := map[string]interface{}{
+	result := map[string]any{
 		DependencyLineHistory: core.LineHistoryChanges{
 			Changes:  commit.Changes,
 			Resolver: loadedFileIdResolver{analyser},
@@ -263,7 +275,8 @@ func (analyser *LineHistoryLoader) loadChangesFromYaml(decoder *yaml.Decoder) er
 		LineDumper dumperScheme `yaml:"LineDumper"`
 	}{}
 
-	if err := decoder.Decode(&values); err != nil {
+	err := decoder.Decode(&values)
+	if err != nil {
 		return err
 	}
 
@@ -278,20 +291,25 @@ func (analyser *LineHistoryLoader) loadChangesFromYaml(decoder *yaml.Decoder) er
 	for _, yamlCommit := range values.LineDumper.Commits {
 		analyser.commits = append(analyser.commits, commitInfo{})
 		info := &analyser.commits[len(analyser.commits)-1]
+
 		for r := bufio.NewScanner(strings.NewReader(yamlCommit.Value.(string))); r.Scan(); {
 			line := r.Text()
+
 			chunks := regexSplitBySpace.Split(line, -1)
 			if len(chunks) != 6 {
 				return fmt.Errorf("unexpected number of fields '%d' from: %s", len(chunks), line)
 			}
+
 			vals := make([]int, len(chunks))
 			for i, s := range chunks {
 				v, err := strconv.Atoi(s)
 				if err != nil {
 					return fmt.Errorf("unable to parse '%s' from: %s", s, line)
 				}
+
 				vals[i] = v
 			}
+
 			change := core.LineHistoryChange{
 				FileId:     core.FileId(vals[0]),
 				PrevAuthor: core.AuthorId(vals[1]),
@@ -302,6 +320,7 @@ func (analyser *LineHistoryLoader) loadChangesFromYaml(decoder *yaml.Decoder) er
 			}
 			info.Changes = append(info.Changes, change)
 		}
+
 		info.Tick = info.Changes[0].CurrTick
 		info.Author = info.Changes[0].CurrAuthor
 		info.Hash = plumbing.NewHash(yamlCommit.Key.(string))

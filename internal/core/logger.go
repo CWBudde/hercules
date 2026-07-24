@@ -7,19 +7,19 @@ import (
 	"strings"
 )
 
-// ConfigLogger is the key for the pipeline's logger
+// ConfigLogger is the key for the pipeline's logger.
 const ConfigLogger = "Core.Logger"
 
 // Logger defines the output interface used by Hercules components.
 type Logger interface {
-	Info(...interface{})
-	Infof(string, ...interface{})
-	Warn(...interface{})
-	Warnf(string, ...interface{})
-	Error(...interface{})
-	Errorf(string, ...interface{})
-	Critical(...interface{})
-	Criticalf(string, ...interface{})
+	Info(...any)
+	Infof(string, ...any)
+	Warn(...any)
+	Warnf(string, ...any)
+	Error(...any)
+	Errorf(string, ...any)
+	Critical(...any)
+	Criticalf(string, ...any)
 }
 
 // DefaultLogger is the default logger used by a pipeline, and wraps the standard
@@ -40,32 +40,32 @@ func NewLogger() *DefaultLogger {
 }
 
 // Info writes to "info" logger.
-func (d *DefaultLogger) Info(v ...interface{}) { d.I.Println(v...) }
+func (d *DefaultLogger) Info(v ...any) { d.I.Println(v...) }
 
 // Infof writes to "info" logger with printf-style formatting.
-func (d *DefaultLogger) Infof(f string, v ...interface{}) { d.I.Printf(f, v...) }
+func (d *DefaultLogger) Infof(f string, v ...any) { d.I.Printf(f, v...) }
 
 // Warn writes to the "warning" logger.
-func (d *DefaultLogger) Warn(v ...interface{}) { d.W.Println(v...) }
+func (d *DefaultLogger) Warn(v ...any) { d.W.Println(v...) }
 
 // Warnf writes to the "warning" logger with printf-style formatting.
-func (d *DefaultLogger) Warnf(f string, v ...interface{}) { d.W.Printf(f, v...) }
+func (d *DefaultLogger) Warnf(f string, v ...any) { d.W.Printf(f, v...) }
 
 // Error writes to the "error" logger.
-func (d *DefaultLogger) Error(v ...interface{}) { d.E.Println(v...) }
+func (d *DefaultLogger) Error(v ...any) { d.E.Println(v...) }
 
 // Errorf writes to the "error" logger with printf-style formatting.
-func (d *DefaultLogger) Errorf(f string, v ...interface{}) { d.E.Printf(f, v...) }
+func (d *DefaultLogger) Errorf(f string, v ...any) { d.E.Printf(f, v...) }
 
 // Critical writes to the "error" logger and logs the current stacktrace.
-func (d *DefaultLogger) Critical(v ...interface{}) {
+func (d *DefaultLogger) Critical(v ...any) {
 	d.E.Println(v...)
 	d.logStacktraceToErr()
 }
 
 // Criticalf writes to the "error" logger with printf-style formatting and logs the
 // current stacktrace.
-func (d *DefaultLogger) Criticalf(f string, v ...interface{}) {
+func (d *DefaultLogger) Criticalf(f string, v ...any) {
 	d.E.Printf(f, v...)
 	d.logStacktraceToErr()
 }
@@ -75,7 +75,7 @@ func (d *DefaultLogger) Criticalf(f string, v ...interface{}) {
 // * debug.Stack()
 // * core.captureStacktrace()
 // * DefaultLogger::logStacktraceToErr()
-// * DefaultLogger::Error() or DefaultLogger::Errorf()
+// * DefaultLogger::Error() or DefaultLogger::Errorf().
 func (d *DefaultLogger) logStacktraceToErr() {
 	d.E.Println("stacktrace:\n" + strings.Join(captureStacktrace(4), "\n"))
 }
@@ -83,9 +83,11 @@ func (d *DefaultLogger) logStacktraceToErr() {
 func captureStacktrace(skip int) []string {
 	stack := string(debug.Stack())
 	lines := strings.Split(stack, "\n")
+
 	linesToSkip := 2*skip + 1
 	if linesToSkip > len(lines) {
 		return lines
 	}
+
 	return lines[linesToSkip:]
 }

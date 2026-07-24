@@ -16,17 +16,17 @@ import (
 )
 
 const (
-	// ConfigRefactoringThreshold is the name of the configuration option
+	// ConfigRefactoringThreshold is the name of the configuration option.
 	ConfigRefactoringThreshold = "RefactoringProxy.Threshold"
 )
 
-// tickChangeMetrics tracks changes for one tick
+// tickChangeMetrics tracks changes for one tick.
 type tickChangeMetrics struct {
 	TotalChanges int // All additions, modifications, deletions, renames
 	Renames      int // Changes where From.Name != To.Name (both non-empty)
 }
 
-// RefactoringProxyResult is returned by RefactoringProxy.Finalize()
+// RefactoringProxyResult is returned by RefactoringProxy.Finalize().
 type RefactoringProxyResult struct {
 	// Time series data (parallel arrays, same length)
 	Ticks         []int     // Tick indices
@@ -39,7 +39,7 @@ type RefactoringProxyResult struct {
 	tickSize  time.Duration
 }
 
-// RefactoringProxy measures rename/move rate to identify refactoring phases
+// RefactoringProxy measures rename/move rate to identify refactoring phases.
 type RefactoringProxy struct {
 	core.NoopMerger
 	core.OneShotMergeProcessor
@@ -54,17 +54,17 @@ type RefactoringProxy struct {
 	l core.Logger
 }
 
-// Name of this PipelineItem
+// Name of this PipelineItem.
 func (rp *RefactoringProxy) Name() string {
 	return "RefactoringProxy"
 }
 
-// Provides returns entities produced
+// Provides returns entities produced.
 func (rp *RefactoringProxy) Provides() []string {
 	return []string{}
 }
 
-// Requires returns entities needed
+// Requires returns entities needed.
 func (rp *RefactoringProxy) Requires() []string {
 	return []string{
 		items.DependencyTreeChanges,
@@ -72,17 +72,17 @@ func (rp *RefactoringProxy) Requires() []string {
 	}
 }
 
-// Flag for command line switch
+// Flag for command line switch.
 func (rp *RefactoringProxy) Flag() string {
 	return "refactoring-proxy"
 }
 
-// Description explains what the analysis does
+// Description explains what the analysis does.
 func (rp *RefactoringProxy) Description() string {
 	return "Tracks rename/move rate over time to distinguish refactoring phases from feature work."
 }
 
-// ListConfigurationOptions returns changeable properties
+// ListConfigurationOptions returns changeable properties.
 func (rp *RefactoringProxy) ListConfigurationOptions() []core.ConfigurationOption {
 	options := [...]core.ConfigurationOption{
 		{
@@ -93,29 +93,33 @@ func (rp *RefactoringProxy) ListConfigurationOptions() []core.ConfigurationOptio
 			Default:     float32(0.5),
 		},
 	}
+
 	return options[:]
 }
 
-// Configure sets properties
-func (rp *RefactoringProxy) Configure(facts map[string]interface{}) error {
+// Configure sets properties.
+func (rp *RefactoringProxy) Configure(facts map[string]any) error {
 	if l, exists := facts[core.ConfigLogger].(core.Logger); exists {
 		rp.l = l
 	}
+
 	if val, exists := facts[ConfigRefactoringThreshold].(float32); exists {
 		rp.RefactoringThreshold = float64(val)
 	}
+
 	if val, exists := facts[items.FactTickSize].(time.Duration); exists {
 		rp.tickSize = val
 	}
+
 	return nil
 }
 
-// ConfigureUpstream configures upstream dependencies
-func (*RefactoringProxy) ConfigureUpstream(facts map[string]interface{}) error {
+// ConfigureUpstream configures upstream dependencies.
+func (*RefactoringProxy) ConfigureUpstream(facts map[string]any) error {
 	return nil
 }
 
-// Initialize resets caches
+// Initialize resets caches.
 func (rp *RefactoringProxy) Initialize(repository *git.Repository) error {
 	rp.l = core.NewLogger()
 	rp.tickMetrics = map[int]*tickChangeMetrics{}
@@ -128,7 +132,7 @@ func (rp *RefactoringProxy) Initialize(repository *git.Repository) error {
 	return nil
 }
 
-// isRename checks if a change represents a file rename
+// isRename checks if a change represents a file rename.
 func isRename(change *object.Change) bool {
 	hasFrom := change.From.Name != ""
 	hasTo := change.To.Name != ""
@@ -137,18 +141,19 @@ func isRename(change *object.Change) bool {
 	return hasFrom && hasTo && differentNames
 }
 
-// getOrCreateTickMetrics retrieves or creates tick metrics
+// getOrCreateTickMetrics retrieves or creates tick metrics.
 func (rp *RefactoringProxy) getOrCreateTickMetrics(tick int) *tickChangeMetrics {
 	metrics, exists := rp.tickMetrics[tick]
 	if !exists {
 		metrics = &tickChangeMetrics{}
 		rp.tickMetrics[tick] = metrics
 	}
+
 	return metrics
 }
 
-// Consume runs on next commit data
-func (rp *RefactoringProxy) Consume(deps map[string]interface{}) (map[string]interface{}, error) {
+// Consume runs on next commit data.
+func (rp *RefactoringProxy) Consume(deps map[string]any) (map[string]any, error) {
 	if !rp.ShouldConsumeCommit(deps) {
 		return nil, nil
 	}
@@ -173,12 +178,13 @@ func (rp *RefactoringProxy) Consume(deps map[string]interface{}) (map[string]int
 	return nil, nil
 }
 
-// Finalize returns the analysis result
-func (rp *RefactoringProxy) Finalize() interface{} {
+// Finalize returns the analysis result.
+func (rp *RefactoringProxy) Finalize() any {
 	ticks := make([]int, 0, len(rp.tickMetrics))
 	for tick := range rp.tickMetrics {
 		ticks = append(ticks, tick)
 	}
+
 	sort.Ints(ticks)
 
 	result := RefactoringProxyResult{
@@ -209,12 +215,12 @@ func (rp *RefactoringProxy) Finalize() interface{} {
 	return result
 }
 
-// Fork clones this pipeline item
+// Fork clones this pipeline item.
 func (rp *RefactoringProxy) Fork(n int) []core.PipelineItem {
 	return core.ForkSamePipelineItem(rp, n)
 }
 
-// serializeText outputs YAML format
+// serializeText outputs YAML format.
 func (rp *RefactoringProxy) serializeText(result *RefactoringProxyResult, writer io.Writer) {
 	fmt.Fprintln(writer, "  refactoring_proxy:")
 	fmt.Fprintf(writer, "    threshold: %.2f\n", result.Threshold)
@@ -222,46 +228,58 @@ func (rp *RefactoringProxy) serializeText(result *RefactoringProxyResult, writer
 
 	// Ticks array
 	fmt.Fprint(writer, "    ticks: [")
+
 	for i, tick := range result.Ticks {
 		if i > 0 {
 			fmt.Fprint(writer, ", ")
 		}
+
 		fmt.Fprintf(writer, "%d", tick)
 	}
+
 	fmt.Fprintln(writer, "]")
 
 	// Rename ratios array
 	fmt.Fprint(writer, "    rename_ratios: [")
+
 	for i, ratio := range result.RenameRatios {
 		if i > 0 {
 			fmt.Fprint(writer, ", ")
 		}
+
 		fmt.Fprintf(writer, "%.4f", ratio)
 	}
+
 	fmt.Fprintln(writer, "]")
 
 	// Is refactoring array
 	fmt.Fprint(writer, "    is_refactoring: [")
+
 	for i, isRef := range result.IsRefactoring {
 		if i > 0 {
 			fmt.Fprint(writer, ", ")
 		}
+
 		fmt.Fprintf(writer, "%t", isRef)
 	}
+
 	fmt.Fprintln(writer, "]")
 
 	// Total changes array
 	fmt.Fprint(writer, "    total_changes: [")
+
 	for i, total := range result.TotalChanges {
 		if i > 0 {
 			fmt.Fprint(writer, ", ")
 		}
+
 		fmt.Fprintf(writer, "%d", total)
 	}
+
 	fmt.Fprintln(writer, "]")
 }
 
-// serializeBinary outputs Protocol Buffers format
+// serializeBinary outputs Protocol Buffers format.
 func (rp *RefactoringProxy) serializeBinary(result *RefactoringProxyResult, writer io.Writer) error {
 	message := pb.RefactoringProxyResults{
 		Ticks:         make([]int32, len(result.Ticks)),
@@ -282,44 +300,50 @@ func (rp *RefactoringProxy) serializeBinary(result *RefactoringProxyResult, writ
 	if err != nil {
 		return err
 	}
+
 	_, err = writer.Write(serialized)
+
 	return err
 }
 
-// Serialize converts analysis result to text or bytes
-func (rp *RefactoringProxy) Serialize(result interface{}, binary bool, writer io.Writer) error {
+// Serialize converts analysis result to text or bytes.
+func (rp *RefactoringProxy) Serialize(result any, binary bool, writer io.Writer) error {
 	refactoringResult, ok := result.(RefactoringProxyResult)
 	if !ok {
 		return fmt.Errorf("result is not a RefactoringProxyResult: '%v'", result)
 	}
+
 	if binary {
 		return rp.serializeBinary(&refactoringResult, writer)
 	}
+
 	rp.serializeText(&refactoringResult, writer)
+
 	return nil
 }
 
-// Deserialize converts protobuf bytes to RefactoringProxyResult
-func (rp *RefactoringProxy) Deserialize(pbmessage []byte) (interface{}, error) {
+// Deserialize converts protobuf bytes to RefactoringProxyResult.
+func (rp *RefactoringProxy) Deserialize(pbmessage []byte) (any, error) {
 	message := pb.RefactoringProxyResults{}
+
 	err := proto.Unmarshal(pbmessage, &message)
 	if err != nil {
 		return nil, err
 	}
 
 	result := RefactoringProxyResult{
-		Ticks:         make([]int, len(message.Ticks)),
-		RenameRatios:  make([]float64, len(message.RenameRatios)),
-		IsRefactoring: message.IsRefactoring,
-		TotalChanges:  make([]int, len(message.TotalChanges)),
-		Threshold:     float64(message.Threshold), // Convert float32 from protobuf to float64
-		tickSize:      time.Duration(message.TickSize),
+		Ticks:         make([]int, len(message.GetTicks())),
+		RenameRatios:  make([]float64, len(message.GetRenameRatios())),
+		IsRefactoring: message.GetIsRefactoring(),
+		TotalChanges:  make([]int, len(message.GetTotalChanges())),
+		Threshold:     float64(message.GetThreshold()), // Convert float32 from protobuf to float64
+		tickSize:      time.Duration(message.GetTickSize()),
 	}
 
-	for i := range message.Ticks {
-		result.Ticks[i] = int(message.Ticks[i])
-		result.RenameRatios[i] = float64(message.RenameRatios[i])
-		result.TotalChanges[i] = int(message.TotalChanges[i])
+	for i := range message.GetTicks() {
+		result.Ticks[i] = int(message.GetTicks()[i])
+		result.RenameRatios[i] = float64(message.GetRenameRatios()[i])
+		result.TotalChanges[i] = int(message.GetTotalChanges()[i])
 	}
 
 	return result, nil

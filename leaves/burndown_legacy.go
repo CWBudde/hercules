@@ -191,11 +191,12 @@ func (analyser *LegacyBurndownAnalysis) ListConfigurationOptions() []core.Config
 			Default:     false,
 		},
 	}
+
 	return append(BurndownSharedOptions[:], options[:]...)
 }
 
 // Configure sets the properties previously published by ListConfigurationOptions().
-func (analyser *LegacyBurndownAnalysis) Configure(facts map[string]interface{}) error {
+func (analyser *LegacyBurndownAnalysis) Configure(facts map[string]any) error {
 	if l, exists := facts[core.ConfigLogger].(core.Logger); exists {
 		analyser.l = l
 	} else {
@@ -205,15 +206,19 @@ func (analyser *LegacyBurndownAnalysis) Configure(facts map[string]interface{}) 
 	if val, exists := facts[items.FactTickSize].(time.Duration); exists {
 		analyser.tickSize = val
 	}
+
 	if val, exists := facts[ConfigBurndownGranularity].(int); exists {
 		analyser.Granularity = val
 	}
+
 	if val, exists := facts[ConfigBurndownSampling].(int); exists {
 		analyser.Sampling = val
 	}
+
 	if val, exists := facts[ConfigBurndownTrackFiles].(bool); exists {
 		analyser.TrackFiles = val
 	}
+
 	if people, exists := facts[ConfigBurndownTrackPeople].(bool); people {
 		if val, exists := facts[identity.FactIdentityDetectorReversedPeopleDict].([]string); exists {
 			analyser.reversedPeopleDict = val
@@ -222,15 +227,19 @@ func (analyser *LegacyBurndownAnalysis) Configure(facts map[string]interface{}) 
 	} else if exists {
 		analyser.PeopleNumber = 0
 	}
+
 	if val, exists := facts[ConfigLegacyBurndownHibernationThreshold].(int); exists {
 		analyser.HibernationThreshold = val
 	}
+
 	if val, exists := facts[ConfigLegacyBurndownHibernationToDisk].(bool); exists {
 		analyser.HibernationToDisk = val
 	}
+
 	if val, exists := facts[ConfigLegacyBurndownHibernationDirectory].(string); exists {
 		analyser.HibernationDirectory = val
 	}
+
 	if val, exists := facts[ConfigLegacyBurndownDebug].(bool); exists {
 		analyser.Debug = val
 	}
@@ -238,7 +247,7 @@ func (analyser *LegacyBurndownAnalysis) Configure(facts map[string]interface{}) 
 	return nil
 }
 
-func (analyser *LegacyBurndownAnalysis) ConfigureUpstream(_ map[string]interface{}) error {
+func (analyser *LegacyBurndownAnalysis) ConfigureUpstream(_ map[string]any) error {
 	return nil
 }
 
@@ -262,22 +271,27 @@ func (analyser *LegacyBurndownAnalysis) Initialize(repository *git.Repository) e
 			DefaultBurndownGranularity)
 		analyser.Granularity = DefaultBurndownGranularity
 	}
+
 	if analyser.Sampling <= 0 {
 		analyser.l.Warnf("adjusted the sampling to %d ticks\n",
 			DefaultBurndownGranularity)
 		analyser.Sampling = DefaultBurndownGranularity
 	}
+
 	if analyser.Sampling > analyser.Granularity {
 		analyser.l.Warnf("granularity may not be less than sampling, adjusted to %d\n",
 			analyser.Granularity)
 		analyser.Sampling = analyser.Granularity
 	}
+
 	analyser.repository = repository
 	analyser.globalHistory = sparseHistory{}
+
 	analyser.fileHistories = map[string]sparseHistory{}
 	if analyser.PeopleNumber < 0 {
 		return fmt.Errorf("PeopleNumber is negative: %d", analyser.PeopleNumber)
 	}
+
 	analyser.peopleHistories = make([]sparseHistory, analyser.PeopleNumber)
 	analyser.files = map[string]*linehistory.File{}
 	analyser.fileAllocator = rbtree.NewAllocator()
@@ -299,7 +313,7 @@ func (analyser *LegacyBurndownAnalysis) Initialize(repository *git.Repository) e
 // Additionally, DependencyCommit is always present there and represents the analysed *object.Commit.
 // This function returns the mapping with analysis results. The keys must be the same as
 // in Provides(). If there was an error, nil is returned.
-func (analyser *LegacyBurndownAnalysis) Consume(deps map[string]interface{}) (map[string]interface{}, error) {
+func (analyser *LegacyBurndownAnalysis) Consume(deps map[string]any) (map[string]any, error) {
 	if analyser.fileAllocator.Size() == 0 && len(analyser.files) > 0 {
 		panic("LegacyBurndownAnalysis.Consume() was called on a hibernated instance")
 	}
@@ -313,9 +327,11 @@ func (analyser *LegacyBurndownAnalysis) Consume(deps map[string]interface{}) (ma
 	cache := deps[items.DependencyBlobCache].(map[plumbing.Hash]*items.CachedBlob)
 	treeDiffs := deps[items.DependencyTreeChanges].(object.Changes)
 	fileDiffs := deps[items.DependencyFileDiff].(map[string]items.FileDiffData)
+
 	for _, change := range treeDiffs {
 		action, _ := change.Action()
 		var err error
+
 		switch action {
 		case merkletrie.Insert:
 			err = analyser.handleInsertion(change, author, cache)
@@ -324,12 +340,14 @@ func (analyser *LegacyBurndownAnalysis) Consume(deps map[string]interface{}) (ma
 		case merkletrie.Modify:
 			err = analyser.handleModification(change, author, cache, fileDiffs)
 		}
+
 		if err != nil {
 			return nil, err
 		}
 	}
 	// in case there is a merge analyser.tick equals to TreeMergeMark
 	analyser.tick = tick
+
 	return nil, nil
 }
 
@@ -340,23 +358,29 @@ func (analyser *LegacyBurndownAnalysis) Fork(n int) []core.PipelineItem {
 	for i := range result {
 		clone := *analyser
 		clone.files = map[string]*linehistory.File{}
+
 		clone.fileAllocator = clone.fileAllocator.Clone()
 		for key, file := range analyser.files {
 			clone.files[key] = file.CloneShallow(clone.fileAllocator)
 		}
+
 		result[i] = &clone
 	}
+
 	return result
 }
 
 // Merge combines several items together. We apply the special file merging logic here.
 func (analyser *LegacyBurndownAnalysis) Merge(branches []core.PipelineItem) {
 	all := make([]*LegacyBurndownAnalysis, len(branches)+1)
+
 	all[0] = analyser
 	for i, branch := range branches {
 		all[i+1] = branch.(*LegacyBurndownAnalysis)
 	}
+
 	keys := map[string]bool{}
+
 	for _, burn := range all {
 		for key, val := range burn.mergedFiles {
 			// (*)
@@ -366,16 +390,20 @@ func (analyser *LegacyBurndownAnalysis) Merge(branches []core.PipelineItem) {
 			keys[key] = keys[key] || val
 		}
 	}
+
 	for key, val := range keys {
 		if !val {
 			for _, burn := range all {
 				if f, exists := burn.files[key]; exists {
 					f.Delete()
 				}
+
 				delete(burn.files, key)
 			}
+
 			continue
 		}
+
 		files := make([]*linehistory.File, 0, len(all))
 		for _, burn := range all {
 			file := burn.files[key]
@@ -384,47 +412,57 @@ func (analyser *LegacyBurndownAnalysis) Merge(branches []core.PipelineItem) {
 				files = append(files, file)
 			}
 		}
+
 		if len(files) == 0 {
 			// so we could be wrong in (*) and there is no such file eventually
 			// it could be also removed in the merge commit itself
 			continue
 		}
+
 		files[0].Merge(
 			analyser.packPersonWithTick(analyser.mergedAuthor, analyser.tick),
 			files[1:]...,
 		)
+
 		for _, burn := range all {
 			if burn.files[key] != files[0] {
 				if burn.files[key] != nil {
 					burn.files[key].Delete()
 				}
+
 				burn.files[key] = files[0].CloneDeep(burn.fileAllocator)
 			}
 		}
 	}
+
 	analyser.onNewTick()
 }
 
 // Hibernate compresses the bound RBTree memory with the files.
 func (analyser *LegacyBurndownAnalysis) Hibernate() error {
 	analyser.fileAllocator.Hibernate()
+
 	if analyser.HibernationToDisk {
 		file, err := ioutil.TempFile(analyser.HibernationDirectory, "*-hercules.bin")
 		if err != nil {
 			return err
 		}
+
 		analyser.hibernatedFileName = file.Name()
+
 		err = file.Close()
 		if err != nil {
 			analyser.hibernatedFileName = ""
 			return err
 		}
+
 		err = analyser.fileAllocator.Serialize(analyser.hibernatedFileName)
 		if err != nil {
 			analyser.hibernatedFileName = ""
 			return err
 		}
 	}
+
 	return nil
 }
 
@@ -435,43 +473,53 @@ func (analyser *LegacyBurndownAnalysis) Boot() error {
 		if err != nil {
 			return err
 		}
+
 		err = os.Remove(analyser.hibernatedFileName)
 		if err != nil {
 			return err
 		}
+
 		analyser.hibernatedFileName = ""
 	}
+
 	analyser.fileAllocator.Boot()
+
 	return nil
 }
 
 // Finalize returns the result of the analysis. Further Consume() calls are not expected.
-func (analyser *LegacyBurndownAnalysis) Finalize() interface{} {
+func (analyser *LegacyBurndownAnalysis) Finalize() any {
 	globalHistory, lastTick := analyser.groupSparseHistory(analyser.globalHistory, -1)
 	fileHistories := map[string]DenseHistory{}
 	fileOwnership := map[string]map[int]int{}
+
 	for key, history := range analyser.fileHistories {
 		if len(history) == 0 {
 			continue
 		}
+
 		fileHistories[key], _ = analyser.groupSparseHistory(history, lastTick)
 		file := analyser.files[key]
 		previousLine := 0
 		previousAuthor := core.AuthorMissing
 		ownership := map[int]int{}
 		fileOwnership[key] = ownership
+
 		file.ForEach(func(line, value int) {
 			length := line - previousLine
 			if length > 0 {
 				ownership[previousAuthor] += length
 			}
+
 			previousLine = line
+
 			previousAuthor, _ = analyser.unpackPersonWithTick(int(value))
 			if previousAuthor == core.AuthorMissing {
 				previousAuthor = -1
 			}
 		})
 	}
+
 	peopleHistories := make([]DenseHistory, analyser.PeopleNumber)
 	for i := range peopleHistories {
 		history := analyser.peopleHistories[i]
@@ -485,6 +533,7 @@ func (analyser *LegacyBurndownAnalysis) Finalize() interface{} {
 			}
 		}
 	}
+
 	var peopleMatrix DenseHistory
 	if len(analyser.matrix) > 0 {
 		peopleMatrix = make(DenseHistory, analyser.PeopleNumber)
@@ -492,16 +541,20 @@ func (analyser *LegacyBurndownAnalysis) Finalize() interface{} {
 			row := analyser.matrix[i]
 			mrow := make([]int64, analyser.PeopleNumber+2)
 			peopleMatrix[i] = mrow
+
 			for key, val := range row {
-				if key == core.AuthorMissing {
+				switch key {
+				case core.AuthorMissing:
 					key = -1
-				} else if key == authorSelf {
+				case authorSelf:
 					key = -2
 				}
+
 				mrow[key+2] = val
 			}
 		}
 	}
+
 	return BurndownResult{
 		GlobalHistory:      globalHistory,
 		FileHistories:      fileHistories,
@@ -517,105 +570,117 @@ func (analyser *LegacyBurndownAnalysis) Finalize() interface{} {
 
 // Serialize converts the analysis result as returned by Finalize() to text or bytes.
 // The text format is YAML and the bytes format is Protocol Buffers.
-func (analyser *LegacyBurndownAnalysis) Serialize(result interface{}, binary bool, writer io.Writer) error {
+func (analyser *LegacyBurndownAnalysis) Serialize(result any, binary bool, writer io.Writer) error {
 	burndownResult, ok := result.(BurndownResult)
 	if !ok {
 		return fmt.Errorf("result is not a burndown result: '%v'", result)
 	}
+
 	if binary {
 		return analyser.serializeBinary(&burndownResult, writer)
 	}
+
 	analyser.serializeText(&burndownResult, writer)
+
 	return nil
 }
 
 // Deserialize converts the specified protobuf bytes to BurndownResult.
-func (analyser *LegacyBurndownAnalysis) Deserialize(pbmessage []byte) (interface{}, error) {
+func (analyser *LegacyBurndownAnalysis) Deserialize(pbmessage []byte) (any, error) {
 	msg := pb.BurndownAnalysisResults{}
+
 	err := proto.Unmarshal(pbmessage, &msg)
 	if err != nil {
 		return nil, err
 	}
+
 	convertCSR := func(mat *pb.BurndownSparseMatrix) DenseHistory {
-		res := make(DenseHistory, mat.NumberOfRows)
-		for i := 0; i < int(mat.NumberOfRows); i++ {
-			res[i] = make([]int64, mat.NumberOfColumns)
-			for j := 0; j < len(mat.Rows[i].Columns); j++ {
-				res[i][j] = int64(mat.Rows[i].Columns[j])
+		res := make(DenseHistory, mat.GetNumberOfRows())
+		for i := range mat.GetNumberOfRows() {
+			res[i] = make([]int64, mat.GetNumberOfColumns())
+			for j := range len(mat.GetRows()[i].GetColumns()) {
+				res[i][j] = int64(mat.GetRows()[i].GetColumns()[j])
 			}
 		}
+
 		return res
 	}
+
 	result := BurndownResult{
-		GlobalHistory: convertCSR(msg.Project),
+		GlobalHistory: convertCSR(msg.GetProject()),
 		FileHistories: map[string]DenseHistory{},
 		FileOwnership: map[string]map[int]int{},
-		tickSize:      time.Duration(msg.TickSize),
+		tickSize:      time.Duration(msg.GetTickSize()),
 
-		granularity: int(msg.Granularity),
-		sampling:    int(msg.Sampling),
+		granularity: int(msg.GetGranularity()),
+		sampling:    int(msg.GetSampling()),
 	}
-	for i, mat := range msg.Files {
-		result.FileHistories[mat.Name] = convertCSR(mat)
+	for i, mat := range msg.GetFiles() {
+		result.FileHistories[mat.GetName()] = convertCSR(mat)
 		ownership := map[int]int{}
-		result.FileOwnership[mat.Name] = ownership
-		for key, val := range msg.FilesOwnership[i].Value {
+
+		result.FileOwnership[mat.GetName()] = ownership
+		for key, val := range msg.GetFilesOwnership()[i].GetValue() {
 			ownership[int(key)] = int(val)
 		}
 	}
-	result.reversedPeopleDict = make([]string, len(msg.People))
-	result.PeopleHistories = make([]DenseHistory, len(msg.People))
-	for i, mat := range msg.People {
+
+	result.reversedPeopleDict = make([]string, len(msg.GetPeople()))
+
+	result.PeopleHistories = make([]DenseHistory, len(msg.GetPeople()))
+	for i, mat := range msg.GetPeople() {
 		result.PeopleHistories[i] = convertCSR(mat)
-		result.reversedPeopleDict[i] = mat.Name
+		result.reversedPeopleDict[i] = mat.GetName()
 	}
-	if msg.PeopleInteraction != nil {
-		result.PeopleMatrix = make(DenseHistory, msg.PeopleInteraction.NumberOfRows)
+
+	if msg.GetPeopleInteraction() != nil {
+		result.PeopleMatrix = make(DenseHistory, msg.GetPeopleInteraction().GetNumberOfRows())
 	}
+
 	for i := 0; i < len(result.PeopleMatrix); i++ {
-		result.PeopleMatrix[i] = make([]int64, msg.PeopleInteraction.NumberOfColumns)
-		for j := int(msg.PeopleInteraction.Indptr[i]); j < int(msg.PeopleInteraction.Indptr[i+1]); j++ {
-			result.PeopleMatrix[i][msg.PeopleInteraction.Indices[j]] = msg.PeopleInteraction.Data[j]
+		result.PeopleMatrix[i] = make([]int64, msg.GetPeopleInteraction().GetNumberOfColumns())
+		for j := int(msg.GetPeopleInteraction().GetIndptr()[i]); j < int(msg.GetPeopleInteraction().GetIndptr()[i+1]); j++ {
+			result.PeopleMatrix[i][msg.GetPeopleInteraction().GetIndices()[j]] = msg.GetPeopleInteraction().GetData()[j]
 		}
 	}
+
 	return result, nil
 }
 
 // MergeResults combines two BurndownResult-s together.
 func (analyser *LegacyBurndownAnalysis) MergeResults(
-	r1, r2 interface{}, c1, c2 *core.CommonAnalysisResult,
-) interface{} {
+	r1, r2 any, c1, c2 *core.CommonAnalysisResult,
+) any {
 	bar1 := r1.(BurndownResult)
+
 	bar2 := r2.(BurndownResult)
 	if bar1.tickSize != bar2.tickSize {
 		return fmt.Errorf("mismatching tick sizes (r1: %d, r2: %d) received",
 			bar1.tickSize, bar2.tickSize)
 	}
+
 	merged := BurndownResult{
 		tickSize: bar1.tickSize,
 	}
-	if bar1.sampling < bar2.sampling {
-		merged.sampling = bar1.sampling
-	} else {
-		merged.sampling = bar2.sampling
-	}
-	if bar1.granularity < bar2.granularity {
-		merged.granularity = bar1.granularity
-	} else {
-		merged.granularity = bar2.granularity
-	}
+	merged.sampling = min(bar1.sampling, bar2.sampling)
+
+	merged.granularity = min(bar1.granularity, bar2.granularity)
 	var people map[string]join.JoinedIndex
 	people, merged.reversedPeopleDict = join.PeopleIdentities(
 		bar1.reversedPeopleDict, bar2.reversedPeopleDict,
 	)
 	var wg sync.WaitGroup
 	sem := make(chan int, 5) // with large files not limiting number of GoRoutines eats 200G of RAM on large merges
+
 	if len(bar1.GlobalHistory) > 0 || len(bar2.GlobalHistory) > 0 {
 		wg.Add(1)
+
 		sem <- 1
+
 		go func() {
 			defer wg.Done()
 			defer func() { <-sem }()
+
 			merged.GlobalHistory = analyser.mergeMatrices(
 				bar1.GlobalHistory, bar2.GlobalHistory,
 				bar1.granularity, bar1.sampling,
@@ -631,18 +696,24 @@ func (analyser *LegacyBurndownAnalysis) MergeResults(
 			merged.PeopleHistories = make([]DenseHistory, len(merged.reversedPeopleDict))
 			for i, key := range merged.reversedPeopleDict {
 				ptrs := people[key]
+
 				wg.Add(1)
+
 				sem <- 1
+
 				go func(i int) {
 					defer wg.Done()
 					defer func() { <-sem }()
+
 					var m1, m2 DenseHistory
 					if ptrs.First >= 0 {
 						m1 = bar1.PeopleHistories[ptrs.First]
 					}
+
 					if ptrs.Second >= 0 {
 						m2 = bar2.PeopleHistories[ptrs.Second]
 					}
+
 					merged.PeopleHistories[i] = analyser.mergeMatrices(
 						m1, m2,
 						bar1.granularity, bar1.sampling,
@@ -653,11 +724,15 @@ func (analyser *LegacyBurndownAnalysis) MergeResults(
 				}(i)
 			}
 		}
+
 		wg.Add(1)
+
 		sem <- 1
+
 		go func() {
 			defer wg.Done()
 			defer func() { <-sem }()
+
 			if len(bar2.PeopleMatrix) == 0 {
 				merged.PeopleMatrix = bar1.PeopleMatrix
 				// extend the matrix in both directions
@@ -666,6 +741,7 @@ func (analyser *LegacyBurndownAnalysis) MergeResults(
 						merged.PeopleMatrix[i] = append(merged.PeopleMatrix[i], 0)
 					}
 				}
+
 				if len(bar1.PeopleMatrix) > 0 {
 					for i := len(bar1.reversedPeopleDict); i < len(merged.reversedPeopleDict); i++ {
 						merged.PeopleMatrix = append(
@@ -678,16 +754,20 @@ func (analyser *LegacyBurndownAnalysis) MergeResults(
 				for i := range merged.PeopleMatrix {
 					merged.PeopleMatrix[i] = make([]int64, len(merged.reversedPeopleDict)+2)
 				}
+
 				for i, key := range bar1.reversedPeopleDict {
 					mi := people[key].Final // index in merged.reversedPeopleDict
 					copy(merged.PeopleMatrix[mi][:2], bar1.PeopleMatrix[i][:2])
+
 					for j, val := range bar1.PeopleMatrix[i][2:] {
 						merged.PeopleMatrix[mi][2+people[bar1.reversedPeopleDict[j]].Final] = val
 					}
 				}
+
 				for i, key := range bar2.reversedPeopleDict {
 					mi := people[key].Final // index in merged.reversedPeopleDict
 					merged.PeopleMatrix[mi][0] += bar2.PeopleMatrix[i][0]
+
 					merged.PeopleMatrix[mi][1] += bar2.PeopleMatrix[i][1]
 					for j, val := range bar2.PeopleMatrix[i][2:] {
 						merged.PeopleMatrix[mi][2+people[bar2.reversedPeopleDict[j]].Final] += val
@@ -696,7 +776,9 @@ func (analyser *LegacyBurndownAnalysis) MergeResults(
 			}
 		}()
 	}
+
 	wg.Wait()
+
 	return merged
 }
 
@@ -704,10 +786,12 @@ func roundTime(t time.Time, d time.Duration, dir bool) int {
 	if !dir {
 		t = items.FloorTime(t, d)
 	}
+
 	ticks := float64(t.Unix()) / d.Seconds()
 	if dir {
 		return int(math.Ceil(ticks))
 	}
+
 	return int(math.Floor(ticks))
 }
 
@@ -720,21 +804,13 @@ func (analyser *LegacyBurndownAnalysis) mergeMatrices(
 ) DenseHistory {
 	//	defer print("mergeMatrices exit\n\n\n")
 	//	print("mergeMatrices enter\n\n\n")
-
 	commonMerged := c1.Copy()
 	commonMerged.Merge(c2)
 
 	var granularity, sampling int
-	if sampling1 < sampling2 {
-		sampling = sampling1
-	} else {
-		sampling = sampling2
-	}
-	if granularity1 < granularity2 {
-		granularity = granularity1
-	} else {
-		granularity = granularity2
-	}
+	sampling = min(sampling1, sampling2)
+
+	granularity = min(granularity1, granularity2)
 
 	size := roundTime(commonMerged.EndTimeAsTime(), tickSize, true) -
 		roundTime(commonMerged.BeginTimeAsTime(), tickSize, false)
@@ -753,6 +829,7 @@ func (analyser *LegacyBurndownAnalysis) mergeMatrices(
 		addBurndownMatrix(m1, granularity1, sampling1, perTick,
 			roundTime(c1.BeginTimeAsTime(), tickSize, false)-roundTime(commonMerged.BeginTimeAsTime(), tickSize, false))
 	}
+
 	if len(m2) > 0 {
 		addBurndownMatrix(m2, granularity2, sampling2, perTick,
 			roundTime(c2.BeginTimeAsTime(), tickSize, false)-roundTime(commonMerged.BeginTimeAsTime(), tickSize, false))
@@ -762,12 +839,14 @@ func (analyser *LegacyBurndownAnalysis) mergeMatrices(
 	result := make(DenseHistory, (size+sampling-1)/sampling)
 	for i := range result {
 		result[i] = make([]int64, (size+granularity-1)/granularity)
+
 		sampledIndex := (i+1)*sampling - 1
-		for j := 0; j < len(result[i]); j++ {
+		for j := range len(result[i]) {
 			accum := float32(0)
 			for k := j * granularity; k < (j+1)*granularity; k++ {
 				accum += perTick[sampledIndex][k]
 			}
+
 			result[i][j] = int64(accum)
 		}
 	}
@@ -777,6 +856,7 @@ func (analyser *LegacyBurndownAnalysis) mergeMatrices(
 	for i := range perTick {
 		perTick[i] = nil
 	}
+
 	perTick = nil
 
 	runtime.GC()
@@ -806,11 +886,13 @@ func addBurndownMatrix(matrix DenseHistory, granularity, sampling int, accPerTic
 			maxCols = len(row)
 		}
 	}
+
 	neededRows := len(matrix)*sampling + offset
 	if len(accPerTick) < neededRows {
 		log.Panicf("merge bug: too few per-tick rows: required %d, have %d",
 			neededRows, len(accPerTick))
 	}
+
 	if len(accPerTick[0]) < maxCols {
 		log.Panicf("merge bug: too few per-tick cols: required %d, have %d",
 			maxCols, len(accPerTick[0]))
@@ -826,17 +908,20 @@ func addBurndownMatrix(matrix DenseHistory, granularity, sampling int, accPerTic
 
 	//	print("addBurndownMatrix Allocating: ", len(accPerTick), " x ", len(perTick[0]), " = ", len(accPerTick)*len(perTick[0])*4/1024/1024, ", total ", m.Alloc/1024/1024, "\n")
 
-	for x := 0; x < maxCols; x++ {
-		for y := 0; y < len(matrix); y++ {
+	for x := range maxCols {
+		for y := range matrix {
 			if x*granularity > (y+1)*sampling {
 				// the future is zeros
 				continue
 			}
+
 			decay := func(startIndex int, startVal float32) {
 				if startVal == 0 {
 					return
 				}
+
 				k := float32(matrix[y][x]) / startVal // <= 1
+
 				scale := float32((y+1)*sampling - startIndex)
 				for i := x * granularity; i < (x+1)*granularity; i++ {
 					initial := perTick[startIndex-1+offset][i+offset]
@@ -850,13 +935,13 @@ func addBurndownMatrix(matrix DenseHistory, granularity, sampling int, accPerTic
 				if y > 0 {
 					initial = float32(matrix[y-1][x])
 				}
-				startIndex := y * sampling
-				if startIndex < x*granularity {
-					startIndex = x * granularity
-				}
+
+				startIndex := max(y*sampling, x*granularity)
+
 				if startIndex == finishIndex {
 					return
 				}
+
 				avg := (finishVal - initial) / float32(finishIndex-startIndex)
 				for j := y * sampling; j < finishIndex; j++ {
 					for i := startIndex; i <= j; i++ {
@@ -870,6 +955,7 @@ func addBurndownMatrix(matrix DenseHistory, granularity, sampling int, accPerTic
 					}
 				}
 			}
+
 			if (x+1)*granularity >= (y+1)*sampling {
 				// x*granularity <= (y+1)*sampling
 				// 1. x*granularity <= y*sampling
@@ -899,6 +985,7 @@ func addBurndownMatrix(matrix DenseHistory, granularity, sampling int, accPerTic
 					raise((y+1)*sampling, float32(matrix[y][x]))
 				} else if (y+1)*sampling > x*granularity {
 					raise((y+1)*sampling, float32(matrix[y][x]))
+
 					avg := float32(matrix[y][x]) / float32((y+1)*sampling-x*granularity)
 					for j := x * granularity; j < (y+1)*sampling; j++ {
 						for i := x * granularity; i <= j; i++ {
@@ -923,12 +1010,14 @@ func addBurndownMatrix(matrix DenseHistory, granularity, sampling int, accPerTic
 				delta := float32((x+1)*granularity - y*sampling)
 				var scale float32
 				var previous float32
+
 				if y > 0 && (y-1)*sampling >= x*granularity {
 					// x*g <= (y-1)*s <= y*s <= (x+1)*g <= (y+1)*s
 					//           |________|.......^
 					if y > 1 {
 						previous = float32(matrix[y-2][x])
 					}
+
 					scale = float32(sampling)
 				} else {
 					// (y-1)*s < x*g <= y*s <= (x+1)*g <= (y+1)*s
@@ -939,6 +1028,7 @@ func addBurndownMatrix(matrix DenseHistory, granularity, sampling int, accPerTic
 						scale = float32(y*sampling - x*granularity)
 					}
 				}
+
 				peak = v1 + (v1-previous)/scale*delta
 				if v2 > peak {
 					// we need to adjust the peak, it may not be less than the decayed value
@@ -953,6 +1043,7 @@ func addBurndownMatrix(matrix DenseHistory, granularity, sampling int, accPerTic
 						// not enough data to interpolate; this is at least not restricted
 					}
 				}
+
 				raise((x+1)*granularity, peak)
 				decay((x+1)*granularity, peak)
 			} else {
@@ -962,6 +1053,7 @@ func addBurndownMatrix(matrix DenseHistory, granularity, sampling int, accPerTic
 			}
 		}
 	}
+
 	for y := len(matrix) * sampling; y+offset < len(perTick); y++ {
 		copy(perTick[y+offset], perTick[len(matrix)*sampling-1+offset])
 	}
@@ -974,10 +1066,13 @@ func addBurndownMatrix(matrix DenseHistory, granularity, sampling int, accPerTic
 	}
 
 	runtime.ReadMemStats(&m)
+
 	for i := range perTick {
 		perTick[i] = nil
 	}
+
 	perTick = nil
+
 	runtime.GC()
 	var a runtime.MemStats
 	runtime.ReadMemStats(&a)
@@ -990,27 +1085,36 @@ func (analyser *LegacyBurndownAnalysis) serializeText(result *BurndownResult, wr
 	fmt.Fprintln(writer, "  sampling:", result.sampling)
 	fmt.Fprintln(writer, "  tick_size:", int(result.tickSize.Seconds()))
 	yaml.PrintMatrix(writer, result.GlobalHistory, 2, "project", true)
+
 	if len(result.FileHistories) > 0 {
 		fmt.Fprintln(writer, "  files:")
+
 		keys := sortedKeys(result.FileHistories)
 		for _, key := range keys {
 			yaml.PrintMatrix(writer, result.FileHistories[key], 4, key, true)
 		}
+
 		fmt.Fprintln(writer, "  files_ownership:")
+
 		okeys := make([]string, 0, len(result.FileOwnership))
 		for key := range result.FileOwnership {
 			okeys = append(okeys, key)
 		}
+
 		sort.Strings(okeys)
+
 		for _, key := range okeys {
 			owned := result.FileOwnership[key]
+
 			devs := make([]int, 0, len(owned))
 			for devi := range owned {
 				devs = append(devs, devi)
 			}
+
 			sort.Slice(devs, func(i, j int) bool {
 				return owned[devs[i]] > owned[devs[j]] // descending order
 			})
+
 			for x, devi := range devs {
 				var indent string
 				if x == 0 {
@@ -1018,6 +1122,7 @@ func (analyser *LegacyBurndownAnalysis) serializeText(result *BurndownResult, wr
 				} else {
 					indent = "  "
 				}
+
 				fmt.Fprintf(writer, "    %s%d: %d\n", indent, devi, owned[devi])
 			}
 		}
@@ -1025,13 +1130,17 @@ func (analyser *LegacyBurndownAnalysis) serializeText(result *BurndownResult, wr
 
 	if len(result.PeopleHistories) > 0 {
 		fmt.Fprintln(writer, "  people_sequence:")
+
 		for key := range result.PeopleHistories {
 			fmt.Fprintln(writer, "    - "+yaml.SafeString(result.reversedPeopleDict[key]))
 		}
+
 		fmt.Fprintln(writer, "  people:")
+
 		for key, val := range result.PeopleHistories {
 			yaml.PrintMatrix(writer, val, 4, result.reversedPeopleDict[key], true)
 		}
+
 		fmt.Fprintln(writer, "  people_interaction: |-")
 		yaml.PrintMatrix(writer, result.PeopleMatrix, 4, "", false)
 	}
@@ -1046,18 +1155,22 @@ func (analyser *LegacyBurndownAnalysis) serializeBinary(result *BurndownResult, 
 	if len(result.GlobalHistory) > 0 {
 		message.Project = pb.ToBurndownSparseMatrix(result.GlobalHistory, "project")
 	}
+
 	if len(result.FileHistories) > 0 {
 		message.Files = make([]*pb.BurndownSparseMatrix, len(result.FileHistories))
 		message.FilesOwnership = make([]*pb.FilesOwnership, len(result.FileHistories))
 		keys := sortedKeys(result.FileHistories)
+
 		i := 0
 		for _, key := range keys {
 			message.Files[i] = pb.ToBurndownSparseMatrix(result.FileHistories[key], key)
 			ownership := map[int32]int32{}
+
 			message.FilesOwnership[i] = &pb.FilesOwnership{Value: ownership}
 			for key, val := range result.FileOwnership[key] {
 				ownership[int32(key)] = int32(val)
 			}
+
 			i++
 		}
 	}
@@ -1072,14 +1185,18 @@ func (analyser *LegacyBurndownAnalysis) serializeBinary(result *BurndownResult, 
 			}
 		}
 	}
+
 	if result.PeopleMatrix != nil {
 		message.PeopleInteraction = pb.DenseToCompressedSparseRowMatrix(result.PeopleMatrix)
 	}
+
 	serialized, err := proto.Marshal(&message)
 	if err != nil {
 		return err
 	}
+
 	_, err = writer.Write(serialized)
+
 	return err
 }
 
@@ -1091,6 +1208,7 @@ func (analyser *LegacyBurndownAnalysis) packPersonWithTick(person, tick int) int
 	if analyser.PeopleNumber == 0 {
 		return tick
 	}
+
 	result := tick & linehistory.TreeMergeMark
 
 	if tick > linehistory.TreeMergeMark {
@@ -1118,6 +1236,7 @@ func (analyser *LegacyBurndownAnalysis) unpackPersonWithTick(value int) (int, in
 	if analyser.PeopleNumber == 0 {
 		return core.AuthorMissing, value
 	}
+
 	return value >> linehistory.TreeMaxBinPower, value & linehistory.TreeMergeMark
 }
 
@@ -1125,6 +1244,7 @@ func (analyser *LegacyBurndownAnalysis) onNewTick() {
 	if analyser.tick > analyser.previousTick {
 		analyser.previousTick = analyser.tick
 	}
+
 	analyser.mergedAuthor = core.AuthorMissing
 }
 
@@ -1150,9 +1270,11 @@ func (analyser *LegacyBurndownAnalysis) updateAuthor(_ *linehistory.File, curren
 	if prevAuthor == core.AuthorMissing {
 		return
 	}
+
 	newAuthor, curTick := analyser.unpackPersonWithTick(currentTime)
 	if delta > 0 && newAuthor != prevAuthor {
 		analyser.l.Errorf("insertion must have the same author (%d, %d)", prevAuthor, newAuthor)
+
 		delta = 0
 	}
 
@@ -1161,6 +1283,7 @@ func (analyser *LegacyBurndownAnalysis) updateAuthor(_ *linehistory.File, curren
 		history = sparseHistory{}
 		analyser.peopleHistories[prevAuthor] = history
 	}
+
 	history.updateDelta(prevTick, curTick, delta)
 }
 
@@ -1171,18 +1294,23 @@ func (analyser *LegacyBurndownAnalysis) updateChurnMatrix(_ *linehistory.File, c
 	if prevAuthor == core.AuthorMissing {
 		return
 	}
+
 	if delta > 0 {
 		if newAuthor != prevAuthor {
 			analyser.l.Errorf("insertion must have the same author (%d, %d)", prevAuthor, newAuthor)
+
 			delta = 0
 		}
+
 		newAuthor = authorSelf
 	}
+
 	row := analyser.matrix[prevAuthor]
 	if row == nil {
 		row = map[int]int64{}
 		analyser.matrix[prevAuthor] = row
 	}
+
 	row[newAuthor] += int64(delta)
 }
 
@@ -1190,6 +1318,7 @@ func (analyser *LegacyBurndownAnalysis) newFile(
 	_ plumbing.Hash, name string, author, tick, size int,
 ) (*linehistory.File, error) {
 	updaters := make([]linehistory.Updater, 1)
+
 	updaters[0] = analyser.updateGlobal
 	if analyser.TrackFiles {
 		history := analyser.fileHistories[name]
@@ -1197,11 +1326,14 @@ func (analyser *LegacyBurndownAnalysis) newFile(
 			// can be not nil if the file was created in a future branch
 			history = sparseHistory{}
 		}
+
 		analyser.fileHistories[name] = history
+
 		updaters = append(updaters, func(_ *linehistory.File, currentTime, previousTime, delta int) {
 			analyser.updateFile(history, currentTime, previousTime, delta)
 		})
 	}
+
 	if analyser.PeopleNumber > 0 {
 		updaters = append(updaters, analyser.updateAuthor)
 		updaters = append(updaters, analyser.updateChurnMatrix)
@@ -1215,12 +1347,15 @@ func (analyser *LegacyBurndownAnalysis) handleInsertion(
 	change *object.Change, author int, cache map[plumbing.Hash]*items.CachedBlob,
 ) error {
 	blob := cache[change.To.TreeEntry.Hash]
+
 	lines, err := blob.CountLines()
 	if err != nil {
 		// binary
 		return nil
 	}
+
 	name := change.To.Name
+
 	file := analyser.files[name]
 	if file != nil {
 		return fmt.Errorf("file %s already exists", name)
@@ -1230,12 +1365,15 @@ func (analyser *LegacyBurndownAnalysis) handleInsertion(
 	if analyser.tick != linehistory.TreeMergeMark {
 		hash = blob.Hash
 	}
+
 	file, err = analyser.newFile(hash, name, author, analyser.tick, lines)
 	analyser.files[name] = file
 	delete(analyser.deletions, name)
+
 	if analyser.tick == linehistory.TreeMergeMark {
 		analyser.mergedFiles[name] = true
 	}
+
 	return err
 }
 
@@ -1249,12 +1387,15 @@ func (analyser *LegacyBurndownAnalysis) handleDeletion(
 	} else {
 		name = change.From.Name
 	}
+
 	file, exists := analyser.files[name]
 	blob := cache[change.From.TreeEntry.Hash]
+
 	lines, err := blob.CountLines()
 	if exists && err != nil {
 		return fmt.Errorf("previous version of %s unexpectedly became binary", name)
 	}
+
 	if !exists {
 		return nil
 	}
@@ -1267,15 +1408,18 @@ func (analyser *LegacyBurndownAnalysis) handleDeletion(
 		tick = 0
 		// Early removal in one branch with pre-merge changes in another is not handled correctly.
 	}
+
 	analyser.deletions[name] = true
 	file.Update(analyser.packPersonWithTick(author, tick), 0, 0, lines)
 	file.Delete()
 	delete(analyser.files, name)
 	delete(analyser.fileHistories, name)
+
 	stack := []string{name}
 	for len(stack) > 0 {
 		head := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
+
 		analyser.renames[head] = "" // TODO delete instead of zero value
 		for key, val := range analyser.renames {
 			if val == head {
@@ -1283,9 +1427,11 @@ func (analyser *LegacyBurndownAnalysis) handleDeletion(
 			}
 		}
 	}
+
 	if analyser.tick == linehistory.TreeMergeMark {
 		analyser.mergedFiles[name] = false
 	}
+
 	return nil
 }
 
@@ -1296,6 +1442,7 @@ func (analyser *LegacyBurndownAnalysis) handleModification(
 	if analyser.tick == linehistory.TreeMergeMark {
 		analyser.mergedFiles[change.To.Name] = true
 	}
+
 	file, exists := analyser.files[change.From.Name]
 	if !exists {
 		// this indeed may happen
@@ -1314,8 +1461,9 @@ func (analyser *LegacyBurndownAnalysis) handleModification(
 	blobFrom := cache[change.From.TreeEntry.Hash]
 	_, errFrom := blobFrom.CountLines()
 	blobTo := cache[change.To.TreeEntry.Hash]
+
 	_, errTo := blobTo.CountLines()
-	if errFrom != errTo {
+	if !errors.Is(errFrom, errTo) {
 		if errFrom != nil {
 			// the file is no longer binary
 			return analyser.handleInsertion(change, author, cache)
@@ -1330,6 +1478,7 @@ func (analyser *LegacyBurndownAnalysis) handleModification(
 	thisDiffs := diffs[change.To.Name]
 	if file.Len() != thisDiffs.OldLinesOfCode {
 		analyser.l.Infof("====TREE====\n%s", file.Dump())
+
 		return fmt.Errorf("%s: internal integrity error src %d != %d %s -> %s",
 			change.To.Name, thisDiffs.OldLinesOfCode, file.Len(),
 			change.From.TreeEntry.Hash.String(), change.To.TreeEntry.Hash.String())
@@ -1348,6 +1497,7 @@ func (analyser *LegacyBurndownAnalysis) handleModification(
 		} else {
 			file.Update(analyser.packPersonWithTick(author, analyser.tick), position, 0, length)
 		}
+
 		if analyser.Debug {
 			file.Validate()
 		}
@@ -1358,22 +1508,27 @@ func (analyser *LegacyBurndownAnalysis) handleModification(
 		if analyser.Debug {
 			dumpBefore = file.Dump()
 		}
+
 		length := utf8.RuneCountInString(edit.Text)
 		debugError := func() {
 			analyser.l.Errorf("%s: internal diff error\n", change.To.Name)
 			analyser.l.Errorf("Update(%d, %d, %d (0), %d (0))\n", analyser.tick, position,
 				length, utf8.RuneCountInString(pending.Text))
+
 			if dumpBefore != "" {
 				analyser.l.Errorf("====TREE BEFORE====\n%s====END====\n", dumpBefore)
 			}
+
 			analyser.l.Errorf("====TREE AFTER====\n%s====END====\n", file.Dump())
 		}
+
 		switch edit.Type {
 		case diffmatchpatch.DiffEqual:
 			if pending.Text != "" {
 				apply(pending)
 				pending.Text = ""
 			}
+
 			position += length
 		case diffmatchpatch.DiffInsert:
 			if pending.Text != "" {
@@ -1381,11 +1536,14 @@ func (analyser *LegacyBurndownAnalysis) handleModification(
 					debugError()
 					return errors.New("DiffInsert may not appear after DiffInsert")
 				}
+
 				file.Update(analyser.packPersonWithTick(author, analyser.tick), position, length,
 					utf8.RuneCountInString(pending.Text))
+
 				if analyser.Debug {
 					file.Validate()
 				}
+
 				position += length
 				pending.Text = ""
 			} else {
@@ -1396,21 +1554,25 @@ func (analyser *LegacyBurndownAnalysis) handleModification(
 				debugError()
 				return errors.New("DiffDelete may not appear after DiffInsert/DiffDelete")
 			}
+
 			pending = edit
 		default:
 			debugError()
 			return fmt.Errorf("diff operation is not supported: %d", edit.Type)
 		}
 	}
+
 	if pending.Text != "" {
 		apply(pending)
 		pending.Text = ""
 	}
+
 	if file.Len() != thisDiffs.NewLinesOfCode {
 		return fmt.Errorf("%s: internal integrity error dst %d != %d %s -> %s",
 			change.To.Name, thisDiffs.NewLinesOfCode, file.Len(),
 			change.From.TreeEntry.Hash.String(), change.To.TreeEntry.Hash.String())
 	}
+
 	return nil
 }
 
@@ -1418,13 +1580,16 @@ func (analyser *LegacyBurndownAnalysis) handleRename(from, to string) error {
 	if from == to {
 		return nil
 	}
+
 	file, exists := analyser.files[from]
 	if !exists {
 		return fmt.Errorf("file %s > %s does not exist (files)", from, to)
 	}
+
 	delete(analyser.files, from)
 	analyser.files[to] = file
 	delete(analyser.deletions, to)
+
 	if analyser.tick == linehistory.TreeMergeMark {
 		analyser.mergedFiles[from] = false
 	}
@@ -1433,26 +1598,33 @@ func (analyser *LegacyBurndownAnalysis) handleRename(from, to string) error {
 		history := analyser.fileHistories[from]
 		if history == nil {
 			var futureRename string
+
 			if _, exists := analyser.renames[""]; exists {
 				panic("burndown renames tracking corruption")
 			}
+
 			known := map[string]bool{}
 			newRename, exists := analyser.renames[from]
 			known[from] = true
+
 			for exists {
 				futureRename = newRename
+
 				newRename, exists = analyser.renames[futureRename]
 				if known[newRename] {
 					// infinite cycle
 					futureRename = ""
+
 					for key := range known {
 						if analyser.fileHistories[key] != nil {
 							futureRename = key
 							break
 						}
 					}
+
 					break
 				}
+
 				known[futureRename] = true
 			}
 			// a future branch could have already renamed it and we are retarded
@@ -1467,10 +1639,13 @@ func (analyser *LegacyBurndownAnalysis) handleRename(from, to string) error {
 				}
 			}
 		}
+
 		delete(analyser.fileHistories, from)
 		analyser.fileHistories[to] = history
 	}
+
 	analyser.renames[from] = to
+
 	return nil
 }
 
@@ -1480,11 +1655,14 @@ func (analyser *LegacyBurndownAnalysis) groupSparseHistory(
 	if len(history) == 0 {
 		panic("empty history")
 	}
+
 	var ticks []int
 	for tick := range history {
 		ticks = append(ticks, tick)
 	}
+
 	sort.Ints(ticks)
+
 	if lastTick >= 0 {
 		if ticks[len(ticks)-1] < lastTick {
 			ticks = append(ticks, lastTick)
@@ -1499,11 +1677,14 @@ func (analyser *LegacyBurndownAnalysis) groupSparseHistory(
 	// x - granularity
 	samples := lastTick/analyser.Sampling + 1
 	bands := lastTick/analyser.Granularity + 1
+
 	result := make(DenseHistory, samples)
-	for i := 0; i < bands; i++ {
+	for i := range bands {
 		result[i] = make([]int64, bands)
 	}
+
 	prevsi := 0
+
 	for _, tick := range ticks {
 		si := tick / analyser.Sampling
 		if si > prevsi {
@@ -1511,13 +1692,16 @@ func (analyser *LegacyBurndownAnalysis) groupSparseHistory(
 			for i := prevsi + 1; i <= si; i++ {
 				copy(result[i], state)
 			}
+
 			prevsi = si
 		}
+
 		sample := result[si]
 		for t, value := range history[tick].deltas {
 			sample[t/analyser.Granularity] += value
 		}
 	}
+
 	return result, lastTick
 }
 

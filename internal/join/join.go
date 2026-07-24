@@ -10,7 +10,7 @@ import (
 // in respectively `rd1` and `rd2`.
 // See also:
 // * LiteralIdentities()
-// * PeopleIdentities()
+// * PeopleIdentities().
 type JoinedIndex struct {
 	Final  int
 	First  int
@@ -28,6 +28,7 @@ func LiteralIdentities(rd1, rd2 []string) (map[string]JoinedIndex, []string) {
 	for i, pid := range rd1 {
 		people[pid] = JoinedIndex{len(people), i, -1}
 	}
+
 	for i, pid := range rd2 {
 		if ptrs, exists := people[pid]; !exists {
 			people[pid] = JoinedIndex{len(people), -1, i}
@@ -35,10 +36,12 @@ func LiteralIdentities(rd1, rd2 []string) (map[string]JoinedIndex, []string) {
 			people[pid] = JoinedIndex{ptrs.Final, ptrs.First, i}
 		}
 	}
+
 	mrd := make([]string, len(people))
 	for name, ptrs := range people {
 		mrd[ptrs.Final] = name
 	}
+
 	return people, mrd
 }
 
@@ -55,17 +58,21 @@ type identityPair struct {
 // 3. Corresponding index in the second array - `rd2`. -1 means that it does not exist.
 func PeopleIdentities(rd1, rd2 []string) (map[string]JoinedIndex, []string) {
 	vocabulary := map[string]identityPair{}
+
 	vertices1 := make([][]string, len(rd1))
 	for i, s := range rd1 {
 		parts := strings.Split(s, "|")
+
 		vertices1[i] = parts
 		for _, p := range parts {
 			vocabulary[p] = identityPair{i, -1}
 		}
 	}
+
 	vertices2 := make([][]string, len(rd2))
 	for i, s := range rd2 {
 		parts := strings.Split(s, "|")
+
 		vertices2[i] = parts
 		for _, p := range parts {
 			if ip, exists := vocabulary[p]; !exists {
@@ -83,19 +90,24 @@ func PeopleIdentities(rd1, rd2 []string) (map[string]JoinedIndex, []string) {
 
 	walkFromVertex := func(root []string) {
 		walk := map[string]bool{}
+
 		pending := map[string]bool{}
 		for _, p := range root {
 			pending[p] = true
 		}
+
 		for len(pending) > 0 {
 			var element string
 			for e := range pending {
 				element = e
 				delete(pending, e)
+
 				break
 			}
+
 			if !walk[element] {
 				walk[element] = true
+
 				ip := vocabulary[element]
 				if ip.Index1 >= 0 {
 					for _, p := range vertices1[ip.Index1] {
@@ -104,6 +116,7 @@ func PeopleIdentities(rd1, rd2 []string) (map[string]JoinedIndex, []string) {
 						}
 					}
 				}
+
 				if ip.Index2 >= 0 {
 					for _, p := range vertices2[ip.Index2] {
 						if !walk[p] {
@@ -113,36 +126,45 @@ func PeopleIdentities(rd1, rd2 []string) (map[string]JoinedIndex, []string) {
 				}
 			}
 		}
+
 		for e := range walk {
 			visited[e] = true
 		}
+
 		walks = append(walks, walk)
 	}
 
 	for i1 := range rd1 {
 		var skip bool
+
 		for _, p := range vertices1[i1] {
 			if visited[p] {
 				skip = true
 				break
 			}
 		}
+
 		if skip {
 			continue
 		}
+
 		walkFromVertex(vertices1[i1])
 	}
+
 	for i2 := range rd2 {
 		var skip bool
+
 		for _, p := range vertices2[i2] {
 			if visited[p] {
 				skip = true
 				break
 			}
 		}
+
 		if skip {
 			continue
 		}
+
 		walkFromVertex(vertices2[i2])
 	}
 
@@ -159,12 +181,15 @@ func PeopleIdentities(rd1, rd2 []string) (map[string]JoinedIndex, []string) {
 			iid := ids[i]
 			jid := ids[j]
 			iHasAt := strings.ContainsRune(iid, '@')
+
 			jHasAt := strings.ContainsRune(jid, '@')
 			if iHasAt == jHasAt {
 				return iid < jid
 			}
+
 			return jHasAt
 		})
+
 		mergedStrings = append(mergedStrings, strings.Join(ids, "|"))
 		for _, key := range ids {
 			ipair := vocabulary[key]
@@ -176,6 +201,7 @@ func PeopleIdentities(rd1, rd2 []string) (map[string]JoinedIndex, []string) {
 					mergedIndex[s1] = JoinedIndex{walkIndex, ipair.Index1, mi.Second}
 				}
 			}
+
 			if ipair.Index2 >= 0 {
 				s2 := rd2[ipair.Index2]
 				if mi, exists := mergedIndex[s2]; !exists {
@@ -186,6 +212,7 @@ func PeopleIdentities(rd1, rd2 []string) (map[string]JoinedIndex, []string) {
 			}
 		}
 	}
+
 	return mergedIndex, mergedStrings
 }
 

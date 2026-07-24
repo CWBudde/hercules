@@ -40,11 +40,11 @@ func (item *dummyPipelineItem) Features() []string {
 	return []string{"power"}
 }
 
-func (item *dummyPipelineItem) Configure(facts map[string]interface{}) error {
+func (item *dummyPipelineItem) Configure(facts map[string]any) error {
 	return nil
 }
 
-func (item *dummyPipelineItem) ConfigureUpstream(facts map[string]interface{}) error {
+func (item *dummyPipelineItem) ConfigureUpstream(facts map[string]any) error {
 	return nil
 }
 
@@ -63,8 +63,8 @@ func (item *dummyPipelineItem) Initialize(repository *git.Repository) error {
 	return nil
 }
 
-func (item *dummyPipelineItem) Consume(deps map[string]interface{}) (map[string]interface{}, error) {
-	return map[string]interface{}{"dummy": nil}, nil
+func (item *dummyPipelineItem) Consume(deps map[string]any) (map[string]any, error) {
+	return map[string]any{"dummy": nil}, nil
 }
 
 func (item *dummyPipelineItem) Fork(n int) []PipelineItem {
@@ -92,11 +92,11 @@ func (item *dummyPipelineItem2) Features() []string {
 	return []string{"other"}
 }
 
-func (item *dummyPipelineItem2) Configure(facts map[string]interface{}) error {
+func (item *dummyPipelineItem2) Configure(facts map[string]any) error {
 	return nil
 }
 
-func (item *dummyPipelineItem2) ConfigureUpstream(facts map[string]interface{}) error {
+func (item *dummyPipelineItem2) ConfigureUpstream(facts map[string]any) error {
 	return nil
 }
 
@@ -108,8 +108,8 @@ func (item *dummyPipelineItem2) Initialize(repository *git.Repository) error {
 	return nil
 }
 
-func (item *dummyPipelineItem2) Consume(deps map[string]interface{}) (map[string]interface{}, error) {
-	return map[string]interface{}{"dummy2": nil}, nil
+func (item *dummyPipelineItem2) Consume(deps map[string]any) (map[string]any, error) {
+	return map[string]any{"dummy2": nil}, nil
 }
 
 func (item *dummyPipelineItem2) Fork(n int) []PipelineItem {
@@ -133,11 +133,11 @@ func (item *dummyPipelineItem3) Requires() []string {
 	return []string{"dummy"}
 }
 
-func (item *dummyPipelineItem3) Configure(facts map[string]interface{}) error {
+func (item *dummyPipelineItem3) Configure(facts map[string]any) error {
 	return nil
 }
 
-func (item *dummyPipelineItem3) ConfigureUpstream(facts map[string]interface{}) error {
+func (item *dummyPipelineItem3) ConfigureUpstream(facts map[string]any) error {
 	return nil
 }
 
@@ -149,8 +149,8 @@ func (item *dummyPipelineItem3) Initialize(repository *git.Repository) error {
 	return nil
 }
 
-func (item *dummyPipelineItem3) Consume(deps map[string]interface{}) (map[string]interface{}, error) {
-	return map[string]interface{}{"dummy": nil}, nil
+func (item *dummyPipelineItem3) Consume(deps map[string]any) (map[string]any, error) {
+	return map[string]any{"dummy": nil}, nil
 }
 
 func (item *dummyPipelineItem3) Fork(n int) []PipelineItem {
@@ -174,11 +174,11 @@ func (item *dummyPipelineItem4) Requires() []string {
 	return []string{"dummy3"}
 }
 
-func (item *dummyPipelineItem4) Configure(facts map[string]interface{}) error {
+func (item *dummyPipelineItem4) Configure(facts map[string]any) error {
 	return nil
 }
 
-func (item *dummyPipelineItem4) ConfigureUpstream(facts map[string]interface{}) error {
+func (item *dummyPipelineItem4) ConfigureUpstream(facts map[string]any) error {
 	return nil
 }
 
@@ -190,8 +190,8 @@ func (item *dummyPipelineItem4) Initialize(repository *git.Repository) error {
 	return nil
 }
 
-func (item *dummyPipelineItem4) Consume(deps map[string]interface{}) (map[string]interface{}, error) {
-	return map[string]interface{}{"dummy": nil}, nil
+func (item *dummyPipelineItem4) Consume(deps map[string]any) (map[string]any, error) {
+	return map[string]any{"dummy": nil}, nil
 }
 
 func (item *dummyPipelineItem4) Fork(n int) []PipelineItem {
@@ -203,7 +203,7 @@ func (item *dummyPipelineItem4) Merge(branches []PipelineItem) {
 
 func TestRegistrySummon(t *testing.T) {
 	reg := getRegistry()
-	assert.Len(t, reg.Summon("whatever"), 0)
+	assert.Empty(t, reg.Summon("whatever"))
 	reg.Register(&testPipelineItem{})
 	summoned := reg.Summon((&testPipelineItem{}).Provides()[0])
 	assert.Len(t, summoned, 1)
@@ -298,7 +298,7 @@ func TestRegistryCollectAllDependencies(t *testing.T) {
 	reg.Register(&dummyPipelineItem{})
 	reg.Register(&dummyPipelineItem3{})
 	reg.Register(&dummyPipelineItem4{})
-	assert.Len(t, reg.CollectAllDependencies(&dummyPipelineItem{}), 0)
+	assert.Empty(t, reg.CollectAllDependencies(&dummyPipelineItem{}))
 	deps := reg.CollectAllDependencies(&dummyPipelineItem4{})
 	assert.Len(t, deps, 2)
 	assert.Equal(t, deps[0].Name(), (&dummyPipelineItem{}).Name())
@@ -350,10 +350,10 @@ func TestRegistryPathMasquerade(t *testing.T) {
 	fs.StringVar(&value, "test", "", "usage")
 	flag := fs.Lookup("test")
 	PathifyFlagValue(flag)
-	assert.Equal(t, flag.Value.Type(), "string")
-	assert.Nil(t, flag.Value.Set("xxx"))
-	assert.Equal(t, flag.Value.String(), "xxx")
+	assert.Equal(t, "string", flag.Value.Type())
+	assert.NoError(t, flag.Value.Set("xxx"))
+	assert.Equal(t, "xxx", flag.Value.String())
 	EnablePathFlagTypeMasquerade()
-	assert.Equal(t, flag.Value.Type(), "path")
-	assert.Equal(t, flag.Value.String(), "xxx")
+	assert.Equal(t, "path", flag.Value.Type())
+	assert.Equal(t, "xxx", flag.Value.String())
 }

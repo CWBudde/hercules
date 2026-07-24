@@ -17,9 +17,9 @@ import (
 	"github.com/cwbudde/hercules/internal/test"
 )
 
-// makeTestDeps creates test dependencies for Consume
-func makeTestDeps(author, tick int, files map[string]int) map[string]interface{} {
-	deps := map[string]interface{}{
+// makeTestDeps creates test dependencies for Consume.
+func makeTestDeps(author, tick int, files map[string]int) map[string]any {
+	deps := map[string]any{
 		core.DependencyCommit:       &object.Commit{},
 		identity.DependencyAuthor:   author,
 		items.DependencyTick:        tick,
@@ -335,7 +335,7 @@ func TestOnboardingAnalysis_CohortAggregation(t *testing.T) {
 func TestOnboardingAnalysis_Configuration(t *testing.T) {
 	oa := &OnboardingAnalysis{}
 
-	facts := map[string]interface{}{
+	facts := map[string]any{
 		ConfigOnboardingWindows:             "14,60",
 		ConfigOnboardingMeaningfulThreshold: 50,
 		items.FactTickSize:                  24 * time.Hour,
@@ -353,7 +353,7 @@ func TestOnboardingAnalysis_Configuration(t *testing.T) {
 func TestOnboardingAnalysis_Configuration_Invalid(t *testing.T) {
 	oa := &OnboardingAnalysis{}
 
-	facts := map[string]interface{}{
+	facts := map[string]any{
 		ConfigOnboardingWindows: "7,invalid,30",
 	}
 

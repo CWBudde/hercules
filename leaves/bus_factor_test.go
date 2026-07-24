@@ -16,7 +16,7 @@ import (
 func TestBusFactorMeta(t *testing.T) {
 	bf := BusFactorAnalysis{}
 	assert.Equal(t, "BusFactor", bf.Name())
-	assert.Len(t, bf.Provides(), 0)
+	assert.Empty(t, bf.Provides())
 	assert.Contains(t, bf.Requires(), identity.DependencyAuthor)
 	assert.Contains(t, bf.Requires(), items.DependencyTick)
 	assert.Equal(t, "bus-factor", bf.Flag())
@@ -40,14 +40,14 @@ func TestBusFactorRegistration(t *testing.T) {
 
 func TestBusFactorConfigure(t *testing.T) {
 	bf := BusFactorAnalysis{}
-	facts := map[string]interface{}{}
+	facts := map[string]any{}
 	facts[identity.FactIdentityDetectorReversedPeopleDict] = []string{"Alice", "Bob"}
 	facts[items.FactTickSize] = 24 * time.Hour
 	facts[ConfigBusFactorThreshold] = float32(0.9)
 	logger := core.NewLogger()
 	facts[core.ConfigLogger] = logger
 
-	assert.Nil(t, bf.Configure(facts))
+	assert.NoError(t, bf.Configure(facts))
 	assert.Equal(t, []string{"Alice", "Bob"}, bf.reversedPeopleDict)
 	assert.Equal(t, 24*time.Hour, bf.tickSize)
 	assert.InDelta(t, float32(0.9), bf.Threshold, 0.001)
@@ -55,16 +55,16 @@ func TestBusFactorConfigure(t *testing.T) {
 
 func TestBusFactorConfigureDefaults(t *testing.T) {
 	bf := BusFactorAnalysis{}
-	facts := map[string]interface{}{}
-	assert.Nil(t, bf.Configure(facts))
+	facts := map[string]any{}
+	assert.NoError(t, bf.Configure(facts))
 	// threshold stays zero until Initialize
-	assert.Nil(t, bf.Initialize(test.Repository))
+	assert.NoError(t, bf.Initialize(test.Repository))
 	assert.InDelta(t, float32(0.8), bf.Threshold, 0.001)
 }
 
 func TestBusFactorInitialize(t *testing.T) {
 	bf := BusFactorAnalysis{}
-	assert.Nil(t, bf.Initialize(test.Repository))
+	assert.NoError(t, bf.Initialize(test.Repository))
 	assert.NotNil(t, bf.snapshots)
 	assert.Equal(t, -1, bf.lastTick)
 	assert.InDelta(t, float32(0.8), bf.Threshold, 0.001)
@@ -157,7 +157,7 @@ func TestBusFactorFinalize(t *testing.T) {
 	bf.reversedPeopleDict = []string{"Alice", "Bob"}
 	bf.tickSize = 24 * time.Hour
 	bf.Threshold = 0.8
-	assert.Nil(t, bf.Initialize(test.Repository))
+	assert.NoError(t, bf.Initialize(test.Repository))
 
 	// Manually populate snapshots
 	bf.snapshots[0] = &BusFactorSnapshot{
@@ -195,7 +195,7 @@ func TestBusFactorSerializeText(t *testing.T) {
 
 	var buf bytes.Buffer
 	err := bf.Serialize(result, false, &buf)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	output := buf.String()
 	assert.Contains(t, output, "bus_factor:")
@@ -229,12 +229,12 @@ func TestBusFactorSerializeBinaryRoundtrip(t *testing.T) {
 	// Serialize to binary
 	var buf bytes.Buffer
 	err := bf.Serialize(result, true, &buf)
-	assert.Nil(t, err)
-	assert.Greater(t, buf.Len(), 0)
+	assert.NoError(t, err)
+	assert.Positive(t, buf.Len())
 
 	// Deserialize
 	rawResult2, err := bf.Deserialize(buf.Bytes())
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	result2 := rawResult2.(BusFactorResult)
 
 	// Compare

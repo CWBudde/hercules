@@ -14,7 +14,7 @@ import (
 func buildLargeGoSource(funcs int) []byte {
 	var b strings.Builder
 	b.WriteString("package bench\n\n")
-	for i := 0; i < funcs; i++ {
+	for i := range funcs {
 		fmt.Fprintf(&b, "func Fn%d(x int) int {\n\ty := x + %d\n\treturn y * %d\n}\n\n", i, i, i+1)
 	}
 	return []byte(b.String())
@@ -24,7 +24,7 @@ func BenchmarkExtractNamedNodesFullFile(b *testing.B) {
 	source := buildLargeGoSource(1000) // ~5000 lines
 	b.ResetTimer()
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		nodes, err := ast_items.ExtractNamedNodes("bench.go", source)
 		if err != nil {
 			b.Fatalf("ExtractNamedNodes: %v", err)
@@ -42,7 +42,7 @@ func BenchmarkExtractNamedNodesInRangesSmallDiff(b *testing.B) {
 	ranges := []ast_items.LineRange{{Start: 2500, End: 2510}}
 	b.ResetTimer()
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		nodes, err := ast_items.ExtractNamedNodesInRanges("bench.go", source, ranges)
 		if err != nil {
 			b.Fatalf("ExtractNamedNodesInRanges: %v", err)
@@ -60,7 +60,7 @@ func BenchmarkExtractNamedNodesInRangesLargeFraction(b *testing.B) {
 	ranges := []ast_items.LineRange{{Start: 1, End: 2500}}
 	b.ResetTimer()
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		nodes, err := ast_items.ExtractNamedNodesInRanges("bench.go", source, ranges)
 		if err != nil {
 			b.Fatalf("ExtractNamedNodesInRanges: %v", err)

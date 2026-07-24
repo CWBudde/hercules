@@ -44,10 +44,12 @@ func Load(path string) (Snapshot, error) {
 	if err != nil {
 		return Snapshot{}, err
 	}
+
 	var snapshot Snapshot
 	if err := json.Unmarshal(data, &snapshot); err != nil {
 		return Snapshot{}, err
 	}
+
 	return snapshot, nil
 }
 
@@ -57,6 +59,8 @@ func Write(path string, snapshot Snapshot) error {
 	if err != nil {
 		return err
 	}
+
 	data = append(data, '\n')
+
 	return os.WriteFile(path, data, 0o644)
 }

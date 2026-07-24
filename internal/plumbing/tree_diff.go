@@ -1,6 +1,7 @@
 package plumbing
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"path"
@@ -21,6 +22,7 @@ import (
 // TreeDiff is a PipelineItem.
 type TreeDiff struct {
 	core.NoopMerger
+
 	SkipFiles  []string
 	NameFilter *regexp.Regexp
 	// Languages is the set of allowed languages. The values must be lower case. The default
@@ -125,17 +127,20 @@ func (treediff *TreeDiff) ListConfigurationOptions() []core.ConfigurationOption 
 			Default:     "",
 		},
 	}
+
 	return options[:]
 }
 
 // Configure sets the properties previously published by ListConfigurationOptions().
-func (treediff *TreeDiff) Configure(facts map[string]interface{}) error {
+func (treediff *TreeDiff) Configure(facts map[string]any) error {
 	if l, exists := facts[core.ConfigLogger].(core.Logger); exists {
 		treediff.l = l
 	}
+
 	if val, exists := facts[ConfigTreeDiffEnableBlacklist].(bool); exists && val {
 		treediff.SkipFiles = facts[ConfigTreeDiffBlacklistedPrefixes].([]string)
 	}
+
 	if val, exists := facts[ConfigTreeDiffLanguages].([]string); exists {
 		treediff.Languages = map[string]bool{}
 		for _, lang := range val {
@@ -149,10 +154,11 @@ func (treediff *TreeDiff) Configure(facts map[string]interface{}) error {
 	if val, exists := facts[ConfigTreeDiffFilterRegexp].(string); exists {
 		treediff.NameFilter = regexp.MustCompile(val)
 	}
+
 	return nil
 }
 
-func (*TreeDiff) ConfigureUpstream(map[string]interface{}) error {
+func (*TreeDiff) ConfigureUpstream(map[string]any) error {
 	return nil
 }
 
@@ -161,11 +167,13 @@ func (*TreeDiff) ConfigureUpstream(map[string]interface{}) error {
 func (treediff *TreeDiff) Initialize(repository *git.Repository) error {
 	treediff.l = core.NewLogger()
 	treediff.previousTree = nil
+
 	treediff.repository = repository
 	if treediff.Languages == nil {
 		treediff.Languages = map[string]bool{}
 		treediff.Languages[allLanguages] = true
 	}
+
 	return nil
 }
 
@@ -174,23 +182,28 @@ func (treediff *TreeDiff) Initialize(repository *git.Repository) error {
 // Additionally, DependencyCommit is always present there and represents the analysed *object.Commit.
 // This function returns the mapping with analysis results. The keys must be the same as
 // in Provides(). If there was an error, nil is returned.
-func (treediff *TreeDiff) Consume(deps map[string]interface{}) (map[string]interface{}, error) {
+func (treediff *TreeDiff) Consume(deps map[string]any) (map[string]any, error) {
 	commit := deps[core.DependencyCommit].(*object.Commit)
 	pass := false
+
 	for _, hash := range commit.ParentHashes {
 		if hash == treediff.previousCommit {
 			pass = true
 		}
 	}
+
 	if !pass && treediff.previousCommit != plumbing.ZeroHash {
 		err := fmt.Errorf("%s > %s", treediff.previousCommit.String(), commit.Hash.String())
 		treediff.l.Critical(err)
+
 		return nil, err
 	}
+
 	tree, err := commit.Tree()
 	if err != nil {
 		return nil, err
 	}
+
 	var diffs object.Changes
 	if treediff.previousTree != nil {
 		diffs, err = object.DiffTree(treediff.previousTree, tree)
@@ -199,55 +212,67 @@ func (treediff *TreeDiff) Consume(deps map[string]interface{}) (map[string]inter
 		}
 	} else {
 		diffs = []*object.Change{}
+
 		err = func() error {
 			fileIter := tree.Files()
 			defer fileIter.Close()
+
 			for {
 				file, err := fileIter.Next()
 				if err != nil {
-					if err == io.EOF {
+					if errors.Is(err, io.EOF) {
 						break
 					}
+
 					return err
 				}
+
 				pass, err := treediff.checkLanguage(file.Name, file.Hash)
 				if err != nil {
 					return err
 				}
+
 				if !pass {
 					continue
 				}
+
 				diffs = append(diffs, &object.Change{
 					To: object.ChangeEntry{Name: file.Name, Tree: tree, TreeEntry: object.TreeEntry{
 						Name: file.Name, Mode: file.Mode, Hash: file.Hash,
 					}},
 				})
 			}
+
 			return nil
 		}()
 		if err != nil {
 			return nil, err
 		}
 	}
+
 	treediff.previousTree = tree
 	treediff.previousCommit = commit.Hash
 	diffs = treediff.filterDiffs(diffs)
-	return map[string]interface{}{DependencyTreeChanges: diffs}, nil
+
+	return map[string]any{DependencyTreeChanges: diffs}, nil
 }
 
 func (treediff *TreeDiff) filterDiffs(diffs object.Changes) object.Changes {
 	// filter without allocation
 	filteredDiffs := make(object.Changes, 0, len(diffs))
+
 OUTER:
 	for _, change := range diffs {
 		if len(treediff.SkipFiles) > 0 && (enry.IsVendor(change.To.Name) || enry.IsVendor(change.From.Name)) {
 			continue
 		}
+
 		for _, dir := range treediff.SkipFiles {
 			if strings.HasPrefix(change.To.Name, dir) || strings.HasPrefix(change.From.Name, dir) {
 				continue OUTER
 			}
 		}
+
 		if treediff.NameFilter != nil {
 			matchedTo := treediff.NameFilter.MatchString(change.To.Name)
 			matchedFrom := treediff.NameFilter.MatchString(change.From.Name)
@@ -256,17 +281,21 @@ OUTER:
 				continue
 			}
 		}
+
 		var changeEntry object.ChangeEntry
 		if change.To.Tree == nil {
 			changeEntry = change.From
 		} else {
 			changeEntry = change.To
 		}
+
 		if pass, _ := treediff.checkLanguage(changeEntry.Name, changeEntry.TreeEntry.Hash); !pass {
 			continue
 		}
+
 		filteredDiffs = append(filteredDiffs, change)
 	}
+
 	return filteredDiffs
 }
 
@@ -280,23 +309,30 @@ func (treediff *TreeDiff) checkLanguage(name string, blobHash plumbing.Hash) (bo
 	if treediff.Languages[allLanguages] {
 		return true, nil
 	}
+
 	blob, err := treediff.repository.BlobObject(blobHash)
 	if err != nil {
 		return false, err
 	}
+
 	reader, err := blob.Reader()
 	if err != nil {
 		return false, err
 	}
+
 	buffer := make([]byte, 1024)
+
 	n, err := reader.Read(buffer)
-	if err != nil && (blob.Size != 0 || err != io.EOF) {
+	if err != nil && (blob.Size != 0 || !errors.Is(err, io.EOF)) {
 		return false, err
 	}
+
 	if n < len(buffer) {
 		buffer = buffer[:n]
 	}
+
 	lang := strings.ToLower(normalizeLanguage(name, enry.GetLanguage(path.Base(name), buffer)))
+
 	return treediff.Languages[lang], nil
 }
 

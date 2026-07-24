@@ -1,7 +1,6 @@
 package visual
 
 import (
-	"fmt"
 	"image"
 	"image/color"
 	"image/png"
@@ -10,7 +9,7 @@ import (
 	"testing"
 )
 
-// VisualTestCase defines a test case for visual regression testing
+// VisualTestCase defines a test case for visual regression testing.
 type VisualTestCase struct {
 	Name            string
 	Mode            string
@@ -20,7 +19,7 @@ type VisualTestCase struct {
 	Description     string
 }
 
-// TestVisualRegression runs comprehensive visual regression tests
+// TestVisualRegression runs comprehensive visual regression tests.
 func TestVisualRegression(t *testing.T) {
 	requireVisualParityOptIn(t)
 
@@ -59,7 +58,7 @@ func TestVisualRegression(t *testing.T) {
 	}
 }
 
-// TestPythonCompatibility runs visual compatibility tests against Python reference images
+// TestPythonCompatibility runs visual compatibility tests against Python reference images.
 func TestPythonCompatibility(t *testing.T) {
 	requirePythonParityOptIn(t)
 
@@ -89,7 +88,7 @@ func TestPythonCompatibility(t *testing.T) {
 	}
 }
 
-// TestChartStructuralValidation performs functional validation of chart components
+// TestChartStructuralValidation performs functional validation of chart components.
 func TestChartStructuralValidation(t *testing.T) {
 	// Generate a test chart
 	outputPath := generateTestChart(t, "burndown-project", "../../internal/render/testdata/example_data/hercules_burndown.yaml")
@@ -110,7 +109,7 @@ func TestChartStructuralValidation(t *testing.T) {
 	})
 }
 
-// TestSimilarityMetricsAccuracy validates the similarity calculation algorithms
+// TestSimilarityMetricsAccuracy validates the similarity calculation algorithms.
 func TestSimilarityMetricsAccuracy(t *testing.T) {
 	// Create temp directory for test images
 	tmpDir := t.TempDir()
@@ -152,7 +151,7 @@ func TestSimilarityMetricsAccuracy(t *testing.T) {
 	})
 }
 
-// runVisualRegressionTest executes a single visual regression test case
+// runVisualRegressionTest executes a single visual regression test case.
 func runVisualRegressionTest(t *testing.T, tc VisualTestCase) {
 	t.Helper()
 
@@ -167,7 +166,8 @@ func runVisualRegressionTest(t *testing.T, tc VisualTestCase) {
 	currentOutput := generateTestChart(t, tc.Mode, tc.InputFile)
 	defer func() {
 		// Clean up generated file
-		if err := os.Remove(currentOutput); err != nil {
+		err := os.Remove(currentOutput)
+		if err != nil {
 			t.Logf("Failed to clean up test file %s: %v", currentOutput, err)
 		}
 	}()
@@ -192,14 +192,15 @@ func runVisualRegressionTest(t *testing.T, tc VisualTestCase) {
 	}
 }
 
-// runPythonCompatibilityTest executes compatibility test against Python reference
+// runPythonCompatibilityTest executes compatibility test against Python reference.
 func runPythonCompatibilityTest(t *testing.T, tc VisualTestCase) {
 	t.Helper()
 
 	// Generate Go output
 	goOutput := generateTestChart(t, tc.Mode, tc.InputFile)
 	defer func() {
-		if err := os.Remove(goOutput); err != nil {
+		err := os.Remove(goOutput)
+		if err != nil {
 			t.Logf("Failed to clean up Go output file %s: %v", goOutput, err)
 		}
 	}()
@@ -221,14 +222,14 @@ func runPythonCompatibilityTest(t *testing.T, tc VisualTestCase) {
 
 	if !metrics.IsValidationPassing(tc.ValidationLevel) {
 		t.Errorf("Python compatibility test failed for %s:\n%s", tc.Name, report)
-		saveDifferenceAnalysis(t, fmt.Sprintf("%s_python_compat", tc.Name),
+		saveDifferenceAnalysis(t, tc.Name+"_python_compat",
 			goOutput, tc.ExpectedPath, metrics)
 	} else {
 		t.Logf("✅ Python compatibility maintained for %s", tc.Name)
 	}
 }
 
-// generateTestChart creates a chart using the current implementation
+// generateTestChart creates a chart using the current implementation.
 func generateTestChart(t *testing.T, mode, inputFile string) string {
 	t.Helper()
 
@@ -250,7 +251,7 @@ func generateTestChart(t *testing.T, mode, inputFile string) string {
 	return outputPath
 }
 
-// validateChartDimensions checks if chart has expected dimensions
+// validateChartDimensions checks if chart has expected dimensions.
 func validateChartDimensions(t *testing.T, chartPath string) {
 	t.Helper()
 
@@ -275,7 +276,7 @@ func validateChartDimensions(t *testing.T, chartPath string) {
 	t.Logf("Chart dimensions: %dx%d", width, height)
 }
 
-// validateChartColorScheme checks for expected color usage
+// validateChartColorScheme checks for expected color usage.
 func validateChartColorScheme(t *testing.T, chartPath string) {
 	t.Helper()
 
@@ -313,8 +314,8 @@ func writeSolidPNG(t *testing.T, path string, width, height int, c color.RGBA) {
 	t.Helper()
 
 	img := image.NewRGBA(image.Rect(0, 0, width, height))
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
+	for y := range height {
+		for x := range width {
 			img.SetRGBA(x, y, c)
 		}
 	}
@@ -330,7 +331,7 @@ func writeSolidPNG(t *testing.T, path string, width, height int, c color.RGBA) {
 	}
 }
 
-// copyFile copies a file for testing purposes
+// copyFile copies a file for testing purposes.
 func copyFile(t *testing.T, src, dst string) {
 	t.Helper()
 
@@ -352,13 +353,14 @@ func copyFile(t *testing.T, src, dst string) {
 	}
 }
 
-// saveDifferenceAnalysis saves detailed difference analysis for manual review
+// saveDifferenceAnalysis saves detailed difference analysis for manual review.
 func saveDifferenceAnalysis(t *testing.T, testName, currentPath, expectedPath string, metrics *SimilarityMetrics) {
 	t.Helper()
 
 	// Create analysis directory
 	analysisDir := filepath.Join("analysis_output", testName)
-	if err := os.MkdirAll(analysisDir, 0o750); err != nil {
+	err := os.MkdirAll(analysisDir, 0o750)
+	if err != nil {
 		t.Logf("Failed to create analysis directory: %v", err)
 		return
 	}
@@ -371,7 +373,8 @@ func saveDifferenceAnalysis(t *testing.T, testName, currentPath, expectedPath st
 	reportPath := filepath.Join(analysisDir, "analysis_report.txt")
 	report := metrics.GetDetailedReport(ValidationStandard)
 
-	if err := os.WriteFile(reportPath, []byte(report), 0o600); err != nil {
+	err = os.WriteFile(reportPath, []byte(report), 0o600)
+	if err != nil {
 		t.Logf("Failed to save analysis report: %v", err)
 	} else {
 		t.Logf("📊 Detailed analysis saved to: %s", analysisDir)

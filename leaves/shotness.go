@@ -99,14 +99,15 @@ func (shotness *ShotnessAnalysis) Description() string {
 }
 
 // Configure sets the properties previously published by ListConfigurationOptions().
-func (shotness *ShotnessAnalysis) Configure(facts map[string]interface{}) error {
+func (shotness *ShotnessAnalysis) Configure(facts map[string]any) error {
 	if l, exists := facts[core.ConfigLogger].(core.Logger); exists {
 		shotness.l = l
 	}
+
 	return nil
 }
 
-func (*ShotnessAnalysis) ConfigureUpstream(facts map[string]interface{}) error {
+func (*ShotnessAnalysis) ConfigureUpstream(facts map[string]any) error {
 	return nil
 }
 
@@ -118,6 +119,7 @@ func (shotness *ShotnessAnalysis) Initialize(repository *git.Repository) error {
 	shotness.files = map[string]map[string]*nodeShotness{}
 	shotness.extractor = ast_items.NewTreeSitterExtractor()
 	shotness.OneShotMergeProcessor.Initialize()
+
 	return nil
 }
 
@@ -126,10 +128,11 @@ func (shotness *ShotnessAnalysis) Initialize(repository *git.Repository) error {
 // Additionally, DependencyCommit is always present there and represents the analysed *object.Commit.
 // This function returns the mapping with analysis results. The keys must be the same as
 // in Provides(). If there was an error, nil is returned.
-func (shotness *ShotnessAnalysis) Consume(deps map[string]interface{}) (map[string]interface{}, error) {
+func (shotness *ShotnessAnalysis) Consume(deps map[string]any) (map[string]any, error) {
 	if !shotness.ShouldConsumeCommit(deps) {
 		return nil, nil
 	}
+
 	commit := deps[core.DependencyCommit].(*object.Commit)
 	changes := deps[items.DependencyTreeChanges].(object.Changes)
 	diffs := deps[items.DependencyFileDiff].(map[string]items.FileDiffData)
@@ -145,18 +148,22 @@ func (shotness *ShotnessAnalysis) Consume(deps map[string]interface{}) (map[stri
 		key := nodeSummary.String()
 		exists := allNodes[key]
 		allNodes[key] = true
+
 		var count int
 		if ns := shotness.nodes[key]; ns != nil {
 			count = ns.Count
 		}
+
 		if count == 0 {
 			shotness.nodes[key] = &nodeShotness{
 				Summary: nodeSummary, Count: 1, Couples: map[string]int{},
 			}
+
 			fmap := shotness.files[nodeSummary.File]
 			if fmap == nil {
 				fmap = map[string]*nodeShotness{}
 			}
+
 			fmap[key] = shotness.nodes[key]
 			shotness.files[nodeSummary.File] = fmap
 		} else if !exists {
@@ -169,6 +176,7 @@ func (shotness *ShotnessAnalysis) Consume(deps map[string]interface{}) (map[stri
 		if err != nil {
 			return nil, err
 		}
+
 		switch action {
 		case merkletrie.Delete:
 			fromName := change.From.Name
@@ -179,45 +187,56 @@ func (shotness *ShotnessAnalysis) Consume(deps map[string]interface{}) (map[stri
 					}
 				}
 			}
+
 			for key := range shotness.files[fromName] {
 				delete(shotness.nodes, key)
 			}
+
 			delete(shotness.files, fromName)
 		case merkletrie.Insert:
 			toName := change.To.Name
+
 			nodes, err := shotness.extractNodes(toName, cache, change.To.TreeEntry.Hash)
 			if err != nil {
 				shotness.l.Warnf("Shotness: commit %s file %s failed to parse AST: %s\n",
 					commit.Hash.String(), toName, err.Error())
+
 				continue
 			}
+
 			for name, node := range nodes {
 				addNode(name, node, toName)
 			}
 		case merkletrie.Modify:
 			fromName := change.From.Name
+
 			toName := change.To.Name
 			if fromName != toName {
 				oldFile := shotness.files[fromName]
 				newFile := map[string]*nodeShotness{}
+
 				shotness.files[toName] = newFile
 				for oldKey, ns := range oldFile {
 					ns.Summary.File = toName
 					newKey := ns.Summary.String()
 					newFile[newKey] = ns
+
 					shotness.nodes[newKey] = ns
 					for coupleKey, count := range ns.Couples {
 						if shotness.nodes[coupleKey] == nil {
 							continue
 						}
+
 						coupleCouples := shotness.nodes[coupleKey].Couples
 						delete(coupleCouples, oldKey)
 						coupleCouples[newKey] = count
 					}
 				}
+
 				for key := range oldFile {
 					delete(shotness.nodes, key)
 				}
+
 				delete(shotness.files, fromName)
 			}
 
@@ -225,27 +244,35 @@ func (shotness *ShotnessAnalysis) Consume(deps map[string]interface{}) (map[stri
 			if err != nil {
 				shotness.l.Warnf("Shotness: commit ^%s file %s failed to parse AST: %s\n",
 					commit.Hash.String(), fromName, err.Error())
+
 				continue
 			}
+
 			nodesAfter, err := shotness.extractNodes(toName, cache, change.To.TreeEntry.Hash)
 			if err != nil {
 				shotness.l.Warnf("Shotness: commit %s file %s failed to parse AST: %s\n",
 					commit.Hash.String(), toName, err.Error())
+
 				continue
 			}
+
 			diff, exists := diffs[toName]
 			if !exists {
 				for name, node := range nodesBefore {
 					addNode(name, node, toName)
 				}
+
 				for name, node := range nodesAfter {
 					addNode(name, node, toName)
 				}
+
 				continue
 			}
+
 			line2nodeBefore := genLine2Node(nodesBefore, diff.OldLinesOfCode)
 			line2nodeAfter := genLine2Node(nodesAfter, diff.NewLinesOfCode)
 			var lineNumBefore, lineNumAfter int
+
 			for _, edit := range diff.Diffs {
 				size := utf8.RuneCountInString(edit.Text)
 				switch edit.Type {
@@ -255,6 +282,7 @@ func (shotness *ShotnessAnalysis) Consume(deps map[string]interface{}) (map[stri
 							addNode(node.Name, node, toName)
 						}
 					}
+
 					lineNumBefore += size
 				case diffmatchpatch.DiffInsert:
 					for l := lineNumAfter; l < lineNumAfter+size && l < len(line2nodeAfter); l++ {
@@ -262,6 +290,7 @@ func (shotness *ShotnessAnalysis) Consume(deps map[string]interface{}) (map[stri
 							addNode(node.Name, node, toName)
 						}
 					}
+
 					lineNumAfter += size
 				case diffmatchpatch.DiffEqual:
 					lineNumBefore += size
@@ -270,14 +299,17 @@ func (shotness *ShotnessAnalysis) Consume(deps map[string]interface{}) (map[stri
 			}
 		}
 	}
+
 	for keyi := range allNodes {
 		for keyj := range allNodes {
 			if keyi == keyj {
 				continue
 			}
+
 			shotness.nodes[keyi].Couples[keyj]++
 		}
 	}
+
 	return nil, nil
 }
 
@@ -285,26 +317,34 @@ func genLine2Node(nodes map[string]ast_items.Node, linesNum int) [][]ast_items.N
 	if linesNum <= 0 {
 		return nil
 	}
+
 	res := make([][]ast_items.Node, linesNum)
+
 	for _, node := range nodes {
 		startLine := node.StartLine
 		endLine := node.EndLine
+
 		if startLine < 1 {
 			startLine = 1
 		}
+
 		if endLine < startLine {
 			endLine = startLine
 		}
+
 		if startLine > linesNum {
 			continue
 		}
+
 		if endLine > linesNum {
 			endLine = linesNum
 		}
+
 		for l := startLine; l <= endLine; l++ {
 			res[l-1] = append(res[l-1], node)
 		}
 	}
+
 	return res
 }
 
@@ -317,14 +357,17 @@ func (shotness *ShotnessAnalysis) extractNodes(
 	if blob == nil {
 		return map[string]ast_items.Node{}, nil
 	}
+
 	nodes, err := shotness.extractor.Extract(path, blob.Data)
 	if err != nil {
 		return nil, err
 	}
+
 	res := map[string]ast_items.Node{}
 	for _, node := range nodes {
 		res[node.Name] = node
 	}
+
 	return res, nil
 }
 
@@ -334,43 +377,51 @@ func (shotness *ShotnessAnalysis) Fork(n int) []core.PipelineItem {
 }
 
 // Finalize returns the result of the analysis. Further Consume() calls are not expected.
-func (shotness *ShotnessAnalysis) Finalize() interface{} {
+func (shotness *ShotnessAnalysis) Finalize() any {
 	result := ShotnessResult{
 		Nodes:    make([]NodeSummary, len(shotness.nodes)),
 		Counters: make([]map[int]int, len(shotness.nodes)),
 	}
 	keys := make([]string, len(shotness.nodes))
+
 	i := 0
 	for key := range shotness.nodes {
 		keys[i] = key
 		i++
 	}
+
 	sort.Strings(keys)
+
 	reverseKeys := map[string]int{}
 	for i, key := range keys {
 		reverseKeys[key] = i
 	}
+
 	for i, key := range keys {
 		node := shotness.nodes[key]
 		result.Nodes[i] = node.Summary
 		counter := map[int]int{}
 		result.Counters[i] = counter
+
 		counter[i] = node.Count
 		for ck, val := range node.Couples {
 			counter[reverseKeys[ck]] = val
 		}
 	}
+
 	return result
 }
 
 // Serialize converts the analysis result as returned by Finalize() to text or bytes.
 // The text format is YAML and the bytes format is Protocol Buffers.
-func (shotness *ShotnessAnalysis) Serialize(result interface{}, binary bool, writer io.Writer) error {
+func (shotness *ShotnessAnalysis) Serialize(result any, binary bool, writer io.Writer) error {
 	shotnessResult := result.(ShotnessResult)
 	if binary {
 		return shotness.serializeBinary(&shotnessResult, writer)
 	}
+
 	shotness.serializeText(&shotnessResult, writer)
+
 	return nil
 }
 
@@ -378,14 +429,19 @@ func (shotness *ShotnessAnalysis) serializeText(result *ShotnessResult, writer i
 	for i, summary := range result.Nodes {
 		fmt.Fprintf(writer, "  - name: %s\n    file: %s\n    internal_role: %s\n    counters: {",
 			summary.Name, summary.File, summary.Type)
+
 		keys := make([]int, len(result.Counters[i]))
+
 		j := 0
 		for key := range result.Counters[i] {
 			keys[j] = key
 			j++
 		}
+
 		sort.Ints(keys)
+
 		j = 0
+
 		for _, key := range keys {
 			val := result.Counters[i][key]
 			if j < len(result.Counters[i])-1 {
@@ -393,6 +449,7 @@ func (shotness *ShotnessAnalysis) serializeText(result *ShotnessResult, writer i
 			} else {
 				fmt.Fprintf(writer, "\"%d\":%d}\n", key, val)
 			}
+
 			j++
 		}
 	}
@@ -412,13 +469,17 @@ func (shotness *ShotnessAnalysis) serializeBinary(result *ShotnessResult, writer
 		for key, val := range result.Counters[i] {
 			record.Counters[int32(key)] = int32(val)
 		}
+
 		message.Records[i] = record
 	}
+
 	serialized, err := proto.Marshal(&message)
 	if err != nil {
 		return err
 	}
+
 	_, err = writer.Write(serialized)
+
 	return err
 }
 

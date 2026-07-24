@@ -1,6 +1,8 @@
 package lang
 
 import (
+	"slices"
+
 	sitter "github.com/odvcencio/gotreesitter"
 )
 
@@ -8,10 +10,12 @@ import (
 // node. Returns nil on failure (callers treat this as "no imports").
 func parseFull(lang *sitter.Language, content []byte) *sitter.Node {
 	parser := sitter.NewParser(lang)
+
 	tree, err := parser.Parse(content)
 	if err != nil || tree == nil {
 		return nil
 	}
+
 	return tree.RootNode()
 }
 
@@ -22,12 +26,14 @@ func runQuery(q *sitter.Query, root *sitter.Node, lang *sitter.Language, content
 	if q == nil || root == nil {
 		return
 	}
+
 	cursor := q.Exec(root, lang, content)
 	for {
 		m, ok := cursor.NextMatch()
 		if !ok {
 			break
 		}
+
 		visit(m.Captures)
 	}
 }
@@ -37,6 +43,7 @@ func nodeText(node *sitter.Node, content []byte) []byte {
 	if node == nil {
 		return nil
 	}
+
 	return content[node.StartByte():node.EndByte()]
 }
 
@@ -51,9 +58,11 @@ func eachNode(root *sitter.Node, lang *sitter.Language, fnc func(n *sitter.Node)
 	if root == nil {
 		return
 	}
+
 	if !fnc(root) {
 		return
 	}
+
 	for i := 0; i < root.ChildCount(); i++ {
 		eachNode(root.Child(i), lang, fnc)
 	}
@@ -68,11 +77,11 @@ func eachNodeOfTypes(root *sitter.Node, lang *sitter.Language, fnc func(n *sitte
 		if typ == "" {
 			return true
 		}
-		for _, t := range types {
-			if t == typ {
-				return fnc(n)
-			}
+
+		if slices.Contains(types, typ) {
+			return fnc(n)
 		}
+
 		return true
 	})
 }

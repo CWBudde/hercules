@@ -29,6 +29,7 @@ func NewGraph() *Graph {
 func NewGraphWithInsertionOrder() *Graph {
 	g := NewGraph()
 	g.sortIndex = map[string]int{}
+
 	return g
 }
 
@@ -43,11 +44,12 @@ func (v indexedStringSorter) Len() int {
 
 func (v indexedStringSorter) Less(i, j int) bool {
 	idx0, ok0 := v.index[v.values[i]]
+
 	idx1, ok1 := v.index[v.values[j]]
 	switch {
 	case ok0 && ok1:
 		return idx0 < idx1
-	case !(ok0 || ok1):
+	case !ok0 && !ok1:
 		return v.values[i] < v.values[j]
 	default:
 		return ok0
@@ -71,11 +73,14 @@ func (g *Graph) AddNode(name string) bool {
 	if _, exists := g.outputs[name]; exists {
 		return false
 	}
+
 	g.outputs[name] = map[string]struct{}{}
+
 	g.inputs[name] = 0
 	if g.sortIndex != nil {
 		g.sortIndex[name] = len(g.sortIndex)
 	}
+
 	return true
 }
 
@@ -86,6 +91,7 @@ func (g *Graph) AddNodes(names ...string) bool {
 			return false
 		}
 	}
+
 	return true
 }
 
@@ -114,8 +120,10 @@ func (g *Graph) RemoveEdge(from, to string) bool {
 	if _, ok := g.outputs[from]; !ok {
 		return false
 	}
+
 	delete(g.outputs[from], to)
 	g.inputs[to]--
+
 	return true
 }
 
@@ -130,14 +138,17 @@ func (g *Graph) Toposort() ([]string, bool) {
 			queue = append(queue, n)
 		}
 	}
+
 	g.Sort(queue)
 
 	for len(queue) > 0 {
 		n := queue[0]
 		queue = queue[1:]
+
 		result = append(result, n)
 
 		queueLen := len(queue)
+
 		for k := range g.outputs[n] {
 			switch c, ok := counters[k]; {
 			case !ok:
@@ -145,11 +156,13 @@ func (g *Graph) Toposort() ([]string, bool) {
 				if c == 1 {
 					break
 				}
+
 				fallthrough
 			case c != 1:
 				counters[k] = c - 1
 				continue
 			}
+
 			counters[k] = 0
 			queue = append(queue, k)
 		}
@@ -186,7 +199,7 @@ func SortByNodeIndex(nodes []string, positions map[string]NodePosition) {
 	sort.Sort(nodePosSorter{nodes: nodes, positions: positions})
 }
 
-// BreadthSort sorts the nodes in the graph in BFS order. Does NOT consider node ordering
+// BreadthSort sorts the nodes in the graph in BFS order. Does NOT consider node ordering.
 func (g *Graph) BreadthSort() map[string]NodePosition {
 	// TODO improve sorting to consider node ordering
 	S := make([]string, 0, len(g.outputs))
@@ -203,6 +216,7 @@ func (g *Graph) BreadthSort() map[string]NodePosition {
 	for len(S) > 0 {
 		node := S[0]
 		S = S[1:]
+
 		if _, exists := result[node]; !exists {
 			level := levels[node]
 			result[node] = NodePosition{
@@ -210,6 +224,7 @@ func (g *Graph) BreadthSort() map[string]NodePosition {
 				Index: len(result),
 			}
 			level++
+
 			for child := range g.outputs[node] {
 				S = append(S, child)
 				levels[child] = level
@@ -229,30 +244,37 @@ func (g *Graph) FindCycle(seed string) []string {
 	S := make([]edge, 0, len(g.outputs))
 	S = append(S, edge{seed, ""})
 	visited := map[string]string{}
+
 	for len(S) > 0 {
 		e := S[0]
 		S = S[1:]
+
 		if parent, exists := visited[e.node]; !exists || parent == "" {
 			visited[e.node] = e.parent
 			for child := range g.outputs[e.node] {
 				S = append(S, edge{child, e.node})
 			}
 		}
+
 		if e.node == seed && e.parent != "" {
 			var result []string
+
 			node := e.parent
 			for node != seed {
 				result = append(result, node)
 				node = visited[node]
 			}
+
 			result = append(result, seed)
 			// reverse
 			for left, right := 0, len(result)-1; left < right; left, right = left+1, right-1 {
 				result[left], result[right] = result[right], result[left]
 			}
+
 			return result
 		}
 	}
+
 	return []string{}
 }
 
@@ -263,7 +285,9 @@ func (g *Graph) FindParents(to string) (result []string) {
 			result = append(result, node)
 		}
 	}
+
 	g.Sort(result)
+
 	return result
 }
 
@@ -272,7 +296,9 @@ func (g *Graph) FindChildren(from string) (result []string) {
 	for child := range g.outputs[from] {
 		result = append(result, child)
 	}
+
 	g.Sort(result)
+
 	return result
 }
 
@@ -284,23 +310,30 @@ func (g *Graph) Serialize(sorted []string) string {
 	}
 	var buffer bytes.Buffer
 	buffer.WriteString("digraph Hercules {\n")
+
 	var nodesFrom []string
 	for nodeFrom := range g.outputs {
 		nodesFrom = append(nodesFrom, nodeFrom)
 	}
+
 	g.Sort(nodesFrom)
+
 	for _, nodeFrom := range nodesFrom {
 		var links []string
 		for nodeTo := range g.outputs[nodeFrom] {
 			links = append(links, nodeTo)
 		}
+
 		g.Sort(links)
+
 		for _, nodeTo := range links {
-			buffer.WriteString(fmt.Sprintf("  \"%d %s\" -> \"%d %s\"\n",
-				node2index[nodeFrom], nodeFrom, node2index[nodeTo], nodeTo))
+			fmt.Fprintf(&buffer, "  \"%d %s\" -> \"%d %s\"\n",
+				node2index[nodeFrom], nodeFrom, node2index[nodeTo], nodeTo)
 		}
 	}
+
 	buffer.WriteString("}")
+
 	return buffer.String()
 }
 
@@ -312,25 +345,32 @@ func (g *Graph) DebugDump() string {
 			S = append(S, n)
 		}
 	}
+
 	g.Sort(S)
 	var buffer bytes.Buffer
 	buffer.WriteString(strings.Join(S, " ") + "\n")
+
 	keys := []string(nil)
 	vals := map[string][]string{}
+
 	for key, val1 := range g.outputs {
 		val2 := make([]string, 0, len(val1))
 		for name := range val1 {
 			val2 = append(val2, name)
 		}
+
 		keys = append(keys, key)
 		vals[key] = val2
 	}
+
 	g.Sort(keys)
+
 	for _, key := range keys {
-		buffer.WriteString(fmt.Sprintf("%s %d = ", key, g.inputs[key]))
+		fmt.Fprintf(&buffer, "%s %d = ", key, g.inputs[key])
 		outs := vals[key]
 		buffer.WriteString(strings.Join(outs, " ") + "\n")
 	}
+
 	return buffer.String()
 }
 
@@ -342,12 +382,15 @@ func (g *Graph) RemoveNode(name string) bool {
 	if _, ok := g.outputs[name]; !ok {
 		return false
 	}
+
 	for child := range g.outputs[name] {
 		g.inputs[child]--
 	}
+
 	for _, children := range g.outputs {
 		delete(children, name)
 	}
+
 	delete(g.inputs, name)
 	delete(g.outputs, name)
 	delete(g.sortIndex, name)

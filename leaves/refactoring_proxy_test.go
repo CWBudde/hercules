@@ -12,9 +12,9 @@ import (
 	items "github.com/cwbudde/hercules/internal/plumbing"
 )
 
-// Helper functions
-func makeRefactoringTestDeps(tick int, changes object.Changes) map[string]interface{} {
-	return map[string]interface{}{
+// Helper functions.
+func makeRefactoringTestDeps(tick int, changes object.Changes) map[string]any {
+	return map[string]any{
 		core.DependencyCommit:       &object.Commit{},
 		items.DependencyTick:        tick,
 		items.DependencyTreeChanges: changes,
@@ -47,7 +47,7 @@ func makeModification(name string) *object.Change {
 	}
 }
 
-// Task 6: Basic Tests
+// Task 6: Basic Tests.
 func TestRefactoringProxy_RenameDetection(t *testing.T) {
 	rp := &RefactoringProxy{}
 	require.NoError(t, rp.Initialize(nil))
@@ -65,14 +65,14 @@ func TestRefactoringProxy_RenameDetection(t *testing.T) {
 
 	result := rp.Finalize().(RefactoringProxyResult)
 
-	assert.Equal(t, 1, len(result.Ticks))
+	assert.Len(t, result.Ticks, 1)
 	assert.Equal(t, 4, result.TotalChanges[0])
 	assert.Equal(t, 1, rp.tickMetrics[0].Renames)
 	assert.InDelta(t, 0.25, result.RenameRatios[0], 0.01)
 	assert.False(t, result.IsRefactoring[0])
 }
 
-// Task 7: Classification & Edge Cases
+// Task 7: Classification & Edge Cases.
 func TestRefactoringProxy_Classification(t *testing.T) {
 	testCases := []struct {
 		name        string
@@ -94,10 +94,10 @@ func TestRefactoringProxy_Classification(t *testing.T) {
 			require.NoError(t, rp.Initialize(nil))
 
 			changes := object.Changes{}
-			for i := 0; i < tc.renames; i++ {
+			for i := range tc.renames {
 				changes = append(changes, makeRename("old"+string(rune(i)), "new"+string(rune(i))))
 			}
-			for i := 0; i < tc.total-tc.renames; i++ {
+			for i := range tc.total - tc.renames {
 				changes = append(changes, makeAddition("added"+string(rune(i))))
 			}
 
@@ -122,10 +122,10 @@ func TestRefactoringProxy_EmptyCommits(t *testing.T) {
 
 	result := rp.Finalize().(RefactoringProxyResult)
 
-	assert.Equal(t, 0, len(result.Ticks))
+	assert.Empty(t, result.Ticks)
 }
 
-// Task 8: Multiple Ticks & Serialization
+// Task 8: Multiple Ticks & Serialization.
 func TestRefactoringProxy_MultipleTicks(t *testing.T) {
 	rp := &RefactoringProxy{}
 	require.NoError(t, rp.Initialize(nil))
@@ -162,7 +162,7 @@ func TestRefactoringProxy_MultipleTicks(t *testing.T) {
 
 	result := rp.Finalize().(RefactoringProxyResult)
 
-	assert.Equal(t, 3, len(result.Ticks))
+	assert.Len(t, result.Ticks, 3)
 	assert.Equal(t, []int{0, 1, 2}, result.Ticks)
 	assert.InDelta(t, 0.2, result.RenameRatios[0], 0.01)
 	assert.InDelta(t, 0.8, result.RenameRatios[1], 0.01)

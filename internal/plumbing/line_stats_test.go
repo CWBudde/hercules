@@ -16,15 +16,15 @@ import (
 
 func TestLinesStatsMeta(t *testing.T) {
 	ra := &items.LinesStatsCalculator{}
-	assert.Equal(t, ra.Name(), "LinesStats")
-	assert.Equal(t, len(ra.Provides()), 1)
-	assert.Equal(t, ra.Provides()[0], items.DependencyLineStats)
-	assert.Equal(t, len(ra.Requires()), 3)
-	assert.Equal(t, ra.Requires()[0], items.DependencyTreeChanges)
-	assert.Equal(t, ra.Requires()[1], items.DependencyBlobCache)
-	assert.Equal(t, ra.Requires()[2], items.DependencyFileDiff)
+	assert.Equal(t, "LinesStats", ra.Name())
+	assert.Len(t, ra.Provides(), 1)
+	assert.Equal(t, items.DependencyLineStats, ra.Provides()[0])
+	assert.Len(t, ra.Requires(), 3)
+	assert.Equal(t, items.DependencyTreeChanges, ra.Requires()[0])
+	assert.Equal(t, items.DependencyBlobCache, ra.Requires()[1])
+	assert.Equal(t, items.DependencyFileDiff, ra.Requires()[2])
 	assert.Nil(t, ra.ListConfigurationOptions())
-	assert.NoError(t, ra.Configure(map[string]interface{}{
+	assert.NoError(t, ra.Configure(map[string]any{
 		core.ConfigLogger: core.NewLogger(),
 	}))
 	for _, f := range ra.Fork(10) {
@@ -35,9 +35,9 @@ func TestLinesStatsMeta(t *testing.T) {
 func TestLinesStatsRegistration(t *testing.T) {
 	summoned := core.Registry.Summon((&items.LinesStatsCalculator{}).Name())
 	assert.Len(t, summoned, 1)
-	assert.Equal(t, summoned[0].Name(), "LinesStats")
+	assert.Equal(t, "LinesStats", summoned[0].Name())
 	summoned = core.Registry.Summon((&items.LinesStatsCalculator{}).Provides()[0])
-	assert.True(t, len(summoned) >= 1)
+	assert.GreaterOrEqual(t, len(summoned), 1)
 	matched := false
 	for _, tp := range summoned {
 		matched = matched || tp.Name() == "LinesStats"
@@ -46,7 +46,7 @@ func TestLinesStatsRegistration(t *testing.T) {
 }
 
 func TestLinesStatsConsume(t *testing.T) {
-	deps := map[string]interface{}{}
+	deps := map[string]any{}
 
 	// stage 1
 	deps[identity.DependencyAuthor] = 0
@@ -105,7 +105,7 @@ func TestLinesStatsConsume(t *testing.T) {
 	deps[items.DependencyTreeChanges] = changes
 	fd := fixtures.FileDiff()
 	result, err := fd.Consume(deps)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	deps[items.DependencyFileDiff] = result[items.DependencyFileDiff]
 	deps[core.DependencyCommit], _ = test.Repository.CommitObject(plumbing.NewHash(
 		"cce947b98a050c6d356bc6ba95030254914027b1",
@@ -113,26 +113,26 @@ func TestLinesStatsConsume(t *testing.T) {
 	deps[core.DependencyIsMerge] = false
 	lsc := &items.LinesStatsCalculator{}
 	result, err = lsc.Consume(deps)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	stats := result[items.DependencyLineStats].(map[object.ChangeEntry]items.LineStats)
 	assert.Len(t, stats, 3)
 	nameMap := map[string]items.LineStats{}
 	for ch, val := range stats {
 		nameMap[ch.Name] = val
 	}
-	assert.Equal(t, nameMap["analyser2.go"], items.LineStats{
+	assert.Equal(t, items.LineStats{
 		Added:   628,
 		Removed: 9,
 		Changed: 67,
-	})
-	assert.Equal(t, nameMap[".travis.yml"], items.LineStats{
+	}, nameMap["analyser2.go"])
+	assert.Equal(t, items.LineStats{
 		Added:   0,
 		Removed: 12,
 		Changed: 0,
-	})
-	assert.Equal(t, nameMap["cmd/hercules/main.go"], items.LineStats{
+	}, nameMap[".travis.yml"])
+	assert.Equal(t, items.LineStats{
 		Added:   207,
 		Removed: 0,
 		Changed: 0,
-	})
+	}, nameMap["cmd/hercules/main.go"])
 }

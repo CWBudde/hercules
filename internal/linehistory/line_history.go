@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"maps"
 	"os"
 	"path"
 	"runtime/debug"
@@ -80,11 +81,11 @@ type LineHistoryAnalyser struct {
 }
 
 type counterHolder struct {
-	atomicCounter int32
+	atomicCounter atomic.Int32
 }
 
 func (p *counterHolder) next() FileId {
-	return FileId(atomic.AddInt32(&p.atomicCounter, 1))
+	return FileId(p.atomicCounter.Add(1))
 }
 
 var _ core.FileIdResolver = FileIdResolver{}
@@ -101,6 +102,7 @@ func (v FileIdResolver) NameOf(id FileId) string {
 	if n, ok := v.analyser.fileNames[id]; ok {
 		return n
 	}
+
 	return v.abandonedNameOf(id)
 }
 
@@ -108,6 +110,7 @@ func (v FileIdResolver) abandonedNameOf(id FileId) string {
 	if n, ok := v.analyser.fileAbandonedNames[id]; ok {
 		return n
 	}
+
 	return v.analyser.fileAbandonedNamesOfParent[id]
 }
 
@@ -122,6 +125,7 @@ func (v FileIdResolver) MergedWith(id FileId) (FileId, string, bool) {
 	case n != "":
 		return 0, n, false
 	}
+
 	return 0, v.abandonedNameOf(id), false
 }
 
@@ -133,6 +137,7 @@ func (v FileIdResolver) ForEachFile(callback func(id FileId, name string)) bool 
 	for name, file := range v.analyser.files {
 		callback(file.Id, name)
 	}
+
 	return true
 }
 
@@ -145,10 +150,12 @@ func (v FileIdResolver) ScanFile(id FileId, callback func(line int, tick core.Ti
 	if file == nil {
 		return false
 	}
+
 	file.ForEach(func(line, value int) {
 		author, tick := unpackPersonWithTick(value)
 		callback(line, tick, author)
 	})
+
 	return true
 }
 
@@ -226,28 +233,34 @@ func (analyser *LineHistoryAnalyser) ListConfigurationOptions() []core.Configura
 			Default:     []string{},
 		},
 	}
+
 	return options[:]
 }
 
 // Configure sets the properties previously published by ListConfigurationOptions().
-func (analyser *LineHistoryAnalyser) Configure(facts map[string]interface{}) error {
+func (analyser *LineHistoryAnalyser) Configure(facts map[string]any) error {
 	if l, exists := facts[core.ConfigLogger].(core.Logger); exists {
 		analyser.l = l
 	} else {
 		analyser.l = core.NewLogger()
 	}
+
 	if val, exists := facts[ConfigLinesHibernationThreshold].(int); exists {
 		analyser.HibernationThreshold = val
 	}
+
 	if val, exists := facts[ConfigLinesHibernationToDisk].(bool); exists {
 		analyser.HibernationToDisk = val
 	}
+
 	if val, exists := facts[ConfigLinesHibernationDirectory].(string); exists {
 		analyser.HibernationDirectory = val
 	}
+
 	if val, exists := facts[ConfigLinesDebug].(bool); exists {
 		analyser.Debug = val
 	}
+
 	if val, exists := facts[ConfigLinesExcludePaths].([]string); exists {
 		analyser.ExcludePathPatterns = val
 	}
@@ -258,7 +271,7 @@ func (analyser *LineHistoryAnalyser) Configure(facts map[string]interface{}) err
 	return nil
 }
 
-func (analyser *LineHistoryAnalyser) ConfigureUpstream(_ map[string]interface{}) error {
+func (analyser *LineHistoryAnalyser) ConfigureUpstream(_ map[string]any) error {
 	return nil
 }
 
@@ -279,7 +292,7 @@ func (analyser *LineHistoryAnalyser) Initialize(repository *git.Repository) erro
 	return nil
 }
 
-func (analyser *LineHistoryAnalyser) Consume(deps map[string]interface{}) (map[string]interface{}, error) {
+func (analyser *LineHistoryAnalyser) Consume(deps map[string]any) (map[string]any, error) {
 	if analyser.fileAllocator.Size() == 0 && len(analyser.files) > 0 {
 		panic("LineHistoryAnalyser.Consume() was called on a hibernated instance")
 	}
@@ -297,8 +310,10 @@ func (analyser *LineHistoryAnalyser) Consume(deps map[string]interface{}) (map[s
 		if analyser.isExcluded(change.From.Name, change.To.Name) {
 			continue
 		}
+
 		action, _ := change.Action()
 		var err error
+
 		switch action {
 		case merkletrie.Insert:
 			err = analyser.handleInsertion(change, author, cache)
@@ -307,17 +322,19 @@ func (analyser *LineHistoryAnalyser) Consume(deps map[string]interface{}) (map[s
 		case merkletrie.Modify:
 			err = analyser.handleModification(change, author, cache, fileDiffs)
 		}
+
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	result := map[string]interface{}{DependencyLineHistory: core.LineHistoryChanges{
+	result := map[string]any{DependencyLineHistory: core.LineHistoryChanges{
 		Changes:  analyser.changes,
 		Resolver: FileIdResolver{analyser},
 	}}
 
 	analyser.changes = nil
+
 	return result, nil
 }
 
@@ -330,12 +347,14 @@ func (analyser *LineHistoryAnalyser) isExcluded(fromName, toName string) bool {
 				return true
 			}
 		}
+
 		if toName != "" {
 			if ok, _ := path.Match(pattern, toName); ok {
 				return true
 			}
 		}
 	}
+
 	return false
 }
 
@@ -344,8 +363,10 @@ func (analyser *LineHistoryAnalyser) findFileAndName(id FileId) (*File, string) 
 		if f := analyser.files[n]; f != nil {
 			return f, n
 		}
+
 		analyser.addAbandonedName(id, n)
 	}
+
 	return nil, ""
 }
 
@@ -353,6 +374,7 @@ func (analyser *LineHistoryAnalyser) addAbandonedName(id FileId, name string) {
 	if analyser.fileAbandonedNames == nil {
 		analyser.fileAbandonedNames = map[FileId]string{}
 	}
+
 	analyser.fileAbandonedNames[id] = name
 	delete(analyser.fileNames, id)
 }
@@ -363,6 +385,7 @@ func (analyser *LineHistoryAnalyser) mergeAbandonedName(id FileId, name string) 
 	} else if _, ok := analyser.fileAbandonedNames[id]; ok {
 		return
 	}
+
 	analyser.fileAbandonedNames[id] = name
 }
 
@@ -370,16 +393,16 @@ func (analyser *LineHistoryAnalyser) inheritAbandonedNames() map[FileId]string {
 	if len(analyser.fileAbandonedNamesOfParent) == 0 {
 		return analyser.fileAbandonedNames
 	}
+
 	if len(analyser.fileAbandonedNames) == 0 {
 		return analyser.fileAbandonedNamesOfParent
 	}
+
 	m := make(map[FileId]string, len(analyser.fileAbandonedNames)+len(analyser.fileAbandonedNamesOfParent))
-	for k, v := range analyser.fileAbandonedNamesOfParent {
-		m[k] = v
-	}
-	for k, v := range analyser.fileAbandonedNames {
-		m[k] = v
-	}
+	maps.Copy(m, analyser.fileAbandonedNamesOfParent)
+
+	maps.Copy(m, analyser.fileAbandonedNames)
+
 	return m
 }
 
@@ -395,11 +418,13 @@ func (analyser *LineHistoryAnalyser) Fork(n int) []core.PipelineItem {
 		clone.fileNames = make(map[FileId]string, len(analyser.fileNames))
 		clone.fileAbandonedNames = nil
 		clone.fileAbandonedNamesOfParent = nil
+
 		clone.fileAllocator = clone.fileAllocator.Clone()
 		for key, file := range analyser.files {
 			clone.files[key] = file.CloneShallowWithUpdaters(clone.fileAllocator, clone.updateChangeList)
 			clone.fileNames[file.Id] = key
 		}
+
 		clone.changes = nil
 
 		result[i] = &clone
@@ -447,23 +472,28 @@ func (analyser *LineHistoryAnalyser) Merge(items []core.PipelineItem) {
 // Hibernate compresses the bound RBTree memory with the files.
 func (analyser *LineHistoryAnalyser) Hibernate() error {
 	analyser.fileAllocator.Hibernate()
+
 	if analyser.HibernationToDisk {
 		file, err := ioutil.TempFile(analyser.HibernationDirectory, "*-hercules.bin")
 		if err != nil {
 			return err
 		}
+
 		analyser.hibernatedFileName = file.Name()
+
 		err = file.Close()
 		if err != nil {
 			analyser.hibernatedFileName = ""
 			return err
 		}
+
 		err = analyser.fileAllocator.Serialize(analyser.hibernatedFileName)
 		if err != nil {
 			analyser.hibernatedFileName = ""
 			return err
 		}
 	}
+
 	return nil
 }
 
@@ -474,13 +504,17 @@ func (analyser *LineHistoryAnalyser) Boot() error {
 		if err != nil {
 			return err
 		}
+
 		err = os.Remove(analyser.hibernatedFileName)
 		if err != nil {
 			return err
 		}
+
 		analyser.hibernatedFileName = ""
 	}
+
 	analyser.fileAllocator.Boot()
+
 	return nil
 }
 
@@ -492,6 +526,7 @@ func packPersonWithTick(author core.AuthorId, tick core.TickNumber) int {
 	if author > core.AuthorMissing {
 		log.Fatalf("person > AuthorMissing %d \n%s", author, string(debug.Stack()))
 	}
+
 	if tick > TreeMergeMark {
 		log.Fatalf("tick > TreeMergeMark %d %d\n%s", tick, TreeMergeMark, string(debug.Stack()))
 	}
@@ -520,6 +555,7 @@ func (analyser *LineHistoryAnalyser) onNewTick() {
 
 func (analyser *LineHistoryAnalyser) updateChangeList(f *File, currentTime, previousTime, delta int) {
 	prevAuthor, prevTick := unpackPersonWithTick(previousTime)
+
 	newAuthor, curTick := unpackPersonWithTick(currentTime)
 	if delta > 0 && newAuthor != prevAuthor {
 		analyser.l.Errorf("insertion must have the same author (%d, %d)", prevAuthor, newAuthor)
@@ -543,7 +579,6 @@ func (analyser *LineHistoryAnalyser) updateChangeList(f *File, currentTime, prev
 				last.Delta += delta
 				return
 			}
-
 		}
 	}
 
@@ -568,8 +603,10 @@ func (analyser *LineHistoryAnalyser) forgetFileName(name string) *File {
 	if file := analyser.files[name]; file != nil {
 		analyser.addAbandonedName(file.Id, name)
 		delete(analyser.files, name)
+
 		return file
 	}
+
 	return nil
 }
 
@@ -586,6 +623,7 @@ func (analyser *LineHistoryAnalyser) handleInsertion(
 		// binary
 		return nil
 	}
+
 	file := analyser.files[name]
 	if file != nil {
 		return fmt.Errorf("file %s already exists", name)
@@ -593,6 +631,7 @@ func (analyser *LineHistoryAnalyser) handleInsertion(
 
 	hash := blob.Hash
 	file, err = analyser.newFile(hash, name, author, analyser.tick, lines)
+
 	return err
 }
 
@@ -606,12 +645,15 @@ func (analyser *LineHistoryAnalyser) handleDeletion(
 	} else {
 		name = change.From.Name
 	}
+
 	file, exists := analyser.files[name]
 	blob := cache[change.From.TreeEntry.Hash]
+
 	lines, err := blob.CountLines()
 	if exists && err != nil {
 		return fmt.Errorf("previous version of %s unexpectedly became binary", name)
 	}
+
 	if !exists {
 		return nil
 	}
@@ -623,6 +665,7 @@ func (analyser *LineHistoryAnalyser) handleDeletion(
 
 	analyser.changes = append(analyser.changes, core.NewLineHistoryDeletion(file.Id, author, analyser.tick))
 	analyser.forgetFileName(name)
+
 	return nil
 }
 
@@ -648,8 +691,9 @@ func (analyser *LineHistoryAnalyser) handleModification(
 	blobFrom := cache[change.From.TreeEntry.Hash]
 	_, errFrom := blobFrom.CountLines()
 	blobTo := cache[change.To.TreeEntry.Hash]
+
 	_, errTo := blobTo.CountLines()
-	if errFrom != errTo {
+	if !errors.Is(errFrom, errTo) {
 		if errFrom != nil {
 			// the file is no longer binary
 			return analyser.handleInsertion(change, author, cache)
@@ -665,6 +709,7 @@ func (analyser *LineHistoryAnalyser) handleModification(
 	thisDiffs := diffs[change.To.Name]
 	if file.Len() != thisDiffs.OldLinesOfCode {
 		analyser.l.Infof("====TREE====\n%s", file.Dump())
+
 		return fmt.Errorf("%s: internal integrity error src %d != %d %s -> %s",
 			change.To.Name, thisDiffs.OldLinesOfCode, file.Len(),
 			change.From.TreeEntry.Hash.String(), change.To.TreeEntry.Hash.String())
@@ -683,6 +728,7 @@ func (analyser *LineHistoryAnalyser) handleModification(
 		} else {
 			file.Update(packPersonWithTick(author, analyser.tick), position, 0, length)
 		}
+
 		if analyser.Debug {
 			file.Validate()
 		}
@@ -693,22 +739,27 @@ func (analyser *LineHistoryAnalyser) handleModification(
 		if analyser.Debug {
 			dumpBefore = file.Dump()
 		}
+
 		length := utf8.RuneCountInString(edit.Text)
 		debugError := func() {
 			analyser.l.Errorf("%s: internal diff error\n", change.To.Name)
 			analyser.l.Errorf("Update(%d, %d, %d (0), %d (0))\n", analyser.tick, position,
 				length, utf8.RuneCountInString(pending.Text))
+
 			if dumpBefore != "" {
 				analyser.l.Errorf("====TREE BEFORE====\n%s====END====\n", dumpBefore)
 			}
+
 			analyser.l.Errorf("====TREE AFTER====\n%s====END====\n", file.Dump())
 		}
+
 		switch edit.Type {
 		case diffmatchpatch.DiffEqual:
 			if pending.Text != "" {
 				apply(pending)
 				pending.Text = ""
 			}
+
 			position += length
 		case diffmatchpatch.DiffInsert:
 			if pending.Text != "" {
@@ -716,11 +767,14 @@ func (analyser *LineHistoryAnalyser) handleModification(
 					debugError()
 					return errors.New("DiffInsert may not appear after DiffInsert")
 				}
+
 				file.Update(packPersonWithTick(author, analyser.tick), position, length,
 					utf8.RuneCountInString(pending.Text))
+
 				if analyser.Debug {
 					file.Validate()
 				}
+
 				position += length
 				pending.Text = ""
 			} else {
@@ -731,21 +785,25 @@ func (analyser *LineHistoryAnalyser) handleModification(
 				debugError()
 				return errors.New("DiffDelete may not appear after DiffInsert/DiffDelete")
 			}
+
 			pending = edit
 		default:
 			debugError()
 			return fmt.Errorf("diff operation is not supported: %d", edit.Type)
 		}
 	}
+
 	if pending.Text != "" {
 		apply(pending)
 		pending.Text = ""
 	}
+
 	if file.Len() != thisDiffs.NewLinesOfCode {
 		return fmt.Errorf("%s: internal integrity error dst %d != %d %s -> %s",
 			change.To.Name, thisDiffs.NewLinesOfCode, file.Len(),
 			change.From.TreeEntry.Hash.String(), change.To.TreeEntry.Hash.String())
 	}
+
 	return nil
 }
 
@@ -753,10 +811,12 @@ func (analyser *LineHistoryAnalyser) handleRename(from, to string) error {
 	if from == to {
 		return nil
 	}
+
 	file, exists := analyser.files[from]
 	if !exists {
 		return fmt.Errorf("file %s > %s does not exist (files)", from, to)
 	}
+
 	delete(analyser.files, from)
 	analyser.forgetFileName(to)
 	analyser.fileNames[file.Id] = to

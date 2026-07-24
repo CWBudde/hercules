@@ -50,7 +50,7 @@ func (item *testPipelineItem) Requires() []string {
 	return []string{}
 }
 
-func (item *testPipelineItem) Configure(facts map[string]interface{}) error {
+func (item *testPipelineItem) Configure(facts map[string]any) error {
 	if item.ConfigureRaises {
 		return errors.New("test1")
 	}
@@ -60,7 +60,7 @@ func (item *testPipelineItem) Configure(facts map[string]interface{}) error {
 	return nil
 }
 
-func (item *testPipelineItem) ConfigureUpstream(facts map[string]interface{}) error {
+func (item *testPipelineItem) ConfigureUpstream(facts map[string]any) error {
 	return nil
 }
 
@@ -101,7 +101,7 @@ func (item *testPipelineItem) Initialize(repository *git.Repository) error {
 	return nil
 }
 
-func (item *testPipelineItem) Consume(deps map[string]interface{}) (map[string]interface{}, error) {
+func (item *testPipelineItem) Consume(deps map[string]any) (map[string]any, error) {
 	if item.TestError {
 		return nil, errors.New("error")
 	}
@@ -127,7 +127,7 @@ func (item *testPipelineItem) Consume(deps map[string]interface{}) (map[string]i
 			*item.MergeState++
 		}
 	}
-	return map[string]interface{}{"test": item}, nil
+	return map[string]any{"test": item}, nil
 }
 
 func (item *testPipelineItem) Dispose() {
@@ -136,7 +136,7 @@ func (item *testPipelineItem) Dispose() {
 
 func (item *testPipelineItem) Fork(n int) []PipelineItem {
 	result := make([]PipelineItem, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		result[i] = &testPipelineItem{Merged: item.Merged, MergeState: item.MergeState}
 	}
 	item.Forked = true
@@ -147,11 +147,11 @@ func (item *testPipelineItem) Merge(branches []PipelineItem) {
 	*item.Merged = true
 }
 
-func (item *testPipelineItem) Finalize() interface{} {
+func (item *testPipelineItem) Finalize() any {
 	return item
 }
 
-func (item *testPipelineItem) Serialize(result interface{}, binary bool, writer io.Writer) error {
+func (item *testPipelineItem) Serialize(result any, binary bool, writer io.Writer) error {
 	return nil
 }
 
@@ -187,11 +187,11 @@ func (item *dependingTestPipelineItem) ListConfigurationOptions() []Configuratio
 	return options[:]
 }
 
-func (item *dependingTestPipelineItem) Configure(facts map[string]interface{}) error {
+func (item *dependingTestPipelineItem) Configure(facts map[string]any) error {
 	return nil
 }
 
-func (item *dependingTestPipelineItem) ConfigureUpstream(facts map[string]interface{}) error {
+func (item *dependingTestPipelineItem) ConfigureUpstream(facts map[string]any) error {
 	return nil
 }
 
@@ -207,11 +207,11 @@ func (item *dependingTestPipelineItem) Description() string {
 	return "another description"
 }
 
-func (item *dependingTestPipelineItem) Consume(deps map[string]interface{}) (map[string]interface{}, error) {
+func (item *dependingTestPipelineItem) Consume(deps map[string]any) (map[string]any, error) {
 	_, exists := deps["test"]
 	item.DependencySatisfied = exists
 	if !item.TestNilConsumeReturn {
-		return map[string]interface{}{"test2": item}, nil
+		return map[string]any{"test2": item}, nil
 	}
 	return nil, nil
 }
@@ -243,11 +243,11 @@ func (item *dependingTestPipelineItem) Boot() error {
 	return nil
 }
 
-func (item *dependingTestPipelineItem) Finalize() interface{} {
+func (item *dependingTestPipelineItem) Finalize() any {
 	return true
 }
 
-func (item *dependingTestPipelineItem) Serialize(result interface{}, binary bool, writer io.Writer) error {
+func (item *dependingTestPipelineItem) Serialize(result any, binary bool, writer io.Writer) error {
 	return nil
 }
 
@@ -277,19 +277,19 @@ func TestPipelineErrors(t *testing.T) {
 	item := &testPipelineItem{}
 	pipeline.AddItem(item)
 	item.ConfigureRaises = true
-	err := pipeline.Initialize(map[string]interface{}{})
+	err := pipeline.Initialize(map[string]any{})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "configure")
 	assert.Contains(t, err.Error(), "test1")
 	item.ConfigureRaises = false
 	item.InitializeRaises = true
-	err = pipeline.Initialize(map[string]interface{}{})
+	err = pipeline.Initialize(map[string]any{})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "initialize")
 	assert.Contains(t, err.Error(), "test2")
 	item.InitializeRaises = false
 	item.InitializePanics = true
-	assert.Panics(t, func() { pipeline.Initialize(map[string]interface{}{}) })
+	assert.Panics(t, func() { pipeline.Initialize(map[string]any{}) })
 }
 
 func TestPipelineInitialize(t *testing.T) {
@@ -297,7 +297,7 @@ func TestPipelineInitialize(t *testing.T) {
 		pipeline := NewPipeline(test.FixtureRepository())
 		item := &testPipelineItem{}
 		pipeline.AddItem(item)
-		require.NoError(t, pipeline.Initialize(map[string]interface{}{}))
+		require.NoError(t, pipeline.Initialize(map[string]any{}))
 		// pipeline logger should be initialized, and item logger should be the same
 		require.NotNil(t, pipeline.l)
 		assert.Equal(t, pipeline.l, item.Logger)
@@ -308,7 +308,7 @@ func TestPipelineInitialize(t *testing.T) {
 		item := &testPipelineItem{}
 		logger := NewLogger()
 		pipeline.AddItem(item)
-		require.NoError(t, pipeline.Initialize(map[string]interface{}{
+		require.NoError(t, pipeline.Initialize(map[string]any{
 			ConfigLogger: logger,
 		}))
 		// pipeline logger should be set, and the item logger should be the same
@@ -321,7 +321,7 @@ func TestPipelineRun(t *testing.T) {
 	pipeline := NewPipeline(test.FixtureRepository())
 	item := &testPipelineItem{}
 	pipeline.AddItem(item)
-	assert.NoError(t, pipeline.Initialize(map[string]interface{}{}))
+	assert.NoError(t, pipeline.Initialize(map[string]any{}))
 	assert.True(t, item.Initialized)
 	commits := make([]*object.Commit, 1)
 	commits[0], _ = test.FixtureRepository().CommitObject(plumbing.NewHash(
@@ -329,16 +329,16 @@ func TestPipelineRun(t *testing.T) {
 	))
 	result, err := pipeline.Run(commits)
 	assert.NoError(t, err)
-	assert.Equal(t, 2, len(result))
+	assert.Len(t, result, 2)
 	assert.Equal(t, item, result[item].(*testPipelineItem))
 	common := result[nil].(*CommonAnalysisResult)
-	assert.Equal(t, common.BeginTime, int64(1481719198))
-	assert.Equal(t, common.EndTime, int64(1481719198))
-	assert.Equal(t, common.CommitsNumber, 1)
-	assert.True(t, common.RunTime.Nanoseconds()/1e6 < 100)
+	assert.Equal(t, int64(1481719198), common.BeginTime)
+	assert.Equal(t, int64(1481719198), common.EndTime)
+	assert.Equal(t, 1, common.CommitsNumber)
+	assert.Less(t, common.RunTime.Nanoseconds()/1e6, 100)
 	assert.Len(t, common.RunTimePerItem, 1)
 	for key, val := range common.RunTimePerItem {
-		assert.True(t, val >= 0, key)
+		assert.GreaterOrEqual(t, val, 0, key)
 	}
 	assert.True(t, item.DepsConsumed)
 	assert.True(t, item.Disposed)
@@ -349,15 +349,15 @@ func TestPipelineRun(t *testing.T) {
 	assert.False(t, *item.Merged)
 	pipeline.RemoveItem(item)
 	result, err = pipeline.Run(commits)
-	assert.Nil(t, err)
-	assert.Equal(t, 1, len(result))
+	assert.NoError(t, err)
+	assert.Len(t, result, 1)
 }
 
 func TestPipelineRunBranches(t *testing.T) {
 	pipeline := NewPipeline(test.FixtureRepository())
 	item := &testPipelineItem{}
 	pipeline.AddItem(item)
-	pipeline.Initialize(map[string]interface{}{})
+	pipeline.Initialize(map[string]any{})
 	assert.True(t, item.Initialized)
 	hashes := []string{
 		"6db8065cdb9bb0758f36a7e75fc72ab95f9e8145",
@@ -375,13 +375,13 @@ func TestPipelineRunBranches(t *testing.T) {
 		}
 	}
 	result, err := pipeline.Run(commits)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.True(t, item.Forked)
 	assert.True(t, *item.Merged)
-	assert.Equal(t, 2, len(result))
+	assert.Len(t, result, 2)
 	assert.Equal(t, item, result[item].(*testPipelineItem))
 	common := result[nil].(*CommonAnalysisResult)
-	assert.Equal(t, common.CommitsNumber, 5)
+	assert.Equal(t, 5, common.CommitsNumber)
 	assert.Equal(t, 6, *item.MergeState)
 }
 
@@ -410,21 +410,21 @@ func TestPipelineOnProgress(t *testing.T) {
 		"af9ddc0db70f09f3f27b4b98e415592a7485171c",
 	))
 	result, err := pipeline.Run(commits)
-	assert.Nil(t, err)
-	assert.Equal(t, 1, len(result))
+	assert.NoError(t, err)
+	assert.Len(t, result, 1)
 	assert.Equal(t, 4, progressOk)
 }
 
 func TestPipelineCommitsFull(t *testing.T) {
 	pipeline := NewPipeline(test.FixtureRepository())
 	commits, err := pipeline.Commits(false)
-	assert.Nil(t, err)
-	assert.True(t, len(commits) >= 100)
+	assert.NoError(t, err)
+	assert.GreaterOrEqual(t, len(commits), 100)
 	hashMap := map[plumbing.Hash]bool{}
 	for _, c := range commits {
 		hashMap[c.Hash] = true
 	}
-	assert.Equal(t, len(commits), len(hashMap))
+	assert.Len(t, hashMap, len(commits))
 	assert.Contains(t, hashMap, plumbing.NewHash(
 		"cce947b98a050c6d356bc6ba95030254914027b1",
 	))
@@ -437,12 +437,12 @@ func TestPipelineCommitsFirstParent(t *testing.T) {
 	pipeline := NewPipeline(test.FixtureRepository())
 	commits, err := pipeline.Commits(true)
 	assert.NoError(t, err)
-	assert.True(t, len(commits) >= 100)
+	assert.GreaterOrEqual(t, len(commits), 100)
 	hashMap := map[plumbing.Hash]bool{}
 	for _, c := range commits {
 		hashMap[c.Hash] = true
 	}
-	assert.Equal(t, len(commits), len(hashMap))
+	assert.Len(t, hashMap, len(commits))
 	assert.Contains(t, hashMap, plumbing.NewHash(
 		"cce947b98a050c6d356bc6ba95030254914027b1",
 	))
@@ -456,20 +456,20 @@ func TestPipelineHeadCommit(t *testing.T) {
 	commits, err := pipeline.HeadCommit()
 	assert.NoError(t, err)
 	assert.Len(t, commits, 1)
-	assert.True(t, len(commits[0].ParentHashes) > 0)
+	assert.NotEmpty(t, commits[0].ParentHashes)
 	head, _ := test.FixtureRepository().Head()
 	assert.Equal(t, head.Hash(), commits[0].Hash)
 }
 
 func TestLoadCommitsFromFile(t *testing.T) {
 	tmp, err := ioutil.TempFile("", "hercules-test-")
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	tmp.WriteString("cce947b98a050c6d356bc6ba95030254914027b1\n6db8065cdb9bb0758f36a7e75fc72ab95f9e8145")
 	tmp.Close()
 	defer os.Remove(tmp.Name())
 	commits, err := LoadCommitsFromFile(tmp.Name(), test.FixtureRepository())
-	assert.Nil(t, err)
-	assert.Equal(t, len(commits), 2)
+	assert.NoError(t, err)
+	assert.Len(t, commits, 2)
 	assert.Equal(t, commits[0].Hash, plumbing.NewHash(
 		"cce947b98a050c6d356bc6ba95030254914027b1",
 	))
@@ -478,23 +478,23 @@ func TestLoadCommitsFromFile(t *testing.T) {
 	))
 	commits, err = LoadCommitsFromFile("/WAT?xxx!", test.FixtureRepository())
 	assert.Nil(t, commits)
-	assert.NotNil(t, err)
+	assert.Error(t, err)
 	tmp, err = ioutil.TempFile("", "hercules-test-")
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	tmp.WriteString("WAT")
 	tmp.Close()
 	defer os.Remove(tmp.Name())
 	commits, err = LoadCommitsFromFile(tmp.Name(), test.FixtureRepository())
 	assert.Nil(t, commits)
-	assert.NotNil(t, err)
+	assert.Error(t, err)
 	tmp, err = ioutil.TempFile("", "hercules-test-")
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	tmp.WriteString("ffffffffffffffffffffffffffffffffffffffff")
 	tmp.Close()
 	defer os.Remove(tmp.Name())
 	commits, err = LoadCommitsFromFile(tmp.Name(), test.FixtureRepository())
 	assert.Nil(t, commits)
-	assert.NotNil(t, err)
+	assert.Error(t, err)
 }
 
 func TestPipelineDeps(t *testing.T) {
@@ -503,8 +503,8 @@ func TestPipelineDeps(t *testing.T) {
 	item2 := &testPipelineItem{}
 	pipeline.AddItem(item1)
 	pipeline.AddItem(item2)
-	assert.Equal(t, pipeline.Len(), 2)
-	pipeline.Initialize(map[string]interface{}{})
+	assert.Equal(t, 2, pipeline.Len())
+	pipeline.Initialize(map[string]any{})
 	commits := make([]*object.Commit, 1)
 	commits[0], _ = test.FixtureRepository().CommitObject(plumbing.NewHash(
 		"af9ddc0db70f09f3f27b4b98e415592a7485171c",
@@ -530,14 +530,14 @@ func TestPipelineError(t *testing.T) {
 	item := &testPipelineItem{}
 	item.TestError = true
 	pipeline.AddItem(item)
-	assert.NoError(t, pipeline.Initialize(map[string]interface{}{}))
+	assert.NoError(t, pipeline.Initialize(map[string]any{}))
 	commits := make([]*object.Commit, 1)
 	commits[0], _ = test.FixtureRepository().CommitObject(plumbing.NewHash(
 		"af9ddc0db70f09f3f27b4b98e415592a7485171c",
 	))
 	result, err := pipeline.Run(commits)
 	assert.Nil(t, result)
-	assert.NotNil(t, err)
+	assert.Error(t, err)
 }
 
 func TestPipelineDryRun(t *testing.T) {
@@ -546,10 +546,10 @@ func TestPipelineDryRun(t *testing.T) {
 	item.TestError = true
 	pipeline.AddItem(item)
 	pipeline.DryRun = true
-	pipeline.Initialize(map[string]interface{}{})
+	pipeline.Initialize(map[string]any{})
 	assert.True(t, pipeline.DryRun)
 	pipeline.DryRun = false
-	pipeline.Initialize(map[string]interface{}{ConfigPipelineDryRun: true})
+	pipeline.Initialize(map[string]any{ConfigPipelineDryRun: true})
 	assert.True(t, pipeline.DryRun)
 	commits := make([]*object.Commit, 1)
 	commits[0], _ = test.FixtureRepository().CommitObject(plumbing.NewHash(
@@ -559,14 +559,14 @@ func TestPipelineDryRun(t *testing.T) {
 	assert.NotNil(t, result)
 	assert.Len(t, result, 1)
 	assert.Contains(t, result, nil)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 }
 
 func TestPipelineDryRunFalse(t *testing.T) {
 	pipeline := NewPipeline(test.FixtureRepository())
 	item := &testPipelineItem{}
 	pipeline.AddItem(item)
-	pipeline.Initialize(map[string]interface{}{ConfigPipelineDryRun: false})
+	pipeline.Initialize(map[string]any{ConfigPipelineDryRun: false})
 	commits := make([]*object.Commit, 1)
 	commits[0], _ = test.FixtureRepository().CommitObject(plumbing.NewHash(
 		"af9ddc0db70f09f3f27b4b98e415592a7485171c",
@@ -576,7 +576,7 @@ func TestPipelineDryRunFalse(t *testing.T) {
 	assert.Len(t, result, 2)
 	assert.Contains(t, result, nil)
 	assert.Contains(t, result, item)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.True(t, item.DepsConsumed)
 	assert.True(t, item.CommitMatches)
 	assert.True(t, item.IndexMatches)
@@ -591,14 +591,14 @@ func TestPipelineDumpPlanConfigure(t *testing.T) {
 	pipeline.AddItem(item)
 	pipeline.DumpPlan = true
 	pipeline.DryRun = true
-	pipeline.Initialize(map[string]interface{}{})
+	pipeline.Initialize(map[string]any{})
 	assert.True(t, pipeline.DumpPlan)
 	pipeline.DumpPlan = false
-	pipeline.Initialize(map[string]interface{}{ConfigPipelineDumpPlan: true})
+	pipeline.Initialize(map[string]any{ConfigPipelineDumpPlan: true})
 	assert.True(t, pipeline.DumpPlan)
 	stream := &bytes.Buffer{}
 	backupPlanPrintFunc := planPrintFunc
-	planPrintFunc = func(args ...interface{}) {
+	planPrintFunc = func(args ...any) {
 		fmt.Fprintln(stream, args...)
 	}
 	defer func() {
@@ -612,7 +612,7 @@ func TestPipelineDumpPlanConfigure(t *testing.T) {
 	assert.NotNil(t, result)
 	assert.Len(t, result, 1)
 	assert.Contains(t, result, nil)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, `E [1]
 C 1 af9ddc0db70f09f3f27b4b98e415592a7485171c
 `, stream.String())
@@ -634,18 +634,18 @@ func TestCommonAnalysisResultMerge(t *testing.T) {
 		BeginTime: 1513620635, EndTime: 1513720635, CommitsNumber: 1, RunTime: 100,
 		RunTimePerItem: map[string]float64{"one": 1, "two": 2},
 	}
-	assert.Equal(t, c1.BeginTimeAsTime().Unix(), int64(1513620635))
-	assert.Equal(t, c1.EndTimeAsTime().Unix(), int64(1513720635))
+	assert.Equal(t, int64(1513620635), c1.BeginTimeAsTime().Unix())
+	assert.Equal(t, int64(1513720635), c1.EndTimeAsTime().Unix())
 	c2 := CommonAnalysisResult{
 		BeginTime: 1513620535, EndTime: 1513730635, CommitsNumber: 2, RunTime: 200,
 		RunTimePerItem: map[string]float64{"two": 4, "three": 8},
 	}
 	c1.Merge(&c2)
-	assert.Equal(t, c1.BeginTime, int64(1513620535))
-	assert.Equal(t, c1.EndTime, int64(1513730635))
-	assert.Equal(t, c1.CommitsNumber, 3)
-	assert.Equal(t, c1.RunTime.Nanoseconds(), int64(300))
-	assert.Equal(t, c1.RunTimePerItem, map[string]float64{"one": 1, "two": 6, "three": 8})
+	assert.Equal(t, int64(1513620535), c1.BeginTime)
+	assert.Equal(t, int64(1513730635), c1.EndTime)
+	assert.Equal(t, 3, c1.CommitsNumber)
+	assert.Equal(t, int64(300), c1.RunTime.Nanoseconds())
+	assert.Equal(t, map[string]float64{"one": 1, "two": 6, "three": 8}, c1.RunTimePerItem)
 }
 
 func TestCommonAnalysisResultMetadata(t *testing.T) {
@@ -655,39 +655,39 @@ func TestCommonAnalysisResultMetadata(t *testing.T) {
 	}
 	meta := &pb.Metadata{}
 	c1 = MetadataToCommonAnalysisResult(c1.FillMetadata(meta))
-	assert.Equal(t, c1.BeginTimeAsTime().Unix(), int64(1513620635))
-	assert.Equal(t, c1.EndTimeAsTime().Unix(), int64(1513720635))
-	assert.Equal(t, c1.CommitsNumber, 1)
+	assert.Equal(t, int64(1513620635), c1.BeginTimeAsTime().Unix())
+	assert.Equal(t, int64(1513720635), c1.EndTimeAsTime().Unix())
+	assert.Equal(t, 1, c1.CommitsNumber)
 	assert.Equal(t, c1.RunTime.Nanoseconds(), int64(100*1e6))
-	assert.Equal(t, c1.RunTimePerItem, map[string]float64{"one": 1, "two": 2})
+	assert.Equal(t, map[string]float64{"one": 1, "two": 2}, c1.RunTimePerItem)
 }
 
 func TestConfigurationOptionTypeString(t *testing.T) {
 	opt := ConfigurationOptionType(0)
-	assert.Equal(t, opt.String(), "")
+	assert.Empty(t, opt.String())
 	opt = ConfigurationOptionType(1)
-	assert.Equal(t, opt.String(), "int")
+	assert.Equal(t, "int", opt.String())
 	opt = ConfigurationOptionType(2)
-	assert.Equal(t, opt.String(), "string")
+	assert.Equal(t, "string", opt.String())
 	opt = ConfigurationOptionType(3)
-	assert.Equal(t, opt.String(), "float")
+	assert.Equal(t, "float", opt.String())
 	opt = ConfigurationOptionType(4)
-	assert.Equal(t, opt.String(), "string")
+	assert.Equal(t, "string", opt.String())
 	opt = ConfigurationOptionType(5)
-	assert.Equal(t, opt.String(), "path")
+	assert.Equal(t, "path", opt.String())
 	opt = ConfigurationOptionType(6)
 	assert.Panics(t, func() { _ = opt.String() })
 }
 
 func TestConfigurationOptionFormatDefault(t *testing.T) {
 	opt := ConfigurationOption{Type: StringConfigurationOption, Default: "ololo"}
-	assert.Equal(t, opt.FormatDefault(), "\"ololo\"")
+	assert.Equal(t, "\"ololo\"", opt.FormatDefault())
 	opt = ConfigurationOption{Type: IntConfigurationOption, Default: 7}
-	assert.Equal(t, opt.FormatDefault(), "7")
+	assert.Equal(t, "7", opt.FormatDefault())
 	opt = ConfigurationOption{Type: BoolConfigurationOption, Default: false}
-	assert.Equal(t, opt.FormatDefault(), "false")
+	assert.Equal(t, "false", opt.FormatDefault())
 	opt = ConfigurationOption{Type: FloatConfigurationOption, Default: 0.5}
-	assert.Equal(t, opt.FormatDefault(), "0.5")
+	assert.Equal(t, "0.5", opt.FormatDefault())
 }
 
 func TestPrepareRunPlanTiny(t *testing.T) {
@@ -902,11 +902,11 @@ func TestPrepareRunPlanBig(t *testing.T) {
 					assert.Equal(t, 1, v, fmt.Sprint(c.String(), b))
 				}
 			}
-			assert.Equal(t, len(commits)+testCase[3], numCommits, fmt.Sprintf("commits %v", testCase))
-			assert.Equal(t, testCase[4], numForks, fmt.Sprintf("forks %v", testCase))
-			assert.Equal(t, testCase[5], numMerges, fmt.Sprintf("merges %v", testCase))
-			assert.Equal(t, testCase[6], numDeletes, fmt.Sprintf("deletes %v", testCase))
-			assert.Equal(t, 1, numEmerges, fmt.Sprintf("emerges %v", testCase))
+			assert.Equal(t, len(commits)+testCase[3], numCommits, "commits %v", testCase)
+			assert.Equal(t, testCase[4], numForks, "forks %v", testCase)
+			assert.Equal(t, testCase[5], numMerges, "merges %v", testCase)
+			assert.Equal(t, testCase[6], numDeletes, "deletes %v", testCase)
+			assert.Equal(t, 1, numEmerges, "emerges %v", testCase)
 		}()
 	}
 }
@@ -917,7 +917,7 @@ func TestPipelineRunHibernation(t *testing.T) {
 	pipeline.AddItem(&testPipelineItem{})
 	item := &dependingTestPipelineItem{}
 	pipeline.AddItem(item)
-	pipeline.Initialize(map[string]interface{}{})
+	pipeline.Initialize(map[string]any{})
 	hashes := []string{
 		"0183e08978007c746468fca9f68e6e2fbf32100c",
 		"b467a682f680a4dcfd74869480a52f8be3a4fdf0",
@@ -960,13 +960,13 @@ func (item *configUpstreamFailItem) Provides() []string { return []string{"upstr
 
 func (item *configUpstreamFailItem) Requires() []string                              { return []string{} }
 func (item *configUpstreamFailItem) ListConfigurationOptions() []ConfigurationOption { return nil }
-func (item *configUpstreamFailItem) Configure(facts map[string]interface{}) error    { return nil }
-func (item *configUpstreamFailItem) ConfigureUpstream(facts map[string]interface{}) error {
+func (item *configUpstreamFailItem) Configure(facts map[string]any) error            { return nil }
+func (item *configUpstreamFailItem) ConfigureUpstream(facts map[string]any) error {
 	return errors.New("upstream config error")
 }
 func (item *configUpstreamFailItem) Initialize(repository *git.Repository) error { return nil }
-func (item *configUpstreamFailItem) Consume(deps map[string]interface{}) (map[string]interface{}, error) {
-	return map[string]interface{}{"upstreamfail": true}, nil
+func (item *configUpstreamFailItem) Consume(deps map[string]any) (map[string]any, error) {
+	return map[string]any{"upstreamfail": true}, nil
 }
 
 func (item *configUpstreamFailItem) Fork(n int) []PipelineItem {
@@ -1043,7 +1043,7 @@ func TestPipelineDeployItemOnceNew(t *testing.T) {
 func TestPipelineRunPreparedPlanNil(t *testing.T) {
 	pipeline := NewPipeline(test.FixtureRepository())
 	pipeline.AddItem(&testPipelineItem{})
-	pipeline.Initialize(map[string]interface{}{})
+	pipeline.Initialize(map[string]any{})
 
 	result, err := pipeline.RunPreparedPlan()
 	assert.Nil(t, result)
@@ -1061,7 +1061,7 @@ func TestPipelineRunPreparedPlanValid(t *testing.T) {
 		"af9ddc0db70f09f3f27b4b98e415592a7485171c",
 	))
 
-	err := pipeline.InitializeExt(map[string]interface{}{
+	err := pipeline.InitializeExt(map[string]any{
 		ConfigPipelineCommits: commits,
 	}, func(items []PipelineItem) PipelineItem { return items[0] }, true)
 	require.NoError(t, err)
@@ -1080,7 +1080,7 @@ func TestPipelineRunPreparedPlanValid(t *testing.T) {
 func TestPipelineNegativeHibernationDistance(t *testing.T) {
 	pipeline := NewPipeline(test.FixtureRepository())
 	pipeline.AddItem(&testPipelineItem{})
-	err := pipeline.Initialize(map[string]interface{}{
+	err := pipeline.Initialize(map[string]any{
 		ConfigPipelineHibernationDistance: -1,
 	})
 	assert.Error(t, err)
@@ -1090,7 +1090,7 @@ func TestPipelineNegativeHibernationDistance(t *testing.T) {
 func TestPipelineHibernationDistanceFromFact(t *testing.T) {
 	pipeline := NewPipeline(test.FixtureRepository())
 	pipeline.AddItem(&testPipelineItem{})
-	err := pipeline.Initialize(map[string]interface{}{
+	err := pipeline.Initialize(map[string]any{
 		ConfigPipelineHibernationDistance: 5,
 	})
 	assert.NoError(t, err)
@@ -1100,7 +1100,7 @@ func TestPipelineHibernationDistanceFromFact(t *testing.T) {
 func TestPipelinePrintActionsFromFact(t *testing.T) {
 	pipeline := NewPipeline(test.FixtureRepository())
 	pipeline.AddItem(&testPipelineItem{})
-	pipeline.Initialize(map[string]interface{}{
+	pipeline.Initialize(map[string]any{
 		ConfigPipelinePrintActions: true,
 	})
 	assert.True(t, pipeline.PrintActions)
@@ -1110,7 +1110,7 @@ func TestPipelineUnsatisfiedDependency(t *testing.T) {
 	pipeline := NewPipeline(test.FixtureRepository())
 	item := &dependingTestPipelineItem{} // requires "test" but nothing provides it
 	pipeline.AddItem(item)
-	err := pipeline.Initialize(map[string]interface{}{})
+	err := pipeline.Initialize(map[string]any{})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "unsatisfied")
 }
@@ -1124,7 +1124,7 @@ func TestPipelineDAGDumpToFile(t *testing.T) {
 	tmpFile.Close()
 	defer os.Remove(tmpFile.Name())
 
-	err = pipeline.Initialize(map[string]interface{}{
+	err = pipeline.Initialize(map[string]any{
 		ConfigPipelineDAGPath: tmpFile.Name(),
 	})
 	assert.NoError(t, err)
@@ -1142,7 +1142,7 @@ func TestPipelineDAGDumpToStderr(t *testing.T) {
 	r, w, _ := os.Pipe()
 	os.Stderr = w
 
-	err := pipeline.Initialize(map[string]interface{}{
+	err := pipeline.Initialize(map[string]any{
 		ConfigPipelineDAGPath: "-",
 	})
 
@@ -1160,7 +1160,7 @@ func TestPipelineDAGDumpToStderr(t *testing.T) {
 func TestPipelineConfigureUpstreamError(t *testing.T) {
 	pipeline := NewPipeline(test.FixtureRepository())
 	pipeline.AddItem(&configUpstreamFailItem{})
-	err := pipeline.Initialize(map[string]interface{}{})
+	err := pipeline.Initialize(map[string]any{})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "configure upstream")
 }
@@ -1169,7 +1169,7 @@ func TestPipelineInitializeMergeTracksNotAllowed(t *testing.T) {
 	pipeline := NewPipeline(test.FixtureRepository())
 	pipeline.SetFeature(FeatureMergeTracks)
 	pipeline.AddItem(&testPipelineItem{})
-	err := pipeline.Initialize(map[string]interface{}{})
+	err := pipeline.Initialize(map[string]any{})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "merge tracks")
 }
@@ -1177,7 +1177,7 @@ func TestPipelineInitializeMergeTracksNotAllowed(t *testing.T) {
 func TestPipelineInitializeExtNoCommits(t *testing.T) {
 	pipeline := NewPipeline(test.FixtureRepository())
 	pipeline.AddItem(&testPipelineItem{})
-	err := pipeline.InitializeExt(map[string]interface{}{},
+	err := pipeline.InitializeExt(map[string]any{},
 		func(items []PipelineItem) PipelineItem { return items[0] }, true)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "commits are not available")
@@ -1188,7 +1188,7 @@ func TestPipelineInitializeDryRunSkipsConfigure(t *testing.T) {
 	item := &testPipelineItem{ConfigureRaises: true}
 	pipeline.AddItem(item)
 	// DryRun via fact should skip Configure (which would fail)
-	err := pipeline.Initialize(map[string]interface{}{
+	err := pipeline.Initialize(map[string]any{
 		ConfigPipelineDryRun: true,
 	})
 	assert.NoError(t, err)
@@ -1205,13 +1205,13 @@ func (item *circularDepItem) Provides() []string { return []string{"circular"} }
 
 func (item *circularDepItem) Requires() []string                              { return []string{"circular"} }
 func (item *circularDepItem) ListConfigurationOptions() []ConfigurationOption { return nil }
-func (item *circularDepItem) Configure(facts map[string]interface{}) error    { return nil }
-func (item *circularDepItem) ConfigureUpstream(facts map[string]interface{}) error {
+func (item *circularDepItem) Configure(facts map[string]any) error            { return nil }
+func (item *circularDepItem) ConfigureUpstream(facts map[string]any) error {
 	return nil
 }
 func (item *circularDepItem) Initialize(repository *git.Repository) error { return nil }
-func (item *circularDepItem) Consume(deps map[string]interface{}) (map[string]interface{}, error) {
-	return map[string]interface{}{"circular": true}, nil
+func (item *circularDepItem) Consume(deps map[string]any) (map[string]any, error) {
+	return map[string]any{"circular": true}, nil
 }
 
 func (item *circularDepItem) Fork(n int) []PipelineItem {
@@ -1221,7 +1221,7 @@ func (item *circularDepItem) Fork(n int) []PipelineItem {
 func TestPipelineResolveCircularDependency(t *testing.T) {
 	pipeline := NewPipeline(test.FixtureRepository())
 	pipeline.AddItem(&circularDepItem{})
-	err := pipeline.Initialize(map[string]interface{}{})
+	err := pipeline.Initialize(map[string]any{})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "topological sort")
 }
@@ -1244,7 +1244,7 @@ func TestPipelineInitializeWithCommitsFact(t *testing.T) {
 	))
 
 	// Pass commits directly via fact to skip Commits() call
-	err := pipeline.Initialize(map[string]interface{}{
+	err := pipeline.Initialize(map[string]any{
 		ConfigPipelineCommits: commits,
 	})
 	assert.NoError(t, err)
@@ -1263,7 +1263,7 @@ func TestPipelineInitializeExtMergeTracksWithPreparePlan(t *testing.T) {
 	))
 
 	// merge tracks with preparePlan=true should work
-	err := pipeline.InitializeExt(map[string]interface{}{
+	err := pipeline.InitializeExt(map[string]any{
 		ConfigPipelineCommits: commits,
 	}, func(items []PipelineItem) PipelineItem { return items[0] }, true)
 	assert.NoError(t, err)

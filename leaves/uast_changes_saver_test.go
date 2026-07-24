@@ -38,13 +38,13 @@ func TestUASTChangesSaverMeta(t *testing.T) {
 	assert.Equal(t, "UASTChangesSaver", saver.Name())
 	assert.Equal(t, "dump-uast-changes", saver.Flag())
 	assert.NotEmpty(t, saver.Description())
-	assert.Len(t, saver.Provides(), 0)
+	assert.Empty(t, saver.Provides())
 	assert.Equal(t, []string{items.DependencyTreeChanges, items.DependencyBlobCache}, saver.Requires())
 	opts := saver.ListConfigurationOptions()
 	assert.Len(t, opts, 1)
 	assert.Equal(t, ConfigUASTChangesSaverOutputPath, opts[0].Name)
 	assert.Equal(t, "changed-uast-dir", opts[0].Flag)
-	assert.NoError(t, saver.Configure(map[string]interface{}{
+	assert.NoError(t, saver.Configure(map[string]any{
 		core.ConfigLogger:                core.NewLogger(),
 		ConfigUASTChangesSaverOutputPath: t.TempDir(),
 	}))
@@ -68,7 +68,7 @@ func TestUASTChangesSaverRegistration(t *testing.T) {
 func TestUASTChangesSaverConsumeAndSerialize(t *testing.T) {
 	outputDir := t.TempDir()
 	saver := &UASTChangesSaver{}
-	assert.NoError(t, saver.Configure(map[string]interface{}{
+	assert.NoError(t, saver.Configure(map[string]any{
 		ConfigUASTChangesSaverOutputPath: outputDir,
 	}))
 	assert.NoError(t, saver.Initialize(test.Repository))
@@ -101,7 +101,7 @@ func TestUASTChangesSaverConsumeAndSerialize(t *testing.T) {
 		},
 	}
 	commit, _ := test.Repository.CommitObject(plumbing.NewHash("2b1ed978194a94edeabbca6de7ff3b5771d4d665"))
-	deps := map[string]interface{}{
+	deps := map[string]any{
 		core.DependencyCommit:       commit,
 		items.DependencyTreeChanges: changes,
 		items.DependencyBlobCache:   cache,

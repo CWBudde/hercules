@@ -38,44 +38,53 @@ func split(I, V []int, start, length, h int) {
 	if length < 16 {
 		for k = start; k < start+length; k += j {
 			j = 1
+
 			x = V[I[k]+h]
 			for i = 1; k+i < start+length; i++ {
 				if V[I[k+i]+h] < x {
 					x = V[I[k+i]+h]
 					j = 0
 				}
+
 				if V[I[k+i]+h] == x {
 					swap(I, k+i, k+j)
 					j++
 				}
 			}
+
 			for i = 0; i < j; i++ {
 				V[I[k+i]] = k + j - 1
 			}
+
 			if j == 1 {
 				I[k] = -1
 			}
 		}
+
 		return
 	}
 
 	x = V[I[start+length/2]+h]
 	jj = 0
 	kk = 0
+
 	for i = start; i < start+length; i++ {
 		if V[I[i]+h] < x {
 			jj++
 		}
+
 		if V[I[i]+h] == x {
 			kk++
 		}
 	}
+
 	jj += start
 	kk += jj
 
 	i = start
 	j = 0
 	k = 0
+
 	for i < jj {
 		if V[I[i]+h] < x {
 			i++
@@ -104,6 +113,7 @@ func split(I, V []int, start, length, h int) {
 	for i = 0; i < kk-jj; i++ {
 		V[I[jj+i]] = kk - 1
 	}
+
 	if jj == kk-1 {
 		I[jj] = -1
 	}
@@ -122,9 +132,11 @@ func qsufsort(obuf []byte) []int {
 	for _, c := range obuf {
 		buckets[c]++
 	}
+
 	for i = 1; i < 256; i++ {
 		buckets[i] += buckets[i-1]
 	}
+
 	copy(buckets[1:], buckets[:])
 	buckets[0] = 0
 
@@ -139,15 +151,18 @@ func qsufsort(obuf []byte) []int {
 	}
 
 	V[len(obuf)] = 0
+
 	for i = 1; i < 256; i++ {
 		if buckets[i] == buckets[i-1]+1 {
 			I[buckets[i]] = -1
 		}
 	}
+
 	I[0] = -1
 
 	for h = 1; I[0] != -(len(obuf) + 1); h += h {
 		var n int
+
 		for i = 0; i < len(obuf)+1; {
 			if I[i] < 0 {
 				n -= I[i]
@@ -156,12 +171,14 @@ func qsufsort(obuf []byte) []int {
 				if n != 0 {
 					I[i-n] = -n
 				}
+
 				n = V[I[i]] + 1 - i
 				split(I, V, i, n, h)
 				i += n
 				n = 0
 			}
 		}
+
 		if n != 0 {
 			I[i-n] = -n
 		}
@@ -170,6 +187,7 @@ func qsufsort(obuf []byte) []int {
 	for i = 0; i < len(obuf)+1; i++ {
 		I[V[i]] = i
 	}
+
 	return I
 }
 
@@ -177,6 +195,7 @@ func matchlen(a, b []byte) (i int) {
 	for i < len(a) && i < len(b) && a[i] == b[i] {
 		i++
 	}
+
 	return i
 }
 
@@ -188,6 +207,7 @@ func search(I []int, obuf, nbuf []byte, st, en int) (pos, n int) {
 		if x > y {
 			return I[st], x
 		}
+
 		return I[en], y
 	}
 
@@ -195,6 +215,7 @@ func search(I []int, obuf, nbuf []byte, st, en int) (pos, n int) {
 	if bytes.Compare(obuf[I[x]:], nbuf) < 0 {
 		return search(I, obuf, nbuf, x, en)
 	}
+
 	return search(I, obuf, nbuf, st, x)
 }
 
@@ -212,8 +233,10 @@ func DiffBytes(obuf, nbuf []byte) int {
 	// Compute the differences, writing ctrl as we go
 	var scan, pos, length int
 	var lastscan, lastpos, lastoffset int
+
 	for scan < len(nbuf) {
 		var oldscore int
+
 		scan += length
 		for scsc := scan; scan < len(nbuf); scan++ {
 			pos, length = search(I, obuf, nbuf[scan:], 0, len(obuf))
@@ -237,10 +260,12 @@ func DiffBytes(obuf, nbuf []byte) int {
 		if length != oldscore || scan == len(nbuf) {
 			var s, Sf int
 			lenf = 0
+
 			for i := 0; lastscan+i < scan && lastpos+i < len(obuf); {
 				if obuf[lastpos+i] == nbuf[lastscan+i] {
 					s++
 				}
+
 				i++
 				if s*2-i > Sf*2-lenf {
 					Sf = s
@@ -249,12 +274,15 @@ func DiffBytes(obuf, nbuf []byte) int {
 			}
 
 			lenb := 0
+
 			if scan < len(nbuf) {
 				var s, Sb int
+
 				for i := 1; (scan >= lastscan+i) && (pos >= i); i++ {
 					if obuf[pos-i] == nbuf[scan-i] {
 						s++
 					}
+
 					if s*2-i > Sb*2-lenb {
 						Sb = s
 						lenb = i
@@ -267,13 +295,16 @@ func DiffBytes(obuf, nbuf []byte) int {
 				s := 0
 				Ss := 0
 				lens := 0
-				for i := 0; i < overlap; i++ {
+
+				for i := range overlap {
 					if nbuf[lastscan+lenf-overlap+i] == obuf[lastpos+lenf-overlap+i] {
 						s++
 					}
+
 					if nbuf[scan-lenb+i] == obuf[pos-lenb+i] {
 						s--
 					}
+
 					if s > Ss {
 						Ss = s
 						lens = i + 1
@@ -285,7 +316,8 @@ func DiffBytes(obuf, nbuf []byte) int {
 			}
 
 			var nonzero int
-			for i := 0; i < lenf; i++ {
+
+			for i := range lenf {
 				if nbuf[lastscan+i]-obuf[lastpos+i] != 0 {
 					nonzero++
 				}
@@ -298,5 +330,6 @@ func DiffBytes(obuf, nbuf []byte) int {
 			lastoffset = pos - scan
 		}
 	}
+
 	return dblen + eblen
 }

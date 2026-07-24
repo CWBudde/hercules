@@ -1,6 +1,7 @@
 package plumbing
 
 import (
+	"errors"
 	"unicode/utf8"
 
 	"github.com/go-git/go-git/v5"
@@ -60,14 +61,15 @@ func (lsc *LinesStatsCalculator) ListConfigurationOptions() []core.Configuration
 }
 
 // Configure sets the properties previously published by ListConfigurationOptions().
-func (lsc *LinesStatsCalculator) Configure(facts map[string]interface{}) error {
+func (lsc *LinesStatsCalculator) Configure(facts map[string]any) error {
 	if l, exists := facts[core.ConfigLogger].(core.Logger); exists {
 		lsc.l = l
 	}
+
 	return nil
 }
 
-func (*LinesStatsCalculator) ConfigureUpstream(facts map[string]interface{}) error {
+func (*LinesStatsCalculator) ConfigureUpstream(facts map[string]any) error {
 	return nil
 }
 
@@ -83,11 +85,12 @@ func (lsc *LinesStatsCalculator) Initialize(repository *git.Repository) error {
 // Additionally, DependencyCommit is always present there and represents the analysed *object.Commit.
 // This function returns the mapping with analysis results. The keys must be the same as
 // in Provides(). If there was an error, nil is returned.
-func (lsc *LinesStatsCalculator) Consume(deps map[string]interface{}) (map[string]interface{}, error) {
+func (lsc *LinesStatsCalculator) Consume(deps map[string]any) (map[string]any, error) {
 	result := map[object.ChangeEntry]LineStats{}
 	treeDiff := deps[DependencyTreeChanges].(object.Changes)
 	cache := deps[DependencyBlobCache].(map[plumbing.Hash]*CachedBlob)
 	fileDiffs := deps[DependencyFileDiff].(map[string]FileDiffData)
+
 	for _, change := range treeDiff {
 		action, err := change.Action()
 		if err != nil {
@@ -96,25 +99,29 @@ func (lsc *LinesStatsCalculator) Consume(deps map[string]interface{}) (map[strin
 		// Skip binary files completely; they do not contribute line counts.
 		switch action {
 		case merkletrie.Modify:
-			if _, err := cache[change.From.TreeEntry.Hash].CountLines(); err == ErrorBinary {
+			if _, err := cache[change.From.TreeEntry.Hash].CountLines(); errors.Is(err, ErrorBinary) {
 				continue
 			} else if err != nil {
 				return nil, err
 			}
-			if _, err := cache[change.To.TreeEntry.Hash].CountLines(); err == ErrorBinary {
+
+			if _, err := cache[change.To.TreeEntry.Hash].CountLines(); errors.Is(err, ErrorBinary) {
 				continue
 			} else if err != nil {
 				return nil, err
 			}
 		}
+
 		switch action {
 		case merkletrie.Insert:
 			blob := cache[change.To.TreeEntry.Hash]
+
 			lines, err := blob.CountLines()
 			if err != nil {
 				// binary
 				continue
 			}
+
 			result[change.To] = LineStats{
 				Added:   lines,
 				Removed: 0,
@@ -122,11 +129,13 @@ func (lsc *LinesStatsCalculator) Consume(deps map[string]interface{}) (map[strin
 			}
 		case merkletrie.Delete:
 			blob := cache[change.From.TreeEntry.Hash]
+
 			lines, err := blob.CountLines()
 			if err != nil {
 				// binary
 				continue
 			}
+
 			result[change.From] = LineStats{
 				Added:   0,
 				Removed: lines,
@@ -135,12 +144,14 @@ func (lsc *LinesStatsCalculator) Consume(deps map[string]interface{}) (map[strin
 		case merkletrie.Modify:
 			thisDiffs := fileDiffs[change.To.Name]
 			var added, removed, changed, removedPending int
+
 			for _, edit := range thisDiffs.Diffs {
 				switch edit.Type {
 				case diffmatchpatch.DiffEqual:
 					if removedPending > 0 {
 						removed += removedPending
 					}
+
 					removedPending = 0
 				case diffmatchpatch.DiffInsert:
 					delta := utf8.RuneCountInString(edit.Text)
@@ -151,14 +162,17 @@ func (lsc *LinesStatsCalculator) Consume(deps map[string]interface{}) (map[strin
 						changed += removedPending
 						added += delta - removedPending
 					}
+
 					removedPending = 0
 				case diffmatchpatch.DiffDelete:
 					removedPending = utf8.RuneCountInString(edit.Text)
 				}
 			}
+
 			if removedPending > 0 {
 				removed += removedPending
 			}
+
 			result[change.To] = LineStats{
 				Added:   added,
 				Removed: removed,
@@ -166,7 +180,8 @@ func (lsc *LinesStatsCalculator) Consume(deps map[string]interface{}) (map[strin
 			}
 		}
 	}
-	return map[string]interface{}{DependencyLineStats: result}, nil
+
+	return map[string]any{DependencyLineStats: result}, nil
 }
 
 // Fork clones this PipelineItem.

@@ -3,6 +3,7 @@ package leaves
 import (
 	"fmt"
 	"io"
+	"maps"
 	"sort"
 	"time"
 
@@ -24,6 +25,7 @@ import (
 // edited it, and how many distinct editors were active recently.
 type KnowledgeDiffusionAnalysis struct {
 	core.NoopMerger
+
 	// WindowMonths is the sliding window in months for "recent" editor counting (default 6).
 	WindowMonths int
 
@@ -104,28 +106,33 @@ func (kd *KnowledgeDiffusionAnalysis) ListConfigurationOptions() []core.Configur
 		Type:        core.IntConfigurationOption,
 		Default:     6,
 	}}
+
 	return options[:]
 }
 
 // Configure sets the properties previously published by ListConfigurationOptions().
-func (kd *KnowledgeDiffusionAnalysis) Configure(facts map[string]interface{}) error {
+func (kd *KnowledgeDiffusionAnalysis) Configure(facts map[string]any) error {
 	if l, exists := facts[core.ConfigLogger].(core.Logger); exists {
 		kd.l = l
 	}
+
 	if val, exists := facts[ConfigKnowledgeDiffusionWindowMonths]; exists {
 		kd.WindowMonths = val.(int)
 	}
+
 	if val, exists := facts[identity.FactIdentityDetectorReversedPeopleDict].([]string); exists {
 		kd.reversedPeopleDict = val
 	}
+
 	if val, exists := facts[items.FactTickSize].(time.Duration); exists {
 		kd.tickSize = val
 	}
+
 	return nil
 }
 
 // ConfigureUpstream configures the upstream dependencies.
-func (*KnowledgeDiffusionAnalysis) ConfigureUpstream(facts map[string]interface{}) error {
+func (*KnowledgeDiffusionAnalysis) ConfigureUpstream(facts map[string]any) error {
 	return nil
 }
 
@@ -143,16 +150,18 @@ func (kd *KnowledgeDiffusionAnalysis) Description() string {
 func (kd *KnowledgeDiffusionAnalysis) Initialize(repository *git.Repository) error {
 	kd.l = core.NewLogger()
 	kd.fileAuthors = map[string]map[int]*authorFileInfo{}
+
 	kd.lastTick = -1
 	if kd.WindowMonths <= 0 {
 		kd.WindowMonths = 6
 	}
+
 	return nil
 }
 
 // Consume runs this PipelineItem on the next commit data.
 // For each changed file, it records the author as an editor.
-func (kd *KnowledgeDiffusionAnalysis) Consume(deps map[string]interface{}) (map[string]interface{}, error) {
+func (kd *KnowledgeDiffusionAnalysis) Consume(deps map[string]any) (map[string]any, error) {
 	changes := deps[items.DependencyTreeChanges].(object.Changes)
 	author := deps[identity.DependencyAuthor].(int)
 	tick := deps[items.DependencyTick].(int)
@@ -173,11 +182,13 @@ func (kd *KnowledgeDiffusionAnalysis) Consume(deps map[string]interface{}) (map[
 					delete(kd.fileAuthors, change.From.Name)
 				}
 			}
+
 			kd.recordEdit(change.To.Name, author, tick)
 		}
 	}
 
 	kd.lastTick = tick
+
 	return nil, nil
 }
 
@@ -189,11 +200,12 @@ func (kd *KnowledgeDiffusionAnalysis) windowTicks() int {
 	// Average month ≈ 30.44 days
 	monthDuration := time.Duration(float64(30.44*24) * float64(time.Hour))
 	windowDuration := time.Duration(kd.WindowMonths) * monthDuration
+
 	return int(windowDuration / kd.tickSize)
 }
 
 // Finalize returns the result of the analysis.
-func (kd *KnowledgeDiffusionAnalysis) Finalize() interface{} {
+func (kd *KnowledgeDiffusionAnalysis) Finalize() any {
 	files := make(map[string]*KnowledgeDiffusionFileResult, len(kd.fileAuthors))
 	distribution := map[int]int{}
 	windowTicks := kd.windowTicks()
@@ -205,13 +217,16 @@ func (kd *KnowledgeDiffusionAnalysis) Finalize() interface{} {
 			tick  int
 			count int // cumulative count at this tick
 		}
+
 		firstTicks := make([]int, 0, len(authors))
 		for _, info := range authors {
 			firstTicks = append(firstTicks, info.FirstTick)
 		}
+
 		sort.Ints(firstTicks)
 
 		editorsOverTime := make(map[int]int, len(firstTicks))
+
 		count := 0
 		for _, tick := range firstTicks {
 			count++
@@ -220,13 +235,16 @@ func (kd *KnowledgeDiffusionAnalysis) Finalize() interface{} {
 
 		// Count recent editors.
 		recentCount := 0
+
 		authorIndices := make([]int, 0, len(authors))
 		for authorID, info := range authors {
 			authorIndices = append(authorIndices, authorID)
+
 			if info.LastTick >= cutoffTick {
 				recentCount++
 			}
 		}
+
 		sort.Ints(authorIndices)
 
 		result := &KnowledgeDiffusionFileResult{
@@ -254,54 +272,60 @@ func (kd *KnowledgeDiffusionAnalysis) Fork(n int) []core.PipelineItem {
 }
 
 // Serialize converts the analysis result as returned by Finalize() to text or bytes.
-func (kd *KnowledgeDiffusionAnalysis) Serialize(result interface{}, binary bool, writer io.Writer) error {
+func (kd *KnowledgeDiffusionAnalysis) Serialize(result any, binary bool, writer io.Writer) error {
 	kdResult := result.(KnowledgeDiffusionResult)
 	if binary {
 		return kd.serializeBinary(&kdResult, writer)
 	}
+
 	kd.serializeText(&kdResult, writer)
+
 	return nil
 }
 
 // Deserialize loads the result from Protocol Buffers blob.
-func (kd *KnowledgeDiffusionAnalysis) Deserialize(pbmessage []byte) (interface{}, error) {
+func (kd *KnowledgeDiffusionAnalysis) Deserialize(pbmessage []byte) (any, error) {
 	message := pb.KnowledgeDiffusionResults{}
+
 	err := proto.Unmarshal(pbmessage, &message)
 	if err != nil {
 		return nil, err
 	}
 
-	files := make(map[string]*KnowledgeDiffusionFileResult, len(message.Files))
-	distribution := make(map[int]int, len(message.Distribution))
+	files := make(map[string]*KnowledgeDiffusionFileResult, len(message.GetFiles()))
+	distribution := make(map[int]int, len(message.GetDistribution()))
 
-	for fileName, pbFile := range message.Files {
-		editorsOverTime := make(map[int]int, len(pbFile.UniqueEditorsOverTime))
-		for tick, count := range pbFile.UniqueEditorsOverTime {
+	for fileName, pbFile := range message.GetFiles() {
+		editorsOverTime := make(map[int]int, len(pbFile.GetUniqueEditorsOverTime()))
+		for tick, count := range pbFile.GetUniqueEditorsOverTime() {
 			editorsOverTime[int(tick)] = int(count)
 		}
-		authors := make([]int, len(pbFile.Authors))
-		for i, a := range pbFile.Authors {
+
+		authors := make([]int, len(pbFile.GetAuthors()))
+		for i, a := range pbFile.GetAuthors() {
 			authors[i] = int(a)
 		}
+
 		files[fileName] = &KnowledgeDiffusionFileResult{
-			UniqueEditorsCount:    int(pbFile.UniqueEditorsCount),
+			UniqueEditorsCount:    int(pbFile.GetUniqueEditorsCount()),
 			UniqueEditorsOverTime: editorsOverTime,
-			RecentEditorsCount:    int(pbFile.RecentEditorsCount),
+			RecentEditorsCount:    int(pbFile.GetRecentEditorsCount()),
 			Authors:               authors,
 		}
 	}
 
-	for editorCount, fileCount := range message.Distribution {
+	for editorCount, fileCount := range message.GetDistribution() {
 		distribution[int(editorCount)] = int(fileCount)
 	}
 
 	result := KnowledgeDiffusionResult{
 		Files:              files,
 		Distribution:       distribution,
-		WindowMonths:       int(message.WindowMonths),
-		reversedPeopleDict: message.DevIndex,
-		tickSize:           time.Duration(message.TickSize),
+		WindowMonths:       int(message.GetWindowMonths()),
+		reversedPeopleDict: message.GetDevIndex(),
+		tickSize:           time.Duration(message.GetTickSize()),
 	}
+
 	return result, nil
 }
 
@@ -314,9 +338,11 @@ func (kd *KnowledgeDiffusionAnalysis) serializeText(result *KnowledgeDiffusionRe
 	for name := range result.Files {
 		fileNames = append(fileNames, name)
 	}
+
 	sort.Strings(fileNames)
 
 	fmt.Fprintln(writer, "    files:")
+
 	for _, name := range fileNames {
 		f := result.Files[name]
 		fmt.Fprintf(writer, "      %s:\n", yaml.SafeString(name))
@@ -328,32 +354,41 @@ func (kd *KnowledgeDiffusionAnalysis) serializeText(result *KnowledgeDiffusionRe
 		for tick := range f.UniqueEditorsOverTime {
 			ticks = append(ticks, tick)
 		}
+
 		sort.Ints(ticks)
 		fmt.Fprint(writer, "        editors_over_time: {")
+
 		for i, tick := range ticks {
 			if i > 0 {
 				fmt.Fprint(writer, ", ")
 			}
+
 			fmt.Fprintf(writer, "%d: %d", tick, f.UniqueEditorsOverTime[tick])
 		}
+
 		fmt.Fprintln(writer, "}")
 	}
 
 	// Distribution histogram.
 	fmt.Fprintln(writer, "    distribution:")
+
 	editorCounts := make([]int, 0, len(result.Distribution))
 	for count := range result.Distribution {
 		editorCounts = append(editorCounts, count)
 	}
+
 	sort.Ints(editorCounts)
+
 	for _, count := range editorCounts {
 		fmt.Fprintf(writer, "      %d: %d\n", count, result.Distribution[count])
 	}
 
 	fmt.Fprintln(writer, "    people:")
+
 	for _, person := range result.reversedPeopleDict {
 		fmt.Fprintf(writer, "    - %s\n", yaml.SafeString(person))
 	}
+
 	fmt.Fprintln(writer, "    tick_size:", int(result.tickSize.Seconds()))
 }
 
@@ -375,9 +410,11 @@ func (kd *KnowledgeDiffusionAnalysis) serializeBinary(result *KnowledgeDiffusion
 		for tick, count := range f.UniqueEditorsOverTime {
 			pbFile.UniqueEditorsOverTime[int32(tick)] = int32(count)
 		}
+
 		for i, a := range f.Authors {
 			pbFile.Authors[i] = int32(a)
 		}
+
 		message.Files[fileName] = pbFile
 	}
 
@@ -390,14 +427,16 @@ func (kd *KnowledgeDiffusionAnalysis) serializeBinary(result *KnowledgeDiffusion
 	if err != nil {
 		return err
 	}
+
 	_, err = writer.Write(serialized)
+
 	return err
 }
 
 // MergeResults combines two KnowledgeDiffusionResult-s together.
 func (kd *KnowledgeDiffusionAnalysis) MergeResults(
-	r1, r2 interface{}, c1, c2 *core.CommonAnalysisResult,
-) interface{} {
+	r1, r2 any, c1, c2 *core.CommonAnalysisResult,
+) any {
 	kdr1 := r1.(KnowledgeDiffusionResult)
 	kdr2 := r2.(KnowledgeDiffusionResult)
 
@@ -410,9 +449,8 @@ func (kd *KnowledgeDiffusionAnalysis) MergeResults(
 	}
 
 	// Merge files: union of authors per file.
-	for name, f := range kdr1.Files {
-		merged.Files[name] = f
-	}
+	maps.Copy(merged.Files, kdr1.Files)
+
 	for name, f := range kdr2.Files {
 		if existing, ok := merged.Files[name]; ok {
 			// Merge author sets: keep the one with more editors.

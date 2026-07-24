@@ -17,7 +17,7 @@ func TestPipelineSerialize(t *testing.T) {
 	pipeline := core.NewPipeline(test.Repository)
 	pipeline.SetFeature(core.FeatureGitCommits)
 	pipeline.DeployItem(&leaves.LegacyBurndownAnalysis{})
-	facts := map[string]interface{}{}
+	facts := map[string]any{}
 	facts[core.ConfigPipelineDryRun] = true
 	tmpdir, _ := ioutil.TempDir("", "hercules-")
 	defer func() { _ = os.RemoveAll(tmpdir) }()
@@ -50,5 +50,5 @@ func TestPipelineResolveIntegration(t *testing.T) {
 	pipeline.SetFeature(core.FeatureGitCommits)
 	pipeline.DeployItem(&leaves.LegacyBurndownAnalysis{})
 	pipeline.DeployItem(&leaves.CouplesAnalysis{})
-	assert.NoError(t, pipeline.Initialize(map[string]interface{}{}))
+	assert.NoError(t, pipeline.Initialize(map[string]any{}))
 }

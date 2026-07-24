@@ -387,7 +387,7 @@ func selectReportAnalysisFlags(
 	}
 	sort.Strings(result)
 	if len(result) == 0 {
-		return nil, fmt.Errorf("no analysis flags selected for report")
+		return nil, errors.New("no analysis flags selected for report")
 	}
 	return result, nil
 }
@@ -443,7 +443,7 @@ func selectReportModes(requested []string, includeAll bool) ([]string, error) {
 // for the external labours subprocess path.
 func validateReportLaboursFlags(laboursCmdOverride string, laboursExtra []string) error {
 	if laboursCmdOverride == "" && len(laboursExtra) > 0 {
-		return fmt.Errorf("--labours-arg requires --labours-cmd: the built-in renderer does not accept extra labours arguments")
+		return errors.New("--labours-arg requires --labours-cmd: the built-in renderer does not accept extra labours arguments")
 	}
 	return nil
 }
@@ -451,7 +451,7 @@ func validateReportLaboursFlags(laboursCmdOverride string, laboursExtra []string
 func resolveLaboursCommand(override string) ([]string, error) {
 	parts := strings.Fields(override)
 	if len(parts) == 0 {
-		return nil, fmt.Errorf("--labours-cmd is empty")
+		return nil, errors.New("--labours-cmd is empty")
 	}
 	return parts, nil
 }
@@ -583,22 +583,22 @@ func newReportIndexData(
 	commits := int32(0)
 	runtimeMS := int64(0)
 
-	if message.Header != nil {
-		repository = message.Header.Repository
-		version = message.Header.Version
-		gitHash = message.Header.Hash
-		commits = message.Header.Commits
-		runtimeMS = message.Header.RunTime
-		if message.Header.BeginUnixTime > 0 {
-			begin = time.Unix(message.Header.BeginUnixTime, 0).UTC().Format(time.RFC3339)
+	if message.GetHeader() != nil {
+		repository = message.GetHeader().GetRepository()
+		version = message.GetHeader().GetVersion()
+		gitHash = message.GetHeader().GetHash()
+		commits = message.GetHeader().GetCommits()
+		runtimeMS = message.GetHeader().GetRunTime()
+		if message.GetHeader().GetBeginUnixTime() > 0 {
+			begin = time.Unix(message.GetHeader().GetBeginUnixTime(), 0).UTC().Format(time.RFC3339)
 		}
-		if message.Header.EndUnixTime > 0 {
-			end = time.Unix(message.Header.EndUnixTime, 0).UTC().Format(time.RFC3339)
+		if message.GetHeader().GetEndUnixTime() > 0 {
+			end = time.Unix(message.GetHeader().GetEndUnixTime(), 0).UTC().Format(time.RFC3339)
 		}
 	}
 
-	analyses := make([]string, 0, len(message.Contents))
-	for key := range message.Contents {
+	analyses := make([]string, 0, len(message.GetContents()))
+	for key := range message.GetContents() {
 		analyses = append(analyses, key)
 	}
 	sort.Strings(analyses)

@@ -14,6 +14,7 @@ import (
 // It is a PipelineItem.
 type TicksSinceStart struct {
 	core.NoopMerger
+
 	TickSize time.Duration
 
 	remote       string
@@ -79,24 +80,28 @@ func (ticks *TicksSinceStart) ListConfigurationOptions() []core.ConfigurationOpt
 }
 
 // Configure sets the properties previously published by ListConfigurationOptions().
-func (ticks *TicksSinceStart) Configure(facts map[string]interface{}) error {
+func (ticks *TicksSinceStart) Configure(facts map[string]any) error {
 	if l, exists := facts[core.ConfigLogger].(core.Logger); exists {
 		ticks.l = l
 	}
+
 	if val, exists := facts[ConfigTicksSinceStartTickSize].(int); exists {
 		ticks.TickSize = time.Duration(val) * time.Hour
 	} else {
 		ticks.TickSize = DefaultTicksSinceStartTickSize * time.Hour
 	}
+
 	if ticks.commits == nil {
 		ticks.commits = map[int][]plumbing.Hash{}
 	}
+
 	facts[FactCommitsByTick] = ticks.commits
 	facts[FactTickSize] = ticks.TickSize
+
 	return nil
 }
 
-func (*TicksSinceStart) ConfigureUpstream(map[string]interface{}) error {
+func (*TicksSinceStart) ConfigureUpstream(map[string]any) error {
 	return nil
 }
 
@@ -107,18 +112,23 @@ func (ticks *TicksSinceStart) Initialize(repository *git.Repository) error {
 	if ticks.TickSize == 0 {
 		ticks.TickSize = DefaultTicksSinceStartTickSize * time.Hour
 	}
+
 	ticks.tick0 = &time.Time{}
+
 	ticks.previousTick = 0
 	if len(ticks.commits) > 0 {
 		keys := make([]int, len(ticks.commits))
 		for key := range ticks.commits {
 			keys = append(keys, key)
 		}
+
 		for _, key := range keys {
 			delete(ticks.commits, key)
 		}
 	}
+
 	ticks.remote = core.GetSensibleRemote(repository)
+
 	return nil
 }
 
@@ -127,8 +137,9 @@ func (ticks *TicksSinceStart) Initialize(repository *git.Repository) error {
 // Additionally, DependencyCommit is always present there and represents the analysed *object.Commit.
 // This function returns the mapping with analysis results. The keys must be the same as
 // in Provides(). If there was an error, nil is returned.
-func (ticks *TicksSinceStart) Consume(deps map[string]interface{}) (map[string]interface{}, error) {
+func (ticks *TicksSinceStart) Consume(deps map[string]any) (map[string]any, error) {
 	commit := deps[core.DependencyCommit].(*object.Commit)
+
 	index := deps[core.DependencyIndex].(int)
 	if index == 0 {
 		// first iteration - initialize the file objects from the tree
@@ -138,22 +149,23 @@ func (ticks *TicksSinceStart) Consume(deps map[string]interface{}) (map[string]i
 			ticks.l.Warnf("suspicious committer timestamp in %s > %s: %d",
 				ticks.remote, commit.Hash.String(), tick0.Unix())
 		}
+
 		*ticks.tick0 = FloorTime(tick0, ticks.TickSize)
 	}
 
-	tick := int(commit.Committer.When.Sub(*ticks.tick0) / ticks.TickSize)
-	if tick < ticks.previousTick {
+	tick := max(int(commit.Committer.When.Sub(*ticks.tick0)/ticks.TickSize),
 		// rebase works miracles, but we need the monotonous time
-		tick = ticks.previousTick
-	}
+		ticks.previousTick)
 
 	ticks.previousTick = tick
+
 	tickCommits := ticks.commits[tick]
 	if tickCommits == nil {
 		tickCommits = []plumbing.Hash{}
 	}
 
 	exists := false
+
 	if commit.NumParents() > 0 {
 		for i := range tickCommits {
 			if tickCommits[len(tickCommits)-i-1] == commit.Hash {
@@ -162,11 +174,12 @@ func (ticks *TicksSinceStart) Consume(deps map[string]interface{}) (map[string]i
 			}
 		}
 	}
+
 	if !exists {
 		ticks.commits[tick] = append(tickCommits, commit.Hash)
 	}
 
-	return map[string]interface{}{DependencyTick: tick}, nil
+	return map[string]any{DependencyTick: tick}, nil
 }
 
 // Fork clones this PipelineItem.
@@ -181,6 +194,7 @@ func FloorTime(t time.Time, d time.Duration) time.Time {
 	if result.After(t) {
 		result = result.Add(-d)
 	}
+
 	return result
 }
 

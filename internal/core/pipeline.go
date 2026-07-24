@@ -6,9 +6,11 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"maps"
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -61,7 +63,9 @@ func (opt ConfigurationOptionType) String() string {
 	case PathConfigurationOption:
 		return "path"
 	}
+
 	log.Panicf("Invalid ConfigurationOptionType value %d", opt)
+
 	return ""
 }
 
@@ -76,7 +80,7 @@ type ConfigurationOption struct {
 	// Type specifies the kind of the configuration option's value.
 	Type ConfigurationOptionType
 	// Default is the initial value of the configuration option.
-	Default interface{}
+	Default any
 	// Shared allows to share same option by multiple items. All cases must have same type, name and default.
 	Shared bool
 }
@@ -87,9 +91,11 @@ func (opt ConfigurationOption) FormatDefault() string {
 	if opt.Type == StringsConfigurationOption {
 		return fmt.Sprintf("\"%s\"", strings.Join(opt.Default.([]string), ","))
 	}
+
 	if opt.Type != StringConfigurationOption {
 		return fmt.Sprint(opt.Default)
 	}
+
 	return fmt.Sprintf("\"%s\"", opt.Default)
 }
 
@@ -105,9 +111,9 @@ type PipelineItem interface {
 	// ListConfigurationOptions returns the list of available options which can be consumed by Configure().
 	ListConfigurationOptions() []ConfigurationOption
 	// Configure performs the initial setup of the object by applying parameters from facts in downstream directio.
-	Configure(facts map[string]interface{}) error
+	Configure(facts map[string]any) error
 	// ConfigureUpstream performs the initial setup of the object by applying parameters from facts in upstream direction.
-	ConfigureUpstream(facts map[string]interface{}) error
+	ConfigureUpstream(facts map[string]any) error
 	// Initialize prepares and resets the item. Consume() requires Initialize()
 	// to be called at least once beforehand.
 	Initialize(*git.Repository) error
@@ -115,7 +121,7 @@ type PipelineItem interface {
 	// deps contains the required entities which match Depends(). Besides, it always includes
 	// DependencyCommit and DependencyIndex.
 	// Returns the calculated entities which match Provides().
-	Consume(deps map[string]interface{}) (map[string]interface{}, error)
+	Consume(deps map[string]any) (map[string]any, error)
 	// Fork clones the item the requested number of times. The data links between the clones
 	// are up to the implementation. Needed to handle Git branches. See also Merge().
 	// Returns a slice with `n` fresh clones. In other words, it does not include the original item.
@@ -156,18 +162,18 @@ type LeafPipelineItem interface {
 	// Should start with a capital letter and end with a dot.
 	Description() string
 	// Finalize returns the result of the analysis.
-	Finalize() interface{}
+	Finalize() any
 	// Serialize encodes the object returned by Finalize() to YAML or Protocol Buffers.
-	Serialize(result interface{}, binary bool, writer io.Writer) error
+	Serialize(result any, binary bool, writer io.Writer) error
 }
 
 // ResultMergeablePipelineItem specifies the methods to combine several analysis results together.
 type ResultMergeablePipelineItem interface {
 	LeafPipelineItem
 	// Deserialize loads the result from Protocol Buffers blob.
-	Deserialize(message []byte) (interface{}, error)
+	Deserialize(message []byte) (any, error)
 	// MergeResults joins two results together. Common-s are specified as the global state.
-	MergeResults(r1, r2 interface{}, c1, c2 *CommonAnalysisResult) interface{}
+	MergeResults(r1, r2 any, c1, c2 *CommonAnalysisResult) any
 }
 
 // HibernateablePipelineItem is the interface to allow pipeline items to be frozen (compacted, unloaded)
@@ -197,10 +203,10 @@ type CommonAnalysisResult struct {
 // Copy produces a deep clone of the object.
 func (car CommonAnalysisResult) Copy() CommonAnalysisResult {
 	result := car
+
 	result.RunTimePerItem = map[string]float64{}
-	for key, val := range car.RunTimePerItem {
-		result.RunTimePerItem[key] = val
-	}
+	maps.Copy(result.RunTimePerItem, car.RunTimePerItem)
+
 	return result
 }
 
@@ -221,13 +227,17 @@ func (car *CommonAnalysisResult) Merge(other *CommonAnalysisResult) {
 	if car.EndTime == 0 || other.BeginTime == 0 {
 		panic("Merging with an uninitialized CommonAnalysisResult")
 	}
+
 	if other.BeginTime < car.BeginTime {
 		car.BeginTime = other.BeginTime
 	}
+
 	if other.EndTime > car.EndTime {
 		car.EndTime = other.EndTime
 	}
+
 	car.CommitsNumber += other.CommitsNumber
+
 	car.RunTime += other.RunTime
 	for key, val := range other.RunTimePerItem {
 		car.RunTimePerItem[key] += val
@@ -241,6 +251,7 @@ func (car *CommonAnalysisResult) FillMetadata(meta *pb.Metadata) *pb.Metadata {
 	meta.Commits = int32(car.CommitsNumber)
 	meta.RunTime = car.RunTime.Nanoseconds() / 1e6
 	meta.RunTimePerItem = car.RunTimePerItem
+
 	return meta
 }
 
@@ -259,7 +270,7 @@ func MetadataToCommonAnalysisResult(meta *Metadata) *CommonAnalysisResult {
 }
 
 // Pipeline is the core Hercules entity which carries several PipelineItems and executes them.
-// See the extended example of how a Pipeline works in doc.go
+// See the extended example of how a Pipeline works in doc.go.
 type Pipeline struct {
 	// OnProgress is the callback which is invoked in Analyse() to output it's
 	// progress. The first argument is the number of complete steps, the
@@ -386,6 +397,7 @@ func (pipeline *Pipeline) SetFeaturesFromFlags(registry ...*PipelineItemRegistry
 	} else {
 		panic("Zero or one registry is allowed to be passed.")
 	}
+
 	for _, feature := range ffr.featureFlags.Flags {
 		pipeline.SetFeature(feature)
 	}
@@ -404,13 +416,16 @@ func (pipeline *Pipeline) DeployItemOnce(item PipelineItem) PipelineItem {
 func (pipeline *Pipeline) deployItem(item PipelineItem, once bool) PipelineItem {
 	var queue []PipelineItem
 	queue = append(queue, item)
+
 	added := map[string]PipelineItem{}
 	for _, existingItem := range pipeline.items {
 		added[existingItem.Name()] = existingItem
 	}
+
 	if prevItem, present := added[item.Name()]; once && present {
 		return prevItem
 	}
+
 	added[item.Name()] = item
 
 	fpi, ok := item.(FeaturedPipelineItem)
@@ -421,9 +436,11 @@ func (pipeline *Pipeline) deployItem(item PipelineItem, once bool) PipelineItem 
 	}
 
 	pipeline.AddItem(item)
+
 	for len(queue) > 0 {
 		head := queue[0]
 		queue = queue[1:]
+
 		for _, dep := range head.Requires() {
 			summons := Registry.Summon(dep)
 			for _, sibling := range summons {
@@ -438,9 +455,11 @@ func (pipeline *Pipeline) deployItem(item PipelineItem, once bool) PipelineItem 
 							}
 						}
 					}
+
 					if disabled {
 						continue
 					}
+
 					added[sibling.Name()] = sibling
 					queue = append(queue, sibling)
 					pipeline.AddItem(sibling)
@@ -448,6 +467,7 @@ func (pipeline *Pipeline) deployItem(item PipelineItem, once bool) PipelineItem 
 			}
 		}
 	}
+
 	return item
 }
 
@@ -479,42 +499,50 @@ func (pipeline *Pipeline) Len() int {
 func (pipeline *Pipeline) Commits(firstParent bool) ([]*object.Commit, error) {
 	var result []*object.Commit
 	repository := pipeline.repository
+
 	heads, err := pipeline.HeadCommit()
 	if err != nil {
 		return nil, err
 	}
+
 	head := heads[0]
 	if firstParent {
 		// the first parent matches the head
-		for commit := head; err != io.EOF; commit, err = commit.Parents().Next() {
+		for commit := head; !errors.Is(err, io.EOF); commit, err = commit.Parents().Next() {
 			if err != nil {
 				panic(err)
 			}
+
 			result = append(result, commit)
 		}
 		// reverse the order
 		for i, j := 0, len(result)-1; i < j; i, j = i+1, j-1 {
 			result[i], result[j] = result[j], result[i]
 		}
+
 		return result, nil
 	}
+
 	cit, err := repository.Log(&git.LogOptions{From: head.Hash})
 	if err != nil {
 		return nil, errors.Wrap(err, "unable to collect the commit history")
 	}
 	defer cit.Close()
+
 	err = cit.ForEach(func(commit *object.Commit) error {
 		result = append(result, commit)
 		return nil
 	})
+
 	return result, err
 }
 
 // HeadCommit returns the latest commit in the repository (HEAD).
 func (pipeline *Pipeline) HeadCommit() ([]*object.Commit, error) {
 	repository := pipeline.repository
+
 	head, err := repository.Head()
-	if err == plumbing.ErrReferenceNotFound {
+	if errors.Is(err, plumbing.ErrReferenceNotFound) {
 		refs, errr := repository.References()
 		if errr != nil {
 			return nil, errors.Wrap(errr, "unable to list the references")
@@ -524,13 +552,16 @@ func (pipeline *Pipeline) HeadCommit() ([]*object.Commit, error) {
 		err = refs.ForEach(func(ref *plumbing.Reference) error {
 			refname := ref.Name().String()
 			refnames = append(refnames, refname)
+
 			refByName[refname] = ref
 			if strings.HasPrefix(refname, "refs/heads/HEAD/") {
 				head = ref
 				return storer.ErrStop
 			}
+
 			return nil
 		})
+
 		if head == nil {
 			sort.Strings(refnames)
 			headName := refnames[len(refnames)-1]
@@ -538,13 +569,16 @@ func (pipeline *Pipeline) HeadCommit() ([]*object.Commit, error) {
 			head = refByName[headName]
 		}
 	}
+
 	if head == nil {
 		return nil, errors.Wrap(err, "unable to find the head reference")
 	}
+
 	commit, err := repository.CommitObject(head.Hash())
 	if err != nil {
 		return nil, err
 	}
+
 	return []*object.Commit{commit}, nil
 }
 
@@ -580,6 +614,7 @@ func (pipeline *Pipeline) resolve(dumpPath string, priorityFn DependencyPriority
 			name2item[name] = item
 
 			graph.AddNode(name)
+
 			for _, key := range item.Requires() {
 				key = "[" + key + "]"
 				name2data[key] = struct{}{}
@@ -604,8 +639,10 @@ func (pipeline *Pipeline) resolve(dumpPath string, priorityFn DependencyPriority
 			children := graph.FindChildren(name)
 			sort.Strings(children)
 			pipeline.l.Criticalf("Unsatisfied dependency: %s -> %s", name, children)
+
 			return errors.New("unsatisfied dependency")
 		}
+
 		if nParents > 1 {
 			ambiguousInputs[name] = struct{}{}
 		}
@@ -623,15 +660,20 @@ func (pipeline *Pipeline) resolve(dumpPath string, priorityFn DependencyPriority
 	pipelinePlan, ok := graph.Toposort()
 	if !ok {
 		_, _ = fmt.Fprint(os.Stderr, graph.DebugDump())
+
 		pipeline.l.Critical("Failed to resolve pipeline dependencies: unable to topologically sort the items.")
+
 		return errors.New("topological sort failure")
 	}
+
 	pipeline.items = pipeline.items[:0]
+
 	for _, key := range pipelinePlan {
 		if item, ok := name2item[key]; ok {
 			pipeline.items = append(pipeline.items, item)
 		}
 	}
+
 	if dumpPath != "" {
 		// If there is a floating difference, uncomment this:
 		// fmt.Fprint(os.Stderr, graphCopy.DebugDump())
@@ -644,10 +686,11 @@ func (pipeline *Pipeline) resolve(dumpPath string, priorityFn DependencyPriority
 			_, _ = fmt.Fprint(os.Stderr, plan)
 		}
 	}
+
 	return nil
 }
 
-// break cycles - unwinds sequential processing of same facts
+// break cycles - unwinds sequential processing of same facts.
 func (pipeline *Pipeline) resolveAmbiguous(ambiguousDataKeys []string,
 	graph *toposort.Graph, name2item map[string]PipelineItem, priorityFn DependencyPriorityFunc,
 ) {
@@ -663,16 +706,19 @@ func (pipeline *Pipeline) resolveAmbiguous(ambiguousDataKeys []string,
 		{
 			last := len(ambInputs)
 			lastLevel := 0
+
 			for i := last - 1; i >= -1; i-- {
 				level := -1
 				if i >= 0 {
 					level = bfsIndex[ambInputs[i]].Level
 				}
+
 				if level != lastLevel {
 					if s := ambInputs[i+1 : last]; len(s) > 1 {
 						graph.Sort(s) // because BreadthSort doesn't do it properly
 						pipeline.resolveAlternatives(graph, s, name2item, priorityFn, excludes)
 					}
+
 					lastLevel = level
 					last = i + 1
 				}
@@ -681,6 +727,7 @@ func (pipeline *Pipeline) resolveAmbiguous(ambiguousDataKeys []string,
 
 		if len(excludes) > 0 {
 			j := 0
+
 			for i := 0; i < len(ambInputs); i++ {
 				ambInput := ambInputs[i]
 				if _, ok := excludes[ambInput]; ok {
@@ -688,11 +735,14 @@ func (pipeline *Pipeline) resolveAmbiguous(ambiguousDataKeys []string,
 					graph.RemoveNode(ambInput)
 					continue
 				}
+
 				if i != j {
 					ambInputs[j] = ambInputs[i]
 				}
+
 				j++
 			}
+
 			ambInputs = ambInputs[:j]
 		}
 
@@ -706,16 +756,19 @@ func (pipeline *Pipeline) resolveAmbiguous(ambiguousDataKeys []string,
 
 		replacingParents := map[string]string{}
 		nextCycleNode := key
-		for i := len(ambInputs) - 1; i >= 0; i-- {
-			ambInput := ambInputs[i]
+
+		for i, v := range slices.Backward(ambInputs) {
+			ambInput := v
 			graph.AddEdge(ambInput, key)
 			cycle := graph.FindCycle(ambInput)
 
 			nextNode := ambInput
+
 			if len(cycle) == 0 {
 				if i != 0 {
 					continue
 				}
+
 				nextNode = key
 			} else if len(cycle) == 1 || cycle[1] != key {
 				panic("unexpected")
@@ -723,6 +776,7 @@ func (pipeline *Pipeline) resolveAmbiguous(ambiguousDataKeys []string,
 				if len(cycle) > 2 {
 					nextNode = cycle[2]
 				}
+
 				graph.RemoveEdge(key, nextNode)
 			}
 
@@ -744,11 +798,14 @@ func (pipeline *Pipeline) resolveAmbiguous(ambiguousDataKeys []string,
 			} else if len(cycle) < 3 || cycle[len(cycle)-1] != key {
 				panic("unexpected")
 			}
+
 			loopingParent := cycle[len(cycle)-2]
+
 			replacingParent := replacingParents[loopingParent]
 			if replacingParent == "" {
 				panic("unexpected")
 			}
+
 			graph.RemoveEdge(key, child)
 			graph.AddEdge(replacingParent, child)
 		}
@@ -758,15 +815,17 @@ func (pipeline *Pipeline) resolveAmbiguous(ambiguousDataKeys []string,
 // Initialize prepares the pipeline for the execution (Run()). This function
 // resolves the execution DAG, Configure()-s and Initialize()-s the items in it in the
 // topological dependency order. `facts` are passed inside Configure(). They are mutable.
-func (pipeline *Pipeline) Initialize(facts map[string]interface{}) error {
+func (pipeline *Pipeline) Initialize(facts map[string]any) error {
 	if _, exists := facts[ConfigPipelineCommits]; !exists {
 		var err error
+
 		facts[ConfigPipelineCommits], err = pipeline.Commits(false)
 		if err != nil {
 			pipeline.l.Errorf("failed to list the commits: %v", err)
 			return err
 		}
 	}
+
 	return pipeline.InitializeExt(facts, func(items []PipelineItem) PipelineItem {
 		return items[0]
 	}, false)
@@ -774,7 +833,7 @@ func (pipeline *Pipeline) Initialize(facts map[string]interface{}) error {
 
 type DependencyPriorityFunc = func(items []PipelineItem) PipelineItem
 
-func (pipeline *Pipeline) InitializeExt(facts map[string]interface{},
+func (pipeline *Pipeline) InitializeExt(facts map[string]any,
 	priorityFn DependencyPriorityFunc, preparePlan bool,
 ) error {
 	cleanReturn := false
@@ -800,18 +859,24 @@ func (pipeline *Pipeline) InitializeExt(facts map[string]interface{},
 		if val < 0 {
 			err := fmt.Errorf("--hibernation-distance cannot be negative (got %d)", val)
 			pipeline.l.Error(err)
+
 			return err
 		}
+
 		pipeline.HibernationDistance = val
 	}
+
 	dumpPath, _ := facts[ConfigPipelineDAGPath].(string)
-	if err := pipeline.resolve(dumpPath, priorityFn); err != nil {
+
+	err := pipeline.resolve(dumpPath, priorityFn)
+	if err != nil {
 		return err
 	}
 
 	if dumpPlan, exists := facts[ConfigPipelineDumpPlan].(bool); exists {
 		pipeline.DumpPlan = dumpPlan
 	}
+
 	if dryRun, exists := facts[ConfigPipelineDryRun].(bool); exists {
 		pipeline.DryRun = dryRun
 	}
@@ -819,20 +884,24 @@ func (pipeline *Pipeline) InitializeExt(facts map[string]interface{},
 	mergeTracks, _ := pipeline.GetFeature(FeatureMergeTracks)
 
 	if !preparePlan && mergeTracks {
-		return fmt.Errorf("merge tracks mode is not allowed")
+		return errors.New("merge tracks mode is not allowed")
 	}
 
 	planCooker := func() {
 		if commits, ok := facts[ConfigPipelineCommits].([]*object.Commit); ok {
 			var prepared preparedRun
 			prepared.commitCount = len(commits)
+
 			prepared.plan, prepared.mergeHashCount = prepareRunPlan(commits, pipeline.HibernationDistance, mergeTracks)
 			if mergeTracks {
 				facts[FactMergeHashCount] = prepared.mergeHashCount
 			}
+
 			pipeline.preparedRun = &prepared
+
 			return
 		}
+
 		pipeline.preparedRun = nil
 	}
 
@@ -846,7 +915,8 @@ func (pipeline *Pipeline) InitializeExt(facts map[string]interface{},
 	}
 
 	for _, item := range pipeline.items {
-		if err := item.Configure(facts); err != nil {
+		err := item.Configure(facts)
+		if err != nil {
 			cleanReturn = true
 			return errors.Wrapf(err, "%s failed to configure", item.Name())
 		}
@@ -854,14 +924,17 @@ func (pipeline *Pipeline) InitializeExt(facts map[string]interface{},
 
 	if pipeline.preparedRun == nil && preparePlan {
 		planCooker()
+
 		if pipeline.preparedRun == nil {
-			return fmt.Errorf("commits are not available")
+			return errors.New("commits are not available")
 		}
 	}
 
-	for i := len(pipeline.items) - 1; i >= 0; i-- {
-		item := pipeline.items[i]
-		if err := item.ConfigureUpstream(facts); err != nil {
+	for _, v := range slices.Backward(pipeline.items) {
+		item := v
+
+		err := item.ConfigureUpstream(facts)
+		if err != nil {
 			cleanReturn = true
 			return errors.Wrapf(err, "%s failed to configure upstream", item.Name())
 		}
@@ -874,11 +947,14 @@ func (pipeline *Pipeline) InitializeExt(facts map[string]interface{},
 			return errors.Wrapf(err, "%s failed to initialize", item.Name())
 		}
 	}
+
 	if pipeline.HibernationDistance > 0 {
 		// if we want hibernation, then we want to minimize RSS
 		debug.SetGCPercent(20) // the default is 100
 	}
+
 	cleanReturn = true
+
 	return nil
 }
 
@@ -888,22 +964,25 @@ func (pipeline *Pipeline) InitializeExt(facts map[string]interface{},
 //
 // Returns the mapping from each LeafPipelineItem to the corresponding analysis result.
 // There is always a "nil" record with CommonAnalysisResult.
-func (pipeline *Pipeline) Run(commits []*object.Commit) (map[LeafPipelineItem]interface{}, error) {
+func (pipeline *Pipeline) Run(commits []*object.Commit) (map[LeafPipelineItem]any, error) {
 	plan, _ := prepareRunPlan(commits, pipeline.HibernationDistance, false)
 	return pipeline.runPlan(plan, len(commits), -1)
 }
 
-func (pipeline *Pipeline) RunPreparedPlan() (map[LeafPipelineItem]interface{}, error) {
+func (pipeline *Pipeline) RunPreparedPlan() (map[LeafPipelineItem]any, error) {
 	prepared := pipeline.preparedRun
 	pipeline.preparedRun = nil
+
 	if prepared == nil {
-		return nil, fmt.Errorf("run plan was not prepared")
+		return nil, errors.New("run plan was not prepared")
 	}
+
 	return pipeline.runPlan(prepared.plan, prepared.commitCount, prepared.mergeHashCount)
 }
 
 func (pipeline *Pipeline) runPlan(plan []runAction, commitCount, mergeHashCount int) (map[LeafPipelineItem]any, error) {
 	startRunTime := time.Now()
+
 	cleanReturn := false
 	defer pipeline.reportRunFailure(&cleanReturn)
 
@@ -1179,11 +1258,13 @@ func (pipeline *Pipeline) resolveAlternatives(graph *toposort.Graph, nodes []str
 	dataKeys := make(map[string][]string, len(nodes))
 	for _, node := range nodes {
 		childList := strings.Builder{}
+
 		for _, child := range graph.FindChildren(node) {
 			if graph.HasChildren(child) {
 				if childList.Len() != 0 {
 					childList.WriteString(",")
 				}
+
 				childList.WriteString(child)
 			}
 		}
@@ -1198,24 +1279,29 @@ func (pipeline *Pipeline) resolveAlternatives(graph *toposort.Graph, nodes []str
 		if len(altNodes) < 2 {
 			continue
 		}
+
 		items = items[:0]
 		for _, node := range altNodes {
 			items = append(items, itemMap[node])
 		}
+
 		pItem := priorityFn(items)
 		pNode := ""
+
 		if pItem != nil {
 			for _, node := range altNodes {
 				if pItem == itemMap[node] {
 					if pNode != "" {
 						panic("unexpected")
 					}
+
 					pNode = node
 				} else {
 					excludes[node] = struct{}{}
 				}
 			}
 		}
+
 		if pNode == "" {
 			panic("unexpected")
 		}
@@ -1226,26 +1312,34 @@ func (pipeline *Pipeline) resolveAlternatives(graph *toposort.Graph, nodes []str
 // by interpreting each line as a Git commit hash.
 func LoadCommitsFromFile(path string, repository *git.Repository) ([]*object.Commit, error) {
 	var file io.ReadCloser
+
 	if path != "-" {
 		var err error
+
 		file, err = os.Open(path)
 		if err != nil {
 			return nil, err
 		}
+
 		defer func() { _ = file.Close() }()
 	} else {
 		file = os.Stdin
 	}
+
 	scanner := bufio.NewScanner(file)
 	var commits []*object.Commit
+
 	for scanner.Scan() {
 		hash := plumbing.NewHash(scanner.Text())
+
 		commit, err := repository.CommitObject(hash)
 		if err != nil {
 			return nil, err
 		}
+
 		commits = append(commits, commit)
 	}
+
 	return commits, nil
 }
 
@@ -1254,5 +1348,6 @@ func GetSensibleRemote(repository *git.Repository) string {
 	if r, err := repository.Remotes(); err == nil && len(r) > 0 {
 		return r[0].Config().URLs[0]
 	}
+
 	return "<no remote>"
 }

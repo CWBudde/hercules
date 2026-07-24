@@ -35,7 +35,8 @@ func buildFileDiff(before, after string) items.FileDiffData {
 
 func TestShotnessMetaTreeSitter(t *testing.T) {
 	sh := &ShotnessAnalysis{}
-	if err := sh.Initialize(test.Repository); err != nil {
+	err := sh.Initialize(test.Repository)
+	if err != nil {
 		t.Fatalf("initialize failed: %v", err)
 	}
 	if got := sh.Name(); got != "Shotness" {
@@ -51,10 +52,12 @@ func TestShotnessMetaTreeSitter(t *testing.T) {
 
 func TestShotnessConsumeTreeSitter(t *testing.T) {
 	sh := &ShotnessAnalysis{}
-	if err := sh.Initialize(test.Repository); err != nil {
+	err := sh.Initialize(test.Repository)
+	if err != nil {
 		t.Fatalf("initialize failed: %v", err)
 	}
-	if err := sh.Configure(nil); err != nil {
+	err = sh.Configure(nil)
+	if err != nil {
 		t.Fatalf("configure failed: %v", err)
 	}
 
@@ -78,7 +81,7 @@ func beta() int {
 	newHash := makeHash(2)
 	fileDiff := buildFileDiff(oldText, newText)
 
-	insertDeps := map[string]interface{}{
+	insertDeps := map[string]any{
 		core.DependencyCommit: &object.Commit{},
 		items.DependencyTreeChanges: object.Changes{
 			&object.Change{
@@ -101,7 +104,7 @@ func beta() int {
 		t.Fatalf("consume insert failed: %v", err)
 	}
 
-	modifyDeps := map[string]interface{}{
+	modifyDeps := map[string]any{
 		core.DependencyCommit: &object.Commit{},
 		items.DependencyTreeChanges: object.Changes{
 			&object.Change{
@@ -153,7 +156,8 @@ func TestShotnessSerializeTreeSitter(t *testing.T) {
 		},
 	}
 	text := &bytes.Buffer{}
-	if err := sh.Serialize(result, false, text); err != nil {
+	err := sh.Serialize(result, false, text)
+	if err != nil {
 		t.Fatalf("serialize text failed: %v", err)
 	}
 	if !strings.Contains(text.String(), "alpha") {
@@ -161,14 +165,16 @@ func TestShotnessSerializeTreeSitter(t *testing.T) {
 	}
 
 	binary := &bytes.Buffer{}
-	if err := sh.Serialize(result, true, binary); err != nil {
+	err = sh.Serialize(result, true, binary)
+	if err != nil {
 		t.Fatalf("serialize binary failed: %v", err)
 	}
 	msg := &pb.ShotnessAnalysisResults{}
-	if err := proto.Unmarshal(binary.Bytes(), msg); err != nil {
+	err = proto.Unmarshal(binary.Bytes(), msg)
+	if err != nil {
 		t.Fatalf("unmarshal failed: %v", err)
 	}
-	if len(msg.Records) != 1 || msg.Records[0].Name != "alpha" {
-		t.Fatalf("unexpected protobuf payload: %+v", msg.Records)
+	if len(msg.GetRecords()) != 1 || msg.GetRecords()[0].GetName() != "alpha" {
+		t.Fatalf("unexpected protobuf payload: %+v", msg.GetRecords())
 	}
 }

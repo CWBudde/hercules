@@ -25,7 +25,8 @@ func TestProtobufSchemaSnapshot(t *testing.T) {
 	actual.Version = SchemaVersion
 
 	if os.Getenv("UPDATE_PB_SCHEMA_SNAPSHOT") == "1" {
-		if err := schema.Write("pb.schema.json", actual); err != nil {
+		err := schema.Write("pb.schema.json", actual)
+		if err != nil {
 			t.Fatalf("write protobuf schema snapshot: %v", err)
 		}
 	}

@@ -16,7 +16,7 @@ import (
 	"github.com/cwbudde/hercules/internal/yaml"
 )
 
-// CommitsAnalysis extracts statistics for each commit
+// CommitsAnalysis extracts statistics for each commit.
 type CommitsAnalysis struct {
 	core.NoopMerger
 
@@ -37,14 +37,14 @@ type CommitsResult struct {
 	reversedPeopleDict []string
 }
 
-// FileStat is the statistics for a file in a commit
+// FileStat is the statistics for a file in a commit.
 type FileStat struct {
 	Name     string
 	Language string
 	items.LineStats
 }
 
-// CommitStat is the statistics for a commit
+// CommitStat is the statistics for a commit.
 type CommitStat struct {
 	Hash   string
 	When   int64
@@ -79,17 +79,19 @@ func (ca *CommitsAnalysis) ListConfigurationOptions() []core.ConfigurationOption
 }
 
 // Configure sets the properties previously published by ListConfigurationOptions().
-func (ca *CommitsAnalysis) Configure(facts map[string]interface{}) error {
+func (ca *CommitsAnalysis) Configure(facts map[string]any) error {
 	if l, exists := facts[core.ConfigLogger].(core.Logger); exists {
 		ca.l = l
 	}
+
 	if val, exists := facts[identity.FactIdentityDetectorReversedPeopleDict].([]string); exists {
 		ca.reversedPeopleDict = val
 	}
+
 	return nil
 }
 
-func (*CommitsAnalysis) ConfigureUpstream(facts map[string]interface{}) error {
+func (*CommitsAnalysis) ConfigureUpstream(facts map[string]any) error {
 	return nil
 }
 
@@ -115,11 +117,12 @@ func (ca *CommitsAnalysis) Initialize(repository *git.Repository) error {
 // Additionally, DependencyCommit is always present there and represents the analysed *object.Commit.
 // This function returns the mapping with analysis results. The keys must be the same as
 // in Provides(). If there was an error, nil is returned.
-func (ca *CommitsAnalysis) Consume(deps map[string]interface{}) (map[string]interface{}, error) {
+func (ca *CommitsAnalysis) Consume(deps map[string]any) (map[string]any, error) {
 	commit := deps[core.DependencyCommit].(*object.Commit)
 	author := deps[identity.DependencyAuthor].(int)
 	lineStats := deps[items.DependencyLineStats].(map[object.ChangeEntry]items.LineStats)
 	langs := deps[items.DependencyLanguages].(map[plumbing.Hash]string)
+
 	cs := CommitStat{
 		Hash:   commit.Hash.String(),
 		When:   commit.Author.When.Unix(),
@@ -132,12 +135,14 @@ func (ca *CommitsAnalysis) Consume(deps map[string]interface{}) (map[string]inte
 			LineStats: stats,
 		})
 	}
+
 	ca.commits = append(ca.commits, &cs)
+
 	return nil, nil
 }
 
 // Finalize returns the result of the analysis. Further Consume() calls are not expected.
-func (ca *CommitsAnalysis) Finalize() interface{} {
+func (ca *CommitsAnalysis) Finalize() any {
 	return CommitsResult{
 		Commits:            ca.commits,
 		reversedPeopleDict: ca.reversedPeopleDict,
@@ -151,29 +156,35 @@ func (ca *CommitsAnalysis) Fork(n int) []core.PipelineItem {
 
 // Serialize converts the analysis result as returned by Finalize() to text or bytes.
 // The text format is YAML and the bytes format is Protocol Buffers.
-func (ca *CommitsAnalysis) Serialize(result interface{}, binary bool, writer io.Writer) error {
+func (ca *CommitsAnalysis) Serialize(result any, binary bool, writer io.Writer) error {
 	commitsResult := result.(CommitsResult)
 	if binary {
 		return ca.serializeBinary(&commitsResult, writer)
 	}
+
 	ca.serializeText(&commitsResult, writer)
+
 	return nil
 }
 
 func (ca *CommitsAnalysis) serializeText(result *CommitsResult, writer io.Writer) {
 	fmt.Fprintln(writer, "  commits:")
+
 	for _, c := range result.Commits {
 		fmt.Fprintf(writer, "    - hash: %s\n", c.Hash)
 		fmt.Fprintf(writer, "      when: %d\n", c.When)
 		fmt.Fprintf(writer, "      author: %d\n", c.Author)
 		fmt.Fprintf(writer, "      files:\n")
+
 		for _, f := range c.Files {
 			fmt.Fprintf(writer, "       - name: %s\n", f.Name)
 			fmt.Fprintf(writer, "         language: %s\n", f.Language)
 			fmt.Fprintf(writer, "         stat: [%d, %d, %d]\n", f.Added, f.Changed, f.Removed)
 		}
 	}
+
 	fmt.Fprintln(writer, "  people:")
+
 	for _, person := range result.reversedPeopleDict {
 		fmt.Fprintf(writer, "  - %s\n", yaml.SafeString(person))
 	}
@@ -182,6 +193,7 @@ func (ca *CommitsAnalysis) serializeText(result *CommitsResult, writer io.Writer
 func (ca *CommitsAnalysis) serializeBinary(result *CommitsResult, writer io.Writer) error {
 	message := pb.CommitsAnalysisResults{}
 	message.AuthorIndex = result.reversedPeopleDict
+
 	message.Commits = make([]*pb.Commit, len(result.Commits))
 	for i, c := range result.Commits {
 		files := make([]*pb.CommitFile, len(c.Files))
@@ -190,9 +202,9 @@ func (ca *CommitsAnalysis) serializeBinary(result *CommitsResult, writer io.Writ
 				Name:     f.Name,
 				Language: f.Language,
 				Stats: &pb.LineStats{
-					Added:   int32(f.LineStats.Added),
-					Changed: int32(f.LineStats.Changed),
-					Removed: int32(f.LineStats.Removed),
+					Added:   int32(f.Added),
+					Changed: int32(f.Changed),
+					Removed: int32(f.Removed),
 				},
 			}
 		}
@@ -204,11 +216,14 @@ func (ca *CommitsAnalysis) serializeBinary(result *CommitsResult, writer io.Writ
 			Files:        files,
 		}
 	}
+
 	serialized, err := proto.Marshal(&message)
 	if err != nil {
 		return err
 	}
+
 	_, err = writer.Write(serialized)
+
 	return err
 }
 

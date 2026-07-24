@@ -1,6 +1,7 @@
 package plumbing
 
 import (
+	"errors"
 	"path"
 	"strings"
 
@@ -50,14 +51,15 @@ func (langs *LanguagesDetection) ListConfigurationOptions() []core.Configuration
 }
 
 // Configure sets the properties previously published by ListConfigurationOptions().
-func (langs *LanguagesDetection) Configure(facts map[string]interface{}) error {
+func (langs *LanguagesDetection) Configure(facts map[string]any) error {
 	if l, exists := facts[core.ConfigLogger].(core.Logger); exists {
 		langs.l = l
 	}
+
 	return nil
 }
 
-func (*LanguagesDetection) ConfigureUpstream(facts map[string]interface{}) error {
+func (*LanguagesDetection) ConfigureUpstream(facts map[string]any) error {
 	return nil
 }
 
@@ -73,15 +75,17 @@ func (langs *LanguagesDetection) Initialize(repository *git.Repository) error {
 // Additionally, DependencyCommit is always present there and represents the analysed *object.Commit.
 // This function returns the mapping with analysis results. The keys must be the same as
 // in Provides(). If there was an error, nil is returned.
-func (langs *LanguagesDetection) Consume(deps map[string]interface{}) (map[string]interface{}, error) {
+func (langs *LanguagesDetection) Consume(deps map[string]any) (map[string]any, error) {
 	changes := deps[DependencyTreeChanges].(object.Changes)
 	cache := deps[DependencyBlobCache].(map[plumbing.Hash]*CachedBlob)
 	result := map[plumbing.Hash]string{}
+
 	for _, change := range changes {
 		action, err := change.Action()
 		if err != nil {
 			return nil, err
 		}
+
 		switch action {
 		case merkletrie.Insert:
 			result[change.To.TreeEntry.Hash] = langs.detectLanguage(
@@ -100,7 +104,8 @@ func (langs *LanguagesDetection) Consume(deps map[string]interface{}) (map[strin
 			)
 		}
 	}
-	return map[string]interface{}{DependencyLanguages: result}, nil
+
+	return map[string]any{DependencyLanguages: result}, nil
 }
 
 // Fork clones this PipelineItem.
@@ -111,10 +116,12 @@ func (langs *LanguagesDetection) Fork(n int) []core.PipelineItem {
 // detectLanguage returns the programming language of a blob.
 func (langs *LanguagesDetection) detectLanguage(name string, blob *CachedBlob) string {
 	_, err := blob.CountLines()
-	if err == ErrorBinary {
+	if errors.Is(err, ErrorBinary) {
 		return ""
 	}
+
 	lang := enry.GetLanguage(path.Base(name), blob.Data)
+
 	return normalizeLanguage(name, lang)
 }
 

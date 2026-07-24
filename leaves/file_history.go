@@ -23,6 +23,7 @@ import (
 type FileHistoryAnalysis struct {
 	core.NoopMerger
 	core.OneShotMergeProcessor
+
 	files      map[string]*FileHistory
 	lastCommit *object.Commit
 
@@ -79,14 +80,15 @@ func (history *FileHistoryAnalysis) Description() string {
 }
 
 // Configure sets the properties previously published by ListConfigurationOptions().
-func (history *FileHistoryAnalysis) Configure(facts map[string]interface{}) error {
+func (history *FileHistoryAnalysis) Configure(facts map[string]any) error {
 	if l, exists := facts[core.ConfigLogger].(core.Logger); exists {
 		history.l = l
 	}
+
 	return nil
 }
 
-func (*FileHistoryAnalysis) ConfigureUpstream(facts map[string]interface{}) error {
+func (*FileHistoryAnalysis) ConfigureUpstream(facts map[string]any) error {
 	return nil
 }
 
@@ -96,6 +98,7 @@ func (history *FileHistoryAnalysis) Initialize(repository *git.Repository) error
 	history.l = core.NewLogger()
 	history.files = map[string]*FileHistory{}
 	history.OneShotMergeProcessor.Initialize()
+
 	return nil
 }
 
@@ -104,22 +107,26 @@ func (history *FileHistoryAnalysis) Initialize(repository *git.Repository) error
 // Additionally, DependencyCommit is always present there and represents the analysed *object.Commit.
 // This function returns the mapping with analysis results. The keys must be the same as
 // in Provides(). If there was an error, nil is returned.
-func (history *FileHistoryAnalysis) Consume(deps map[string]interface{}) (map[string]interface{}, error) {
+func (history *FileHistoryAnalysis) Consume(deps map[string]any) (map[string]any, error) {
 	history.lastCommit = deps[core.DependencyCommit].(*object.Commit)
 	commit := history.lastCommit.Hash
+
 	changes := deps[items.DependencyTreeChanges].(object.Changes)
 	for _, change := range changes {
 		action, _ := change.Action()
+
 		var fh *FileHistory
 		if action != merkletrie.Delete {
 			fh = history.files[change.To.Name]
 		} else {
 			fh = history.files[change.From.Name]
 		}
+
 		if fh == nil {
 			fh = &FileHistory{}
 			history.files[change.To.Name] = fh
 		}
+
 		switch action {
 		case merkletrie.Insert:
 			fh.Hashes = []plumbing.Hash{commit}
@@ -130,26 +137,32 @@ func (history *FileHistoryAnalysis) Consume(deps map[string]interface{}) (map[st
 			if fromFile := history.files[change.From.Name]; fromFile != nil {
 				hashes = fromFile.Hashes
 			}
+
 			if change.From.Name != change.To.Name {
 				delete(history.files, change.From.Name)
 			}
+
 			hashes = append(hashes, commit)
 			fh.Hashes = hashes
 		}
 	}
+
 	lineStats := deps[items.DependencyLineStats].(map[object.ChangeEntry]items.LineStats)
 	author := deps[identity.DependencyAuthor].(int)
+
 	for changeEntry, stats := range lineStats {
 		file := history.files[changeEntry.Name]
 		if file == nil {
 			file = &FileHistory{}
 			history.files[changeEntry.Name] = file
 		}
+
 		people := file.People
 		if people == nil {
 			people = map[int]items.LineStats{}
 			file.People = people
 		}
+
 		oldStats := people[author]
 		people[author] = items.LineStats{
 			Added:   oldStats.Added + stats.Added,
@@ -157,27 +170,32 @@ func (history *FileHistoryAnalysis) Consume(deps map[string]interface{}) (map[st
 			Changed: oldStats.Changed + stats.Changed,
 		}
 	}
+
 	return nil, nil
 }
 
 // Finalize returns the result of the analysis. Further Consume() calls are not expected.
-func (history *FileHistoryAnalysis) Finalize() interface{} {
+func (history *FileHistoryAnalysis) Finalize() any {
 	files := map[string]FileHistory{}
+
 	fileIter, err := history.lastCommit.Files()
 	if err != nil {
 		history.l.Errorf("Failed to iterate files of %s", history.lastCommit.Hash.String())
 		return err
 	}
+
 	err = fileIter.ForEach(func(file *object.File) error {
 		if fh := history.files[file.Name]; fh != nil {
 			files[file.Name] = *fh
 		}
+
 		return nil
 	})
 	if err != nil {
 		history.l.Errorf("Failed to iterate files of %s", history.lastCommit.Hash.String())
 		return err
 	}
+
 	return FileHistoryResult{Files: files}
 }
 
@@ -188,37 +206,46 @@ func (history *FileHistoryAnalysis) Fork(n int) []core.PipelineItem {
 
 // Serialize converts the analysis result as returned by Finalize() to text or bytes.
 // The text format is YAML and the bytes format is Protocol Buffers.
-func (history *FileHistoryAnalysis) Serialize(result interface{}, binary bool, writer io.Writer) error {
+func (history *FileHistoryAnalysis) Serialize(result any, binary bool, writer io.Writer) error {
 	historyResult := result.(FileHistoryResult)
 	if binary {
 		return history.serializeBinary(&historyResult, writer)
 	}
+
 	history.serializeText(&historyResult, writer)
+
 	return nil
 }
 
 func (history *FileHistoryAnalysis) serializeText(result *FileHistoryResult, writer io.Writer) {
 	keys := make([]string, len(result.Files))
+
 	i := 0
 	for key := range result.Files {
 		keys[i] = key
 		i++
 	}
+
 	sort.Strings(keys)
+
 	for _, key := range keys {
 		fmt.Fprintf(writer, "  - %s:\n", key)
 		file := result.Files[key]
 		hashes := file.Hashes
+
 		strhashes := make([]string, len(hashes))
 		for i, hash := range hashes {
 			strhashes[i] = "\"" + hash.String() + "\""
 		}
+
 		sort.Strings(strhashes)
 		fmt.Fprintf(writer, "    commits: [%s]\n", strings.Join(strhashes, ","))
+
 		strpeople := make([]string, 0, len(file.People))
 		for key, val := range file.People {
 			strpeople = append(strpeople, fmt.Sprintf("%d:[%d,%d,%d]", key, val.Added, val.Removed, val.Changed))
 		}
+
 		sort.Strings(strpeople)
 		fmt.Fprintf(writer, "    people: {%s}\n", strings.Join(strpeople, ","))
 	}
@@ -236,6 +263,7 @@ func (history *FileHistoryAnalysis) serializeBinary(result *FileHistoryResult, w
 		for i, hash := range vals.Hashes {
 			fh.Commits[i] = hash.String()
 		}
+
 		for key, val := range vals.People {
 			fh.ChangesByDeveloper[int32(key)] = &pb.LineStats{
 				Added:   int32(val.Added),
@@ -243,13 +271,17 @@ func (history *FileHistoryAnalysis) serializeBinary(result *FileHistoryResult, w
 				Changed: int32(val.Changed),
 			}
 		}
+
 		message.Files[key] = fh
 	}
+
 	serialized, err := proto.Marshal(&message)
 	if err != nil {
 		return err
 	}
+
 	_, err = writer.Write(serialized)
+
 	return err
 }
 

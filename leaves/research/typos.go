@@ -98,21 +98,24 @@ func (tdb *TyposDatasetBuilder) ListConfigurationOptions() []core.ConfigurationO
 			Default: DefaultMaximumAllowedTypoDistance,
 		},
 	}
+
 	return options[:]
 }
 
 // Configure sets the properties previously published by ListConfigurationOptions().
-func (tdb *TyposDatasetBuilder) Configure(facts map[string]interface{}) error {
+func (tdb *TyposDatasetBuilder) Configure(facts map[string]any) error {
 	if l, exists := facts[core.ConfigLogger].(core.Logger); exists {
 		tdb.l = l
 	}
+
 	if val, exists := facts[ConfigTyposDatasetMaximumAllowedDistance].(int); exists {
 		tdb.MaximumAllowedDistance = val
 	}
+
 	return nil
 }
 
-func (*TyposDatasetBuilder) ConfigureUpstream(facts map[string]interface{}) error {
+func (*TyposDatasetBuilder) ConfigureUpstream(facts map[string]any) error {
 	return nil
 }
 
@@ -133,9 +136,11 @@ func (tdb *TyposDatasetBuilder) Initialize(repository *git.Repository) error {
 	if tdb.MaximumAllowedDistance <= 0 {
 		tdb.MaximumAllowedDistance = DefaultMaximumAllowedTypoDistance
 	}
+
 	tdb.lcontext = &levenshtein.Context{}
 	tdb.remote = core.GetSensibleRemote(repository)
 	tdb.extractor = ast_items.NewTreeSitterExtractor()
+
 	return nil
 }
 
@@ -146,15 +151,18 @@ type candidate struct {
 
 func collectIdentifiersByLine(nodes []ast_items.Node, focused map[int]bool) map[int][]string {
 	result := map[int][]string{}
+
 	for _, node := range nodes {
 		if node.Name == "" {
 			continue
 		}
+
 		line := node.StartLine - 1
 		if focused[line] {
 			result[line] = append(result[line], node.Name)
 		}
 	}
+
 	return result
 }
 
@@ -163,32 +171,39 @@ func collectIdentifiersByLine(nodes []ast_items.Node, focused map[int]bool) map[
 // Additionally, DependencyCommit is always present there and represents the analysed *object.Commit.
 // This function returns the mapping with analysis results. The keys must be the same as
 // in Provides(). If there was an error, nil is returned.
-func (tdb *TyposDatasetBuilder) Consume(deps map[string]interface{}) (map[string]interface{}, error) {
+func (tdb *TyposDatasetBuilder) Consume(deps map[string]any) (map[string]any, error) {
 	// Skip merge commits
 	if isMerge, exists := deps[core.DependencyIsMerge].(bool); exists && isMerge {
 		return nil, nil
 	}
+
 	commit := deps[core.DependencyCommit].(*object.Commit).Hash
 	cache := deps[items.DependencyBlobCache].(map[plumbing.Hash]*items.CachedBlob)
 	diffs := deps[items.DependencyFileDiff].(map[string]items.FileDiffData)
+
 	changes := deps[items.DependencyTreeChanges].(object.Changes)
 	for _, change := range changes {
 		action, err := change.Action()
 		if err != nil {
 			return nil, err
 		}
+
 		if action != merkletrie.Modify {
 			continue
 		}
+
 		before := cache[change.From.TreeEntry.Hash]
+
 		after := cache[change.To.TreeEntry.Hash]
 		if before == nil || after == nil {
 			continue
 		}
+
 		diff, exists := diffs[change.To.Name]
 		if !exists {
 			continue
 		}
+
 		linesBefore := bytes.Split(before.Data, []byte{'\n'})
 		linesAfter := bytes.Split(after.Data, []byte{'\n'})
 		var lineNumBefore, lineNumAfter int
@@ -196,6 +211,7 @@ func (tdb *TyposDatasetBuilder) Consume(deps map[string]interface{}) (map[string
 		focusedLinesBefore := map[int]bool{}
 		focusedLinesAfter := map[int]bool{}
 		removedSize := 0
+
 		for _, edit := range diff.Diffs {
 			size := utf8.RuneCountInString(edit.Text)
 			switch edit.Type {
@@ -204,12 +220,14 @@ func (tdb *TyposDatasetBuilder) Consume(deps map[string]interface{}) (map[string
 				removedSize = size
 			case diffmatchpatch.DiffInsert:
 				if size == removedSize {
-					for i := 0; i < size; i++ {
+					for i := range size {
 						lb := lineNumBefore - size + i
+
 						la := lineNumAfter + i
 						if lb < 0 || lb >= len(linesBefore) || la < 0 || la >= len(linesAfter) {
 							continue
 						}
+
 						dist := tdb.lcontext.Distance(string(linesBefore[lb]), string(linesAfter[la]))
 						if dist <= tdb.MaximumAllowedDistance {
 							candidates = append(candidates, candidate{lb, la})
@@ -218,6 +236,7 @@ func (tdb *TyposDatasetBuilder) Consume(deps map[string]interface{}) (map[string
 						}
 					}
 				}
+
 				lineNumAfter += size
 				removedSize = 0
 			case diffmatchpatch.DiffEqual:
@@ -226,6 +245,7 @@ func (tdb *TyposDatasetBuilder) Consume(deps map[string]interface{}) (map[string
 				removedSize = 0
 			}
 		}
+
 		if len(candidates) == 0 {
 			continue
 		}
@@ -234,18 +254,24 @@ func (tdb *TyposDatasetBuilder) Consume(deps map[string]interface{}) (map[string
 		if err != nil {
 			tdb.l.Warnf("repo %s commit %s file %s failed to parse before AST: %v",
 				tdb.remote, commit.String(), change.From.Name, err)
+
 			continue
 		}
+
 		afterIdentifiers, err := tdb.extractor.ExtractIdentifiers(change.To.Name, after.Data)
 		if err != nil {
 			tdb.l.Warnf("repo %s commit %s file %s failed to parse after AST: %v",
 				tdb.remote, commit.String(), change.To.Name, err)
+
 			continue
 		}
+
 		removedIdentifiers := collectIdentifiersByLine(beforeIdentifiers, focusedLinesBefore)
 		addedIdentifiers := collectIdentifiersByLine(afterIdentifiers, focusedLinesAfter)
+
 		for _, c := range candidates {
 			idsBefore := removedIdentifiers[c.Before]
+
 			idsAfter := addedIdentifiers[c.After]
 			if len(idsBefore) == 1 && len(idsAfter) == 1 && idsBefore[0] != idsAfter[0] {
 				tdb.typos = append(tdb.typos, Typo{
@@ -258,21 +284,25 @@ func (tdb *TyposDatasetBuilder) Consume(deps map[string]interface{}) (map[string
 			}
 		}
 	}
+
 	return nil, nil
 }
 
 // Finalize returns the result of the analysis. Further Consume() calls are not expected.
-func (tdb *TyposDatasetBuilder) Finalize() interface{} {
+func (tdb *TyposDatasetBuilder) Finalize() any {
 	// deduplicate
 	typos := make([]Typo, 0, len(tdb.typos))
 	pairs := map[string]bool{}
+
 	for _, t := range tdb.typos {
 		id := t.Wrong + "|" + t.Correct
 		if _, exists := pairs[id]; !exists {
 			pairs[id] = true
+
 			typos = append(typos, t)
 		}
 	}
+
 	return TyposResult{Typos: typos}
 }
 
@@ -283,12 +313,14 @@ func (tdb *TyposDatasetBuilder) Fork(n int) []core.PipelineItem {
 
 // Serialize converts the analysis result as returned by Finalize() to text or bytes.
 // The text format is YAML and the bytes format is Protocol Buffers.
-func (tdb *TyposDatasetBuilder) Serialize(result interface{}, binary bool, writer io.Writer) error {
+func (tdb *TyposDatasetBuilder) Serialize(result any, binary bool, writer io.Writer) error {
 	commitsResult := result.(TyposResult)
 	if binary {
 		return tdb.serializeBinary(&commitsResult, writer)
 	}
+
 	tdb.serializeText(&commitsResult, writer)
+
 	return nil
 }
 
@@ -304,6 +336,7 @@ func (tdb *TyposDatasetBuilder) serializeText(result *TyposResult, writer io.Wri
 
 func (tdb *TyposDatasetBuilder) serializeBinary(result *TyposResult, writer io.Writer) error {
 	message := pb.TyposDataset{}
+
 	message.Typos = make([]*pb.Typo, len(result.Typos))
 	for i, t := range result.Typos {
 		message.Typos[i] = &pb.Typo{
@@ -314,11 +347,14 @@ func (tdb *TyposDatasetBuilder) serializeBinary(result *TyposResult, writer io.W
 			Line:    int32(t.Line),
 		}
 	}
+
 	serialized, err := proto.Marshal(&message)
 	if err != nil {
 		return err
 	}
+
 	_, err = writer.Write(serialized)
+
 	return err
 }
 

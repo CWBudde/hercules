@@ -16,7 +16,7 @@ import (
 func TestOwnershipConcentrationMeta(t *testing.T) {
 	oc := OwnershipConcentrationAnalysis{}
 	assert.Equal(t, "OwnershipConcentration", oc.Name())
-	assert.Len(t, oc.Provides(), 0)
+	assert.Empty(t, oc.Provides())
 	assert.Contains(t, oc.Requires(), identity.DependencyAuthor)
 	assert.Contains(t, oc.Requires(), items.DependencyTick)
 	assert.Equal(t, "ownership-concentration", oc.Flag())
@@ -40,20 +40,20 @@ func TestOwnershipConcentrationRegistration(t *testing.T) {
 
 func TestOwnershipConcentrationConfigure(t *testing.T) {
 	oc := OwnershipConcentrationAnalysis{}
-	facts := map[string]interface{}{}
+	facts := map[string]any{}
 	facts[identity.FactIdentityDetectorReversedPeopleDict] = []string{"Alice", "Bob"}
 	facts[items.FactTickSize] = 24 * time.Hour
 	logger := core.NewLogger()
 	facts[core.ConfigLogger] = logger
 
-	assert.Nil(t, oc.Configure(facts))
+	assert.NoError(t, oc.Configure(facts))
 	assert.Equal(t, []string{"Alice", "Bob"}, oc.reversedPeopleDict)
 	assert.Equal(t, 24*time.Hour, oc.tickSize)
 }
 
 func TestOwnershipConcentrationInitialize(t *testing.T) {
 	oc := OwnershipConcentrationAnalysis{}
-	assert.Nil(t, oc.Initialize(test.Repository))
+	assert.NoError(t, oc.Initialize(test.Repository))
 	assert.NotNil(t, oc.snapshots)
 	assert.Equal(t, -1, oc.lastTick)
 }
@@ -195,7 +195,7 @@ func TestOwnershipConcentrationFinalize(t *testing.T) {
 	oc := OwnershipConcentrationAnalysis{}
 	oc.reversedPeopleDict = []string{"Alice", "Bob"}
 	oc.tickSize = 24 * time.Hour
-	assert.Nil(t, oc.Initialize(test.Repository))
+	assert.NoError(t, oc.Initialize(test.Repository))
 
 	oc.snapshots[0] = &OwnershipConcentrationSnapshot{
 		Gini:        0.25,
@@ -231,7 +231,7 @@ func TestOwnershipConcentrationSerializeText(t *testing.T) {
 
 	var buf bytes.Buffer
 	err := oc.Serialize(result, false, &buf)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	output := buf.String()
 	assert.Contains(t, output, "ownership_concentration:")
@@ -261,11 +261,11 @@ func TestOwnershipConcentrationSerializeBinaryRoundtrip(t *testing.T) {
 
 	var buf bytes.Buffer
 	err := oc.Serialize(result, true, &buf)
-	assert.Nil(t, err)
-	assert.Greater(t, buf.Len(), 0)
+	assert.NoError(t, err)
+	assert.Positive(t, buf.Len())
 
 	rawResult2, err := oc.Deserialize(buf.Bytes())
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	result2 := rawResult2.(OwnershipConcentrationResult)
 
 	assert.Equal(t, result.reversedPeopleDict, result2.reversedPeopleDict)

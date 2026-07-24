@@ -23,7 +23,7 @@ func fixtureExtractor() *Extractor {
 func TestExtractorConfigureInitialize(t *testing.T) {
 	ex := fixtureExtractor()
 	assert.Equal(t, runtime.NumCPU(), ex.Goroutines)
-	facts := map[string]interface{}{}
+	facts := map[string]any{}
 	facts[ConfigImportsGoroutines] = 7
 	facts[ConfigMaxFileSize] = 8
 	assert.NoError(t, ex.Configure(facts))
@@ -39,25 +39,25 @@ func TestExtractorConfigureInitialize(t *testing.T) {
 
 func TestExtractorMetadata(t *testing.T) {
 	ex := fixtureExtractor()
-	assert.Equal(t, ex.Name(), "Imports")
-	assert.Equal(t, len(ex.Provides()), 1)
-	assert.Equal(t, ex.Provides()[0], DependencyImports)
+	assert.Equal(t, "Imports", ex.Name())
+	assert.Len(t, ex.Provides(), 1)
+	assert.Equal(t, DependencyImports, ex.Provides()[0])
 	assert.Equal(t, []string{plumbing.DependencyTreeChanges, plumbing.DependencyBlobCache}, ex.Requires())
 	opts := ex.ListConfigurationOptions()
 	assert.Len(t, opts, 2)
-	assert.Equal(t, opts[0].Name, ConfigImportsGoroutines)
+	assert.Equal(t, ConfigImportsGoroutines, opts[0].Name)
 	assert.Equal(t, opts[0].Default.(int), runtime.NumCPU())
-	assert.Equal(t, opts[1].Name, ConfigMaxFileSize)
-	assert.Equal(t, opts[1].Default.(int), DefaultMaxFileSize)
+	assert.Equal(t, ConfigMaxFileSize, opts[1].Name)
+	assert.Equal(t, DefaultMaxFileSize, opts[1].Default.(int))
 }
 
 func TestExtractorRegistration(t *testing.T) {
 	summoned := core.Registry.Summon((&Extractor{}).Name())
 	assert.Len(t, summoned, 1)
-	assert.Equal(t, summoned[0].Name(), "Imports")
+	assert.Equal(t, "Imports", summoned[0].Name())
 	summoned = core.Registry.Summon((&Extractor{}).Provides()[0])
 	assert.Len(t, summoned, 1)
-	assert.Equal(t, summoned[0].Name(), "Imports")
+	assert.Equal(t, "Imports", summoned[0].Name())
 }
 
 func TestExtractorConsumeModification(t *testing.T) {
@@ -88,7 +88,7 @@ func TestExtractorConsumeModification(t *testing.T) {
 			Hash: gitplumbing.NewHash("c872b8d2291a5224e2c9f6edd7f46039b96b4742"),
 		},
 	}}
-	deps := map[string]interface{}{}
+	deps := map[string]any{}
 	deps[core.DependencyCommit] = commit
 	deps[plumbing.DependencyTreeChanges] = changes
 	cache := &plumbing.BlobCache{}
@@ -98,7 +98,7 @@ func TestExtractorConsumeModification(t *testing.T) {
 	deps[plumbing.DependencyBlobCache] = blobs[plumbing.DependencyBlobCache]
 	result, err := fixtureExtractor().Consume(deps)
 	assert.NoError(t, err)
-	assert.Equal(t, len(result), 1)
+	assert.Len(t, result, 1)
 	exIface, exists := result[DependencyImports]
 	assert.True(t, exists)
 	ex := exIface.(map[gitplumbing.Hash]lang.File)

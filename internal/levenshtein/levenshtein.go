@@ -14,6 +14,7 @@ func (c *Context) getIntSlice(l int) []int {
 	if cap(c.intSlice) < l {
 		c.intSlice = make([]int, l)
 	}
+
 	return c.intSlice[:l]
 }
 
@@ -44,17 +45,19 @@ func (c *Context) Distance(str1, str2 string) int {
 		column[i] = i
 	}
 
-	for x := 0; x < lenS2; x++ {
+	for x := range lenS2 {
 		s2Rune := s2[x]
 		column[0] = x + 1
 		lastdiag := x
 
-		for y := 0; y < lenS1; y++ {
+		for y := range lenS1 {
 			olddiag := column[y+1]
+
 			cost := 0
 			if s1[y] != s2Rune {
 				cost = 1
 			}
+
 			column[y+1] = min(
 				column[y+1]+1,
 				column[y]+1,
@@ -77,5 +80,6 @@ func min(a, b, c int) int {
 			return b
 		}
 	}
+
 	return c
 }

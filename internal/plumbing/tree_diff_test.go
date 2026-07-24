@@ -21,14 +21,14 @@ func fixtureTreeDiff() *TreeDiff {
 
 func TestTreeDiffMeta(t *testing.T) {
 	td := fixtureTreeDiff()
-	assert.Equal(t, td.Name(), "TreeDiff")
-	assert.Equal(t, len(td.Requires()), 0)
-	assert.Equal(t, len(td.Provides()), 1)
-	assert.Equal(t, td.Provides()[0], DependencyTreeChanges)
+	assert.Equal(t, "TreeDiff", td.Name())
+	assert.Empty(t, td.Requires())
+	assert.Len(t, td.Provides(), 1)
+	assert.Equal(t, DependencyTreeChanges, td.Provides()[0])
 	opts := td.ListConfigurationOptions()
 	assert.Len(t, opts, 4)
 	logger := core.NewLogger()
-	assert.NoError(t, td.Configure(map[string]interface{}{
+	assert.NoError(t, td.Configure(map[string]any{
 		core.ConfigLogger: logger,
 	}))
 	assert.Equal(t, logger, td.l)
@@ -36,32 +36,32 @@ func TestTreeDiffMeta(t *testing.T) {
 
 func TestTreeDiffConfigure(t *testing.T) {
 	td := fixtureTreeDiff()
-	facts := map[string]interface{}{
+	facts := map[string]any{
 		ConfigTreeDiffEnableBlacklist:     true,
 		ConfigTreeDiffBlacklistedPrefixes: []string{"vendor"},
 		ConfigTreeDiffLanguages:           []string{"go"},
 		ConfigTreeDiffFilterRegexp:        "_.*",
 	}
-	assert.Nil(t, td.Configure(facts))
-	assert.Equal(t, td.Languages, map[string]bool{"go": true})
-	assert.Equal(t, td.SkipFiles, []string{"vendor"})
-	assert.Equal(t, td.NameFilter.String(), "_.*")
+	assert.NoError(t, td.Configure(facts))
+	assert.Equal(t, map[string]bool{"go": true}, td.Languages)
+	assert.Equal(t, []string{"vendor"}, td.SkipFiles)
+	assert.Equal(t, "_.*", td.NameFilter.String())
 	delete(facts, ConfigTreeDiffLanguages)
 	td.Languages = nil
-	assert.Nil(t, td.Configure(facts))
-	assert.Equal(t, td.Languages, map[string]bool{"all": true})
+	assert.NoError(t, td.Configure(facts))
+	assert.Equal(t, map[string]bool{"all": true}, td.Languages)
 	td.SkipFiles = []string{"test"}
 	delete(facts, ConfigTreeDiffEnableBlacklist)
-	assert.Nil(t, td.Configure(facts))
-	assert.Equal(t, td.SkipFiles, []string{"test"})
+	assert.NoError(t, td.Configure(facts))
+	assert.Equal(t, []string{"test"}, td.SkipFiles)
 }
 
 func TestTreeDiffRegistration(t *testing.T) {
 	summoned := core.Registry.Summon((&TreeDiff{}).Name())
 	assert.Len(t, summoned, 1)
-	assert.Equal(t, summoned[0].Name(), "TreeDiff")
+	assert.Equal(t, "TreeDiff", summoned[0].Name())
 	summoned = core.Registry.Summon((&TreeDiff{}).Provides()[0])
-	assert.True(t, len(summoned) >= 1)
+	assert.GreaterOrEqual(t, len(summoned), 1)
 	matched := false
 	for _, tp := range summoned {
 		matched = matched || tp.Name() == "TreeDiff"
@@ -74,7 +74,7 @@ func TestTreeDiffConsume(t *testing.T) {
 	commit, _ := test.Repository.CommitObject(plumbing.NewHash(
 		"2b1ed978194a94edeabbca6de7ff3b5771d4d665",
 	))
-	deps := map[string]interface{}{}
+	deps := map[string]any{}
 	deps[core.DependencyCommit] = commit
 	prevCommit, _ := test.Repository.CommitObject(plumbing.NewHash(
 		"fbe766ffdc3f87f6affddc051c6f8b419beea6a2",
@@ -82,9 +82,9 @@ func TestTreeDiffConsume(t *testing.T) {
 	td.previousTree, _ = prevCommit.Tree()
 	res, err := td.Consume(deps)
 	assert.NoError(t, err)
-	assert.Equal(t, len(res), 1)
+	assert.Len(t, res, 1)
 	changes := res[DependencyTreeChanges].(object.Changes)
-	assert.Equal(t, len(changes), 12)
+	assert.Len(t, changes, 12)
 	baseline := map[string]merkletrie.Action{
 		"analyser.go":               merkletrie.Delete,
 		"cmd/hercules/main.go":      merkletrie.Modify,
@@ -117,17 +117,17 @@ func TestTreeDiffConsumeFirst(t *testing.T) {
 	commit, _ := test.Repository.CommitObject(plumbing.NewHash(
 		"2b1ed978194a94edeabbca6de7ff3b5771d4d665",
 	))
-	deps := map[string]interface{}{}
+	deps := map[string]any{}
 	deps[core.DependencyCommit] = commit
 	res, err := td.Consume(deps)
 	assert.NoError(t, err)
-	assert.Equal(t, len(res), 1)
+	assert.Len(t, res, 1)
 	changes := res[DependencyTreeChanges].(object.Changes)
-	assert.Equal(t, len(changes), 21)
+	assert.Len(t, changes, 21)
 	for _, change := range changes {
 		action, err := change.Action()
 		assert.NoError(t, err)
-		assert.Equal(t, action, merkletrie.Insert)
+		assert.Equal(t, merkletrie.Insert, action)
 	}
 }
 
@@ -137,11 +137,11 @@ func TestTreeDiffBadCommit(t *testing.T) {
 		"2b1ed978194a94edeabbca6de7ff3b5771d4d665",
 	))
 	commit.TreeHash = plumbing.NewHash("0000000000000000000000000000000000000000")
-	deps := map[string]interface{}{}
+	deps := map[string]any{}
 	deps[core.DependencyCommit] = commit
 	res, err := td.Consume(deps)
 	assert.Nil(t, res)
-	assert.NotNil(t, err)
+	assert.Error(t, err)
 }
 
 func TestTreeDiffConsumeSkip(t *testing.T) {
@@ -151,7 +151,7 @@ func TestTreeDiffConsumeSkip(t *testing.T) {
 	commit, _ := test.Repository.CommitObject(plumbing.NewHash(
 		"aefdedf7cafa6ee110bae9a3910bf5088fdeb5a9",
 	))
-	deps := map[string]interface{}{}
+	deps := map[string]any{}
 	deps[core.DependencyCommit] = commit
 	prevCommit, _ := test.Repository.CommitObject(plumbing.NewHash(
 		"1e076dc56989bc6aa1ef5f55901696e9e01423d4",
@@ -159,22 +159,22 @@ func TestTreeDiffConsumeSkip(t *testing.T) {
 	td.previousTree, _ = prevCommit.Tree()
 	res, err := td.Consume(deps)
 	assert.NoError(t, err)
-	assert.Equal(t, len(res), 1)
+	assert.Len(t, res, 1)
 	changes := res[DependencyTreeChanges].(object.Changes)
-	assert.Equal(t, 37, len(changes))
+	assert.Len(t, changes, 37)
 
 	// consume with skipping
 	td = fixtureTreeDiff()
 	td.previousTree, _ = prevCommit.Tree()
-	td.Configure(map[string]interface{}{
+	td.Configure(map[string]any{
 		ConfigTreeDiffEnableBlacklist:     true,
 		ConfigTreeDiffBlacklistedPrefixes: []string{"vendor/"},
 	})
 	res, err = td.Consume(deps)
 	assert.NoError(t, err)
-	assert.Equal(t, len(res), 1)
+	assert.Len(t, res, 1)
 	changes = res[DependencyTreeChanges].(object.Changes)
-	assert.Equal(t, 31, len(changes))
+	assert.Len(t, changes, 31)
 }
 
 func TestTreeDiffConsumeOnlyFilesThatMatchFilter(t *testing.T) {
@@ -184,7 +184,7 @@ func TestTreeDiffConsumeOnlyFilesThatMatchFilter(t *testing.T) {
 	commit, _ := test.Repository.CommitObject(plumbing.NewHash(
 		"aefdedf7cafa6ee110bae9a3910bf5088fdeb5a9",
 	))
-	deps := map[string]interface{}{}
+	deps := map[string]any{}
 	deps[core.DependencyCommit] = commit
 	prevCommit, _ := test.Repository.CommitObject(plumbing.NewHash(
 		"1e076dc56989bc6aa1ef5f55901696e9e01423d4",
@@ -192,73 +192,73 @@ func TestTreeDiffConsumeOnlyFilesThatMatchFilter(t *testing.T) {
 	td.previousTree, _ = prevCommit.Tree()
 	res, err := td.Consume(deps)
 	assert.NoError(t, err)
-	assert.Equal(t, len(res), 1)
+	assert.Len(t, res, 1)
 	changes := res[DependencyTreeChanges].(object.Changes)
-	assert.Equal(t, 37, len(changes))
+	assert.Len(t, changes, 37)
 
 	// consume with skipping
 	td = fixtureTreeDiff()
 	td.previousTree, _ = prevCommit.Tree()
-	td.Configure(map[string]interface{}{
+	td.Configure(map[string]any{
 		ConfigTreeDiffFilterRegexp: ".*go",
 	})
 	res, err = td.Consume(deps)
 	assert.NoError(t, err)
-	assert.Equal(t, len(res), 1)
+	assert.Len(t, res, 1)
 	changes = res[DependencyTreeChanges].(object.Changes)
-	assert.Equal(t, 27, len(changes))
+	assert.Len(t, changes, 27)
 }
 
 func TestTreeDiffConsumeLanguageFilterFirst(t *testing.T) {
 	td := fixtureTreeDiff()
-	td.Configure(map[string]interface{}{ConfigTreeDiffLanguages: []string{"Go"}})
+	td.Configure(map[string]any{ConfigTreeDiffLanguages: []string{"Go"}})
 	commit, _ := test.Repository.CommitObject(plumbing.NewHash(
 		"fbe766ffdc3f87f6affddc051c6f8b419beea6a2",
 	))
-	deps := map[string]interface{}{}
+	deps := map[string]any{}
 	deps[core.DependencyCommit] = commit
 	res, err := td.Consume(deps)
 	assert.NoError(t, err)
-	assert.Equal(t, len(res), 1)
+	assert.Len(t, res, 1)
 	changes := res[DependencyTreeChanges].(object.Changes)
-	assert.Equal(t, len(changes), 6)
-	assert.Equal(t, changes[0].To.Name, "analyser.go")
-	assert.Equal(t, changes[1].To.Name, "cmd/hercules/main.go")
-	assert.Equal(t, changes[2].To.Name, "doc.go")
-	assert.Equal(t, changes[3].To.Name, "file.go")
-	assert.Equal(t, changes[4].To.Name, "file_test.go")
-	assert.Equal(t, changes[5].To.Name, "rbtree.go")
+	assert.Len(t, changes, 6)
+	assert.Equal(t, "analyser.go", changes[0].To.Name)
+	assert.Equal(t, "cmd/hercules/main.go", changes[1].To.Name)
+	assert.Equal(t, "doc.go", changes[2].To.Name)
+	assert.Equal(t, "file.go", changes[3].To.Name)
+	assert.Equal(t, "file_test.go", changes[4].To.Name)
+	assert.Equal(t, "rbtree.go", changes[5].To.Name)
 }
 
 func TestTreeDiffConsumeLanguageFilter(t *testing.T) {
 	td := fixtureTreeDiff()
-	assert.NoError(t, td.Configure(map[string]interface{}{ConfigTreeDiffLanguages: []string{"Python"}}))
+	assert.NoError(t, td.Configure(map[string]any{ConfigTreeDiffLanguages: []string{"Python"}}))
 	commit, _ := test.Repository.CommitObject(plumbing.NewHash(
 		"e89c1d10fb31e32668ad905eb59dc44d7a4a021e",
 	))
-	deps := map[string]interface{}{}
+	deps := map[string]any{}
 	deps[core.DependencyCommit] = commit
 	res, err := td.Consume(deps)
 	assert.NoError(t, err)
-	assert.Equal(t, len(res), 1)
+	assert.Len(t, res, 1)
 	commit, _ = test.Repository.CommitObject(plumbing.NewHash(
 		"fbe766ffdc3f87f6affddc051c6f8b419beea6a2",
 	))
 	deps[core.DependencyCommit] = commit
 	res, err = td.Consume(deps)
 	assert.NoError(t, err)
-	assert.Equal(t, len(res), 1)
+	assert.Len(t, res, 1)
 	changes := res[DependencyTreeChanges].(object.Changes)
-	assert.Equal(t, len(changes), 1)
-	assert.Equal(t, changes[0].To.Name, "labours.py")
+	assert.Len(t, changes, 1)
+	assert.Equal(t, "labours.py", changes[0].To.Name)
 
 	// lowercase
-	assert.NoError(t, td.Configure(map[string]interface{}{ConfigTreeDiffLanguages: []string{"python"}}))
+	assert.NoError(t, td.Configure(map[string]any{ConfigTreeDiffLanguages: []string{"python"}}))
 	assert.NoError(t, err)
-	assert.Equal(t, len(res), 1)
+	assert.Len(t, res, 1)
 	changes = res[DependencyTreeChanges].(object.Changes)
-	assert.Equal(t, len(changes), 1)
-	assert.Equal(t, changes[0].To.Name, "labours.py")
+	assert.Len(t, changes, 1)
+	assert.Equal(t, "labours.py", changes[0].To.Name)
 }
 
 func TestTreeDiffFork(t *testing.T) {
@@ -267,7 +267,7 @@ func TestTreeDiffFork(t *testing.T) {
 	clones := td1.Fork(1)
 	assert.Len(t, clones, 1)
 	td2 := clones[0].(*TreeDiff)
-	assert.False(t, td1 == td2)
+	assert.NotSame(t, td1, td2)
 	assert.Equal(t, td1.SkipFiles, td2.SkipFiles)
 	assert.Equal(t, td1.previousTree, td2.previousTree)
 	td1.Merge([]core.PipelineItem{td2})
@@ -301,12 +301,12 @@ func TestTreeDiffConsumeEnryFilter(t *testing.T) {
 
 	newDiffs := td.filterDiffs(diffs)
 	assert.Len(t, newDiffs, 2)
-	assert.NoError(t, td.Configure(map[string]interface{}{
+	assert.NoError(t, td.Configure(map[string]any{
 		ConfigTreeDiffEnableBlacklist:     true,
 		ConfigTreeDiffBlacklistedPrefixes: []string{"whatever"},
 	}))
 	newDiffs = td.filterDiffs(diffs)
-	assert.Len(t, newDiffs, 0)
+	assert.Empty(t, newDiffs)
 }
 
 func TestTreeDiffCheckLanguageEmpty(t *testing.T) {

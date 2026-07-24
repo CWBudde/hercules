@@ -10,7 +10,7 @@ import (
 func TestLogger(t *testing.T) {
 	var (
 		f = "%s-%s"
-		v = []interface{}{"hello", "world"}
+		v = []any{"hello", "world"}
 		l = NewLogger()
 
 		iBuf bytes.Buffer

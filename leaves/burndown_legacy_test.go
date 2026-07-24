@@ -3,7 +3,6 @@ package leaves
 import (
 	"bytes"
 	"errors"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"path"
@@ -27,8 +26,8 @@ import (
 
 func TestLegacyBurndownMeta(t *testing.T) {
 	bd := LegacyBurndownAnalysis{}
-	assert.Equal(t, bd.Name(), "LegacyBurndown")
-	assert.Len(t, bd.Provides(), 0)
+	assert.Equal(t, "LegacyBurndown", bd.Name())
+	assert.Empty(t, bd.Provides())
 	required := [...]string{
 		items.DependencyFileDiff, items.DependencyTreeChanges, items.DependencyBlobCache,
 		items.DependencyTick, identity.DependencyAuthor,
@@ -48,9 +47,9 @@ func TestLegacyBurndownMeta(t *testing.T) {
 		}
 	}
 	assert.Len(t, opts, matches)
-	assert.Equal(t, bd.Flag(), "legacy-burndown")
+	assert.Equal(t, "legacy-burndown", bd.Flag())
 	logger := core.NewLogger()
-	assert.NoError(t, bd.Configure(map[string]interface{}{
+	assert.NoError(t, bd.Configure(map[string]any{
 		core.ConfigLogger: logger,
 	}))
 	assert.Equal(t, logger, bd.l)
@@ -58,7 +57,7 @@ func TestLegacyBurndownMeta(t *testing.T) {
 
 func TestLegacyBurndownConfigure(t *testing.T) {
 	bd := LegacyBurndownAnalysis{}
-	facts := map[string]interface{}{}
+	facts := map[string]any{}
 	facts[ConfigBurndownGranularity] = 100
 	facts[ConfigBurndownSampling] = 200
 	facts[ConfigBurndownTrackFiles] = true
@@ -69,34 +68,34 @@ func TestLegacyBurndownConfigure(t *testing.T) {
 	facts[ConfigLegacyBurndownHibernationDirectory] = "xxx"
 	facts[items.FactTickSize] = 24 * time.Hour
 	facts[identity.FactIdentityDetectorReversedPeopleDict] = bd.Requires()
-	assert.Nil(t, bd.Configure(facts))
-	assert.Equal(t, bd.Granularity, 100)
-	assert.Equal(t, bd.Sampling, 200)
-	assert.Equal(t, bd.TrackFiles, true)
-	assert.Equal(t, bd.PeopleNumber, 5)
-	assert.Equal(t, bd.HibernationThreshold, 100)
+	assert.NoError(t, bd.Configure(facts))
+	assert.Equal(t, 100, bd.Granularity)
+	assert.Equal(t, 200, bd.Sampling)
+	assert.True(t, bd.TrackFiles)
+	assert.Equal(t, 5, bd.PeopleNumber)
+	assert.Equal(t, 100, bd.HibernationThreshold)
 	assert.True(t, bd.HibernationToDisk)
-	assert.Equal(t, bd.HibernationDirectory, "xxx")
-	assert.Equal(t, bd.Debug, true)
-	assert.Equal(t, bd.tickSize, 24*time.Hour)
+	assert.Equal(t, "xxx", bd.HibernationDirectory)
+	assert.True(t, bd.Debug)
+	assert.Equal(t, 24*time.Hour, bd.tickSize)
 	assert.Equal(t, bd.reversedPeopleDict, bd.Requires())
 	facts[ConfigBurndownTrackPeople] = false
-	assert.Nil(t, bd.Configure(facts))
-	assert.Equal(t, bd.PeopleNumber, 0)
-	facts = map[string]interface{}{}
-	assert.Nil(t, bd.Configure(facts))
-	assert.Equal(t, bd.Granularity, 100)
-	assert.Equal(t, bd.Sampling, 200)
-	assert.Equal(t, bd.TrackFiles, true)
-	assert.Equal(t, bd.PeopleNumber, 0)
-	assert.Equal(t, bd.Debug, true)
+	assert.NoError(t, bd.Configure(facts))
+	assert.Equal(t, 0, bd.PeopleNumber)
+	facts = map[string]any{}
+	assert.NoError(t, bd.Configure(facts))
+	assert.Equal(t, 100, bd.Granularity)
+	assert.Equal(t, 200, bd.Sampling)
+	assert.True(t, bd.TrackFiles)
+	assert.Equal(t, 0, bd.PeopleNumber)
+	assert.True(t, bd.Debug)
 	assert.Equal(t, bd.reversedPeopleDict, bd.Requires())
 }
 
 func TestLegacyBurndownRegistration(t *testing.T) {
 	summoned := core.Registry.Summon((&LegacyBurndownAnalysis{}).Name())
 	assert.Len(t, summoned, 1)
-	assert.Equal(t, summoned[0].Name(), "LegacyBurndown")
+	assert.Equal(t, "LegacyBurndown", summoned[0].Name())
 	leaves := core.Registry.GetLeaves()
 	matched := false
 	for _, tp := range leaves {
@@ -113,24 +112,24 @@ func TestLegacyBurndownInitialize(t *testing.T) {
 	bd.Sampling = -10
 	bd.Granularity = DefaultBurndownGranularity
 	bd.HibernationThreshold = 10
-	assert.Nil(t, bd.Initialize(test.Repository))
-	assert.Equal(t, bd.Sampling, DefaultBurndownGranularity)
-	assert.Equal(t, bd.Granularity, DefaultBurndownGranularity)
-	assert.Equal(t, bd.fileAllocator.HibernationThreshold, 10)
+	assert.NoError(t, bd.Initialize(test.Repository))
+	assert.Equal(t, DefaultBurndownGranularity, bd.Sampling)
+	assert.Equal(t, DefaultBurndownGranularity, bd.Granularity)
+	assert.Equal(t, 10, bd.fileAllocator.HibernationThreshold)
 	bd.Sampling = 0
 	bd.Granularity = DefaultBurndownGranularity - 1
-	assert.Nil(t, bd.Initialize(test.Repository))
-	assert.Equal(t, bd.Sampling, DefaultBurndownGranularity-1)
-	assert.Equal(t, bd.Granularity, DefaultBurndownGranularity-1)
+	assert.NoError(t, bd.Initialize(test.Repository))
+	assert.Equal(t, DefaultBurndownGranularity-1, bd.Sampling)
+	assert.Equal(t, DefaultBurndownGranularity-1, bd.Granularity)
 	bd.Sampling = DefaultBurndownGranularity - 1
 	bd.Granularity = -10
-	assert.Nil(t, bd.Initialize(test.Repository))
-	assert.Equal(t, bd.Sampling, DefaultBurndownGranularity-1)
-	assert.Equal(t, bd.Granularity, DefaultBurndownGranularity)
+	assert.NoError(t, bd.Initialize(test.Repository))
+	assert.Equal(t, DefaultBurndownGranularity-1, bd.Sampling)
+	assert.Equal(t, DefaultBurndownGranularity, bd.Granularity)
 }
 
 func TestLegacyBurndownConsumeFinalize(t *testing.T) {
-	deps := map[string]interface{}{}
+	deps := map[string]any{}
 
 	// stage 1
 	deps[identity.DependencyAuthor] = 0
@@ -190,7 +189,7 @@ func TestLegacyBurndownConsumeFinalize(t *testing.T) {
 	deps[items.DependencyTreeChanges] = changes
 	fd := fixtures.FileDiff()
 	result, err := fd.Consume(deps)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	deps[items.DependencyFileDiff] = result[items.DependencyFileDiff]
 	deps[core.DependencyCommit], _ = test.Repository.CommitObject(plumbing.NewHash(
 		"cce947b98a050c6d356bc6ba95030254914027b1",
@@ -206,12 +205,12 @@ func TestLegacyBurndownConsumeFinalize(t *testing.T) {
 	totalLines := int64(0)
 
 	{
-		assert.Nil(t, bd.Initialize(test.Repository))
+		assert.NoError(t, bd.Initialize(test.Repository))
 
 		result, err = bd.Consume(deps)
 		assert.Nil(t, result)
-		assert.Nil(t, err)
-		assert.Equal(t, bd.previousTick, 0)
+		assert.NoError(t, err)
+		assert.Equal(t, 0, bd.previousTick)
 		assert.Len(t, bd.files, 3)
 
 		expectedFiles := map[string]int64{
@@ -236,7 +235,7 @@ func TestLegacyBurndownConsumeFinalize(t *testing.T) {
 		// assert.Equal(t, bd.globalHistory[0].totalDelete, int64(0))
 
 		assert.Len(t, bd.fileHistories, len(expectedFiles))
-		//for k, v := range expectedFiles {
+		// for k, v := range expectedFiles {
 		//	assert.Equal(t, bd.fileHistories[k][0].totalInsert, v)
 		//	assert.Equal(t, bd.fileHistories[k][0].totalDelete, int64(0))
 		//}
@@ -247,11 +246,11 @@ func TestLegacyBurndownConsumeFinalize(t *testing.T) {
 			Granularity: 30,
 			Sampling:    0,
 		}
-		assert.Nil(t, bd2.Initialize(test.Repository))
+		assert.NoError(t, bd2.Initialize(test.Repository))
 		_, err = bd2.Consume(deps)
-		assert.Nil(t, err)
-		assert.Len(t, bd2.peopleHistories, 0)
-		assert.Len(t, bd2.fileHistories, 0)
+		assert.NoError(t, err)
+		assert.Empty(t, bd2.peopleHistories)
+		assert.Empty(t, bd2.fileHistories)
 	}
 
 	deps[identity.DependencyAuthor] = 1
@@ -325,40 +324,40 @@ func TestLegacyBurndownConsumeFinalize(t *testing.T) {
 	deps[items.DependencyTreeChanges] = changes
 	fd = fixtures.FileDiff()
 	result, err = fd.Consume(deps)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	deps[items.DependencyFileDiff] = result[items.DependencyFileDiff]
 	result, err = bd.Consume(deps)
 	assert.Nil(t, result)
-	assert.Nil(t, err)
-	assert.Equal(t, bd.previousTick, 30)
+	assert.NoError(t, err)
+	assert.Equal(t, 30, bd.previousTick)
 	assert.Len(t, bd.files, 2)
-	assert.Equal(t, bd.files["cmd/hercules/main.go"].Len(), 290)
-	assert.Equal(t, bd.files["burndown.go"].Len(), 543)
+	assert.Equal(t, 290, bd.files["cmd/hercules/main.go"].Len())
+	assert.Equal(t, 543, bd.files["burndown.go"].Len())
 
 	assert.Len(t, bd.peopleHistories, 2)
 	assert.Equal(t, bd.peopleHistories[0][0].deltas[0], totalLines)
 	// assert.Equal(t, bd.peopleHistories[0][0].totalInsert, totalLines)
 	// assert.Equal(t, bd.peopleHistories[0][0].totalDelete, int64(0))
 
-	assert.Equal(t, len(bd.peopleHistories[0][30].deltas), 1)
-	assert.Equal(t, bd.peopleHistories[0][30].deltas[0], int64(-681))
+	assert.Len(t, bd.peopleHistories[0][30].deltas, 1)
+	assert.Equal(t, int64(-681), bd.peopleHistories[0][30].deltas[0])
 	// assert.Equal(t, bd.peopleHistories[0][30].totalInsert, int64(0))
 	// assert.Equal(t, bd.peopleHistories[0][30].totalDelete, int64(-681))
 
-	assert.Equal(t, len(bd.peopleHistories[1][30].deltas), 1)
-	assert.Equal(t, bd.peopleHistories[1][30].deltas[30], int64(369))
+	assert.Len(t, bd.peopleHistories[1][30].deltas, 1)
+	assert.Equal(t, int64(369), bd.peopleHistories[1][30].deltas[30])
 	// assert.Equal(t, bd.peopleHistories[1][30].totalInsert, int64(369))
 	// assert.Equal(t, bd.peopleHistories[1][30].totalDelete, int64(0))
 
 	assert.Len(t, bd.globalHistory, 2)
-	assert.Equal(t, len(bd.globalHistory[0].deltas), 1)
+	assert.Len(t, bd.globalHistory[0].deltas, 1)
 	assert.Equal(t, bd.globalHistory[0].deltas[0], totalLines)
 	// assert.Equal(t, bd.globalHistory[0].totalInsert, totalLines)
 	// assert.Equal(t, bd.globalHistory[0].totalDelete, int64(0))
 
-	assert.Equal(t, len(bd.globalHistory[30].deltas), 2)
-	assert.Equal(t, bd.globalHistory[30].deltas[0], int64(-681))
-	assert.Equal(t, bd.globalHistory[30].deltas[30], int64(369))
+	assert.Len(t, bd.globalHistory[30].deltas, 2)
+	assert.Equal(t, int64(-681), bd.globalHistory[30].deltas[0])
+	assert.Equal(t, int64(369), bd.globalHistory[30].deltas[30])
 	// assert.Equal(t, bd.globalHistory[30].totalInsert, int64(369))
 	// assert.Equal(t, bd.globalHistory[30].totalDelete, int64(-681))
 
@@ -373,35 +372,35 @@ func TestLegacyBurndownConsumeFinalize(t *testing.T) {
 			PeopleMatrix    [][]int64
 	*/
 	assert.Len(t, out.GlobalHistory, 2)
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		assert.Len(t, out.GlobalHistory[i], 2)
 	}
 	assert.Len(t, out.GlobalHistory, 2)
-	assert.Equal(t, out.GlobalHistory[0][0], int64(1145))
-	assert.Equal(t, out.GlobalHistory[0][1], int64(0))
-	assert.Equal(t, out.GlobalHistory[1][0], int64(464))
-	assert.Equal(t, out.GlobalHistory[1][1], int64(369))
+	assert.Equal(t, int64(1145), out.GlobalHistory[0][0])
+	assert.Equal(t, int64(0), out.GlobalHistory[0][1])
+	assert.Equal(t, int64(464), out.GlobalHistory[1][0])
+	assert.Equal(t, int64(369), out.GlobalHistory[1][1])
 	assert.Len(t, out.FileHistories, 2)
 	assert.Len(t, out.FileHistories["cmd/hercules/main.go"], 2)
 	assert.Len(t, out.FileHistories["burndown.go"], 2)
 	assert.Len(t, out.FileHistories["cmd/hercules/main.go"][0], 2)
 	assert.Len(t, out.FileHistories["burndown.go"][0], 2)
 	assert.Len(t, out.FileOwnership, 2)
-	assert.Equal(t, out.FileOwnership["cmd/hercules/main.go"], map[int]int{0: 171, 1: 119})
-	assert.Equal(t, out.FileOwnership["burndown.go"], map[int]int{0: 293, 1: 250})
+	assert.Equal(t, map[int]int{0: 171, 1: 119}, out.FileOwnership["cmd/hercules/main.go"])
+	assert.Equal(t, map[int]int{0: 293, 1: 250}, out.FileOwnership["burndown.go"])
 	assert.Len(t, out.PeopleMatrix, 2)
 	assert.Len(t, out.PeopleMatrix[0], 4)
 	assert.Len(t, out.PeopleMatrix[1], 4)
-	assert.Equal(t, out.PeopleMatrix[0][0], int64(1145))
-	assert.Equal(t, out.PeopleMatrix[0][1], int64(0))
-	assert.Equal(t, out.PeopleMatrix[0][2], int64(0))
-	assert.Equal(t, out.PeopleMatrix[0][3], int64(-681))
-	assert.Equal(t, out.PeopleMatrix[1][0], int64(369))
-	assert.Equal(t, out.PeopleMatrix[1][1], int64(0))
-	assert.Equal(t, out.PeopleMatrix[1][2], int64(0))
-	assert.Equal(t, out.PeopleMatrix[1][3], int64(0))
+	assert.Equal(t, int64(1145), out.PeopleMatrix[0][0])
+	assert.Equal(t, int64(0), out.PeopleMatrix[0][1])
+	assert.Equal(t, int64(0), out.PeopleMatrix[0][2])
+	assert.Equal(t, int64(-681), out.PeopleMatrix[0][3])
+	assert.Equal(t, int64(369), out.PeopleMatrix[1][0])
+	assert.Equal(t, int64(0), out.PeopleMatrix[1][1])
+	assert.Equal(t, int64(0), out.PeopleMatrix[1][2])
+	assert.Equal(t, int64(0), out.PeopleMatrix[1][3])
 	assert.Len(t, out.PeopleHistories, 2)
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		assert.Len(t, out.PeopleHistories[i], 2)
 		assert.Len(t, out.PeopleHistories[i][0], 2)
 		assert.Len(t, out.PeopleHistories[i][1], 2)
@@ -409,7 +408,7 @@ func TestLegacyBurndownConsumeFinalize(t *testing.T) {
 }
 
 func TestLegacyBurndownConsumeMergeAuthorMissing(t *testing.T) {
-	deps := map[string]interface{}{}
+	deps := map[string]any{}
 	deps[items.DependencyTick] = 0
 	cache := map[plumbing.Hash]*items.CachedBlob{}
 	AddHash(t, cache, "291286b4ac41952cbd1389fda66420ec03c1a9fe")
@@ -466,7 +465,7 @@ func TestLegacyBurndownConsumeMergeAuthorMissing(t *testing.T) {
 	deps[items.DependencyTreeChanges] = changes
 	fd := fixtures.FileDiff()
 	filediff, err := fd.Consume(deps)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	deps[items.DependencyFileDiff] = filediff[items.DependencyFileDiff]
 	deps[core.DependencyCommit], _ = test.Repository.CommitObject(plumbing.NewHash(
 		"cce947b98a050c6d356bc6ba95030254914027b1",
@@ -474,10 +473,10 @@ func TestLegacyBurndownConsumeMergeAuthorMissing(t *testing.T) {
 
 	// check that we survive merge + missing author
 	bd := LegacyBurndownAnalysis{PeopleNumber: 1}
-	assert.Nil(t, bd.Initialize(test.Repository))
+	assert.NoError(t, bd.Initialize(test.Repository))
 	deps[identity.DependencyAuthor] = 0
 	_, err = bd.Consume(deps)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	AddHash(t, cache, "4cdb0d969cf976f76634d1f348da3a175c9b4501")
 	treeFrom, _ = test.Repository.TreeObject(plumbing.NewHash(
@@ -509,7 +508,7 @@ func TestLegacyBurndownConsumeMergeAuthorMissing(t *testing.T) {
 	}
 	deps[items.DependencyTreeChanges] = changes
 	filediff, err = fd.Consume(deps)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	deps[items.DependencyFileDiff] = filediff[items.DependencyFileDiff]
 	deps[core.DependencyCommit], _ = test.Repository.CommitObject(plumbing.NewHash(
 		"7ef5c47aa79a1b229e3227d9ffe2401dbcbeb22f",
@@ -517,7 +516,7 @@ func TestLegacyBurndownConsumeMergeAuthorMissing(t *testing.T) {
 	deps[identity.DependencyAuthor] = core.AuthorMissing
 	deps[core.DependencyIsMerge] = true
 	_, err = bd.Consume(deps)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	assert.Equal(t, core.AuthorMissing, bd.mergedAuthor)
 }
 
@@ -531,8 +530,8 @@ func bakeBurndownForSerialization(t *testing.T, firstAuthor, secondAuthor int) (
 		TrackFiles:   true,
 		tickSize:     24 * time.Hour,
 	}
-	assert.Nil(t, bd.Initialize(test.Repository))
-	deps := map[string]interface{}{}
+	assert.NoError(t, bd.Initialize(test.Repository))
+	deps := map[string]any{}
 	// stage 1
 	deps[identity.DependencyAuthor] = firstAuthor
 	deps[items.DependencyTick] = 0
@@ -680,8 +679,8 @@ func TestLegacyBurndownSerialize(t *testing.T) {
 	bd := &LegacyBurndownAnalysis{}
 
 	buffer := &bytes.Buffer{}
-	assert.Nil(t, bd.Serialize(out, false, buffer))
-	assert.Equal(t, buffer.String(), `  granularity: 30
+	assert.NoError(t, bd.Serialize(out, false, buffer))
+	assert.Equal(t, `  granularity: 30
   sampling: 30
   tick_size: 86400
   "project": |-
@@ -712,56 +711,56 @@ func TestLegacyBurndownSerialize(t *testing.T) {
   people_interaction: |-
     1145    0    0 -681
      369    0    0    0
-`)
+`, buffer.String())
 	buffer = &bytes.Buffer{}
 	assert.NoError(t, bd.Serialize(out, true, buffer))
 	msg := pb.BurndownAnalysisResults{}
 	assert.NoError(t, proto.Unmarshal(buffer.Bytes(), &msg))
-	assert.Equal(t, msg.TickSize, int64(24*time.Hour))
-	assert.Equal(t, msg.Granularity, int32(30))
-	assert.Equal(t, msg.Sampling, int32(30))
-	assert.Equal(t, msg.Project.Name, "project")
-	assert.Equal(t, msg.Project.NumberOfRows, int32(2))
-	assert.Equal(t, msg.Project.NumberOfColumns, int32(2))
-	assert.Len(t, msg.Project.Rows, 2)
-	assert.Len(t, msg.Project.Rows[0].Columns, 1)
-	assert.Equal(t, msg.Project.Rows[0].Columns[0], uint32(1145))
-	assert.Len(t, msg.Project.Rows[1].Columns, 2)
-	assert.Equal(t, msg.Project.Rows[1].Columns[0], uint32(464))
-	assert.Equal(t, msg.Project.Rows[1].Columns[1], uint32(369))
-	assert.Len(t, msg.Files, 2)
-	assert.Equal(t, msg.Files[0].Name, "burndown.go")
-	assert.Equal(t, msg.Files[1].Name, "cmd/hercules/main.go")
-	assert.Len(t, msg.Files[0].Rows, 2)
-	assert.Len(t, msg.Files[0].Rows[0].Columns, 1)
-	assert.Equal(t, msg.Files[0].Rows[0].Columns[0], uint32(926))
-	assert.Len(t, msg.Files[0].Rows[1].Columns, 2)
-	assert.Equal(t, msg.Files[0].Rows[1].Columns[0], uint32(293))
-	assert.Equal(t, msg.Files[0].Rows[1].Columns[1], uint32(250))
-	assert.Len(t, msg.FilesOwnership, 2)
-	assert.Equal(t, msg.FilesOwnership[0].Value, map[int32]int32{0: 293, 1: 250})
-	assert.Equal(t, msg.FilesOwnership[1].Value, map[int32]int32{0: 171, 1: 119})
-	assert.Len(t, msg.People, 2)
-	assert.Equal(t, msg.People[0].Name, "one@srcd")
-	assert.Equal(t, msg.People[1].Name, "two@srcd")
-	assert.Len(t, msg.People[0].Rows, 2)
-	assert.Len(t, msg.People[0].Rows[0].Columns, 1)
-	assert.Len(t, msg.People[0].Rows[1].Columns, 1)
-	assert.Equal(t, msg.People[0].Rows[0].Columns[0], uint32(1145))
-	assert.Equal(t, msg.People[0].Rows[1].Columns[0], uint32(464))
-	assert.Len(t, msg.People[1].Rows, 2)
-	assert.Len(t, msg.People[1].Rows[0].Columns, 0)
-	assert.Len(t, msg.People[1].Rows[1].Columns, 2)
-	assert.Equal(t, msg.People[1].Rows[1].Columns[0], uint32(0))
-	assert.Equal(t, msg.People[1].Rows[1].Columns[1], uint32(369))
-	assert.Equal(t, msg.PeopleInteraction.NumberOfRows, int32(2))
-	assert.Equal(t, msg.PeopleInteraction.NumberOfColumns, int32(4))
+	assert.Equal(t, msg.GetTickSize(), int64(24*time.Hour))
+	assert.Equal(t, int32(30), msg.GetGranularity())
+	assert.Equal(t, int32(30), msg.GetSampling())
+	assert.Equal(t, "project", msg.GetProject().GetName())
+	assert.Equal(t, int32(2), msg.GetProject().GetNumberOfRows())
+	assert.Equal(t, int32(2), msg.GetProject().GetNumberOfColumns())
+	assert.Len(t, msg.GetProject().GetRows(), 2)
+	assert.Len(t, msg.GetProject().GetRows()[0].GetColumns(), 1)
+	assert.Equal(t, uint32(1145), msg.GetProject().GetRows()[0].GetColumns()[0])
+	assert.Len(t, msg.GetProject().GetRows()[1].GetColumns(), 2)
+	assert.Equal(t, uint32(464), msg.GetProject().GetRows()[1].GetColumns()[0])
+	assert.Equal(t, uint32(369), msg.GetProject().GetRows()[1].GetColumns()[1])
+	assert.Len(t, msg.GetFiles(), 2)
+	assert.Equal(t, "burndown.go", msg.GetFiles()[0].GetName())
+	assert.Equal(t, "cmd/hercules/main.go", msg.GetFiles()[1].GetName())
+	assert.Len(t, msg.GetFiles()[0].GetRows(), 2)
+	assert.Len(t, msg.GetFiles()[0].GetRows()[0].GetColumns(), 1)
+	assert.Equal(t, uint32(926), msg.GetFiles()[0].GetRows()[0].GetColumns()[0])
+	assert.Len(t, msg.GetFiles()[0].GetRows()[1].GetColumns(), 2)
+	assert.Equal(t, uint32(293), msg.GetFiles()[0].GetRows()[1].GetColumns()[0])
+	assert.Equal(t, uint32(250), msg.GetFiles()[0].GetRows()[1].GetColumns()[1])
+	assert.Len(t, msg.GetFilesOwnership(), 2)
+	assert.Equal(t, map[int32]int32{0: 293, 1: 250}, msg.GetFilesOwnership()[0].GetValue())
+	assert.Equal(t, map[int32]int32{0: 171, 1: 119}, msg.GetFilesOwnership()[1].GetValue())
+	assert.Len(t, msg.GetPeople(), 2)
+	assert.Equal(t, "one@srcd", msg.GetPeople()[0].GetName())
+	assert.Equal(t, "two@srcd", msg.GetPeople()[1].GetName())
+	assert.Len(t, msg.GetPeople()[0].GetRows(), 2)
+	assert.Len(t, msg.GetPeople()[0].GetRows()[0].GetColumns(), 1)
+	assert.Len(t, msg.GetPeople()[0].GetRows()[1].GetColumns(), 1)
+	assert.Equal(t, uint32(1145), msg.GetPeople()[0].GetRows()[0].GetColumns()[0])
+	assert.Equal(t, uint32(464), msg.GetPeople()[0].GetRows()[1].GetColumns()[0])
+	assert.Len(t, msg.GetPeople()[1].GetRows(), 2)
+	assert.Empty(t, msg.GetPeople()[1].GetRows()[0].GetColumns())
+	assert.Len(t, msg.GetPeople()[1].GetRows()[1].GetColumns(), 2)
+	assert.Equal(t, uint32(0), msg.GetPeople()[1].GetRows()[1].GetColumns()[0])
+	assert.Equal(t, uint32(369), msg.GetPeople()[1].GetRows()[1].GetColumns()[1])
+	assert.Equal(t, int32(2), msg.GetPeopleInteraction().GetNumberOfRows())
+	assert.Equal(t, int32(4), msg.GetPeopleInteraction().GetNumberOfColumns())
 	data := [...]int64{1145, -681, 369}
-	assert.Equal(t, msg.PeopleInteraction.Data, data[:])
+	assert.Equal(t, msg.GetPeopleInteraction().GetData(), data[:])
 	indices := [...]int32{0, 3, 0}
-	assert.Equal(t, msg.PeopleInteraction.Indices, indices[:])
+	assert.Equal(t, msg.GetPeopleInteraction().GetIndices(), indices[:])
 	indptr := [...]int64{0, 2, 3}
-	assert.Equal(t, msg.PeopleInteraction.Indptr, indptr[:])
+	assert.Equal(t, msg.GetPeopleInteraction().GetIndptr(), indptr[:])
 }
 
 func TestLegacyBurndownSerializeAuthorMissing(t *testing.T) {
@@ -769,8 +768,8 @@ func TestLegacyBurndownSerializeAuthorMissing(t *testing.T) {
 	bd := &LegacyBurndownAnalysis{}
 
 	buffer := &bytes.Buffer{}
-	assert.Nil(t, bd.Serialize(out, false, buffer))
-	assert.Equal(t, buffer.String(), `  granularity: 30
+	assert.NoError(t, bd.Serialize(out, false, buffer))
+	assert.Equal(t, `  granularity: 30
   sampling: 30
   tick_size: 86400
   "project": |-
@@ -801,53 +800,53 @@ func TestLegacyBurndownSerializeAuthorMissing(t *testing.T) {
   people_interaction: |-
     1145 -681    0    0
        0    0    0    0
-`)
+`, buffer.String())
 	buffer = &bytes.Buffer{}
 	assert.NoError(t, bd.Serialize(out, true, buffer))
 	msg := pb.BurndownAnalysisResults{}
 	assert.NoError(t, proto.Unmarshal(buffer.Bytes(), &msg))
-	assert.Equal(t, msg.Granularity, int32(30))
-	assert.Equal(t, msg.Sampling, int32(30))
-	assert.Equal(t, msg.Project.Name, "project")
-	assert.Equal(t, msg.Project.NumberOfRows, int32(2))
-	assert.Equal(t, msg.Project.NumberOfColumns, int32(2))
-	assert.Len(t, msg.Project.Rows, 2)
-	assert.Len(t, msg.Project.Rows[0].Columns, 1)
-	assert.Equal(t, msg.Project.Rows[0].Columns[0], uint32(1145))
-	assert.Len(t, msg.Project.Rows[1].Columns, 2)
-	assert.Equal(t, msg.Project.Rows[1].Columns[0], uint32(464))
-	assert.Equal(t, msg.Project.Rows[1].Columns[1], uint32(369))
-	assert.Len(t, msg.Files, 2)
-	assert.Equal(t, msg.Files[0].Name, "burndown.go")
-	assert.Equal(t, msg.Files[1].Name, "cmd/hercules/main.go")
-	assert.Len(t, msg.Files[0].Rows, 2)
-	assert.Len(t, msg.Files[0].Rows[0].Columns, 1)
-	assert.Equal(t, msg.Files[0].Rows[0].Columns[0], uint32(926))
-	assert.Len(t, msg.Files[0].Rows[1].Columns, 2)
-	assert.Equal(t, msg.Files[0].Rows[1].Columns[0], uint32(293))
-	assert.Equal(t, msg.Files[0].Rows[1].Columns[1], uint32(250))
-	assert.Len(t, msg.FilesOwnership, 2)
-	assert.Equal(t, msg.FilesOwnership[0].Value, map[int32]int32{0: 293, -1: 250})
-	assert.Equal(t, msg.FilesOwnership[1].Value, map[int32]int32{0: 171, -1: 119})
-	assert.Len(t, msg.People, 2)
-	assert.Equal(t, msg.People[0].Name, "one@srcd")
-	assert.Equal(t, msg.People[1].Name, "two@srcd")
-	assert.Len(t, msg.People[0].Rows, 2)
-	assert.Len(t, msg.People[0].Rows[0].Columns, 1)
-	assert.Len(t, msg.People[0].Rows[1].Columns, 1)
-	assert.Equal(t, msg.People[0].Rows[0].Columns[0], uint32(1145))
-	assert.Equal(t, msg.People[0].Rows[1].Columns[0], uint32(464))
-	assert.Len(t, msg.People[1].Rows, 2)
-	assert.Len(t, msg.People[1].Rows[0].Columns, 0)
-	assert.Len(t, msg.People[1].Rows[1].Columns, 0)
-	assert.Equal(t, msg.PeopleInteraction.NumberOfRows, int32(2))
-	assert.Equal(t, msg.PeopleInteraction.NumberOfColumns, int32(4))
+	assert.Equal(t, int32(30), msg.GetGranularity())
+	assert.Equal(t, int32(30), msg.GetSampling())
+	assert.Equal(t, "project", msg.GetProject().GetName())
+	assert.Equal(t, int32(2), msg.GetProject().GetNumberOfRows())
+	assert.Equal(t, int32(2), msg.GetProject().GetNumberOfColumns())
+	assert.Len(t, msg.GetProject().GetRows(), 2)
+	assert.Len(t, msg.GetProject().GetRows()[0].GetColumns(), 1)
+	assert.Equal(t, uint32(1145), msg.GetProject().GetRows()[0].GetColumns()[0])
+	assert.Len(t, msg.GetProject().GetRows()[1].GetColumns(), 2)
+	assert.Equal(t, uint32(464), msg.GetProject().GetRows()[1].GetColumns()[0])
+	assert.Equal(t, uint32(369), msg.GetProject().GetRows()[1].GetColumns()[1])
+	assert.Len(t, msg.GetFiles(), 2)
+	assert.Equal(t, "burndown.go", msg.GetFiles()[0].GetName())
+	assert.Equal(t, "cmd/hercules/main.go", msg.GetFiles()[1].GetName())
+	assert.Len(t, msg.GetFiles()[0].GetRows(), 2)
+	assert.Len(t, msg.GetFiles()[0].GetRows()[0].GetColumns(), 1)
+	assert.Equal(t, uint32(926), msg.GetFiles()[0].GetRows()[0].GetColumns()[0])
+	assert.Len(t, msg.GetFiles()[0].GetRows()[1].GetColumns(), 2)
+	assert.Equal(t, uint32(293), msg.GetFiles()[0].GetRows()[1].GetColumns()[0])
+	assert.Equal(t, uint32(250), msg.GetFiles()[0].GetRows()[1].GetColumns()[1])
+	assert.Len(t, msg.GetFilesOwnership(), 2)
+	assert.Equal(t, map[int32]int32{0: 293, -1: 250}, msg.GetFilesOwnership()[0].GetValue())
+	assert.Equal(t, map[int32]int32{0: 171, -1: 119}, msg.GetFilesOwnership()[1].GetValue())
+	assert.Len(t, msg.GetPeople(), 2)
+	assert.Equal(t, "one@srcd", msg.GetPeople()[0].GetName())
+	assert.Equal(t, "two@srcd", msg.GetPeople()[1].GetName())
+	assert.Len(t, msg.GetPeople()[0].GetRows(), 2)
+	assert.Len(t, msg.GetPeople()[0].GetRows()[0].GetColumns(), 1)
+	assert.Len(t, msg.GetPeople()[0].GetRows()[1].GetColumns(), 1)
+	assert.Equal(t, uint32(1145), msg.GetPeople()[0].GetRows()[0].GetColumns()[0])
+	assert.Equal(t, uint32(464), msg.GetPeople()[0].GetRows()[1].GetColumns()[0])
+	assert.Len(t, msg.GetPeople()[1].GetRows(), 2)
+	assert.Empty(t, msg.GetPeople()[1].GetRows()[0].GetColumns())
+	assert.Empty(t, msg.GetPeople()[1].GetRows()[1].GetColumns())
+	assert.Equal(t, int32(2), msg.GetPeopleInteraction().GetNumberOfRows())
+	assert.Equal(t, int32(4), msg.GetPeopleInteraction().GetNumberOfColumns())
 	data := [...]int64{1145, -681}
-	assert.Equal(t, msg.PeopleInteraction.Data, data[:])
+	assert.Equal(t, msg.GetPeopleInteraction().GetData(), data[:])
 	indices := [...]int32{0, 1}
-	assert.Equal(t, msg.PeopleInteraction.Indices, indices[:])
+	assert.Equal(t, msg.GetPeopleInteraction().GetIndices(), indices[:])
 	indptr := [...]int64{0, 2, 2}
-	assert.Equal(t, msg.PeopleInteraction.Indptr, indptr[:])
+	assert.Equal(t, msg.GetPeopleInteraction().GetIndptr(), indptr[:])
 }
 
 type panickingCloser struct{}
@@ -923,8 +922,8 @@ func TestLegacyBurndownAddMatrix(t *testing.T) {
 		fmt.Println(row)
 	}*/
 	// check pinned points
-	for y := 0; y < 5; y++ {
-		for x := 0; x < 3; x++ {
+	for y := range 5 {
+		for x := range 3 {
 			var sum float32
 			for i := x * 5; i < (x+1)*5; i++ {
 				sum += daily[(y+1)*3][i+1]
@@ -933,8 +932,8 @@ func TestLegacyBurndownAddMatrix(t *testing.T) {
 		}
 	}
 	// check overall trend: 0 -> const -> peak -> decay
-	for x := 0; x < 15; x++ {
-		for y := 0; y < x; y++ {
+	for x := range 15 {
+		for y := range x {
 			assert.Zero(t, daily[y+1][x+1])
 		}
 		var prev float32
@@ -948,7 +947,7 @@ func TestLegacyBurndownAddMatrix(t *testing.T) {
 			if prev == 0 {
 				prev = daily[y+1][x+1]
 			}
-			assert.True(t, daily[y+1][x+1] <= prev)
+			assert.LessOrEqual(t, daily[y+1][x+1], prev)
 			prev = daily[y+1][x+1]
 		}
 	}
@@ -1001,8 +1000,8 @@ func TestLegacyBurndownAddMatrixCrazy(t *testing.T) {
 		}
 	*/
 	// check pinned points
-	for y := 0; y < 5; y++ {
-		for x := 0; x < 3; x++ {
+	for y := range 5 {
+		for x := range 3 {
 			var sum float32
 			for i := x * 5; i < (x+1)*5; i++ {
 				sum += daily[(y+1)*3-1][i]
@@ -1011,8 +1010,8 @@ func TestLegacyBurndownAddMatrixCrazy(t *testing.T) {
 		}
 	}
 	// check overall trend: 0 -> const -> peak -> decay
-	for x := 0; x < 15; x++ {
-		for y := 0; y < x; y++ {
+	for x := range 15 {
+		for y := range x {
 			assert.Zero(t, daily[y][x])
 		}
 		var prev float32
@@ -1026,7 +1025,7 @@ func TestLegacyBurndownAddMatrixCrazy(t *testing.T) {
 			if prev == 0 {
 				prev = daily[y][x]
 			}
-			assert.True(t, daily[y][x] <= prev)
+			assert.LessOrEqual(t, daily[y][x], prev)
 			prev = daily[y][x]
 		}
 	}
@@ -1076,8 +1075,8 @@ func TestLegacyBurndownAddMatrixNaNs(t *testing.T) {
 		}
 	*/
 	// check pinned points
-	for y := 0; y < 4; y++ {
-		for x := 0; x < 4; x++ {
+	for y := range 4 {
+		for x := range 4 {
 			var sum float32
 			for i := x * 4; i < (x+1)*4; i++ {
 				sum += daily[(y+1)*4-1][i]
@@ -1086,8 +1085,8 @@ func TestLegacyBurndownAddMatrixNaNs(t *testing.T) {
 		}
 	}
 	// check overall trend: 0 -> const -> peak -> decay
-	for x := 0; x < 16; x++ {
-		for y := 0; y < x; y++ {
+	for x := range 16 {
+		for y := range x {
 			assert.Zero(t, daily[y][x])
 		}
 		var prev float32
@@ -1104,7 +1103,7 @@ func TestLegacyBurndownAddMatrixNaNs(t *testing.T) {
 			if prev == 0 {
 				prev = daily[y][x]
 			}
-			assert.True(t, daily[y][x] <= prev)
+			assert.LessOrEqual(t, daily[y][x], prev)
 			prev = daily[y][x]
 		}
 	}
@@ -1213,9 +1212,9 @@ func TestLegacyBurndownMergeGlobalHistory(t *testing.T) {
 		tickSize: 24 * time.Hour,
 	}
 	merged := bd.MergeResults(res1, res2, &c1, &c2).(BurndownResult)
-	assert.Equal(t, merged.granularity, 19)
-	assert.Equal(t, merged.sampling, 14)
-	assert.Equal(t, merged.tickSize, 24*time.Hour)
+	assert.Equal(t, 19, merged.granularity)
+	assert.Equal(t, 14, merged.sampling)
+	assert.Equal(t, 24*time.Hour, merged.tickSize)
 	assert.Len(t, merged.GlobalHistory, 5)
 	for _, row := range merged.GlobalHistory {
 		assert.Len(t, row, 4)
@@ -1229,24 +1228,24 @@ func TestLegacyBurndownMergeGlobalHistory(t *testing.T) {
 	for _, row := range merged.PeopleMatrix {
 		assert.Len(t, row, 5)
 	}
-	assert.Equal(t, merged.PeopleMatrix[0][0], int64(10))
-	assert.Equal(t, merged.PeopleMatrix[0][1], int64(20))
-	assert.Equal(t, merged.PeopleMatrix[0][2], int64(30))
-	assert.Equal(t, merged.PeopleMatrix[0][3], int64(40))
-	assert.Equal(t, merged.PeopleMatrix[0][4], int64(0))
+	assert.Equal(t, int64(10), merged.PeopleMatrix[0][0])
+	assert.Equal(t, int64(20), merged.PeopleMatrix[0][1])
+	assert.Equal(t, int64(30), merged.PeopleMatrix[0][2])
+	assert.Equal(t, int64(40), merged.PeopleMatrix[0][3])
+	assert.Equal(t, int64(0), merged.PeopleMatrix[0][4])
 
-	assert.Equal(t, merged.PeopleMatrix[1][0], int64(150))
-	assert.Equal(t, merged.PeopleMatrix[1][1], int64(260))
-	assert.Equal(t, merged.PeopleMatrix[1][2], int64(70))
-	assert.Equal(t, merged.PeopleMatrix[1][3], int64(380))
-	assert.Equal(t, merged.PeopleMatrix[1][4], int64(400))
+	assert.Equal(t, int64(150), merged.PeopleMatrix[1][0])
+	assert.Equal(t, int64(260), merged.PeopleMatrix[1][1])
+	assert.Equal(t, int64(70), merged.PeopleMatrix[1][2])
+	assert.Equal(t, int64(380), merged.PeopleMatrix[1][3])
+	assert.Equal(t, int64(400), merged.PeopleMatrix[1][4])
 
-	assert.Equal(t, merged.PeopleMatrix[2][0], int64(500))
-	assert.Equal(t, merged.PeopleMatrix[2][1], int64(600))
-	assert.Equal(t, merged.PeopleMatrix[2][2], int64(0))
-	assert.Equal(t, merged.PeopleMatrix[2][3], int64(700))
-	assert.Equal(t, merged.PeopleMatrix[2][4], int64(800))
-	assert.Nil(t, bd.serializeBinary(&merged, ioutil.Discard))
+	assert.Equal(t, int64(500), merged.PeopleMatrix[2][0])
+	assert.Equal(t, int64(600), merged.PeopleMatrix[2][1])
+	assert.Equal(t, int64(0), merged.PeopleMatrix[2][2])
+	assert.Equal(t, int64(700), merged.PeopleMatrix[2][3])
+	assert.Equal(t, int64(800), merged.PeopleMatrix[2][4])
+	assert.NoError(t, bd.serializeBinary(&merged, ioutil.Discard))
 }
 
 func TestLegacyBurndownMergeGlobalHistory_withDifferentTickSizes(t *testing.T) {
@@ -1313,14 +1312,14 @@ func TestLegacyBurndownMergeNils(t *testing.T) {
 		tickSize: 24 * time.Hour,
 	}
 	merged := bd.MergeResults(res1, res2, &c1, &c2).(BurndownResult)
-	assert.Equal(t, merged.granularity, 19)
-	assert.Equal(t, merged.sampling, 14)
-	assert.Equal(t, merged.tickSize, 24*time.Hour)
+	assert.Equal(t, 19, merged.granularity)
+	assert.Equal(t, 14, merged.sampling)
+	assert.Equal(t, 24*time.Hour, merged.tickSize)
 	assert.Nil(t, merged.GlobalHistory)
 	assert.Nil(t, merged.FileHistories)
 	assert.Nil(t, merged.PeopleHistories)
 	assert.Nil(t, merged.PeopleMatrix)
-	assert.Nil(t, bd.serializeBinary(&merged, ioutil.Discard))
+	assert.NoError(t, bd.serializeBinary(&merged, ioutil.Discard))
 
 	res2.GlobalHistory = [][]int64{
 		{900, 0, 0},
@@ -1359,42 +1358,42 @@ func TestLegacyBurndownMergeNils(t *testing.T) {
 	for _, row := range merged.PeopleMatrix {
 		assert.Len(t, row, 5)
 	}
-	assert.Equal(t, merged.PeopleMatrix[0][0], int64(10))
-	assert.Equal(t, merged.PeopleMatrix[0][1], int64(20))
-	assert.Equal(t, merged.PeopleMatrix[0][2], int64(30))
-	assert.Equal(t, merged.PeopleMatrix[0][3], int64(40))
-	assert.Equal(t, merged.PeopleMatrix[0][4], int64(0))
+	assert.Equal(t, int64(10), merged.PeopleMatrix[0][0])
+	assert.Equal(t, int64(20), merged.PeopleMatrix[0][1])
+	assert.Equal(t, int64(30), merged.PeopleMatrix[0][2])
+	assert.Equal(t, int64(40), merged.PeopleMatrix[0][3])
+	assert.Equal(t, int64(0), merged.PeopleMatrix[0][4])
 
-	assert.Equal(t, merged.PeopleMatrix[1][0], int64(50))
-	assert.Equal(t, merged.PeopleMatrix[1][1], int64(60))
-	assert.Equal(t, merged.PeopleMatrix[1][2], int64(70))
-	assert.Equal(t, merged.PeopleMatrix[1][3], int64(80))
-	assert.Equal(t, merged.PeopleMatrix[1][4], int64(0))
+	assert.Equal(t, int64(50), merged.PeopleMatrix[1][0])
+	assert.Equal(t, int64(60), merged.PeopleMatrix[1][1])
+	assert.Equal(t, int64(70), merged.PeopleMatrix[1][2])
+	assert.Equal(t, int64(80), merged.PeopleMatrix[1][3])
+	assert.Equal(t, int64(0), merged.PeopleMatrix[1][4])
 
-	assert.Equal(t, merged.PeopleMatrix[2][0], int64(0))
-	assert.Equal(t, merged.PeopleMatrix[2][1], int64(0))
-	assert.Equal(t, merged.PeopleMatrix[2][2], int64(0))
-	assert.Equal(t, merged.PeopleMatrix[2][3], int64(0))
-	assert.Equal(t, merged.PeopleMatrix[2][4], int64(0))
-	assert.Nil(t, bd.serializeBinary(&merged, ioutil.Discard))
+	assert.Equal(t, int64(0), merged.PeopleMatrix[2][0])
+	assert.Equal(t, int64(0), merged.PeopleMatrix[2][1])
+	assert.Equal(t, int64(0), merged.PeopleMatrix[2][2])
+	assert.Equal(t, int64(0), merged.PeopleMatrix[2][3])
+	assert.Equal(t, int64(0), merged.PeopleMatrix[2][4])
+	assert.NoError(t, bd.serializeBinary(&merged, ioutil.Discard))
 }
 
 func TestLegacyBurndownDeserialize(t *testing.T) {
 	allBuffer, err := ioutil.ReadFile(path.Join("..", "internal", "test_data", "burndown.pb"))
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	bd := LegacyBurndownAnalysis{}
 	iresult, err := bd.Deserialize(allBuffer)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	result := iresult.(BurndownResult)
-	assert.True(t, len(result.GlobalHistory) > 0)
-	assert.True(t, len(result.FileHistories) > 0)
-	assert.Equal(t, len(result.FileOwnership), len(result.FileHistories))
-	assert.True(t, len(result.reversedPeopleDict) > 0)
-	assert.True(t, len(result.PeopleHistories) > 0)
-	assert.True(t, len(result.PeopleMatrix) > 0)
-	assert.Equal(t, result.granularity, 30)
-	assert.Equal(t, result.sampling, 30)
-	assert.Equal(t, result.tickSize, 24*time.Hour)
+	assert.NotEmpty(t, result.GlobalHistory)
+	assert.NotEmpty(t, result.FileHistories)
+	assert.Len(t, result.FileHistories, len(result.FileOwnership))
+	assert.NotEmpty(t, result.reversedPeopleDict)
+	assert.NotEmpty(t, result.PeopleHistories)
+	assert.NotEmpty(t, result.PeopleMatrix)
+	assert.Equal(t, 30, result.granularity)
+	assert.Equal(t, 30, result.sampling)
+	assert.Equal(t, 24*time.Hour, result.tickSize)
 }
 
 func TestLegacyBurndownEmptyFileHistory(t *testing.T) {
@@ -1406,9 +1405,9 @@ func TestLegacyBurndownEmptyFileHistory(t *testing.T) {
 	}
 	res := bd.Finalize().(BurndownResult)
 	assert.Len(t, res.GlobalHistory, 1)
-	assert.Len(t, res.FileHistories, 0)
+	assert.Empty(t, res.FileHistories)
 	assert.NotNil(t, res.FileHistories)
-	assert.Len(t, res.PeopleHistories, 0)
+	assert.Empty(t, res.PeopleHistories)
 	assert.NotNil(t, res.PeopleHistories)
 }
 
@@ -1419,35 +1418,35 @@ func TestLegacyBurndownNegativePeople(t *testing.T) {
 		PeopleNumber: -1,
 	}
 	err := bd.Initialize(test.Repository)
-	assert.Equal(t, err.Error(), "PeopleNumber is negative: -1")
+	assert.Equal(t, "PeopleNumber is negative: -1", err.Error())
 }
 
 func TestLegacyBurndownHibernateBoot(t *testing.T) {
 	_, bd := bakeBurndownForSerialization(t, 0, 1)
-	assert.Equal(t, bd.fileAllocator.Size(), 157)
-	assert.Equal(t, bd.fileAllocator.Used(), 155)
-	assert.Nil(t, bd.Hibernate())
+	assert.Equal(t, 157, bd.fileAllocator.Size())
+	assert.Equal(t, 155, bd.fileAllocator.Used())
+	assert.NoError(t, bd.Hibernate())
 	assert.PanicsWithValue(t, "LegacyBurndownAnalysis.Consume() was called on a hibernated instance",
 		func() { bd.Consume(nil) })
-	assert.Equal(t, bd.fileAllocator.Size(), 0)
-	assert.Nil(t, bd.Boot())
-	assert.Equal(t, bd.fileAllocator.Size(), 157)
-	assert.Equal(t, bd.fileAllocator.Used(), 155)
+	assert.Equal(t, 0, bd.fileAllocator.Size())
+	assert.NoError(t, bd.Boot())
+	assert.Equal(t, 157, bd.fileAllocator.Size())
+	assert.Equal(t, 155, bd.fileAllocator.Used())
 }
 
 func TestLegacyBurndownHibernateBootSerialize(t *testing.T) {
 	_, bd := bakeBurndownForSerialization(t, 0, 1)
-	assert.Equal(t, bd.fileAllocator.Size(), 157)
-	assert.Equal(t, bd.fileAllocator.Used(), 155)
+	assert.Equal(t, 157, bd.fileAllocator.Size())
+	assert.Equal(t, 155, bd.fileAllocator.Used())
 	bd.HibernationToDisk = true
-	assert.Nil(t, bd.Hibernate())
+	assert.NoError(t, bd.Hibernate())
 	assert.NotEmpty(t, bd.hibernatedFileName)
 	assert.PanicsWithValue(t, "LegacyBurndownAnalysis.Consume() was called on a hibernated instance",
 		func() { bd.Consume(nil) })
-	assert.Equal(t, bd.fileAllocator.Size(), 0)
-	assert.Nil(t, bd.Boot())
-	assert.Equal(t, bd.fileAllocator.Size(), 157)
-	assert.Equal(t, bd.fileAllocator.Used(), 155)
+	assert.Equal(t, 0, bd.fileAllocator.Size())
+	assert.NoError(t, bd.Boot())
+	assert.Equal(t, 157, bd.fileAllocator.Size())
+	assert.Equal(t, 155, bd.fileAllocator.Used())
 	assert.Empty(t, bd.hibernatedFileName)
 }
 
@@ -1554,13 +1553,13 @@ func TestLegacyBurndownMergeMatrices(t *testing.T) {
 	nh := bd.mergeMatrices(h, nil, 30, 30, 30, 30, bd.tickSize, cr, cr)
 	for y, row := range nh {
 		for x, v := range row {
-			assert.InDelta(t, v, h[y][x], 1, fmt.Sprintf("y=%d x=%d", y, x))
+			assert.InDelta(t, v, h[y][x], 1, "y=%d x=%d", y, x)
 		}
 	}
 	nh = bd.mergeMatrices(h, h, 30, 30, 30, 30, bd.tickSize, cr, cr)
 	for y, row := range nh {
 		for x, v := range row {
-			assert.InDelta(t, v, h[y][x]*2, 1, fmt.Sprintf("y=%d x=%d", y, x))
+			assert.InDelta(t, v, h[y][x]*2, 1, "y=%d x=%d", y, x)
 		}
 	}
 }
@@ -1620,7 +1619,7 @@ func TestLegacyBurndownMergePeopleHistories(t *testing.T) {
 		{605, 767, 670, 0},
 		{575, 709, 685, 178},
 	}
-	assert.Equal(t, merged.reversedPeopleDict, []string{"one", "three", "two"})
+	assert.Equal(t, []string{"one", "three", "two"}, merged.reversedPeopleDict)
 	assert.Equal(t, mh, merged.PeopleHistories[0])
 	mh = burndown.DenseHistory{
 		{46, 0, 0, 0},
@@ -1639,7 +1638,7 @@ func TestLegacyBurndownMergePeopleHistories(t *testing.T) {
 	}
 	assert.Equal(t, mh, merged.PeopleHistories[2])
 	assert.Nil(t, merged.PeopleMatrix)
-	assert.Nil(t, bd.serializeBinary(&merged, ioutil.Discard))
+	assert.NoError(t, bd.serializeBinary(&merged, ioutil.Discard))
 }
 
 func TestLegacyBurndownHandleRenameCycle(t *testing.T) {
@@ -1657,19 +1656,19 @@ func TestLegacyBurndownHandleRenameCycle(t *testing.T) {
 			"one": {Id: 1},
 		},
 	}
-	assert.Nil(t, bd.handleRename("one", "three"))
-	assert.Equal(t, bd.renames, map[string]string{
+	assert.NoError(t, bd.handleRename("one", "three"))
+	assert.Equal(t, map[string]string{
 		"one":   "three",
 		"two":   "three",
 		"three": "one",
-	})
-	assert.Equal(t, bd.fileHistories, map[string]sparseHistory{
+	}, bd.renames)
+	assert.Equal(t, map[string]sparseHistory{
 		"two":   {},
 		"three": {},
-	})
-	assert.Equal(t, bd.files, map[string]*linehistory.File{
+	}, bd.fileHistories)
+	assert.Equal(t, map[string]*linehistory.File{
 		"three": {Id: 1},
-	})
+	}, bd.files)
 }
 
 func TestLegacyBurndownResultGetters(t *testing.T) {

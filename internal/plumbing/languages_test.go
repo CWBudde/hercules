@@ -13,17 +13,17 @@ import (
 
 func TestLanguagesDetectionMeta(t *testing.T) {
 	ls := &LanguagesDetection{}
-	assert.Equal(t, ls.Name(), "LanguagesDetection")
-	assert.Equal(t, len(ls.Provides()), 1)
-	assert.Equal(t, ls.Provides()[0], DependencyLanguages)
-	assert.Equal(t, len(ls.Requires()), 2)
-	assert.Equal(t, ls.Requires()[0], DependencyTreeChanges)
-	assert.Equal(t, ls.Requires()[1], DependencyBlobCache)
+	assert.Equal(t, "LanguagesDetection", ls.Name())
+	assert.Len(t, ls.Provides(), 1)
+	assert.Equal(t, DependencyLanguages, ls.Provides()[0])
+	assert.Len(t, ls.Requires(), 2)
+	assert.Equal(t, DependencyTreeChanges, ls.Requires()[0])
+	assert.Equal(t, DependencyBlobCache, ls.Requires()[1])
 	opts := ls.ListConfigurationOptions()
-	assert.Len(t, opts, 0)
+	assert.Empty(t, opts)
 	assert.NoError(t, ls.Configure(nil))
 	logger := core.NewLogger()
-	assert.NoError(t, ls.Configure(map[string]interface{}{
+	assert.NoError(t, ls.Configure(map[string]any{
 		core.ConfigLogger: logger,
 	}))
 	assert.Equal(t, logger, ls.l)
@@ -33,9 +33,9 @@ func TestLanguagesDetectionMeta(t *testing.T) {
 func TestLanguagesDetectionRegistration(t *testing.T) {
 	summoned := core.Registry.Summon((&LanguagesDetection{}).Name())
 	assert.Len(t, summoned, 1)
-	assert.Equal(t, summoned[0].Name(), "LanguagesDetection")
+	assert.Equal(t, "LanguagesDetection", summoned[0].Name())
 	summoned = core.Registry.Summon((&LanguagesDetection{}).Provides()[0])
-	assert.True(t, len(summoned) >= 1)
+	assert.GreaterOrEqual(t, len(summoned), 1)
 	matched := false
 	for _, tp := range summoned {
 		matched = matched || tp.Name() == "LanguagesDetection"
@@ -100,18 +100,18 @@ func TestLanguagesDetectionConsume(t *testing.T) {
 	AddHash(t, cache, "c29112dbd697ad9b401333b80c18a63951bc18d9")
 	AddHash(t, cache, "f7d918ec500e2f925ecde79b51cc007bac27de72")
 
-	deps := map[string]interface{}{}
+	deps := map[string]any{}
 	deps[DependencyBlobCache] = cache
 	deps[DependencyTreeChanges] = changes
 	result, err := ls.Consume(deps)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	langs := result[DependencyLanguages].(map[plumbing.Hash]string)
 	assert.Equal(t, "Go", langs[plumbing.NewHash("baa64828831d174f40140e4b3cfa77d1e917a2c1")])
 	assert.Equal(t, "Go", langs[plumbing.NewHash("c29112dbd697ad9b401333b80c18a63951bc18d9")])
 	assert.Equal(t, "Go", langs[plumbing.NewHash("f7d918ec500e2f925ecde79b51cc007bac27de72")])
 	lang, exists := langs[plumbing.NewHash("29c9fafd6a2fae8cd20298c3f60115bc31a4c0f2")]
 	assert.True(t, exists)
-	assert.Equal(t, "", lang)
+	assert.Empty(t, lang)
 }
 
 func TestLanguagesDetectionTypeScriptAliases(t *testing.T) {

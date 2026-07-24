@@ -30,6 +30,7 @@ type ImportsMap = map[int]map[string]map[string]map[int]int64
 type ImportsPerDeveloper struct {
 	core.NoopMerger
 	core.OneShotMergeProcessor
+
 	// TickSize defines the time mapping granularity (the last ImportsMap's key).
 	TickSize time.Duration
 	// imports mapping, see the referenced type for details.
@@ -85,18 +86,20 @@ func (ipd *ImportsPerDeveloper) Description() string {
 }
 
 // Configure sets the properties previously published by ListConfigurationOptions().
-func (ipd *ImportsPerDeveloper) Configure(facts map[string]interface{}) error {
+func (ipd *ImportsPerDeveloper) Configure(facts map[string]any) error {
 	if l, exists := facts[core.ConfigLogger].(core.Logger); exists {
 		ipd.l = l
 	}
+
 	ipd.reversedPeopleDict = facts[identity.FactIdentityDetectorReversedPeopleDict].([]string)
 	if val, exists := facts[plumbing.FactTickSize].(time.Duration); exists {
 		ipd.TickSize = val
 	}
+
 	return nil
 }
 
-func (*ImportsPerDeveloper) ConfigureUpstream(facts map[string]interface{}) error {
+func (*ImportsPerDeveloper) ConfigureUpstream(facts map[string]any) error {
 	return nil
 }
 
@@ -106,10 +109,12 @@ func (ipd *ImportsPerDeveloper) Initialize(repository *git.Repository) error {
 	ipd.l = core.NewLogger()
 	ipd.imports = ImportsMap{}
 	ipd.OneShotMergeProcessor.Initialize()
+
 	if ipd.TickSize == 0 {
 		ipd.TickSize = time.Hour * 24
 		ipd.l.Warnf("tick size was not set, adjusted to %v\n", ipd.TickSize)
 	}
+
 	return nil
 }
 
@@ -118,35 +123,40 @@ func (ipd *ImportsPerDeveloper) Initialize(repository *git.Repository) error {
 // Additionally, DependencyCommit is always present there and represents the analysed *object.Commit.
 // This function returns the mapping with analysis results. The keys must be the same as
 // in Provides(). If there was an error, nil is returned.
-func (ipd *ImportsPerDeveloper) Consume(deps map[string]interface{}) (map[string]interface{}, error) {
+func (ipd *ImportsPerDeveloper) Consume(deps map[string]any) (map[string]any, error) {
 	author := deps[identity.DependencyAuthor].(int)
 	imps := deps[imports.DependencyImports].(map[gitplumbing.Hash]importslang.File)
 	aimps := ipd.imports[author]
 	tick := deps[plumbing.DependencyTick].(int)
+
 	if aimps == nil {
 		aimps = map[string]map[string]map[int]int64{}
 		ipd.imports[author] = aimps
 	}
+
 	for _, file := range imps {
 		limps := aimps[file.Lang]
 		if limps == nil {
 			limps = map[string]map[int]int64{}
 			aimps[file.Lang] = limps
 		}
+
 		for _, imp := range file.Imports {
 			timps, exists := limps[imp]
 			if !exists {
 				timps = map[int]int64{}
 				limps[imp] = timps
 			}
+
 			timps[tick]++
 		}
 	}
+
 	return nil, nil
 }
 
 // Finalize returns the result of the analysis. Further Consume() calls are not expected.
-func (ipd *ImportsPerDeveloper) Finalize() interface{} {
+func (ipd *ImportsPerDeveloper) Finalize() any {
 	return ImportsPerDeveloperResult{
 		Imports:            ipd.imports,
 		reversedPeopleDict: ipd.reversedPeopleDict,
@@ -161,12 +171,14 @@ func (ipd *ImportsPerDeveloper) Fork(n int) []core.PipelineItem {
 
 // Serialize converts the analysis result as returned by Finalize() to text or bytes.
 // The text format is YAML and the bytes format is Protocol Buffers.
-func (ipd *ImportsPerDeveloper) Serialize(result interface{}, binary bool, writer io.Writer) error {
+func (ipd *ImportsPerDeveloper) Serialize(result any, binary bool, writer io.Writer) error {
 	importsResult := result.(ImportsPerDeveloperResult)
 	if binary {
 		return ipd.serializeBinary(&importsResult, writer)
 	}
+
 	ipd.serializeText(&importsResult, writer)
+
 	return nil
 }
 
@@ -175,15 +187,19 @@ func (ipd *ImportsPerDeveloper) serializeText(result *ImportsPerDeveloperResult,
 	for dev := range result.Imports {
 		devs = append(devs, dev)
 	}
+
 	sort.Ints(devs)
 	fmt.Fprintln(writer, "  tick_size:", int(result.tickSize.Seconds()))
 	fmt.Fprintln(writer, "  imports:")
+
 	for _, dev := range devs {
 		imps := result.Imports[dev]
+
 		obj, err := json.Marshal(imps)
 		if err != nil {
 			log.Panicf("Could not serialize %v: %v", imps, err)
 		}
+
 		fmt.Fprintf(writer, "    %s: %s\n", yaml.SafeString(result.reversedPeopleDict[dev]), string(obj))
 	}
 }
@@ -195,6 +211,7 @@ func (ipd *ImportsPerDeveloper) serializeBinary(result *ImportsPerDeveloperResul
 			authorsLen = key + 1
 		}
 	}
+
 	authorIndex := make([]string, authorsLen)
 	copy(authorIndex, result.reversedPeopleDict)
 	message := pb.ImportsPerDeveloperResults{
@@ -203,17 +220,21 @@ func (ipd *ImportsPerDeveloper) serializeBinary(result *ImportsPerDeveloperResul
 		TickSize:    int64(result.tickSize),
 	}
 	// Initialize all entries to avoid nil elements in the repeated protobuf field
-	for i := range message.Imports {
+	for i := range message.GetImports() {
 		message.Imports[i] = &pb.ImportsPerDeveloper{Languages: map[string]*pb.ImportsPerLanguage{}}
 	}
+
 	for key, dev := range result.Imports {
 		pbdev := &pb.ImportsPerDeveloper{Languages: map[string]*pb.ImportsPerLanguage{}}
 		message.Imports[key] = pbdev
+
 		for lang, ticks := range dev {
 			pbticks := map[string]*pb.ImportsPerTick{}
 			pbdev.Languages[lang] = &pb.ImportsPerLanguage{Ticks: pbticks}
+
 			for imp, tick := range ticks {
 				counts := map[int32]int64{}
+
 				pbticks[imp] = &pb.ImportsPerTick{Counts: counts}
 				for ti, val := range tick {
 					counts[int32(ti)] = val
@@ -221,41 +242,50 @@ func (ipd *ImportsPerDeveloper) serializeBinary(result *ImportsPerDeveloperResul
 			}
 		}
 	}
+
 	serialized, err := proto.Marshal(&message)
 	if err != nil {
 		return err
 	}
+
 	_, err = writer.Write(serialized)
+
 	return err
 }
 
 // Deserialize converts the specified protobuf bytes to ImportsPerDeveloperResult.
-func (ipd *ImportsPerDeveloper) Deserialize(pbmessage []byte) (interface{}, error) {
+func (ipd *ImportsPerDeveloper) Deserialize(pbmessage []byte) (any, error) {
 	msg := pb.ImportsPerDeveloperResults{}
+
 	err := proto.Unmarshal(pbmessage, &msg)
 	if err != nil {
 		return nil, err
 	}
+
 	r := ImportsPerDeveloperResult{
 		Imports:            ImportsMap{},
-		reversedPeopleDict: msg.AuthorIndex,
-		tickSize:           time.Duration(msg.TickSize),
+		reversedPeopleDict: msg.GetAuthorIndex(),
+		tickSize:           time.Duration(msg.GetTickSize()),
 	}
-	for devi, dev := range msg.Imports {
+	for devi, dev := range msg.GetImports() {
 		rdev := map[string]map[string]map[int]int64{}
 		r.Imports[devi] = rdev
-		for lang, names := range dev.Languages {
+
+		for lang, names := range dev.GetLanguages() {
 			rlang := map[string]map[int]int64{}
 			rdev[lang] = rlang
-			for name, ticks := range names.Ticks {
+
+			for name, ticks := range names.GetTicks() {
 				rticks := map[int]int64{}
+
 				rlang[name] = rticks
-				for tick, val := range ticks.Counts {
+				for tick, val := range ticks.GetCounts() {
 					rticks[int(tick)] = val
 				}
 			}
 		}
 	}
+
 	return r, nil
 }
 

@@ -54,20 +54,25 @@ func LanguageByName(name string) Language {
 // languages return a *File with Path/Lang populated but no Imports.
 func Extract(path string, content []byte) (*File, error) {
 	langName := enry.GetLanguage(path, content)
+
 	f := &File{Path: path, Lang: langName}
 	if langName == enry.OtherLanguage {
 		return f, nil
 	}
+
 	l := LanguageByName(langName)
 	if l == nil {
 		return f, nil
 	}
+
 	list, err := l.Imports(content)
 	if err != nil {
 		return f, err
 	}
+
 	sort.Strings(list)
 	f.Imports = dedup(list)
+
 	return f, nil
 }
 
@@ -76,13 +81,16 @@ func dedup(sorted []string) []string {
 	if len(sorted) == 0 {
 		return []string{}
 	}
+
 	j := 0
 	for i := 1; i < len(sorted); i++ {
 		if sorted[j] == sorted[i] {
 			continue
 		}
+
 		j++
 		sorted[j] = sorted[i]
 	}
+
 	return sorted[:j+1]
 }

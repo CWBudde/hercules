@@ -1,6 +1,7 @@
 package core
 
 import (
+	"maps"
 	"math"
 )
 
@@ -41,18 +42,18 @@ func NewIdentityResolver(names []string, toIds map[string]int) IdentityResolver 
 	if n == 0 {
 		return resolver
 	}
+
 	resolver.toNames = make([]string, n)
 	copy(resolver.toNames, names)
 
 	if len(toIds) != 0 {
 		n = len(toIds)
 	}
+
 	resolver.toIds = make(map[string]int, n)
 
 	if len(toIds) != 0 {
-		for k, v := range toIds {
-			resolver.toIds[k] = v
-		}
+		maps.Copy(resolver.toIds, toIds)
 	} else {
 		for k, v := range names {
 			resolver.toIds[v] = k
@@ -83,6 +84,7 @@ func (v identityResolver) FriendlyNameOf(id AuthorId) string {
 	if id == AuthorMissing || id < 0 || int(id) >= len(v.toNames) {
 		return AuthorMissingName
 	}
+
 	return v.toNames[id]
 }
 
@@ -90,6 +92,7 @@ func (v identityResolver) FindIdOf(name string) AuthorId {
 	if id, ok := v.toIds[name]; ok {
 		return AuthorId(id)
 	}
+
 	return AuthorId(-1)
 }
 
@@ -97,6 +100,7 @@ func (v identityResolver) ForEachIdentity(callback func(AuthorId, string)) bool 
 	for id, name := range v.toNames {
 		callback(AuthorId(id), name)
 	}
+
 	return true
 }
 
@@ -106,6 +110,7 @@ func (v identityResolver) CopyNames(bool) []string {
 
 type LineHistoryChange struct {
 	FileId
+
 	CurrTick, PrevTick     TickNumber
 	CurrAuthor, PrevAuthor AuthorId
 	Delta                  int

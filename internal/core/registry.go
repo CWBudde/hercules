@@ -28,6 +28,7 @@ func (registry *PipelineItemRegistry) Register(example PipelineItem) {
 func (registry *PipelineItemRegistry) RegisterPreferred(example PipelineItem, preferred bool) {
 	t := reflect.TypeOf(example)
 	exampleName := example.Name()
+
 	registry.registered[exampleName] = t
 	if fpi, ok := example.(LeafPipelineItem); ok {
 		registry.flags[fpi.Flag()] = t
@@ -46,6 +47,7 @@ func (registry *PipelineItemRegistry) RegisterPreferred(example PipelineItem, pr
 		} else {
 			ts = append(ts, t)
 		}
+
 		registry.provided[dep] = ts
 	}
 }
@@ -58,15 +60,18 @@ func (registry *PipelineItemRegistry) Summon(providesOrNames ...string) []Pipeli
 	}
 
 	var items []PipelineItem
+
 	for _, providesOrName := range providesOrNames {
 		ts := registry.provided[providesOrName]
 		for _, t := range ts {
 			items = append(items, reflect.New(t.Elem()).Interface().(PipelineItem))
 		}
+
 		if t, exists := registry.registered[providesOrName]; exists {
 			items = append(items, reflect.New(t.Elem()).Interface().(PipelineItem))
 		}
 	}
+
 	return items
 }
 
@@ -76,11 +81,14 @@ func (registry *PipelineItemRegistry) GetLeaves() []LeafPipelineItem {
 	for key := range registry.flags {
 		keys = append(keys, key)
 	}
+
 	sort.Strings(keys)
+
 	var items []LeafPipelineItem
 	for _, key := range keys {
 		items = append(items, reflect.New(registry.flags[key].Elem()).Interface().(LeafPipelineItem))
 	}
+
 	return items
 }
 
@@ -90,7 +98,9 @@ func (registry *PipelineItemRegistry) GetPlumbingItems() []PipelineItem {
 	for key := range registry.registered {
 		keys = append(keys, key)
 	}
+
 	sort.Strings(keys)
+
 	items := make([]PipelineItem, 0, len(keys))
 	for _, key := range keys {
 		iface := reflect.New(registry.registered[key].Elem()).Interface()
@@ -98,17 +108,20 @@ func (registry *PipelineItemRegistry) GetPlumbingItems() []PipelineItem {
 			items = append(items, iface.(PipelineItem))
 		}
 	}
+
 	return items
 }
 
 // GetFeaturedItems returns all FeaturedPipelineItem-s registered.
 func (registry *PipelineItemRegistry) GetFeaturedItems() map[string][]PipelineItem {
 	features := map[string][]PipelineItem{}
+
 	for _, t := range registry.registered {
 		item := reflect.New(t.Elem()).Interface().(PipelineItem)
 		deps := registry.CollectAllDependencies(item)
 		deps = append(deps, item)
 		depFeatures := map[string]bool{}
+
 		for _, dep := range deps {
 			if fiFace, ok := dep.(FeaturedPipelineItem); ok {
 				for _, f := range fiFace.Features() {
@@ -116,6 +129,7 @@ func (registry *PipelineItemRegistry) GetFeaturedItems() map[string][]PipelineIt
 				}
 			}
 		}
+
 		for f := range depFeatures {
 			features[f] = append(features[f], item)
 		}
@@ -126,6 +140,7 @@ func (registry *PipelineItemRegistry) GetFeaturedItems() map[string][]PipelineIt
 			return vals[i].Name() < vals[j].Name()
 		})
 	}
+
 	return features
 }
 
@@ -133,9 +148,11 @@ func (registry *PipelineItemRegistry) GetFeaturedItems() map[string][]PipelineIt
 // depends.
 func (registry *PipelineItemRegistry) CollectAllDependencies(item PipelineItem) []PipelineItem {
 	deps := map[string]PipelineItem{}
+
 	for stack := []PipelineItem{item}; len(stack) > 0; {
 		head := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
+
 		for _, reqID := range head.Requires() {
 			req := registry.Summon(reqID)[0]
 			if _, exists := deps[reqID]; !exists {
@@ -144,13 +161,16 @@ func (registry *PipelineItemRegistry) CollectAllDependencies(item PipelineItem) 
 			}
 		}
 	}
+
 	result := make([]PipelineItem, 0, len(deps))
 	for _, val := range deps {
 		result = append(result, val)
 	}
+
 	sort.Slice(result, func(i, j int) bool {
 		return result[i].Name() < result[j].Name()
 	})
+
 	return result
 }
 
@@ -178,6 +198,7 @@ func (s *pathValue) Type() string {
 	if pathFlagTypeMasquerade {
 		return "path"
 	}
+
 	return "string"
 }
 
@@ -205,7 +226,9 @@ func (acf *arrayFeatureFlags) Set(value string) error {
 	if _, exists := acf.Choices[value]; !exists {
 		return fmt.Errorf("feature \"%s\" is not registered", value)
 	}
+
 	acf.Flags = append(acf.Flags, value)
+
 	return nil
 }
 
@@ -220,9 +243,9 @@ func (acf *arrayFeatureFlags) Type() string {
 // runnable analysis (LeafPipelineItem) choices. E.g. if "BurndownAnalysis" was activated
 // through "-burndown" cmdline argument, this mapping would contain ["BurndownAnalysis"] = *true.
 func (registry *PipelineItemRegistry) AddFlags(flagSet *pflag.FlagSet) (
-	flags map[string]interface{}, deployed map[string]*bool, activations map[string][]string,
+	flags map[string]any, deployed map[string]*bool, activations map[string][]string,
 ) {
-	flags = map[string]interface{}{}
+	flags = map[string]any{}
 	deployed = map[string]*bool{}
 	activations = map[string][]string{}
 	reusableOptions := map[string]ConfigurationOption{}
@@ -251,7 +274,9 @@ func (registry *PipelineItemRegistry) AddFlags(flagSet *pflag.FlagSet) (
 			if leafFlag == "" {
 				return
 			}
+
 			flagName := flagSet.Lookup(optFlag).Name
+
 			list := activations[flagName]
 			if _, ok := registry.preferred[name]; !ok || len(list) == 0 {
 				activations[flagName] = append(list, name)
@@ -272,42 +297,46 @@ func (registry *PipelineItemRegistry) AddFlags(flagSet *pflag.FlagSet) (
 						addFlagActivation(opt.Flag)
 						continue
 					}
+
 					s := fmt.Sprintf("Param conflict of the option %s from: %s, %s", opt.Flag, reused.Description, name)
 					fmt.Println(s)
 					panic(s)
 				}
 			}
 
-			var iface interface{}
+			var iface any
 			getPtr := func() unsafe.Pointer {
-				return unsafe.Pointer(uintptr(unsafe.Pointer(&iface)) + unsafe.Sizeof(&iface))
+				return unsafe.Add(unsafe.Pointer(&iface), unsafe.Sizeof(&iface))
 			}
+
 			switch opt.Type {
 			case BoolConfigurationOption:
-				iface = interface{}(true)
+				iface = any(true)
 				ptr := (**bool)(getPtr())
 				*ptr = flagSet.Bool(opt.Flag, opt.Default.(bool), formatHelp(opt.Description))
 			case IntConfigurationOption:
-				iface = interface{}(0)
+				iface = any(0)
 				ptr := (**int)(getPtr())
 				*ptr = flagSet.Int(opt.Flag, opt.Default.(int), formatHelp(opt.Description))
 			case StringConfigurationOption, PathConfigurationOption:
-				iface = interface{}("")
+				iface = any("")
 				ptr := (**string)(getPtr())
+
 				*ptr = flagSet.String(opt.Flag, opt.Default.(string), formatHelp(opt.Description))
 				if opt.Type == PathConfigurationOption {
 					err := cobra.MarkFlagFilename(flagSet, opt.Flag)
 					if err != nil {
 						panic(err)
 					}
+
 					PathifyFlagValue(flagSet.Lookup(opt.Flag))
 				}
 			case FloatConfigurationOption:
-				iface = interface{}(float32(0))
+				iface = any(float32(0))
 				ptr := (**float32)(getPtr())
 				*ptr = flagSet.Float32(opt.Flag, opt.Default.(float32), formatHelp(opt.Description))
 			case StringsConfigurationOption:
-				iface = interface{}([]string{})
+				iface = any([]string{})
 				ptr := (**[]string)(getPtr())
 				*ptr = flagSet.StringSlice(opt.Flag, opt.Default.([]string), formatHelp(opt.Description))
 			}
@@ -318,35 +347,39 @@ func (registry *PipelineItemRegistry) AddFlags(flagSet *pflag.FlagSet) (
 	}
 	{
 		// Pipeline flags
-		iface := interface{}("")
-		ptr1 := (**string)(unsafe.Pointer(uintptr(unsafe.Pointer(&iface)) + unsafe.Sizeof(&iface)))
+		iface := any("")
+		ptr1 := (**string)(unsafe.Add(unsafe.Pointer(&iface), unsafe.Sizeof(&iface)))
 		*ptr1 = flagSet.String("dump-dag", "", "Write the pipeline DAG to a Graphviz file.")
 		flags[ConfigPipelineDAGPath] = iface
+
 		PathifyFlagValue(flagSet.Lookup("dump-dag"))
-		iface = interface{}(true)
-		ptr2 := (**bool)(unsafe.Pointer(uintptr(unsafe.Pointer(&iface)) + unsafe.Sizeof(&iface)))
+
+		iface = any(true)
+		ptr2 := (**bool)(unsafe.Add(unsafe.Pointer(&iface), unsafe.Sizeof(&iface)))
 		*ptr2 = flagSet.Bool("dry-run", false, "Do not run any analyses - only resolve the DAG. "+
 			"Useful for --dump-dag or --dump-plan.")
 		flags[ConfigPipelineDryRun] = iface
-		iface = interface{}(true)
-		ptr3 := (**bool)(unsafe.Pointer(uintptr(unsafe.Pointer(&iface)) + unsafe.Sizeof(&iface)))
+		iface = any(true)
+		ptr3 := (**bool)(unsafe.Add(unsafe.Pointer(&iface), unsafe.Sizeof(&iface)))
 		*ptr3 = flagSet.Bool("dump-plan", false, "Print the pipeline execution plan to stderr.")
 		flags[ConfigPipelineDumpPlan] = iface
-		iface = interface{}(0)
-		ptr4 := (**int)(unsafe.Pointer(uintptr(unsafe.Pointer(&iface)) + unsafe.Sizeof(&iface)))
+		iface = any(0)
+		ptr4 := (**int)(unsafe.Add(unsafe.Pointer(&iface), unsafe.Sizeof(&iface)))
 		*ptr4 = flagSet.Int("hibernation-distance", 0,
 			"Minimum number of actions between two sequential usages of a branch to activate "+
 				"the hibernation optimization (cpu-memory trade-off). 0 disables.")
 		flags[ConfigPipelineHibernationDistance] = iface
-		iface = interface{}(true)
-		ptr5 := (**bool)(unsafe.Pointer(uintptr(unsafe.Pointer(&iface)) + unsafe.Sizeof(&iface)))
+		iface = any(true)
+		ptr5 := (**bool)(unsafe.Add(unsafe.Pointer(&iface), unsafe.Sizeof(&iface)))
 		*ptr5 = flagSet.Bool("print-actions", false, "Print the executed actions to stderr.")
 		flags[ConfigPipelinePrintActions] = iface
 	}
+
 	var features []string
 	for f := range registry.featureFlags.Choices {
 		features = append(features, f)
 	}
+
 	sort.Strings(features)
 	featureHelp := fmt.Sprintf("Enables the items which depend on the specified features. Can be specified "+
 		"multiple times. Available features: [%s] (see --feature below).",

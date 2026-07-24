@@ -1,6 +1,7 @@
 package leaves
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -75,7 +76,7 @@ func (analyser *LineDumper) ListConfigurationOptions() []core.ConfigurationOptio
 }
 
 // Configure sets the properties previously published by ListConfigurationOptions().
-func (analyser *LineDumper) Configure(facts map[string]interface{}) error {
+func (analyser *LineDumper) Configure(facts map[string]any) error {
 	if l, exists := facts[core.ConfigLogger].(core.Logger); exists {
 		analyser.l = l
 	} else {
@@ -95,7 +96,7 @@ func (analyser *LineDumper) Configure(facts map[string]interface{}) error {
 	return nil
 }
 
-func (analyser *LineDumper) ConfigureUpstream(map[string]interface{}) error {
+func (analyser *LineDumper) ConfigureUpstream(map[string]any) error {
 	return nil
 }
 
@@ -117,6 +118,7 @@ func (analyser *LineDumper) Initialize(*git.Repository) error {
 	if analyser.peopleResolver == nil {
 		analyser.peopleResolver = core.NewIdentityResolver(nil, nil)
 	}
+
 	analyser.commits = nil
 
 	return nil
@@ -131,7 +133,7 @@ func (analyser *LineDumper) Fork(n int) []core.PipelineItem {
 // Additionally, DependencyCommit is always present there and represents the analysed *object.Commit.
 // This function returns the mapping with analysis results. The keys must be the same as
 // in Provides(). If there was an error, nil is returned.
-func (analyser *LineDumper) Consume(deps map[string]interface{}) (map[string]interface{}, error) {
+func (analyser *LineDumper) Consume(deps map[string]any) (map[string]any, error) {
 	commit := deps[core.DependencyCommit].(*object.Commit)
 
 	changes := deps[linehistory.DependencyLineHistory].(core.LineHistoryChanges)
@@ -152,15 +154,18 @@ func (analyser *LineDumper) Consume(deps map[string]interface{}) (map[string]int
 }
 
 // Finalize returns the result of the analysis. Further calls to Consume() are not expected.
-func (analyser *LineDumper) Finalize() interface{} {
+func (analyser *LineDumper) Finalize() any {
 	if analyser.AuthorDictOut != "" {
 		names := analyser.peopleResolver.CopyNames(true)
-		if err := writeLines(names, analyser.AuthorDictOut); err != nil {
+
+		err := writeLines(names, analyser.AuthorDictOut)
+		if err != nil {
 			_, _ = fmt.Fprint(os.Stderr, "unable to write to the file:", analyser.AuthorDictOut, err)
 		}
 	}
 
 	fileNames := map[core.FileId]string{}
+
 	analyser.primaryResolver.ForEachFile(func(id core.FileId, name string) {
 		fileNames[id] = name
 	})
@@ -181,6 +186,7 @@ func writeLines(lines []string, out string) error {
 	defer func() {
 		_ = authors.Close()
 	}()
+
 	for _, name := range lines {
 		if _, err = authors.WriteString(name + "\n"); err != nil {
 			return err
@@ -192,15 +198,18 @@ func writeLines(lines []string, out string) error {
 
 // Serialize converts the analysis result as returned by Finalize() to text or bytes.
 // The text format is YAML and the bytes format is Protocol Buffers.
-func (analyser *LineDumper) Serialize(result interface{}, binary bool, writer io.Writer) error {
+func (analyser *LineDumper) Serialize(result any, binary bool, writer io.Writer) error {
 	typedResult, ok := result.(LineDumperResult)
 	if !ok {
 		return fmt.Errorf("result is not a line dumper result: '%v'", result)
 	}
+
 	if binary {
-		return fmt.Errorf("binary is not supported")
+		return errors.New("binary is not supported")
 	}
+
 	analyser.serializeText(typedResult, writer)
+
 	return nil
 }
 
@@ -210,8 +219,10 @@ func (analyser *LineDumper) serializeText(result LineDumperResult, writer io.Wri
 	}
 
 	_, _ = fmt.Fprintln(writer, "  commits: ")
+
 	for _, commit := range result.Commits {
 		hash := commit.CommitHash.String()
+
 		_, _ = fmt.Fprintf(writer, "    %s: |-\n", hash)
 		for _, change := range commit.Changes {
 			_, _ = fmt.Fprintf(writer, "      %d %6d %5d %6d %5d %d\n", change.FileId,
@@ -225,9 +236,11 @@ func (analyser *LineDumper) serializeText(result LineDumperResult, writer io.Wri
 		for k := range result.fileDict {
 			ids = append(ids, int(k))
 		}
+
 		sort.Ints(ids)
 
 		_, _ = fmt.Fprintln(writer, "  file_sequence:")
+
 		for _, k := range ids {
 			v := result.fileDict[core.FileId(k)]
 			_, _ = fmt.Fprintf(writer, "    %d: %s\n", k, yaml.SafeString(v))

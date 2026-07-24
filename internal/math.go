@@ -8,6 +8,7 @@ func Min(a, b int) int {
 	if a < b {
 		return a
 	}
+
 	return b
 }
 
@@ -16,6 +17,7 @@ func Min64(a, b int64) int64 {
 	if a < b {
 		return a
 	}
+
 	return b
 }
 
@@ -24,6 +26,7 @@ func Max(a, b int) int {
 	if a < b {
 		return b
 	}
+
 	return a
 }
 
@@ -32,6 +35,7 @@ func Max64(a, b int64) int64 {
 	if a < b {
 		return b
 	}
+
 	return a
 }
 
@@ -40,5 +44,6 @@ func Abs64(v int64) int64 {
 	if v <= 0 {
 		return -v
 	}
+
 	return v
 }

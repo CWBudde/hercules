@@ -15,6 +15,7 @@ import (
 
 type testForkPipelineItem struct {
 	NoopMerger
+
 	Mutable   map[int]bool
 	Immutable string
 }
@@ -31,11 +32,11 @@ func (item *testForkPipelineItem) Requires() []string {
 	return []string{}
 }
 
-func (item *testForkPipelineItem) Configure(facts map[string]interface{}) error {
+func (item *testForkPipelineItem) Configure(facts map[string]any) error {
 	return nil
 }
 
-func (item *testForkPipelineItem) ConfigureUpstream(facts map[string]interface{}) error {
+func (item *testForkPipelineItem) ConfigureUpstream(facts map[string]any) error {
 	return nil
 }
 
@@ -56,8 +57,8 @@ func (item *testForkPipelineItem) Initialize(repository *git.Repository) error {
 	return nil
 }
 
-func (item *testForkPipelineItem) Consume(deps map[string]interface{}) (map[string]interface{}, error) {
-	return map[string]interface{}{"test": "foo"}, nil
+func (item *testForkPipelineItem) Consume(deps map[string]any) (map[string]any, error) {
+	return map[string]any{"test": "foo"}, nil
 }
 
 func (item *testForkPipelineItem) Fork(n int) []PipelineItem {
@@ -115,17 +116,17 @@ func TestRunActionString(t *testing.T) {
 	ra := runAction{runActionCommit, c, nil, nil}
 	assert.Equal(t, "cce947b", ra.String())
 	ra = runAction{runActionFork, nil, nil, []int{1, 2, 5}}
-	assert.Equal(t, ra.String(), "fork^3")
+	assert.Equal(t, "fork^3", ra.String())
 	ra = runAction{runActionMerge, nil, nil, []int{1, 2, 5}}
-	assert.Equal(t, ra.String(), "merge^3")
+	assert.Equal(t, "merge^3", ra.String())
 	ra = runAction{runActionEmerge, nil, nil, nil}
-	assert.Equal(t, ra.String(), "emerge")
+	assert.Equal(t, "emerge", ra.String())
 	ra = runAction{runActionDelete, nil, nil, nil}
-	assert.Equal(t, ra.String(), "delete")
+	assert.Equal(t, "delete", ra.String())
 	ra = runAction{runActionHibernate, nil, nil, nil}
-	assert.Equal(t, ra.String(), "hibernate")
+	assert.Equal(t, "hibernate", ra.String())
 	ra = runAction{runActionBoot, nil, nil, nil}
-	assert.Equal(t, ra.String(), "boot")
+	assert.Equal(t, "boot", ra.String())
 }
 
 // makeTestCommit creates a fake commit with a padded hash and optional parent hashes.
@@ -148,7 +149,7 @@ func makeTestCommit(hash string, parents ...string) *object.Commit {
 
 func TestRunActionStringUnknown(t *testing.T) {
 	ra := runAction{Action: 999, Items: []int{1}}
-	assert.Equal(t, "", ra.String())
+	assert.Empty(t, ra.String())
 }
 
 func TestOneShotMergeProcessor(t *testing.T) {
@@ -163,7 +164,7 @@ func TestOneShotMergeProcessor(t *testing.T) {
 		proc := &OneShotMergeProcessor{}
 		proc.Initialize()
 		commit := makeTestCommit("aa", "bb") // 1 parent = regular
-		deps := map[string]interface{}{DependencyCommit: commit}
+		deps := map[string]any{DependencyCommit: commit}
 		assert.True(t, proc.ShouldConsumeCommit(deps))
 		assert.True(t, proc.ShouldConsumeCommit(deps))
 	})
@@ -172,7 +173,7 @@ func TestOneShotMergeProcessor(t *testing.T) {
 		proc := &OneShotMergeProcessor{}
 		proc.Initialize()
 		commit := makeTestCommit("aa") // 0 parents = root
-		deps := map[string]interface{}{DependencyCommit: commit}
+		deps := map[string]any{DependencyCommit: commit}
 		assert.True(t, proc.ShouldConsumeCommit(deps))
 		assert.True(t, proc.ShouldConsumeCommit(deps))
 	})
@@ -181,7 +182,7 @@ func TestOneShotMergeProcessor(t *testing.T) {
 		proc := &OneShotMergeProcessor{}
 		proc.Initialize()
 		commit := makeTestCommit("aa", "bb", "cc") // 2 parents = merge
-		deps := map[string]interface{}{DependencyCommit: commit}
+		deps := map[string]any{DependencyCommit: commit}
 		assert.True(t, proc.ShouldConsumeCommit(deps))
 		assert.False(t, proc.ShouldConsumeCommit(deps))
 	})
@@ -191,8 +192,8 @@ func TestOneShotMergeProcessor(t *testing.T) {
 		proc.Initialize()
 		merge1 := makeTestCommit("aa", "bb", "cc")
 		merge2 := makeTestCommit("dd", "ee", "ff")
-		deps1 := map[string]interface{}{DependencyCommit: merge1}
-		deps2 := map[string]interface{}{DependencyCommit: merge2}
+		deps1 := map[string]any{DependencyCommit: merge1}
+		deps2 := map[string]any{DependencyCommit: merge2}
 		assert.True(t, proc.ShouldConsumeCommit(deps1))
 		assert.True(t, proc.ShouldConsumeCommit(deps2))
 		assert.False(t, proc.ShouldConsumeCommit(deps1))
@@ -508,7 +509,7 @@ func TestBindOrderNodes(t *testing.T) {
 	reverseOrder := orderNodes(true, false)
 	assert.NotEmpty(t, reverseOrder)
 	// reversed order should be the reverse
-	assert.Equal(t, len(order), len(reverseOrder))
+	assert.Len(t, reverseOrder, len(order))
 	for i := range order {
 		assert.Equal(t, order[i], reverseOrder[len(reverseOrder)-1-i])
 	}
@@ -670,7 +671,7 @@ func TestTracebackMerges(t *testing.T) {
 func TestPrintAction(t *testing.T) {
 	var buf bytes.Buffer
 	old := planPrintFunc
-	planPrintFunc = func(args ...interface{}) {
+	planPrintFunc = func(args ...any) {
 		fmt.Fprintln(&buf, args...)
 	}
 	defer func() { planPrintFunc = old }()
@@ -728,7 +729,7 @@ func TestPrepareRunPlan(t *testing.T) {
 		d := makeTestCommit("dd", "bb", "cc")
 
 		_, mergeCount := prepareRunPlan([]*object.Commit{a, b, c, d}, 0, true)
-		assert.Greater(t, mergeCount, 0)
+		assert.Positive(t, mergeCount)
 	})
 
 	t.Run("with hibernation", func(t *testing.T) {

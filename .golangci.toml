@@ -6,6 +6,7 @@ disable = [
     'depguard',
     'exhaustive',
     'exhaustruct',
+    'gocyclo',
     'godox',
     'gomodguard',
     'ireturn',
@@ -24,11 +25,9 @@ max-complexity = 10
 [linters.settings.funlen]
 lines = 60
 statements = 40
+ignore-comments = true
 
 [linters.settings.gocognit]
-min-complexity = 20
-
-[linters.settings.gocyclo]
 min-complexity = 15
 
 [linters.settings.nestif]

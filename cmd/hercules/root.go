@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -52,6 +54,8 @@ const (
 	progressModeLines progressMode = "lines"
 	progressModeJSON  progressMode = "json"
 	progressModeNone  progressMode = "none"
+
+	progressEventWriteStart = "write-start"
 )
 
 type progressEvent struct {
@@ -308,204 +312,374 @@ var rootCmd = &cobra.Command{
 	Long: `Hercules is a flexible and fast Git repository analysis engine. The base command executes
 the commit processing pipeline which is automatically generated from the dependencies of one
 or several analysis targets. The list of the available targets is printed in --help. External
-targets can be added using the --plugin system.`,
+	targets can be added using the --plugin system.`,
 	Args: cobra.RangeArgs(1, 2),
-	Run: func(cmd *cobra.Command, args []string) {
-		flags := cmd.Flags()
-		applyPreset(flags)
-		getBool := func(name string) bool {
-			value, err := flags.GetBool(name)
-			if err != nil {
-				panic(err)
-			}
-			return value
-		}
-		getString := func(name string) string {
-			value, err := flags.GetString(name)
-			if err != nil {
-				panic(err)
-			}
-			return value
-		}
-		firstParent := getBool("first-parent")
-		commitsFile := getString("commits")
-		head := getBool("head")
-		protobuf := getBool("pb")
-		profile := getBool("profile")
-		disableStatus := getBool("quiet")
-		identityAudit := getBool("identity-audit")
-		peopleDictTemplate := getString("people-dict-template")
-		progressModeValue, err := parseProgressMode(getString("progress"))
-		if err != nil {
-			log.Fatal(err)
-		}
-		if disableStatus && !flags.Changed("progress") {
-			progressModeValue = progressModeNone
-		} else if progressModeValue == progressModeAuto {
-			progressModeValue = progressModeBar
-		}
-		sshIdentity := getString("ssh-identity")
+	RunE: runRoot,
+}
 
-		if profile {
-			go func() {
-				err := http.ListenAndServe("localhost:6060", nil)
-				if err != nil {
-					panic(err)
-				}
-			}()
-			prof, _ := os.Create("hercules.pprof")
-			err := pprof.StartCPUProfile(prof)
-			if err != nil {
-				panic(err)
-			}
-			defer pprof.StopCPUProfile()
-		}
-		uri := args[0]
-		cachePath := ""
-		if len(args) == 2 {
-			cachePath = args[1]
-		}
-		repository, repoUri, repoFeature := loadRepository(uri, cachePath, disableStatus, sshIdentity)
+type rootOptions struct {
+	firstParent        bool
+	commitsFile        string
+	head               bool
+	protobuf           bool
+	profile            bool
+	quiet              bool
+	identityAudit      bool
+	peopleDictTemplate string
+	progress           progressMode
+	sshIdentity        string
+	uri                string
+	cachePath          string
+}
 
-		// core logic
-		pipeline := hercules.NewPipeline(repository)
-		if repoFeature != "" {
-			pipeline.SetFeature(repoFeature)
-		}
-		pipeline.SetFeaturesFromFlags()
-		var bar *progress.ProgressBar
-		emitProgress := func(event progressEvent) {
-			if progressModeValue != progressModeLines && progressModeValue != progressModeJSON {
-				return
-			}
-			line, err := formatProgressEvent(event, progressModeValue)
-			if err != nil {
-				log.Fatal(err)
-			}
-			_, _ = os.Stderr.WriteString(line)
-		}
-		if progressModeValue == progressModeBar {
-			pipeline.OnProgress = func(commit, length int, action string) {
-				if bar == nil {
-					bar = progress.New(length)
-					bar.Callback = func(msg string) {
-						_, _ = os.Stderr.WriteString("\033[2K\r" + msg)
-					}
-					bar.NotPrint = true
-					bar.ShowPercent = false
-					bar.ShowSpeed = false
-					bar.SetMaxWidth(80).Start()
-				}
-				if action == hercules.MessageFinalize {
-					bar.Finish()
-					_, _ = fmt.Fprint(os.Stderr, "\033[2K\rfinalizing...")
-				} else {
-					bar.Set(commit).Postfix(" [" + action + "] ")
-				}
-			}
-		} else if progressModeValue == progressModeLines || progressModeValue == progressModeJSON {
-			lastCommit := -1
-			pipeline.OnProgress = func(commit, length int, action string) {
-				if action == hercules.MessageFinalize {
-					emitProgress(progressEvent{Event: "finalize", Commit: commit, Total: length, Action: action})
-					return
-				}
-				interval := 100
-				if length > 0 {
-					interval = length / 20
-					if interval < 25 {
-						interval = 25
-					} else if interval > 500 {
-						interval = 500
-					}
-				}
-				if commit == 0 || commit == length || commit-lastCommit >= interval {
-					emitProgress(progressEvent{Event: "commit", Commit: commit, Total: length, Action: action})
-					lastCommit = commit
-				}
-			}
-		}
+type commandFlagReader struct {
+	flags *pflag.FlagSet
+	err   error
+}
 
-		if repoFeature == core.FeatureGitCommits {
-			var commits []*object.Commit
-			var err error
-			if commitsFile == "" {
-				if !head {
-					if progressModeValue == progressModeBar {
-						_, _ = fmt.Fprint(os.Stderr, "git log...\r")
-					} else {
-						emitProgress(progressEvent{Event: "git-log-start", Repo: repoUri})
-					}
-					commits, err = pipeline.Commits(firstParent)
-					emitProgress(progressEvent{Event: "git-log-done", Repo: repoUri, Total: len(commits)})
-				} else {
-					commits, err = pipeline.HeadCommit()
-				}
-			} else {
-				commits, err = hercules.LoadCommitsFromFile(commitsFile, repository)
-			}
-			if err != nil {
-				log.Fatalf("failed to list the commits: %v", err)
-			}
-			cmdlineFacts[hercules.ConfigPipelineCommits] = commits
-		}
+func (reader *commandFlagReader) bool(name string) bool {
+	if reader.err != nil {
+		return false
+	}
+	value, err := reader.flags.GetBool(name)
+	reader.err = err
+	return value
+}
 
-		if identityAudit || peopleDictTemplate != "" {
-			commits, ok := cmdlineFacts[hercules.ConfigPipelineCommits].([]*object.Commit)
-			if !ok {
-				log.Fatal("identity audit requires a Git commit repository")
-			}
-			err := runIdentityWorkflow(identityWorkflowOptions{
-				Commits:      commits,
-				Facts:        cmdlineFacts,
-				Audit:        identityAudit,
-				TemplatePath: peopleDictTemplate,
-				Out:          os.Stdout,
-			})
-			if err != nil {
-				log.Fatal(err)
-			}
-			return
-		}
+func (reader *commandFlagReader) string(name string) string {
+	if reader.err != nil {
+		return ""
+	}
+	value, err := reader.flags.GetString(name)
+	reader.err = err
+	return value
+}
 
-		priorityFn := func(items []core.PipelineItem) core.PipelineItem {
-			if len(items) == 0 {
-				return nil
-			}
-			if len(items) > 1 {
-				sort.Stable(&flagSorter{items: items, flagSet: flags, featureSet: pipeline})
-			}
-			return items[0]
-		}
+func (reader *commandFlagReader) stringSlice(name string) []string {
+	if reader.err != nil {
+		return nil
+	}
+	value, err := reader.flags.GetStringSlice(name)
+	reader.err = err
+	return value
+}
 
-		pipeline.DryRun, _ = cmdlineFacts[hercules.ConfigPipelineDryRun].(bool)
-		deployedLeafs := deployItemsToPipeline(pipeline, flags, priorityFn)
+func (reader *commandFlagReader) stringArray(name string) []string {
+	if reader.err != nil {
+		return nil
+	}
+	value, err := reader.flags.GetStringArray(name)
+	reader.err = err
+	return value
+}
 
-		if err := pipeline.InitializeExt(cmdlineFacts, priorityFn, true); err != nil {
-			log.Fatal(err)
-		}
-		emitProgress(progressEvent{Event: "pipeline-initialized", Repo: repoUri})
+func readRootOptions(cmd *cobra.Command, args []string) (rootOptions, error) {
+	flags := cmd.Flags()
+	applyPreset(flags)
+	reader := commandFlagReader{flags: flags}
+	firstParent := reader.bool("first-parent")
+	commitsFile := reader.string("commits")
+	head := reader.bool("head")
+	protobuf := reader.bool("pb")
+	profile := reader.bool("profile")
+	quiet := reader.bool("quiet")
+	identityAudit := reader.bool("identity-audit")
+	peopleDictTemplate := reader.string("people-dict-template")
+	progressValue := reader.string("progress")
+	sshIdentity := reader.string("ssh-identity")
+	if reader.err != nil {
+		return rootOptions{}, reader.err
+	}
+	progressModeValue, err := parseProgressMode(progressValue)
+	if err != nil {
+		return rootOptions{}, err
+	}
+	if quiet && !flags.Changed("progress") {
+		progressModeValue = progressModeNone
+	} else if progressModeValue == progressModeAuto {
+		progressModeValue = progressModeBar
+	}
 
-		results, err := pipeline.RunPreparedPlan()
-		if err != nil {
-			log.Fatalf("failed to run the pipeline: %v", err)
+	cachePath := ""
+	if len(args) == 2 {
+		cachePath = args[1]
+	}
+	return rootOptions{
+		firstParent:        firstParent,
+		commitsFile:        commitsFile,
+		head:               head,
+		protobuf:           protobuf,
+		profile:            profile,
+		quiet:              quiet,
+		identityAudit:      identityAudit,
+		peopleDictTemplate: peopleDictTemplate,
+		progress:           progressModeValue,
+		sshIdentity:        sshIdentity,
+		uri:                args[0],
+		cachePath:          cachePath,
+	}, nil
+}
+
+func runRoot(cmd *cobra.Command, args []string) error {
+	options, err := readRootOptions(cmd, args)
+	if err != nil {
+		return err
+	}
+	stopProfile, err := startRootProfile(options.profile)
+	if err != nil {
+		return err
+	}
+	defer stopProfile()
+
+	repository, repoURI, repoFeature, err := loadRepositoryWithError(
+		options.uri, options.cachePath, options.quiet, options.sshIdentity,
+	)
+	if err != nil {
+		return fmt.Errorf("open repository %s: %w", options.uri, err)
+	}
+	pipeline := newRootPipeline(repository, repoFeature)
+
+	reporter := &progressReporter{mode: options.progress, lastCommit: -1}
+	if options.progress != progressModeNone {
+		pipeline.OnProgress = reporter.update
+	}
+
+	if err := loadRootCommits(pipeline, repository, repoURI, repoFeature, options, reporter); err != nil {
+		return err
+	}
+	handled, err := runRequestedIdentityWorkflow(options)
+	if err != nil || handled {
+		return err
+	}
+
+	priorityFn := pipelinePriority(cmd.Flags(), pipeline)
+	pipeline.DryRun, _ = cmdlineFacts[hercules.ConfigPipelineDryRun].(bool)
+	deployedLeafs := deployItemsToPipeline(pipeline, cmd.Flags(), priorityFn)
+	if err := pipeline.InitializeExt(cmdlineFacts, priorityFn, true); err != nil {
+		return err
+	}
+	reporter.emit(progressEvent{Event: "pipeline-initialized", Repo: repoURI})
+
+	results, err := pipeline.RunPreparedPlan()
+	if err != nil {
+		return fmt.Errorf("run pipeline: %w", err)
+	}
+	return writeRootResults(options, repoURI, deployedLeafs, results, reporter)
+}
+
+func newRootPipeline(repository *git.Repository, repoFeature string) *core.Pipeline {
+	pipeline := hercules.NewPipeline(repository)
+	if repoFeature != "" {
+		pipeline.SetFeature(repoFeature)
+	}
+	pipeline.SetFeaturesFromFlags()
+	return pipeline
+}
+
+func startRootProfile(enabled bool) (func(), error) {
+	if !enabled {
+		return func() {}, nil
+	}
+	profileFile, err := os.Create("hercules.pprof")
+	if err != nil {
+		return nil, fmt.Errorf("create CPU profile: %w", err)
+	}
+	if err := pprof.StartCPUProfile(profileFile); err != nil {
+		_ = profileFile.Close()
+		return nil, fmt.Errorf("start CPU profile: %w", err)
+	}
+
+	server := &http.Server{
+		Addr:              "localhost:6060",
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	go func() {
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Printf("profiling server: %v", err)
 		}
-		if progressModeValue == progressModeBar {
-			_, _ = fmt.Fprint(os.Stderr, "\033[2K\r")
-			// if not a terminal, the user will not see the output, so show the status
-			if !terminal.IsTerminal(int(os.Stdout.Fd())) {
-				_, _ = fmt.Fprint(os.Stderr, "writing...\r")
-			}
+	}()
+	return func() {
+		pprof.StopCPUProfile()
+		if err := profileFile.Close(); err != nil {
+			log.Printf("close CPU profile: %v", err)
 		}
-		if protobuf {
-			emitProgress(progressEvent{Event: "write-start", Repo: repoUri, Output: "protobuf"})
-			protobufResults(repoUri, deployedLeafs, results)
-		} else {
-			emitProgress(progressEvent{Event: "write-start", Repo: repoUri, Output: "yaml"})
-			printResults(repoUri, deployedLeafs, results)
+		if err := server.Close(); err != nil {
+			log.Printf("close profiling server: %v", err)
 		}
-		emitProgress(progressEvent{Event: "write-done", Repo: repoUri})
-	},
+	}, nil
+}
+
+type progressReporter struct {
+	mode       progressMode
+	bar        *progress.ProgressBar
+	lastCommit int
+}
+
+func (reporter *progressReporter) emit(event progressEvent) {
+	if reporter.mode != progressModeLines && reporter.mode != progressModeJSON {
+		return
+	}
+	line, err := formatProgressEvent(event, reporter.mode)
+	if err != nil {
+		log.Printf("format progress event: %v", err)
+		return
+	}
+	_, _ = os.Stderr.WriteString(line)
+}
+
+func (reporter *progressReporter) update(commit, length int, action string) {
+	switch reporter.mode {
+	case progressModeBar:
+		reporter.updateBar(commit, length, action)
+	case progressModeLines, progressModeJSON:
+		reporter.updateStream(commit, length, action)
+	}
+}
+
+func (reporter *progressReporter) updateBar(commit, length int, action string) {
+	if reporter.bar == nil {
+		reporter.bar = progress.New(length)
+		reporter.bar.Callback = func(message string) {
+			_, _ = os.Stderr.WriteString("\033[2K\r" + message)
+		}
+		reporter.bar.NotPrint = true
+		reporter.bar.ShowPercent = false
+		reporter.bar.ShowSpeed = false
+		reporter.bar.SetMaxWidth(80).Start()
+	}
+	if action == hercules.MessageFinalize {
+		reporter.bar.Finish()
+		_, _ = fmt.Fprint(os.Stderr, "\033[2K\rfinalizing...")
+		return
+	}
+	reporter.bar.Set(commit).Postfix(" [" + action + "] ")
+}
+
+func (reporter *progressReporter) updateStream(commit, length int, action string) {
+	if action == hercules.MessageFinalize {
+		reporter.emit(progressEvent{Event: "finalize", Commit: commit, Total: length, Action: action})
+		return
+	}
+	if commit == 0 || commit == length || commit-reporter.lastCommit >= progressInterval(length) {
+		reporter.emit(progressEvent{Event: "commit", Commit: commit, Total: length, Action: action})
+		reporter.lastCommit = commit
+	}
+}
+
+func progressInterval(length int) int {
+	if length <= 0 {
+		return 100
+	}
+	interval := length / 20
+	if interval < 25 {
+		return 25
+	}
+	if interval > 500 {
+		return 500
+	}
+	return interval
+}
+
+func loadRootCommits(
+	pipeline *core.Pipeline,
+	repository *git.Repository,
+	repoURI, repoFeature string,
+	options rootOptions,
+	reporter *progressReporter,
+) error {
+	if repoFeature != core.FeatureGitCommits {
+		return nil
+	}
+	commits, err := selectRootCommits(pipeline, repository, repoURI, options, reporter)
+	if err != nil {
+		return fmt.Errorf("list commits: %w", err)
+	}
+	cmdlineFacts[hercules.ConfigPipelineCommits] = commits
+	return nil
+}
+
+func selectRootCommits(
+	pipeline *core.Pipeline,
+	repository *git.Repository,
+	repoURI string,
+	options rootOptions,
+	reporter *progressReporter,
+) ([]*object.Commit, error) {
+	if options.commitsFile != "" {
+		return hercules.LoadCommitsFromFile(options.commitsFile, repository)
+	}
+	if options.head {
+		return pipeline.HeadCommit()
+	}
+	if options.progress == progressModeBar {
+		_, _ = fmt.Fprint(os.Stderr, "git log...\r")
+	} else {
+		reporter.emit(progressEvent{Event: "git-log-start", Repo: repoURI})
+	}
+	commits, err := pipeline.Commits(options.firstParent)
+	reporter.emit(progressEvent{Event: "git-log-done", Repo: repoURI, Total: len(commits)})
+	return commits, err
+}
+
+func runRequestedIdentityWorkflow(options rootOptions) (bool, error) {
+	if !options.identityAudit && options.peopleDictTemplate == "" {
+		return false, nil
+	}
+	commits, ok := cmdlineFacts[hercules.ConfigPipelineCommits].([]*object.Commit)
+	if !ok {
+		return true, errors.New("identity audit requires a Git commit repository")
+	}
+	err := runIdentityWorkflow(identityWorkflowOptions{
+		Commits:      commits,
+		Facts:        cmdlineFacts,
+		Audit:        options.identityAudit,
+		TemplatePath: options.peopleDictTemplate,
+		Out:          os.Stdout,
+	})
+	return true, err
+}
+
+func pipelinePriority(flags *pflag.FlagSet, pipeline *core.Pipeline) func(
+	[]core.PipelineItem,
+) core.PipelineItem {
+	return func(items []core.PipelineItem) core.PipelineItem {
+		if len(items) == 0 {
+			return nil
+		}
+		if len(items) > 1 {
+			sort.Stable(&flagSorter{items: items, flagSet: flags, featureSet: pipeline})
+		}
+		return items[0]
+	}
+}
+
+func writeRootResults(
+	options rootOptions,
+	repoURI string,
+	deployedLeafs []hercules.LeafPipelineItem,
+	results map[hercules.LeafPipelineItem]any,
+	reporter *progressReporter,
+) error {
+	if options.progress == progressModeBar {
+		_, _ = fmt.Fprint(os.Stderr, "\033[2K\r")
+		// if not a terminal, the user will not see the output, so show the status
+		if !terminal.IsTerminal(int(os.Stdout.Fd())) {
+			_, _ = fmt.Fprint(os.Stderr, "writing...\r")
+		}
+	}
+	if options.protobuf {
+		reporter.emit(progressEvent{Event: progressEventWriteStart, Repo: repoURI, Output: "protobuf"})
+		if err := protobufResults(repoURI, deployedLeafs, results); err != nil {
+			return err
+		}
+	} else {
+		reporter.emit(progressEvent{Event: progressEventWriteStart, Repo: repoURI, Output: "yaml"})
+		if err := printResults(repoURI, deployedLeafs, results); err != nil {
+			return err
+		}
+	}
+	reporter.emit(progressEvent{Event: "write-done", Repo: repoURI})
+	return nil
 }
 
 type identityWorkflowOptions struct {
@@ -645,31 +819,62 @@ func (v *flagSorter) weightFlagsOf(item core.PipelineItem, flagSet *pflag.FlagSe
 func printResults(
 	uri string, deployed []hercules.LeafPipelineItem,
 	results map[hercules.LeafPipelineItem]interface{},
-) {
+) error {
 	commonResult := results[nil].(*hercules.CommonAnalysisResult)
 
-	fmt.Println("hercules:")
-	fmt.Printf("  version: %d\n", pb.SchemaVersion)
-	fmt.Println("  hash:", hercules.BinaryGitHash)
-	fmt.Println("  repository:", uri)
-	fmt.Println("  begin_unix_time:", commonResult.BeginTime)
-	fmt.Println("  end_unix_time:", commonResult.EndTime)
-	fmt.Println("  commits:", commonResult.CommitsNumber)
-	fmt.Println("  run_time:", commonResult.RunTime.Nanoseconds()/1e6)
+	output := bufio.NewWriter(os.Stdout)
+	if err := writeResultsHeader(output, uri, commonResult); err != nil {
+		return err
+	}
 
 	for _, item := range deployed {
 		result := results[item]
-		fmt.Printf("%s:\n", item.Name())
-		if err := item.Serialize(result, false, os.Stdout); err != nil {
-			panic(err)
+		if _, err := fmt.Fprintf(output, "%s:\n", item.Name()); err != nil {
+			return fmt.Errorf("write %s result header: %w", item.Name(), err)
+		}
+		if err := item.Serialize(result, false, output); err != nil {
+			return fmt.Errorf("serialize %s result: %w", item.Name(), err)
 		}
 	}
+	if err := output.Flush(); err != nil {
+		return fmt.Errorf("write YAML results: %w", err)
+	}
+	return nil
+}
+
+func writeResultsHeader(
+	writer io.Writer,
+	uri string,
+	result *hercules.CommonAnalysisResult,
+) error {
+	_, err := fmt.Fprintf(
+		writer,
+		"hercules:\n"+
+			"  version: %d\n"+
+			"  hash: %s\n"+
+			"  repository: %s\n"+
+			"  begin_unix_time: %d\n"+
+			"  end_unix_time: %d\n"+
+			"  commits: %d\n"+
+			"  run_time: %d\n",
+		pb.SchemaVersion,
+		hercules.BinaryGitHash,
+		uri,
+		result.BeginTime,
+		result.EndTime,
+		result.CommitsNumber,
+		result.RunTime.Nanoseconds()/1e6,
+	)
+	if err != nil {
+		return fmt.Errorf("write YAML result header: %w", err)
+	}
+	return nil
 }
 
 func protobufResults(
 	uri string, deployed []hercules.LeafPipelineItem,
 	results map[hercules.LeafPipelineItem]interface{},
-) {
+) error {
 	header := pb.Metadata{
 		Version:    pb.SchemaVersion,
 		Hash:       hercules.BinaryGitHash,
@@ -686,16 +891,19 @@ func protobufResults(
 		result := results[item]
 		buffer := &bytes.Buffer{}
 		if err := item.Serialize(result, true, buffer); err != nil {
-			panic(err)
+			return fmt.Errorf("serialize %s result: %w", item.Name(), err)
 		}
 		message.Contents[item.Name()] = buffer.Bytes()
 	}
 
 	serialized, err := proto.Marshal(&message)
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("marshal protobuf results: %w", err)
 	}
-	_, _ = os.Stdout.Write(serialized)
+	if _, err := os.Stdout.Write(serialized); err != nil {
+		return fmt.Errorf("write protobuf results: %w", err)
+	}
+	return nil
 }
 
 // trimRightSpace removes the trailing whitespace characters.
@@ -825,10 +1033,12 @@ var versionCmd = &cobra.Command{
 	Short: "Print version information and exit.",
 	Long:  ``,
 	Args:  cobra.MaximumNArgs(0),
-	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Printf("Version: %d\nGit:     %s\nSchema:  %d\n",
-			hercules.BinaryVersion, hercules.BinaryGitHash, pb.SchemaVersion)
-	},
+	Run:   runVersion,
+}
+
+func runVersion(cmd *cobra.Command, _ []string) {
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Version: %d\nGit:     %s\nSchema:  %d\n",
+		hercules.BinaryVersion, hercules.BinaryGitHash, pb.SchemaVersion)
 }
 
 var (

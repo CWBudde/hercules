@@ -22,12 +22,14 @@ var (
 var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Print version, build, and Hercules schema compatibility information",
-	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Printf("labours-go %s (commit %s, built %s, %s/%s)\n",
-			version, commit, date, runtime.GOOS, runtime.GOARCH)
-		fmt.Printf("hercules protobuf schema: v%d\n", pb.SchemaVersion)
-		fmt.Printf("go: %s\n", runtime.Version())
-	},
+	Run:   runVersion,
+}
+
+func runVersion(cmd *cobra.Command, _ []string) {
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "labours-go %s (commit %s, built %s, %s/%s)\n",
+		version, commit, date, runtime.GOOS, runtime.GOARCH)
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "hercules protobuf schema: v%d\n", pb.SchemaVersion)
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "go: %s\n", runtime.Version())
 }
 
 func init() {

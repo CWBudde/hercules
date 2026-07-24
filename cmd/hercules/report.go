@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"html/template"
 	"os"
@@ -132,170 +133,223 @@ in-process renderer (or an external labours command when --labours-cmd is
 given) and writes an output directory with generated chart assets and
 index.html summary.`,
 	Args: cobra.RangeArgs(1, 2),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		flags := cmd.Flags()
-		outputDir, err := flags.GetString("output")
-		if err != nil {
-			return err
-		}
-		if outputDir == "" {
-			return fmt.Errorf("--output must not be empty")
-		}
-		allAnalyses, err := flags.GetBool("all")
-		if err != nil {
-			return err
-		}
-		requestedAnalyses, err := flags.GetStringSlice("analysis")
-		if err != nil {
-			return err
-		}
-		requestedModes, err := flags.GetStringSlice("mode")
-		if err != nil {
-			return err
-		}
-		format, err := flags.GetString("format")
-		if err != nil {
-			return err
-		}
-		format = strings.TrimPrefix(strings.ToLower(strings.TrimSpace(format)), ".")
-		if format != "png" && format != "svg" {
-			return fmt.Errorf("unsupported --format %q: expected png or svg", format)
-		}
-		strict, err := flags.GetBool("strict")
-		if err != nil {
-			return err
-		}
-		herculesExtra, err := flags.GetStringArray("hercules-arg")
-		if err != nil {
-			return err
-		}
-		laboursExtra, err := flags.GetStringArray("labours-arg")
-		if err != nil {
-			return err
-		}
-		laboursCmdOverride, err := flags.GetString("labours-cmd")
-		if err != nil {
-			return err
-		}
-		if err := validateReportLaboursFlags(laboursCmdOverride, laboursExtra); err != nil {
-			return err
-		}
+	RunE: runReport,
+}
 
-		availableAnalysisFlags := make(map[string]struct{})
-		for _, leaf := range hercules.Registry.GetLeaves() {
-			flag := leaf.Flag()
-			if flag != "" {
-				availableAnalysisFlags[flag] = struct{}{}
+func runReport(cmd *cobra.Command, args []string) error {
+	options, err := readReportOptions(cmd, args)
+	if err != nil {
+		return err
+	}
+	available := availableReportAnalysisFlags()
+	analysisFlags, err := selectReportAnalysisFlags(
+		available, options.requestedAnalyses, options.allAnalyses,
+	)
+	if err != nil {
+		return err
+	}
+	modes, err := selectReportModes(options.requestedModes, options.allAnalyses)
+	if err != nil {
+		return err
+	}
+
+	reportPB, message, err := generateReportInput(options, analysisFlags)
+	if err != nil {
+		return err
+	}
+	modeResults, err := renderReportModes(options, reportPB, modes)
+	if err != nil {
+		return err
+	}
+	return finalizeReport(options, message, analysisFlags, modes, modeResults)
+}
+
+type reportOptions struct {
+	outputDir         string
+	format            string
+	allAnalyses       bool
+	strict            bool
+	requestedAnalyses []string
+	requestedModes    []string
+	herculesExtra     []string
+	laboursExtra      []string
+	laboursCommand    string
+	repositoryArgs    []string
+}
+
+func readReportOptions(cmd *cobra.Command, args []string) (reportOptions, error) {
+	flags := cmd.Flags()
+	reader := commandFlagReader{flags: flags}
+	outputDir := reader.string("output")
+	allAnalyses := reader.bool("all")
+	requestedAnalyses := reader.stringSlice("analysis")
+	requestedModes := reader.stringSlice("mode")
+	format := reader.string("format")
+	strict := reader.bool("strict")
+	herculesExtra := reader.stringArray("hercules-arg")
+	laboursExtra := reader.stringArray("labours-arg")
+	laboursCmdOverride := reader.string("labours-cmd")
+	if reader.err != nil {
+		return reportOptions{}, reader.err
+	}
+	if outputDir == "" {
+		return reportOptions{}, errors.New("--output must not be empty")
+	}
+	format = strings.TrimPrefix(strings.ToLower(strings.TrimSpace(format)), ".")
+	if format != "png" && format != "svg" {
+		return reportOptions{}, fmt.Errorf("unsupported --format %q: expected png or svg", format)
+	}
+	if err := validateReportLaboursFlags(laboursCmdOverride, laboursExtra); err != nil {
+		return reportOptions{}, err
+	}
+	return reportOptions{
+		outputDir:         filepath.Clean(outputDir),
+		format:            format,
+		allAnalyses:       allAnalyses,
+		strict:            strict,
+		requestedAnalyses: requestedAnalyses,
+		requestedModes:    requestedModes,
+		herculesExtra:     herculesExtra,
+		laboursExtra:      laboursExtra,
+		laboursCommand:    laboursCmdOverride,
+		repositoryArgs:    args,
+	}, nil
+}
+
+func availableReportAnalysisFlags() map[string]struct{} {
+	available := make(map[string]struct{})
+	for _, leaf := range hercules.Registry.GetLeaves() {
+		flag := leaf.Flag()
+		if flag != "" {
+			available[flag] = struct{}{}
+		}
+	}
+	return available
+}
+
+func generateReportInput(options reportOptions, analysisFlags []string) (
+	string, pb.AnalysisResults, error,
+) {
+	if err := os.MkdirAll(options.outputDir, 0o755); err != nil {
+		return "", pb.AnalysisResults{}, err
+	}
+	reportPB := filepath.Join(options.outputDir, "report.pb")
+
+	herculesArgs := make(
+		[]string, 0, len(analysisFlags)+len(options.herculesExtra)+len(options.repositoryArgs)+3,
+	)
+	herculesArgs = append(herculesArgs, "--pb", "--quiet")
+	for _, flag := range analysisFlags {
+		herculesArgs = append(herculesArgs, "--"+flag)
+	}
+	herculesArgs = append(herculesArgs, options.herculesExtra...)
+	herculesArgs = append(herculesArgs, options.repositoryArgs...)
+
+	_, _ = fmt.Fprintf(os.Stderr, "report: running hercules (%d analysis flags)...\n", len(analysisFlags))
+	payload, err := runAndCapture(os.Args[0], herculesArgs, nil)
+	if err != nil {
+		return "", pb.AnalysisResults{}, fmt.Errorf("run hercules for report: %w", err)
+	}
+	if err := os.WriteFile(reportPB, payload, 0o600); err != nil {
+		return "", pb.AnalysisResults{}, err
+	}
+
+	var message pb.AnalysisResults
+	if err := proto.Unmarshal(payload, &message); err != nil {
+		return "", pb.AnalysisResults{}, fmt.Errorf("parse generated protobuf report: %w", err)
+	}
+	return reportPB, message, nil
+}
+
+func renderReportModes(options reportOptions, reportPB string, modes []string) ([]reportModeFailure, error) {
+	chartsRoot := filepath.Join(options.outputDir, "charts")
+	if err := os.MkdirAll(chartsRoot, 0o755); err != nil {
+		return nil, err
+	}
+	if options.laboursCommand == "" {
+		return renderReportInProcess(options, reportPB, chartsRoot, modes)
+	}
+	return renderReportExternally(options, reportPB, chartsRoot, modes)
+}
+
+func renderReportInProcess(options reportOptions, reportPB, chartsRoot string,
+	modes []string,
+) ([]reportModeFailure, error) {
+	render.SetRenderDefaults()
+	reader, err := render.LoadInput(reportPB, "pb")
+	if err != nil {
+		return nil, fmt.Errorf("load generated protobuf report for rendering: %w", err)
+	}
+	var failures []reportModeFailure
+	for _, mode := range modes {
+		output := reportModeOutput(chartsRoot, mode, options.format)
+		_, _ = fmt.Fprintf(os.Stderr, "report: rendering mode %s...\n", mode)
+		for _, result := range render.RunWithResults(reader, []string{mode}, render.Options{Output: output}) {
+			if result.Err == nil {
+				continue
+			}
+			failures = append(failures, reportModeFailure{Mode: mode, Error: result.Err.Error()})
+			if options.strict {
+				return nil, fmt.Errorf("render mode %s failed: %w", mode, result.Err)
 			}
 		}
-		analysisFlags, err := selectReportAnalysisFlags(availableAnalysisFlags, requestedAnalyses, allAnalyses)
-		if err != nil {
-			return err
-		}
-		modes, err := selectReportModes(requestedModes, allAnalyses)
-		if err != nil {
-			return err
-		}
+	}
+	return failures, nil
+}
 
-		outputDir = filepath.Clean(outputDir)
-		if err := os.MkdirAll(outputDir, 0o755); err != nil {
-			return err
-		}
-		reportPB := filepath.Join(outputDir, "report.pb")
-
-		herculesArgs := make([]string, 0, len(analysisFlags)+len(herculesExtra)+len(args)+3)
-		herculesArgs = append(herculesArgs, "--pb", "--quiet")
-		for _, flag := range analysisFlags {
-			herculesArgs = append(herculesArgs, "--"+flag)
-		}
-		herculesArgs = append(herculesArgs, herculesExtra...)
-		herculesArgs = append(herculesArgs, args...)
-
-		_, _ = fmt.Fprintf(os.Stderr, "report: running hercules (%d analysis flags)...\n", len(analysisFlags))
-		pbPayload, err := runAndCapture(os.Args[0], herculesArgs, nil)
-		if err != nil {
-			return fmt.Errorf("failed to run hercules for report: %w", err)
-		}
-		if err := os.WriteFile(reportPB, pbPayload, 0o644); err != nil {
-			return err
-		}
-
-		var pbMessage pb.AnalysisResults
-		if err := proto.Unmarshal(pbPayload, &pbMessage); err != nil {
-			return fmt.Errorf("failed to parse generated protobuf report: %w", err)
-		}
-
-		chartsRoot := filepath.Join(outputDir, "charts")
-		if err := os.MkdirAll(chartsRoot, 0o755); err != nil {
-			return err
-		}
-
-		var modeResults []reportModeFailure
-		if laboursCmdOverride == "" {
-			// Default: render in-process via the importable render API.
-			render.SetRenderDefaults()
-			reader, err := render.LoadInput(reportPB, "pb")
-			if err != nil {
-				return fmt.Errorf("failed to load generated protobuf report for rendering: %w", err)
-			}
-			for _, mode := range modes {
-				modeOutput := filepath.Join(chartsRoot, sanitizePathComponent(mode)+"."+format)
-				_, _ = fmt.Fprintf(os.Stderr, "report: rendering mode %s...\n", mode)
-				for _, result := range render.RunWithResults(reader, []string{mode}, render.Options{Output: modeOutput}) {
-					if result.Err != nil {
-						modeResults = append(modeResults, reportModeFailure{Mode: mode, Error: result.Err.Error()})
-						if strict {
-							return fmt.Errorf("render mode %s failed: %w", mode, result.Err)
-						}
-					}
-				}
-			}
-		} else {
-			// Escape hatch: shell out to an external drop-in labours command.
-			laboursCmd, err := resolveLaboursCommand(laboursCmdOverride)
-			if err != nil {
-				return err
-			}
-			for _, mode := range modes {
-				modeOutput := filepath.Join(chartsRoot, sanitizePathComponent(mode)+"."+format)
-				cmdArgs := make([]string, 0, len(laboursCmd)+len(laboursExtra)+8)
-				cmdArgs = append(cmdArgs, laboursCmd[1:]...)
-				cmdArgs = append(
-					cmdArgs,
-					"-f", "pb",
-					"-i", reportPB,
-					"-o", modeOutput,
-					"-m", mode,
-					"--backend", "Agg",
-				)
-				cmdArgs = append(cmdArgs, laboursExtra...)
-				_, _ = fmt.Fprintf(os.Stderr, "report: running labours mode %s...\n", mode)
-				if err := runAndCaptureTo(os.Stderr, laboursCmd[0], cmdArgs, nil); err != nil {
-					modeResults = append(modeResults, reportModeFailure{Mode: mode, Error: err.Error()})
-					if strict {
-						return fmt.Errorf("labours mode %s failed: %w", mode, err)
-					}
-				}
+func renderReportExternally(options reportOptions, reportPB, chartsRoot string,
+	modes []string,
+) ([]reportModeFailure, error) {
+	command, err := resolveLaboursCommand(options.laboursCommand)
+	if err != nil {
+		return nil, err
+	}
+	var failures []reportModeFailure
+	for _, mode := range modes {
+		args := externalReportModeArgs(
+			command, options.laboursExtra, reportPB, reportModeOutput(chartsRoot, mode, options.format), mode,
+		)
+		_, _ = fmt.Fprintf(os.Stderr, "report: running labours mode %s...\n", mode)
+		if err := runAndCaptureTo(os.Stderr, command[0], args, nil); err != nil {
+			failures = append(failures, reportModeFailure{Mode: mode, Error: err.Error()})
+			if options.strict {
+				return nil, fmt.Errorf("labours mode %s failed: %w", mode, err)
 			}
 		}
+	}
+	return failures, nil
+}
 
-		plots, assets, err := collectReportAssets(outputDir)
-		if err != nil {
-			return err
-		}
+func externalReportModeArgs(command, extra []string, reportPB, output, mode string) []string {
+	args := make([]string, 0, len(command)+len(extra)+8)
+	args = append(args, command[1:]...)
+	args = append(args, "-f", "pb", "-i", reportPB, "-o", output, "-m", mode, "--backend", "Agg")
+	return append(args, extra...)
+}
 
-		indexFile := filepath.Join(outputDir, "index.html")
-		indexData := newReportIndexData(pbMessage, analysisFlags, modes, modeResults, plots, assets, format)
-		if err := writeReportIndex(indexFile, indexData); err != nil {
-			return err
-		}
+func reportModeOutput(chartsRoot, mode, format string) string {
+	return filepath.Join(chartsRoot, sanitizePathComponent(mode)+"."+format)
+}
 
-		if len(modeResults) > 0 {
-			_, _ = fmt.Fprintf(os.Stderr, "report: %d mode(s) failed. See index.html for details.\n", len(modeResults))
-		}
-		_, _ = fmt.Fprintf(os.Stderr, "report: done. Open %s\n", indexFile)
-		return nil
-	},
+func finalizeReport(options reportOptions, message pb.AnalysisResults, analysisFlags, modes []string,
+	modeResults []reportModeFailure,
+) error {
+	plots, assets, err := collectReportAssets(options.outputDir)
+	if err != nil {
+		return err
+	}
+
+	indexFile := filepath.Join(options.outputDir, "index.html")
+	indexData := newReportIndexData(message, analysisFlags, modes, modeResults, plots, assets, options.format)
+	if err := writeReportIndex(indexFile, indexData); err != nil {
+		return err
+	}
+
+	if len(modeResults) > 0 {
+		_, _ = fmt.Fprintf(os.Stderr, "report: %d mode(s) failed. See index.html for details.\n", len(modeResults))
+	}
+	_, _ = fmt.Fprintf(os.Stderr, "report: done. Open %s\n", indexFile)
+	return nil
 }
 
 // reportAnalysisFlagParents maps analysis flags that are sub-options of another
@@ -308,49 +362,25 @@ var reportAnalysisFlagParents = map[string]string{
 func selectReportAnalysisFlags(
 	available map[string]struct{}, requested []string, includeAll bool,
 ) ([]string, error) {
+	source, strictSelection := reportAnalysisSource(requested, includeAll)
+
 	set := map[string]struct{}{}
-	isSupportedInBuild := func(flag string) bool {
-		if flag == "sentiment" && !tensorflowEnabled {
-			return false
-		}
-		return true
-	}
-	isAvailable := func(flag string) bool {
-		if parent, ok := reportAnalysisFlagParents[flag]; ok {
-			flag = parent
-		}
-		_, exists := available[flag]
-		return exists
-	}
-	if includeAll {
-		for _, flag := range reportAllAnalysisFlags {
-			if !isSupportedInBuild(flag) {
-				continue
-			}
-			if isAvailable(flag) {
-				set[flag] = struct{}{}
-			}
-		}
-	} else if len(requested) > 0 {
-		for _, flag := range requested {
-			if !isSupportedInBuild(flag) {
+	for _, flag := range source {
+		if !reportAnalysisSupported(flag) {
+			if strictSelection {
 				return nil, fmt.Errorf("analysis flag %q is unavailable in this build; rebuild with -tags tensorflow", flag)
 			}
-			if !isAvailable(flag) {
+			continue
+		}
+		if !reportAnalysisAvailable(available, flag) {
+			if strictSelection {
 				return nil, fmt.Errorf("unknown analysis flag %q", flag)
 			}
-			set[flag] = struct{}{}
+			continue
 		}
-	} else {
-		for _, flag := range reportDefaultAnalysisFlags {
-			if !isSupportedInBuild(flag) {
-				continue
-			}
-			if isAvailable(flag) {
-				set[flag] = struct{}{}
-			}
-		}
+		set[flag] = struct{}{}
 	}
+
 	result := make([]string, 0, len(set))
 	for flag := range set {
 		result = append(result, flag)
@@ -360,6 +390,28 @@ func selectReportAnalysisFlags(
 		return nil, fmt.Errorf("no analysis flags selected for report")
 	}
 	return result, nil
+}
+
+func reportAnalysisSource(requested []string, includeAll bool) ([]string, bool) {
+	if len(requested) > 0 {
+		return requested, true
+	}
+	if includeAll {
+		return reportAllAnalysisFlags, false
+	}
+	return reportDefaultAnalysisFlags, false
+}
+
+func reportAnalysisSupported(flag string) bool {
+	return flag != "sentiment" || tensorflowEnabled
+}
+
+func reportAnalysisAvailable(available map[string]struct{}, flag string) bool {
+	if parent, ok := reportAnalysisFlagParents[flag]; ok {
+		flag = parent
+	}
+	_, exists := available[flag]
+	return exists
 }
 
 func selectReportModes(requested []string, includeAll bool) ([]string, error) {
@@ -438,20 +490,26 @@ func sanitizePathComponent(value string) string {
 	builder := strings.Builder{}
 	builder.Grow(len(value))
 	for _, ch := range value {
-		switch {
-		case ch >= 'a' && ch <= 'z':
+		if isSafeReportPathRune(ch) {
 			builder.WriteRune(ch)
-		case ch >= 'A' && ch <= 'Z':
-			builder.WriteRune(ch)
-		case ch >= '0' && ch <= '9':
-			builder.WriteRune(ch)
-		case ch == '.', ch == '-', ch == '_':
-			builder.WriteRune(ch)
-		default:
+		} else {
 			builder.WriteRune('_')
 		}
 	}
 	return builder.String()
+}
+
+func isSafeReportPathRune(character rune) bool {
+	switch {
+	case character >= 'a' && character <= 'z':
+		return true
+	case character >= 'A' && character <= 'Z':
+		return true
+	case character >= '0' && character <= '9':
+		return true
+	default:
+		return character == '.' || character == '-' || character == '_'
+	}
 }
 
 func collectReportAssets(root string) ([]string, []string, error) {

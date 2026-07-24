@@ -63,37 +63,58 @@ func compareMessage(old, updated Message, add func(bool, string, ...any)) {
 	oldReservedNames := stringSet(old.ReservedNames)
 	newReservedNames := stringSet(updated.ReservedNames)
 
+	compareExistingFields(old, oldFields, newFields, newReservedNumbers, newReservedNames, add)
+	compareAddedFields(updated, oldFields, newFields, oldReservedNumbers, oldReservedNames, add)
+	compareReservedNumbers(old, updated, oldReservedNumbers, newReservedNumbers, add)
+	compareReservedNames(old, updated, oldReservedNames, newReservedNames, add)
+}
+
+func compareExistingFields(
+	message Message,
+	oldFields, newFields map[int]Field,
+	newReservedNumbers map[int]bool,
+	newReservedNames map[string]bool,
+	add func(bool, string, ...any),
+) {
 	for _, number := range sortedIntKeys(oldFields) {
 		oldField := oldFields[number]
 
 		newField, ok := newFields[number]
 		if !ok {
 			if newReservedNumbers[number] && newReservedNames[oldField.Name] {
-				add(true, "field %s.%s (%d) removed", old.Name, oldField.Name, number)
+				add(true, "field %s.%s (%d) removed", message.Name, oldField.Name, number)
 			} else {
 				add(true, "field %s.%s (%d) removed without reserving its number and name",
-					old.Name, oldField.Name, number)
+					message.Name, oldField.Name, number)
 			}
 
 			continue
 		}
 
 		if oldField.Name != newField.Name {
-			add(true, "field %s.%s (%d) renamed to %s", old.Name, oldField.Name, number, newField.Name)
+			add(true, "field %s.%s (%d) renamed to %s", message.Name, oldField.Name, number, newField.Name)
 			continue
 		}
 
 		if oldField.Type != newField.Type || oldField.Key != newField.Key || oldField.Value != newField.Value {
 			add(true, "field %s.%s (%d) changed type from %s to %s",
-				old.Name, oldField.Name, number, fieldType(oldField), fieldType(newField))
+				message.Name, oldField.Name, number, fieldType(oldField), fieldType(newField))
 		}
 
 		if oldField.Label != newField.Label {
 			add(true, "field %s.%s (%d) changed label from %q to %q",
-				old.Name, oldField.Name, number, oldField.Label, newField.Label)
+				message.Name, oldField.Name, number, oldField.Label, newField.Label)
 		}
 	}
+}
 
+func compareAddedFields(
+	message Message,
+	oldFields, newFields map[int]Field,
+	oldReservedNumbers map[int]bool,
+	oldReservedNames map[string]bool,
+	add func(bool, string, ...any),
+) {
 	for _, number := range sortedIntKeys(newFields) {
 		newField := newFields[number]
 		if _, ok := oldFields[number]; ok {
@@ -102,14 +123,20 @@ func compareMessage(old, updated Message, add func(bool, string, ...any)) {
 
 		switch {
 		case oldReservedNumbers[number]:
-			add(true, "field %s.%s (%d) reuses reserved number %d", updated.Name, newField.Name, number, number)
+			add(true, "field %s.%s (%d) reuses reserved number %d", message.Name, newField.Name, number, number)
 		case oldReservedNames[newField.Name]:
-			add(true, "field %s.%s (%d) reuses reserved name %q", updated.Name, newField.Name, number, newField.Name)
+			add(true, "field %s.%s (%d) reuses reserved name %q", message.Name, newField.Name, number, newField.Name)
 		default:
-			add(false, "field %s.%s (%d) added", updated.Name, newField.Name, number)
+			add(false, "field %s.%s (%d) added", message.Name, newField.Name, number)
 		}
 	}
+}
 
+func compareReservedNumbers(
+	old, updated Message,
+	oldReservedNumbers, newReservedNumbers map[int]bool,
+	add func(bool, string, ...any),
+) {
 	for _, number := range sortedIntSet(oldReservedNumbers) {
 		if !newReservedNumbers[number] {
 			add(true, "message %s un-reserved number %d", old.Name, number)
@@ -121,7 +148,13 @@ func compareMessage(old, updated Message, add func(bool, string, ...any)) {
 			add(false, "message %s: reserved number %d added", updated.Name, number)
 		}
 	}
+}
 
+func compareReservedNames(
+	old, updated Message,
+	oldReservedNames, newReservedNames map[string]bool,
+	add func(bool, string, ...any),
+) {
 	for _, name := range sortedStringSet(oldReservedNames) {
 		if !newReservedNames[name] {
 			add(true, "message %s un-reserved name %q", old.Name, name)

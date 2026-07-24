@@ -932,38 +932,7 @@ func tmpl(w io.Writer, text string, data any) error {
 	return t.Execute(w, data)
 }
 
-func formatUsage(c *cobra.Command) error {
-	// the default UsageFunc() does some private magic c.mergePersistentFlags()
-	// this should stay on top
-	localFlags := c.LocalFlags()
-	leaves := hercules.Registry.GetLeaves()
-	plumbing := hercules.Registry.GetPlumbingItems()
-	features := hercules.Registry.GetFeaturedItems()
-	hercules.EnablePathFlagTypeMasquerade()
-	filter := map[string]bool{}
-	for _, l := range leaves {
-		filter[l.Flag()] = true
-		for _, cfg := range l.ListConfigurationOptions() {
-			filter[cfg.Flag] = true
-		}
-	}
-	for _, i := range plumbing {
-		for _, cfg := range i.ListConfigurationOptions() {
-			filter[cfg.Flag] = true
-		}
-	}
-
-	for key := range filter {
-		localFlags.Lookup(key).Hidden = true
-	}
-	args := map[string]any{
-		"c":        c,
-		"leaves":   leaves,
-		"plumbing": plumbing,
-		"features": features,
-	}
-
-	helpTemplate := `Usage:{{if .c.Runnable}}
+const helpTemplate = `Usage:{{if .c.Runnable}}
   {{.c.UseLine}}{{end}}{{if .c.HasAvailableSubCommands}}
   {{.c.CommandPath}} [command]{{end}}{{if gt (len .c.Aliases) 0}}
 
@@ -1014,6 +983,38 @@ Additional help topics:{{range .c.Commands}}{{if .IsAdditionalHelpTopicCommand}}
 
 Use "{{.c.CommandPath}} [command] --help" for more information about a command.{{end}}
 `
+
+func formatUsage(c *cobra.Command) error {
+	// the default UsageFunc() does some private magic c.mergePersistentFlags()
+	// this should stay on top
+	localFlags := c.LocalFlags()
+	leaves := hercules.Registry.GetLeaves()
+	plumbing := hercules.Registry.GetPlumbingItems()
+	features := hercules.Registry.GetFeaturedItems()
+	hercules.EnablePathFlagTypeMasquerade()
+	filter := map[string]bool{}
+	for _, l := range leaves {
+		filter[l.Flag()] = true
+		for _, cfg := range l.ListConfigurationOptions() {
+			filter[cfg.Flag] = true
+		}
+	}
+	for _, i := range plumbing {
+		for _, cfg := range i.ListConfigurationOptions() {
+			filter[cfg.Flag] = true
+		}
+	}
+
+	for key := range filter {
+		localFlags.Lookup(key).Hidden = true
+	}
+	args := map[string]any{
+		"c":        c,
+		"leaves":   leaves,
+		"plumbing": plumbing,
+		"features": features,
+	}
+
 	err := tmpl(c.OutOrStderr(), helpTemplate, args)
 	for key := range filter {
 		localFlags.Lookup(key).Hidden = false

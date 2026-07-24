@@ -98,16 +98,12 @@ func (lsc *LinesStatsCalculator) Consume(deps map[string]any) (map[string]any, e
 		}
 		// Skip binary files completely; they do not contribute line counts.
 		if action == merkletrie.Modify {
-			if _, err := cache[change.From.TreeEntry.Hash].CountLines(); errors.Is(err, ErrBinary) {
-				continue
-			} else if err != nil {
+			binary, err := modificationIsBinary(change, cache)
+			if err != nil {
 				return nil, err
 			}
-
-			if _, err := cache[change.To.TreeEntry.Hash].CountLines(); errors.Is(err, ErrBinary) {
+			if binary {
 				continue
-			} else if err != nil {
-				return nil, err
 			}
 		}
 
@@ -141,46 +137,48 @@ func (lsc *LinesStatsCalculator) Consume(deps map[string]any) (map[string]any, e
 				Changed: 0,
 			}
 		case merkletrie.Modify:
-			thisDiffs := fileDiffs[change.To.Name]
-			var added, removed, changed, removedPending int
-
-			for _, edit := range thisDiffs.Diffs {
-				switch edit.Type {
-				case diffmatchpatch.DiffEqual:
-					if removedPending > 0 {
-						removed += removedPending
-					}
-
-					removedPending = 0
-				case diffmatchpatch.DiffInsert:
-					delta := utf8.RuneCountInString(edit.Text)
-					if removedPending > delta {
-						changed += delta
-						removed += removedPending - delta
-					} else {
-						changed += removedPending
-						added += delta - removedPending
-					}
-
-					removedPending = 0
-				case diffmatchpatch.DiffDelete:
-					removedPending = utf8.RuneCountInString(edit.Text)
-				}
-			}
-
-			if removedPending > 0 {
-				removed += removedPending
-			}
-
-			result[change.To] = LineStats{
-				Added:   added,
-				Removed: removed,
-				Changed: changed,
-			}
+			result[change.To] = countModifiedLines(fileDiffs[change.To.Name])
 		}
 	}
 
 	return map[string]any{DependencyLineStats: result}, nil
+}
+
+func modificationIsBinary(
+	change *object.Change, cache map[plumbing.Hash]*CachedBlob,
+) (bool, error) {
+	for _, hash := range []plumbing.Hash{change.From.TreeEntry.Hash, change.To.TreeEntry.Hash} {
+		if _, err := cache[hash].CountLines(); errors.Is(err, ErrBinary) {
+			return true, nil
+		} else if err != nil {
+			return false, err
+		}
+	}
+
+	return false, nil
+}
+
+func countModifiedLines(fileDiff FileDiffData) LineStats {
+	var stats LineStats
+	removedPending := 0
+	for _, edit := range fileDiff.Diffs {
+		switch edit.Type {
+		case diffmatchpatch.DiffEqual:
+			stats.Removed += removedPending
+			removedPending = 0
+		case diffmatchpatch.DiffInsert:
+			delta := utf8.RuneCountInString(edit.Text)
+			stats.Changed += min(removedPending, delta)
+			stats.Removed += max(removedPending-delta, 0)
+			stats.Added += max(delta-removedPending, 0)
+			removedPending = 0
+		case diffmatchpatch.DiffDelete:
+			removedPending = utf8.RuneCountInString(edit.Text)
+		}
+	}
+	stats.Removed += removedPending
+
+	return stats
 }
 
 // Fork clones this PipelineItem.

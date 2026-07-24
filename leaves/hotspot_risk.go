@@ -262,58 +262,71 @@ func (hra *HotspotRiskAnalysis) Consume(deps map[string]any) (map[string]any, er
 	changedFiles := make([]string, 0, len(treeDiff))
 
 	for _, change := range treeDiff {
-		action, err := change.Action()
+		fileName, err := hra.updateFileRisk(change, lineStats, author, tick)
 		if err != nil {
 			return nil, err
 		}
 
-		var fileName string
-
-		switch action {
-		case merkletrie.Insert:
-			fileName = change.To.Name
-		case merkletrie.Delete:
-			fileName = change.From.Name
-		case merkletrie.Modify:
-			// Handle renames
-			if change.From.Name != change.To.Name {
-				// Transfer metrics from old name to new name
-				if old, exists := hra.fileMetrics[change.From.Name]; exists {
-					hra.fileMetrics[change.To.Name] = old
-					delete(hra.fileMetrics, change.From.Name)
-				}
-			}
-
-			fileName = change.To.Name
-		}
-
 		if fileName != "" {
 			changedFiles = append(changedFiles, fileName)
-
-			// Get or create metrics for this file
-			metrics := hra.fileMetrics[fileName]
-			if metrics == nil {
-				metrics = &fileRiskMetrics{
-					ChurnByTick:  make(map[int]int),
-					CoupledFiles: make(map[string]bool),
-					AuthorLines:  make(map[int]int),
-				}
-				hra.fileMetrics[fileName] = metrics
-			}
-
-			// Update churn
-			metrics.ChurnByTick[tick]++
-
-			// Update author lines
-			if stats, exists := lineStats[object.ChangeEntry{Name: fileName}]; exists {
-				// For line ownership, we accumulate net changes per author
-				netChange := stats.Added - stats.Removed
-				metrics.AuthorLines[author] += netChange
-			}
 		}
 	}
 
-	// Update coupling: all files in this commit are coupled to each other
+	hra.updateFileCoupling(changedFiles)
+
+	return nil, nil
+}
+
+func (hra *HotspotRiskAnalysis) updateFileRisk(
+	change *object.Change,
+	lineStats map[object.ChangeEntry]items.LineStats,
+	author, tick int,
+) (string, error) {
+	action, err := change.Action()
+	if err != nil {
+		return "", err
+	}
+
+	var fileName string
+	switch action {
+	case merkletrie.Insert:
+		fileName = change.To.Name
+	case merkletrie.Delete:
+		fileName = change.From.Name
+	case merkletrie.Modify:
+		hra.transferFileRisk(change.From.Name, change.To.Name)
+		fileName = change.To.Name
+	}
+	if fileName == "" {
+		return "", nil
+	}
+
+	metrics := hra.fileMetrics[fileName]
+	if metrics == nil {
+		metrics = &fileRiskMetrics{
+			ChurnByTick: make(map[int]int), CoupledFiles: make(map[string]bool), AuthorLines: make(map[int]int),
+		}
+		hra.fileMetrics[fileName] = metrics
+	}
+	metrics.ChurnByTick[tick]++
+	if stats, exists := lineStats[object.ChangeEntry{Name: fileName}]; exists {
+		metrics.AuthorLines[author] += stats.Added - stats.Removed
+	}
+
+	return fileName, nil
+}
+
+func (hra *HotspotRiskAnalysis) transferFileRisk(from, to string) {
+	if from == to {
+		return
+	}
+	if old, exists := hra.fileMetrics[from]; exists {
+		hra.fileMetrics[to] = old
+		delete(hra.fileMetrics, from)
+	}
+}
+
+func (hra *HotspotRiskAnalysis) updateFileCoupling(changedFiles []string) {
 	for _, file1 := range changedFiles {
 		if metrics, exists := hra.fileMetrics[file1]; exists {
 			for _, file2 := range changedFiles {
@@ -323,8 +336,6 @@ func (hra *HotspotRiskAnalysis) Consume(deps map[string]any) (map[string]any, er
 			}
 		}
 	}
-
-	return nil, nil
 }
 
 // Finalize returns the result of the analysis.

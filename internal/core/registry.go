@@ -251,130 +251,19 @@ func (registry *PipelineItemRegistry) AddFlags(flagSet *pflag.FlagSet) (
 	reusableOptions := map[string]ConfigurationOption{}
 
 	for name, it := range registry.registered {
-		formatHelp := func(desc string) string {
-			return fmt.Sprintf("%s [%s]", desc, name)
-		}
 		itemIface := reflect.New(it.Elem()).Interface()
-
-		if fpi, ok := itemIface.(FeaturedPipelineItem); ok {
-			for _, f := range fpi.Features() {
-				registry.featureFlags.Choices[f] = true
-			}
-		}
-
-		leafFlag := ""
-		if fpi, ok := itemIface.(LeafPipelineItem); ok {
-			leafFlag = fpi.Flag()
-			deployed[fpi.Name()] = flagSet.Bool(
-				leafFlag, false, fmt.Sprintf("Runs %s analysis.", fpi.Name()),
-			)
-		}
-
-		addFlagActivation := func(optFlag string) {
-			if leafFlag == "" {
-				return
-			}
-
-			flagName := flagSet.Lookup(optFlag).Name
-
-			list := activations[flagName]
-			if _, ok := registry.preferred[name]; !ok || len(list) == 0 {
-				activations[flagName] = append(list, name)
-			} else {
-				activations[flagName] = append([]string{name}, list...)
-			}
-		}
-
-		for _, opt := range itemIface.(PipelineItem).ListConfigurationOptions() {
-			if opt.Shared {
-				optCopy := opt
-				if reused, ok := reusableOptions[opt.Flag]; !ok {
-					optCopy.Description = name
-					reusableOptions[opt.Flag] = optCopy
-				} else {
-					optCopy.Description = reused.Description
-					if reflect.DeepEqual(reused, optCopy) {
-						addFlagActivation(opt.Flag)
-						continue
-					}
-
-					s := fmt.Sprintf("Param conflict of the option %s from: %s, %s", opt.Flag, reused.Description, name)
-					fmt.Println(s)
-					panic(s)
-				}
-			}
-
-			var iface any
-			getPtr := func() unsafe.Pointer {
-				return unsafe.Add(unsafe.Pointer(&iface), unsafe.Sizeof(&iface))
-			}
-
-			switch opt.Type {
-			case BoolConfigurationOption:
-				iface = any(true)
-				ptr := (**bool)(getPtr())
-				*ptr = flagSet.Bool(opt.Flag, opt.Default.(bool), formatHelp(opt.Description))
-			case IntConfigurationOption:
-				iface = any(0)
-				ptr := (**int)(getPtr())
-				*ptr = flagSet.Int(opt.Flag, opt.Default.(int), formatHelp(opt.Description))
-			case StringConfigurationOption, PathConfigurationOption:
-				iface = any("")
-				ptr := (**string)(getPtr())
-
-				*ptr = flagSet.String(opt.Flag, opt.Default.(string), formatHelp(opt.Description))
-				if opt.Type == PathConfigurationOption {
-					err := cobra.MarkFlagFilename(flagSet, opt.Flag)
-					if err != nil {
-						panic(err)
-					}
-
-					PathifyFlagValue(flagSet.Lookup(opt.Flag))
-				}
-			case FloatConfigurationOption:
-				iface = any(float32(0))
-				ptr := (**float32)(getPtr())
-				*ptr = flagSet.Float32(opt.Flag, opt.Default.(float32), formatHelp(opt.Description))
-			case StringsConfigurationOption:
-				iface = any([]string{})
-				ptr := (**[]string)(getPtr())
-				*ptr = flagSet.StringSlice(opt.Flag, opt.Default.([]string), formatHelp(opt.Description))
-			}
-
-			flags[opt.Name] = iface
-			addFlagActivation(opt.Flag)
-		}
-	}
-	{
-		// Pipeline flags
-		iface := any("")
-		ptr1 := (**string)(unsafe.Add(unsafe.Pointer(&iface), unsafe.Sizeof(&iface)))
-		*ptr1 = flagSet.String("dump-dag", "", "Write the pipeline DAG to a Graphviz file.")
-		flags[ConfigPipelineDAGPath] = iface
-
-		PathifyFlagValue(flagSet.Lookup("dump-dag"))
-
-		iface = any(true)
-		ptr2 := (**bool)(unsafe.Add(unsafe.Pointer(&iface), unsafe.Sizeof(&iface)))
-		*ptr2 = flagSet.Bool("dry-run", false, "Do not run any analyses - only resolve the DAG. "+
-			"Useful for --dump-dag or --dump-plan.")
-		flags[ConfigPipelineDryRun] = iface
-		iface = any(true)
-		ptr3 := (**bool)(unsafe.Add(unsafe.Pointer(&iface), unsafe.Sizeof(&iface)))
-		*ptr3 = flagSet.Bool("dump-plan", false, "Print the pipeline execution plan to stderr.")
-		flags[ConfigPipelineDumpPlan] = iface
-		iface = any(0)
-		ptr4 := (**int)(unsafe.Add(unsafe.Pointer(&iface), unsafe.Sizeof(&iface)))
-		*ptr4 = flagSet.Int("hibernation-distance", 0,
-			"Minimum number of actions between two sequential usages of a branch to activate "+
-				"the hibernation optimization (cpu-memory trade-off). 0 disables.")
-		flags[ConfigPipelineHibernationDistance] = iface
-		iface = any(true)
-		ptr5 := (**bool)(unsafe.Add(unsafe.Pointer(&iface), unsafe.Sizeof(&iface)))
-		*ptr5 = flagSet.Bool("print-actions", false, "Print the executed actions to stderr.")
-		flags[ConfigPipelinePrintActions] = iface
+		registry.addItemFlags(
+			flagSet, name, itemIface, flags, deployed, activations, reusableOptions,
+		)
 	}
 
+	addPipelineFlags(flagSet, flags)
+	registry.addFeatureFlag(flagSet)
+
+	return flags, deployed, activations
+}
+
+func (registry *PipelineItemRegistry) addFeatureFlag(flagSet *pflag.FlagSet) {
 	features := make([]string, 0, len(registry.featureFlags.Choices))
 	for f := range registry.featureFlags.Choices {
 		features = append(features, f)
@@ -386,8 +275,177 @@ func (registry *PipelineItemRegistry) AddFlags(flagSet *pflag.FlagSet) (
 		strings.Join(features, ", "))
 	flagSet.Var(&registry.featureFlags, "feature",
 		featureHelp)
+}
 
-	return flags, deployed, activations
+func (registry *PipelineItemRegistry) addItemFlags(
+	flagSet *pflag.FlagSet,
+	name string,
+	itemIface any,
+	flags map[string]any,
+	deployed map[string]*bool,
+	activations map[string][]string,
+	reusableOptions map[string]ConfigurationOption,
+) {
+	if featured, ok := itemIface.(FeaturedPipelineItem); ok {
+		for _, feature := range featured.Features() {
+			registry.featureFlags.Choices[feature] = true
+		}
+	}
+
+	leafFlag := registry.addLeafFlag(flagSet, itemIface, deployed)
+	addActivation := func(optionFlag string) {
+		registry.addFlagActivation(flagSet, name, leafFlag, optionFlag, activations)
+	}
+	for _, option := range itemIface.(PipelineItem).ListConfigurationOptions() {
+		if option.Shared && registry.reuseOption(name, option, reusableOptions, addActivation) {
+			continue
+		}
+
+		flags[option.Name] = addConfigurationFlag(flagSet, name, option)
+		addActivation(option.Flag)
+	}
+}
+
+func (registry *PipelineItemRegistry) addLeafFlag(
+	flagSet *pflag.FlagSet, itemIface any, deployed map[string]*bool,
+) string {
+	leaf, ok := itemIface.(LeafPipelineItem)
+	if !ok {
+		return ""
+	}
+
+	deployed[leaf.Name()] = flagSet.Bool(
+		leaf.Flag(), false, fmt.Sprintf("Runs %s analysis.", leaf.Name()),
+	)
+
+	return leaf.Flag()
+}
+
+func (registry *PipelineItemRegistry) addFlagActivation(
+	flagSet *pflag.FlagSet,
+	itemName, leafFlag, optionFlag string,
+	activations map[string][]string,
+) {
+	if leafFlag == "" {
+		return
+	}
+
+	flagName := flagSet.Lookup(optionFlag).Name
+	list := activations[flagName]
+	if _, preferred := registry.preferred[itemName]; !preferred || len(list) == 0 {
+		activations[flagName] = append(list, itemName)
+	} else {
+		activations[flagName] = append([]string{itemName}, list...)
+	}
+}
+
+func (registry *PipelineItemRegistry) reuseOption(
+	itemName string,
+	option ConfigurationOption,
+	reusableOptions map[string]ConfigurationOption,
+	addActivation func(string),
+) bool {
+	optionCopy := option
+	reused, exists := reusableOptions[option.Flag]
+	if !exists {
+		optionCopy.Description = itemName
+		reusableOptions[option.Flag] = optionCopy
+
+		return false
+	}
+
+	optionCopy.Description = reused.Description
+	if reflect.DeepEqual(reused, optionCopy) {
+		addActivation(option.Flag)
+
+		return true
+	}
+
+	message := fmt.Sprintf(
+		"Param conflict of the option %s from: %s, %s", option.Flag, reused.Description, itemName,
+	)
+	fmt.Println(message)
+	panic(message)
+}
+
+func addConfigurationFlag(flagSet *pflag.FlagSet, itemName string, option ConfigurationOption) any {
+	help := fmt.Sprintf("%s [%s]", option.Description, itemName)
+	var value any
+	valuePointer := func() unsafe.Pointer {
+		return unsafe.Add(unsafe.Pointer(&value), unsafe.Sizeof(&value))
+	}
+
+	switch option.Type {
+	case BoolConfigurationOption:
+		value = any(true)
+		*(**bool)(valuePointer()) = flagSet.Bool(option.Flag, option.Default.(bool), help)
+	case IntConfigurationOption:
+		value = any(0)
+		*(**int)(valuePointer()) = flagSet.Int(option.Flag, option.Default.(int), help)
+	case StringConfigurationOption, PathConfigurationOption:
+		value = any("")
+		*(**string)(valuePointer()) = flagSet.String(option.Flag, option.Default.(string), help)
+		if option.Type == PathConfigurationOption {
+			if err := cobra.MarkFlagFilename(flagSet, option.Flag); err != nil {
+				panic(err)
+			}
+			PathifyFlagValue(flagSet.Lookup(option.Flag))
+		}
+	case FloatConfigurationOption:
+		value = any(float32(0))
+		*(**float32)(valuePointer()) = flagSet.Float32(option.Flag, option.Default.(float32), help)
+	case StringsConfigurationOption:
+		value = any([]string{})
+		*(**[]string)(valuePointer()) = flagSet.StringSlice(option.Flag, option.Default.([]string), help)
+	}
+
+	return value
+}
+
+func addPipelineFlags(flagSet *pflag.FlagSet, flags map[string]any) {
+	addPipelineStringFlag(
+		flagSet, flags, ConfigPipelineDAGPath, "dump-dag", "Write the pipeline DAG to a Graphviz file.",
+	)
+	PathifyFlagValue(flagSet.Lookup("dump-dag"))
+	addPipelineBoolFlag(
+		flagSet, flags, ConfigPipelineDryRun, "dry-run",
+		"Do not run any analyses - only resolve the DAG. Useful for --dump-dag or --dump-plan.",
+	)
+	addPipelineBoolFlag(
+		flagSet, flags, ConfigPipelineDumpPlan, "dump-plan", "Print the pipeline execution plan to stderr.",
+	)
+	addPipelineIntFlag(
+		flagSet, flags, ConfigPipelineHibernationDistance, "hibernation-distance",
+		"Minimum number of actions between two sequential usages of a branch to activate "+
+			"the hibernation optimization (cpu-memory trade-off). 0 disables.",
+	)
+	addPipelineBoolFlag(
+		flagSet, flags, ConfigPipelinePrintActions, "print-actions", "Print the executed actions to stderr.",
+	)
+}
+
+func addPipelineStringFlag(
+	flagSet *pflag.FlagSet, flags map[string]any, key, name, help string,
+) {
+	value := any("")
+	*(**string)(unsafe.Add(unsafe.Pointer(&value), unsafe.Sizeof(&value))) = flagSet.String(name, "", help)
+	flags[key] = value
+}
+
+func addPipelineBoolFlag(
+	flagSet *pflag.FlagSet, flags map[string]any, key, name, help string,
+) {
+	value := any(true)
+	*(**bool)(unsafe.Add(unsafe.Pointer(&value), unsafe.Sizeof(&value))) = flagSet.Bool(name, false, help)
+	flags[key] = value
+}
+
+func addPipelineIntFlag(
+	flagSet *pflag.FlagSet, flags map[string]any, key, name, help string,
+) {
+	value := any(0)
+	*(**int)(unsafe.Add(unsafe.Pointer(&value), unsafe.Sizeof(&value))) = flagSet.Int(name, 0, help)
+	flags[key] = value
 }
 
 // Registry contains all known pipeline item types.

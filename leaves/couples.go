@@ -485,62 +485,46 @@ func (couples *CouplesAnalysis) MergeResults(r1, r2 any, c1, c2 *core.CommonAnal
 func (couples *CouplesAnalysis) serializeText(result *CouplesResult, writer io.Writer) {
 	fmt.Fprintln(writer, "  files_coocc:")
 	fmt.Fprintln(writer, "    index:")
-
-	for _, file := range result.Files {
-		fmt.Fprintf(writer, "      - %s\n", yaml.SafeString(file))
-	}
+	writeCouplesIndex(writer, result.Files)
 
 	fmt.Fprintln(writer, "    lines:")
-
 	for _, l := range result.FilesLines {
 		fmt.Fprintf(writer, "      - %d\n", l)
 	}
 
 	fmt.Fprintln(writer, "    matrix:")
-
-	for _, files := range result.FilesMatrix {
-		fmt.Fprint(writer, "      - {")
-
-		var indices []int
-		for file := range files {
-			indices = append(indices, file)
-		}
-
-		sort.Ints(indices)
-
-		for i, file := range indices {
-			fmt.Fprintf(writer, "%d: %d", file, files[file])
-
-			if i < len(indices)-1 {
-				fmt.Fprint(writer, ", ")
-			}
-		}
-
-		fmt.Fprintln(writer, "}")
-	}
+	writeCouplesMatrix(writer, result.FilesMatrix)
 
 	fmt.Fprintln(writer, "  people_coocc:")
 	fmt.Fprintln(writer, "    index:")
-
-	for _, person := range result.reversedPeopleDict {
-		fmt.Fprintf(writer, "      - %s\n", yaml.SafeString(person))
-	}
+	writeCouplesIndex(writer, result.reversedPeopleDict)
 
 	fmt.Fprintln(writer, "    matrix:")
+	writeCouplesMatrix(writer, result.PeopleMatrix)
 
-	for _, people := range result.PeopleMatrix {
+	fmt.Fprintln(writer, "    author_files:") // sorted by number of files each author changed
+	writeAuthorFiles(writer, result)
+}
+
+func writeCouplesIndex(writer io.Writer, values []string) {
+	for _, value := range values {
+		fmt.Fprintf(writer, "      - %s\n", yaml.SafeString(value))
+	}
+}
+
+func writeCouplesMatrix(writer io.Writer, matrix []map[int]int64) {
+	for _, row := range matrix {
 		fmt.Fprint(writer, "      - {")
 
 		var indices []int
-		for file := range people {
-			indices = append(indices, file)
+		for index := range row {
+			indices = append(indices, index)
 		}
 
 		sort.Ints(indices)
 
-		for i, person := range indices {
-			fmt.Fprintf(writer, "%d: %d", person, people[person])
-
+		for i, index := range indices {
+			fmt.Fprintf(writer, "%d: %d", index, row[index])
 			if i < len(indices)-1 {
 				fmt.Fprint(writer, ", ")
 			}
@@ -548,9 +532,9 @@ func (couples *CouplesAnalysis) serializeText(result *CouplesResult, writer io.W
 
 		fmt.Fprintln(writer, "}")
 	}
+}
 
-	fmt.Fprintln(writer, "    author_files:") // sorted by number of files each author changed
-
+func writeAuthorFiles(writer io.Writer, result *CouplesResult) {
 	peopleFiles := sortByNumberOfFiles(result.PeopleFiles, result.reversedPeopleDict, result.Files)
 	for _, authorFiles := range peopleFiles {
 		fmt.Fprintf(writer, "      - %s:\n", yaml.SafeString(authorFiles.Author))

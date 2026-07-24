@@ -32,64 +32,75 @@ func ParseProto(data []byte) (Snapshot, error) {
 			continue
 		}
 
-		if current == nil {
-			matches := messageRe.FindStringSubmatch(line)
-			if matches == nil {
-				continue
-			}
-
-			snapshot.Messages = append(snapshot.Messages, Message{Name: matches[1]})
-			current = &snapshot.Messages[len(snapshot.Messages)-1]
-
-			continue
-		}
-
-		if line == "}" {
-			current = nil
-			continue
-		}
-
-		if matches := reservedRe.FindStringSubmatch(line); matches != nil {
-			err := parseReserved(current, matches[1])
-			if err != nil {
-				return Snapshot{}, fmt.Errorf("line %d: %w", lineno+1, err)
-			}
-
-			continue
-		}
-
-		if matches := mapRe.FindStringSubmatch(line); matches != nil {
-			number, err := strconv.Atoi(matches[4])
-			if err != nil {
-				return Snapshot{}, fmt.Errorf("line %d: parse field number %q: %w", lineno+1, matches[4], err)
-			}
-
-			current.Fields = append(current.Fields, Field{
-				Number: number,
-				Name:   matches[3],
-				Type:   "map",
-				Key:    matches[1],
-				Value:  matches[2],
-			})
-
-			continue
-		}
-
-		if matches := fieldRe.FindStringSubmatch(line); matches != nil {
-			number, err := strconv.Atoi(matches[4])
-			if err != nil {
-				return Snapshot{}, fmt.Errorf("line %d: parse field number %q: %w", lineno+1, matches[4], err)
-			}
-
-			current.Fields = append(current.Fields, Field{
-				Number: number,
-				Name:   matches[3],
-				Type:   matches[2],
-				Label:  matches[1],
-			})
+		var err error
+		current, err = parseProtoLine(&snapshot, current, line)
+		if err != nil {
+			return Snapshot{}, fmt.Errorf("line %d: %w", lineno+1, err)
 		}
 	}
 
+	sortSnapshot(&snapshot)
+
+	return snapshot, nil
+}
+
+func parseProtoLine(snapshot *Snapshot, current *Message, line string) (*Message, error) {
+	if current == nil {
+		matches := messageRe.FindStringSubmatch(line)
+		if matches == nil {
+			return nil, nil
+		}
+
+		snapshot.Messages = append(snapshot.Messages, Message{Name: matches[1]})
+
+		return &snapshot.Messages[len(snapshot.Messages)-1], nil
+	}
+
+	if line == "}" {
+		return nil, nil
+	}
+
+	if matches := reservedRe.FindStringSubmatch(line); matches != nil {
+		return current, parseReserved(current, matches[1])
+	}
+
+	if matches := mapRe.FindStringSubmatch(line); matches != nil {
+		number, err := parseFieldNumber(matches[4])
+		if err != nil {
+			return current, err
+		}
+
+		current.Fields = append(current.Fields, Field{
+			Number: number, Name: matches[3], Type: "map", Key: matches[1], Value: matches[2],
+		})
+
+		return current, nil
+	}
+
+	if matches := fieldRe.FindStringSubmatch(line); matches != nil {
+		number, err := parseFieldNumber(matches[4])
+		if err != nil {
+			return current, err
+		}
+
+		current.Fields = append(current.Fields, Field{
+			Number: number, Name: matches[3], Type: matches[2], Label: matches[1],
+		})
+	}
+
+	return current, nil
+}
+
+func parseFieldNumber(raw string) (int, error) {
+	number, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, fmt.Errorf("parse field number %q: %w", raw, err)
+	}
+
+	return number, nil
+}
+
+func sortSnapshot(snapshot *Snapshot) {
 	sort.Slice(snapshot.Messages, func(i, j int) bool {
 		return snapshot.Messages[i].Name < snapshot.Messages[j].Name
 	})
@@ -102,8 +113,6 @@ func ParseProto(data []byte) (Snapshot, error) {
 		sort.Ints(message.ReservedNumbers)
 		sort.Strings(message.ReservedNames)
 	}
-
-	return snapshot, nil
 }
 
 func parseReserved(message *Message, spec string) error {

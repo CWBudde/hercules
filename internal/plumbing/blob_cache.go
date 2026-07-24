@@ -191,90 +191,16 @@ func (blobCache *BlobCache) Consume(deps map[string]any) (map[string]any, error)
 			blobCache.l.Errorf("no action in %s\n", change.To.TreeEntry.Hash)
 			return nil, err
 		}
-		var exists bool
-		var blob *object.Blob
 
 		switch action {
 		case merkletrie.Insert:
-			cache[change.To.TreeEntry.Hash] = &CachedBlob{}
-			newCache[change.To.TreeEntry.Hash] = &CachedBlob{}
-
-			blob, err = blobCache.getBlob(&change.To, commit.File)
-			if err != nil {
-				blobCache.l.Errorf("file to %s %s: %v\n", change.To.Name, change.To.TreeEntry.Hash, err)
-			} else {
-				cb := &CachedBlob{Blob: *blob}
-
-				err = cb.Cache()
-				if err == nil {
-					cache[change.To.TreeEntry.Hash] = cb
-					newCache[change.To.TreeEntry.Hash] = cb
-				} else {
-					blobCache.l.Errorf("file to %s %s: %v\n", change.To.Name, change.To.TreeEntry.Hash, err)
-				}
-			}
+			err = blobCache.cacheTo(change.To, commit, cache, newCache)
 		case merkletrie.Delete:
-			cache[change.From.TreeEntry.Hash], exists = blobCache.cache[change.From.TreeEntry.Hash]
-			if !exists {
-				cache[change.From.TreeEntry.Hash] = &CachedBlob{}
-
-				blob, err = blobCache.getBlob(&change.From, commit.File)
-				if err != nil {
-					if err.Error() != plumbing.ErrObjectNotFound.Error() {
-						blobCache.l.Errorf("file from %s %s: %v\n", change.From.Name,
-							change.From.TreeEntry.Hash, err)
-					} else {
-						blob, err = internal.CreateDummyBlob(change.From.TreeEntry.Hash)
-						cache[change.From.TreeEntry.Hash] = &CachedBlob{Blob: *blob}
-					}
-				} else {
-					cb := &CachedBlob{Blob: *blob}
-
-					err = cb.Cache()
-					if err == nil {
-						cache[change.From.TreeEntry.Hash] = cb
-					} else {
-						blobCache.l.Errorf("file from %s %s: %v\n", change.From.Name,
-							change.From.TreeEntry.Hash, err)
-					}
-				}
-			}
+			err = blobCache.cacheFrom(change.From, commit, cache, true)
 		case merkletrie.Modify:
-			blob, err = blobCache.getBlob(&change.To, commit.File)
-			cache[change.To.TreeEntry.Hash] = &CachedBlob{}
-
-			newCache[change.To.TreeEntry.Hash] = &CachedBlob{}
-			if err != nil {
-				blobCache.l.Errorf("file to %s: %v\n", change.To.Name, err)
-			} else {
-				cb := &CachedBlob{Blob: *blob}
-
-				err = cb.Cache()
-				if err == nil {
-					cache[change.To.TreeEntry.Hash] = cb
-					newCache[change.To.TreeEntry.Hash] = cb
-				} else {
-					blobCache.l.Errorf("file to %s: %v\n", change.To.Name, err)
-				}
-			}
-
-			cache[change.From.TreeEntry.Hash], exists = blobCache.cache[change.From.TreeEntry.Hash]
-			if !exists {
-				cache[change.From.TreeEntry.Hash] = &CachedBlob{}
-
-				blob, err = blobCache.getBlob(&change.From, commit.File)
-				if err != nil {
-					blobCache.l.Errorf("file from %s: %v\n", change.From.Name, err)
-				} else {
-					cb := &CachedBlob{Blob: *blob}
-
-					err = cb.Cache()
-					if err == nil {
-						cache[change.From.TreeEntry.Hash] = cb
-					} else {
-						blobCache.l.Errorf("file from %s: %v\n", change.From.Name, err)
-					}
-				}
+			err = blobCache.cacheTo(change.To, commit, cache, newCache)
+			if err == nil {
+				err = blobCache.cacheFrom(change.From, commit, cache, false)
 			}
 		}
 
@@ -286,6 +212,65 @@ func (blobCache *BlobCache) Consume(deps map[string]any) (map[string]any, error)
 	blobCache.cache = newCache
 
 	return map[string]any{DependencyBlobCache: cache}, nil
+}
+
+func (blobCache *BlobCache) cacheTo(
+	entry object.ChangeEntry,
+	commit *object.Commit,
+	cache, newCache map[plumbing.Hash]*CachedBlob,
+) error {
+	cache[entry.TreeEntry.Hash] = &CachedBlob{}
+	newCache[entry.TreeEntry.Hash] = &CachedBlob{}
+	blob, err := blobCache.getBlob(&entry, commit.File)
+	if err != nil {
+		blobCache.l.Errorf("file to %s %s: %v\n", entry.Name, entry.TreeEntry.Hash, err)
+		return err
+	}
+
+	cached := &CachedBlob{Blob: *blob}
+	if err := cached.Cache(); err != nil {
+		blobCache.l.Errorf("file to %s %s: %v\n", entry.Name, entry.TreeEntry.Hash, err)
+		return err
+	}
+	cache[entry.TreeEntry.Hash] = cached
+	newCache[entry.TreeEntry.Hash] = cached
+
+	return nil
+}
+
+func (blobCache *BlobCache) cacheFrom(
+	entry object.ChangeEntry,
+	commit *object.Commit,
+	cache map[plumbing.Hash]*CachedBlob,
+	dummyWhenMissing bool,
+) error {
+	if cached, exists := blobCache.cache[entry.TreeEntry.Hash]; exists {
+		cache[entry.TreeEntry.Hash] = cached
+		return nil
+	}
+	cache[entry.TreeEntry.Hash] = &CachedBlob{}
+
+	blob, err := blobCache.getBlob(&entry, commit.File)
+	if err != nil && dummyWhenMissing && err.Error() == plumbing.ErrObjectNotFound.Error() {
+		blob, err = internal.CreateDummyBlob(entry.TreeEntry.Hash)
+		if err == nil {
+			cache[entry.TreeEntry.Hash] = &CachedBlob{Blob: *blob}
+		}
+		return err
+	}
+	if err != nil {
+		blobCache.l.Errorf("file from %s %s: %v\n", entry.Name, entry.TreeEntry.Hash, err)
+		return err
+	}
+
+	cached := &CachedBlob{Blob: *blob}
+	if err := cached.Cache(); err != nil {
+		blobCache.l.Errorf("file from %s %s: %v\n", entry.Name, entry.TreeEntry.Hash, err)
+		return err
+	}
+	cache[entry.TreeEntry.Hash] = cached
+
+	return nil
 }
 
 // Fork clones this PipelineItem.

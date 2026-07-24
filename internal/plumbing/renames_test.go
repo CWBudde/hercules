@@ -339,6 +339,7 @@ func TestBlobsAreCloseBinary(t *testing.T) {
 }
 
 func loadData(t *testing.T, name string) []byte {
+	t.Helper()
 	gzsource, err := os.Open(path.Join("..", "test_data", name))
 	if err != nil {
 		t.Errorf("open ../test_data/%s: %v", name, err)

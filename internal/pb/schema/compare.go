@@ -22,14 +22,14 @@ type Result struct {
 // Compare classifies the differences between two snapshots according to the
 // PB schema change policy in docs/SCHEMAS.md. Snapshot.Version is not
 // compared here; Evaluate enforces the version-bump rule.
-func Compare(old, new Snapshot) []Change {
+func Compare(old, updated Snapshot) []Change {
 	var changes []Change
 	add := func(breaking bool, format string, args ...any) {
 		changes = append(changes, Change{Breaking: breaking, Description: fmt.Sprintf(format, args...)})
 	}
 
 	oldMessages := messageIndex(old)
-	newMessages := messageIndex(new)
+	newMessages := messageIndex(updated)
 
 	for _, name := range sortedKeys(oldMessages) {
 		if _, ok := newMessages[name]; !ok {
@@ -55,13 +55,13 @@ func Compare(old, new Snapshot) []Change {
 	return changes
 }
 
-func compareMessage(old, new Message, add func(bool, string, ...any)) {
+func compareMessage(old, updated Message, add func(bool, string, ...any)) {
 	oldFields := fieldIndex(old)
-	newFields := fieldIndex(new)
+	newFields := fieldIndex(updated)
 	oldReservedNumbers := intSet(old.ReservedNumbers)
-	newReservedNumbers := intSet(new.ReservedNumbers)
+	newReservedNumbers := intSet(updated.ReservedNumbers)
 	oldReservedNames := stringSet(old.ReservedNames)
-	newReservedNames := stringSet(new.ReservedNames)
+	newReservedNames := stringSet(updated.ReservedNames)
 
 	for _, number := range sortedIntKeys(oldFields) {
 		oldField := oldFields[number]
@@ -102,11 +102,11 @@ func compareMessage(old, new Message, add func(bool, string, ...any)) {
 
 		switch {
 		case oldReservedNumbers[number]:
-			add(true, "field %s.%s (%d) reuses reserved number %d", new.Name, newField.Name, number, number)
+			add(true, "field %s.%s (%d) reuses reserved number %d", updated.Name, newField.Name, number, number)
 		case oldReservedNames[newField.Name]:
-			add(true, "field %s.%s (%d) reuses reserved name %q", new.Name, newField.Name, number, newField.Name)
+			add(true, "field %s.%s (%d) reuses reserved name %q", updated.Name, newField.Name, number, newField.Name)
 		default:
-			add(false, "field %s.%s (%d) added", new.Name, newField.Name, number)
+			add(false, "field %s.%s (%d) added", updated.Name, newField.Name, number)
 		}
 	}
 
@@ -118,7 +118,7 @@ func compareMessage(old, new Message, add func(bool, string, ...any)) {
 
 	for _, number := range sortedIntSet(newReservedNumbers) {
 		if !oldReservedNumbers[number] {
-			add(false, "message %s: reserved number %d added", new.Name, number)
+			add(false, "message %s: reserved number %d added", updated.Name, number)
 		}
 	}
 
@@ -130,15 +130,15 @@ func compareMessage(old, new Message, add func(bool, string, ...any)) {
 
 	for _, name := range sortedStringSet(newReservedNames) {
 		if !oldReservedNames[name] {
-			add(false, "message %s: reserved name %q added", new.Name, name)
+			add(false, "message %s: reserved name %q added", updated.Name, name)
 		}
 	}
 }
 
 // Evaluate applies the CI policy: any schema change requires a changelog
 // entry, and breaking changes additionally require a schema version bump.
-func Evaluate(old, new Snapshot, changelogUpdated bool) Result {
-	result := Result{Changes: Compare(old, new)}
+func Evaluate(old, updated Snapshot, changelogUpdated bool) Result {
+	result := Result{Changes: Compare(old, updated)}
 	for _, change := range result.Changes {
 		if change.Breaking {
 			result.Breaking = true
@@ -151,10 +151,10 @@ func Evaluate(old, new Snapshot, changelogUpdated bool) Result {
 			"the PB schema changed but docs/SCHEMA_CHANGELOG.md was not updated in the same change")
 	}
 
-	if result.Breaking && new.Version <= old.Version {
+	if result.Breaking && updated.Version <= old.Version {
 		result.Errors = append(result.Errors, fmt.Sprintf(
 			"breaking PB schema change requires a version bump: pb.SchemaVersion is still %d (was %d)",
-			new.Version, old.Version,
+			updated.Version, old.Version,
 		))
 	}
 

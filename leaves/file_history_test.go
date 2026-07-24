@@ -130,6 +130,7 @@ func TestFileHistorySerializeBinary(t *testing.T) {
 }
 
 func bakeFileHistoryForSerialization(t *testing.T) (*FileHistoryAnalysis, map[string]any) {
+	t.Helper()
 	fh := fixtureFileHistory()
 	deps := map[string]any{}
 	cache := map[plumbing.Hash]*items.CachedBlob{}

@@ -680,7 +680,7 @@ func (pipeline *Pipeline) resolve(dumpPath string, priorityFn DependencyPriority
 		// fmt.Fprint(os.Stderr, graphCopy.DebugDump())
 		plan := graph.Serialize(pipelinePlan)
 		if dumpPath != "-" {
-			_ = os.WriteFile(dumpPath, []byte(plan), 0o666)
+			_ = os.WriteFile(dumpPath, []byte(plan), 0o600)
 			absPath, _ := filepath.Abs(dumpPath)
 			pipeline.l.Infof("Wrote the DAG to %s\n", absPath)
 		} else {

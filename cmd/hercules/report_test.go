@@ -112,7 +112,7 @@ func TestCollectReportAssets(t *testing.T) {
 		if err != nil {
 			t.Fatalf("mkdir failed: %v", err)
 		}
-		err = os.WriteFile(path, []byte("x"), 0o644)
+		err = os.WriteFile(path, []byte("x"), 0o600)
 		if err != nil {
 			t.Fatalf("write failed: %v", err)
 		}

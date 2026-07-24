@@ -62,5 +62,5 @@ func Write(path string, snapshot Snapshot) error {
 
 	data = append(data, '\n')
 
-	return os.WriteFile(path, data, 0o644)
+	return os.WriteFile(path, data, 0o600)
 }

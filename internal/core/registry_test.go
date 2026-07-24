@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/cwbudde/hercules/internal/test"
 )
@@ -289,7 +290,7 @@ func TestRegistryFeaturesUnknownFeature(t *testing.T) {
 	}
 	reg.AddFlags(testCmd.Flags())
 	err := testCmd.ParseFlags([]string{"--feature", "missing"})
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Contains(t, err.Error(), "is not registered")
 }
 

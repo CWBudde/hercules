@@ -9,6 +9,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/gogo/protobuf/proto"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/cwbudde/hercules/internal/core"
 	"github.com/cwbudde/hercules/internal/pb"
@@ -389,7 +390,9 @@ func TestDevsMergeResults(t *testing.T) {
 
 	devs := fixtureDevs()
 	c1 := core.CommonAnalysisResult{BeginTime: 1556224895}
-	assert.IsType(t, assert.AnError, devs.MergeResults(r1, r2, &c1, &c1))
+	mergeErr, ok := devs.MergeResults(r1, r2, &c1, &c1).(error)
+	require.True(t, ok)
+	require.Error(t, mergeErr)
 	r2.tickSize = r1.tickSize
 	rm := devs.MergeResults(r1, r2, &c1, &c1).(DevsResult)
 	peoplerm := [...]string{"1@srcd", "2@srcd", "3@srcd"}

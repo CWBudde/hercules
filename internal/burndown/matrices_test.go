@@ -62,10 +62,10 @@ func TestBurndownAddMatrix(t *testing.T) {
 	*/
 	AddBurndownMatrix(added, 5, 3, daily, 1)
 	for i := range daily[0] {
-		assert.Equal(t, daily[0][i], float32(0))
+		assert.InDelta(t, float32(0), daily[0][i], 0.00001)
 	}
 	for i := range daily {
-		assert.Equal(t, daily[i][0], float32(0))
+		assert.InDelta(t, float32(0), daily[i][0], 0.00001)
 	}
 	/*for _, row := range daily {
 		fmt.Println(row)
@@ -90,7 +90,7 @@ func TestBurndownAddMatrix(t *testing.T) {
 			if prev == 0 {
 				prev = daily[y+1][x+1]
 			}
-			assert.Equal(t, daily[y+1][x+1], prev)
+			assert.InDelta(t, prev, daily[y+1][x+1], 0.00001)
 		}
 		for y := ((x + 3) / 5) * 5; y < 15; y++ {
 			if prev == 0 {
@@ -168,7 +168,7 @@ func TestBurndownAddMatrixCrazy(t *testing.T) {
 			if prev == 0 {
 				prev = daily[y][x]
 			}
-			assert.Equal(t, daily[y][x], prev)
+			assert.InDelta(t, prev, daily[y][x], 0.00001)
 		}
 		for y := ((x + 3) / 5) * 5; y < 15; y++ {
 			if prev == 0 {
@@ -246,7 +246,7 @@ func TestBurndownAddMatrixNaNs(t *testing.T) {
 			if prev == 0 {
 				prev = daily[y][x]
 			}
-			assert.Equal(t, daily[y][x], prev)
+			assert.InDelta(t, prev, daily[y][x], 0.00001)
 		}
 		for y := x; y < 16; y++ {
 			if prev == 0 {

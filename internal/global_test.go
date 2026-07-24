@@ -18,8 +18,7 @@ func TestPipelineSerialize(t *testing.T) {
 	pipeline.DeployItem(&leaves.LegacyBurndownAnalysis{})
 	facts := map[string]any{}
 	facts[core.ConfigPipelineDryRun] = true
-	tmpdir, _ := os.MkdirTemp("", "hercules-")
-	defer func() { _ = os.RemoveAll(tmpdir) }()
+	tmpdir := t.TempDir()
 	dotpath := path.Join(tmpdir, "graph.dot")
 	facts[core.ConfigPipelineDAGPath] = dotpath
 	_ = pipeline.Initialize(facts)

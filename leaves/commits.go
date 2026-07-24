@@ -39,9 +39,10 @@ type CommitsResult struct {
 
 // FileStat is the statistics for a file in a commit.
 type FileStat struct {
+	items.LineStats
+
 	Name     string
 	Language string
-	items.LineStats
 }
 
 // CommitStat is the statistics for a commit.

@@ -223,25 +223,19 @@ func TestPeopleDetectorGeneratePeopleDict(t *testing.T) {
 		for ; commits[i].Author.Name != "Vadim Markovtsev"; i++ {
 		}
 		if i > 0 {
-			commit := commits[0]
-			commits[0] = commits[i]
-			commits[i] = commit
+			commits[0], commits[i] = commits[i], commits[0]
 		}
 		i = 1
 		for ; commits[i].Author.Name != "Alexander Bezzubov"; i++ {
 		}
 		if i > 0 {
-			commit := commits[1]
-			commits[1] = commits[i]
-			commits[i] = commit
+			commits[1], commits[i] = commits[i], commits[1]
 		}
 		i = 2
 		for ; commits[i].Author.Name != "Máximo Cuadros"; i++ {
 		}
 		if i > 0 {
-			commit := commits[2]
-			commits[2] = commits[i]
-			commits[i] = commit
+			commits[2], commits[i] = commits[i], commits[2]
 		}
 	}
 	id.GeneratePeopleDict(commits)
@@ -296,7 +290,7 @@ func TestPeopleDetectorCoAuthorTrailers(t *testing.T) {
 	assert.Equal(t, "alice example|alice@example.com|alice@users.noreply.github.com", audit.Identities[0].PeopleDictLine)
 	assert.Len(t, audit.MergeDecisions, 1)
 	assert.Equal(t, "co-authored-by", audit.MergeDecisions[0].Reason)
-	assert.Equal(t, 1.0, audit.MergeDecisions[0].Confidence)
+	assert.InDelta(t, 1.0, audit.MergeDecisions[0].Confidence, 0.00001)
 	assert.Empty(t, audit.Ambiguous)
 }
 
@@ -355,7 +349,7 @@ func TestPeopleDetectorIdentityThresholdConfiguration(t *testing.T) {
 
 	facts[ConfigIdentityDetectorMergeThreshold] = 0.98
 	assert.NoError(t, id.Configure(facts))
-	assert.Equal(t, 0.98, id.MergeThreshold)
+	assert.InDelta(t, 0.98, id.MergeThreshold, 0.00001)
 }
 
 func TestPeopleDetectorLoadPeopleDictInvalidPath(t *testing.T) {

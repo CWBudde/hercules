@@ -625,7 +625,7 @@ func TestCommonAnalysisResultCopy(t *testing.T) {
 	c2 := c1.Copy()
 	assert.Equal(t, c1, c2)
 	c2.RunTimePerItem["one"] = 100500
-	assert.Equal(t, c1.RunTimePerItem["one"], float64(1))
+	assert.InDelta(t, float64(1), c1.RunTimePerItem["one"], 0.00001)
 }
 
 func TestCommonAnalysisResultMerge(t *testing.T) {
@@ -1178,7 +1178,7 @@ func TestPipelineInitializeExtNoCommits(t *testing.T) {
 	pipeline.AddItem(&testPipelineItem{})
 	err := pipeline.InitializeExt(map[string]any{},
 		func(items []PipelineItem) PipelineItem { return items[0] }, true)
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Contains(t, err.Error(), "commits are not available")
 }
 
@@ -1221,7 +1221,7 @@ func TestPipelineResolveCircularDependency(t *testing.T) {
 	pipeline := NewPipeline(test.FixtureRepository())
 	pipeline.AddItem(&circularDepItem{})
 	err := pipeline.Initialize(map[string]any{})
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Contains(t, err.Error(), "topological sort")
 }
 

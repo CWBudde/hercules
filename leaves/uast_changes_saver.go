@@ -213,11 +213,11 @@ func (saver *UASTChangesSaver) dumpChangeFiles(
 	uastBeforePath := filepath.Join(saver.OutputPath, fmt.Sprintf("%s_before_%s.ast.json", prefix, shortHash(fromHash)))
 	uastAfterPath := filepath.Join(saver.OutputPath, fmt.Sprintf("%s_after_%s.ast.json", prefix, shortHash(toHash)))
 
-	if err := os.WriteFile(srcBeforePath, srcBefore, 0o644); err != nil {
+	if err := os.WriteFile(srcBeforePath, srcBefore, 0o600); err != nil {
 		return UASTChangeRecord{}, err
 	}
 
-	if err := os.WriteFile(srcAfterPath, srcAfter, 0o644); err != nil {
+	if err := os.WriteFile(srcAfterPath, srcAfter, 0o600); err != nil {
 		return UASTChangeRecord{}, err
 	}
 

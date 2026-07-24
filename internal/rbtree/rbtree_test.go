@@ -82,9 +82,9 @@ func iterToString(i Iterator) string {
 	s := ""
 	for ; !i.Limit(); i = i.Next() {
 		if s != "" {
-			s = s + ","
+			s += ","
 		}
-		s = s + strconv.FormatUint(uint64(i.Item().Key), 10)
+		s += strconv.FormatUint(uint64(i.Item().Key), 10)
 	}
 	return s
 }
@@ -93,16 +93,16 @@ func reverseIterToString(i Iterator) string {
 	s := ""
 	for ; !i.NegativeLimit(); i = i.Prev() {
 		if s != "" {
-			s = s + ","
+			s += ","
 		}
-		s = s + strconv.FormatUint(uint64(i.Item().Key), 10)
+		s += strconv.FormatUint(uint64(i.Item().Key), 10)
 	}
 	return s
 }
 
 func TestIterator(t *testing.T) {
 	tree := testNewIntSet()
-	for i := 0; i < 10; i = i + 2 {
+	for i := 0; i < 10; i += 2 {
 		boolInsert(tree, i)
 	}
 	assert.Equal(t, "4,6,8", iterToString(tree.FindGE(3)))
@@ -138,9 +138,7 @@ func (o *oracle) Less(i, j int) bool {
 }
 
 func (o *oracle) Swap(i, j int) {
-	e := o.data[j]
-	o.data[j] = o.data[i]
-	o.data[i] = e
+	o.data[j], o.data[i] = o.data[i], o.data[j]
 }
 
 func (o *oracle) Insert(key int) bool {
@@ -233,6 +231,7 @@ func (oiter oracleIterator) Prev() oracleIterator {
 }
 
 func compareContents(t *testing.T, oiter oracleIterator, titer Iterator) {
+	t.Helper()
 	oi := oiter
 	ti := titer
 
@@ -283,6 +282,7 @@ func compareContents(t *testing.T, oiter oracleIterator, titer Iterator) {
 }
 
 func compareContentsFull(t *testing.T, o *oracle, tree *RBTree) {
+	t.Helper()
 	compareContents(t, o.FindGE(t, -1), tree.FindGE(0))
 }
 

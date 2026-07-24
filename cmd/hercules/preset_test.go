@@ -5,6 +5,7 @@ import (
 
 	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestApplyPresetLargeRepo(t *testing.T) {
@@ -18,7 +19,7 @@ func TestApplyPresetLargeRepo(t *testing.T) {
 	flags.Bool("head", false, "")
 
 	err := flags.Set("preset", "large-repo")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	applyPreset(flags)
 
@@ -41,7 +42,7 @@ func TestApplyPresetQuick(t *testing.T) {
 	flags.Bool("first-parent", false, "")
 
 	err := flags.Set("preset", "quick")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	applyPreset(flags)
 

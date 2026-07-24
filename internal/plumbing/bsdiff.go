@@ -199,24 +199,24 @@ func matchlen(a, b []byte) (i int) {
 	return i
 }
 
-func search(I []int, obuf, nbuf []byte, st, en int) (pos, n int) {
+func search(index []int, obuf, nbuf []byte, st, en int) (pos, n int) {
 	if en-st < 2 {
-		x := matchlen(obuf[I[st]:], nbuf)
-		y := matchlen(obuf[I[en]:], nbuf)
+		x := matchlen(obuf[index[st]:], nbuf)
+		y := matchlen(obuf[index[en]:], nbuf)
 
 		if x > y {
-			return I[st], x
+			return index[st], x
 		}
 
-		return I[en], y
+		return index[en], y
 	}
 
 	x := st + (en-st)/2
-	if bytes.Compare(obuf[I[x]:], nbuf) < 0 {
-		return search(I, obuf, nbuf, x, en)
+	if bytes.Compare(obuf[index[x]:], nbuf) < 0 {
+		return search(index, obuf, nbuf, x, en)
 	}
 
-	return search(I, obuf, nbuf, st, x)
+	return search(index, obuf, nbuf, st, x)
 }
 
 // DiffBytes calculates the approximated number of different bytes between two binary buffers.

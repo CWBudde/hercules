@@ -19,6 +19,7 @@ func fixtureBlobCache() *BlobCache {
 }
 
 func AddHash(t *testing.T, cache map[plumbing.Hash]*CachedBlob, hash string) {
+	t.Helper()
 	objhash := plumbing.NewHash(hash)
 	blob, err := test.Repository.BlobObject(objhash)
 	assert.NoError(t, err)

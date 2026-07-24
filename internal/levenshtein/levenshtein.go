@@ -58,7 +58,7 @@ func (c *Context) Distance(str1, str2 string) int {
 				cost = 1
 			}
 
-			column[y+1] = min(
+			column[y+1] = minInt(
 				column[y+1]+1,
 				column[y]+1,
 				lastdiag+cost,
@@ -70,7 +70,7 @@ func (c *Context) Distance(str1, str2 string) int {
 	return column[lenS1]
 }
 
-func min(a, b, c int) int {
+func minInt(a, b, c int) int {
 	if a < b {
 		if a < c {
 			return a

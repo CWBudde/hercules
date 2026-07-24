@@ -250,8 +250,9 @@ type churnDeltaKey struct {
 }
 
 type churnDelta struct {
-	lastTouch core.TickNumber
 	churnLines
+
+	lastTouch core.TickNumber
 }
 
 type churnLines struct {
@@ -802,7 +803,7 @@ func (analyser *CodeChurnAnalysis) calculateAwareness(entry churnFileEntry, chan
 	if awareness > awarenessLowCut {
 		memorability = math.Min(memorability, memorabilityMin)
 
-		awareness = awareness * analyser.memoryLoss(timeDelta*(1+memorabilityMin-memorability))
+		awareness *= analyser.memoryLoss(timeDelta * (1 + memorabilityMin - memorability))
 		if awareness >= awarenessLowCut {
 			return awareness, memorability
 		}

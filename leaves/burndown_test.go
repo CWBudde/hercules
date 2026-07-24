@@ -31,6 +31,7 @@ func LineHistoryAnalyser() *linehistory.LineHistoryAnalyser {
 }
 
 func AddHash(t *testing.T, cache map[plumbing.Hash]*items.CachedBlob, hash string) {
+	t.Helper()
 	objhash := plumbing.NewHash(hash)
 	blob, err := test.Repository.BlobObject(objhash)
 	assert.NoError(t, err)
@@ -435,6 +436,7 @@ func TestBurndownConsumeFinalize(t *testing.T) {
 func prepareBDForSerialization(t *testing.T, firstAuthor, secondAuthor int) (
 	BurndownResult, *BurndownAnalysis,
 ) {
+	t.Helper()
 	bd := BurndownAnalysis{
 		Granularity:    30,
 		Sampling:       30,

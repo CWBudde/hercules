@@ -706,7 +706,8 @@ func peopleDictLine(names, emails []string) string {
 
 	sort.Strings(names)
 	sort.Strings(emails)
-	parts := append(names, emails...)
+	names = append(names, emails...)
+	parts := names
 
 	compact := parts[:0]
 	for _, part := range parts {

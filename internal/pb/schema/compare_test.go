@@ -47,7 +47,7 @@ func TestCompareCompatibleAdditions(t *testing.T) {
 	old := mustParse(t, `message A {
     string x = 1;
 }`)
-	new := mustParse(t, `
+	updated := mustParse(t, `
 message A {
     string x = 1;
     int32 y = 2;
@@ -56,7 +56,7 @@ message B {
     string z = 1;
 }
 `)
-	changes := Compare(old, new)
+	changes := Compare(old, updated)
 	if breakingCount(changes) != 0 {
 		t.Fatalf("expected only compatible changes, got %+v", changes)
 	}
@@ -76,7 +76,7 @@ message Gone {
     string a = 1;
 }
 `)
-	new := mustParse(t, `
+	updated := mustParse(t, `
 message A {
     string x = 1;
     string y = 2;
@@ -84,7 +84,7 @@ message A {
     string w = 4;
 }
 `)
-	changes := Compare(old, new)
+	changes := Compare(old, updated)
 	requireChange(t, changes, true, "message Gone removed")
 	requireChange(t, changes, true, "field A.y (2) changed type")
 	requireChange(t, changes, true, "field A.z (3) renamed")
@@ -149,11 +149,11 @@ func TestCompareReservedAdditionIsCompatible(t *testing.T) {
 	old := mustParse(t, `message A {
     string x = 1;
 }`)
-	new := mustParse(t, `message A {
+	updated := mustParse(t, `message A {
     reserved 5;
     string x = 1;
 }`)
-	changes := Compare(old, new)
+	changes := Compare(old, updated)
 	if breakingCount(changes) != 0 {
 		t.Fatalf("expected compatible, got %+v", changes)
 	}

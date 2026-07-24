@@ -382,21 +382,21 @@ func TestAuthorResolverCopyNames(t *testing.T) {
 	loader.authors = []string{"Alice", "Bob"}
 
 	resolver := authorResolver{identities: loader}
-	copy := resolver.CopyNames(false)
+	names := resolver.CopyNames(false)
 
-	assert.Len(t, copy, 2)
-	assert.Equal(t, "Alice", copy[0])
-	assert.Equal(t, "Bob", copy[1])
+	assert.Len(t, names, 2)
+	assert.Equal(t, "Alice", names[0])
+	assert.Equal(t, "Bob", names[1])
 
 	// Verify it's a copy, not the same slice
-	copy[0] = "Modified"
+	names[0] = "Modified"
 	assert.Equal(t, "Alice", loader.authors[0])
 }
 
 func TestAuthorResolverCopyNamesNil(t *testing.T) {
 	resolver := authorResolver{identities: nil}
-	copy := resolver.CopyNames(false)
-	assert.Nil(t, copy)
+	names := resolver.CopyNames(false)
+	assert.Nil(t, names)
 }
 
 func TestLineHistoryLoaderBuildCommits(t *testing.T) {
@@ -570,7 +570,7 @@ LineDumper:
 
 	tmpDir := t.TempDir()
 	tmpFile := filepath.Join(tmpDir, "history.yml")
-	err := os.WriteFile(tmpFile, []byte(yamlData), 0o644)
+	err := os.WriteFile(tmpFile, []byte(yamlData), 0o600)
 	require.NoError(t, err)
 
 	loader := &LineHistoryLoader{}
@@ -603,7 +603,7 @@ LineDumper:
 
 	tmpDir := t.TempDir()
 	tmpFile := filepath.Join(tmpDir, "history.yml")
-	err := os.WriteFile(tmpFile, []byte(yamlData), 0o644)
+	err := os.WriteFile(tmpFile, []byte(yamlData), 0o600)
 	require.NoError(t, err)
 
 	loader := &LineHistoryLoader{}

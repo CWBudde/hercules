@@ -6,6 +6,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/cwbudde/hercules/internal/core"
 	items "github.com/cwbudde/hercules/internal/plumbing"
@@ -18,7 +19,7 @@ func AddHash(t *testing.T, cache map[plumbing.Hash]*items.CachedBlob, hash strin
 	t.Helper()
 	objHash := plumbing.NewHash(hash)
 	blob, err := test.Repository.BlobObject(objHash)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	cb := &items.CachedBlob{Blob: *blob}
 	err = cb.Cache()
 	assert.NoError(t, err)
@@ -147,7 +148,7 @@ func TestLinesConsume(t *testing.T) {
 	deps[items.DependencyTreeChanges] = changes
 	fd := fixtures.FileDiff()
 	result, err := fd.Consume(deps)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	deps[items.DependencyFileDiff] = result[items.DependencyFileDiff]
 	deps[core.DependencyCommit], _ = test.Repository.CommitObject(plumbing.NewHash(
 		"cce947b98a050c6d356bc6ba95030254914027b1",
@@ -168,9 +169,9 @@ func TestLinesConsume(t *testing.T) {
 
 	bd := &LineHistoryAnalyser{}
 
-	assert.NoError(t, bd.Initialize(test.Repository))
+	require.NoError(t, bd.Initialize(test.Repository))
 	result, err = bd.Consume(deps)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	assert.Equal(t, core.TickNumber(0), bd.previousTick)
 

@@ -14,6 +14,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/cwbudde/hercules/internal/core"
 	"github.com/cwbudde/hercules/internal/plumbing/identity"
@@ -34,17 +35,12 @@ func TestLoadGitRepositoryWithCreds(t *testing.T) {
 }
 
 func TestLoadLocalRepository(t *testing.T) {
-	tempdir, err := os.MkdirTemp("", "hercules-")
-	assert.NoError(t, err)
-	defer func() { _ = os.RemoveAll(tempdir) }()
+	tempdir := t.TempDir()
 
 	backend := filesystem.NewStorage(osfs.New(tempdir), cache.NewObjectLRUDefault())
 	cloneOptions := &git.CloneOptions{URL: "https://github.com/src-d/hercules"}
-	_, err = git.Clone(backend, nil, cloneOptions)
-	assert.NoError(t, err)
-	if err != nil {
-		assert.FailNow(t, "filesystem.NewStorage")
-	}
+	_, err := git.Clone(backend, nil, cloneOptions)
+	require.NoError(t, err)
 
 	repo, repoUri, repoFeature := loadRepository(tempdir, "", true, "")
 	assert.NotNil(t, repo)
@@ -53,7 +49,8 @@ func TestLoadLocalRepository(t *testing.T) {
 }
 
 func TestLoadSivaRepository(t *testing.T) {
-	_, filename, _, _ := runtime.Caller(0)
+	_, filename, _, ok := runtime.Caller(0)
+	assert.True(t, ok)
 	sivafile := filepath.Join(filepath.Dir(filename), "test_data", "hercules.siva")
 	repo, _, repoFeature := loadRepository(sivafile, "", true, "")
 	assert.NotNil(t, repo)
@@ -129,12 +126,10 @@ func TestIdentityAuditWorkflowWritesJSON(t *testing.T) {
 }
 
 func TestIdentityTemplateWorkflowWritesPeopleDictFile(t *testing.T) {
-	tempdir, err := os.MkdirTemp("", "hercules-identity-")
-	assert.NoError(t, err)
-	defer func() { _ = os.RemoveAll(tempdir) }()
+	tempdir := t.TempDir()
 	templatePath := filepath.Join(tempdir, "people.txt")
 
-	err = runIdentityWorkflow(identityWorkflowOptions{
+	err := runIdentityWorkflow(identityWorkflowOptions{
 		Commits: []*object.Commit{
 			{
 				Author:  object.Signature{Name: "Alice Example", Email: "alice@example.com"},

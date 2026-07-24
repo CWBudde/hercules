@@ -75,7 +75,7 @@ func makeTinyRepo(t *testing.T) string {
 	for i := 1; i <= 2; i++ {
 		name := fmt.Sprintf("file%d.txt", i)
 		require.NoError(t, os.WriteFile(
-			filepath.Join(dir, name), fmt.Appendf(nil, "content %d\n", i), 0o644,
+			filepath.Join(dir, name), fmt.Appendf(nil, "content %d\n", i), 0o600,
 		))
 		_, err = worktree.Add(name)
 		require.NoError(t, err)

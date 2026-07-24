@@ -655,7 +655,8 @@ func (hra *HotspotRiskAnalysis) MergeResults(r1, r2 any, c1, c2 *core.CommonAnal
 	cr1 := r1.(HotspotRiskResult)
 	cr2 := r2.(HotspotRiskResult)
 
-	allFiles := append(cr1.Files, cr2.Files...)
+	allFiles := append([]FileRisk(nil), cr1.Files...)
+	allFiles = append(allFiles, cr2.Files...)
 	sortFileRisks(allFiles)
 
 	if len(allFiles) > hra.TopN {

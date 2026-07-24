@@ -17,6 +17,7 @@ func testNewIntSet() *RBTree {
 }
 
 func testAssert(t *testing.T, b bool, message string) {
+	t.Helper()
 	assert.True(t, b, message)
 }
 
@@ -162,6 +163,7 @@ func (o *oracle) RandomExistingKey(rand *rand.Rand) int {
 }
 
 func (o *oracle) FindGE(t *testing.T, key int) oracleIterator {
+	t.Helper()
 	prev := int(-1)
 	for i, e := range o.data {
 		if e <= prev {
@@ -175,6 +177,7 @@ func (o *oracle) FindGE(t *testing.T, key int) oracleIterator {
 }
 
 func (o *oracle) FindLE(t *testing.T, key int) oracleIterator {
+	t.Helper()
 	iter := o.FindGE(t, key)
 	if !iter.Limit() && o.data[iter.index] == key {
 		return iter

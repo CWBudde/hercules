@@ -51,7 +51,7 @@ func TestLinesMeta(t *testing.T) {
 	}
 	assert.Len(t, opts, matches)
 	logger := core.NewLogger()
-	assert.NoError(t, bd.Configure(map[string]any{
+	require.NoError(t, bd.Configure(map[string]any{
 		core.ConfigLogger: logger,
 	}))
 	assert.Equal(t, logger, bd.l)
@@ -476,11 +476,11 @@ func TestLinesHibernateBoot(t *testing.T) {
 	bd := bakeBurndownForSerialization(t, 0, 1)
 	assert.Equal(t, 157, bd.fileAllocator.Size())
 	assert.Equal(t, 155, bd.fileAllocator.Used())
-	assert.NoError(t, bd.Hibernate())
+	require.NoError(t, bd.Hibernate())
 	assert.PanicsWithValue(t, "LineHistoryAnalyser.Consume() was called on a hibernated instance",
 		func() { _, _ = bd.Consume(nil) })
 	assert.Equal(t, 0, bd.fileAllocator.Size())
-	assert.NoError(t, bd.Boot())
+	require.NoError(t, bd.Boot())
 	assert.Equal(t, 157, bd.fileAllocator.Size())
 	assert.Equal(t, 155, bd.fileAllocator.Used())
 }

@@ -155,12 +155,12 @@ func TestHotspotRiskSerializationShapes(t *testing.T) {
 	assert.Equal(t, int32(30), message.GetWindowDays())
 	require.Len(t, message.GetFiles(), 1)
 	assert.Equal(t, "main.go", message.GetFiles()[0].GetPath())
-	assert.Equal(t, 0.25, message.GetFiles()[0].GetRiskScore())
+	assert.InDelta(t, 0.25, message.GetFiles()[0].GetRiskScore(), 0.00001)
 	assert.Equal(t, int32(12), message.GetFiles()[0].GetSize_())
 	assert.Equal(t, int32(3), message.GetFiles()[0].GetChurn())
 	assert.Equal(t, int32(2), message.GetFiles()[0].GetCouplingDegree())
-	assert.Equal(t, 0.75, message.GetFiles()[0].GetOwnershipGini())
-	assert.Equal(t, 1.0, message.GetFiles()[0].GetSizeNormalized())
+	assert.InDelta(t, 0.75, message.GetFiles()[0].GetOwnershipGini(), 0.00001)
+	assert.InDelta(t, 1.0, message.GetFiles()[0].GetSizeNormalized(), 0.00001)
 }
 
 func newHotspotRiskFixtureRepository(t *testing.T, files map[string]string) (*git.Repository, *object.Commit) {

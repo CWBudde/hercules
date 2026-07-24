@@ -8,6 +8,10 @@ import (
 	"sort"
 	"time"
 
+	"github.com/go-git/go-git/v5"
+	gitplumbing "github.com/go-git/go-git/v5/plumbing"
+	"github.com/gogo/protobuf/proto"
+
 	"github.com/cwbudde/hercules/internal/core"
 	"github.com/cwbudde/hercules/internal/pb"
 	"github.com/cwbudde/hercules/internal/plumbing"
@@ -15,9 +19,6 @@ import (
 	"github.com/cwbudde/hercules/internal/plumbing/imports"
 	importslang "github.com/cwbudde/hercules/internal/plumbing/imports/lang"
 	"github.com/cwbudde/hercules/internal/yaml"
-	"github.com/go-git/go-git/v5"
-	gitplumbing "github.com/go-git/go-git/v5/plumbing"
-	"github.com/gogo/protobuf/proto"
 )
 
 // ImportsMap is the type of the mapping from dev indexes to languages to import names to ticks to

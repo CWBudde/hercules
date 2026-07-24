@@ -1,6 +1,7 @@
 package plumbing
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -9,14 +10,15 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/cwbudde/hercules/internal"
-	"github.com/cwbudde/hercules/internal/core"
-	"github.com/cwbudde/hercules/internal/levenshtein"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/utils/merkletrie"
 	"github.com/sergi/go-diff/diffmatchpatch"
+
+	"github.com/cwbudde/hercules/internal"
+	"github.com/cwbudde/hercules/internal/core"
+	"github.com/cwbudde/hercules/internal/levenshtein"
 )
 
 // RenameAnalysis improves TreeDiff's results by searching for changed blobs under different
@@ -422,45 +424,23 @@ func (ra *RenameAnalysis) Fork(n int) []core.PipelineItem {
 	return core.ForkSamePipelineItem(ra, n)
 }
 
-func (ra *RenameAnalysis) sizesAreClose(size1 int64, size2 int64) bool {
+func (ra *RenameAnalysis) sizesAreClose(size1, size2 int64) bool {
 	size := internal.Max64(1, internal.Max64(size1, size2))
 	return (internal.Abs64(size1-size2)*10000)/size <= int64(100-ra.SimilarityThreshold)*100
 }
 
-func (ra *RenameAnalysis) blobsAreClose(blob1 *CachedBlob, blob2 *CachedBlob) (bool, error) {
+func (ra *RenameAnalysis) blobsAreClose(blob1, blob2 *CachedBlob) (bool, error) {
 	cleanReturn := false
-	defer func() {
-		if !cleanReturn {
-			ra.l.Warnf("\nunclean return detected for blobs '%s' and '%s'\n",
-				blob1.Hash.String(), blob2.Hash.String())
-		}
-	}()
-	_, err1 := blob1.CountLines()
-	_, err2 := blob2.CountLines()
-	if err1 == ErrorBinary || err2 == ErrorBinary {
-		// binary mode
-		bsdifflen := DiffBytes(blob1.Data, blob2.Data)
-		delta := int((int64(bsdifflen) * 100) / internal.Max64(
-			internal.Min64(blob1.Size, blob2.Size), 1,
-		))
+	defer ra.warnUncleanBlobComparison(&cleanReturn, blob1, blob2)
+
+	if binary, similar := ra.binaryBlobsAreClose(blob1, blob2); binary {
 		cleanReturn = true
-		return 100-delta >= ra.SimilarityThreshold, nil
+		return similar, nil
 	}
 	src, dst := string(blob1.Data), string(blob2.Data)
 	maxSize := internal.Max(1, internal.Max(utf8.RuneCountInString(src), utf8.RuneCountInString(dst)))
 
-	// compute the line-by-line diff, then the char-level diffs of the del-ins blocks
-	// yes, this algorithm is greedy and not exact
-	dmp := diffmatchpatch.New()
-	dmp.DiffTimeout = time.Hour
-	srcLineRunes, dstLineRunes, _ := dmp.DiffLinesToRunes(src, dst)
-	// the third returned value, []string, is the mapping from runes to lines
-	// we cannot use it because it is approximate and has string collisions
-	// that is, the mapping is wrong for huge files
-	diffs := dmp.DiffMainRunes(srcLineRunes, dstLineRunes, false)
-
-	srcPositions := calcLinePositions(src)
-	dstPositions := calcLinePositions(dst)
+	diffs, srcPositions, dstPositions := renameLineDiffs(src, dst)
 	var common, posSrc, prevPosSrc, posDst int
 	possibleDelInsBlock := false
 	for _, edit := range diffs {
@@ -473,21 +453,9 @@ func (ra *RenameAnalysis) blobsAreClose(blob1 *CachedBlob, blob2 *CachedBlob) (b
 			nextPosDst := posDst + utf8.RuneCountInString(edit.Text)
 			if possibleDelInsBlock {
 				possibleDelInsBlock = false
-				if internal.Max(srcPositions[posSrc]-srcPositions[prevPosSrc],
-					dstPositions[nextPosDst]-dstPositions[posDst]) < RenameAnalysisByteDiffSizeThreshold {
-					localDmp := diffmatchpatch.New()
-					localDmp.DiffTimeout = time.Hour
-					localSrc := src[srcPositions[prevPosSrc]:srcPositions[posSrc]]
-					localDst := dst[dstPositions[posDst]:dstPositions[nextPosDst]]
-					localDiffs := localDmp.DiffMainRunes(
-						strToLiteralRunes(localSrc), strToLiteralRunes(localDst), false,
-					)
-					for _, localEdit := range localDiffs {
-						if localEdit.Type == diffmatchpatch.DiffEqual {
-							common += utf8.RuneCountInString(localEdit.Text)
-						}
-					}
-				}
+				common += delInsCommonRunes(
+					src, dst, srcPositions, dstPositions, prevPosSrc, posSrc, posDst, nextPosDst,
+				)
 			}
 			posDst = nextPosDst
 		case diffmatchpatch.DiffEqual:
@@ -506,25 +474,92 @@ func (ra *RenameAnalysis) blobsAreClose(blob1 *CachedBlob, blob2 *CachedBlob) (b
 		}
 		// supposing that the rest of the lines are the same (they are not - too optimistic),
 		// estimate the maximum similarity and exit the loop if it lower than our threshold
-		var srcPendingSize, dstPendingSize int
-		srcPendingSize = len(src) - srcPositions[posSrc]
-		dstPendingSize = len(dst) - dstPositions[posDst]
-		maxCommon := common + internal.Min(srcPendingSize, dstPendingSize)
-		similarity := (maxCommon * 100) / maxSize
-		if similarity < ra.SimilarityThreshold {
+		if decided, similar := ra.similarityDecision(
+			common, maxSize, len(src)-srcPositions[posSrc], len(dst)-dstPositions[posDst],
+		); decided {
 			cleanReturn = true
-			return false, nil
-		}
-		similarity = (common * 100) / maxSize
-		if similarity >= ra.SimilarityThreshold {
-			cleanReturn = true
-			return true, nil
+			return similar, nil
 		}
 	}
 	// the very last "overly optimistic" estimate was actually precise, so since we are still here
 	// the blobs are similar
 	cleanReturn = true
 	return true, nil
+}
+
+func renameLineDiffs(src, dst string) ([]diffmatchpatch.Diff, []int, []int) {
+	// Compute the line-by-line diff, then the char-level diffs of the del-ins blocks.
+	// The ignored []string mapping is approximate and collides for huge files.
+	dmp := diffmatchpatch.New()
+	dmp.DiffTimeout = time.Hour
+	srcLineRunes, dstLineRunes, _ := dmp.DiffLinesToRunes(src, dst)
+	diffs := dmp.DiffMainRunes(srcLineRunes, dstLineRunes, false)
+
+	return diffs, calcLinePositions(src), calcLinePositions(dst)
+}
+
+func (ra *RenameAnalysis) warnUncleanBlobComparison(cleanReturn *bool, blob1, blob2 *CachedBlob) {
+	if !*cleanReturn {
+		ra.l.Warnf("\nunclean return detected for blobs '%s' and '%s'\n",
+			blob1.Hash.String(), blob2.Hash.String())
+	}
+}
+
+func (ra *RenameAnalysis) binaryBlobsAreClose(blob1, blob2 *CachedBlob) (bool, bool) {
+	_, firstErr := blob1.CountLines()
+
+	_, secondErr := blob2.CountLines()
+	if !errors.Is(firstErr, ErrorBinary) && !errors.Is(secondErr, ErrorBinary) {
+		return false, false
+	}
+
+	diffLength := DiffBytes(blob1.Data, blob2.Data)
+	delta := int((int64(diffLength) * 100) / internal.Max64(
+		internal.Min64(blob1.Size, blob2.Size), 1,
+	))
+
+	return true, 100-delta >= ra.SimilarityThreshold
+}
+
+func (ra *RenameAnalysis) similarityDecision(common, maxSize, srcPendingSize, dstPendingSize int) (bool, bool) {
+	maxCommon := common + internal.Min(srcPendingSize, dstPendingSize)
+	if (maxCommon*100)/maxSize < ra.SimilarityThreshold {
+		return true, false
+	}
+
+	if (common*100)/maxSize >= ra.SimilarityThreshold {
+		return true, true
+	}
+
+	return false, false
+}
+
+func delInsCommonRunes(src, dst string, srcPositions, dstPositions []int,
+	prevPosSrc, posSrc, posDst, nextPosDst int,
+) int {
+	srcSize := srcPositions[posSrc] - srcPositions[prevPosSrc]
+
+	dstSize := dstPositions[nextPosDst] - dstPositions[posDst]
+	if internal.Max(srcSize, dstSize) >= RenameAnalysisByteDiffSizeThreshold {
+		return 0
+	}
+
+	localDmp := diffmatchpatch.New()
+	localDmp.DiffTimeout = time.Hour
+	localSrc := src[srcPositions[prevPosSrc]:srcPositions[posSrc]]
+	localDst := dst[dstPositions[posDst]:dstPositions[nextPosDst]]
+	localDiffs := localDmp.DiffMainRunes(
+		strToLiteralRunes(localSrc), strToLiteralRunes(localDst), false,
+	)
+	common := 0
+
+	for _, localEdit := range localDiffs {
+		if localEdit.Type == diffmatchpatch.DiffEqual {
+			common += utf8.RuneCountInString(localEdit.Text)
+		}
+	}
+
+	return common
 }
 
 func calcLinePositions(text string) []int {

@@ -45,7 +45,7 @@ func DetectOutputFormat(outputPath string) string {
 
 // GenerateOutputPath returns basePath with the extension matching format,
 // replacing any existing extension.
-func GenerateOutputPath(basePath string, format string) string {
+func GenerateOutputPath(basePath, format string) string {
 	ext := "." + format
 
 	// If basePath already has the correct extension, use it as-is

@@ -5,8 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cwbudde/hercules/internal/core"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/cwbudde/hercules/internal/core"
 )
 
 func TestBurndownAddMatrix(t *testing.T) {

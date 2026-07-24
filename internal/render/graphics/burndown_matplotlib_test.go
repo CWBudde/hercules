@@ -9,8 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cwbudde/hercules/internal/render/burndown"
 	"github.com/spf13/viper"
+
+	"github.com/cwbudde/hercules/internal/render/burndown"
 )
 
 func TestPythonLaboursColorPaletteMatchesTab20Cycle(t *testing.T) {

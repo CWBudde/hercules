@@ -5,10 +5,6 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/cwbudde/hercules/internal/core"
-	"github.com/cwbudde/hercules/internal/pb"
-	items "github.com/cwbudde/hercules/internal/plumbing"
-	"github.com/cwbudde/hercules/internal/plumbing/identity"
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5"
@@ -18,6 +14,11 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/cwbudde/hercules/internal/core"
+	"github.com/cwbudde/hercules/internal/pb"
+	items "github.com/cwbudde/hercules/internal/plumbing"
+	"github.com/cwbudde/hercules/internal/plumbing/identity"
 )
 
 func TestHotspotRiskMergeResultsSortsEqualScoresByPath(t *testing.T) {
@@ -184,7 +185,7 @@ func newHotspotRiskFixtureRepository(t *testing.T, files map[string]string) (*gi
 	return repo, commit
 }
 
-func writeFixtureFile(t *testing.T, fs billy.Filesystem, name string, content string) {
+func writeFixtureFile(t *testing.T, fs billy.Filesystem, name, content string) {
 	t.Helper()
 	file, err := fs.Create(name)
 	require.NoError(t, err)

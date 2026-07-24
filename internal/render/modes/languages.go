@@ -9,9 +9,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spf13/viper"
+
 	"github.com/cwbudde/hercules/internal/render/graphics"
 	"github.com/cwbudde/hercules/internal/render/readers"
-	"github.com/spf13/viper"
 )
 
 // Languages generates language statistics and visualization showing the distribution

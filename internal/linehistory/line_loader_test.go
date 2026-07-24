@@ -6,13 +6,14 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/cwbudde/hercules/internal/core"
-	items "github.com/cwbudde/hercules/internal/plumbing"
-	"github.com/cwbudde/hercules/internal/plumbing/identity"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v2"
+
+	"github.com/cwbudde/hercules/internal/core"
+	items "github.com/cwbudde/hercules/internal/plumbing"
+	"github.com/cwbudde/hercules/internal/plumbing/identity"
 )
 
 func TestLineHistoryLoaderMeta(t *testing.T) {
@@ -633,7 +634,7 @@ func TestLineHistoryLoaderRegistration(t *testing.T) {
 func TestFileInfoForEachPanics(t *testing.T) {
 	fi := fileInfo{Name: "test.go"}
 	assert.PanicsWithValue(t, "not implemented", func() {
-		fi.ForEach(func(line int, value int) {})
+		fi.ForEach(func(line, value int) {})
 	})
 }
 

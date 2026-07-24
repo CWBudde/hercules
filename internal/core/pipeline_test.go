@@ -10,14 +10,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cwbudde/hercules/internal/pb"
-	"github.com/cwbudde/hercules/internal/test"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/cwbudde/hercules/internal/pb"
+	"github.com/cwbudde/hercules/internal/test"
 )
 
 type testPipelineItem struct {
@@ -388,7 +389,7 @@ func TestPipelineOnProgress(t *testing.T) {
 	pipeline := NewPipeline(test.FixtureRepository())
 	progressOk := 0
 
-	onProgress := func(step int, total int, action string) {
+	onProgress := func(step, total int, action string) {
 		if step == 1 && total == 4 && action == "emerge" {
 			progressOk++
 		}

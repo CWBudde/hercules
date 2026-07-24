@@ -6,8 +6,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/cwbudde/hercules/internal/pb"
 	"github.com/gogo/protobuf/proto"
+
+	"github.com/cwbudde/hercules/internal/pb"
 )
 
 func TestProtobufReaderGetLanguageStatsFromDevsTicks(t *testing.T) {

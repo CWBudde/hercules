@@ -8,9 +8,10 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/spf13/viper"
+
 	"github.com/cwbudde/hercules/internal/render/progress"
 	"github.com/cwbudde/hercules/internal/render/readers"
-	"github.com/spf13/viper"
 )
 
 // CouplesPeople generates people coupling embeddings (Python-compatible)

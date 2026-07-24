@@ -131,7 +131,7 @@ func newSparseHistoryEntry() sparseHistoryEntry {
 
 type sparseHistory map[int]sparseHistoryEntry
 
-func (p sparseHistory) updateDelta(prevTick, curTick int, delta int) {
+func (p sparseHistory) updateDelta(prevTick, curTick, delta int) {
 	currentHistory, ok := p[curTick]
 	if !ok {
 		currentHistory = newSparseHistoryEntry()

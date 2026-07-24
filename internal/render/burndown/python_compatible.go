@@ -183,7 +183,7 @@ func FloorDateTime(dt time.Time, tickSize float64) time.Time {
 }
 
 // LoadBurndown is the main function that replicates Python's load_burndown
-func LoadBurndown(header BurndownHeader, name string, matrix [][]int, resample string, reportSurvival bool, interpolationProgress bool) (*ProcessedBurndown, error) {
+func LoadBurndown(header BurndownHeader, name string, matrix [][]int, resample string, reportSurvival, interpolationProgress bool) (*ProcessedBurndown, error) {
 	if header.Sampling <= 0 || header.Granularity <= 0 {
 		return nil, fmt.Errorf("invalid sampling (%d) or granularity (%d)", header.Sampling, header.Granularity)
 	}

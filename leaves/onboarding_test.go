@@ -6,14 +6,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cwbudde/hercules/internal/core"
-	items "github.com/cwbudde/hercules/internal/plumbing"
-	"github.com/cwbudde/hercules/internal/plumbing/identity"
-	"github.com/cwbudde/hercules/internal/test"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/cwbudde/hercules/internal/core"
+	items "github.com/cwbudde/hercules/internal/plumbing"
+	"github.com/cwbudde/hercules/internal/plumbing/identity"
+	"github.com/cwbudde/hercules/internal/test"
 )
 
 // makeTestDeps creates test dependencies for Consume

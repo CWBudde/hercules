@@ -42,22 +42,6 @@ const TreeMaxBinPower = 14
 // TreeMergeMark is the special day which disables the status updates and is used in File.Merge().
 const TreeMergeMark = (1 << TreeMaxBinPower) - 1
 
-func (file *File) updateTime(currentTime, previousTime, delta int) {
-	if previousTime&TreeMergeMark == TreeMergeMark {
-		if currentTime == previousTime {
-			return
-		}
-		panic("previousTime cannot be TreeMergeMark")
-	}
-	if currentTime&TreeMergeMark == TreeMergeMark {
-		// merge mode - we have already updated in one of the branches
-		return
-	}
-	for _, update := range file.updaters {
-		update(file, currentTime, previousTime, delta)
-	}
-}
-
 // NewFile initializes a new instance of File struct.
 //
 // time is the starting value of the first node;
@@ -66,7 +50,7 @@ func (file *File) updateTime(currentTime, previousTime, delta int) {
 // last node);
 //
 // updaters are the attached interval length mappings.
-func NewFile(id FileId, time int, length int, allocator *rbtree.Allocator, updaters ...Updater) *File {
+func NewFile(id FileId, time, length int, allocator *rbtree.Allocator, updaters ...Updater) *File {
 	file := &File{tree: rbtree.NewRBTree(allocator), updaters: updaters, Id: id}
 	if time < 0 || time > math.MaxUint32 {
 		log.Panicf("time is out of allowed range: %d", time)
@@ -92,7 +76,7 @@ func NewFile(id FileId, time int, length int, allocator *rbtree.Allocator, updat
 // vals is a slice with the starting tree values. Must match the size of keys.
 //
 // updaters are the attached interval length mappings.
-func NewFileFromTree(keys []int, vals []int, allocator *rbtree.Allocator, updaters ...Updater) *File {
+func NewFileFromTree(keys, vals []int, allocator *rbtree.Allocator, updaters ...Updater) *File {
 	file := &File{tree: rbtree.NewRBTree(allocator), updaters: updaters}
 	if len(keys) != len(vals) {
 		panic("keys and vals must be of equal length")
@@ -163,7 +147,36 @@ func (file File) Nodes() int {
 // The code inside this function is probably the most important one throughout
 // the project. It is extensively covered with tests. If you find a bug, please
 // add the corresponding case in file_test.go.
-func (file *File) Update(time int, pos int, insLength int, delLength int) {
+func (file *File) Update(time, pos, insLength, delLength int) {
+	validateUpdate(file, time, pos, insLength, delLength)
+
+	if insLength|delLength == 0 {
+		return
+	}
+
+	tree := file.tree
+	iter := tree.FindLE(checkedUint32(pos))
+	origin := *iter.Item()
+
+	prevOrigin := origin
+	if prevIter := iter.Prev(); prevIter.Item() != nil {
+		prevOrigin = *prevIter.Item()
+	}
+
+	if insLength > 0 {
+		file.updateTime(time, time, insLength)
+	}
+
+	if delLength == 0 {
+		insertOnly(tree, iter, origin, time, pos, insLength)
+		return
+	}
+
+	iter, origin = deleteRange(file, tree, iter, origin, prevOrigin, time, pos, insLength, delLength)
+	finishUpdate(tree, iter, origin, prevOrigin, time, pos, insLength, delLength)
+}
+
+func validateUpdate(file *File, time, pos, insLength, delLength int) {
 	if time < 0 {
 		panic("time may not be negative")
 	}
@@ -179,9 +192,6 @@ func (file *File) Update(time int, pos int, insLength int, delLength int) {
 	if insLength < 0 || delLength < 0 {
 		panic("insLength and delLength must be non-negative")
 	}
-	if insLength|delLength == 0 {
-		return
-	}
 	tree := file.tree
 	if tree.Len() < 2 && tree.Min().Item().Key != 0 {
 		panic("invalid tree state")
@@ -190,36 +200,45 @@ func (file *File) Update(time int, pos int, insLength int, delLength int) {
 		panic(fmt.Sprintf("attempt to insert after the end of the file: %d < %d",
 			tree.Max().Item().Key, pos))
 	}
-	iter := tree.FindLE(uint32(pos))
-	origin := *iter.Item()
-	prevOrigin := origin
-	{
-		prevIter := iter.Prev()
-		if prevIter.Item() != nil {
-			prevOrigin = *prevIter.Item()
-		}
-	}
-	if insLength > 0 {
-		file.updateTime(time, time, insLength)
-	}
-	if delLength == 0 {
-		// simple case with insertions only
-		if origin.Key < uint32(pos) || (origin.Value == uint32(time) && (pos == 0 || uint32(pos) == origin.Key)) {
-			iter = iter.Next()
-		}
-		for ; !iter.Limit(); iter = iter.Next() {
-			iter.Item().Key += uint32(insLength)
-		}
-		if origin.Value != uint32(time) {
-			tree.Insert(rbtree.Item{Key: uint32(pos), Value: uint32(time)})
-			if origin.Key < uint32(pos) {
-				tree.Insert(rbtree.Item{Key: uint32(pos + insLength), Value: origin.Value})
-			}
-		}
-		return
+}
+
+func checkedUint32(value int) uint32 {
+	if value < 0 || uint64(value) > math.MaxUint32 {
+		panic(fmt.Sprintf("value does not fit into uint32: %d", value))
 	}
 
-	// delete nodes
+	return uint32(value)
+}
+
+func insertOnly(tree *rbtree.RBTree, iter rbtree.Iterator, origin rbtree.Item,
+	time, pos, insLength int,
+) {
+	position := checkedUint32(pos)
+
+	timestamp := checkedUint32(time)
+	insertionLength := checkedUint32(insLength)
+
+	if origin.Key < position ||
+		(origin.Value == timestamp && (pos == 0 || position == origin.Key)) {
+		iter = iter.Next()
+	}
+
+	for ; !iter.Limit(); iter = iter.Next() {
+		iter.Item().Key += insertionLength
+	}
+
+	if origin.Value != timestamp {
+		tree.Insert(rbtree.Item{Key: position, Value: timestamp})
+
+		if origin.Key < position {
+			tree.Insert(rbtree.Item{Key: checkedUint32(pos + insLength), Value: origin.Value})
+		}
+	}
+}
+
+func deleteRange(file *File, tree *rbtree.RBTree, iter rbtree.Iterator,
+	origin, prevOrigin rbtree.Item, time, pos, insLength, delLength int,
+) (rbtree.Iterator, rbtree.Item) {
 	for true {
 		node := iter.Item()
 		nextIter := iter.Next()
@@ -246,7 +265,20 @@ func (file *File) Update(time int, pos int, insLength int, delLength int) {
 		iter = nextIter
 	}
 
-	// prepare for the keys update
+	return iter, origin
+}
+
+func finishUpdate(tree *rbtree.RBTree, iter rbtree.Iterator,
+	origin, prevOrigin rbtree.Item, time, pos, insLength, delLength int,
+) {
+	iter, origin, previous := prepareUpdatedRange(tree, iter, origin, time, pos, insLength, delLength)
+	origin = shiftUpdatedKeys(iter, origin, pos, insLength-delLength)
+	restoreUpdatedInterval(tree, origin, prevOrigin, previous, time, pos, insLength)
+}
+
+func prepareUpdatedRange(tree *rbtree.RBTree, iter rbtree.Iterator,
+	origin rbtree.Item, time, pos, insLength, delLength int,
+) (rbtree.Iterator, rbtree.Item, *rbtree.Item) {
 	var previous *rbtree.Item
 	if insLength > 0 && (origin.Value != uint32(time) || origin.Key == uint32(pos)) {
 		// insert our new interval
@@ -268,8 +300,10 @@ func (file *File) Update(time int, pos int, insLength int, delLength int) {
 		previous = iter.Item()
 	}
 
-	// update the keys of all subsequent nodes
-	delta := insLength - delLength
+	return iter, origin, previous
+}
+
+func shiftUpdatedKeys(iter rbtree.Iterator, origin rbtree.Item, pos, delta int) rbtree.Item {
 	if delta != 0 {
 		for iter = iter.Next(); !iter.Limit(); iter = iter.Next() {
 			// we do not need to re-balance the tree
@@ -281,6 +315,12 @@ func (file *File) Update(time int, pos int, insLength int, delLength int) {
 		}
 	}
 
+	return origin
+}
+
+func restoreUpdatedInterval(tree *rbtree.RBTree, origin, prevOrigin rbtree.Item,
+	previous *rbtree.Item, time, pos, insLength int,
+) {
 	if insLength > 0 {
 		if origin.Value != uint32(time) {
 			tree.Insert(rbtree.Item{Key: uint32(pos + insLength), Value: origin.Value})
@@ -400,6 +440,25 @@ func (file File) ForEach(callback func(line, value int)) {
 			value = int(item.Value)
 		}
 		callback(key, value)
+	}
+}
+
+func (file *File) updateTime(currentTime, previousTime, delta int) {
+	if previousTime&TreeMergeMark == TreeMergeMark {
+		if currentTime == previousTime {
+			return
+		}
+
+		panic("previousTime cannot be TreeMergeMark")
+	}
+
+	if currentTime&TreeMergeMark == TreeMergeMark {
+		// merge mode - we have already updated in one of the branches
+		return
+	}
+
+	for _, update := range file.updaters {
+		update(file, currentTime, previousTime, delta)
 	}
 }
 

@@ -8,9 +8,10 @@ import (
 	"reflect"
 	"sort"
 
-	"github.com/cwbudde/hercules/internal/toposort"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+
+	"github.com/cwbudde/hercules/internal/toposort"
 )
 
 // OneShotMergeProcessor provides the convenience method to consume merges only once.
@@ -185,7 +186,7 @@ func prepareRunPlan(commits []*object.Commit, hibernationDistance int, traceback
 		plan = insertHibernateBoot(plan, hibernationDistance)
 	}
 
-	return
+	return plan, mergeHashCount
 }
 
 // printAction prints the specified action to stderr.
@@ -415,7 +416,8 @@ func mergeDag(
 		mergedSeq[head] = seq
 		mergedDag[head] = dag[seq[len(seq)-1].Hash]
 	}
-	return
+
+	return mergedDag, mergedSeq
 }
 
 // collapseFastForwards removes the fast forward merges.

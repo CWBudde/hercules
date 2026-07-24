@@ -4,12 +4,13 @@ import (
 	"path"
 	"strings"
 
-	"github.com/cwbudde/hercules/internal/core"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/utils/merkletrie"
 	"github.com/src-d/enry/v2"
+
+	"github.com/cwbudde/hercules/internal/core"
 )
 
 // LanguagesDetection run programming language detection over the changed files.
@@ -117,7 +118,7 @@ func (langs *LanguagesDetection) detectLanguage(name string, blob *CachedBlob) s
 	return normalizeLanguage(name, lang)
 }
 
-func normalizeLanguage(name string, lang string) string {
+func normalizeLanguage(name, lang string) string {
 	filename := strings.ToLower(name)
 	switch {
 	case strings.HasSuffix(filename, ".ts"), strings.HasSuffix(filename, ".tsx"):

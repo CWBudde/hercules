@@ -5,10 +5,11 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/spf13/viper"
+
 	"github.com/cwbudde/hercules/internal/render/burndown"
 	"github.com/cwbudde/hercules/internal/render/graphics"
 	"github.com/cwbudde/hercules/internal/render/readers"
-	"github.com/spf13/viper"
 )
 
 // BurndownPerson generates burndown charts for individual people/developers.

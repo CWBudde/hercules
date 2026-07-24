@@ -9,14 +9,15 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/cwbudde/hercules/internal/core"
-	"github.com/cwbudde/hercules/internal/plumbing/identity"
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/cwbudde/hercules/internal/core"
+	"github.com/cwbudde/hercules/internal/plumbing/identity"
 )
 
 func TestLoadGitRepository(t *testing.T) {

@@ -10,7 +10,7 @@ import (
 )
 
 // DetectAndReadInput detects the format (if "auto"), creates the appropriate Reader, and reads the input.
-func DetectAndReadInput(input string, format string) (Reader, error) {
+func DetectAndReadInput(input, format string) (Reader, error) {
 	// Open input source
 	var file io.Reader
 	if input == "-" {

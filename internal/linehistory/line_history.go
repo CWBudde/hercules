@@ -11,15 +11,16 @@ import (
 	"sync/atomic"
 	"unicode/utf8"
 
-	"github.com/cwbudde/hercules/internal/core"
-	items "github.com/cwbudde/hercules/internal/plumbing"
-	"github.com/cwbudde/hercules/internal/plumbing/identity"
-	"github.com/cwbudde/hercules/internal/rbtree"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/utils/merkletrie"
 	"github.com/sergi/go-diff/diffmatchpatch"
+
+	"github.com/cwbudde/hercules/internal/core"
+	items "github.com/cwbudde/hercules/internal/plumbing"
+	"github.com/cwbudde/hercules/internal/plumbing/identity"
+	"github.com/cwbudde/hercules/internal/rbtree"
 )
 
 // LineHistoryAnalyser allows to gather per-line history and statistics for a Git repository.

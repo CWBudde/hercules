@@ -126,10 +126,10 @@ func (writer oneLineWriter) Write(p []byte) (n int, err error) {
 	}
 	_, err = writer.Writer.Write([]byte("\033[2K\r"))
 	if err != nil {
-		return
+		return n, err
 	}
 	n, err = writer.Writer.Write([]byte(strp))
-	return
+	return n, err
 }
 
 func loadSSHIdentity(sshIdentity string) (*ssh.PublicKeys, error) {
@@ -142,92 +142,121 @@ func loadSSHIdentity(sshIdentity string) (*ssh.PublicKeys, error) {
 
 var regexUri = regexp.MustCompile("^[A-Za-z]\\w*@[A-Za-z0-9][\\w.]*:")
 
-func loadRepository(uri string, cachePath string, disableStatus bool, sshIdentity string,
-) (repository *git.Repository, repoUri string, repoFeature string) {
-	var err error
-	repository, repoUri, repoFeature, err = loadRepositoryWithError(uri, cachePath, disableStatus, sshIdentity)
+func createStubRepository() (*git.Repository, error) {
+	repository, err := git.Init(memory.NewStorage(), memfs.New())
+	if err != nil {
+		return nil, err
+	}
+	worktree, err := repository.Worktree()
+	if err != nil {
+		return nil, err
+	}
+	// Provide an explicit signature so creating the stub repo does not
+	// depend on ambient git user.name/user.email config (absent on fresh
+	// CI runners, where go-git errors with "author field is required").
+	signature := &object.Signature{Name: "Hercules", Email: "hercules@localhost", When: time.Now()}
+	_, err = worktree.Commit("Initial", &git.CommitOptions{
+		AllowEmptyCommits: true,
+		Author:            signature,
+		Committer:         signature,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create virtual repository: %w", err)
+	}
+	return repository, nil
+}
+
+func loadRepository(uri, cachePath string, disableStatus bool, sshIdentity string,
+) (*git.Repository, string, string) {
+	repository, repoURI, repoFeature, err := loadRepositoryWithError(
+		uri, cachePath, disableStatus, sshIdentity,
+	)
 	if err != nil {
 		log.Panicf("failed to open %s: %v", uri, err)
 	}
-	return
+	return repository, repoURI, repoFeature
 }
 
-func loadRepositoryWithError(uri string, cachePath string, disableStatus bool, sshIdentity string,
-) (repository *git.Repository, repoUri string, repoFeature string, err error) {
-	repoFeature = core.FeatureGitCommits
-	repoUri = uri
+func loadRepositoryWithError(uri, cachePath string, disableStatus bool, sshIdentity string,
+) (*git.Repository, string, string, error) {
+	switch {
+	case uri == "-" && cachePath == "":
+		repository, err := createStubRepository()
+		return repository, uri, core.FeatureGitStub, err
+	case strings.Contains(uri, "://") || regexUri.MatchString(uri):
+		repository, repoURI, err := cloneRemoteRepository(uri, cachePath, disableStatus, sshIdentity)
+		return repository, repoURI, core.FeatureGitCommits, err
+	case isSivaRepository(uri):
+		repository, err := openSivaRepository(uri)
+		return repository, uri, core.FeatureGitCommits, err
+	default:
+		uri = strings.TrimSuffix(uri, string(os.PathSeparator))
+		repository, err := git.PlainOpen(uri)
+		return repository, uri, core.FeatureGitCommits, err
+	}
+}
 
-	if uri == "-" && cachePath == "" {
-		repository, err = git.Init(memory.NewStorage(), memfs.New())
-		w, _ := repository.Worktree()
-		// Provide an explicit signature so creating the stub repo does not
-		// depend on ambient git user.name/user.email config (absent on fresh
-		// CI runners, where go-git errors with "author field is required").
-		sig := &object.Signature{Name: "Hercules", Email: "hercules@localhost", When: time.Now()}
-		if _, err = w.Commit("Initial", &git.CommitOptions{
-			AllowEmptyCommits: true, Author: sig, Committer: sig,
-		}); err != nil {
-			log.Panicf("failed to create a virtual repo: %v", err)
-		}
-		repoFeature = core.FeatureGitStub
-	} else if strings.Contains(uri, "://") || regexUri.MatchString(uri) {
-		var backend storage.Storer
-		if cachePath != "" {
-			backend = filesystem.NewStorage(osfs.New(cachePath), cache.NewObjectLRUDefault())
-			_, err = os.Stat(cachePath)
-			if !os.IsNotExist(err) {
-				log.Printf("warning: deleted %s\n", cachePath)
-				_ = os.RemoveAll(cachePath)
-			}
+func cloneRemoteRepository(uri, cachePath string, disableStatus bool, sshIdentity string,
+) (*git.Repository, string, error) {
+	backend := remoteCloneStorage(cachePath)
+	cloneOptions := &git.CloneOptions{URL: uri}
+	repoURI := sanitizedRepositoryURI(uri)
+
+	if !disableStatus {
+		_, _ = fmt.Fprint(os.Stderr, "connecting...\r")
+		cloneOptions.Progress = oneLineWriter{Writer: os.Stderr}
+	}
+	if sshIdentity != "" {
+		auth, err := loadSSHIdentity(sshIdentity)
+		if err != nil {
+			log.Printf("Failed loading SSH Identity: %v\n", err)
 		} else {
-			backend = memory.NewStorage()
-		}
-
-		cloneOptions := &git.CloneOptions{URL: uri}
-
-		if parsed, err2 := url.Parse(uri); err2 == nil {
-			if parsed.User != nil {
-				parsed.User = nil
-				repoUri = parsed.String()
-			}
-		}
-
-		if !disableStatus {
-			_, _ = fmt.Fprint(os.Stderr, "connecting...\r")
-			cloneOptions.Progress = oneLineWriter{Writer: os.Stderr}
-		}
-
-		if sshIdentity != "" {
-			auth, err2 := loadSSHIdentity(sshIdentity)
-			if err2 != nil {
-				log.Printf("Failed loading SSH Identity %s\n", err)
-			}
 			cloneOptions.Auth = auth
 		}
-
-		repository, err = git.Clone(backend, nil, cloneOptions)
-		if !disableStatus {
-			_, _ = fmt.Fprint(os.Stderr, "\033[2K\r")
-		}
-
-	} else if stat, err2 := os.Stat(uri); err2 == nil && !stat.IsDir() {
-		localFs := osfs.New(filepath.Dir(uri))
-		tmpFs := memfs.New()
-		basePath := filepath.Base(uri)
-		fs, err3 := sivafs.NewFilesystem(localFs, basePath, tmpFs)
-		if err3 != nil {
-			log.Panicf("unable to create a siva filesystem from %s: %v", uri, err2)
-		}
-		sivaStorage := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
-		repository, err = git.Open(sivaStorage, tmpFs)
-	} else {
-		if uri[len(uri)-1] == os.PathSeparator {
-			uri = uri[:len(uri)-1]
-		}
-		repository, err = git.PlainOpen(uri)
 	}
 
-	return
+	repository, err := git.Clone(backend, nil, cloneOptions)
+	if !disableStatus {
+		_, _ = fmt.Fprint(os.Stderr, "\033[2K\r")
+	}
+	return repository, repoURI, err
+}
+
+func remoteCloneStorage(cachePath string) storage.Storer {
+	if cachePath == "" {
+		return memory.NewStorage()
+	}
+	backend := filesystem.NewStorage(osfs.New(cachePath), cache.NewObjectLRUDefault())
+	if _, err := os.Stat(cachePath); !os.IsNotExist(err) {
+		log.Printf("warning: deleted %s\n", cachePath)
+		_ = os.RemoveAll(cachePath)
+	}
+	return backend
+}
+
+func sanitizedRepositoryURI(uri string) string {
+	parsed, err := url.Parse(uri)
+	if err == nil && parsed.User != nil {
+		parsed.User = nil
+		return parsed.String()
+	}
+	return uri
+}
+
+func isSivaRepository(uri string) bool {
+	stat, err := os.Stat(uri)
+	return err == nil && !stat.IsDir()
+}
+
+func openSivaRepository(uri string) (*git.Repository, error) {
+	localFS := osfs.New(filepath.Dir(uri))
+	tempFS := memfs.New()
+	fs, err := sivafs.NewFilesystem(localFS, filepath.Base(uri), tempFS)
+	if err != nil {
+		return nil, fmt.Errorf("create siva filesystem from %s: %w", uri, err)
+	}
+	sivaStorage := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
+	return git.Open(sivaStorage, tempFS)
 }
 
 type arrayPluginFlags map[string]bool
@@ -553,7 +582,7 @@ func deployItemsToPipeline(pipeline *core.Pipeline, flags *pflag.FlagSet,
 		}
 	}
 
-	return
+	return deployed
 }
 
 type flagSorter struct {

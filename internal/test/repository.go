@@ -28,7 +28,7 @@ import (
 var Repository *git.Repository
 
 // FakeChangeForName creates an artificial Git Change from a file name and two arbitrary hashes.
-func FakeChangeForName(name string, hashFrom string, hashTo string) *object.Change {
+func FakeChangeForName(name, hashFrom, hashTo string) *object.Change {
 	return &object.Change{
 		From: object.ChangeEntry{Name: name, TreeEntry: object.TreeEntry{
 			Name: name, Hash: plumbing.NewHash(hashFrom),

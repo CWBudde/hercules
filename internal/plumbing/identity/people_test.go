@@ -10,12 +10,13 @@ import (
 	"testing"
 	"unsafe"
 
-	"github.com/cwbudde/hercules/internal/core"
-	"github.com/cwbudde/hercules/internal/test"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/storer"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/cwbudde/hercules/internal/core"
+	"github.com/cwbudde/hercules/internal/test"
 )
 
 func fixturePeopleDetector() *PeopleDetector {
@@ -454,7 +455,7 @@ func (strr fakeEncodedObjectStorer) EncodedObjectSize(plumbing.Hash) (int64, err
 	return 0, nil
 }
 
-func getFakeCommitWithFile(name string, contents string) *object.Commit {
+func getFakeCommitWithFile(name, contents string) *object.Commit {
 	c := object.Commit{
 		Hash: plumbing.NewHash("ffffffffffffffffffffffffffffffffffffffff"),
 		Author: object.Signature{

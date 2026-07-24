@@ -9,9 +9,10 @@ import (
 	"time"
 
 	"github.com/araddon/dateparse"
+	"github.com/spf13/viper"
+
 	"github.com/cwbudde/hercules/internal/render"
 	"github.com/cwbudde/hercules/internal/render/readers"
-	"github.com/spf13/viper"
 )
 
 // parseFlexibleDate parses a date string into a time.Time object.
@@ -24,7 +25,7 @@ func parseFlexibleDate(dateStr string) (time.Time, error) {
 	return parsedDate, nil
 }
 
-func parseDates() (startTime *time.Time, endTime *time.Time) {
+func parseDates() (startTime, endTime *time.Time) {
 	if startTimeStr := viper.GetString("start-date"); startTimeStr != "" {
 		parsedStartTime, err := parseFlexibleDate(startTimeStr)
 		if err != nil {

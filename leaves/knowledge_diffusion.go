@@ -6,15 +6,16 @@ import (
 	"sort"
 	"time"
 
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/utils/merkletrie"
+	"github.com/gogo/protobuf/proto"
+
 	"github.com/cwbudde/hercules/internal/core"
 	"github.com/cwbudde/hercules/internal/pb"
 	items "github.com/cwbudde/hercules/internal/plumbing"
 	"github.com/cwbudde/hercules/internal/plumbing/identity"
 	"github.com/cwbudde/hercules/internal/yaml"
-	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/go-git/go-git/v5/utils/merkletrie"
-	"github.com/gogo/protobuf/proto"
 )
 
 // KnowledgeDiffusionAnalysis tracks unique editors per file over time to
@@ -178,21 +179,6 @@ func (kd *KnowledgeDiffusionAnalysis) Consume(deps map[string]interface{}) (map[
 
 	kd.lastTick = tick
 	return nil, nil
-}
-
-// recordEdit records that an author edited a file at the given tick.
-func (kd *KnowledgeDiffusionAnalysis) recordEdit(fileName string, author int, tick int) {
-	authors, exists := kd.fileAuthors[fileName]
-	if !exists {
-		authors = map[int]*authorFileInfo{}
-		kd.fileAuthors[fileName] = authors
-	}
-	info, exists := authors[author]
-	if !exists {
-		authors[author] = &authorFileInfo{FirstTick: tick, LastTick: tick}
-	} else {
-		info.LastTick = tick
-	}
 }
 
 // windowTicks converts the WindowMonths to ticks based on tickSize.
@@ -444,6 +430,22 @@ func (kd *KnowledgeDiffusionAnalysis) MergeResults(
 	}
 
 	return merged
+}
+
+// recordEdit records that an author edited a file at the given tick.
+func (kd *KnowledgeDiffusionAnalysis) recordEdit(fileName string, author, tick int) {
+	authors, exists := kd.fileAuthors[fileName]
+	if !exists {
+		authors = map[int]*authorFileInfo{}
+		kd.fileAuthors[fileName] = authors
+	}
+
+	info, exists := authors[author]
+	if !exists {
+		authors[author] = &authorFileInfo{FirstTick: tick, LastTick: tick}
+	} else {
+		info.LastTick = tick
+	}
 }
 
 func init() {

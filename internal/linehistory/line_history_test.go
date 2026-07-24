@@ -3,14 +3,15 @@ package linehistory
 import (
 	"testing"
 
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/stretchr/testify/assert"
+
 	"github.com/cwbudde/hercules/internal/core"
 	items "github.com/cwbudde/hercules/internal/plumbing"
 	"github.com/cwbudde/hercules/internal/plumbing/identity"
 	"github.com/cwbudde/hercules/internal/test"
 	"github.com/cwbudde/hercules/internal/test/fixtures"
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/stretchr/testify/assert"
 )
 
 func AddHash(t *testing.T, cache map[plumbing.Hash]*items.CachedBlob, hash string) {

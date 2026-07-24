@@ -3,12 +3,13 @@ package plumbing
 import (
 	"unicode/utf8"
 
-	"github.com/cwbudde/hercules/internal/core"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/utils/merkletrie"
 	"github.com/sergi/go-diff/diffmatchpatch"
+
+	"github.com/cwbudde/hercules/internal/core"
 )
 
 // LinesStatsCalculator measures line statistics for each text file in the commit.

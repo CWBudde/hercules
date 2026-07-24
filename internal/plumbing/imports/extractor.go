@@ -4,13 +4,14 @@ import (
 	"runtime"
 	"sync"
 
-	"github.com/cwbudde/hercules/internal/core"
-	"github.com/cwbudde/hercules/internal/plumbing"
-	"github.com/cwbudde/hercules/internal/plumbing/imports/lang"
 	"github.com/go-git/go-git/v5"
 	gitplumbing "github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/utils/merkletrie"
+
+	"github.com/cwbudde/hercules/internal/core"
+	"github.com/cwbudde/hercules/internal/plumbing"
+	"github.com/cwbudde/hercules/internal/plumbing/imports/lang"
 )
 
 // Extractor reports the imports in the changed files.

@@ -3,10 +3,11 @@ package plumbing
 import (
 	"time"
 
-	"github.com/cwbudde/hercules/internal/core"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+
+	"github.com/cwbudde/hercules/internal/core"
 )
 
 // TicksSinceStart provides relative tick information for every commit.

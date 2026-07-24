@@ -6,10 +6,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/cwbudde/hercules/internal/render/burndown"
-	"github.com/cwbudde/hercules/internal/render/progress"
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"
+
+	"github.com/cwbudde/hercules/internal/render/burndown"
+	"github.com/cwbudde/hercules/internal/render/progress"
 )
 
 type YamlReader struct {

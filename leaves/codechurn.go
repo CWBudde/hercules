@@ -8,14 +8,15 @@ import (
 	"sort"
 	"time"
 
+	"github.com/go-git/go-git/v5"
+	"github.com/gogo/protobuf/proto"
+
 	"github.com/cwbudde/hercules/internal/core"
 	"github.com/cwbudde/hercules/internal/linehistory"
 	"github.com/cwbudde/hercules/internal/pb"
 	items "github.com/cwbudde/hercules/internal/plumbing"
 	"github.com/cwbudde/hercules/internal/plumbing/identity"
 	"github.com/cwbudde/hercules/internal/yaml"
-	"github.com/go-git/go-git/v5"
-	"github.com/gogo/protobuf/proto"
 )
 
 // CodeChurnAnalysis allows to gather the code churn statistics for a Git repository.
@@ -88,13 +89,14 @@ func (p *personChurnStats) getFileEntry(id core.FileId) (entry churnFileEntry) {
 	if p.files != nil {
 		entry = p.files[id]
 		if entry.deleteHistory != nil {
-			return
+			return entry
 		}
 	} else {
 		p.files = map[core.FileId]churnFileEntry{}
 	}
 	entry.deleteHistory = map[core.AuthorId]sparseHistory{}
-	return
+
+	return entry
 }
 
 func (result CodeChurnResult) GetIdentities() []string {
@@ -706,7 +708,7 @@ func (analyser *CodeChurnAnalysis) calculateAwareness(entry churnFileEntry, chan
 	}
 	awareness, memorability = float64(entry.awareness), float64(entry.memorability)
 	if lastTouch >= change.CurrTick {
-		return
+		return awareness, memorability
 	}
 
 	ownedLines := 0.0
@@ -730,7 +732,7 @@ func (analyser *CodeChurnAnalysis) calculateAwareness(entry churnFileEntry, chan
 
 		awareness = awareness * analyser.memoryLoss(timeDelta*(1+memorabilityMin-memorability))
 		if awareness >= awarenessLowCut {
-			return
+			return awareness, memorability
 		}
 	}
 	return 0, 0

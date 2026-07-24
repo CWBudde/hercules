@@ -11,11 +11,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gogo/protobuf/proto"
+	"github.com/spf13/cobra"
+
 	"github.com/cwbudde/hercules"
 	"github.com/cwbudde/hercules/internal/pb"
 	"github.com/cwbudde/hercules/internal/render"
-	"github.com/gogo/protobuf/proto"
-	"github.com/spf13/cobra"
 )
 
 var reportDefaultAnalysisFlags = []string{
@@ -269,7 +270,7 @@ index.html summary.`,
 				)
 				cmdArgs = append(cmdArgs, laboursExtra...)
 				_, _ = fmt.Fprintf(os.Stderr, "report: running labours mode %s...\n", mode)
-				if _, err := runAndCaptureTo(os.Stderr, laboursCmd[0], cmdArgs, nil); err != nil {
+				if err := runAndCaptureTo(os.Stderr, laboursCmd[0], cmdArgs, nil); err != nil {
 					modeResults = append(modeResults, reportModeFailure{Mode: mode, Error: err.Error()})
 					if strict {
 						return fmt.Errorf("labours mode %s failed: %w", mode, err)
@@ -403,7 +404,7 @@ func resolveLaboursCommand(override string) ([]string, error) {
 	return parts, nil
 }
 
-func runAndCapture(command string, args []string, env []string) ([]byte, error) {
+func runAndCapture(command string, args, env []string) ([]byte, error) {
 	cmd := exec.Command(command, args...)
 	cmd.Stderr = os.Stderr
 	if len(env) > 0 {
@@ -417,7 +418,7 @@ func runAndCapture(command string, args []string, env []string) ([]byte, error) 
 	return output.Bytes(), nil
 }
 
-func runAndCaptureTo(writer *os.File, command string, args []string, env []string) ([]byte, error) {
+func runAndCaptureTo(writer *os.File, command string, args, env []string) error {
 	cmd := exec.Command(command, args...)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
@@ -425,9 +426,9 @@ func runAndCaptureTo(writer *os.File, command string, args []string, env []strin
 		cmd.Env = append(os.Environ(), env...)
 	}
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("%s %s: %w", command, strings.Join(args, " "), err)
+		return fmt.Errorf("%s %s: %w", command, strings.Join(args, " "), err)
 	}
-	return nil, nil
+	return nil
 }
 
 func sanitizePathComponent(value string) string {

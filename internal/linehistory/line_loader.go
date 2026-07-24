@@ -8,13 +8,14 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/cwbudde/hercules/internal/core"
-	items "github.com/cwbudde/hercules/internal/plumbing"
-	"github.com/cwbudde/hercules/internal/plumbing/identity"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"gopkg.in/yaml.v2"
+
+	"github.com/cwbudde/hercules/internal/core"
+	items "github.com/cwbudde/hercules/internal/plumbing"
+	"github.com/cwbudde/hercules/internal/plumbing/identity"
 )
 
 // LineHistoryLoader allows to gather per-line history and statistics for a Git repository.
@@ -40,7 +41,7 @@ type commitInfo struct {
 	Changes []core.LineHistoryChange
 }
 
-func (v fileInfo) ForEach(func(line int, value int)) {
+func (v fileInfo) ForEach(func(line, value int)) {
 	panic("not implemented")
 }
 
@@ -326,7 +327,7 @@ func (analyser *LineHistoryLoader) buildCommits() (result []*object.Commit) {
 		parentHash = []plumbing.Hash{commit.Hash}
 	}
 
-	return
+	return result
 }
 
 func init() {

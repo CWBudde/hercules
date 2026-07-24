@@ -42,6 +42,7 @@ command = "gci"
 options = [
   "write",
   "--skip-generated",
+  "--custom-order",
   "-s",
   "standard",
   "-s",

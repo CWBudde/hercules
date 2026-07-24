@@ -7,11 +7,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cwbudde/matplotlib-go/core"
+	"github.com/spf13/viper"
+
 	"github.com/cwbudde/hercules/internal/render/graphics"
 	"github.com/cwbudde/hercules/internal/render/progress"
 	"github.com/cwbudde/hercules/internal/render/readers"
-	"github.com/cwbudde/matplotlib-go/core"
-	"github.com/spf13/viper"
 )
 
 // Python labours highlights per-developer summary stats with a green or red

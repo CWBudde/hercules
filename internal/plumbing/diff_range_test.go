@@ -3,8 +3,9 @@ package plumbing
 import (
 	"testing"
 
-	ast_items "github.com/cwbudde/hercules/internal/plumbing/ast"
 	"github.com/sergi/go-diff/diffmatchpatch"
+
+	ast_items "github.com/cwbudde/hercules/internal/plumbing/ast"
 )
 
 // runeLines builds a synthetic line-as-rune string of N lines using consecutive

@@ -354,7 +354,7 @@ func (registry *PipelineItemRegistry) AddFlags(flagSet *pflag.FlagSet) (
 	flagSet.Var(&registry.featureFlags, "feature",
 		featureHelp)
 
-	return
+	return flags, deployed, activations
 }
 
 // Registry contains all known pipeline item types.

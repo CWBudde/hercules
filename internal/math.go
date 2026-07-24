@@ -4,7 +4,7 @@ package internal
 // template <typename T> please!
 
 // Min calculates the minimum of two 32-bit integers.
-func Min(a int, b int) int {
+func Min(a, b int) int {
 	if a < b {
 		return a
 	}
@@ -12,7 +12,7 @@ func Min(a int, b int) int {
 }
 
 // Min64 calculates the minimum of two 64-bit integers.
-func Min64(a int64, b int64) int64 {
+func Min64(a, b int64) int64 {
 	if a < b {
 		return a
 	}
@@ -20,7 +20,7 @@ func Min64(a int64, b int64) int64 {
 }
 
 // Max calculates the maximum of two 32-bit integers.
-func Max(a int, b int) int {
+func Max(a, b int) int {
 	if a < b {
 		return b
 	}
@@ -28,7 +28,7 @@ func Max(a int, b int) int {
 }
 
 // Max64 calculates the maximum of two 64-bit integers.
-func Max64(a int64, b int64) int64 {
+func Max64(a, b int64) int64 {
 	if a < b {
 		return b
 	}

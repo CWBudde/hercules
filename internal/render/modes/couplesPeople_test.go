@@ -6,9 +6,10 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/spf13/viper"
+
 	"github.com/cwbudde/hercules/internal/render/burndown"
 	"github.com/cwbudde/hercules/internal/render/readers"
-	"github.com/spf13/viper"
 )
 
 // MockCouplesReader provides test data for couples-people testing

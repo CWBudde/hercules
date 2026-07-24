@@ -8,15 +8,16 @@ import (
 	"strings"
 	"testing"
 
+	gitplumbing "github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/gogo/protobuf/proto"
+	"github.com/stretchr/testify/assert"
+
 	"github.com/cwbudde/hercules/internal/core"
 	"github.com/cwbudde/hercules/internal/pb"
 	"github.com/cwbudde/hercules/internal/plumbing"
 	"github.com/cwbudde/hercules/internal/plumbing/identity"
 	"github.com/cwbudde/hercules/internal/test"
-	gitplumbing "github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/gogo/protobuf/proto"
-	"github.com/stretchr/testify/assert"
 )
 
 func fixtureCouples() *CouplesAnalysis {

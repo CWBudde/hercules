@@ -13,13 +13,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cwbudde/hercules/internal/pb"
-	"github.com/cwbudde/hercules/internal/toposort"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/storer"
 	"github.com/pkg/errors"
+
+	"github.com/cwbudde/hercules/internal/pb"
+	"github.com/cwbudde/hercules/internal/toposort"
 )
 
 // ConfigurationOptionType represents the possible types of a ConfigurationOption's value.
@@ -298,6 +299,16 @@ type preparedRun struct {
 	plan           []runAction
 	commitCount    int
 	mergeHashCount int
+}
+
+type pipelineRunState struct {
+	pipeline       *Pipeline
+	branches       map[int][]PipelineItem
+	rootClone      []PipelineItem
+	runTimePerItem map[string]float64
+	mergeHashCount int
+	commitIndex    int
+	newestTime     int64
 }
 
 const (
@@ -891,178 +902,275 @@ func (pipeline *Pipeline) RunPreparedPlan() (map[LeafPipelineItem]interface{}, e
 	return pipeline.runPlan(prepared.plan, prepared.commitCount, prepared.mergeHashCount)
 }
 
-func (pipeline *Pipeline) runPlan(plan []runAction, commitCount int, mergeHashCount int) (map[LeafPipelineItem]interface{}, error) {
+func (pipeline *Pipeline) runPlan(plan []runAction, commitCount, mergeHashCount int) (map[LeafPipelineItem]any, error) {
 	startRunTime := time.Now()
 	cleanReturn := false
-	defer func() {
-		if !cleanReturn {
-			remotes, _ := pipeline.repository.Remotes()
-			if len(remotes) > 0 {
-				pipeline.l.Errorf("Failed to run the pipeline on %s", remotes[0].Config().URLs)
-			}
-		}
-	}()
-	onProgress := pipeline.OnProgress
-	if onProgress == nil {
-		onProgress = func(int, int, string) {}
-	}
+	defer pipeline.reportRunFailure(&cleanReturn)
 
-	if pipeline.DumpPlan {
-		for _, p := range plan {
-			printAction(p)
-		}
-	}
-
+	onProgress := pipeline.progressCallback()
+	pipeline.dumpRunPlan(plan)
 	progressSteps := len(plan) + 2
-	branches := map[int][]PipelineItem{}
 
-	// we will need rootClone if there is more than one root branch
-	var rootClone []PipelineItem
-	if !pipeline.DryRun {
-		rootClone = cloneItems(pipeline.items, 1)[0]
-	}
-	var newestTime int64
-	runTimePerItem := map[string]float64{}
+	state := pipeline.newRunState(mergeHashCount)
 
-	isMerge := func(index int, commit plumbing.Hash) bool {
-		// look for the same hash forward
-		for i := index + 1; i < len(plan); i++ {
-			switch plan[i].Action {
-			case runActionHibernate, runActionBoot:
-				continue
-			case runActionMerge:
-				if plan[i].Commit.Hash == commit {
-					return true
-				}
-			}
-			break
-		}
-		return false
+	err := state.executePlan(plan, progressSteps, onProgress)
+	if err != nil {
+		return nil, err
 	}
 
-	commitIndex := 0
-	for index, step := range plan {
-		onProgress(index+1, progressSteps, step.String())
-		if pipeline.DryRun {
-			continue
-		}
-		if pipeline.PrintActions {
-			printAction(step)
-		}
-		if index > 0 && index%100 == 0 && pipeline.HibernationDistance > 0 {
-			debug.FreeOSMemory()
-		}
-		firstItem := step.Items[0]
-		switch step.Action {
-		case runActionCommit:
-			state := map[string]interface{}{
-				DependencyCommit:  step.Commit,
-				DependencyIndex:   commitIndex,
-				DependencyIsMerge: isMerge(index, step.Commit.Hash),
-			}
-
-			if mergeHashCount >= 0 {
-				state[DependencyNextMerge] = step.NextMerge
-			}
-
-			for _, item := range branches[firstItem] {
-				startTime := time.Now()
-				update, err := item.Consume(state)
-				runTimePerItem[item.Name()] += time.Now().Sub(startTime).Seconds()
-				if err != nil {
-					pipeline.l.Errorf("%s failed on commit #%d (%d) %s: %v\n",
-						item.Name(), commitIndex+1, index+1, step.Commit.Hash.String(), err)
-					return nil, err
-				}
-				for _, key := range item.Provides() {
-					val, ok := update[key]
-					if !ok {
-						err := fmt.Errorf("%s: Consume() did not return %s", item.Name(), key)
-						pipeline.l.Critical(err)
-						return nil, err
-					}
-					state[key] = val
-				}
-			}
-			commitTime := step.Commit.Committer.When.Unix()
-			if commitTime > newestTime {
-				newestTime = commitTime
-			}
-			commitIndex++
-		case runActionFork:
-			startTime := time.Now()
-			for i, clone := range cloneItems(branches[firstItem], len(step.Items)-1) {
-				branches[step.Items[i+1]] = clone
-			}
-			runTimePerItem["*.Fork"] += time.Now().Sub(startTime).Seconds()
-		case runActionMerge:
-			startTime := time.Now()
-			merged := make([][]PipelineItem, len(step.Items))
-			for i, b := range step.Items {
-				merged[i] = branches[b]
-			}
-			mergeItems(merged)
-			runTimePerItem["*.Merge"] += time.Now().Sub(startTime).Seconds()
-		case runActionEmerge:
-			if firstItem == rootBranchIndex {
-				branches[firstItem] = pipeline.items
-			} else {
-				branches[firstItem] = cloneItems(rootClone, 1)[0]
-			}
-		case runActionDelete:
-			delete(branches, firstItem)
-		case runActionHibernate:
-			for _, item := range step.Items {
-				for _, item := range branches[item] {
-					if hi, ok := item.(HibernateablePipelineItem); ok {
-						startTime := time.Now()
-						err := hi.Hibernate()
-						if err != nil {
-							pipeline.l.Errorf("Failed to hibernate %s: %v\n", item.Name(), err)
-							return nil, err
-						}
-						runTimePerItem[item.Name()+".Hibernation"] += time.Now().Sub(startTime).Seconds()
-					}
-				}
-			}
-		case runActionBoot:
-			for _, item := range step.Items {
-				for _, item := range branches[item] {
-					if hi, ok := item.(HibernateablePipelineItem); ok {
-						startTime := time.Now()
-						err := hi.Boot()
-						if err != nil {
-							pipeline.l.Errorf("Failed to boot %s: %v\n", item.Name(), err)
-							return nil, err
-						}
-						runTimePerItem[item.Name()+".Hibernation"] += time.Now().Sub(startTime).Seconds()
-					}
-				}
-			}
-		}
-	}
 	onProgress(len(plan)+1, progressSteps, MessageFinalize)
-	result := map[LeafPipelineItem]interface{}{}
-	if !pipeline.DryRun {
-		for index, item := range getMasterBranch(branches) {
-			if casted, ok := item.(DisposablePipelineItem); ok {
-				casted.Dispose()
-			}
-			if casted, ok := item.(LeafPipelineItem); ok {
-				result[pipeline.items[index].(LeafPipelineItem)] = casted.Finalize()
-			}
-		}
-	}
+
+	result := state.finalize()
+
 	onProgress(progressSteps, progressSteps, "")
+
 	result[nil] = &CommonAnalysisResult{
 		BeginTime:      plan[0].Commit.Committer.When.Unix(),
-		EndTime:        newestTime,
+		EndTime:        state.newestTime,
 		CommitsNumber:  commitCount,
 		RunTime:        time.Since(startRunTime),
-		RunTimePerItem: runTimePerItem,
+		RunTimePerItem: state.runTimePerItem,
 	}
 	cleanReturn = true
+
 	return result, nil
+}
+
+func (pipeline *Pipeline) reportRunFailure(cleanReturn *bool) {
+	if *cleanReturn {
+		return
+	}
+
+	remotes, _ := pipeline.repository.Remotes()
+	if len(remotes) > 0 {
+		pipeline.l.Errorf("Failed to run the pipeline on %s", remotes[0].Config().URLs)
+	}
+}
+
+func (pipeline *Pipeline) progressCallback() func(int, int, string) {
+	if pipeline.OnProgress != nil {
+		return pipeline.OnProgress
+	}
+
+	return func(int, int, string) {}
+}
+
+func (pipeline *Pipeline) dumpRunPlan(plan []runAction) {
+	if !pipeline.DumpPlan {
+		return
+	}
+
+	for _, action := range plan {
+		printAction(action)
+	}
+}
+
+func (pipeline *Pipeline) newRunState(mergeHashCount int) pipelineRunState {
+	state := pipelineRunState{
+		pipeline:       pipeline,
+		branches:       map[int][]PipelineItem{},
+		runTimePerItem: map[string]float64{},
+		mergeHashCount: mergeHashCount,
+	}
+	if !pipeline.DryRun {
+		// We will need rootClone if there is more than one root branch.
+		state.rootClone = cloneItems(pipeline.items, 1)[0]
+	}
+
+	return state
+}
+
+func (state *pipelineRunState) executePlan(plan []runAction, progressSteps int,
+	onProgress func(int, int, string),
+) error {
+	for index, step := range plan {
+		onProgress(index+1, progressSteps, step.String())
+
+		if state.pipeline.DryRun {
+			continue
+		}
+
+		if state.pipeline.PrintActions {
+			printAction(step)
+		}
+
+		if index > 0 && index%100 == 0 && state.pipeline.HibernationDistance > 0 {
+			debug.FreeOSMemory()
+		}
+
+		err := state.executeStep(plan, index, step)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (state *pipelineRunState) finalize() map[LeafPipelineItem]any {
+	result := map[LeafPipelineItem]any{}
+	if state.pipeline.DryRun {
+		return result
+	}
+
+	for index, item := range getMasterBranch(state.branches) {
+		if disposable, ok := item.(DisposablePipelineItem); ok {
+			disposable.Dispose()
+		}
+
+		if leaf, ok := item.(LeafPipelineItem); ok {
+			registeredLeaf, registered := state.pipeline.items[index].(LeafPipelineItem)
+			if registered {
+				result[registeredLeaf] = leaf.Finalize()
+			}
+		}
+	}
+
+	return result
+}
+
+func (state *pipelineRunState) executeStep(plan []runAction, index int, step runAction) error {
+	firstItem := step.Items[0]
+	switch step.Action {
+	case runActionCommit:
+		return state.consumeCommit(plan, index, firstItem, step)
+	case runActionFork:
+		state.fork(firstItem, step.Items)
+	case runActionMerge:
+		state.merge(step.Items)
+	case runActionEmerge:
+		state.emerge(firstItem)
+	case runActionDelete:
+		delete(state.branches, firstItem)
+	case runActionHibernate:
+		return state.changeHibernation(step.Items, false)
+	case runActionBoot:
+		return state.changeHibernation(step.Items, true)
+	}
+
+	return nil
+}
+
+func (state *pipelineRunState) consumeCommit(plan []runAction, index, firstItem int, step runAction) error {
+	dependencies := map[string]any{
+		DependencyCommit:  step.Commit,
+		DependencyIndex:   state.commitIndex,
+		DependencyIsMerge: isMergeAction(plan, index, step.Commit.Hash),
+	}
+	if state.mergeHashCount >= 0 {
+		dependencies[DependencyNextMerge] = step.NextMerge
+	}
+
+	for _, item := range state.branches[firstItem] {
+		startTime := time.Now()
+		update, err := item.Consume(dependencies)
+
+		state.runTimePerItem[item.Name()] += time.Since(startTime).Seconds()
+		if err != nil {
+			state.pipeline.l.Errorf("%s failed on commit #%d (%d) %s: %v\n",
+				item.Name(), state.commitIndex+1, index+1, step.Commit.Hash.String(), err)
+
+			return fmt.Errorf("%s failed to consume commit: %w", item.Name(), err)
+		}
+
+		for _, key := range item.Provides() {
+			value, ok := update[key]
+			if !ok {
+				err := fmt.Errorf("%s did not return %s: %w",
+					item.Name(), key, errors.New("consume output missing"))
+				state.pipeline.l.Critical(err)
+
+				return err
+			}
+
+			dependencies[key] = value
+		}
+	}
+
+	commitTime := step.Commit.Committer.When.Unix()
+	if commitTime > state.newestTime {
+		state.newestTime = commitTime
+	}
+
+	state.commitIndex++
+
+	return nil
+}
+
+func isMergeAction(plan []runAction, index int, commit plumbing.Hash) bool {
+	for i := index + 1; i < len(plan); i++ {
+		switch plan[i].Action {
+		case runActionHibernate, runActionBoot:
+			continue
+		case runActionMerge:
+			return plan[i].Commit.Hash == commit
+		default:
+			return false
+		}
+	}
+
+	return false
+}
+
+func (state *pipelineRunState) fork(firstItem int, items []int) {
+	startTime := time.Now()
+
+	for i, clone := range cloneItems(state.branches[firstItem], len(items)-1) {
+		state.branches[items[i+1]] = clone
+	}
+
+	state.runTimePerItem["*.Fork"] += time.Since(startTime).Seconds()
+}
+
+func (state *pipelineRunState) merge(items []int) {
+	startTime := time.Now()
+
+	merged := make([][]PipelineItem, len(items))
+	for i, branch := range items {
+		merged[i] = state.branches[branch]
+	}
+
+	mergeItems(merged)
+
+	state.runTimePerItem["*.Merge"] += time.Since(startTime).Seconds()
+}
+
+func (state *pipelineRunState) emerge(firstItem int) {
+	if firstItem == rootBranchIndex {
+		state.branches[firstItem] = state.pipeline.items
+		return
+	}
+
+	state.branches[firstItem] = cloneItems(state.rootClone, 1)[0]
+}
+
+func (state *pipelineRunState) changeHibernation(items []int, boot bool) error {
+	for _, branch := range items {
+		for _, item := range state.branches[branch] {
+			hibernatable, ok := item.(HibernateablePipelineItem)
+			if !ok {
+				continue
+			}
+
+			startTime := time.Now()
+
+			var err error
+			if boot {
+				err = hibernatable.Boot()
+			} else {
+				err = hibernatable.Hibernate()
+			}
+
+			if err != nil {
+				state.pipeline.l.Errorf("Failed to change hibernation state for %s: %v\n", item.Name(), err)
+				return fmt.Errorf("change hibernation state for %s: %w", item.Name(), err)
+			}
+
+			state.runTimePerItem[item.Name()+".Hibernation"] += time.Since(startTime).Seconds()
+		}
+	}
+
+	return nil
 }
 
 func (pipeline *Pipeline) resolveAlternatives(graph *toposort.Graph, nodes []string, itemMap map[string]PipelineItem,

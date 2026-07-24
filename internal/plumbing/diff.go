@@ -6,13 +6,14 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/cwbudde/hercules/internal/core"
-	ast_items "github.com/cwbudde/hercules/internal/plumbing/ast"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/utils/merkletrie"
 	"github.com/sergi/go-diff/diffmatchpatch"
+
+	"github.com/cwbudde/hercules/internal/core"
+	ast_items "github.com/cwbudde/hercules/internal/plumbing/ast"
 )
 
 // refineCoverageThreshold is the fraction of new-file lines above which the
@@ -375,7 +376,7 @@ func extractNodesForRefinement(path string, source []byte, ranges []ast_items.Li
 // [1, newLOC]. The result is unsorted and may overlap — buildSitterRanges
 // (called inside ExtractNamedNodesInRanges) merges and sorts before passing the
 // list to tree-sitter. A non-positive `pad` returns the input untouched.
-func padRanges(ranges []ast_items.LineRange, newLOC int, pad int) []ast_items.LineRange {
+func padRanges(ranges []ast_items.LineRange, newLOC, pad int) []ast_items.LineRange {
 	if pad <= 0 || len(ranges) == 0 {
 		return ranges
 	}

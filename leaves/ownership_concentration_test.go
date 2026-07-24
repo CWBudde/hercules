@@ -5,11 +5,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/cwbudde/hercules/internal/core"
 	items "github.com/cwbudde/hercules/internal/plumbing"
 	"github.com/cwbudde/hercules/internal/plumbing/identity"
 	"github.com/cwbudde/hercules/internal/test"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestOwnershipConcentrationMeta(t *testing.T) {

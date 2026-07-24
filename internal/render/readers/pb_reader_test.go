@@ -5,8 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cwbudde/hercules/internal/pb"
 	"github.com/gogo/protobuf/proto"
+
+	"github.com/cwbudde/hercules/internal/pb"
 )
 
 func TestProtobufReader_Read(t *testing.T) {

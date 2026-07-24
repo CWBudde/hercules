@@ -8,11 +8,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spf13/viper"
+
 	"github.com/cwbudde/hercules/internal/render/burndown"
 	"github.com/cwbudde/hercules/internal/render/graphics"
 	"github.com/cwbudde/hercules/internal/render/progress"
 	"github.com/cwbudde/hercules/internal/render/readers"
-	"github.com/spf13/viper"
 )
 
 // GenerateBurndownProjectPython creates a Python-compatible burndown chart

@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cwbudde/hercules/internal/render/burndown"
 	"github.com/cwbudde/matplotlib-go/backends"
 	_ "github.com/cwbudde/matplotlib-go/backends/agg"
 	_ "github.com/cwbudde/matplotlib-go/backends/svg"
@@ -20,6 +19,8 @@ import (
 	"github.com/cwbudde/matplotlib-go/render"
 	"github.com/cwbudde/matplotlib-go/style"
 	"github.com/spf13/viper"
+
+	"github.com/cwbudde/hercules/internal/render/burndown"
 )
 
 // PlotStackedBurndownMatplotlib renders a stacked burndown chart from a raw

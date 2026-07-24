@@ -1028,43 +1028,43 @@ just bench-large-repo /path/to/representative/repository
 
 ## Finding-to-work mapping
 
-| Audit finding | Work item |
-|---|---|
-| Existing cache path recursively deleted | `SAFE-01` |
-| GitHub Action shell injection | `SEC-01` |
-| Vulnerable `go-git` dependency | `SEC-02` |
-| Hard render/combine failures exit zero | `REL-01` |
-| Hotspot Risk tick/key/ownership/scoring defects | `METRIC-01` |
-| Onboarding cohorts based on 1970 | `METRIC-02` |
-| Bus-factor/ownership off-by-one snapshots | `METRIC-03` |
-| Bus-factor threshold truncation | `METRIC-03` |
-| File History loses people on rename | `METRIC-04` |
-| Couples merge uses people index for files | `METRIC-05` |
-| `couples-shotness` labels ticks as entities | `METRIC-06` |
-| Shotness collapses same-named entities | `METRIC-07` |
-| Filter-crossing renames corrupt state | `METRIC-08` |
-| Nondeterministic `BreadthSort` and edge counts | `CORE-01` |
-| Identity joining loses duplicates/overlaps | `CORE-02` |
-| Empty/disconnected/duplicate commits panic or disappear | `CORE-03` |
-| Line History loader erases state and panics | `CORE-04` |
-| Packed limits terminate process; cleanup/global GC leaks | `CORE-05` |
-| Truncated allocator/commit input and numerical boundaries | `CORE-06` |
-| Malformed YAML/PB panics or allocates excessively | `DATA-01` |
-| Schema versions emitted but not enforced | `DATA-02` |
-| Stale/colliding report artifacts | `DATA-03` |
-| `labours --from-repo` renders substitute modes | `DATA-04` |
-| Plugin/protobuf generation drift | `DATA-05` |
-| Malformed `.mailmap`, dictionaries, or regex configuration panic/truncate | `DATA-06` |
-| Coupling ranking up to `O(N^4)` | `PERF-01` |
-| Burndown merge quadratic memory and forced GC | `PERF-02` |
-| Ownership rescanned for every tick | `PERF-03` |
-| Unbounded blobs and ineffective rename timeout | `PERF-04` |
-| Global renderer/Viper state | `ARCH-01` |
-| Unsafe interface-layout flag storage | `ARCH-02` |
-| Implicit lifecycle contracts | `ARCH-03` |
-| Push-only CI, opt-in visuals, broad lint exclusions | `CI-01`–`CI-03` |
-| cgo/documentation/container drift | `OPS-01` |
-| Stale CLI and output documentation | `DOC-01` |
+| Audit finding                                                             | Work item       |
+| ------------------------------------------------------------------------- | --------------- |
+| Existing cache path recursively deleted                                   | `SAFE-01`       |
+| GitHub Action shell injection                                             | `SEC-01`        |
+| Vulnerable `go-git` dependency                                            | `SEC-02`        |
+| Hard render/combine failures exit zero                                    | `REL-01`        |
+| Hotspot Risk tick/key/ownership/scoring defects                           | `METRIC-01`     |
+| Onboarding cohorts based on 1970                                          | `METRIC-02`     |
+| Bus-factor/ownership off-by-one snapshots                                 | `METRIC-03`     |
+| Bus-factor threshold truncation                                           | `METRIC-03`     |
+| File History loses people on rename                                       | `METRIC-04`     |
+| Couples merge uses people index for files                                 | `METRIC-05`     |
+| `couples-shotness` labels ticks as entities                               | `METRIC-06`     |
+| Shotness collapses same-named entities                                    | `METRIC-07`     |
+| Filter-crossing renames corrupt state                                     | `METRIC-08`     |
+| Nondeterministic `BreadthSort` and edge counts                            | `CORE-01`       |
+| Identity joining loses duplicates/overlaps                                | `CORE-02`       |
+| Empty/disconnected/duplicate commits panic or disappear                   | `CORE-03`       |
+| Line History loader erases state and panics                               | `CORE-04`       |
+| Packed limits terminate process; cleanup/global GC leaks                  | `CORE-05`       |
+| Truncated allocator/commit input and numerical boundaries                 | `CORE-06`       |
+| Malformed YAML/PB panics or allocates excessively                         | `DATA-01`       |
+| Schema versions emitted but not enforced                                  | `DATA-02`       |
+| Stale/colliding report artifacts                                          | `DATA-03`       |
+| `labours --from-repo` renders substitute modes                            | `DATA-04`       |
+| Plugin/protobuf generation drift                                          | `DATA-05`       |
+| Malformed `.mailmap`, dictionaries, or regex configuration panic/truncate | `DATA-06`       |
+| Coupling ranking up to `O(N^4)`                                           | `PERF-01`       |
+| Burndown merge quadratic memory and forced GC                             | `PERF-02`       |
+| Ownership rescanned for every tick                                        | `PERF-03`       |
+| Unbounded blobs and ineffective rename timeout                            | `PERF-04`       |
+| Global renderer/Viper state                                               | `ARCH-01`       |
+| Unsafe interface-layout flag storage                                      | `ARCH-02`       |
+| Implicit lifecycle contracts                                              | `ARCH-03`       |
+| Push-only CI, opt-in visuals, broad lint exclusions                       | `CI-01`–`CI-03` |
+| cgo/documentation/container drift                                         | `OPS-01`        |
+| Stale CLI and output documentation                                        | `DOC-01`        |
 
 ## Definition of done
 

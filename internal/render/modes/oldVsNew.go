@@ -87,7 +87,7 @@ func OldVsNew(reader readers.Reader, output string, startTime, endTime *time.Tim
 
 // generateOldVsNewTimeSeries creates a time series showing the evolution of code changes over time.
 // This is a simplified implementation - a full version would use actual temporal data from the repository.
-func generateOldVsNewTimeSeries(totalLines int, length int, changeType string) []float64 {
+func generateOldVsNewTimeSeries(totalLines, length int, changeType string) []float64 {
 	series := make([]float64, length)
 
 	if changeType == "new" {

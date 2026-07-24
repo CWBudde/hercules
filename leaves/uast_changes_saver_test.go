@@ -6,13 +6,14 @@ import (
 	"os"
 	"testing"
 
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/stretchr/testify/assert"
+
 	"github.com/cwbudde/hercules/internal/core"
 	items "github.com/cwbudde/hercules/internal/plumbing"
 	ast_items "github.com/cwbudde/hercules/internal/plumbing/ast"
 	"github.com/cwbudde/hercules/internal/test"
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/stretchr/testify/assert"
 )
 
 func addBlobHash(t *testing.T, cache map[plumbing.Hash]*items.CachedBlob, hash string) {

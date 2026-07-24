@@ -6,10 +6,11 @@ import (
 	"path/filepath"
 	"strconv"
 
+	"github.com/spf13/viper"
+
 	"github.com/cwbudde/hercules/internal/render/graphics"
 	"github.com/cwbudde/hercules/internal/render/progress"
 	"github.com/cwbudde/hercules/internal/render/readers"
-	"github.com/spf13/viper"
 )
 
 // CouplesFiles generates file coupling analysis and visualization

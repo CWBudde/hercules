@@ -8,10 +8,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spf13/viper"
+
 	"github.com/cwbudde/hercules/internal/render/modes"
 	"github.com/cwbudde/hercules/internal/render/progress"
 	"github.com/cwbudde/hercules/internal/render/readers"
-	"github.com/spf13/viper"
 )
 
 // Fallback toggles set by Run from Options; they mirror the labours CLI
@@ -255,14 +256,14 @@ func isMissingAnalysisError(err error) bool {
 		strings.Contains(msg, "does not expose")
 }
 
-func burndownProject(reader readers.Reader, output string, _ *time.Time, _ *time.Time) error {
+func burndownProject(reader readers.Reader, output string, _, _ *time.Time) error {
 	relative := viper.GetBool("relative")
 	resample := viper.GetString("resample")
 	// Use Python-compatible implementation
 	return modes.GenerateBurndownProjectPython(reader, output, relative, resample)
 }
 
-func burndownFile(reader readers.Reader, output string, _ *time.Time, _ *time.Time) error {
+func burndownFile(reader readers.Reader, output string, _, _ *time.Time) error {
 	relative := viper.GetBool("relative")
 	resample := viper.GetString("resample")
 	// Use Python-compatible implementation
@@ -275,51 +276,51 @@ func burndownPerson(reader readers.Reader, output string, startTime, endTime *ti
 	return modes.BurndownPerson(reader, output, relative, startTime, endTime, resample)
 }
 
-func burndownRepository(reader readers.Reader, output string, _ *time.Time, _ *time.Time) error {
+func burndownRepository(reader readers.Reader, output string, _, _ *time.Time) error {
 	relative := viper.GetBool("relative")
 	resample := viper.GetString("resample")
 	return modes.GenerateBurndownRepositoryPython(reader, output, relative, resample)
 }
 
-func burndownReposCombined(reader readers.Reader, output string, _ *time.Time, _ *time.Time) error {
+func burndownReposCombined(reader readers.Reader, output string, _, _ *time.Time) error {
 	relative := viper.GetBool("relative")
 	resample := viper.GetString("resample")
 	maxRepos := viper.GetInt("max-repos")
 	return modes.GenerateBurndownReposCombinedPython(reader, output, relative, resample, maxRepos)
 }
 
-func overwritesMatrix(reader readers.Reader, output string, _ *time.Time, _ *time.Time) error {
+func overwritesMatrix(reader readers.Reader, output string, _, _ *time.Time) error {
 	return modes.OverwritesMatrix(reader, output)
 }
 
-func ownershipBurndown(reader readers.Reader, output string, _ *time.Time, _ *time.Time) error {
+func ownershipBurndown(reader readers.Reader, output string, _, _ *time.Time) error {
 	return modes.OwnershipBurndown(reader, output)
 }
 
-func couplesFiles(reader readers.Reader, output string, _ *time.Time, _ *time.Time) error {
+func couplesFiles(reader readers.Reader, output string, _, _ *time.Time) error {
 	// Note: --disable-projector flag is supported for Python compatibility but not used
 	// Our Go implementation focuses on core coupling analysis without TensorFlow embeddings
 	return modes.CouplesFiles(reader, output)
 }
 
-func couplesPeople(reader readers.Reader, output string, _ *time.Time, _ *time.Time) error {
+func couplesPeople(reader readers.Reader, output string, _, _ *time.Time) error {
 	return modes.CouplesPeople(reader, output)
 }
 
-func couplesShotness(reader readers.Reader, output string, _ *time.Time, _ *time.Time) error {
+func couplesShotness(reader readers.Reader, output string, _, _ *time.Time) error {
 	return modes.CouplesShotness(reader, output)
 }
 
-func shotness(reader readers.Reader, output string, _ *time.Time, _ *time.Time) error {
+func shotness(reader readers.Reader, output string, _, _ *time.Time) error {
 	return modes.Shotness(reader, output)
 }
 
-func devs(reader readers.Reader, output string, _ *time.Time, _ *time.Time) error {
+func devs(reader readers.Reader, output string, _, _ *time.Time) error {
 	maxPeople := viper.GetInt("max-people")
 	return modes.Devs(reader, output, maxPeople)
 }
 
-func devsEfforts(reader readers.Reader, output string, _ *time.Time, _ *time.Time) error {
+func devsEfforts(reader readers.Reader, output string, _, _ *time.Time) error {
 	maxPeople := viper.GetInt("max-people")
 	return modes.DevsEfforts(reader, output, maxPeople, viper.GetBool("devs-efforts-detail"))
 }
@@ -329,7 +330,7 @@ func oldVsNew(reader readers.Reader, output string, startTime, endTime *time.Tim
 	return modes.OldVsNew(reader, output, startTime, endTime, resample)
 }
 
-func languages(reader readers.Reader, output string, _ *time.Time, _ *time.Time) error {
+func languages(reader readers.Reader, output string, _, _ *time.Time) error {
 	return modes.Languages(reader, output)
 }
 
@@ -339,35 +340,35 @@ func temporalActivity(reader readers.Reader, output string, startTime, endTime *
 	return modes.TemporalActivity(reader, output, legendThreshold, singleColumnThreshold, startTime, endTime)
 }
 
-func devsParallel(reader readers.Reader, output string, _ *time.Time, _ *time.Time) error {
+func devsParallel(reader readers.Reader, output string, _, _ *time.Time) error {
 	return modes.DevsParallel(reader, output, viper.GetInt("max-people"), devsParallelFallbackEnabled, viper.GetBool("devs-parallel-detail"))
 }
 
-func runTimes(reader readers.Reader, output string, _ *time.Time, _ *time.Time) error {
+func runTimes(reader readers.Reader, output string, _, _ *time.Time) error {
 	return modes.RunTimes(reader, output, viper.GetBool("run-times-detail"))
 }
 
-func busFactor(reader readers.Reader, output string, _ *time.Time, _ *time.Time) error {
+func busFactor(reader readers.Reader, output string, _, _ *time.Time) error {
 	return modes.BusFactor(reader, output)
 }
 
-func ownershipConcentration(reader readers.Reader, output string, _ *time.Time, _ *time.Time) error {
+func ownershipConcentration(reader readers.Reader, output string, _, _ *time.Time) error {
 	return modes.OwnershipConcentration(reader, output)
 }
 
-func knowledgeDiffusion(reader readers.Reader, output string, _ *time.Time, _ *time.Time) error {
+func knowledgeDiffusion(reader readers.Reader, output string, _, _ *time.Time) error {
 	return modes.KnowledgeDiffusion(reader, output, viper.GetBool("knowledge-diffusion-detail"))
 }
 
-func hotspotRisk(reader readers.Reader, output string, _ *time.Time, _ *time.Time) error {
+func hotspotRisk(reader readers.Reader, output string, _, _ *time.Time) error {
 	return modes.HotspotRisk(reader, output)
 }
 
-func sentiment(reader readers.Reader, output string, _ *time.Time, _ *time.Time) error {
+func sentiment(reader readers.Reader, output string, _, _ *time.Time) error {
 	return modes.Sentiment(reader, output, sentimentFallbackEnabled)
 }
 
-func refactoringProxy(reader readers.Reader, output string, _ *time.Time, _ *time.Time) error {
+func refactoringProxy(reader readers.Reader, output string, _, _ *time.Time) error {
 	return modes.RefactoringProxy(reader, output)
 }
 

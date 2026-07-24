@@ -6,14 +6,15 @@ import (
 	"io"
 	"io/ioutil"
 
-	"github.com/cwbudde/hercules/internal"
-	"github.com/cwbudde/hercules/internal/core"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/utils/merkletrie"
 	"github.com/pkg/errors"
+
+	"github.com/cwbudde/hercules/internal"
+	"github.com/cwbudde/hercules/internal/core"
 )
 
 // ErrorBinary is raised in CachedBlob.CountLines() if the file is binary.

@@ -4,9 +4,10 @@ import (
 	"fmt"
 	"runtime"
 
-	"github.com/cwbudde/hercules/internal/pb"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+
+	"github.com/cwbudde/hercules/internal/pb"
 )
 
 // Build metadata. Override at build time via -ldflags.

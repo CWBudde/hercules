@@ -5,11 +5,12 @@ import (
 	"io"
 	"sort"
 
+	"github.com/gogo/protobuf/proto"
+	"github.com/spf13/viper"
+
 	"github.com/cwbudde/hercules/internal/pb"
 	"github.com/cwbudde/hercules/internal/render/burndown"
 	"github.com/cwbudde/hercules/internal/render/progress"
-	"github.com/gogo/protobuf/proto"
-	"github.com/spf13/viper"
 )
 
 type ProtobufReader struct {

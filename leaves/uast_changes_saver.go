@@ -7,13 +7,14 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/cwbudde/hercules/internal/core"
-	items "github.com/cwbudde/hercules/internal/plumbing"
-	ast_items "github.com/cwbudde/hercules/internal/plumbing/ast"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/utils/merkletrie"
+
+	"github.com/cwbudde/hercules/internal/core"
+	items "github.com/cwbudde/hercules/internal/plumbing"
+	ast_items "github.com/cwbudde/hercules/internal/plumbing/ast"
 )
 
 const (

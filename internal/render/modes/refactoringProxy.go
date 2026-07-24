@@ -5,9 +5,10 @@ import (
 	"math"
 	"time"
 
-	"github.com/cwbudde/hercules/internal/render/readers"
 	"github.com/cwbudde/matplotlib-go/core"
 	"github.com/cwbudde/matplotlib-go/render"
+
+	"github.com/cwbudde/hercules/internal/render/readers"
 )
 
 func RefactoringProxy(reader readers.Reader, output string) error {

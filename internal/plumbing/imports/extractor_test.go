@@ -4,13 +4,14 @@ import (
 	"runtime"
 	"testing"
 
+	gitplumbing "github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/stretchr/testify/assert"
+
 	"github.com/cwbudde/hercules/internal/core"
 	"github.com/cwbudde/hercules/internal/plumbing"
 	"github.com/cwbudde/hercules/internal/plumbing/imports/lang"
 	"github.com/cwbudde/hercules/internal/test"
-	gitplumbing "github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/stretchr/testify/assert"
 )
 
 func fixtureExtractor() *Extractor {

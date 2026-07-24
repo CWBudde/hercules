@@ -5,14 +5,15 @@ import (
 	"testing"
 	"time"
 
+	gitplumbing "github.com/go-git/go-git/v5/plumbing"
+	"github.com/stretchr/testify/assert"
+
 	"github.com/cwbudde/hercules/internal/core"
 	"github.com/cwbudde/hercules/internal/plumbing"
 	"github.com/cwbudde/hercules/internal/plumbing/identity"
 	"github.com/cwbudde/hercules/internal/plumbing/imports"
 	importslang "github.com/cwbudde/hercules/internal/plumbing/imports/lang"
 	"github.com/cwbudde/hercules/internal/test"
-	gitplumbing "github.com/go-git/go-git/v5/plumbing"
-	"github.com/stretchr/testify/assert"
 )
 
 func fixtureImportsPerDev() *ImportsPerDeveloper {

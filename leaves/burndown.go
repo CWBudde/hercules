@@ -11,6 +11,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-git/go-git/v5"
+	"github.com/gogo/protobuf/proto"
+
 	"github.com/cwbudde/hercules/internal/burndown"
 	"github.com/cwbudde/hercules/internal/core"
 	"github.com/cwbudde/hercules/internal/join"
@@ -19,8 +22,6 @@ import (
 	items "github.com/cwbudde/hercules/internal/plumbing"
 	"github.com/cwbudde/hercules/internal/plumbing/identity"
 	"github.com/cwbudde/hercules/internal/yaml"
-	"github.com/go-git/go-git/v5"
-	"github.com/gogo/protobuf/proto"
 )
 
 // BurndownAnalysis allows to gather the line burndown statistics for a Git repository.

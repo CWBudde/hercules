@@ -11,9 +11,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spf13/viper"
+
 	"github.com/cwbudde/hercules/internal/render/burndown"
 	"github.com/cwbudde/hercules/internal/render/readers"
-	"github.com/spf13/viper"
 )
 
 type stubReader struct {

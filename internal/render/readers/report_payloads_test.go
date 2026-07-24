@@ -6,9 +6,10 @@ import (
 	"os"
 	"testing"
 
-	"github.com/cwbudde/hercules/internal/pb"
 	"github.com/gogo/protobuf/proto"
 	"github.com/stretchr/testify/require"
+
+	"github.com/cwbudde/hercules/internal/pb"
 )
 
 func TestProtobufReader_CurrentHerculesReportPayloads(t *testing.T) {

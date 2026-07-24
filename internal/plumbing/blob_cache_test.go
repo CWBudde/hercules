@@ -3,12 +3,13 @@ package plumbing
 import (
 	"testing"
 
-	"github.com/cwbudde/hercules/internal"
-	"github.com/cwbudde/hercules/internal/core"
-	"github.com/cwbudde/hercules/internal/test"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/cwbudde/hercules/internal"
+	"github.com/cwbudde/hercules/internal/core"
+	"github.com/cwbudde/hercules/internal/test"
 )
 
 func fixtureBlobCache() *BlobCache {

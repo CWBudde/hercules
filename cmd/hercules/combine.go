@@ -11,13 +11,14 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/gogo/protobuf/proto"
+	"github.com/spf13/cobra"
+	progress "gopkg.in/cheggaaa/pb.v1"
+
 	"github.com/cwbudde/hercules"
 	"github.com/cwbudde/hercules/internal/burndown"
 	"github.com/cwbudde/hercules/internal/pb"
 	"github.com/cwbudde/hercules/leaves"
-	"github.com/gogo/protobuf/proto"
-	"github.com/spf13/cobra"
-	progress "gopkg.in/cheggaaa/pb.v1"
 )
 
 // combineCmd represents the combine command

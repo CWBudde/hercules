@@ -1,15 +1,16 @@
 package hercules
 
 import (
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/spf13/pflag"
+
 	"github.com/cwbudde/hercules/internal/core"
 	"github.com/cwbudde/hercules/internal/plumbing"
 	"github.com/cwbudde/hercules/internal/plumbing/identity"
 	"github.com/cwbudde/hercules/internal/yaml"
 	_ "github.com/cwbudde/hercules/leaves"          // add burndown and other analyses
 	_ "github.com/cwbudde/hercules/leaves/research" // add "research" analyses
-	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/spf13/pflag"
 )
 
 // ConfigurationOptionType represents the possible types of a ConfigurationOption's value.

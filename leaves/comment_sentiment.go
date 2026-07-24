@@ -11,10 +11,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/cwbudde/hercules/internal/core"
-	"github.com/cwbudde/hercules/internal/pb"
-	items "github.com/cwbudde/hercules/internal/plumbing"
-	ast_items "github.com/cwbudde/hercules/internal/plumbing/ast"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -22,6 +18,11 @@ import (
 	"github.com/gogo/protobuf/proto"
 	progress "gopkg.in/cheggaaa/pb.v1"
 	sentiment "gopkg.in/vmarkovtsev/BiDiSentiment.v1"
+
+	"github.com/cwbudde/hercules/internal/core"
+	"github.com/cwbudde/hercules/internal/pb"
+	items "github.com/cwbudde/hercules/internal/plumbing"
+	ast_items "github.com/cwbudde/hercules/internal/plumbing/ast"
 )
 
 // CommentSentimentAnalysis measures comment sentiment through time.
@@ -261,7 +262,7 @@ func (sent *CommentSentimentAnalysis) Finalize() interface{} {
 	}
 	defer session.Close()
 	var bar *progress.ProgressBar
-	callback := func(pos int, total int) {
+	callback := func(pos, total int) {
 		if bar == nil {
 			bar = progress.New(total)
 			bar.Callback = func(msg string) {

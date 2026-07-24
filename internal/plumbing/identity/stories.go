@@ -8,11 +8,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cwbudde/hercules/internal/core"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/pkg/errors"
+
+	"github.com/cwbudde/hercules/internal/core"
 )
 
 // StoryDetector determines the author of a commit. Same person can commit under different
@@ -168,7 +169,8 @@ func splitMergeDict(dict map[plumbing.Hash]string) (hashDict map[plumbing.Hash]i
 	for k, v := range uniqueNames {
 		names[v] = k
 	}
-	return
+
+	return hashDict, names
 }
 
 func (*StoryDetector) ConfigureUpstream(map[string]interface{}) error {

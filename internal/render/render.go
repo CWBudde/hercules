@@ -20,8 +20,9 @@ package render
 import (
 	"time"
 
-	"github.com/cwbudde/hercules/internal/render/readers"
 	"github.com/spf13/viper"
+
+	"github.com/cwbudde/hercules/internal/render/readers"
 )
 
 // Options carries per-run settings for Run that are not read from viper.

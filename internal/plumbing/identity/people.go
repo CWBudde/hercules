@@ -9,10 +9,11 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/cwbudde/hercules/internal/core"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/pkg/errors"
+
+	"github.com/cwbudde/hercules/internal/core"
 )
 
 // PeopleDetector determines the author of a commit. Same person can commit under different
@@ -483,7 +484,7 @@ func identityMergeThresholdFromFacts(facts map[string]interface{}) (float64, boo
 }
 
 func (detector *PeopleDetector) addSignature(name, email, reason string, size *int,
-	dict map[string]int, names map[int][]string, emails map[int][]string, sourceCounts map[int]int,
+	dict map[string]int, names, emails map[int][]string, sourceCounts map[int]int,
 	ambiguous *[]IdentityMergeSuggestion,
 ) (int, *IdentityMergeDecision) {
 	name = normalizeIdentityKey(name)
@@ -588,10 +589,6 @@ func (detector *PeopleDetector) bestFuzzyCandidate(name, email string, names map
 	return bestID, bestScore, tied
 }
 
-func (detector *PeopleDetector) identityLine(id int, names map[int][]string, emails map[int][]string) string {
-	return peopleDictLine(names[id], emails[id])
-}
-
 func addIdentityKey(id int, key string, isEmail bool, dict map[string]int, names map[int][]string,
 	emails map[int][]string,
 ) {
@@ -653,7 +650,7 @@ func lastCommitMailmapContents(commits []*object.Commit) (contents string, ok bo
 	return contents, true
 }
 
-func peopleDictLine(names []string, emails []string) string {
+func peopleDictLine(names, emails []string) string {
 	names = append([]string(nil), names...)
 	emails = append([]string(nil), emails...)
 	sort.Strings(names)
@@ -795,34 +792,64 @@ func (detector *PeopleDetector) GeneratePeopleDictTemplate() string {
 	return builder.String()
 }
 
-func (detector *PeopleDetector) rebuildAuditFromState(names map[int][]string, emails map[int][]string,
+func (detector *PeopleDetector) identityLine(id int, names, emails map[int][]string) string {
+	return peopleDictLine(names[id], emails[id])
+}
+
+func (detector *PeopleDetector) rebuildAuditFromState(names, emails map[int][]string,
 	sourceCounts map[int]int, decisions ...interface{},
 ) {
+	mergeDecisions, ambiguous := identityAuditDecisions(decisions)
+	names, emails = detector.identityAuditMaps(names, emails)
+	identities := detector.identityAuditIdentities(names, emails, sourceCounts)
+
+	sortIdentityAuditDecisions(mergeDecisions, ambiguous)
+	detector.audit = IdentityAudit{
+		Threshold:      detector.MergeThreshold,
+		Identities:     identities,
+		MergeDecisions: mergeDecisions,
+		Ambiguous:      ambiguous,
+	}
+}
+
+func identityAuditDecisions(decisions []any) ([]IdentityMergeDecision, []IdentityMergeSuggestion) {
 	var mergeDecisions []IdentityMergeDecision
 	var ambiguous []IdentityMergeSuggestion
 	if len(decisions) > 0 {
-		if val, ok := decisions[0].([]IdentityMergeDecision); ok {
-			mergeDecisions = val
-		}
+		mergeDecisions, _ = decisions[0].([]IdentityMergeDecision)
 	}
 	if len(decisions) > 1 {
-		if val, ok := decisions[1].([]IdentityMergeSuggestion); ok {
-			ambiguous = val
-		}
+		ambiguous, _ = decisions[1].([]IdentityMergeSuggestion)
 	}
-	if names == nil || emails == nil {
-		names = map[int][]string{}
-		emails = map[int][]string{}
-		for id, line := range detector.ReversedPeopleDict {
-			for _, part := range strings.Split(line, "|") {
-				if strings.Contains(part, "@") {
-					emails[id] = append(emails[id], part)
-				} else if part != "" {
-					names[id] = append(names[id], part)
-				}
+
+	return mergeDecisions, ambiguous
+}
+
+func (detector *PeopleDetector) identityAuditMaps(names, emails map[int][]string,
+) (map[int][]string, map[int][]string) {
+	if names != nil && emails != nil {
+		return names, emails
+	}
+
+	names = map[int][]string{}
+	emails = map[int][]string{}
+
+	for id, line := range detector.ReversedPeopleDict {
+		for part := range strings.SplitSeq(line, "|") {
+			if strings.Contains(part, "@") {
+				emails[id] = append(emails[id], part)
+			} else if part != "" {
+				names[id] = append(names[id], part)
 			}
 		}
 	}
+
+	return names, emails
+}
+
+func (detector *PeopleDetector) identityAuditIdentities(names, emails map[int][]string,
+	sourceCounts map[int]int,
+) []IdentityAuditIdentity {
 	identities := make([]IdentityAuditIdentity, 0, len(detector.ReversedPeopleDict))
 	for id := range detector.ReversedPeopleDict {
 		line := peopleDictLine(names[id], emails[id])
@@ -839,6 +866,13 @@ func (detector *PeopleDetector) rebuildAuditFromState(names map[int][]string, em
 			SourceCount:    sourceCounts[id],
 		})
 	}
+
+	return identities
+}
+
+func sortIdentityAuditDecisions(mergeDecisions []IdentityMergeDecision,
+	ambiguous []IdentityMergeSuggestion,
+) {
 	sort.Slice(mergeDecisions, func(i, j int) bool {
 		if mergeDecisions[i].Identity != mergeDecisions[j].Identity {
 			return mergeDecisions[i].Identity < mergeDecisions[j].Identity
@@ -857,15 +891,9 @@ func (detector *PeopleDetector) rebuildAuditFromState(names map[int][]string, em
 		}
 		return ambiguous[i].Right < ambiguous[j].Right
 	})
-	detector.audit = IdentityAudit{
-		Threshold:      detector.MergeThreshold,
-		Identities:     identities,
-		MergeDecisions: mergeDecisions,
-		Ambiguous:      ambiguous,
-	}
 }
 
-func primaryIdentityValue(names []string, emails []string) string {
+func primaryIdentityValue(names, emails []string) string {
 	if len(names) > 0 {
 		return names[0]
 	}

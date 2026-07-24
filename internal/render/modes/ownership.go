@@ -14,9 +14,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cwbudde/hercules/internal/render/graphics"
-	"github.com/cwbudde/hercules/internal/render/progress"
-	"github.com/cwbudde/hercules/internal/render/readers"
 	"github.com/cwbudde/matplotlib-go/backends"
 	_ "github.com/cwbudde/matplotlib-go/backends/agg"
 	_ "github.com/cwbudde/matplotlib-go/backends/svg"
@@ -24,6 +21,10 @@ import (
 	"github.com/cwbudde/matplotlib-go/render"
 	"github.com/cwbudde/matplotlib-go/style"
 	"github.com/spf13/viper"
+
+	"github.com/cwbudde/hercules/internal/render/graphics"
+	"github.com/cwbudde/hercules/internal/render/progress"
+	"github.com/cwbudde/hercules/internal/render/readers"
 )
 
 func OwnershipBurndown(reader readers.Reader, output string) error {

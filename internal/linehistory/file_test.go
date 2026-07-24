@@ -5,8 +5,9 @@ import (
 	"math"
 	"testing"
 
-	"github.com/cwbudde/hercules/internal/rbtree"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/cwbudde/hercules/internal/rbtree"
 )
 
 func updateStatusFile(status map[int]int64, _, previousTime, delta int) {

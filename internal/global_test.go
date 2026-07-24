@@ -6,10 +6,11 @@ import (
 	"path"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/cwbudde/hercules/internal/core"
 	"github.com/cwbudde/hercules/internal/test"
 	"github.com/cwbudde/hercules/leaves"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestPipelineSerialize(t *testing.T) {

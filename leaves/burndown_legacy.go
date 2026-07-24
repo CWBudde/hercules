@@ -15,6 +15,13 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/utils/merkletrie"
+	"github.com/gogo/protobuf/proto"
+	"github.com/sergi/go-diff/diffmatchpatch"
+
 	"github.com/cwbudde/hercules/internal/burndown"
 	"github.com/cwbudde/hercules/internal/core"
 	"github.com/cwbudde/hercules/internal/join"
@@ -24,12 +31,6 @@ import (
 	"github.com/cwbudde/hercules/internal/plumbing/identity"
 	"github.com/cwbudde/hercules/internal/rbtree"
 	"github.com/cwbudde/hercules/internal/yaml"
-	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/go-git/go-git/v5/utils/merkletrie"
-	"github.com/gogo/protobuf/proto"
-	"github.com/sergi/go-diff/diffmatchpatch"
 )
 
 // LegacyBurndownAnalysis allows to gather the line burndown statistics for a Git repository.
@@ -1086,7 +1087,7 @@ func (analyser *LegacyBurndownAnalysis) serializeBinary(result *BurndownResult, 
 // Strictly speaking, int can be 64-bit and then the author index occupies 32+18 bits.
 // This hack is needed to simplify the values storage inside File-s. We can compare
 // different values together and they are compared as ticks for the same author.
-func (analyser *LegacyBurndownAnalysis) packPersonWithTick(person int, tick int) int {
+func (analyser *LegacyBurndownAnalysis) packPersonWithTick(person, tick int) int {
 	if analyser.PeopleNumber == 0 {
 		return tick
 	}
@@ -1186,7 +1187,7 @@ func (analyser *LegacyBurndownAnalysis) updateChurnMatrix(_ *linehistory.File, c
 }
 
 func (analyser *LegacyBurndownAnalysis) newFile(
-	_ plumbing.Hash, name string, author int, tick int, size int,
+	_ plumbing.Hash, name string, author, tick, size int,
 ) (*linehistory.File, error) {
 	updaters := make([]linehistory.Updater, 1)
 	updaters[0] = analyser.updateGlobal

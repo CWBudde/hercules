@@ -3,9 +3,10 @@ package plumbing
 import (
 	"testing"
 
-	ast_items "github.com/cwbudde/hercules/internal/plumbing/ast"
 	"github.com/sergi/go-diff/diffmatchpatch"
 	"github.com/stretchr/testify/assert"
+
+	ast_items "github.com/cwbudde/hercules/internal/plumbing/ast"
 )
 
 func TestRefineDiffByNodeDensityShiftRight(t *testing.T) {

@@ -34,12 +34,21 @@ includes = [
 
 [formatter.gofumpt]
 command = "gofumpt"
-options = ["-w"]
+options = ["-extra", "-w"]
 includes = ["*.go"]
 
 [formatter.gci]
 command = "gci"
-options = ["-w"]
+options = [
+  "write",
+  "--skip-generated",
+  "-s",
+  "standard",
+  "-s",
+  "default",
+  "-s",
+  "prefix(github.com/cwbudde/hercules)",
+]
 includes = ["*.go"]
 priority = 1        # run after gofumpt
 

@@ -66,11 +66,13 @@ fmt:
 
 # Run linter
 lint:
-    golangci-lint run --config ./.golangci.toml --timeout 2m
+    # Match CI: check changed code only and use the cgo-free build.
+    # Force module mode because vendor/ is ignored and may be stale locally.
+    CGO_ENABLED=0 golangci-lint run --config ./.golangci.toml --timeout 2m --modules-download-mode=mod --new
 
 # Run linter with fix
 lint-fix:
-    golangci-lint run --config ./.golangci.toml --timeout 2m --fix
+    CGO_ENABLED=0 golangci-lint run --config ./.golangci.toml --timeout 2m --modules-download-mode=mod --new --fix
 
 # Check if code is formatted (error if changes needed)
 check-formatted:
@@ -132,7 +134,7 @@ setup-deps:
 
     # Install golangci-lint (Go linter) — v2.x to match the CI lint action and
     # the version = "2" .golangci.toml (v1.x cannot parse the v2 config).
-    command -v golangci-lint >/dev/null 2>&1 || { echo "Installing golangci-lint..."; GOTOOLCHAIN=go1.25.0 go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.5.0; }
+    command -v golangci-lint >/dev/null 2>&1 || { echo "Installing golangci-lint..."; GOTOOLCHAIN=go1.26.2 go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2; }
 
     # Note: shellcheck requires manual installation on most systems
     command -v shellcheck >/dev/null 2>&1 || echo "WARNING: shellcheck not found. Please install manually: apt-get install shellcheck (Ubuntu/Debian) or brew install shellcheck (macOS)"

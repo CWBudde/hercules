@@ -7,6 +7,7 @@ disable = [
     'exhaustive',
     'exhaustruct',
     'godox',
+    'gomodguard',
     'ireturn',
     'mnd',
     'musttag',
@@ -14,7 +15,7 @@ disable = [
     'sqlclosecheck',
     'wsl',
 ]
-enable = ['wsl_v5', "revive"]
+enable = ['gomodguard_v2', 'wsl_v5', "revive"]
 
 [linters.settings]
 [linters.settings.tagliatelle]
@@ -87,6 +88,17 @@ severity = 'info'
 
 [formatters]
 enable = ['gci', 'gofumpt', 'goimports']
+
+[formatters.settings.gci]
+sections = ['standard', 'default', 'prefix(github.com/cwbudde/hercules)']
+custom-order = true
+
+[formatters.settings.gofumpt]
+module-path = 'github.com/cwbudde/hercules'
+extra-rules = true
+
+[formatters.settings.goimports]
+local-prefixes = ['github.com/cwbudde/hercules']
 
 [formatters.exclusions]
 generated = 'lax'

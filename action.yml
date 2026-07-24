@@ -3,8 +3,16 @@ description: "Run various Git history analyses with CWBudde/hercules"
 author: "CWBudde"
 
 inputs:
+  args-json:
+    description: >-
+      Preferred Hercules argv as a JSON string array. When set, this replaces
+      the deprecated whitespace-split args input.
+    required: false
+    default: ""
   args:
-    description: "hercules command line arguments"
+    description: >-
+      Deprecated Hercules arguments, split on whitespace without shell
+      evaluation. Use args-json when an argument contains whitespace.
     required: false
     default: "--burndown --burndown-people --devs --couples --temporal-activity"
   output:
@@ -19,6 +27,10 @@ inputs:
     description: "Labours visualization mode (all, burndown, couples, temporal-activity, etc.)"
     required: false
     default: "all"
+  best-effort-charts:
+    description: "Do not fail the Action when chart generation fails or produces no PNG/SVG files"
+    required: false
+    default: "false"
 
 outputs:
   analysis-file:
@@ -41,31 +53,73 @@ runs:
 
     - name: Build Hercules and Labours
       shell: bash
-      run: just
+      working-directory: ${{ github.action_path }}
+      run: |
+        set -euo pipefail
+        just
+        go build -o hercules-action ./cmd/hercules-action
 
     - name: Run Analysis
       id: analyze
       shell: bash
+      env:
+        HERCULES_ACTION_RUNNER: ${{ github.action_path }}/hercules-action
+        HERCULES_ACTION_HERCULES: ${{ github.action_path }}/hercules
+        HERCULES_ACTION_REPOSITORY: ${{ github.workspace }}
+        HERCULES_ACTION_ARGS_JSON: ${{ inputs.args-json }}
+        HERCULES_ACTION_ARGS: ${{ inputs.args }}
+        HERCULES_ACTION_OUTPUT: ${{ inputs.output }}
       run: |
-        ./hercules ${{ inputs.args }} . > ${{ inputs.output }}
-        echo "file=${{ inputs.output }}" >> $GITHUB_OUTPUT
+        set -euo pipefail
+        "$HERCULES_ACTION_RUNNER" analyze
 
     - name: Generate Charts
       if: inputs.generate-charts == 'true'
       shell: bash
+      env:
+        HERCULES_ACTION_RUNNER: ${{ github.action_path }}/hercules-action
+        HERCULES_ACTION_LABOURS: ${{ github.action_path }}/labours
+        HERCULES_ACTION_OUTPUT: ${{ inputs.output }}
+        HERCULES_ACTION_LABOURS_MODE: ${{ inputs.labours-mode }}
+        HERCULES_ACTION_BEST_EFFORT_CHARTS: ${{ inputs.best-effort-charts }}
       run: |
-        ./labours -m ${{ inputs.labours-mode }} -i ${{ inputs.output }}
-        tar -cf hercules_charts.tar *.png *.svg 2>/dev/null || tar -cf hercules_charts.tar *.png 2>/dev/null || echo "No charts generated"
+        set -euo pipefail
+        rm -f hercules_charts.tar
+
+        if ! "$HERCULES_ACTION_RUNNER" charts; then
+          if [[ "$HERCULES_ACTION_BEST_EFFORT_CHARTS" == "true" ]]; then
+            echo "::warning::Labours chart generation failed"
+          else
+            exit 1
+          fi
+        fi
+
+        shopt -s nullglob
+        chart_files=(*.png *.svg)
+        if (( ${#chart_files[@]} == 0 )); then
+          if [[ "$HERCULES_ACTION_BEST_EFFORT_CHARTS" == "true" ]]; then
+            echo "::warning::No PNG or SVG charts were generated"
+          else
+            echo "No PNG or SVG charts were generated" >&2
+            exit 1
+          fi
+        else
+          tar -cf hercules_charts.tar -- "${chart_files[@]}"
+        fi
 
     - name: Summary
       shell: bash
+      env:
+        HERCULES_ACTION_OUTPUT: ${{ inputs.output }}
       run: |
-        echo "### Hercules Analysis Complete :chart_with_upwards_trend:" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "**Analysis file**: \`${{ inputs.output }}\`" >> $GITHUB_STEP_SUMMARY
-        if [ -f hercules_charts.tar ]; then
-          echo "**Charts archive**: \`hercules_charts.tar\`" >> $GITHUB_STEP_SUMMARY
-        fi
+        set -euo pipefail
+        {
+          printf '%s\n\n' "### Hercules Analysis Complete :chart_with_upwards_trend:"
+          printf '**Analysis file**: \x60%s\x60\n' "$HERCULES_ACTION_OUTPUT"
+          if [[ -f hercules_charts.tar ]]; then
+            printf '**Charts archive**: \x60hercules_charts.tar\x60\n'
+          fi
+        } >> "$GITHUB_STEP_SUMMARY"
 
 branding:
   color: blue

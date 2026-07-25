@@ -109,7 +109,7 @@ func TestHotspotRiskDisabledFactorsRemainDisabled(t *testing.T) {
 func TestHotspotRiskPipelineProducesExplainableScores(t *testing.T) {
 	repository, commits := newHotspotRiskPipelineFixture(t)
 
-	oneDay := runHotspotRiskPipeline(t, repository, commits, 1, 6)
+	oneDay := runHotspotRiskPipeline(t, repository, commits, 1, 10)
 	require.Len(t, oneDay.Files, 3, "the binary file must not be scored")
 
 	alpha := oneDay.Files[0]
@@ -138,7 +138,7 @@ func TestHotspotRiskPipelineProducesExplainableScores(t *testing.T) {
 	assert.Zero(t, solo.CouplingDegree, "a file changed alone has no coupling")
 	assert.InDelta(t, 0.5, solo.RiskScore, 1e-12)
 
-	twoDays := runHotspotRiskPipeline(t, repository, commits, 2, 6)
+	twoDays := runHotspotRiskPipeline(t, repository, commits, 2, 10)
 	require.Len(t, twoDays.Files, 3)
 	assert.Equal(t, testAlphaPath, twoDays.Files[0].Path)
 	assert.Equal(t, 6, twoDays.Files[0].Churn,
@@ -154,7 +154,7 @@ func TestHotspotRiskPipelineProducesExplainableScores(t *testing.T) {
 	assert.Zero(t, risksByPath["renamed.go"].Churn,
 		"the preceding multi-day tick is outside the one-day window")
 
-	fullHistory := runHotspotRiskPipeline(t, repository, commits, 3, 6)
+	fullHistory := runHotspotRiskPipeline(t, repository, commits, 3, 10)
 	risksByPath = map[string]FileRisk{}
 	for _, risk := range fullHistory.Files {
 		risksByPath[risk.Path] = risk

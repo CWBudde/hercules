@@ -138,12 +138,12 @@ func parseReserved(message *Message, spec string) error {
 			return err
 		}
 
-	hi := lo
-	if matches[2] != "" {
-		hi, err = strconv.Atoi(matches[2])
-		if err != nil {
-			return err
-		}
+		hi := lo
+		if matches[2] != "" {
+			hi, err = strconv.Atoi(matches[2])
+			if err != nil {
+				return err
+			}
 		}
 
 		if hi < lo {

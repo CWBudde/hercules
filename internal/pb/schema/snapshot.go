@@ -46,7 +46,9 @@ func Load(path string) (Snapshot, error) {
 	}
 
 	var snapshot Snapshot
-	if err := json.Unmarshal(data, &snapshot); err != nil {
+
+	err = json.Unmarshal(data, &snapshot)
+	if err != nil {
 		return Snapshot{}, err
 	}
 

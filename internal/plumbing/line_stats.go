@@ -149,9 +149,11 @@ func modificationIsBinary(
 	change *object.Change, cache map[plumbing.Hash]*CachedBlob,
 ) (bool, error) {
 	for _, hash := range []plumbing.Hash{change.From.TreeEntry.Hash, change.To.TreeEntry.Hash} {
-		if _, err := cache[hash].CountLines(); errors.Is(err, ErrBinary) {
+		_, err := cache[hash].CountLines()
+		if errors.Is(err, ErrBinary) {
 			return true, nil
-		} else if err != nil {
+		}
+		if err != nil {
 			return false, err
 		}
 	}

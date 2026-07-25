@@ -192,14 +192,14 @@ func (ipd *ImportsPerDeveloper) Deserialize(pbmessage []byte) (any, error) {
 		return nil, fmt.Errorf("unmarshal imports result: %w", err)
 	}
 
-	r := ImportsPerDeveloperResult{
+	result := ImportsPerDeveloperResult{
 		Imports:            ImportsMap{},
 		reversedPeopleDict: msg.GetAuthorIndex(),
 		tickSize:           time.Duration(msg.GetTickSize()),
 	}
 	for devi, dev := range msg.GetImports() {
 		rdev := map[string]map[string]map[int]int64{}
-		r.Imports[devi] = rdev
+		result.Imports[devi] = rdev
 
 		for lang, names := range dev.GetLanguages() {
 			rlang := map[string]map[int]int64{}
@@ -216,7 +216,7 @@ func (ipd *ImportsPerDeveloper) Deserialize(pbmessage []byte) (any, error) {
 		}
 	}
 
-	return r, nil
+	return result, nil
 }
 
 func (ipd *ImportsPerDeveloper) serializeText(result *ImportsPerDeveloperResult, writer io.Writer) {
@@ -273,8 +273,13 @@ func (ipd *ImportsPerDeveloper) serializeBinary(result *ImportsPerDeveloperResul
 				counts := map[int32]int64{}
 
 				pbticks[imp] = &pb.ImportsPerTick{Counts: counts}
+
 				for ti, val := range tick {
-					counts[int32(ti)] = val
+					tickID, err := intToProtoInt32(ti, "imports tick")
+					if err != nil {
+						return err
+					}
+					counts[tickID] = val
 				}
 			}
 		}

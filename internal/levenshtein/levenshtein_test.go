@@ -8,26 +8,25 @@ import (
 	"testing"
 )
 
-var distanceTests = []struct {
-	first  string
-	second string
-	wanted int
-}{
-	{"a", "a", 0},
-	{"ab", "ab", 0},
-	{"ab", "aa", 1},
-	{"ab", "aa", 1},
-	{"ab", "aaa", 2},
-	{"bbb", "a", 3},
-	{"kitten", "sitting", 3},
-	{"a", "", 1},
-	{"", "a", 1},
-	{"aa", "aü", 1},
-	{"Fön", "Föm", 1},
-}
-
 func TestDistance(t *testing.T) {
 	lev := &Context{}
+	distanceTests := []struct {
+		first  string
+		second string
+		wanted int
+	}{
+		{"a", "a", 0},
+		{"ab", "ab", 0},
+		{"ab", "aa", 1},
+		{"ab", "aa", 1},
+		{"ab", "aaa", 2},
+		{"bbb", "a", 3},
+		{"kitten", "sitting", 3},
+		{"a", "", 1},
+		{"", "a", 1},
+		{"aa", "aü", 1},
+		{"Fön", "Föm", 1},
+	}
 
 	for index, distanceTest := range distanceTests {
 		result := lev.Distance(distanceTest.first, distanceTest.second)

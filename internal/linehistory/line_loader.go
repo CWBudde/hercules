@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"regexp"
 	"strconv"
@@ -42,7 +43,11 @@ type commitInfo struct {
 	Changes []core.LineHistoryChange
 }
 
-var errUnexpectedLineHistoryFieldCount = errors.New("unexpected number of fields in line history change")
+var (
+	errUnexpectedLineHistoryFieldCount = errors.New("unexpected number of fields in line history change")
+	errInvalidLineHistoryYAML          = errors.New("line history YAML does not contain a valid LineDumper section")
+	errLineHistoryIntegerRange         = errors.New("line history integer is out of range")
+)
 
 func (v fileInfo) ForEach(func(line, value int)) {
 	panic("not implemented")
@@ -273,29 +278,56 @@ func (analyser *LineHistoryLoader) loadChangesFrom(name string) error {
 var regexSplitBySpace = regexp.MustCompile(`\s+`)
 
 func (analyser *LineHistoryLoader) loadChangesFromYaml(decoder *yaml.Decoder) error {
-	type dumperScheme struct {
-		Commits yaml.MapSlice     `yaml:"commits"`
-		Authors []string          `yaml:"author_sequence"`
-		Files   map[FileId]string `yaml:"file_sequence"`
-	}
-	values := struct {
-		LineDumper dumperScheme `yaml:"LineDumper"`
-	}{}
+	var document yaml.MapSlice
 
-	err := decoder.Decode(&values)
+	err := decoder.Decode(&document)
 	if err != nil {
 		return fmt.Errorf("decode line history YAML: %w", err)
 	}
 
-	analyser.authors = values.LineDumper.Authors
+	lineDumper := yamlMapValue(document, "LineDumper")
+	dumper, ok := lineDumper.(yaml.MapSlice)
 
-	analyser.files = make(map[FileId]fileInfo, len(values.LineDumper.Files))
-	for k, v := range values.LineDumper.Files {
-		analyser.files[k] = fileInfo{Name: v}
+	if !ok {
+		return errInvalidLineHistoryYAML
 	}
 
-	analyser.commits = make([]commitInfo, 0, len(values.LineDumper.Commits))
-	for _, yamlCommit := range values.LineDumper.Commits {
+	commitsValue := yamlMapValue(dumper, "commits")
+	commits, commitsOK := commitsValue.(yaml.MapSlice)
+
+	authorsValue := yamlMapValue(dumper, "author_sequence")
+	authors, authorsOK := authorsValue.([]any)
+
+	filesValue := yamlMapValue(dumper, "file_sequence")
+	files, filesOK := filesValue.(yaml.MapSlice)
+
+	if !commitsOK || !authorsOK || !filesOK {
+		return errInvalidLineHistoryYAML
+	}
+
+	analyser.authors = make([]string, 0, len(authors))
+	for _, author := range authors {
+		if value, ok := author.(string); ok {
+			analyser.authors = append(analyser.authors, value)
+		}
+	}
+
+	analyser.files = make(map[FileId]fileInfo, len(files))
+	for _, item := range files {
+		id, idOK := item.Key.(int)
+		name, nameOK := item.Value.(string)
+
+		if idOK && nameOK {
+			if id < math.MinInt32 || id > math.MaxInt32 {
+				return fmt.Errorf("%w: file ID %d", errLineHistoryIntegerRange, id)
+			}
+
+			analyser.files[FileId(id)] = fileInfo{Name: name}
+		}
+	}
+
+	analyser.commits = make([]commitInfo, 0, len(commits))
+	for _, yamlCommit := range commits {
 		info, err := parseLineHistoryCommit(yamlCommit)
 		if err != nil {
 			return err
@@ -307,15 +339,43 @@ func (analyser *LineHistoryLoader) loadChangesFromYaml(decoder *yaml.Decoder) er
 	return nil
 }
 
+func yamlMapValue(items yaml.MapSlice, key string) any {
+	for _, item := range items {
+		if item.Key == key {
+			return item.Value
+		}
+	}
+
+	return nil
+}
+
 func parseLineHistoryCommit(yamlCommit yaml.MapItem) (commitInfo, error) {
-	info := commitInfo{Hash: plumbing.NewHash(yamlCommit.Key.(string))}
-	for scanner := bufio.NewScanner(strings.NewReader(yamlCommit.Value.(string))); scanner.Scan(); {
+	hash, hashOK := yamlCommit.Key.(string)
+
+	changes, changesOK := yamlCommit.Value.(string)
+	if !hashOK || !changesOK {
+		return commitInfo{}, fmt.Errorf("%w: invalid commit entry", errInvalidLineHistoryYAML)
+	}
+
+	info := commitInfo{Hash: plumbing.NewHash(hash)}
+
+	scanner := bufio.NewScanner(strings.NewReader(changes))
+	for scanner.Scan() {
 		change, err := parseLineHistoryChange(scanner.Text())
 		if err != nil {
 			return commitInfo{}, err
 		}
 
 		info.Changes = append(info.Changes, change)
+	}
+
+	err := scanner.Err()
+	if err != nil {
+		return commitInfo{}, fmt.Errorf("scan line history changes: %w", err)
+	}
+
+	if len(info.Changes) == 0 {
+		return commitInfo{}, fmt.Errorf("%w: commit %s has no changes", errInvalidLineHistoryYAML, hash)
 	}
 
 	info.Tick = info.Changes[0].CurrTick
@@ -333,7 +393,7 @@ func parseLineHistoryChange(line string) (core.LineHistoryChange, error) {
 	}
 
 	values := make([]int, len(chunks))
-	for i, raw := range chunks {
+	for chunkIndex, raw := range chunks {
 		value, err := strconv.Atoi(raw)
 		if err != nil {
 			return core.LineHistoryChange{}, fmt.Errorf(
@@ -341,14 +401,46 @@ func parseLineHistoryChange(line string) (core.LineHistoryChange, error) {
 			)
 		}
 
-		values[i] = value
+		values[chunkIndex] = value
+	}
+
+	fileID, err := lineHistoryFileID(values[0])
+	if err != nil {
+		return core.LineHistoryChange{}, err
+	}
+
+	prevAuthor, err := intToAuthorID(values[1])
+	if err != nil {
+		return core.LineHistoryChange{}, err
+	}
+
+	prevTick, err := intToTickNumber(values[2])
+	if err != nil {
+		return core.LineHistoryChange{}, err
+	}
+
+	currAuthor, err := intToAuthorID(values[3])
+	if err != nil {
+		return core.LineHistoryChange{}, err
+	}
+
+	currTick, err := intToTickNumber(values[4])
+	if err != nil {
+		return core.LineHistoryChange{}, err
 	}
 
 	return core.LineHistoryChange{
-		FileId: core.FileId(values[0]), PrevAuthor: core.AuthorId(values[1]),
-		PrevTick: core.TickNumber(values[2]), CurrAuthor: core.AuthorId(values[3]),
-		CurrTick: core.TickNumber(values[4]), Delta: values[5],
+		FileId: fileID, PrevAuthor: prevAuthor, PrevTick: prevTick,
+		CurrAuthor: currAuthor, CurrTick: currTick, Delta: values[5],
 	}, nil
+}
+
+func lineHistoryFileID(value int) (core.FileId, error) {
+	if value < math.MinInt32 || value > math.MaxInt32 {
+		return 0, fmt.Errorf("%w: file ID %d", errLineHistoryIntegerRange, value)
+	}
+
+	return core.FileId(value), nil
 }
 
 func (analyser *LineHistoryLoader) buildCommits() []*object.Commit {

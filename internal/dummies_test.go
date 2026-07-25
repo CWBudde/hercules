@@ -22,7 +22,7 @@ func TestCreateDummyBlob(t *testing.T) {
 	assert.Equal(t, err, io.EOF)
 	assert.Equal(t, 0, n)
 	assert.Equal(t, buffer[0], byte(0xff))
-	reader.Close()
+	require.NoError(t, reader.Close())
 }
 
 func TestCreateDummyBlobFails(t *testing.T) {
@@ -32,7 +32,9 @@ func TestCreateDummyBlobFails(t *testing.T) {
 	assert.Nil(t, reader)
 	require.Error(t, err)
 	assert.Panics(t, func() {
-		CreateDummyBlob(plumbing.NewHash("334cde09da4afcb74f8d2b3e6fd6cce61228b485"), true, true)
+		_, _ = CreateDummyBlob(
+			plumbing.NewHash("334cde09da4afcb74f8d2b3e6fd6cce61228b485"), true, true,
+		)
 	})
 }
 

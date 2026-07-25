@@ -3,6 +3,7 @@ package ast
 import (
 	"errors"
 	"fmt"
+	"math"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -47,20 +48,31 @@ type languageSpec struct {
 	commentNodeTypes    map[string]struct{}
 }
 
+const (
+	nodeTypeFunctionDeclaration          = "function_declaration"
+	nodeTypeIdentifier                   = "identifier"
+	nodeTypeTypeIdentifier               = "type_identifier"
+	nodeTypeComment                      = "comment"
+	nodeTypeGeneratorFunctionDeclaration = "generator_function_declaration"
+	nodeTypeMethodDefinition             = "method_definition"
+	nodeTypePropertyIdentifier           = "property_identifier"
+	nodeTypePrivatePropertyIdentifier    = "private_property_identifier"
+)
+
 var languageByExtension = map[string]languageSpec{
 	".go": {
 		language: grammars.GoLanguage(),
 		functionNodeTypes: map[string]struct{}{
-			"function_declaration": {},
-			"method_declaration":   {},
+			nodeTypeFunctionDeclaration: {},
+			"method_declaration":        {},
 		},
 		identifierNodeTypes: map[string]struct{}{
-			"identifier":       {},
-			"field_identifier": {},
-			"type_identifier":  {},
+			nodeTypeIdentifier:     {},
+			"field_identifier":     {},
+			nodeTypeTypeIdentifier: {},
 		},
 		commentNodeTypes: map[string]struct{}{
-			"comment": {},
+			nodeTypeComment: {},
 		},
 	},
 	".py": {
@@ -69,110 +81,110 @@ var languageByExtension = map[string]languageSpec{
 			"function_definition": {},
 		},
 		identifierNodeTypes: map[string]struct{}{
-			"identifier": {},
+			nodeTypeIdentifier: {},
 		},
 		commentNodeTypes: map[string]struct{}{
-			"comment": {},
+			nodeTypeComment: {},
 		},
 	},
 	".js": {
 		language: grammars.JavascriptLanguage(),
 		functionNodeTypes: map[string]struct{}{
-			"function_declaration":           {},
-			"generator_function_declaration": {},
-			"method_definition":              {},
+			nodeTypeFunctionDeclaration:          {},
+			nodeTypeGeneratorFunctionDeclaration: {},
+			nodeTypeMethodDefinition:             {},
 		},
 		identifierNodeTypes: map[string]struct{}{
-			"identifier":                  {},
-			"property_identifier":         {},
-			"private_property_identifier": {},
+			nodeTypeIdentifier:                {},
+			nodeTypePropertyIdentifier:        {},
+			nodeTypePrivatePropertyIdentifier: {},
 		},
 		commentNodeTypes: map[string]struct{}{
-			"comment": {},
+			nodeTypeComment: {},
 		},
 	},
 	".jsx": {
 		language: grammars.JavascriptLanguage(),
 		functionNodeTypes: map[string]struct{}{
-			"function_declaration":           {},
-			"generator_function_declaration": {},
-			"method_definition":              {},
+			nodeTypeFunctionDeclaration:          {},
+			nodeTypeGeneratorFunctionDeclaration: {},
+			nodeTypeMethodDefinition:             {},
 		},
 		identifierNodeTypes: map[string]struct{}{
-			"identifier":                  {},
-			"property_identifier":         {},
-			"private_property_identifier": {},
+			nodeTypeIdentifier:                {},
+			nodeTypePropertyIdentifier:        {},
+			nodeTypePrivatePropertyIdentifier: {},
 		},
 		commentNodeTypes: map[string]struct{}{
-			"comment": {},
+			nodeTypeComment: {},
 		},
 	},
 	".mjs": {
 		language: grammars.JavascriptLanguage(),
 		functionNodeTypes: map[string]struct{}{
-			"function_declaration":           {},
-			"generator_function_declaration": {},
-			"method_definition":              {},
+			nodeTypeFunctionDeclaration:          {},
+			nodeTypeGeneratorFunctionDeclaration: {},
+			nodeTypeMethodDefinition:             {},
 		},
 		identifierNodeTypes: map[string]struct{}{
-			"identifier":                  {},
-			"property_identifier":         {},
-			"private_property_identifier": {},
+			nodeTypeIdentifier:                {},
+			nodeTypePropertyIdentifier:        {},
+			nodeTypePrivatePropertyIdentifier: {},
 		},
 		commentNodeTypes: map[string]struct{}{
-			"comment": {},
+			nodeTypeComment: {},
 		},
 	},
 	".cjs": {
 		language: grammars.JavascriptLanguage(),
 		functionNodeTypes: map[string]struct{}{
-			"function_declaration":           {},
-			"generator_function_declaration": {},
-			"method_definition":              {},
+			nodeTypeFunctionDeclaration:          {},
+			nodeTypeGeneratorFunctionDeclaration: {},
+			nodeTypeMethodDefinition:             {},
 		},
 		identifierNodeTypes: map[string]struct{}{
-			"identifier":                  {},
-			"property_identifier":         {},
-			"private_property_identifier": {},
+			nodeTypeIdentifier:                {},
+			nodeTypePropertyIdentifier:        {},
+			nodeTypePrivatePropertyIdentifier: {},
 		},
 		commentNodeTypes: map[string]struct{}{
-			"comment": {},
+			nodeTypeComment: {},
 		},
 	},
 	".ts": {
 		language: grammars.TypescriptLanguage(),
 		functionNodeTypes: map[string]struct{}{
-			"function":                       {},
-			"function_declaration":           {},
-			"generator_function_declaration": {},
-			"method_definition":              {},
+			"function":                           {},
+			nodeTypeFunctionDeclaration:          {},
+			nodeTypeGeneratorFunctionDeclaration: {},
+			nodeTypeMethodDefinition:             {},
 		},
 		identifierNodeTypes: map[string]struct{}{
-			"identifier":                  {},
-			"property_identifier":         {},
-			"private_property_identifier": {},
-			"type_identifier":             {},
+			nodeTypeIdentifier:                {},
+			nodeTypePropertyIdentifier:        {},
+			nodeTypePrivatePropertyIdentifier: {},
+			nodeTypeTypeIdentifier:            {},
 		},
 		commentNodeTypes: map[string]struct{}{
-			"comment": {},
+			nodeTypeComment: {},
 		},
 	},
 	".tsx": {
 		language: grammars.TypescriptLanguage(),
 		functionNodeTypes: map[string]struct{}{
-			"function":                       {},
-			"function_declaration":           {},
-			"generator_function_declaration": {},
-			"method_definition":              {},
+			"function":                           {},
+			nodeTypeFunctionDeclaration:          {},
+			nodeTypeGeneratorFunctionDeclaration: {},
+			nodeTypeMethodDefinition:             {},
 		},
 		identifierNodeTypes: map[string]struct{}{
-			"identifier":                  {},
-			"property_identifier":         {},
-			"private_property_identifier": {},
-			"type_identifier":             {},
+			nodeTypeIdentifier:                {},
+			nodeTypePropertyIdentifier:        {},
+			nodeTypePrivatePropertyIdentifier: {},
+			nodeTypeTypeIdentifier:            {},
 		},
 		commentNodeTypes: map[string]struct{}{
-			"comment": {},
+			nodeTypeComment: {},
 		},
 	},
 	".java": {
@@ -182,7 +194,7 @@ var languageByExtension = map[string]languageSpec{
 			"constructor_declaration": {},
 		},
 		identifierNodeTypes: map[string]struct{}{
-			"identifier": {},
+			nodeTypeIdentifier: {},
 		},
 		commentNodeTypes: map[string]struct{}{
 			"line_comment":  {},
@@ -380,21 +392,21 @@ func buildSitterRanges(ranges []LineRange, lineStarts []int, numLines int) []sit
 	}
 
 	clamped := make([]LineRange, 0, len(ranges))
-	for _, r := range ranges {
-		a, b := r.Start, r.End
-		if a < 1 {
-			a = 1
+	for _, lineRange := range ranges {
+		start, end := lineRange.Start, lineRange.End
+		if start < 1 {
+			start = 1
 		}
 
-		if b > numLines {
-			b = numLines
+		if end > numLines {
+			end = numLines
 		}
 
-		if a > b {
+		if start > end {
 			continue
 		}
 
-		clamped = append(clamped, LineRange{Start: a, End: b})
+		clamped = append(clamped, LineRange{Start: start, End: end})
 	}
 
 	if len(clamped) == 0 {
@@ -406,17 +418,17 @@ func buildSitterRanges(ranges []LineRange, lineStarts []int, numLines int) []sit
 	})
 
 	merged := clamped[:1]
-	for _, r := range clamped[1:] {
+	for _, lineRange := range clamped[1:] {
 		last := &merged[len(merged)-1]
-		if r.Start <= last.End+1 {
-			if r.End > last.End {
-				last.End = r.End
+		if lineRange.Start <= last.End+1 {
+			if lineRange.End > last.End {
+				last.End = lineRange.End
 			}
 
 			continue
 		}
 
-		merged = append(merged, r)
+		merged = append(merged, lineRange)
 	}
 
 	out := make([]sitter.Range, 0, len(merged))
@@ -426,8 +438,8 @@ func buildSitterRanges(ranges []LineRange, lineStarts []int, numLines int) []sit
 		out = append(out, sitter.Range{
 			StartPoint: pointAt(startByte, lineStarts),
 			EndPoint:   pointAt(endByte, lineStarts),
-			StartByte:  uint32(startByte),
-			EndByte:    uint32(endByte),
+			StartByte:  checkedSitterUint32(startByte),
+			EndByte:    checkedSitterUint32(endByte),
 		})
 	}
 
@@ -440,9 +452,19 @@ func pointAt(offset int, lineStarts []int) sitter.Point {
 	r := max(sort.SearchInts(lineStarts, offset+1)-1, 0)
 
 	return sitter.Point{
-		Row:    uint32(r),
-		Column: uint32(offset - lineStarts[r]),
+		Row:    checkedSitterUint32(r),
+		Column: checkedSitterUint32(offset - lineStarts[r]),
 	}
+}
+
+// checkedSitterUint32 converts source positions to tree-sitter's native
+// 32-bit coordinate representation without silently wrapping oversized input.
+func checkedSitterUint32(value int) uint32 {
+	if value < 0 || uint64(value) > math.MaxUint32 {
+		panic("source position exceeds tree-sitter's uint32 range")
+	}
+
+	return uint32(value)
 }
 
 func extractByTypes(
@@ -504,7 +526,7 @@ func extractedNodeName(node *sitter.Node, source []byte, language *sitter.Langua
 		for i := range node.NamedChildCount() {
 			child := node.NamedChild(i)
 			switch child.Type(language) {
-			case "identifier", "field_identifier", "property_identifier", "private_property_identifier":
+			case nodeTypeIdentifier, "field_identifier", nodeTypePropertyIdentifier, nodeTypePrivatePropertyIdentifier:
 				nameNode = child
 			}
 

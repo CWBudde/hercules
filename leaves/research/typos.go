@@ -2,8 +2,10 @@ package research
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
+	"math"
 	"unicode/utf8"
 
 	"github.com/go-git/go-git/v5"
@@ -19,6 +21,14 @@ import (
 	items "github.com/cwbudde/hercules/internal/plumbing"
 	ast_items "github.com/cwbudde/hercules/internal/plumbing/ast"
 	"github.com/cwbudde/hercules/internal/yaml"
+)
+
+var (
+	errInvalidCommitDependency      = errors.New("invalid commit dependency")
+	errInvalidBlobCacheDependency   = errors.New("invalid blob cache dependency")
+	errInvalidFileDiffDependency    = errors.New("invalid file diff dependency")
+	errInvalidTreeChangesDependency = errors.New("invalid tree changes dependency")
+	errTypoLineRange                = errors.New("typo line exceeds the protobuf int32 range")
 )
 
 // TyposDatasetBuilder collects pairs of typo-fix in source code identifiers.
@@ -177,11 +187,28 @@ func (tdb *TyposDatasetBuilder) Consume(deps map[string]any) (map[string]any, er
 		return noDependencies(), nil
 	}
 
-	commit := deps[core.DependencyCommit].(*object.Commit).Hash
-	cache := deps[items.DependencyBlobCache].(map[plumbing.Hash]*items.CachedBlob)
-	diffs := deps[items.DependencyFileDiff].(map[string]items.FileDiffData)
+	commitObject, ok := deps[core.DependencyCommit].(*object.Commit)
+	if !ok {
+		return nil, errInvalidCommitDependency
+	}
 
-	changes := deps[items.DependencyTreeChanges].(object.Changes)
+	commit := commitObject.Hash
+
+	cache, ok := deps[items.DependencyBlobCache].(map[plumbing.Hash]*items.CachedBlob)
+	if !ok {
+		return nil, errInvalidBlobCacheDependency
+	}
+
+	diffs, ok := deps[items.DependencyFileDiff].(map[string]items.FileDiffData)
+	if !ok {
+		return nil, errInvalidFileDiffDependency
+	}
+
+	changes, ok := deps[items.DependencyTreeChanges].(object.Changes)
+	if !ok {
+		return nil, errInvalidTreeChangesDependency
+	}
+
 	for _, change := range changes {
 		typos, err := tdb.typosFromChange(commit, change, cache, diffs)
 		if err != nil {
@@ -350,13 +377,17 @@ func (tdb *TyposDatasetBuilder) serializeBinary(result *TyposResult, writer io.W
 	message := pb.TyposDataset{}
 
 	message.Typos = make([]*pb.Typo, len(result.Typos))
-	for i, t := range result.Typos {
-		message.Typos[i] = &pb.Typo{
-			Wrong:   t.Wrong,
-			Correct: t.Correct,
-			Commit:  t.Commit.String(),
-			File:    t.File,
-			Line:    int32(t.Line),
+	for typoIndex, typo := range result.Typos {
+		if typo.Line < math.MinInt32 || typo.Line > math.MaxInt32 {
+			return fmt.Errorf("%w: %d", errTypoLineRange, typo.Line)
+		}
+
+		message.Typos[typoIndex] = &pb.Typo{
+			Wrong:   typo.Wrong,
+			Correct: typo.Correct,
+			Commit:  typo.Commit.String(),
+			File:    typo.File,
+			Line:    int32(typo.Line),
 		}
 	}
 

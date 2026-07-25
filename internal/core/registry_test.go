@@ -26,11 +26,11 @@ func getRegistry() *PipelineItemRegistry {
 type dummyPipelineItem struct{}
 
 func (item *dummyPipelineItem) Name() string {
-	return "dummy"
+	return testDummyItem
 }
 
 func (item *dummyPipelineItem) Provides() []string {
-	return []string{"dummy"}
+	return []string{testDummyItem}
 }
 
 func (item *dummyPipelineItem) Requires() []string {
@@ -38,7 +38,7 @@ func (item *dummyPipelineItem) Requires() []string {
 }
 
 func (item *dummyPipelineItem) Features() []string {
-	return []string{"power"}
+	return []string{testPowerFeature}
 }
 
 func (item *dummyPipelineItem) Configure(facts map[string]any) error {
@@ -52,7 +52,7 @@ func (item *dummyPipelineItem) ConfigureUpstream(facts map[string]any) error {
 func (item *dummyPipelineItem) ListConfigurationOptions() []ConfigurationOption {
 	options := [...]ConfigurationOption{{
 		Name:        "DummyOption",
-		Description: "The option description.",
+		Description: testOptionDescription,
 		Flag:        "dummy-option",
 		Type:        BoolConfigurationOption,
 		Default:     false,
@@ -65,7 +65,7 @@ func (item *dummyPipelineItem) Initialize(repository *git.Repository) error {
 }
 
 func (item *dummyPipelineItem) Consume(deps map[string]any) (map[string]any, error) {
-	return map[string]any{"dummy": nil}, nil
+	return map[string]any{testDummyItem: nil}, nil
 }
 
 func (item *dummyPipelineItem) Fork(n int) []PipelineItem {
@@ -78,11 +78,11 @@ func (item *dummyPipelineItem) Merge(branches []PipelineItem) {
 type dummyPipelineItem2 struct{}
 
 func (item *dummyPipelineItem2) Name() string {
-	return "dummy2"
+	return testDummyItemTwo
 }
 
 func (item *dummyPipelineItem2) Provides() []string {
-	return []string{"dummy2"}
+	return []string{testDummyItemTwo}
 }
 
 func (item *dummyPipelineItem2) Requires() []string {
@@ -110,7 +110,7 @@ func (item *dummyPipelineItem2) Initialize(repository *git.Repository) error {
 }
 
 func (item *dummyPipelineItem2) Consume(deps map[string]any) (map[string]any, error) {
-	return map[string]any{"dummy2": nil}, nil
+	return map[string]any{testDummyItemTwo: nil}, nil
 }
 
 func (item *dummyPipelineItem2) Fork(n int) []PipelineItem {
@@ -123,15 +123,15 @@ func (item *dummyPipelineItem2) Merge(branches []PipelineItem) {
 type dummyPipelineItem3 struct{}
 
 func (item *dummyPipelineItem3) Name() string {
-	return "dummy3"
+	return testDummyItemThree
 }
 
 func (item *dummyPipelineItem3) Provides() []string {
-	return []string{"dummy3"}
+	return []string{testDummyItemThree}
 }
 
 func (item *dummyPipelineItem3) Requires() []string {
-	return []string{"dummy"}
+	return []string{testDummyItem}
 }
 
 func (item *dummyPipelineItem3) Configure(facts map[string]any) error {
@@ -151,7 +151,7 @@ func (item *dummyPipelineItem3) Initialize(repository *git.Repository) error {
 }
 
 func (item *dummyPipelineItem3) Consume(deps map[string]any) (map[string]any, error) {
-	return map[string]any{"dummy": nil}, nil
+	return map[string]any{testDummyItem: nil}, nil
 }
 
 func (item *dummyPipelineItem3) Fork(n int) []PipelineItem {
@@ -172,7 +172,7 @@ func (item *dummyPipelineItem4) Provides() []string {
 }
 
 func (item *dummyPipelineItem4) Requires() []string {
-	return []string{"dummy3"}
+	return []string{testDummyItemThree}
 }
 
 func (item *dummyPipelineItem4) Configure(facts map[string]any) error {
@@ -192,7 +192,7 @@ func (item *dummyPipelineItem4) Initialize(repository *git.Repository) error {
 }
 
 func (item *dummyPipelineItem4) Consume(deps map[string]any) (map[string]any, error) {
-	return map[string]any{"dummy": nil}, nil
+	return map[string]any{testDummyItem: nil}, nil
 }
 
 func (item *dummyPipelineItem4) Fork(n int) []PipelineItem {
@@ -219,14 +219,14 @@ func TestRegistryAddFlags(t *testing.T) {
 	reg.Register(&testPipelineItem{})
 	reg.Register(&dummyPipelineItem{})
 	testCmd := &cobra.Command{
-		Use:   "test",
-		Short: "Temporary command to test the stuff.",
+		Use:   testFeatureName,
+		Short: testCommandDescription,
 		Long:  ``,
 		Args:  cobra.MaximumNArgs(0),
 		Run:   func(cmd *cobra.Command, args []string) {},
 	}
 	facts, deployed, activations := reg.AddFlags(testCmd.Flags())
-	assert.Equal(t, map[string][]string{"test-option": {"Test"}}, activations)
+	assert.Equal(t, map[string][]string{"test-option": {testItemName}}, activations)
 	assert.Len(t, facts, 7)
 	assert.IsType(t, 0, facts[(&testPipelineItem{}).ListConfigurationOptions()[0].Name])
 	assert.IsType(t, true, facts[(&dummyPipelineItem{}).ListConfigurationOptions()[0].Name])
@@ -257,22 +257,22 @@ func TestRegistryFeatures(t *testing.T) {
 	reg.Register(&dummyPipelineItem{})
 	reg.Register(&dummyPipelineItem2{})
 	testCmd := &cobra.Command{
-		Use:   "test",
-		Short: "Temporary command to test the stuff.",
+		Use:   testFeatureName,
+		Short: testCommandDescription,
 		Long:  ``,
 		Args:  cobra.MaximumNArgs(0),
 		Run:   func(cmd *cobra.Command, args []string) {},
 	}
 	reg.AddFlags(testCmd.Flags())
-	args := [...]string{"--feature", "other", "--feature", "power"}
+	args := [...]string{testFeatureFlag, "other", testFeatureFlag, testPowerFeature}
 	require.NoError(t, testCmd.ParseFlags(args[:]))
 	pipeline := NewPipeline(test.FixtureRepository())
-	val, _ := pipeline.GetFeature("power")
+	val, _ := pipeline.GetFeature(testPowerFeature)
 	assert.False(t, val)
 	val, _ = pipeline.GetFeature("other")
 	assert.False(t, val)
 	pipeline.SetFeaturesFromFlags(reg)
-	val, _ = pipeline.GetFeature("power")
+	val, _ = pipeline.GetFeature(testPowerFeature)
 	assert.True(t, val)
 	val, _ = pipeline.GetFeature("other")
 	assert.True(t, val)
@@ -282,14 +282,14 @@ func TestRegistryFeaturesUnknownFeature(t *testing.T) {
 	reg := getRegistry()
 	reg.Register(&dummyPipelineItem{})
 	testCmd := &cobra.Command{
-		Use:   "test",
-		Short: "Temporary command to test the stuff.",
+		Use:   testFeatureName,
+		Short: testCommandDescription,
 		Long:  ``,
 		Args:  cobra.MaximumNArgs(0),
 		Run:   func(cmd *cobra.Command, args []string) {},
 	}
 	reg.AddFlags(testCmd.Flags())
-	err := testCmd.ParseFlags([]string{"--feature", "missing"})
+	err := testCmd.ParseFlags([]string{testFeatureFlag, "missing"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "is not registered")
 }
@@ -336,7 +336,7 @@ func TestRegistryFeaturedItems(t *testing.T) {
 	reg.Register(&dummyPipelineItem4{})
 	featured := reg.GetFeaturedItems()
 	assert.Len(t, featured, 1)
-	power := featured["power"]
+	power := featured[testPowerFeature]
 	assert.Len(t, power, 5)
 	assert.Equal(t, power[0].Name(), (&testPipelineItem{}).Name())
 	assert.Equal(t, power[1].Name(), (&dependingTestPipelineItem{}).Name())
@@ -348,10 +348,10 @@ func TestRegistryFeaturedItems(t *testing.T) {
 func TestRegistryPathMasquerade(t *testing.T) {
 	fs := pflag.NewFlagSet(os.Args[0], pflag.ContinueOnError)
 	var value string
-	fs.StringVar(&value, "test", "", "usage")
-	flag := fs.Lookup("test")
+	fs.StringVar(&value, testFeatureName, "", "usage")
+	flag := fs.Lookup(testFeatureName)
 	PathifyFlagValue(flag)
-	assert.Equal(t, "string", flag.Value.Type())
+	assert.Equal(t, configurationStringType, flag.Value.Type())
 	require.NoError(t, flag.Value.Set("xxx"))
 	assert.Equal(t, "xxx", flag.Value.String())
 	EnablePathFlagTypeMasquerade()

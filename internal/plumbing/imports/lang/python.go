@@ -7,59 +7,50 @@ import (
 	"github.com/odvcencio/gotreesitter/grammars"
 )
 
-var (
-	pyLang = grammars.PythonLanguage()
+var _ = RegisterLanguage(newPyExtractor())
 
-	// Static imports: each query targets one of the AST shapes Python uses
-	// for `import X`, `import X as Y`, `from X import ...`, and relative
-	// imports (`from . import ...`).
-	pyStaticQuerySources = []string{
+type pyExtractor struct {
+	language      *sitter.Language
+	staticQueries []*sitter.Query
+	dynamicQuery  *sitter.Query
+}
+
+func newPyExtractor() pyExtractor {
+	language := grammars.PythonLanguage()
+	querySources := []string{
 		`((import_statement name: (dotted_name (identifier)) @name))`,
 		`((import_statement name: (aliased_import name: (dotted_name (identifier)) @name)))`,
 		`((import_from_statement module_name: (dotted_name (identifier)) @name))`,
 		`((import_from_statement module_name: (relative_import (import_prefix)) @name))`,
 	}
-	pyStaticQueries []*sitter.Query
 
-	// Dynamic imports: detect calls to __import__ / import_file with a
-	// string literal argument.
-	pyDynamicQuery = `((call function: (identifier) @fn arguments: (argument_list (string) @arg)))`
-	pyDynamicQ     *sitter.Query
-	pyDynamicFns   = map[string]struct{}{
-		"__import__":  {},
-		"import_file": {},
-	}
-)
-
-var _ = initializePythonExtractor()
-
-func initializePythonExtractor() struct{} {
-	RegisterLanguage(pyExtractor{})
-
-	pyStaticQueries = make([]*sitter.Query, len(pyStaticQuerySources))
-	for i, src := range pyStaticQuerySources {
-		pyStaticQueries[i] = mustQuery(src, pyLang)
+	staticQueries := make([]*sitter.Query, len(querySources))
+	for index, source := range querySources {
+		staticQueries[index] = mustQuery(source, language)
 	}
 
-	pyDynamicQ = mustQuery(pyDynamicQuery, pyLang)
-
-	return struct{}{}
+	return pyExtractor{
+		language:      language,
+		staticQueries: staticQueries,
+		dynamicQuery: mustQuery(
+			`((call function: (identifier) @fn arguments: (argument_list (string) @arg)))`,
+			language,
+		),
+	}
 }
-
-type pyExtractor struct{}
 
 func (pyExtractor) Aliases() []string { return []string{"Python"} }
 
-func (pyExtractor) Imports(content []byte) ([]string, error) {
-	root := parseFull(pyLang, content)
+func (extractor pyExtractor) Imports(content []byte) ([]string, error) {
+	root := parseFull(extractor.language, content)
 	if root == nil {
 		return nil, nil
 	}
 
 	out := make([]string, 0)
 
-	for _, q := range pyStaticQueries {
-		runQuery(q, root, pyLang, content, func(captures []sitter.QueryCapture) {
+	for _, query := range extractor.staticQueries {
+		runQuery(query, root, extractor.language, content, func(captures []sitter.QueryCapture) {
 			if len(captures) != 1 {
 				return
 			}
@@ -68,13 +59,13 @@ func (pyExtractor) Imports(content []byte) ([]string, error) {
 		})
 	}
 
-	runQuery(pyDynamicQ, root, pyLang, content, func(captures []sitter.QueryCapture) {
+	runQuery(extractor.dynamicQuery, root, extractor.language, content, func(captures []sitter.QueryCapture) {
 		if len(captures) != 2 {
 			return
 		}
 
-		fn := nodeTextString(captures[0].Node, content)
-		if _, ok := pyDynamicFns[fn]; !ok {
+		functionName := nodeTextString(captures[0].Node, content)
+		if functionName != "__import__" && functionName != "import_file" {
 			return
 		}
 

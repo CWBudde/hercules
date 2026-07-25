@@ -331,14 +331,14 @@ func (kd *KnowledgeDiffusionAnalysis) MergeResults(
 	// Merge files: union of authors per file.
 	maps.Copy(merged.Files, kdr1.Files)
 
-	for name, f := range kdr2.Files {
+	for name, fileData := range kdr2.Files {
 		if existing, ok := merged.Files[name]; ok {
 			// Merge author sets: keep the one with more editors.
-			if f.UniqueEditorsCount > existing.UniqueEditorsCount {
-				merged.Files[name] = f
+			if fileData.UniqueEditorsCount > existing.UniqueEditorsCount {
+				merged.Files[name] = fileData
 			}
 		} else {
-			merged.Files[name] = f
+			merged.Files[name] = fileData
 		}
 	}
 
@@ -377,14 +377,14 @@ func (kd *KnowledgeDiffusionAnalysis) serializeText(result *KnowledgeDiffusionRe
 	fmt.Fprintln(writer, "    files:")
 
 	for _, name := range fileNames {
-		f := result.Files[name]
+		fileData := result.Files[name]
 		fmt.Fprintf(writer, "      %s:\n", yaml.SafeString(name))
-		fmt.Fprintf(writer, "        unique_editors: %d\n", f.UniqueEditorsCount)
-		fmt.Fprintf(writer, "        recent_editors: %d\n", f.RecentEditorsCount)
+		fmt.Fprintf(writer, "        unique_editors: %d\n", fileData.UniqueEditorsCount)
+		fmt.Fprintf(writer, "        recent_editors: %d\n", fileData.RecentEditorsCount)
 
 		// Timeline: sort ticks.
-		ticks := make([]int, 0, len(f.UniqueEditorsOverTime))
-		for tick := range f.UniqueEditorsOverTime {
+		ticks := make([]int, 0, len(fileData.UniqueEditorsOverTime))
+		for tick := range fileData.UniqueEditorsOverTime {
 			ticks = append(ticks, tick)
 		}
 
@@ -396,7 +396,7 @@ func (kd *KnowledgeDiffusionAnalysis) serializeText(result *KnowledgeDiffusionRe
 				fmt.Fprint(writer, ", ")
 			}
 
-			fmt.Fprintf(writer, "%d: %d", tick, f.UniqueEditorsOverTime[tick])
+			fmt.Fprintf(writer, "%d: %d", tick, fileData.UniqueEditorsOverTime[tick])
 		}
 
 		fmt.Fprintln(writer, "}")
@@ -426,26 +426,50 @@ func (kd *KnowledgeDiffusionAnalysis) serializeText(result *KnowledgeDiffusionRe
 }
 
 func (kd *KnowledgeDiffusionAnalysis) serializeBinary(result *KnowledgeDiffusionResult, writer io.Writer) error {
+	windowMonths, err := intToProtoInt32(result.WindowMonths, "knowledge-diffusion window months")
+	if err != nil {
+		return err
+	}
 	message := pb.KnowledgeDiffusionResults{
 		DevIndex:     result.reversedPeopleDict,
 		TickSize:     int64(result.tickSize),
-		WindowMonths: int32(result.WindowMonths),
+		WindowMonths: windowMonths,
 	}
 
 	message.Files = make(map[string]*pb.KnowledgeDiffusionFileData, len(result.Files))
-	for fileName, f := range result.Files {
-		pbFile := &pb.KnowledgeDiffusionFileData{
-			UniqueEditorsCount:    int32(f.UniqueEditorsCount),
-			RecentEditorsCount:    int32(f.RecentEditorsCount),
-			UniqueEditorsOverTime: make(map[int32]int32, len(f.UniqueEditorsOverTime)),
-			Authors:               make([]int32, len(f.Authors)),
+	for fileName, fileData := range result.Files {
+		uniqueEditors, err := intToProtoInt32(fileData.UniqueEditorsCount, "knowledge-diffusion unique editors")
+		if err != nil {
+			return err
 		}
-		for tick, count := range f.UniqueEditorsOverTime {
-			pbFile.UniqueEditorsOverTime[int32(tick)] = int32(count)
+		recentEditors, err := intToProtoInt32(fileData.RecentEditorsCount, "knowledge-diffusion recent editors")
+		if err != nil {
+			return err
+		}
+		pbFile := &pb.KnowledgeDiffusionFileData{
+			UniqueEditorsCount:    uniqueEditors,
+			RecentEditorsCount:    recentEditors,
+			UniqueEditorsOverTime: make(map[int32]int32, len(fileData.UniqueEditorsOverTime)),
+			Authors:               make([]int32, len(fileData.Authors)),
+		}
+		for tick, count := range fileData.UniqueEditorsOverTime {
+			tickID, err := intToProtoInt32(tick, "knowledge-diffusion tick")
+			if err != nil {
+				return err
+			}
+			editorCount, err := intToProtoInt32(count, "knowledge-diffusion editor count")
+			if err != nil {
+				return err
+			}
+			pbFile.UniqueEditorsOverTime[tickID] = editorCount
 		}
 
-		for i, a := range f.Authors {
-			pbFile.Authors[i] = int32(a)
+		for i, a := range fileData.Authors {
+			authorID, err := intToProtoInt32(a, "knowledge-diffusion author")
+			if err != nil {
+				return err
+			}
+			pbFile.Authors[i] = authorID
 		}
 
 		message.Files[fileName] = pbFile
@@ -453,7 +477,15 @@ func (kd *KnowledgeDiffusionAnalysis) serializeBinary(result *KnowledgeDiffusion
 
 	message.Distribution = make(map[int32]int32, len(result.Distribution))
 	for editorCount, fileCount := range result.Distribution {
-		message.Distribution[int32(editorCount)] = int32(fileCount)
+		pbEditorCount, err := intToProtoInt32(editorCount, "knowledge-diffusion distribution editor count")
+		if err != nil {
+			return err
+		}
+		pbFileCount, err := intToProtoInt32(fileCount, "knowledge-diffusion distribution file count")
+		if err != nil {
+			return err
+		}
+		message.Distribution[pbEditorCount] = pbFileCount
 	}
 
 	serialized, err := proto.Marshal(&message)

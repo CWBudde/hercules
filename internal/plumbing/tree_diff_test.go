@@ -93,14 +93,14 @@ func TestTreeDiffConsume(t *testing.T) {
 	changes := res[DependencyTreeChanges].(object.Changes)
 	assert.Len(t, changes, 12)
 	baseline := map[string]merkletrie.Action{
-		"analyser.go":               merkletrie.Delete,
-		"cmd/hercules/main.go":      merkletrie.Modify,
+		testAnalyserPath:            merkletrie.Delete,
+		testHerculesMainPath:        merkletrie.Modify,
 		"blob_cache.go":             merkletrie.Insert,
-		"burndown.go":               merkletrie.Insert,
+		testBurndownPath:            merkletrie.Insert,
 		"day.go":                    merkletrie.Insert,
 		"dummies.go":                merkletrie.Insert,
 		"identity.go":               merkletrie.Insert,
-		"pipeline.go":               merkletrie.Insert,
+		testPipelinePath:            merkletrie.Insert,
 		"renames.go":                merkletrie.Insert,
 		"toposort/toposort.go":      merkletrie.Insert,
 		"toposort/toposort_test.go": merkletrie.Insert,
@@ -229,8 +229,8 @@ func TestTreeDiffConsumeLanguageFilterFirst(t *testing.T) {
 	assert.Len(t, res, 1)
 	changes := res[DependencyTreeChanges].(object.Changes)
 	assert.Len(t, changes, 6)
-	assert.Equal(t, "analyser.go", changes[0].To.Name)
-	assert.Equal(t, "cmd/hercules/main.go", changes[1].To.Name)
+	assert.Equal(t, testAnalyserPath, changes[0].To.Name)
+	assert.Equal(t, testHerculesMainPath, changes[1].To.Name)
 	assert.Equal(t, "doc.go", changes[2].To.Name)
 	assert.Equal(t, "file.go", changes[3].To.Name)
 	assert.Equal(t, "file_test.go", changes[4].To.Name)
@@ -257,7 +257,7 @@ func TestTreeDiffConsumeLanguageFilter(t *testing.T) {
 	assert.Len(t, res, 1)
 	changes := res[DependencyTreeChanges].(object.Changes)
 	assert.Len(t, changes, 1)
-	assert.Equal(t, "labours.py", changes[0].To.Name)
+	assert.Equal(t, testLaboursPath, changes[0].To.Name)
 
 	// lowercase
 	assert.NoError(t, td.Configure(map[string]any{ConfigTreeDiffLanguages: []string{"python"}}))
@@ -265,7 +265,7 @@ func TestTreeDiffConsumeLanguageFilter(t *testing.T) {
 	assert.Len(t, res, 1)
 	changes = res[DependencyTreeChanges].(object.Changes)
 	assert.Len(t, changes, 1)
-	assert.Equal(t, "labours.py", changes[0].To.Name)
+	assert.Equal(t, testLaboursPath, changes[0].To.Name)
 }
 
 func TestTreeDiffFork(t *testing.T) {

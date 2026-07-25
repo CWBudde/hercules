@@ -10,7 +10,7 @@ import (
 	"log"
 	"maps"
 	"net/http"
-	_ "net/http/pprof"
+	httpPprof "net/http/pprof"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -123,7 +123,7 @@ type oneLineWriter struct {
 }
 
 func (writer oneLineWriter) Write(p []byte) (int, error) {
-	var n int
+	var bytesWritten int
 	strp := strings.TrimSpace(string(p))
 	if strings.HasSuffix(strp, "done.") || len(strp) == 0 {
 		strp = "cloning..."
@@ -132,10 +132,10 @@ func (writer oneLineWriter) Write(p []byte) (int, error) {
 	}
 	_, err := writer.Writer.Write([]byte("\033[2K\r"))
 	if err != nil {
-		return n, err
+		return bytesWritten, err
 	}
-	n, err = writer.Writer.Write([]byte(strp))
-	return n, err
+	bytesWritten, err = writer.Writer.Write([]byte(strp))
+	return bytesWritten, err
 }
 
 func loadSSHIdentity(sshIdentity string) (*ssh.PublicKeys, error) {
@@ -172,10 +172,9 @@ func createStubRepository() (*git.Repository, error) {
 	return repository, nil
 }
 
-func loadRepository(uri, cachePath string, disableStatus bool, sshIdentity string,
-) (*git.Repository, string, string) {
+func loadRepository(uri string) (*git.Repository, string, string) {
 	repository, repoURI, repoFeature, err := loadRepositoryWithError(
-		uri, cachePath, disableStatus, sshIdentity,
+		uri, "", true, "",
 	)
 	if err != nil {
 		log.Panicf("failed to open %s: %v", uri, err)
@@ -286,19 +285,19 @@ func (apf *arrayPluginFlags) Type() string {
 
 func loadPlugins() {
 	pluginFlags := arrayPluginFlags{}
-	fs := pflag.NewFlagSet(os.Args[0], pflag.ContinueOnError)
-	fs.SetOutput(io.Discard)
+	pluginFlagSet := pflag.NewFlagSet(os.Args[0], pflag.ContinueOnError)
+	pluginFlagSet.SetOutput(io.Discard)
 	pluginFlagName := "plugin"
 	const pluginDesc = "Load the specified plugin by the full or relative path. " +
 		"Can be specified multiple times. Requires a hercules binary built with " +
 		"CGO_ENABLED=1 (the default build is cgo-free and cannot load plugins); see PLUGINS.md."
-	fs.Var(&pluginFlags, pluginFlagName, pluginDesc)
-	err := cobra.MarkFlagFilename(fs, "plugin")
+	pluginFlagSet.Var(&pluginFlags, pluginFlagName, pluginDesc)
+	err := cobra.MarkFlagFilename(pluginFlagSet, "plugin")
 	if err != nil {
 		panic(err)
 	}
 	pflag.Var(&pluginFlags, pluginFlagName, pluginDesc)
-	_ = fs.Parse(os.Args[1:])
+	_ = pluginFlagSet.Parse(os.Args[1:])
 	for path := range pluginFlags {
 		_, err := plugin.Open(path)
 		if err != nil {
@@ -493,6 +492,7 @@ func startRootProfile(enabled bool) (func(), error) {
 
 	server := &http.Server{
 		Addr:              "localhost:6060",
+		Handler:           profilingHandler(),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	go func() {
@@ -509,6 +509,17 @@ func startRootProfile(enabled bool) (func(), error) {
 			log.Printf("close profiling server: %v", err)
 		}
 	}, nil
+}
+
+func profilingHandler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/debug/pprof/", httpPprof.Index)
+	mux.HandleFunc("/debug/pprof/cmdline", httpPprof.Cmdline)
+	mux.HandleFunc("/debug/pprof/profile", httpPprof.Profile)
+	mux.HandleFunc("/debug/pprof/symbol", httpPprof.Symbol)
+	mux.HandleFunc("/debug/pprof/trace", httpPprof.Trace)
+
+	return mux
 }
 
 type progressReporter struct {
@@ -805,20 +816,20 @@ func (v *flagSorter) weightFlagsOf(item core.PipelineItem, flagSet *pflag.FlagSe
 		weightFeature   = 100
 	)
 
-	w := weightProvide * len(item.Provides())
+	weight := weightProvide * len(item.Provides())
 	for _, opt := range item.ListConfigurationOptions() {
 		if flagSet.Changed(opt.Flag) {
-			w += weightParamFlag
+			weight += weightParamFlag
 		}
 	}
 	if featured, ok := item.(core.FeaturedPipelineItem); v.featureSet != nil && ok {
 		for _, feat := range featured.Features() {
 			if ok, _ := v.featureSet.GetFeature(feat); ok {
-				w += weightFeature
+				weight += weightFeature
 			}
 		}
 	}
-	return w
+	return weight
 }
 
 func printResults(
@@ -929,7 +940,7 @@ func rpad(s string, padding int) string {
 }
 
 // tmpl was adapted from cobra/cobra.go.
-func tmpl(w io.Writer, text string, data any) error {
+func tmpl(writer io.Writer, text string, data any) error {
 	templateFuncs := template.FuncMap{
 		"trim":                    strings.TrimSpace,
 		"trimRightSpace":          trimRightSpace,
@@ -942,7 +953,7 @@ func tmpl(w io.Writer, text string, data any) error {
 	t := template.New("top")
 	t.Funcs(templateFuncs)
 	template.Must(t.Parse(text))
-	return t.Execute(w, data)
+	return t.Execute(writer, data)
 }
 
 const helpTemplate = `Usage:{{if .c.Runnable}}
@@ -964,11 +975,13 @@ Flags:
 {{- $offset := sub ($desc | len) ($desc | trim | len)}}
 {{- $indent := splitList "   " $line | initial | join "   " | len | add 3 | add $offset | int}}
 {{- $wrap := sub 120 $indent | int}}
-{{- splitList "   " $line | initial | join "   "}}   {{cat "!" $desc | wrap $wrap | indent $indent | substr $indent -1 | substr 2 -1}}
+{{- splitList "   " $line | initial | join "   "}}   ` +
+	`{{cat "!" $desc | wrap $wrap | indent $indent | substr $indent -1 | substr 2 -1}}
 {{end}}{{end}}
 
 Analysis Targets:{{range .leaves}}
-      --{{rpad .Flag 40}}Runs {{.Name}} analysis.{{wrap 72 .Description | nindent 48}}{{range .ListConfigurationOptions}}
+      --{{rpad .Flag 40}}Runs {{.Name}} analysis.` +
+	`{{wrap 72 .Description | nindent 48}}{{range .ListConfigurationOptions}}
           --{{if .Type.String}}{{rpad (print .Flag " " .Type.String) 40}}{{else}}{{rpad .Flag 40}}{{end}}
           {{- $desc := dict "desc" .Description}}
           {{- if .Default}}{{$_ := set $desc "desc" (print .Description " The default value is " .FormatDefault ".")}}
@@ -978,7 +991,8 @@ Analysis Targets:{{range .leaves}}
 {{end}}
 
 Plumbing Options:{{range .plumbing}}{{$name := .Name}}{{range .ListConfigurationOptions}}
-      --{{if .Type.String}}{{rpad (print .Flag " " .Type.String " [" $name "]") 40}}{{else}}{{rpad (print .Flag " [" $name "]") 40}}
+      --{{if .Type.String}}{{rpad (print .Flag " " .Type.String " [" $name "]") 40}}` +
+	`{{else}}{{rpad (print .Flag " [" $name "]") 40}}
         {{- end}}
         {{- $desc := dict "desc" .Description}}
         {{- if .Default}}{{$_ := set $desc "desc" (print .Description " The default value is " .FormatDefault ".")}}
@@ -986,7 +1000,8 @@ Plumbing Options:{{range .plumbing}}{{$name := .Name}}{{range .ListConfiguration
         {{- $desc := pluck "desc" $desc | first}}{{$desc | wrap 72 | indent 48 | substr 48 -1}}{{end}}{{end}}
 
 --feature:{{range $key, $value := .features}}
-      {{rpad $key 42}}Enables {{range $index, $item := $value}}{{if $index}}, {{end}}{{$item.Name}}{{end}}.{{end}}{{if .c.HasAvailableInheritedFlags}}
+      {{rpad $key 42}}Enables {{range $index, $item := $value}}{{if $index}}, {{end}}` +
+	`{{$item.Name}}{{end}}.{{end}}{{if .c.HasAvailableInheritedFlags}}
 
 Global Flags:
 {{.c.InheritedFlags.FlagUsages | trimTrailingWhitespaces}}{{end}}{{if .c.HasHelpSubCommands}}
@@ -997,10 +1012,10 @@ Additional help topics:{{range .c.Commands}}{{if .IsAdditionalHelpTopicCommand}}
 Use "{{.c.CommandPath}} [command] --help" for more information about a command.{{end}}
 `
 
-func formatUsage(c *cobra.Command) error {
+func formatUsage(command *cobra.Command) error {
 	// the default UsageFunc() does some private magic c.mergePersistentFlags()
 	// this should stay on top
-	localFlags := c.LocalFlags()
+	localFlags := command.LocalFlags()
 	leaves := hercules.Registry.GetLeaves()
 	plumbing := hercules.Registry.GetPlumbingItems()
 	features := hercules.Registry.GetFeaturedItems()
@@ -1022,18 +1037,18 @@ func formatUsage(c *cobra.Command) error {
 		localFlags.Lookup(key).Hidden = true
 	}
 	args := map[string]any{
-		"c":        c,
+		"c":        command,
 		"leaves":   leaves,
 		"plumbing": plumbing,
 		"features": features,
 	}
 
-	err := tmpl(c.OutOrStderr(), helpTemplate, args)
+	err := tmpl(command.OutOrStderr(), helpTemplate, args)
 	for key := range filter {
 		localFlags.Lookup(key).Hidden = false
 	}
 	if err != nil {
-		c.Println(err)
+		command.Println(err)
 	}
 	return err
 }

@@ -66,10 +66,15 @@ func NewFile(id FileId, time, length int, allocator *rbtree.Allocator, updaters 
 	}
 
 	if length > 0 {
-		file.tree.Insert(rbtree.Item{Key: 0, Value: uint32(time)})
+		file.tree.Insert(rbtree.Item{Key: 0, Value: checkedUint32(time)})
 	}
 
-	file.tree.Insert(rbtree.Item{Key: uint32(length), Value: TreeEnd})
+	endPosition := uint32(TreeEnd)
+	if length >= 0 {
+		endPosition = checkedUint32(length)
+	}
+
+	file.tree.Insert(rbtree.Item{Key: endPosition, Value: TreeEnd})
 
 	return file
 }
@@ -89,17 +94,17 @@ func NewFileFromTree(keys, vals []int, allocator *rbtree.Allocator, updaters ...
 		panic("keys and vals must be of equal length")
 	}
 
-	for i, key := range keys {
-		val := vals[i]
+	for keyIndex, key := range keys {
+		val := vals[keyIndex]
 		if key < 0 || key >= math.MaxUint32 {
-			log.Panicf("key is out of allowed range: [%d]=%d", i, key)
+			log.Panicf("key is out of allowed range: [%d]=%d", keyIndex, key)
 		}
 
 		if val < 0 || val > math.MaxUint32 {
-			log.Panicf("val is out of allowed range: [%d]=%d", i, val)
+			log.Panicf("val is out of allowed range: [%d]=%d", keyIndex, val)
 		}
 
-		file.tree.Insert(rbtree.Item{Key: uint32(key), Value: uint32(val)})
+		file.tree.Insert(rbtree.Item{Key: checkedUint32(key), Value: checkedUint32(val)})
 	}
 
 	file.Validate()
@@ -135,12 +140,12 @@ func (file *File) Delete() {
 
 // Len returns the File's size - that is, the maximum key in the tree of line
 // intervals.
-func (file File) Len() int {
+func (file *File) Len() int {
 	return int(file.tree.Max().Item().Key)
 }
 
 // Nodes returns the number of RBTree nodes in the file.
-func (file File) Nodes() int {
+func (file *File) Nodes() int {
 	return file.tree.Len()
 }
 
@@ -228,6 +233,16 @@ func checkedUint32(value int) uint32 {
 	return uint32(value)
 }
 
+func addUint32Delta(value uint32, delta int) uint32 {
+	if delta >= 0 {
+		return value + checkedUint32(delta)
+	}
+
+	offset := -(delta + 1) + 1
+
+	return value - checkedUint32(offset)
+}
+
 func insertOnly(tree *rbtree.RBTree, iter rbtree.Iterator, origin rbtree.Item,
 	time, pos, insLength int,
 ) {
@@ -262,7 +277,7 @@ func deleteRange(file *File, tree *rbtree.RBTree, iter rbtree.Iterator,
 
 		nextIter := iter.Next()
 		if nextIter.Limit() {
-			if uint32(pos+delLength) > node.Key {
+			if checkedUint32(pos+delLength) > node.Key {
 				panic("attempt to delete after the end of the file")
 			}
 
@@ -270,7 +285,8 @@ func deleteRange(file *File, tree *rbtree.RBTree, iter rbtree.Iterator,
 		}
 
 		delta := internal.Min(int(nextIter.Item().Key), pos+delLength) - internal.Max(int(node.Key), pos)
-		if delta == 0 && insLength == 0 && origin.Key == uint32(pos) && prevOrigin.Value == node.Value {
+		if delta == 0 && insLength == 0 &&
+			origin.Key == checkedUint32(pos) && prevOrigin.Value == node.Value {
 			origin = *node
 
 			tree.DeleteWithIterator(iter)
@@ -283,7 +299,7 @@ func deleteRange(file *File, tree *rbtree.RBTree, iter rbtree.Iterator,
 
 		file.updateTime(time, int(node.Value), -delta)
 
-		if node.Key >= uint32(pos) {
+		if node.Key >= checkedUint32(pos) {
 			origin = *node
 
 			tree.DeleteWithIterator(iter)
@@ -308,20 +324,23 @@ func prepareUpdatedRange(tree *rbtree.RBTree, iter rbtree.Iterator,
 ) (rbtree.Iterator, rbtree.Item, *rbtree.Item) {
 	var previous *rbtree.Item
 
-	if insLength > 0 && (origin.Value != uint32(time) || origin.Key == uint32(pos)) {
+	timestamp := checkedUint32(time)
+	position := checkedUint32(pos)
+
+	if insLength > 0 && (origin.Value != timestamp || origin.Key == position) {
 		// insert our new interval
-		if iter.Item().Value == uint32(time) && int(iter.Item().Key)-delLength == pos {
+		if iter.Item().Value == timestamp && int(iter.Item().Key)-delLength == pos {
 			prev := iter.Prev()
-			if prev.NegativeLimit() || prev.Item().Value != uint32(time) {
-				iter.Item().Key = uint32(pos)
+			if prev.NegativeLimit() || prev.Item().Value != timestamp {
+				iter.Item().Key = position
 			} else {
 				tree.DeleteWithIterator(iter)
 				iter = prev
 			}
 
-			origin.Value = uint32(time) // cancels the insertion after applying the delta
+			origin.Value = timestamp // cancels the insertion after applying the delta
 		} else {
-			_, iter = tree.Insert(rbtree.Item{Key: uint32(pos), Value: uint32(time)})
+			_, iter = tree.Insert(rbtree.Item{Key: position, Value: timestamp})
 		}
 	} else {
 		// rollback 1 position back, see "for true" deletion cycle ^
@@ -336,11 +355,11 @@ func shiftUpdatedKeys(iter rbtree.Iterator, origin rbtree.Item, pos, delta int) 
 	if delta != 0 {
 		for iter = iter.Next(); !iter.Limit(); iter = iter.Next() {
 			// we do not need to re-balance the tree
-			iter.Item().Key = uint32(int(iter.Item().Key) + delta)
+			iter.Item().Key = addUint32Delta(iter.Item().Key, delta)
 		}
 		// have to adjust origin in case insLength == 0
-		if origin.Key > uint32(pos) {
-			origin.Key = uint32(int(origin.Key) + delta)
+		if origin.Key > checkedUint32(pos) {
+			origin.Key = addUint32Delta(origin.Key, delta)
 		}
 	}
 
@@ -351,17 +370,20 @@ func restoreUpdatedInterval(tree *rbtree.RBTree, origin, prevOrigin rbtree.Item,
 	previous *rbtree.Item, time, pos, insLength int,
 ) {
 	if insLength > 0 {
-		if origin.Value != uint32(time) {
-			tree.Insert(rbtree.Item{Key: uint32(pos + insLength), Value: origin.Value})
+		timestamp := checkedUint32(time)
+		position := checkedUint32(pos)
+
+		if origin.Value != timestamp {
+			tree.Insert(rbtree.Item{Key: checkedUint32(pos + insLength), Value: origin.Value})
 		} else if pos == 0 {
 			// recover the beginning
-			tree.Insert(rbtree.Item{Key: uint32(pos), Value: uint32(time)})
+			tree.Insert(rbtree.Item{Key: position, Value: timestamp})
 		}
-	} else if (uint32(pos) > origin.Key && previous != nil && previous.Value != origin.Value) ||
-		(uint32(pos) == origin.Key && origin.Value != prevOrigin.Value) ||
+	} else if (checkedUint32(pos) > origin.Key && previous != nil && previous.Value != origin.Value) ||
+		(checkedUint32(pos) == origin.Key && origin.Value != prevOrigin.Value) ||
 		pos == 0 {
 		// continue the original interval
-		tree.Insert(rbtree.Item{Key: uint32(pos), Value: origin.Value})
+		tree.Insert(rbtree.Item{Key: checkedUint32(pos), Value: origin.Value})
 	}
 }
 
@@ -380,36 +402,36 @@ func (file *File) Merge(day int, others ...*File) {
 				len(myself), len(lines))
 		}
 
-		for i, l := range myself {
-			ol := lines[i]
-			if ol&TreeMergeMark == TreeMergeMark {
+		for lineIndex, ownLine := range myself {
+			otherLine := lines[lineIndex]
+			if otherLine&TreeMergeMark == TreeMergeMark {
 				continue
 			}
 
-			if l&TreeMergeMark == TreeMergeMark || l&TreeMergeMark > ol&TreeMergeMark {
+			if ownLine&TreeMergeMark == TreeMergeMark || ownLine&TreeMergeMark > otherLine&TreeMergeMark {
 				// the line is merged in myself and exists in other
 				// OR the same line introduced in different branches
 				// consider the oldest version as the ground truth in that case
-				myself[i] = ol
+				myself[lineIndex] = otherLine
 				continue
 			}
 		}
 	}
 
-	for i, n := 0, 0; i >= 0; i++ {
+	for lineIndex, mergedCount := 0, 0; lineIndex >= 0; lineIndex++ {
 		switch {
-		case i == len(myself):
-			i = -2
-		case myself[i]&TreeMergeMark == TreeMergeMark:
-			myself[i] = day
-			n++
+		case lineIndex == len(myself):
+			lineIndex = -2
+		case myself[lineIndex]&TreeMergeMark == TreeMergeMark:
+			myself[lineIndex] = day
+			mergedCount++
 
 			continue
 		}
 
-		if n > 0 {
-			file.updateTime(day, day, n)
-			n = 0
+		if mergedCount > 0 {
+			file.updateTime(day, day, mergedCount)
+			mergedCount = 0
 		}
 	}
 
@@ -419,17 +441,17 @@ func (file *File) Merge(day int, others ...*File) {
 
 	for i, v := range myself {
 		if i == 0 || v != myself[i-1] {
-			tree.Insert(rbtree.Item{Key: uint32(i), Value: uint32(v)})
+			tree.Insert(rbtree.Item{Key: checkedUint32(i), Value: checkedUint32(v)})
 		}
 	}
 
-	tree.Insert(rbtree.Item{Key: uint32(len(myself)), Value: TreeEnd})
+	tree.Insert(rbtree.Item{Key: checkedUint32(len(myself)), Value: TreeEnd})
 	file.tree = tree
 }
 
 // Dump formats the underlying line interval tree into a string.
 // Useful for error messages, panic()-s and debugging.
-func (file File) Dump() string {
+func (file *File) Dump() string {
 	buffer := ""
 
 	file.ForEach(func(line, value int) {
@@ -448,7 +470,7 @@ func (file File) Dump() string {
 // which marks the ending of the last line interval.
 //
 // 3. Node keys must monotonically increase and never duplicate.
-func (file File) Validate() {
+func (file *File) Validate() {
 	if file.tree.Min().Item().Key != 0 {
 		log.Panic("the tree must start with key 0")
 	}
@@ -474,7 +496,7 @@ func (file File) Validate() {
 }
 
 // ForEach visits each node in the underlying tree, in ascending key order.
-func (file File) ForEach(callback func(line, value int)) {
+func (file *File) ForEach(callback func(line, value int)) {
 	for iter := file.tree.Min(); !iter.Limit(); iter = iter.Next() {
 		item := iter.Item()
 		key := int(item.Key)
@@ -515,7 +537,7 @@ func (file *File) flatten() []int {
 	val := uint32(math.MaxUint32)
 
 	for iter := file.tree.Min(); !iter.Limit(); iter = iter.Next() {
-		for i := uint32(len(lines)); i < iter.Item().Key; i++ {
+		for i := checkedUint32(len(lines)); i < iter.Item().Key; i++ {
 			lines = append(lines, int(val))
 		}
 

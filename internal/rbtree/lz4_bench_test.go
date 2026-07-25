@@ -1,7 +1,6 @@
 package rbtree
 
 import (
-	"math/rand"
 	"testing"
 )
 
@@ -18,15 +17,15 @@ func makeBenchData(n int, kind string) []uint32 {
 			data[i] = 7
 		}
 	case "random":
-		r := rand.New(rand.NewSource(42))
+		r := newDeterministicRandom(42)
 		for i := range data {
 			data[i] = r.Uint32()
 		}
 	case "realistic":
-		r := rand.New(rand.NewSource(99))
+		r := newDeterministicRandom(99)
 		val := r.Uint32()
 		for i := range data {
-			if r.Intn(20) == 0 {
+			if r.Int31n(20) == 0 {
 				val = r.Uint32()
 			}
 			data[i] = val

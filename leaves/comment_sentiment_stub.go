@@ -36,7 +36,7 @@ type CommentSentimentAnalysis struct {
 // CommentSentimentResult is preserved for API compatibility in non-tensorflow builds.
 type CommentSentimentResult struct{}
 
-func (sent *CommentSentimentAnalysis) Name() string { return "Sentiment" }
+func (sent *CommentSentimentAnalysis) Name() string { return commentSentimentAnalysisName }
 
 func (sent *CommentSentimentAnalysis) Provides() []string { return []string{} }
 

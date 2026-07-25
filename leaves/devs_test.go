@@ -19,17 +19,18 @@ import (
 	"github.com/cwbudde/hercules/internal/test/fixtures"
 )
 
-func fixtureDevs() *DevsAnalysis {
+func fixtureDevs(t *testing.T) *DevsAnalysis {
+	t.Helper()
 	d := DevsAnalysis{}
 	d.tickSize = 24 * time.Hour
-	d.Initialize(test.Repository)
-	people := [...]string{"one@srcd", "two@srcd"}
+	assert.NoError(t, d.Initialize(test.Repository))
+	people := [...]string{testPersonOneSource, testPersonTwoSource}
 	d.reversedPeopleDict = people[:]
 	return &d
 }
 
 func TestDevsMeta(t *testing.T) {
-	d := fixtureDevs()
+	d := fixtureDevs(t)
 	assert.Equal(t, "Devs", d.Name())
 	assert.Empty(t, d.Provides())
 	assert.Len(t, d.Requires(), 5)
@@ -78,14 +79,14 @@ func TestDevsConfigure(t *testing.T) {
 }
 
 func TestDevsInitialize(t *testing.T) {
-	d := fixtureDevs()
+	d := fixtureDevs(t)
 	assert.NotNil(t, d.ticks)
 	d = &DevsAnalysis{}
 	assert.Error(t, d.Initialize(test.Repository))
 }
 
 func TestDevsConsumeFinalize(t *testing.T) {
-	devs := fixtureDevs()
+	devs := fixtureDevs(t)
 	deps := map[string]any{}
 
 	// stage 1
@@ -111,28 +112,28 @@ func TestDevsConsumeFinalize(t *testing.T) {
 		"994eac1cd07235bb9815e547a75c84265dea00f5",
 	))
 	changes[0] = &object.Change{From: object.ChangeEntry{
-		Name: "analyser.go",
+		Name: testAnalyserPath,
 		Tree: treeFrom,
 		TreeEntry: object.TreeEntry{
-			Name: "analyser.go",
+			Name: testAnalyserPath,
 			Mode: 0o100644,
 			Hash: plumbing.NewHash("dc248ba2b22048cc730c571a748e8ffcf7085ab9"),
 		},
 	}, To: object.ChangeEntry{
-		Name: "analyser.go",
+		Name: testAnalyserPath,
 		Tree: treeTo,
 		TreeEntry: object.TreeEntry{
-			Name: "analyser.go",
+			Name: testAnalyserPath,
 			Mode: 0o100644,
 			Hash: plumbing.NewHash("baa64828831d174f40140e4b3cfa77d1e917a2c1"),
 		},
 	}}
 	changes[1] = &object.Change{
 		From: object.ChangeEntry{}, To: object.ChangeEntry{
-			Name: "cmd/hercules/main.go",
+			Name: testHerculesMainPath,
 			Tree: treeTo,
 			TreeEntry: object.TreeEntry{
-				Name: "cmd/hercules/main.go",
+				Name: testHerculesMainPath,
 				Mode: 0o100644,
 				Hash: plumbing.NewHash("c29112dbd697ad9b401333b80c18a63951bc18d9"),
 			},
@@ -140,10 +141,10 @@ func TestDevsConsumeFinalize(t *testing.T) {
 	}
 	changes[2] = &object.Change{
 		From: object.ChangeEntry{}, To: object.ChangeEntry{
-			Name: ".travis.yml",
+			Name: testTravisPath,
 			Tree: treeTo,
 			TreeEntry: object.TreeEntry{
-				Name: ".travis.yml",
+				Name: testTravisPath,
 				Mode: 0o100644,
 				Hash: plumbing.NewHash("291286b4ac41952cbd1389fda66420ec03c1a9fe"),
 			},
@@ -261,7 +262,7 @@ func ls(added, removed, changed int) items.LineStats {
 }
 
 func TestDevsFinalize(t *testing.T) {
-	devs := fixtureDevs()
+	devs := fixtureDevs(t)
 	devs.ticks[1] = map[int]*DevTick{}
 	devs.ticks[1][1] = &DevTick{ls(20, 30, 40), 10, nil}
 	x := devs.Finalize().(DevsResult)
@@ -271,13 +272,13 @@ func TestDevsFinalize(t *testing.T) {
 }
 
 func TestDevsFork(t *testing.T) {
-	devs := fixtureDevs()
+	devs := fixtureDevs(t)
 	clone := devs.Fork(1)[0].(*DevsAnalysis)
 	assert.Same(t, devs, clone)
 }
 
 func TestDevsSerialize(t *testing.T) {
-	devs := fixtureDevs()
+	devs := fixtureDevs(t)
 	devs.ticks[1] = map[int]*DevTick{}
 	devs.ticks[1][0] = &DevTick{ls(20, 30, 40), 10, map[string]items.LineStats{"Go": ls(2, 3, 4)}}
 	devs.ticks[1][1] = &DevTick{ls(2, 3, 4), 1, map[string]items.LineStats{"Go": ls(25, 35, 45)}}
@@ -332,7 +333,7 @@ func TestDevsSerialize(t *testing.T) {
 }
 
 func TestDevsDeserialize(t *testing.T) {
-	devs := fixtureDevs()
+	devs := fixtureDevs(t)
 	devs.ticks[1] = map[int]*DevTick{}
 	devs.ticks[1][0] = &DevTick{ls(20, 30, 40), 10, map[string]items.LineStats{"Go": ls(12, 13, 14)}}
 	devs.ticks[1][1] = &DevTick{ls(2, 3, 4), 1, map[string]items.LineStats{"Go": ls(22, 23, 24)}}
@@ -352,8 +353,8 @@ func TestDevsDeserialize(t *testing.T) {
 }
 
 func TestDevsMergeResults(t *testing.T) {
-	people1 := [...]string{"1@srcd", "2@srcd"}
-	people2 := [...]string{"3@srcd", "1@srcd"}
+	people1 := [...]string{testNumericPersonOneSource, "2@srcd"}
+	people2 := [...]string{"3@srcd", testNumericPersonOneSource}
 	r1 := DevsResult{
 		Ticks:              map[int]map[int]*DevTick{},
 		reversedPeopleDict: people1[:],
@@ -388,14 +389,14 @@ func TestDevsMergeResults(t *testing.T) {
 		ls(200, 300, 400), 100, map[string]items.LineStats{"Go": ls(62, 63, 64)},
 	}
 
-	devs := fixtureDevs()
+	devs := fixtureDevs(t)
 	c1 := core.CommonAnalysisResult{BeginTime: 1556224895}
 	mergeErr, ok := devs.MergeResults(r1, r2, &c1, &c1).(error)
 	require.True(t, ok)
-	require.Error(t, mergeErr)
+	require.ErrorIs(t, mergeErr, errDevsMismatchingTickSizes)
 	r2.tickSize = r1.tickSize
 	rm := devs.MergeResults(r1, r2, &c1, &c1).(DevsResult)
-	peoplerm := [...]string{"1@srcd", "2@srcd", "3@srcd"}
+	peoplerm := [...]string{testNumericPersonOneSource, "2@srcd", "3@srcd"}
 	assert.Equal(t, rm.reversedPeopleDict, peoplerm[:])
 	assert.Len(t, rm.Ticks, 4)
 	assert.Equal(t, map[int]*DevTick{
@@ -445,7 +446,7 @@ func TestDevsMergeResults(t *testing.T) {
 }
 
 func TestDevsResultGetters(t *testing.T) {
-	dr := DevsResult{tickSize: time.Hour, reversedPeopleDict: []string{"one", "two"}}
+	dr := DevsResult{tickSize: time.Hour, reversedPeopleDict: []string{testPersonOne, testPersonTwo}}
 	assert.Equal(t, dr.tickSize, dr.GetTickSize())
 	assert.Equal(t, dr.GetIdentities(), dr.reversedPeopleDict)
 }

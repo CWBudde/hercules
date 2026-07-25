@@ -364,13 +364,13 @@ func (shotness *ShotnessAnalysis) modifyFile(
 	shotness.recordChangedNodes(allNodes, toName, before, after, diff)
 }
 
-func (shotness *ShotnessAnalysis) renameFile(from, to string) {
-	oldFile := shotness.files[from]
+func (shotness *ShotnessAnalysis) renameFile(sourceName, targetName string) {
+	oldFile := shotness.files[sourceName]
 	newFile := map[string]*nodeShotness{}
 
-	shotness.files[to] = newFile
+	shotness.files[targetName] = newFile
 	for oldKey, node := range oldFile {
-		node.Summary.File = to
+		node.Summary.File = targetName
 		newKey := node.Summary.String()
 
 		newFile[newKey], shotness.nodes[newKey] = node, node
@@ -386,7 +386,7 @@ func (shotness *ShotnessAnalysis) renameFile(from, to string) {
 		delete(shotness.nodes, key)
 	}
 
-	delete(shotness.files, from)
+	delete(shotness.files, sourceName)
 }
 
 func (shotness *ShotnessAnalysis) warnParse(
@@ -461,31 +461,31 @@ func (shotness *ShotnessAnalysis) extractNodes(
 }
 
 func (shotness *ShotnessAnalysis) serializeText(result *ShotnessResult, writer io.Writer) {
-	for i, summary := range result.Nodes {
+	for nodeIndex, summary := range result.Nodes {
 		fmt.Fprintf(writer, "  - name: %s\n    file: %s\n    internal_role: %s\n    counters: {",
 			summary.Name, summary.File, summary.Type)
 
-		keys := make([]int, len(result.Counters[i]))
+		keys := make([]int, len(result.Counters[nodeIndex]))
 
-		j := 0
-		for key := range result.Counters[i] {
-			keys[j] = key
-			j++
+		counterIndex := 0
+		for key := range result.Counters[nodeIndex] {
+			keys[counterIndex] = key
+			counterIndex++
 		}
 
 		sort.Ints(keys)
 
-		j = 0
+		counterIndex = 0
 
 		for _, key := range keys {
-			val := result.Counters[i][key]
-			if j < len(result.Counters[i])-1 {
+			val := result.Counters[nodeIndex][key]
+			if counterIndex < len(result.Counters[nodeIndex])-1 {
 				fmt.Fprintf(writer, "\"%d\":%d,", key, val)
 			} else {
 				fmt.Fprintf(writer, "\"%d\":%d}\n", key, val)
 			}
 
-			j++
+			counterIndex++
 		}
 	}
 }
@@ -494,18 +494,26 @@ func (shotness *ShotnessAnalysis) serializeBinary(result *ShotnessResult, writer
 	message := pb.ShotnessAnalysisResults{
 		Records: make([]*pb.ShotnessRecord, len(result.Nodes)),
 	}
-	for i, summary := range result.Nodes {
+	for nodeIndex, summary := range result.Nodes {
 		record := &pb.ShotnessRecord{
 			Name:     summary.Name,
 			File:     summary.File,
 			Type:     summary.Type,
 			Counters: map[int32]int32{},
 		}
-		for key, val := range result.Counters[i] {
-			record.Counters[int32(key)] = int32(val)
+		for key, val := range result.Counters[nodeIndex] {
+			counterID, err := intToProtoInt32(key, "shotness counter index")
+			if err != nil {
+				return err
+			}
+			counterValue, err := intToProtoInt32(val, "shotness counter value")
+			if err != nil {
+				return err
+			}
+			record.Counters[counterID] = counterValue
 		}
 
-		message.Records[i] = record
+		message.Records[nodeIndex] = record
 	}
 
 	serialized, err := proto.Marshal(&message)

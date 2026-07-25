@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"sort"
 	"sync"
@@ -26,8 +27,10 @@ import (
 )
 
 var (
-	errBurndownNotHibernated    = errors.New("burndown: Boot() called without prior Hibernate()")
-	errUnexpectedBurndownResult = errors.New("result is not a burndown result")
+	errBurndownNotHibernated        = errors.New("burndown: Boot() called without prior Hibernate()")
+	errUnexpectedBurndownResult     = errors.New("result is not a burndown result")
+	errBurndownMismatchingTickSizes = errors.New("mismatching tick sizes")
+	errProtoInt32Range              = errors.New("value exceeds the protobuf int32 range")
 )
 
 // BurndownAnalysis allows to gather the line burndown statistics for a Git repository.
@@ -299,30 +302,30 @@ type burndownState struct {
 	Matrix          []map[core.AuthorId]int64
 }
 
-func sparseHistoryToMap(sh sparseHistory) map[int]map[int]int64 {
-	if sh == nil {
+func sparseHistoryToMap(history sparseHistory) map[int]map[int]int64 {
+	if history == nil {
 		return nil
 	}
 
-	m := make(map[int]map[int]int64, len(sh))
-	for k, v := range sh {
-		m[k] = v.deltas
+	historyMap := make(map[int]map[int]int64, len(history))
+	for k, v := range history {
+		historyMap[k] = v.deltas
 	}
 
-	return m
+	return historyMap
 }
 
-func mapToSparseHistory(m map[int]map[int]int64) sparseHistory {
-	if m == nil {
+func mapToSparseHistory(historyMap map[int]map[int]int64) sparseHistory {
+	if historyMap == nil {
 		return nil
 	}
 
-	sh := make(sparseHistory, len(m))
-	for k, v := range m {
-		sh[k] = sparseHistoryEntry{deltas: v}
+	history := make(sparseHistory, len(historyMap))
+	for k, v := range historyMap {
+		history[k] = sparseHistoryEntry{deltas: v}
 	}
 
-	return sh
+	return history
 }
 
 // Hibernate compresses the burndown analysis state to save memory.
@@ -354,19 +357,19 @@ func (analyser *BurndownAnalysis) Hibernate() error {
 func compressBurndownState(state burndownState) ([]byte, error) {
 	var buf bytes.Buffer
 
-	fw, err := flate.NewWriter(&buf, flate.DefaultCompression)
+	compressor, err := flate.NewWriter(&buf, flate.DefaultCompression)
 	if err != nil {
 		return nil, fmt.Errorf("create burndown compressor: %w", err)
 	}
 
-	err = gob.NewEncoder(fw).Encode(state)
+	err = gob.NewEncoder(compressor).Encode(state)
 	if err != nil {
-		_ = fw.Close()
+		_ = compressor.Close()
 
 		return nil, fmt.Errorf("encode burndown hibernation state: %w", err)
 	}
 
-	err = fw.Close()
+	err = compressor.Close()
 	if err != nil {
 		return nil, fmt.Errorf("close burndown compressor: %w", err)
 	}
@@ -564,14 +567,14 @@ func denseInteractionMatrix(matrix *pb.CompressedSparseRowMatrix) burndown.Dense
 
 // MergeResults combines two BurndownResult-s together.
 func (analyser *BurndownAnalysis) MergeResults(
-	r1, r2 any, c1, c2 *core.CommonAnalysisResult,
+	firstResult, secondResult any, commonFirst, commonSecond *core.CommonAnalysisResult,
 ) any {
-	bar1 := r1.(BurndownResult)
+	bar1 := firstResult.(BurndownResult)
 
-	bar2 := r2.(BurndownResult)
+	bar2 := secondResult.(BurndownResult)
 	if bar1.tickSize != bar2.tickSize {
-		return fmt.Errorf("mismatching tick sizes (r1: %d, r2: %d) received",
-			bar1.tickSize, bar2.tickSize)
+		return fmt.Errorf("%w (r1: %d, r2: %d) received",
+			errBurndownMismatchingTickSizes, bar1.tickSize, bar2.tickSize)
 	}
 
 	merged := BurndownResult{
@@ -585,7 +588,7 @@ func (analyser *BurndownAnalysis) MergeResults(
 		bar1.reversedPeopleDict, bar2.reversedPeopleDict,
 	)
 	coordinator := burndownMergeCoordinator{
-		first: bar1, second: bar2, commonFirst: c1, commonSecond: c2,
+		first: bar1, second: bar2, commonFirst: commonFirst, commonSecond: commonSecond,
 		sem: make(chan int, 5),
 	}
 
@@ -677,13 +680,13 @@ func (analyser *BurndownAnalysis) finalizePeopleHistories(
 	global burndown.DenseHistory, lastTick, peopleNumber int,
 ) []burndown.DenseHistory {
 	result := make([]burndown.DenseHistory, peopleNumber)
-	for i := range result {
-		if history := analyser.peopleHistories[i]; len(history) > 0 {
-			result[i], _ = analyser.groupSparseHistory(history, lastTick)
+	for personIndex := range result {
+		if history := analyser.peopleHistories[personIndex]; len(history) > 0 {
+			result[personIndex], _ = analyser.groupSparseHistory(history, lastTick)
 		} else {
-			result[i] = make(burndown.DenseHistory, len(global))
-			for j, row := range global {
-				result[i][j] = make([]int64, len(row))
+			result[personIndex] = make(burndown.DenseHistory, len(global))
+			for rowIndex, row := range global {
+				result[personIndex][rowIndex] = make([]int64, len(row))
 			}
 		}
 	}
@@ -697,9 +700,9 @@ func (analyser *BurndownAnalysis) finalizePeopleMatrix(peopleNumber int) burndow
 	}
 
 	result := make(burndown.DenseHistory, peopleNumber)
-	for i := range result {
-		result[i] = make([]int64, peopleNumber+2)
-		for key, value := range analyser.matrix[i] {
+	for personIndex := range result {
+		result[personIndex] = make([]int64, peopleNumber+2)
+		for key, value := range analyser.matrix[personIndex] {
 			switch key {
 			case core.AuthorMissing:
 				key = -1
@@ -707,7 +710,7 @@ func (analyser *BurndownAnalysis) finalizePeopleMatrix(peopleNumber int) burndow
 				key = -2
 			}
 
-			result[i][key+2] = value
+			result[personIndex][key+2] = value
 		}
 	}
 
@@ -1009,9 +1012,19 @@ func writeBurndownRepositories(writer io.Writer, result *BurndownResult) {
 }
 
 func (analyser *BurndownAnalysis) serializeBinary(result *BurndownResult, writer io.Writer) error {
+	granularity, err := intToProtoInt32(result.granularity, "burndown granularity")
+	if err != nil {
+		return err
+	}
+
+	sampling, err := intToProtoInt32(result.sampling, "burndown sampling")
+	if err != nil {
+		return err
+	}
+
 	message := pb.BurndownAnalysisResults{
-		Granularity: int32(result.granularity),
-		Sampling:    int32(result.sampling),
+		Granularity: granularity,
+		Sampling:    sampling,
 		TickSize:    int64(result.tickSize),
 	}
 	if len(result.GlobalHistory) > 0 {
@@ -1019,7 +1032,10 @@ func (analyser *BurndownAnalysis) serializeBinary(result *BurndownResult, writer
 	}
 
 	if len(result.FileHistories) > 0 {
-		message.Files, message.FilesOwnership = burndownFilesToProto(result)
+		message.Files, message.FilesOwnership, err = burndownFilesToProto(result)
+		if err != nil {
+			return err
+		}
 	}
 
 	if len(result.PeopleHistories) > 0 {
@@ -1052,23 +1068,42 @@ func (analyser *BurndownAnalysis) serializeBinary(result *BurndownResult, writer
 
 func burndownFilesToProto(
 	result *BurndownResult,
-) ([]*pb.BurndownSparseMatrix, []*pb.FilesOwnership) {
+) ([]*pb.BurndownSparseMatrix, []*pb.FilesOwnership, error) {
 	keys := sortedKeys(result.FileHistories)
 	files := make([]*pb.BurndownSparseMatrix, len(keys))
 
 	ownership := make([]*pb.FilesOwnership, len(keys))
-	for i, key := range keys {
-		files[i] = pb.ToBurndownSparseMatrix(result.FileHistories[key], key)
+	for fileIndex, key := range keys {
+		files[fileIndex] = pb.ToBurndownSparseMatrix(result.FileHistories[key], key)
 
 		values := map[int32]int32{}
+
 		for developer, lines := range result.FileOwnership[key] {
-			values[int32(developer)] = int32(lines)
+			developerID, err := intToProtoInt32(developer, "burndown file owner")
+			if err != nil {
+				return nil, nil, err
+			}
+
+			lineCount, err := intToProtoInt32(lines, "burndown file ownership line count")
+			if err != nil {
+				return nil, nil, err
+			}
+
+			values[developerID] = lineCount
 		}
 
-		ownership[i] = &pb.FilesOwnership{Value: values}
+		ownership[fileIndex] = &pb.FilesOwnership{Value: values}
 	}
 
-	return files, ownership
+	return files, ownership, nil
+}
+
+func intToProtoInt32(value int, field string) (int32, error) {
+	if value < math.MinInt32 || value > math.MaxInt32 {
+		return 0, fmt.Errorf("%w: %s %d", errProtoInt32Range, field, value)
+	}
+
+	return int32(value), nil
 }
 
 func namedBurndownMatrices(
@@ -1121,17 +1156,17 @@ func (analyser *BurndownAnalysis) groupSparseHistory(
 	prevSi := 0
 
 	for _, tick := range ticks {
-		si := tick / analyser.Sampling
-		if si > prevSi {
+		sampleIndex := tick / analyser.Sampling
+		if sampleIndex > prevSi {
 			state := result[prevSi]
-			for i := prevSi + 1; i <= si; i++ {
+			for i := prevSi + 1; i <= sampleIndex; i++ {
 				copy(result[i], state)
 			}
 
-			prevSi = si
+			prevSi = sampleIndex
 		}
 
-		sample := result[si]
+		sample := result[sampleIndex]
 		for t, value := range history[tick].deltas {
 			sample[t/analyser.Granularity] += value
 		}

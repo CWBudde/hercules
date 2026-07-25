@@ -41,12 +41,12 @@ func NewAllocator() *Allocator {
 }
 
 // Size returns the currently allocated size.
-func (allocator Allocator) Size() int {
+func (allocator *Allocator) Size() int {
 	return len(allocator.storage)
 }
 
 // Used returns the number of nodes contained in the allocator.
-func (allocator Allocator) Used() int {
+func (allocator *Allocator) Used() int {
 	if allocator.storage == nil {
 		panic("hibernated allocators cannot be used")
 	}
@@ -55,7 +55,7 @@ func (allocator Allocator) Used() int {
 }
 
 // Clone copies an existing RBTree allocator.
-func (allocator Allocator) Clone() *Allocator {
+func (allocator *Allocator) Clone() *Allocator {
 	if allocator.storage == nil {
 		panic("cannot clone a hibernated allocator")
 	}
@@ -109,43 +109,51 @@ func (allocator *Allocator) Boot() {
 	allocator.nextGap = 0
 
 	buffers := [6][]uint32{}
-	wg := &sync.WaitGroup{}
-	wg.Add(len(buffers))
+	waitGroup := &sync.WaitGroup{}
+	waitGroup.Add(len(buffers))
 
-	for i := range buffers {
-		go func(i int) {
-			buffers[i] = make([]uint32, allocator.hibernatedStorageLen)
-			DecompressUInt32Slice(allocator.hibernatedData[i], buffers[i])
-			allocator.hibernatedData[i] = nil
+	for bufferIndex := range buffers {
+		go func(index int) {
+			buffers[index] = make([]uint32, allocator.hibernatedStorageLen)
+			DecompressUInt32Slice(allocator.hibernatedData[index], buffers[index])
+			allocator.hibernatedData[index] = nil
 
-			wg.Done()
-		}(i)
+			waitGroup.Done()
+		}(bufferIndex)
 	}
 
-	wg.Wait()
+	waitGroup.Wait()
 
 	allocator.storage = make([]node, allocator.hibernatedStorageLen, (allocator.hibernatedStorageLen*3)/2)
 	allocator.hibernatedStorageLen = 0
 
-	for i := range allocator.storage {
-		n := &allocator.storage[i]
+	for nodeIndex := range allocator.storage {
+		currentNode := &allocator.storage[nodeIndex]
 
-		doAssert(buffers[5][i] <= uint32(gap))
-		n.color = color(buffers[5][i])
+		switch buffers[5][nodeIndex] {
+		case uint32(red):
+			currentNode.color = red
+		case uint32(black):
+			currentNode.color = black
+		case uint32(gap):
+			currentNode.color = gap
+		default:
+			panic("invalid serialized node color")
+		}
 
-		if n.color == gap {
-			n.right = allocator.nextGap
-			allocator.nextGap = uint32(i)
+		if currentNode.color == gap {
+			currentNode.right = allocator.nextGap
+			allocator.nextGap = uint32(nodeIndex)
 			allocator.gapCount++
 
 			continue
 		}
 
-		n.item.Key = buffers[0][i]
-		n.item.Value = buffers[1][i]
-		n.left = buffers[2][i]
-		n.parent = buffers[3][i]
-		n.right = buffers[4][i]
+		currentNode.item.Key = buffers[0][nodeIndex]
+		currentNode.item.Value = buffers[1][nodeIndex]
+		currentNode.left = buffers[2][nodeIndex]
+		currentNode.parent = buffers[3][nodeIndex]
+		currentNode.right = buffers[4][nodeIndex]
 	}
 }
 
@@ -166,18 +174,18 @@ func (allocator *Allocator) Serialize(path string) error {
 		return fmt.Errorf("write allocator storage length: %w", err)
 	}
 
-	for i, hse := range allocator.hibernatedData {
-		err = binary.WriteVariableWidthInt(file, int64(len(hse)))
+	for bufferIndex, hibernatedBuffer := range allocator.hibernatedData {
+		err = binary.WriteVariableWidthInt(file, int64(len(hibernatedBuffer)))
 		if err != nil {
-			return fmt.Errorf("write allocator buffer %d length: %w", i, err)
+			return fmt.Errorf("write allocator buffer %d length: %w", bufferIndex, err)
 		}
 
-		_, err = file.Write(hse)
+		_, err = file.Write(hibernatedBuffer)
 		if err != nil {
-			return fmt.Errorf("write allocator buffer %d: %w", i, err)
+			return fmt.Errorf("write allocator buffer %d: %w", bufferIndex, err)
 		}
 
-		allocator.hibernatedData[i] = nil
+		allocator.hibernatedData[bufferIndex] = nil
 	}
 
 	return nil
@@ -195,27 +203,30 @@ func (allocator *Allocator) Deserialize(path string) error {
 	}
 	defer file.Close()
 
-	x, err := binary.ReadVariableWidthInt(file)
+	storageLength, err := binary.ReadVariableWidthInt(file)
 	if err != nil {
 		return fmt.Errorf("read allocator storage length: %w", err)
 	}
 
-	allocator.hibernatedStorageLen = int(x)
-	for i := range allocator.hibernatedData {
-		x, err = binary.ReadVariableWidthInt(file)
+	allocator.hibernatedStorageLen = int(storageLength)
+	for bufferIndex := range allocator.hibernatedData {
+		bufferLength, readErr := binary.ReadVariableWidthInt(file)
+
+		err = readErr
 		if err != nil {
-			return fmt.Errorf("read allocator buffer %d length: %w", i, err)
+			return fmt.Errorf("read allocator buffer %d length: %w", bufferIndex, err)
 		}
 
-		allocator.hibernatedData[i] = make([]byte, int(x))
+		allocator.hibernatedData[bufferIndex] = make([]byte, int(bufferLength))
 
-		n, err := file.Read(allocator.hibernatedData[i])
+		bytesRead, err := file.Read(allocator.hibernatedData[bufferIndex])
 		if err != nil {
-			return fmt.Errorf("read allocator buffer %d: %w", i, err)
+			return fmt.Errorf("read allocator buffer %d: %w", bufferIndex, err)
 		}
 
-		if n != int(x) {
-			return fmt.Errorf("%w %d: %d instead of %d", errIncompleteRead, i, n, x)
+		if bytesRead != int(bufferLength) {
+			return fmt.Errorf("%w %d: %d instead of %d",
+				errIncompleteRead, bufferIndex, bytesRead, bufferLength)
 		}
 	}
 
@@ -238,14 +249,14 @@ func (allocator *Allocator) malloc() uint32 {
 		return key
 	}
 
-	switch n := len(allocator.storage); {
-	case n == 0:
+	switch storageLength := len(allocator.storage); {
+	case storageLength == 0:
 		// zero is reserved
 		allocator.storage = append(allocator.storage, node{}, node{})
 		return 1
-	case n < negativeLimitNode:
+	case storageLength < negativeLimitNode:
 		allocator.storage = append(allocator.storage, node{})
-		return uint32(n)
+		return uint32(storageLength)
 	}
 
 	panic("the size of my RBTree allocator has reached the maximum value for uint32")
@@ -300,25 +311,25 @@ func NewRBTree(allocator *Allocator) *RBTree {
 }
 
 // Allocator returns the bound nodes allocator.
-func (tree RBTree) Allocator() *Allocator {
+func (tree *RBTree) Allocator() *Allocator {
 	return tree.allocator
 }
 
 // Len returns the number of elements in the tree.
-func (tree RBTree) Len() int {
+func (tree *RBTree) Len() int {
 	return int(tree.count)
 }
 
 // CloneShallow performs a shallow copy of the tree - the nodes are assumed to already exist in the allocator.
-func (tree RBTree) CloneShallow(allocator *Allocator) *RBTree {
-	clone := tree
+func (tree *RBTree) CloneShallow(allocator *Allocator) *RBTree {
+	clone := *tree
 	clone.allocator = allocator
 
 	return &clone
 }
 
 // CloneDeep performs a deep copy of the tree - the nodes are created from scratch.
-func (tree RBTree) CloneDeep(allocator *Allocator) *RBTree {
+func (tree *RBTree) CloneDeep(allocator *Allocator) *RBTree {
 	clone := &RBTree{
 		count:     tree.count,
 		allocator: allocator,
@@ -369,7 +380,7 @@ func (tree *RBTree) Erase() {
 
 // Get is a convenience function for finding an element equal to Key. Returns
 // nil if not found.
-func (tree RBTree) Get(key uint32) *uint32 {
+func (tree *RBTree) Get(key uint32) *uint32 {
 	n, exact := tree.findGE(key)
 	if exact {
 		return &tree.storage()[n].item.Value
@@ -417,13 +428,13 @@ func (tree *RBTree) FindGE(key uint32) Iterator {
 // iterator pointing to the element. If no such element is found,
 // returns iter.NegativeLimit().
 func (tree *RBTree) FindLE(key uint32) Iterator {
-	n, exact := tree.findGE(key)
+	nodeIndex, exact := tree.findGE(key)
 	if exact {
-		return Iterator{tree, n}
+		return Iterator{tree, nodeIndex}
 	}
 
-	if n != 0 {
-		return Iterator{tree, doPrev(n, tree.storage())}
+	if nodeIndex != 0 {
+		return Iterator{tree, doPrev(nodeIndex, tree.storage())}
 	}
 
 	if tree.maxNode == 0 {
@@ -437,25 +448,25 @@ func (tree *RBTree) FindLE(key uint32) Iterator {
 // return false. Else return true.
 func (tree *RBTree) Insert(item Item) (bool, Iterator) {
 	// TODO: delay creating n until it is found to be inserted
-	n := tree.doInsert(item)
-	if n == 0 {
+	nodeIndex := tree.doInsert(item)
+	if nodeIndex == 0 {
 		return false, Iterator{}
 	}
 
 	alloc := tree.storage()
-	insN := n
-	alloc[n].color = red
-	tree.rebalanceAfterInsert(n, alloc)
+	insertedNode := nodeIndex
+	alloc[nodeIndex].color = red
+	tree.rebalanceAfterInsert(nodeIndex, alloc)
 
-	return true, Iterator{tree, insN}
+	return true, Iterator{tree, insertedNode}
 }
 
 // DeleteWithKey deletes an item with the given Key. Returns true iff the item was
 // found.
 func (tree *RBTree) DeleteWithKey(key uint32) bool {
-	n, exact := tree.findGE(key)
+	nodeIndex, exact := tree.findGE(key)
 	if exact {
-		tree.doDelete(n)
+		tree.doDelete(nodeIndex)
 		return true
 	}
 
@@ -476,25 +487,27 @@ func (allocator *Allocator) deinterleave() ([6][]uint32, bool) {
 		buffers[i] = make([]uint32, len(allocator.storage))
 	}
 
-	for i, current := range allocator.storage {
-		buffers[5][i] = uint32(current.color)
+	for nodeIndex, current := range allocator.storage {
+		buffers[5][nodeIndex] = uint32(current.color)
 		if current.color != gap {
-			buffers[0][i], buffers[1][i] = current.item.Key, current.item.Value
-			buffers[2][i], buffers[3][i], buffers[4][i] = current.left, current.parent, current.right
+			buffers[0][nodeIndex], buffers[1][nodeIndex] = current.item.Key, current.item.Value
+			buffers[2][nodeIndex] = current.left
+			buffers[3][nodeIndex] = current.parent
+			buffers[4][nodeIndex] = current.right
 
 			continue
 		}
 
-		if i+int(allocator.gapCount) == allocator.hibernatedStorageLen {
+		if nodeIndex+int(allocator.gapCount) == allocator.hibernatedStorageLen {
 			allocator.gapCount = 0
-			if i <= 1 {
+			if nodeIndex <= 1 {
 				allocator.hibernatedStorageLen, allocator.nextGap = 0, 0
 				allocator.storage = allocator.storage[:0]
 
 				return buffers, true
 			}
 
-			allocator.hibernatedStorageLen = i
+			allocator.hibernatedStorageLen = nodeIndex
 
 			break
 		}
@@ -506,72 +519,72 @@ func (allocator *Allocator) deinterleave() ([6][]uint32, bool) {
 }
 
 func (allocator *Allocator) compressBuffers(buffers [6][]uint32) {
-	var wg sync.WaitGroup
-	wg.Add(len(buffers))
+	var waitGroup sync.WaitGroup
+	waitGroup.Add(len(buffers))
 
-	for i, buffer := range buffers {
-		go func(i int, buffer []uint32) {
-			defer wg.Done()
+	for bufferIndex, buffer := range buffers {
+		go func(index int, buffer []uint32) {
+			defer waitGroup.Done()
 
-			allocator.hibernatedData[i] = CompressUInt32Slice(buffer[:allocator.hibernatedStorageLen])
-			buffers[i] = nil
-		}(i, buffer)
+			allocator.hibernatedData[index] = CompressUInt32Slice(buffer[:allocator.hibernatedStorageLen])
+			buffers[index] = nil
+		}(bufferIndex, buffer)
 	}
 
-	wg.Wait()
+	waitGroup.Wait()
 }
 
-func (tree RBTree) storage() []node {
+func (tree *RBTree) storage() []node {
 	return tree.allocator.storage
 }
 
-func (tree *RBTree) rebalanceAfterInsert(n uint32, alloc []node) {
+func (tree *RBTree) rebalanceAfterInsert(nodeIndex uint32, alloc []node) {
 	for {
-		if alloc[n].parent == 0 {
-			alloc[n].color = black
+		if alloc[nodeIndex].parent == 0 {
+			alloc[nodeIndex].color = black
 			break
 		}
 
-		if alloc[alloc[n].parent].color == black {
+		if alloc[alloc[nodeIndex].parent].color == black {
 			break
 		}
 
-		grandparent := alloc[alloc[n].parent].parent
+		grandparent := alloc[alloc[nodeIndex].parent].parent
 
 		var uncle uint32
-		if isLeftChild(alloc[n].parent, alloc) {
+		if isLeftChild(alloc[nodeIndex].parent, alloc) {
 			uncle = alloc[grandparent].right
 		} else {
 			uncle = alloc[grandparent].left
 		}
 
 		if uncle != 0 && alloc[uncle].color == red {
-			alloc[alloc[n].parent].color = black
+			alloc[alloc[nodeIndex].parent].color = black
 			alloc[uncle].color = black
 			alloc[grandparent].color = red
-			n = grandparent
+			nodeIndex = grandparent
 
 			continue
 		}
 
-		if isRightChild(n, alloc) && isLeftChild(alloc[n].parent, alloc) {
-			tree.rotateLeft(alloc[n].parent)
-			n = alloc[n].left
+		if isRightChild(nodeIndex, alloc) && isLeftChild(alloc[nodeIndex].parent, alloc) {
+			tree.rotateLeft(alloc[nodeIndex].parent)
+			nodeIndex = alloc[nodeIndex].left
 
 			continue
 		}
 
-		if isLeftChild(n, alloc) && isRightChild(alloc[n].parent, alloc) {
-			tree.rotateRight(alloc[n].parent)
-			n = alloc[n].right
+		if isLeftChild(nodeIndex, alloc) && isRightChild(alloc[nodeIndex].parent, alloc) {
+			tree.rotateRight(alloc[nodeIndex].parent)
+			nodeIndex = alloc[nodeIndex].right
 
 			continue
 		}
 
-		alloc[alloc[n].parent].color = black
+		alloc[alloc[nodeIndex].parent].color = black
 
 		alloc[grandparent].color = red
-		if isLeftChild(n, alloc) {
+		if isLeftChild(nodeIndex, alloc) {
 			tree.rotateRight(grandparent)
 		} else {
 			tree.rotateLeft(grandparent)
@@ -702,21 +715,21 @@ func isRightChild(n uint32, allocator []node) bool {
 	return n == allocator[allocator[n].parent].right
 }
 
-func sibling(n uint32, allocator []node) uint32 {
-	doAssert(allocator[n].parent != 0)
+func sibling(nodeIndex uint32, allocator []node) uint32 {
+	doAssert(allocator[nodeIndex].parent != 0)
 
-	if isLeftChild(n, allocator) {
-		return allocator[allocator[n].parent].right
+	if isLeftChild(nodeIndex, allocator) {
+		return allocator[allocator[nodeIndex].parent].right
 	}
 
-	return allocator[allocator[n].parent].left
+	return allocator[allocator[nodeIndex].parent].left
 }
 
 // Return the minimum node that's larger than N. Return nil if no such
 // node is found.
-func doNext(n uint32, allocator []node) uint32 {
-	if allocator[n].right != 0 {
-		m := allocator[n].right
+func doNext(nodeIndex uint32, allocator []node) uint32 {
+	if allocator[nodeIndex].right != 0 {
+		m := allocator[nodeIndex].right
 		for allocator[m].left != 0 {
 			m = allocator[m].left
 		}
@@ -724,17 +737,17 @@ func doNext(n uint32, allocator []node) uint32 {
 		return m
 	}
 
-	for n != 0 {
-		p := allocator[n].parent
-		if p == 0 {
+	for nodeIndex != 0 {
+		parentIndex := allocator[nodeIndex].parent
+		if parentIndex == 0 {
 			return 0
 		}
 
-		if isLeftChild(n, allocator) {
-			return p
+		if isLeftChild(nodeIndex, allocator) {
+			return parentIndex
 		}
 
-		n = p
+		nodeIndex = parentIndex
 	}
 
 	return 0
@@ -742,22 +755,22 @@ func doNext(n uint32, allocator []node) uint32 {
 
 // Return the maximum node that's smaller than N. Return nil if no
 // such node is found.
-func doPrev(n uint32, allocator []node) uint32 {
-	if allocator[n].left != 0 {
-		return maxPredecessor(n, allocator)
+func doPrev(nodeIndex uint32, allocator []node) uint32 {
+	if allocator[nodeIndex].left != 0 {
+		return maxPredecessor(nodeIndex, allocator)
 	}
 
-	for n != 0 {
-		p := allocator[n].parent
-		if p == 0 {
+	for nodeIndex != 0 {
+		parentIndex := allocator[nodeIndex].parent
+		if parentIndex == 0 {
 			break
 		}
 
-		if isRightChild(n, allocator) {
-			return p
+		if isRightChild(nodeIndex, allocator) {
+			return parentIndex
 		}
 
-		n = p
+		nodeIndex = parentIndex
 	}
 
 	return negativeLimitNode
@@ -805,23 +818,23 @@ func (tree *RBTree) recomputeMaxNode() {
 	}
 }
 
-func (tree *RBTree) maybeSetMinNode(n uint32) {
+func (tree *RBTree) maybeSetMinNode(nodeIndex uint32) {
 	alloc := tree.storage()
 	if tree.minNode == 0 {
-		tree.minNode = n
-		tree.maxNode = n
-	} else if alloc[n].item.Key < alloc[tree.minNode].item.Key {
-		tree.minNode = n
+		tree.minNode = nodeIndex
+		tree.maxNode = nodeIndex
+	} else if alloc[nodeIndex].item.Key < alloc[tree.minNode].item.Key {
+		tree.minNode = nodeIndex
 	}
 }
 
-func (tree *RBTree) maybeSetMaxNode(n uint32) {
+func (tree *RBTree) maybeSetMaxNode(nodeIndex uint32) {
 	alloc := tree.storage()
 	if tree.maxNode == 0 {
-		tree.minNode = n
-		tree.maxNode = n
-	} else if alloc[n].item.Key > alloc[tree.maxNode].item.Key {
-		tree.maxNode = n
+		tree.minNode = nodeIndex
+		tree.maxNode = nodeIndex
+	} else if alloc[nodeIndex].item.Key > alloc[tree.maxNode].item.Key {
+		tree.maxNode = nodeIndex
 	}
 }
 
@@ -829,14 +842,14 @@ func (tree *RBTree) maybeSetMaxNode(n uint32) {
 // already in the tree. Otherwise return a new (leaf) node.
 func (tree *RBTree) doInsert(item Item) uint32 {
 	if tree.root == 0 {
-		n := tree.allocator.malloc()
-		tree.storage()[n].item = item
-		tree.root = n
-		tree.minNode = n
-		tree.maxNode = n
+		nodeIndex := tree.allocator.malloc()
+		tree.storage()[nodeIndex].item = item
+		tree.root = nodeIndex
+		tree.minNode = nodeIndex
+		tree.maxNode = nodeIndex
 		tree.count++
 
-		return n
+		return nodeIndex
 	}
 
 	parent := tree.root
@@ -846,35 +859,36 @@ func (tree *RBTree) doInsert(item Item) uint32 {
 		parentNode := storage[parent]
 
 		comp := int(item.Key) - int(parentNode.item.Key)
-		if comp == 0 {
+		switch {
+		case comp == 0:
 			return 0
-		} else if comp < 0 {
+		case comp < 0:
 			if parentNode.left == 0 {
-				n := tree.allocator.malloc()
+				nodeIndex := tree.allocator.malloc()
 				storage = tree.storage()
-				newNode := &storage[n]
+				newNode := &storage[nodeIndex]
 				newNode.item = item
 				newNode.parent = parent
-				storage[parent].left = n
+				storage[parent].left = nodeIndex
 				tree.count++
-				tree.maybeSetMinNode(n)
+				tree.maybeSetMinNode(nodeIndex)
 
-				return n
+				return nodeIndex
 			}
 
 			parent = parentNode.left
-		} else {
+		default:
 			if parentNode.right == 0 {
-				n := tree.allocator.malloc()
+				nodeIndex := tree.allocator.malloc()
 				storage = tree.storage()
-				newNode := &storage[n]
+				newNode := &storage[nodeIndex]
 				newNode.item = item
 				newNode.parent = parent
-				storage[parent].right = n
+				storage[parent].right = nodeIndex
 				tree.count++
-				tree.maybeSetMaxNode(n)
+				tree.maybeSetMaxNode(nodeIndex)
 
-				return n
+				return nodeIndex
 			}
 
 			parent = parentNode.right
@@ -885,29 +899,30 @@ func (tree *RBTree) doInsert(item Item) uint32 {
 // Find a node whose item >= Key. The 2nd return Value is true iff the
 // node.item==Key. Returns (nil, false) if all nodes in the tree are <
 // Key.
-func (tree RBTree) findGE(key uint32) (uint32, bool) {
+func (tree *RBTree) findGE(key uint32) (uint32, bool) {
 	alloc := tree.storage()
 
-	n := tree.root
+	nodeIndex := tree.root
 	for {
-		if n == 0 {
+		if nodeIndex == 0 {
 			return 0, false
 		}
 
-		comp := int(key) - int(alloc[n].item.Key)
-		if comp == 0 {
-			return n, true
-		} else if comp < 0 {
-			if alloc[n].left != 0 {
-				n = alloc[n].left
+		comp := int(key) - int(alloc[nodeIndex].item.Key)
+		switch {
+		case comp == 0:
+			return nodeIndex, true
+		case comp < 0:
+			if alloc[nodeIndex].left != 0 {
+				nodeIndex = alloc[nodeIndex].left
 			} else {
-				return n, false
+				return nodeIndex, false
 			}
-		} else {
-			if alloc[n].right != 0 {
-				n = alloc[n].right
+		default:
+			if alloc[nodeIndex].right != 0 {
+				nodeIndex = alloc[nodeIndex].right
 			} else {
-				succ := doNext(n, alloc)
+				succ := doNext(nodeIndex, alloc)
 				if succ == 0 {
 					return 0, false
 				}
@@ -919,99 +934,99 @@ func (tree RBTree) findGE(key uint32) (uint32, bool) {
 }
 
 // Delete N from the tree.
-func (tree *RBTree) doDelete(n uint32) {
+func (tree *RBTree) doDelete(nodeIndex uint32) {
 	alloc := tree.storage()
-	if alloc[n].left != 0 && alloc[n].right != 0 {
-		pred := maxPredecessor(n, alloc)
-		tree.swapNodes(n, pred)
+	if alloc[nodeIndex].left != 0 && alloc[nodeIndex].right != 0 {
+		pred := maxPredecessor(nodeIndex, alloc)
+		tree.swapNodes(nodeIndex, pred)
 	}
 
-	doAssert(alloc[n].left == 0 || alloc[n].right == 0)
+	doAssert(alloc[nodeIndex].left == 0 || alloc[nodeIndex].right == 0)
 
-	child := alloc[n].right
+	child := alloc[nodeIndex].right
 	if child == 0 {
-		child = alloc[n].left
+		child = alloc[nodeIndex].left
 	}
 
-	if alloc[n].color == black {
-		alloc[n].color = getColor(child, alloc)
-		tree.deleteCase1(n)
+	if alloc[nodeIndex].color == black {
+		alloc[nodeIndex].color = getColor(child, alloc)
+		tree.deleteCase1(nodeIndex)
 	}
 
-	tree.replaceNode(n, child)
+	tree.replaceNode(nodeIndex, child)
 
-	if alloc[n].parent == 0 && child != 0 {
+	if alloc[nodeIndex].parent == 0 && child != 0 {
 		alloc[child].color = black
 	}
 
-	tree.allocator.free(n)
+	tree.allocator.free(nodeIndex)
 
 	tree.count--
 	if tree.count == 0 {
 		tree.minNode = 0
 		tree.maxNode = 0
 	} else {
-		if tree.minNode == n {
+		if tree.minNode == nodeIndex {
 			tree.recomputeMinNode()
 		}
 
-		if tree.maxNode == n {
+		if tree.maxNode == nodeIndex {
 			tree.recomputeMaxNode()
 		}
 	}
 }
 
 // Move n to the pred's place, and vice versa.
-func (tree *RBTree) swapNodes(n, pred uint32) {
-	doAssert(pred != n)
+func (tree *RBTree) swapNodes(nodeIndex, predecessor uint32) {
+	doAssert(predecessor != nodeIndex)
 
 	alloc := tree.storage()
-	isLeft := isLeftChild(pred, alloc)
-	tmp := alloc[pred]
-	tree.replaceNode(n, pred)
-	alloc[pred].color = alloc[n].color
+	isLeft := isLeftChild(predecessor, alloc)
+	tmp := alloc[predecessor]
+	tree.replaceNode(nodeIndex, predecessor)
+	alloc[predecessor].color = alloc[nodeIndex].color
 
-	if tmp.parent == n {
-		swapAdjacentNodes(n, pred, isLeft, tmp, alloc)
+	if tmp.parent == nodeIndex {
+		swapAdjacentNodes(nodeIndex, predecessor, isLeft, tmp, alloc)
 	} else {
-		swapSeparatedNodes(n, pred, isLeft, tmp, alloc)
+		swapSeparatedNodes(nodeIndex, predecessor, isLeft, tmp, alloc)
 	}
 
-	alloc[n].color = tmp.color
+	alloc[nodeIndex].color = tmp.color
 }
 
-func swapAdjacentNodes(n, pred uint32, isLeft bool, previous node, alloc []node) {
+func swapAdjacentNodes(nodeIndex, pred uint32, isLeft bool, previous node, alloc []node) {
 	if isLeft {
-		alloc[pred].left = n
-		alloc[pred].right = alloc[n].right
+		alloc[pred].left = nodeIndex
+		alloc[pred].right = alloc[nodeIndex].right
 		setParent(alloc[pred].right, pred, alloc)
 	} else {
-		alloc[pred].left = alloc[n].left
+		alloc[pred].left = alloc[nodeIndex].left
 		setParent(alloc[pred].left, pred, alloc)
-		alloc[pred].right = n
+		alloc[pred].right = nodeIndex
 	}
 
-	alloc[n].item, alloc[n].parent = previous.item, pred
-	alloc[n].left, alloc[n].right = previous.left, previous.right
-	setParent(alloc[n].left, n, alloc)
-	setParent(alloc[n].right, n, alloc)
+	alloc[nodeIndex].item, alloc[nodeIndex].parent = previous.item, pred
+	alloc[nodeIndex].left, alloc[nodeIndex].right = previous.left, previous.right
+	setParent(alloc[nodeIndex].left, nodeIndex, alloc)
+	setParent(alloc[nodeIndex].right, nodeIndex, alloc)
 }
 
-func swapSeparatedNodes(n, pred uint32, isLeft bool, previous node, alloc []node) {
-	alloc[pred].left, alloc[pred].right = alloc[n].left, alloc[n].right
+func swapSeparatedNodes(nodeIndex, pred uint32, isLeft bool, previous node, alloc []node) {
+	alloc[pred].left, alloc[pred].right = alloc[nodeIndex].left, alloc[nodeIndex].right
 	setParent(alloc[pred].left, pred, alloc)
 	setParent(alloc[pred].right, pred, alloc)
 
 	if isLeft {
-		alloc[previous.parent].left = n
+		alloc[previous.parent].left = nodeIndex
 	} else {
-		alloc[previous.parent].right = n
+		alloc[previous.parent].right = nodeIndex
 	}
 
-	alloc[n].item, alloc[n].parent = previous.item, previous.parent
-	alloc[n].left, alloc[n].right = previous.left, previous.right
-	setParent(alloc[n].left, n, alloc)
-	setParent(alloc[n].right, n, alloc)
+	alloc[nodeIndex].item, alloc[nodeIndex].parent = previous.item, previous.parent
+	alloc[nodeIndex].left, alloc[nodeIndex].right = previous.left, previous.right
+	setParent(alloc[nodeIndex].left, nodeIndex, alloc)
+	setParent(alloc[nodeIndex].right, nodeIndex, alloc)
 }
 
 func setParent(child, parent uint32, alloc []node) {
@@ -1020,39 +1035,39 @@ func setParent(child, parent uint32, alloc []node) {
 	}
 }
 
-func (tree *RBTree) deleteCase1(n uint32) {
+func (tree *RBTree) deleteCase1(nodeIndex uint32) {
 	alloc := tree.storage()
 	for {
-		if alloc[n].parent != 0 {
-			if getColor(sibling(n, alloc), alloc) == red {
-				alloc[alloc[n].parent].color = red
+		if alloc[nodeIndex].parent != 0 {
+			if getColor(sibling(nodeIndex, alloc), alloc) == red {
+				alloc[alloc[nodeIndex].parent].color = red
 
-				alloc[sibling(n, alloc)].color = black
-				if n == alloc[alloc[n].parent].left {
-					tree.rotateLeft(alloc[n].parent)
+				alloc[sibling(nodeIndex, alloc)].color = black
+				if nodeIndex == alloc[alloc[nodeIndex].parent].left {
+					tree.rotateLeft(alloc[nodeIndex].parent)
 				} else {
-					tree.rotateRight(alloc[n].parent)
+					tree.rotateRight(alloc[nodeIndex].parent)
 				}
 			}
 
-			if getColor(alloc[n].parent, alloc) == black &&
-				getColor(sibling(n, alloc), alloc) == black &&
-				getColor(alloc[sibling(n, alloc)].left, alloc) == black &&
-				getColor(alloc[sibling(n, alloc)].right, alloc) == black {
-				alloc[sibling(n, alloc)].color = red
-				n = alloc[n].parent
+			if getColor(alloc[nodeIndex].parent, alloc) == black &&
+				getColor(sibling(nodeIndex, alloc), alloc) == black &&
+				getColor(alloc[sibling(nodeIndex, alloc)].left, alloc) == black &&
+				getColor(alloc[sibling(nodeIndex, alloc)].right, alloc) == black {
+				alloc[sibling(nodeIndex, alloc)].color = red
+				nodeIndex = alloc[nodeIndex].parent
 
 				continue
 			} else {
 				// case 4
-				if getColor(alloc[n].parent, alloc) == red &&
-					getColor(sibling(n, alloc), alloc) == black &&
-					getColor(alloc[sibling(n, alloc)].left, alloc) == black &&
-					getColor(alloc[sibling(n, alloc)].right, alloc) == black {
-					alloc[sibling(n, alloc)].color = red
-					alloc[alloc[n].parent].color = black
+				if getColor(alloc[nodeIndex].parent, alloc) == red &&
+					getColor(sibling(nodeIndex, alloc), alloc) == black &&
+					getColor(alloc[sibling(nodeIndex, alloc)].left, alloc) == black &&
+					getColor(alloc[sibling(nodeIndex, alloc)].right, alloc) == black {
+					alloc[sibling(nodeIndex, alloc)].color = red
+					alloc[alloc[nodeIndex].parent].color = black
 				} else {
-					tree.deleteCase5(n)
+					tree.deleteCase5(nodeIndex)
 				}
 			}
 		}
@@ -1061,36 +1076,36 @@ func (tree *RBTree) deleteCase1(n uint32) {
 	}
 }
 
-func (tree *RBTree) deleteCase5(n uint32) {
+func (tree *RBTree) deleteCase5(nodeIndex uint32) {
 	alloc := tree.storage()
-	if n == alloc[alloc[n].parent].left &&
-		getColor(sibling(n, alloc), alloc) == black &&
-		getColor(alloc[sibling(n, alloc)].left, alloc) == red &&
-		getColor(alloc[sibling(n, alloc)].right, alloc) == black {
-		alloc[sibling(n, alloc)].color = red
-		alloc[alloc[sibling(n, alloc)].left].color = black
-		tree.rotateRight(sibling(n, alloc))
-	} else if n == alloc[alloc[n].parent].right &&
-		getColor(sibling(n, alloc), alloc) == black &&
-		getColor(alloc[sibling(n, alloc)].right, alloc) == red &&
-		getColor(alloc[sibling(n, alloc)].left, alloc) == black {
-		alloc[sibling(n, alloc)].color = red
-		alloc[alloc[sibling(n, alloc)].right].color = black
-		tree.rotateLeft(sibling(n, alloc))
+	if nodeIndex == alloc[alloc[nodeIndex].parent].left &&
+		getColor(sibling(nodeIndex, alloc), alloc) == black &&
+		getColor(alloc[sibling(nodeIndex, alloc)].left, alloc) == red &&
+		getColor(alloc[sibling(nodeIndex, alloc)].right, alloc) == black {
+		alloc[sibling(nodeIndex, alloc)].color = red
+		alloc[alloc[sibling(nodeIndex, alloc)].left].color = black
+		tree.rotateRight(sibling(nodeIndex, alloc))
+	} else if nodeIndex == alloc[alloc[nodeIndex].parent].right &&
+		getColor(sibling(nodeIndex, alloc), alloc) == black &&
+		getColor(alloc[sibling(nodeIndex, alloc)].right, alloc) == red &&
+		getColor(alloc[sibling(nodeIndex, alloc)].left, alloc) == black {
+		alloc[sibling(nodeIndex, alloc)].color = red
+		alloc[alloc[sibling(nodeIndex, alloc)].right].color = black
+		tree.rotateLeft(sibling(nodeIndex, alloc))
 	}
 
 	// case 6
-	alloc[sibling(n, alloc)].color = getColor(alloc[n].parent, alloc)
+	alloc[sibling(nodeIndex, alloc)].color = getColor(alloc[nodeIndex].parent, alloc)
 
-	alloc[alloc[n].parent].color = black
-	if n == alloc[alloc[n].parent].left {
-		doAssert(getColor(alloc[sibling(n, alloc)].right, alloc) == red)
-		alloc[alloc[sibling(n, alloc)].right].color = black
-		tree.rotateLeft(alloc[n].parent)
+	alloc[alloc[nodeIndex].parent].color = black
+	if nodeIndex == alloc[alloc[nodeIndex].parent].left {
+		doAssert(getColor(alloc[sibling(nodeIndex, alloc)].right, alloc) == red)
+		alloc[alloc[sibling(nodeIndex, alloc)].right].color = black
+		tree.rotateLeft(alloc[nodeIndex].parent)
 	} else {
-		doAssert(getColor(alloc[sibling(n, alloc)].left, alloc) == red)
-		alloc[alloc[sibling(n, alloc)].left].color = black
-		tree.rotateRight(alloc[n].parent)
+		doAssert(getColor(alloc[sibling(nodeIndex, alloc)].left, alloc) == red)
+		alloc[alloc[sibling(nodeIndex, alloc)].left].color = black
+		tree.rotateRight(alloc[nodeIndex].parent)
 	}
 }
 
@@ -1118,28 +1133,28 @@ A   Y	    =>     X   C
 
 	B C 	  A B
 */
-func (tree *RBTree) rotateLeft(x uint32) {
+func (tree *RBTree) rotateLeft(pivot uint32) {
 	alloc := tree.storage()
-	y := alloc[x].right
+	replacement := alloc[pivot].right
 
-	alloc[x].right = alloc[y].left
-	if alloc[y].left != 0 {
-		alloc[alloc[y].left].parent = x
+	alloc[pivot].right = alloc[replacement].left
+	if alloc[replacement].left != 0 {
+		alloc[alloc[replacement].left].parent = pivot
 	}
 
-	alloc[y].parent = alloc[x].parent
-	if alloc[x].parent == 0 {
-		tree.root = y
+	alloc[replacement].parent = alloc[pivot].parent
+	if alloc[pivot].parent == 0 {
+		tree.root = replacement
 	} else {
-		if isLeftChild(x, alloc) {
-			alloc[alloc[x].parent].left = y
+		if isLeftChild(pivot, alloc) {
+			alloc[alloc[pivot].parent].left = replacement
 		} else {
-			alloc[alloc[x].parent].right = y
+			alloc[alloc[pivot].parent].right = replacement
 		}
 	}
 
-	alloc[y].left = x
-	alloc[x].parent = y
+	alloc[replacement].left = pivot
+	alloc[pivot].parent = replacement
 }
 
 /*
@@ -1148,27 +1163,27 @@ func (tree *RBTree) rotateLeft(x uint32) {
 
 A B             C.
 */
-func (tree *RBTree) rotateRight(y uint32) {
+func (tree *RBTree) rotateRight(pivot uint32) {
 	alloc := tree.storage()
-	x := alloc[y].left
+	replacement := alloc[pivot].left
 
 	// Move "B"
-	alloc[y].left = alloc[x].right
-	if alloc[x].right != 0 {
-		alloc[alloc[x].right].parent = y
+	alloc[pivot].left = alloc[replacement].right
+	if alloc[replacement].right != 0 {
+		alloc[alloc[replacement].right].parent = pivot
 	}
 
-	alloc[x].parent = alloc[y].parent
-	if alloc[y].parent == 0 {
-		tree.root = x
+	alloc[replacement].parent = alloc[pivot].parent
+	if alloc[pivot].parent == 0 {
+		tree.root = replacement
 	} else {
-		if isLeftChild(y, alloc) {
-			alloc[alloc[y].parent].left = x
+		if isLeftChild(pivot, alloc) {
+			alloc[alloc[pivot].parent].left = replacement
 		} else {
-			alloc[alloc[y].parent].right = x
+			alloc[alloc[pivot].parent].right = replacement
 		}
 	}
 
-	alloc[x].right = y
-	alloc[y].parent = x
+	alloc[replacement].right = pivot
+	alloc[pivot].parent = replacement
 }

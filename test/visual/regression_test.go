@@ -9,6 +9,8 @@ import (
 	"testing"
 )
 
+const testDefaultReportPath = "../../internal/render/testdata/hercules/report_default.pb"
+
 // VisualTestCase defines a test case for visual regression testing.
 type VisualTestCase struct {
 	Name            string
@@ -27,24 +29,24 @@ func TestVisualRegression(t *testing.T) {
 	testCases := []VisualTestCase{
 		{
 			Name:            "BurndownProject",
-			Mode:            "burndown-project",
-			InputFile:       "../../internal/render/testdata/hercules/report_default.pb",
+			Mode:            chartModeBurndownProject,
+			InputFile:       testDefaultReportPath,
 			ExpectedPath:    "golden/burndown_project_golden.png",
 			ValidationLevel: ValidationStandard,
 			Description:     "Project-level burndown chart visual consistency",
 		},
 		{
 			Name:            "BurndownProjectRelative",
-			Mode:            "burndown-project-relative",
-			InputFile:       "../../internal/render/testdata/hercules/report_default.pb",
+			Mode:            chartModeBurndownProjectRelative,
+			InputFile:       testDefaultReportPath,
 			ExpectedPath:    "golden/burndown_project_relative_golden.png",
 			ValidationLevel: ValidationStandard,
 			Description:     "Relative burndown chart (percentage-based)",
 		},
 		{
 			Name:            "Ownership",
-			Mode:            "ownership",
-			InputFile:       "../../internal/render/testdata/hercules/report_default.pb",
+			Mode:            chartModeOwnership,
+			InputFile:       testDefaultReportPath,
 			ExpectedPath:    "golden/ownership_golden.png",
 			ValidationLevel: ValidationLenient, // More tolerance for complex heatmaps
 			Description:     "Code ownership visualization",
@@ -65,7 +67,7 @@ func TestPythonCompatibility(t *testing.T) {
 	pythonComparisonCases := []VisualTestCase{
 		{
 			Name:            "BurndownPythonCompatibility",
-			Mode:            "burndown-project",
+			Mode:            chartModeBurndownProject,
 			InputFile:       "../../internal/render/testdata/example_data/hercules_burndown.yaml",
 			ExpectedPath:    "reference/python_burndown_absolute.png",
 			ValidationLevel: ValidationLenient, // Different rendering engines need more tolerance
@@ -73,7 +75,7 @@ func TestPythonCompatibility(t *testing.T) {
 		},
 		{
 			Name:            "BurndownRelativePythonCompatibility",
-			Mode:            "burndown-project-relative",
+			Mode:            chartModeBurndownProjectRelative,
 			InputFile:       "../../internal/render/testdata/example_data/hercules_burndown.yaml",
 			ExpectedPath:    "reference/python_burndown_relative.png",
 			ValidationLevel: ValidationLenient,
@@ -93,7 +95,7 @@ func TestChartStructuralValidation(t *testing.T) {
 	// Generate a test chart
 	outputPath := generateTestChart(
 		t,
-		"burndown-project",
+		chartModeBurndownProject,
 		"../../internal/render/testdata/example_data/hercules_burndown.yaml",
 	)
 

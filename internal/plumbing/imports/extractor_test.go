@@ -76,18 +76,18 @@ func TestExtractorConsumeModification(t *testing.T) {
 		"63076fa0dfd93e94b6d2ef0fc8b1fdf9092f83c4",
 	))
 	changes[0] = &object.Change{From: object.ChangeEntry{
-		Name: "labours.py",
+		Name: testLaboursPath,
 		Tree: treeFrom,
 		TreeEntry: object.TreeEntry{
-			Name: "labours.py",
+			Name: testLaboursPath,
 			Mode: 0o100644,
 			Hash: gitplumbing.NewHash("1cacfc1bf0f048eb2f31973750983ae5d8de647a"),
 		},
 	}, To: object.ChangeEntry{
-		Name: "labours.py",
+		Name: testLaboursPath,
 		Tree: treeTo,
 		TreeEntry: object.TreeEntry{
-			Name: "labours.py",
+			Name: testLaboursPath,
 			Mode: 0o100644,
 			Hash: gitplumbing.NewHash("c872b8d2291a5224e2c9f6edd7f46039b96b4742"),
 		},
@@ -108,7 +108,7 @@ func TestExtractorConsumeModification(t *testing.T) {
 	ex := exIface.(map[gitplumbing.Hash]lang.File)
 	assert.Len(t, ex, 1)
 	file := ex[gitplumbing.NewHash("c872b8d2291a5224e2c9f6edd7f46039b96b4742")]
-	assert.Equal(t, "labours.py", file.Path)
+	assert.Equal(t, testLaboursPath, file.Path)
 	assert.Equal(t, "Python", file.Lang)
 	assert.Equal(t, []string{
 		"argparse", "datetime", "matplotlib", "matplotlib.pyplot", "numpy",

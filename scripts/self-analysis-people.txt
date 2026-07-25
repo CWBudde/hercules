@@ -1,0 +1,29 @@
+Christian-W. Budde|christian-w. budde|christian@pcjv.de|christian budde|144226859+meko-christian@users.noreply.github.com|4097562+cwbudde@users.noreply.github.com|christian.budde@meko.de
+Claude (AI assistant)|claude|claude fable 5|claude opus 4.8|claude opus 4.8 (1m context)|claude sonnet 4.6|noreply@anthropic.com
+GitHub Copilot|copilot|copilot@github.com
+Vadim Markovtsev|vadim markovtsev|gmarkhor@gmail.com|vadim@athenian.co|vadim@sourced.tech
+Red Cyrax|red cyrax|cyraxred@users.noreply.github.com
+Santiago M. Mola|santiago m. mola|santi@mola.io
+Máximo Cuadros|máximo cuadros|mcuadros@gmail.com
+Alexander Bezzubov|alexander bezzubov|bzz@apache.org
+Jeff Foster|jeff foster|jeff.foster@acm.org
+Maxim Sukharev|maxim sukharev|max@smacker.ru|maxim@sourced.tech
+Moncho|moncho|ramon.cr@gmail.com
+Ádám Lippai|ádám lippai|adam@rigo.sk
+Konstantin Slavnov|konstantin slavnov|konstantin@sourced.tech|kslavnov@gmail.com
+Jim Doty|jim doty|jdoty@pivotal.io
+hnarasaki|29487319+hnarasaki@users.noreply.github.com
+Andrew Kutta|andrew kutta|andrew.kutta@gmail.com
+Marcelo Novaes|marcelo novaes|mnovaes@gmail.com
+Egor|egor|egor@sourced.tech
+Robert Lin|robert lin|robertlin1@gmail.com
+Eli Flanagan|eli flanagan|efx@users.noreply.github.com
+Justin Poehnelt|justin poehnelt|justin.poehnelt@gmail.com
+Umar Nizamani|umar nizamani|umar.nizamani@gmail.com
+Aarni Koskela|aarni koskela|akx@iki.fi
+Jeffrey McAteer|jeffrey mcateer|jeffrey.p.mcateer@gmail.com
+Tim Overly|tim overly|timothy.overly@gmail.com
+Anton Evers|anton evers|anton@eve.rs
+Anatoly Orlov|anatoly orlov|anatolix@aliexpress.ru
+Oliver Bristow|oliver bristow|oliver.bristow@project-tracr.com
+Zou Guangxian|zou guangxian|zouguangxian@163.com

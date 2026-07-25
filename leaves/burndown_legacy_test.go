@@ -2,7 +2,6 @@ package leaves
 
 import (
 	"bytes"
-	"errors"
 	"io"
 	"os"
 	"path"
@@ -148,28 +147,28 @@ func TestLegacyBurndownConsumeFinalize(t *testing.T) {
 		"994eac1cd07235bb9815e547a75c84265dea00f5",
 	))
 	changes[0] = &object.Change{From: object.ChangeEntry{
-		Name: "analyser.go",
+		Name: testAnalyserPath,
 		Tree: treeFrom,
 		TreeEntry: object.TreeEntry{
-			Name: "analyser.go",
+			Name: testAnalyserPath,
 			Mode: 0o100644,
 			Hash: plumbing.NewHash("dc248ba2b22048cc730c571a748e8ffcf7085ab9"),
 		},
 	}, To: object.ChangeEntry{
-		Name: "analyser.go",
+		Name: testAnalyserPath,
 		Tree: treeTo,
 		TreeEntry: object.TreeEntry{
-			Name: "analyser.go",
+			Name: testAnalyserPath,
 			Mode: 0o100644,
 			Hash: plumbing.NewHash("baa64828831d174f40140e4b3cfa77d1e917a2c1"),
 		},
 	}}
 	changes[1] = &object.Change{
 		From: object.ChangeEntry{}, To: object.ChangeEntry{
-			Name: "cmd/hercules/main.go",
+			Name: testHerculesMainPath,
 			Tree: treeTo,
 			TreeEntry: object.TreeEntry{
-				Name: "cmd/hercules/main.go",
+				Name: testHerculesMainPath,
 				Mode: 0o100644,
 				Hash: plumbing.NewHash("c29112dbd697ad9b401333b80c18a63951bc18d9"),
 			},
@@ -177,10 +176,10 @@ func TestLegacyBurndownConsumeFinalize(t *testing.T) {
 	}
 	changes[2] = &object.Change{
 		From: object.ChangeEntry{}, To: object.ChangeEntry{
-			Name: ".travis.yml",
+			Name: testTravisPath,
 			Tree: treeTo,
 			TreeEntry: object.TreeEntry{
-				Name: ".travis.yml",
+				Name: testTravisPath,
 				Mode: 0o100644,
 				Hash: plumbing.NewHash("291286b4ac41952cbd1389fda66420ec03c1a9fe"),
 			},
@@ -214,9 +213,9 @@ func TestLegacyBurndownConsumeFinalize(t *testing.T) {
 		assert.Len(t, bd.files, 3)
 
 		expectedFiles := map[string]int64{
-			"cmd/hercules/main.go": 207,
-			"analyser.go":          926,
-			".travis.yml":          12,
+			testHerculesMainPath: 207,
+			testAnalyserPath:     926,
+			testTravisPath:       12,
 		}
 
 		for k, v := range expectedFiles {
@@ -274,18 +273,18 @@ func TestLegacyBurndownConsumeFinalize(t *testing.T) {
 	))
 	changes[0] = &object.Change{
 		From: object.ChangeEntry{
-			Name: "analyser.go",
+			Name: testAnalyserPath,
 			Tree: treeFrom,
 			TreeEntry: object.TreeEntry{
-				Name: "analyser.go",
+				Name: testAnalyserPath,
 				Mode: 0o100644,
 				Hash: plumbing.NewHash("baa64828831d174f40140e4b3cfa77d1e917a2c1"),
 			},
 		}, To: object.ChangeEntry{
-			Name: "burndown.go",
+			Name: testBurndownPath,
 			Tree: treeTo,
 			TreeEntry: object.TreeEntry{
-				Name: "burndown.go",
+				Name: testBurndownPath,
 				Mode: 0o100644,
 				Hash: plumbing.NewHash("29c9fafd6a2fae8cd20298c3f60115bc31a4c0f2"),
 			},
@@ -293,18 +292,18 @@ func TestLegacyBurndownConsumeFinalize(t *testing.T) {
 	}
 	changes[1] = &object.Change{
 		From: object.ChangeEntry{
-			Name: "cmd/hercules/main.go",
+			Name: testHerculesMainPath,
 			Tree: treeFrom,
 			TreeEntry: object.TreeEntry{
-				Name: "cmd/hercules/main.go",
+				Name: testHerculesMainPath,
 				Mode: 0o100644,
 				Hash: plumbing.NewHash("c29112dbd697ad9b401333b80c18a63951bc18d9"),
 			},
 		}, To: object.ChangeEntry{
-			Name: "cmd/hercules/main.go",
+			Name: testHerculesMainPath,
 			Tree: treeTo,
 			TreeEntry: object.TreeEntry{
-				Name: "cmd/hercules/main.go",
+				Name: testHerculesMainPath,
 				Mode: 0o100644,
 				Hash: plumbing.NewHash("f7d918ec500e2f925ecde79b51cc007bac27de72"),
 			},
@@ -312,10 +311,10 @@ func TestLegacyBurndownConsumeFinalize(t *testing.T) {
 	}
 	changes[2] = &object.Change{
 		From: object.ChangeEntry{
-			Name: ".travis.yml",
+			Name: testTravisPath,
 			Tree: treeTo,
 			TreeEntry: object.TreeEntry{
-				Name: ".travis.yml",
+				Name: testTravisPath,
 				Mode: 0o100644,
 				Hash: plumbing.NewHash("291286b4ac41952cbd1389fda66420ec03c1a9fe"),
 			},
@@ -331,8 +330,8 @@ func TestLegacyBurndownConsumeFinalize(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 30, bd.previousTick)
 	assert.Len(t, bd.files, 2)
-	assert.Equal(t, 290, bd.files["cmd/hercules/main.go"].Len())
-	assert.Equal(t, 543, bd.files["burndown.go"].Len())
+	assert.Equal(t, 290, bd.files[testHerculesMainPath].Len())
+	assert.Equal(t, 543, bd.files[testBurndownPath].Len())
 
 	assert.Len(t, bd.peopleHistories, 2)
 	assert.Equal(t, bd.peopleHistories[0][0].deltas[0], totalLines)
@@ -381,13 +380,13 @@ func TestLegacyBurndownConsumeFinalize(t *testing.T) {
 	assert.Equal(t, int64(464), out.GlobalHistory[1][0])
 	assert.Equal(t, int64(369), out.GlobalHistory[1][1])
 	assert.Len(t, out.FileHistories, 2)
-	assert.Len(t, out.FileHistories["cmd/hercules/main.go"], 2)
-	assert.Len(t, out.FileHistories["burndown.go"], 2)
-	assert.Len(t, out.FileHistories["cmd/hercules/main.go"][0], 2)
-	assert.Len(t, out.FileHistories["burndown.go"][0], 2)
+	assert.Len(t, out.FileHistories[testHerculesMainPath], 2)
+	assert.Len(t, out.FileHistories[testBurndownPath], 2)
+	assert.Len(t, out.FileHistories[testHerculesMainPath][0], 2)
+	assert.Len(t, out.FileHistories[testBurndownPath][0], 2)
 	assert.Len(t, out.FileOwnership, 2)
-	assert.Equal(t, map[int]int{0: 171, 1: 119}, out.FileOwnership["cmd/hercules/main.go"])
-	assert.Equal(t, map[int]int{0: 293, 1: 250}, out.FileOwnership["burndown.go"])
+	assert.Equal(t, map[int]int{0: 171, 1: 119}, out.FileOwnership[testHerculesMainPath])
+	assert.Equal(t, map[int]int{0: 293, 1: 250}, out.FileOwnership[testBurndownPath])
 	assert.Len(t, out.PeopleMatrix, 2)
 	assert.Len(t, out.PeopleMatrix[0], 4)
 	assert.Len(t, out.PeopleMatrix[1], 4)
@@ -424,28 +423,28 @@ func TestLegacyBurndownConsumeMergeAuthorMissing(t *testing.T) {
 		"994eac1cd07235bb9815e547a75c84265dea00f5",
 	))
 	changes[0] = &object.Change{From: object.ChangeEntry{
-		Name: "analyser.go",
+		Name: testAnalyserPath,
 		Tree: treeFrom,
 		TreeEntry: object.TreeEntry{
-			Name: "analyser.go",
+			Name: testAnalyserPath,
 			Mode: 0o100644,
 			Hash: plumbing.NewHash("dc248ba2b22048cc730c571a748e8ffcf7085ab9"),
 		},
 	}, To: object.ChangeEntry{
-		Name: "analyser.go",
+		Name: testAnalyserPath,
 		Tree: treeTo,
 		TreeEntry: object.TreeEntry{
-			Name: "analyser.go",
+			Name: testAnalyserPath,
 			Mode: 0o100644,
 			Hash: plumbing.NewHash("baa64828831d174f40140e4b3cfa77d1e917a2c1"),
 		},
 	}}
 	changes[1] = &object.Change{
 		From: object.ChangeEntry{}, To: object.ChangeEntry{
-			Name: "cmd/hercules/main.go",
+			Name: testHerculesMainPath,
 			Tree: treeTo,
 			TreeEntry: object.TreeEntry{
-				Name: "cmd/hercules/main.go",
+				Name: testHerculesMainPath,
 				Mode: 0o100644,
 				Hash: plumbing.NewHash("c29112dbd697ad9b401333b80c18a63951bc18d9"),
 			},
@@ -453,10 +452,10 @@ func TestLegacyBurndownConsumeMergeAuthorMissing(t *testing.T) {
 	}
 	changes[2] = &object.Change{
 		From: object.ChangeEntry{}, To: object.ChangeEntry{
-			Name: ".travis.yml",
+			Name: testTravisPath,
 			Tree: treeTo,
 			TreeEntry: object.TreeEntry{
-				Name: ".travis.yml",
+				Name: testTravisPath,
 				Mode: 0o100644,
 				Hash: plumbing.NewHash("291286b4ac41952cbd1389fda66420ec03c1a9fe"),
 			},
@@ -488,18 +487,18 @@ func TestLegacyBurndownConsumeMergeAuthorMissing(t *testing.T) {
 	changes = object.Changes{
 		&object.Change{
 			From: object.ChangeEntry{
-				Name: ".travis.yml",
+				Name: testTravisPath,
 				Tree: treeFrom,
 				TreeEntry: object.TreeEntry{
-					Name: ".travis.yml",
+					Name: testTravisPath,
 					Mode: 0o100644,
 					Hash: plumbing.NewHash("291286b4ac41952cbd1389fda66420ec03c1a9fe"),
 				},
 			}, To: object.ChangeEntry{
-				Name: ".travis.yml",
+				Name: testTravisPath,
 				Tree: treeTo,
 				TreeEntry: object.TreeEntry{
-					Name: ".travis.yml",
+					Name: testTravisPath,
 					Mode: 0o100644,
 					Hash: plumbing.NewHash("4cdb0d969cf976f76634d1f348da3a175c9b4501"),
 				},
@@ -520,7 +519,7 @@ func TestLegacyBurndownConsumeMergeAuthorMissing(t *testing.T) {
 	assert.Equal(t, core.AuthorMissing, bd.mergedAuthor)
 }
 
-func bakeBurndownForSerialization(t *testing.T, firstAuthor, secondAuthor int) (
+func bakeBurndownForSerialization(t *testing.T, secondAuthor int) (
 	BurndownResult, *LegacyBurndownAnalysis,
 ) {
 	t.Helper()
@@ -534,7 +533,7 @@ func bakeBurndownForSerialization(t *testing.T, firstAuthor, secondAuthor int) (
 	assert.NoError(t, bd.Initialize(test.Repository))
 	deps := map[string]any{}
 	// stage 1
-	deps[identity.DependencyAuthor] = firstAuthor
+	deps[identity.DependencyAuthor] = 0
 	deps[items.DependencyTick] = 0
 	cache := map[plumbing.Hash]*items.CachedBlob{}
 	AddHash(t, cache, "291286b4ac41952cbd1389fda66420ec03c1a9fe")
@@ -550,28 +549,28 @@ func bakeBurndownForSerialization(t *testing.T, firstAuthor, secondAuthor int) (
 		"994eac1cd07235bb9815e547a75c84265dea00f5",
 	))
 	changes[0] = &object.Change{From: object.ChangeEntry{
-		Name: "analyser.go",
+		Name: testAnalyserPath,
 		Tree: treeFrom,
 		TreeEntry: object.TreeEntry{
-			Name: "analyser.go",
+			Name: testAnalyserPath,
 			Mode: 0o100644,
 			Hash: plumbing.NewHash("dc248ba2b22048cc730c571a748e8ffcf7085ab9"),
 		},
 	}, To: object.ChangeEntry{
-		Name: "analyser.go",
+		Name: testAnalyserPath,
 		Tree: treeTo,
 		TreeEntry: object.TreeEntry{
-			Name: "analyser.go",
+			Name: testAnalyserPath,
 			Mode: 0o100644,
 			Hash: plumbing.NewHash("baa64828831d174f40140e4b3cfa77d1e917a2c1"),
 		},
 	}}
 	changes[1] = &object.Change{
 		From: object.ChangeEntry{}, To: object.ChangeEntry{
-			Name: "cmd/hercules/main.go",
+			Name: testHerculesMainPath,
 			Tree: treeTo,
 			TreeEntry: object.TreeEntry{
-				Name: "cmd/hercules/main.go",
+				Name: testHerculesMainPath,
 				Mode: 0o100644,
 				Hash: plumbing.NewHash("c29112dbd697ad9b401333b80c18a63951bc18d9"),
 			},
@@ -579,10 +578,10 @@ func bakeBurndownForSerialization(t *testing.T, firstAuthor, secondAuthor int) (
 	}
 	changes[2] = &object.Change{
 		From: object.ChangeEntry{}, To: object.ChangeEntry{
-			Name: ".travis.yml",
+			Name: testTravisPath,
 			Tree: treeTo,
 			TreeEntry: object.TreeEntry{
-				Name: ".travis.yml",
+				Name: testTravisPath,
 				Mode: 0o100644,
 				Hash: plumbing.NewHash("291286b4ac41952cbd1389fda66420ec03c1a9fe"),
 			},
@@ -595,7 +594,8 @@ func bakeBurndownForSerialization(t *testing.T, firstAuthor, secondAuthor int) (
 	fd := fixtures.FileDiff()
 	result, _ := fd.Consume(deps)
 	deps[items.DependencyFileDiff] = result[items.DependencyFileDiff]
-	bd.Consume(deps)
+	_, err := bd.Consume(deps)
+	assert.NoError(t, err)
 
 	// stage 2
 	// 2b1ed978194a94edeabbca6de7ff3b5771d4d665
@@ -617,18 +617,18 @@ func bakeBurndownForSerialization(t *testing.T, firstAuthor, secondAuthor int) (
 	))
 	changes[0] = &object.Change{
 		From: object.ChangeEntry{
-			Name: "analyser.go",
+			Name: testAnalyserPath,
 			Tree: treeFrom,
 			TreeEntry: object.TreeEntry{
-				Name: "analyser.go",
+				Name: testAnalyserPath,
 				Mode: 0o100644,
 				Hash: plumbing.NewHash("baa64828831d174f40140e4b3cfa77d1e917a2c1"),
 			},
 		}, To: object.ChangeEntry{
-			Name: "burndown.go",
+			Name: testBurndownPath,
 			Tree: treeTo,
 			TreeEntry: object.TreeEntry{
-				Name: "burndown.go",
+				Name: testBurndownPath,
 				Mode: 0o100644,
 				Hash: plumbing.NewHash("29c9fafd6a2fae8cd20298c3f60115bc31a4c0f2"),
 			},
@@ -636,18 +636,18 @@ func bakeBurndownForSerialization(t *testing.T, firstAuthor, secondAuthor int) (
 	}
 	changes[1] = &object.Change{
 		From: object.ChangeEntry{
-			Name: "cmd/hercules/main.go",
+			Name: testHerculesMainPath,
 			Tree: treeFrom,
 			TreeEntry: object.TreeEntry{
-				Name: "cmd/hercules/main.go",
+				Name: testHerculesMainPath,
 				Mode: 0o100644,
 				Hash: plumbing.NewHash("c29112dbd697ad9b401333b80c18a63951bc18d9"),
 			},
 		}, To: object.ChangeEntry{
-			Name: "cmd/hercules/main.go",
+			Name: testHerculesMainPath,
 			Tree: treeTo,
 			TreeEntry: object.TreeEntry{
-				Name: "cmd/hercules/main.go",
+				Name: testHerculesMainPath,
 				Mode: 0o100644,
 				Hash: plumbing.NewHash("f7d918ec500e2f925ecde79b51cc007bac27de72"),
 			},
@@ -655,10 +655,10 @@ func bakeBurndownForSerialization(t *testing.T, firstAuthor, secondAuthor int) (
 	}
 	changes[2] = &object.Change{
 		From: object.ChangeEntry{
-			Name: ".travis.yml",
+			Name: testTravisPath,
 			Tree: treeTo,
 			TreeEntry: object.TreeEntry{
-				Name: ".travis.yml",
+				Name: testTravisPath,
 				Mode: 0o100644,
 				Hash: plumbing.NewHash("291286b4ac41952cbd1389fda66420ec03c1a9fe"),
 			},
@@ -668,15 +668,16 @@ func bakeBurndownForSerialization(t *testing.T, firstAuthor, secondAuthor int) (
 	// fd = fixtures.FileDiff()
 	result, _ = fd.Consume(deps)
 	deps[items.DependencyFileDiff] = result[items.DependencyFileDiff]
-	people := [...]string{"one@srcd", "two@srcd"}
+	people := [...]string{testPersonOneSource, testPersonTwoSource}
 	bd.reversedPeopleDict = people[:]
-	bd.Consume(deps)
+	_, err = bd.Consume(deps)
+	assert.NoError(t, err)
 	out := bd.Finalize().(BurndownResult)
 	return out, &bd
 }
 
 func TestLegacyBurndownSerialize(t *testing.T) {
-	out, _ := bakeBurndownForSerialization(t, 0, 1)
+	out, _ := bakeBurndownForSerialization(t, 1)
 	bd := &LegacyBurndownAnalysis{}
 
 	buffer := &bytes.Buffer{}
@@ -730,8 +731,8 @@ func TestLegacyBurndownSerialize(t *testing.T) {
 	assert.Equal(t, uint32(464), msg.GetProject().GetRows()[1].GetColumns()[0])
 	assert.Equal(t, uint32(369), msg.GetProject().GetRows()[1].GetColumns()[1])
 	assert.Len(t, msg.GetFiles(), 2)
-	assert.Equal(t, "burndown.go", msg.GetFiles()[0].GetName())
-	assert.Equal(t, "cmd/hercules/main.go", msg.GetFiles()[1].GetName())
+	assert.Equal(t, testBurndownPath, msg.GetFiles()[0].GetName())
+	assert.Equal(t, testHerculesMainPath, msg.GetFiles()[1].GetName())
 	assert.Len(t, msg.GetFiles()[0].GetRows(), 2)
 	assert.Len(t, msg.GetFiles()[0].GetRows()[0].GetColumns(), 1)
 	assert.Equal(t, uint32(926), msg.GetFiles()[0].GetRows()[0].GetColumns()[0])
@@ -742,8 +743,8 @@ func TestLegacyBurndownSerialize(t *testing.T) {
 	assert.Equal(t, map[int32]int32{0: 293, 1: 250}, msg.GetFilesOwnership()[0].GetValue())
 	assert.Equal(t, map[int32]int32{0: 171, 1: 119}, msg.GetFilesOwnership()[1].GetValue())
 	assert.Len(t, msg.GetPeople(), 2)
-	assert.Equal(t, "one@srcd", msg.GetPeople()[0].GetName())
-	assert.Equal(t, "two@srcd", msg.GetPeople()[1].GetName())
+	assert.Equal(t, testPersonOneSource, msg.GetPeople()[0].GetName())
+	assert.Equal(t, testPersonTwoSource, msg.GetPeople()[1].GetName())
 	assert.Len(t, msg.GetPeople()[0].GetRows(), 2)
 	assert.Len(t, msg.GetPeople()[0].GetRows()[0].GetColumns(), 1)
 	assert.Len(t, msg.GetPeople()[0].GetRows()[1].GetColumns(), 1)
@@ -765,7 +766,7 @@ func TestLegacyBurndownSerialize(t *testing.T) {
 }
 
 func TestLegacyBurndownSerializeAuthorMissing(t *testing.T) {
-	out, _ := bakeBurndownForSerialization(t, 0, core.AuthorMissing)
+	out, _ := bakeBurndownForSerialization(t, core.AuthorMissing)
 	bd := &LegacyBurndownAnalysis{}
 
 	buffer := &bytes.Buffer{}
@@ -818,8 +819,8 @@ func TestLegacyBurndownSerializeAuthorMissing(t *testing.T) {
 	assert.Equal(t, uint32(464), msg.GetProject().GetRows()[1].GetColumns()[0])
 	assert.Equal(t, uint32(369), msg.GetProject().GetRows()[1].GetColumns()[1])
 	assert.Len(t, msg.GetFiles(), 2)
-	assert.Equal(t, "burndown.go", msg.GetFiles()[0].GetName())
-	assert.Equal(t, "cmd/hercules/main.go", msg.GetFiles()[1].GetName())
+	assert.Equal(t, testBurndownPath, msg.GetFiles()[0].GetName())
+	assert.Equal(t, testHerculesMainPath, msg.GetFiles()[1].GetName())
 	assert.Len(t, msg.GetFiles()[0].GetRows(), 2)
 	assert.Len(t, msg.GetFiles()[0].GetRows()[0].GetColumns(), 1)
 	assert.Equal(t, uint32(926), msg.GetFiles()[0].GetRows()[0].GetColumns()[0])
@@ -830,8 +831,8 @@ func TestLegacyBurndownSerializeAuthorMissing(t *testing.T) {
 	assert.Equal(t, map[int32]int32{0: 293, -1: 250}, msg.GetFilesOwnership()[0].GetValue())
 	assert.Equal(t, map[int32]int32{0: 171, -1: 119}, msg.GetFilesOwnership()[1].GetValue())
 	assert.Len(t, msg.GetPeople(), 2)
-	assert.Equal(t, "one@srcd", msg.GetPeople()[0].GetName())
-	assert.Equal(t, "two@srcd", msg.GetPeople()[1].GetName())
+	assert.Equal(t, testPersonOneSource, msg.GetPeople()[0].GetName())
+	assert.Equal(t, testPersonTwoSource, msg.GetPeople()[1].GetName())
 	assert.Len(t, msg.GetPeople()[0].GetRows(), 2)
 	assert.Len(t, msg.GetPeople()[0].GetRows()[0].GetColumns(), 1)
 	assert.Len(t, msg.GetPeople()[0].GetRows()[1].GetColumns(), 1)
@@ -1111,7 +1112,7 @@ func TestLegacyBurndownAddMatrixNaNs(t *testing.T) {
 }
 
 func TestLegacyBurndownMergeGlobalHistory(t *testing.T) {
-	people1 := [...]string{"one", "two"}
+	people1 := [...]string{testPersonOne, testPersonTwo}
 	res1 := BurndownResult{
 		GlobalHistory:      [][]int64{},
 		FileHistories:      map[string]burndown.DenseHistory{},
@@ -1160,7 +1161,7 @@ func TestLegacyBurndownMergeGlobalHistory(t *testing.T) {
 	res1.PeopleMatrix[1][1] = 60
 	res1.PeopleMatrix[1][2] = 70
 	res1.PeopleMatrix[1][3] = 80
-	people2 := [...]string{"two", "three"}
+	people2 := [...]string{testPersonTwo, testPersonThree}
 	res2 := BurndownResult{
 		GlobalHistory:      nil,
 		FileHistories:      map[string]burndown.DenseHistory{},
@@ -1272,8 +1273,10 @@ func TestLegacyBurndownMergeGlobalHistory_withDifferentTickSizes(t *testing.T) {
 		tickSize: 24 * time.Hour,
 	}
 	merged := bd.MergeResults(res1, res2, &c1, &c2)
-	assert.IsType(t, errors.New(""), merged)
-	assert.Contains(t, merged.(error).Error(), "mismatching tick sizes")
+	mergedErr, ok := merged.(error)
+	assert.True(t, ok)
+	assert.ErrorIs(t, mergedErr, errBurndownMismatchingTickSizes)
+	assert.Contains(t, mergedErr.Error(), "mismatching tick sizes")
 }
 
 func TestLegacyBurndownMergeNils(t *testing.T) {
@@ -1329,7 +1332,7 @@ func TestLegacyBurndownMergeNils(t *testing.T) {
 		{800, 600, 600},
 	}
 	res2.FileHistories = map[string]DenseHistory{"test": res2.GlobalHistory}
-	people1 := [...]string{"one", "two"}
+	people1 := [...]string{testPersonOne, testPersonTwo}
 	res1.reversedPeopleDict = people1[:]
 	res1.PeopleMatrix = append(res1.PeopleMatrix, make([]int64, 4))
 	res1.PeopleMatrix = append(res1.PeopleMatrix, make([]int64, 4))
@@ -1341,7 +1344,7 @@ func TestLegacyBurndownMergeNils(t *testing.T) {
 	res1.PeopleMatrix[1][1] = 60
 	res1.PeopleMatrix[1][2] = 70
 	res1.PeopleMatrix[1][3] = 80
-	people2 := [...]string{"two", "three"}
+	people2 := [...]string{testPersonTwo, testPersonThree}
 	res2.reversedPeopleDict = people2[:]
 	merged = bd.MergeResults(res1, res2, &c1, &c2).(BurndownResult)
 	// calculated in a spreadsheet
@@ -1423,12 +1426,12 @@ func TestLegacyBurndownNegativePeople(t *testing.T) {
 }
 
 func TestLegacyBurndownHibernateBoot(t *testing.T) {
-	_, bd := bakeBurndownForSerialization(t, 0, 1)
+	_, bd := bakeBurndownForSerialization(t, 1)
 	assert.Equal(t, 157, bd.fileAllocator.Size())
 	assert.Equal(t, 155, bd.fileAllocator.Used())
 	assert.NoError(t, bd.Hibernate())
 	assert.PanicsWithValue(t, "LegacyBurndownAnalysis.Consume() was called on a hibernated instance",
-		func() { bd.Consume(nil) })
+		func() { _, _ = bd.Consume(nil) })
 	assert.Equal(t, 0, bd.fileAllocator.Size())
 	assert.NoError(t, bd.Boot())
 	assert.Equal(t, 157, bd.fileAllocator.Size())
@@ -1436,14 +1439,14 @@ func TestLegacyBurndownHibernateBoot(t *testing.T) {
 }
 
 func TestLegacyBurndownHibernateBootSerialize(t *testing.T) {
-	_, bd := bakeBurndownForSerialization(t, 0, 1)
+	_, bd := bakeBurndownForSerialization(t, 1)
 	assert.Equal(t, 157, bd.fileAllocator.Size())
 	assert.Equal(t, 155, bd.fileAllocator.Used())
 	bd.HibernationToDisk = true
 	assert.NoError(t, bd.Hibernate())
 	assert.NotEmpty(t, bd.hibernatedFileName)
 	assert.PanicsWithValue(t, "LegacyBurndownAnalysis.Consume() was called on a hibernated instance",
-		func() { bd.Consume(nil) })
+		func() { _, _ = bd.Consume(nil) })
 	assert.Equal(t, 0, bd.fileAllocator.Size())
 	assert.NoError(t, bd.Boot())
 	assert.Equal(t, 157, bd.fileAllocator.Size())
@@ -5489,7 +5492,7 @@ func TestLegacyBurndownMergePeopleHistories(t *testing.T) {
 		PeopleHistories:    []burndown.DenseHistory{h1, h1},
 		PeopleMatrix:       nil,
 		tickSize:           24 * time.Hour,
-		reversedPeopleDict: []string{"one", "three"},
+		reversedPeopleDict: []string{testPersonOne, testPersonThree},
 		sampling:           15, // 3
 		granularity:        20, // 3
 	}
@@ -5505,7 +5508,7 @@ func TestLegacyBurndownMergePeopleHistories(t *testing.T) {
 		PeopleHistories:    []burndown.DenseHistory{h2, h2},
 		PeopleMatrix:       nil,
 		tickSize:           24 * time.Hour,
-		reversedPeopleDict: []string{"one", "two"},
+		reversedPeopleDict: []string{testPersonOne, testPersonTwo},
 		sampling:           14,
 		granularity:        19,
 	}
@@ -5526,7 +5529,7 @@ func TestLegacyBurndownMergePeopleHistories(t *testing.T) {
 		{605, 767, 670, 0},
 		{575, 709, 685, 178},
 	}
-	assert.Equal(t, []string{"one", "three", "two"}, merged.reversedPeopleDict)
+	assert.Equal(t, []string{testPersonOne, testPersonThree, testPersonTwo}, merged.reversedPeopleDict)
 	assert.Equal(t, mh, merged.PeopleHistories[0])
 	mh = burndown.DenseHistory{
 		{46, 0, 0, 0},
@@ -5552,34 +5555,34 @@ func TestLegacyBurndownHandleRenameCycle(t *testing.T) {
 	bd := LegacyBurndownAnalysis{
 		TrackFiles: true,
 		renames: map[string]string{
-			"one":   "two",
-			"two":   "three",
-			"three": "one",
+			testPersonOne:   testPersonTwo,
+			testPersonTwo:   testPersonThree,
+			testPersonThree: testPersonOne,
 		},
 		fileHistories: map[string]sparseHistory{
-			"two": {},
+			testPersonTwo: {},
 		},
 		files: map[string]*linehistory.File{
-			"one": {Id: 1},
+			testPersonOne: {Id: 1},
 		},
 	}
-	assert.NoError(t, bd.handleRename("one", "three"))
+	assert.NoError(t, bd.handleRename(testPersonOne, testPersonThree))
 	assert.Equal(t, map[string]string{
-		"one":   "three",
-		"two":   "three",
-		"three": "one",
+		testPersonOne:   testPersonThree,
+		testPersonTwo:   testPersonThree,
+		testPersonThree: testPersonOne,
 	}, bd.renames)
 	assert.Equal(t, map[string]sparseHistory{
-		"two":   {},
-		"three": {},
+		testPersonTwo:   {},
+		testPersonThree: {},
 	}, bd.fileHistories)
 	assert.Equal(t, map[string]*linehistory.File{
-		"three": {Id: 1},
+		testPersonThree: {Id: 1},
 	}, bd.files)
 }
 
 func TestLegacyBurndownResultGetters(t *testing.T) {
-	br := BurndownResult{tickSize: time.Hour, reversedPeopleDict: []string{"one", "two"}}
+	br := BurndownResult{tickSize: time.Hour, reversedPeopleDict: []string{testPersonOne, testPersonTwo}}
 	assert.Equal(t, br.tickSize, br.GetTickSize())
 	assert.Equal(t, br.GetIdentities(), br.reversedPeopleDict)
 }

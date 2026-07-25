@@ -23,17 +23,17 @@ func parseFull(lang *sitter.Language, content []byte) *sitter.Node {
 // captures via the visit callback. Errors during cursor iteration are
 // suppressed; a malformed query is a programmer error caught at init time.
 func runQuery(
-	q *sitter.Query,
+	query *sitter.Query,
 	root *sitter.Node,
 	lang *sitter.Language,
 	content []byte,
 	visit func(captures []sitter.QueryCapture),
 ) {
-	if q == nil || root == nil {
+	if query == nil || root == nil {
 		return
 	}
 
-	cursor := q.Exec(root, lang, content)
+	cursor := query.Exec(root, lang, content)
 	for {
 		m, ok := cursor.NextMatch()
 		if !ok {
@@ -60,7 +60,7 @@ func nodeTextString(node *sitter.Node, content []byte) string {
 
 // eachNode walks every node (named and unnamed) in pre-order, calling fnc.
 // If fnc returns false, descent into the current node is skipped.
-func eachNode(root *sitter.Node, lang *sitter.Language, fnc func(n *sitter.Node) bool) {
+func eachNode(root *sitter.Node, fnc func(node *sitter.Node) bool) {
 	if root == nil {
 		return
 	}
@@ -70,22 +70,27 @@ func eachNode(root *sitter.Node, lang *sitter.Language, fnc func(n *sitter.Node)
 	}
 
 	for i := range root.ChildCount() {
-		eachNode(root.Child(i), lang, fnc)
+		eachNode(root.Child(i), fnc)
 	}
 }
 
 // eachNodeOfTypes walks the tree and calls fnc only for nodes whose Type
 // matches one of the supplied names. Returning false from fnc skips descent
 // into that node's subtree.
-func eachNodeOfTypes(root *sitter.Node, lang *sitter.Language, fnc func(n *sitter.Node) bool, types ...string) {
-	eachNode(root, lang, func(n *sitter.Node) bool {
-		typ := n.Type(lang)
+func eachNodeOfTypes(
+	root *sitter.Node,
+	lang *sitter.Language,
+	fnc func(node *sitter.Node) bool,
+	types ...string,
+) {
+	eachNode(root, func(node *sitter.Node) bool {
+		typ := node.Type(lang)
 		if typ == "" {
 			return true
 		}
 
 		if slices.Contains(types, typ) {
-			return fnc(n)
+			return fnc(node)
 		}
 
 		return true

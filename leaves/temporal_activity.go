@@ -355,52 +355,115 @@ func protobufAuthorID(author int) int32 {
 		return -1
 	}
 
-	return int32(author)
-}
-
-func temporalActivityToProto(activity *DeveloperTemporalActivity) *pb.DeveloperTemporalActivity {
-	return &pb.DeveloperTemporalActivity{
-		Weekdays: temporalDimensionToProto(activity.Weekdays),
-		Hours:    temporalDimensionToProto(activity.Hours),
-		Months:   temporalDimensionToProto(activity.Months),
-		Weeks:    temporalDimensionToProto(activity.Weeks),
+	authorID, err := intToProtoInt32(author, "author ID")
+	if err != nil {
+		panic(err)
 	}
+
+	return authorID
 }
 
-func temporalDimensionToProto(dimension TemporalDimension) *pb.TemporalDimension {
+func temporalActivityToProto(activity *DeveloperTemporalActivity) (*pb.DeveloperTemporalActivity, error) {
+	weekdays, err := temporalDimensionToProto(activity.Weekdays)
+	if err != nil {
+		return nil, err
+	}
+	hours, err := temporalDimensionToProto(activity.Hours)
+	if err != nil {
+		return nil, err
+	}
+	months, err := temporalDimensionToProto(activity.Months)
+	if err != nil {
+		return nil, err
+	}
+	weeks, err := temporalDimensionToProto(activity.Weeks)
+	if err != nil {
+		return nil, err
+	}
+
+	return &pb.DeveloperTemporalActivity{
+		Weekdays: weekdays, Hours: hours, Months: months, Weeks: weeks,
+	}, nil
+}
+
+func temporalDimensionToProto(dimension TemporalDimension) (*pb.TemporalDimension, error) {
 	result := &pb.TemporalDimension{
 		Commits: make([]int32, len(dimension.Commits)),
 		Lines:   make([]int32, len(dimension.Lines)),
 	}
 	for i, count := range dimension.Commits {
-		result.Commits[i] = int32(count)
+		pbCount, err := intToProtoInt32(count, "temporal commit count")
+		if err != nil {
+			return nil, err
+		}
+		result.Commits[i] = pbCount
 	}
 
 	for i, count := range dimension.Lines {
-		result.Lines[i] = int32(count)
+		pbCount, err := intToProtoInt32(count, "temporal line count")
+		if err != nil {
+			return nil, err
+		}
+		result.Lines[i] = pbCount
 	}
 
-	return result
+	return result, nil
 }
 
 func temporalTicksToProto(
 	ticks map[int]map[int]*TemporalActivityTick,
-) map[int32]*pb.TemporalActivityTickDevs {
+) (map[int32]*pb.TemporalActivityTickDevs, error) {
 	result := make(map[int32]*pb.TemporalActivityTickDevs, len(ticks))
 	for tick, developers := range ticks {
 		pbDevelopers := &pb.TemporalActivityTickDevs{Devs: make(map[int32]*pb.TemporalActivityTick)}
+
 		for developer, activity := range developers {
-			pbDevelopers.Devs[protobufAuthorID(developer)] = &pb.TemporalActivityTick{
-				Commits: int32(activity.Commits), Lines: int32(activity.Lines),
-				Weekday: int32(activity.Weekday), Hour: int32(activity.Hour),
-				Month: int32(activity.Month), Week: int32(activity.Week),
+			developerID, err := intToProtoInt32(developer, "temporal author")
+			if err != nil {
+				return nil, err
+			}
+
+			if developer == core.AuthorMissing {
+				developerID = -1
+			}
+			commits, err := intToProtoInt32(activity.Commits, "temporal tick commit count")
+			if err != nil {
+				return nil, err
+			}
+			lines, err := intToProtoInt32(activity.Lines, "temporal tick line count")
+			if err != nil {
+				return nil, err
+			}
+			weekday, err := intToProtoInt32(activity.Weekday, "temporal weekday")
+			if err != nil {
+				return nil, err
+			}
+			hour, err := intToProtoInt32(activity.Hour, "temporal hour")
+			if err != nil {
+				return nil, err
+			}
+			month, err := intToProtoInt32(activity.Month, "temporal month")
+			if err != nil {
+				return nil, err
+			}
+			week, err := intToProtoInt32(activity.Week, "temporal ISO week")
+			if err != nil {
+				return nil, err
+			}
+			pbDevelopers.Devs[developerID] = &pb.TemporalActivityTick{
+				Commits: commits, Lines: lines,
+				Weekday: weekday, Hour: hour, Month: month, Week: week,
 			}
 		}
 
-		result[int32(tick)] = pbDevelopers
+		tickID, err := intToProtoInt32(tick, "temporal tick")
+		if err != nil {
+			return nil, err
+		}
+		result[tickID] = pbDevelopers
 	}
 
-	return result
+	return result, nil
 }
 
 var _ = core.RegisterPipelineItem(&TemporalActivityAnalysis{})
@@ -484,10 +547,27 @@ func (ta *TemporalActivityAnalysis) serializeBinary(result *TemporalActivityResu
 	message.Activities = make(map[int32]*pb.DeveloperTemporalActivity)
 
 	for dev, activity := range result.Activities {
-		message.Activities[protobufAuthorID(dev)] = temporalActivityToProto(activity)
+		developerID, err := intToProtoInt32(dev, "temporal author")
+		if err != nil {
+			return err
+		}
+
+		if dev == core.AuthorMissing {
+			developerID = -1
+		}
+		pbActivity, err := temporalActivityToProto(activity)
+		if err != nil {
+			return err
+		}
+		message.Activities[developerID] = pbActivity
 	}
 
-	message.Ticks = temporalTicksToProto(result.Ticks)
+	var err error
+
+	message.Ticks, err = temporalTicksToProto(result.Ticks)
+	if err != nil {
+		return err
+	}
 	message.TickSize = int64(result.tickSize)
 
 	serialized, err := proto.Marshal(&message)

@@ -1,6 +1,7 @@
 package leaves
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"sort"
@@ -14,6 +15,8 @@ import (
 	"github.com/cwbudde/hercules/internal/pb"
 	items "github.com/cwbudde/hercules/internal/plumbing"
 )
+
+var errUnexpectedRefactoringProxyResult = errors.New("result is not a RefactoringProxyResult")
 
 const (
 	// ConfigRefactoringThreshold is the name of the configuration option.
@@ -186,19 +189,19 @@ func (rp *RefactoringProxy) Finalize() any {
 		tickSize:      rp.tickSize,
 	}
 
-	for i, tick := range ticks {
+	for tickIndex, tick := range ticks {
 		metrics := rp.tickMetrics[tick]
 
-		result.Ticks[i] = tick
-		result.TotalChanges[i] = metrics.TotalChanges
+		result.Ticks[tickIndex] = tick
+		result.TotalChanges[tickIndex] = metrics.TotalChanges
 
 		if metrics.TotalChanges > 0 {
 			ratio := float64(metrics.Renames) / float64(metrics.TotalChanges)
-			result.RenameRatios[i] = ratio
-			result.IsRefactoring[i] = ratio > rp.RefactoringThreshold
+			result.RenameRatios[tickIndex] = ratio
+			result.IsRefactoring[tickIndex] = ratio > rp.RefactoringThreshold
 		} else {
-			result.RenameRatios[i] = 0.0
-			result.IsRefactoring[i] = false
+			result.RenameRatios[tickIndex] = 0.0
+			result.IsRefactoring[tickIndex] = false
 		}
 	}
 
@@ -214,7 +217,7 @@ func (rp *RefactoringProxy) Fork(n int) []core.PipelineItem {
 func (rp *RefactoringProxy) Serialize(result any, binary bool, writer io.Writer) error {
 	refactoringResult, ok := result.(RefactoringProxyResult)
 	if !ok {
-		return fmt.Errorf("result is not a RefactoringProxyResult: '%v'", result)
+		return fmt.Errorf("%w: '%v'", errUnexpectedRefactoringProxyResult, result)
 	}
 
 	if binary {
@@ -334,10 +337,20 @@ func (rp *RefactoringProxy) serializeBinary(result *RefactoringProxyResult, writ
 		TickSize:      int64(result.tickSize),
 	}
 
-	for i := range result.Ticks {
-		message.Ticks[i] = int32(result.Ticks[i])
-		message.RenameRatios[i] = float32(result.RenameRatios[i])
-		message.TotalChanges[i] = int32(result.TotalChanges[i])
+	for tickIndex := range result.Ticks {
+		tick, err := intToProtoInt32(result.Ticks[tickIndex], "refactoring-proxy tick")
+		if err != nil {
+			return err
+		}
+		totalChanges, err := intToProtoInt32(
+			result.TotalChanges[tickIndex], "refactoring-proxy total changes",
+		)
+		if err != nil {
+			return err
+		}
+		message.Ticks[tickIndex] = tick
+		message.RenameRatios[tickIndex] = float32(result.RenameRatios[tickIndex])
+		message.TotalChanges[tickIndex] = totalChanges
 	}
 
 	serialized, err := proto.Marshal(&message)

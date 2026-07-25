@@ -84,17 +84,17 @@ func (ex *Extractor) Configure(facts map[string]any) error {
 		ex.l = l
 	}
 
-	if gr, exists := facts[ConfigImportsGoroutines].(int); exists {
-		if gr < 1 {
+	if goroutineCount, exists := facts[ConfigImportsGoroutines].(int); exists {
+		if goroutineCount < 1 {
 			if ex.l != nil {
 				ex.l.Warnf("invalid number of goroutines for the imports extraction: %d. Set to %d.",
-					gr, runtime.NumCPU())
+					goroutineCount, runtime.NumCPU())
 			}
 
-			gr = runtime.NumCPU()
+			goroutineCount = runtime.NumCPU()
 		}
 
-		ex.Goroutines = gr
+		ex.Goroutines = goroutineCount
 	}
 
 	if size, exists := facts[ConfigMaxFileSize].(int); exists {
@@ -142,12 +142,12 @@ func (ex *Extractor) Consume(deps map[string]any) (map[string]any, error) {
 	result := map[gitplumbing.Hash]lang.File{}
 	jobs := make(chan *object.Change, ex.Goroutines)
 	resultSync := sync.Mutex{}
-	wg := sync.WaitGroup{}
-	wg.Add(ex.Goroutines)
+	waitGroup := sync.WaitGroup{}
+	waitGroup.Add(ex.Goroutines)
 
 	finishJobs := func() {
 		close(jobs)
-		wg.Wait()
+		waitGroup.Wait()
 	}
 
 	for range ex.Goroutines {
@@ -173,7 +173,7 @@ func (ex *Extractor) Consume(deps map[string]any) (map[string]any, error) {
 				}
 			}
 
-			wg.Done()
+			waitGroup.Done()
 		}()
 	}
 

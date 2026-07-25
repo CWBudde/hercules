@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"sort"
+	"slices"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -239,17 +239,17 @@ func (analyser *LineDumper) serializeText(result LineDumperResult, writer io.Wri
 	}
 
 	if len(result.fileDict) > 0 {
-		ids := make([]int, 0, len(result.fileDict))
+		ids := make([]core.FileId, 0, len(result.fileDict))
 		for k := range result.fileDict {
-			ids = append(ids, int(k))
+			ids = append(ids, k)
 		}
 
-		sort.Ints(ids)
+		slices.Sort(ids)
 
 		_, _ = fmt.Fprintln(writer, "  file_sequence:")
 
 		for _, k := range ids {
-			v := result.fileDict[core.FileId(k)]
+			v := result.fileDict[k]
 			_, _ = fmt.Fprintf(writer, "    %d: %s\n", k, yaml.SafeString(v))
 		}
 	}

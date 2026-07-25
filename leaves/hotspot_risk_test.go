@@ -34,7 +34,7 @@ func TestHotspotRiskMergeResultsSortsEqualScoresByPath(t *testing.T) {
 		HotspotRiskResult{
 			WindowDays: 90,
 			Files: []FileRisk{
-				{Path: "alpha.go", RiskScore: 0.5},
+				{Path: testAlphaPath, RiskScore: 0.5},
 			},
 		},
 		nil,
@@ -42,7 +42,7 @@ func TestHotspotRiskMergeResultsSortsEqualScoresByPath(t *testing.T) {
 	).(HotspotRiskResult)
 
 	require.Len(t, result.Files, 2)
-	assert.Equal(t, "alpha.go", result.Files[0].Path)
+	assert.Equal(t, testAlphaPath, result.Files[0].Path)
 	assert.Equal(t, "zeta.go", result.Files[1].Path)
 }
 
@@ -75,28 +75,36 @@ func TestHotspotRiskNormalizeAndScoreScalesFactors(t *testing.T) {
 
 func TestHotspotRiskFinalizeAppliesWindowAndTopN(t *testing.T) {
 	repo, head := newHotspotRiskFixtureRepository(t, map[string]string{
-		"alpha.go": lines(20),
-		"beta.go":  lines(10),
-		"gamma.go": lines(5),
+		testAlphaPath: lines(20),
+		testBetaPath:  lines(10),
+		testGammaPath: lines(5),
 	})
 
 	hra := HotspotRiskAnalysis{TopN: 2, WindowDays: 2}
 	require.NoError(t, hra.Configure(map[string]any{items.FactTickSize: int64(24 * 60 * 60)}))
 	require.NoError(t, hra.Initialize(repo))
 
-	consumeHotspotRiskCommit(t, &hra, head, 0, 0, []string{"alpha.go", "beta.go"}, map[string]items.LineStats{
-		"alpha.go": {Added: 10},
-		"beta.go":  {Added: 10},
+	consumeHotspotRiskCommit(t, &hra, head, 0, 0, []string{testAlphaPath, testBetaPath}, map[string]items.LineStats{
+		testAlphaPath: {Added: 10},
+		testBetaPath:  {Added: 10},
 	})
-	consumeHotspotRiskCommit(t, &hra, head, 1, 1, []string{"alpha.go", "gamma.go"}, map[string]items.LineStats{
-		"alpha.go": {Added: 5},
-		"gamma.go": {Added: 5},
+	consumeHotspotRiskCommit(t, &hra, head, 1, 1, []string{testAlphaPath, testGammaPath}, map[string]items.LineStats{
+		testAlphaPath: {Added: 5},
+		testGammaPath: {Added: 5},
 	})
-	consumeHotspotRiskCommit(t, &hra, head, 2, 4, []string{"alpha.go", "beta.go", "gamma.go"}, map[string]items.LineStats{
-		"alpha.go": {Added: 5},
-		"beta.go":  {Added: 5},
-		"gamma.go": {Added: 5},
-	})
+	consumeHotspotRiskCommit(
+		t,
+		&hra,
+		head,
+		2,
+		4,
+		[]string{testAlphaPath, testBetaPath, testGammaPath},
+		map[string]items.LineStats{
+			testAlphaPath: {Added: 5},
+			testBetaPath:  {Added: 5},
+			testGammaPath: {Added: 5},
+		},
+	)
 
 	result := hra.Finalize().(HotspotRiskResult)
 
@@ -104,7 +112,7 @@ func TestHotspotRiskFinalizeAppliesWindowAndTopN(t *testing.T) {
 	assert.Equal(t, 2, result.WindowDays)
 
 	alpha := result.Files[0]
-	assert.Equal(t, "alpha.go", alpha.Path)
+	assert.Equal(t, testAlphaPath, alpha.Path)
 	assert.Equal(t, 20, alpha.Size)
 	assert.Equal(t, 1, alpha.Churn, "only the tick inside the two-day window should count")
 	assert.Equal(t, 2, alpha.CouplingDegree)
@@ -115,7 +123,7 @@ func TestHotspotRiskFinalizeAppliesWindowAndTopN(t *testing.T) {
 	assert.InDelta(t, 0.16666666666666674, alpha.OwnershipNormalized, 1e-12)
 	assert.InDelta(t, 0.16666666666666674, alpha.RiskScore, 1e-12)
 
-	assert.Equal(t, "beta.go", result.Files[1].Path)
+	assert.Equal(t, testBetaPath, result.Files[1].Path)
 	assert.Equal(t, 1, result.Files[1].Churn)
 	assert.InDelta(t, 0.13126827616087608, result.Files[1].RiskScore, 1e-12)
 }
@@ -126,7 +134,7 @@ func TestHotspotRiskSerializationShapes(t *testing.T) {
 		WindowDays: 30,
 		Files: []FileRisk{
 			{
-				Path:                "main.go",
+				Path:                testMainPath,
 				RiskScore:           0.25,
 				Size:                12,
 				Churn:               3,
@@ -154,7 +162,7 @@ func TestHotspotRiskSerializationShapes(t *testing.T) {
 	require.NoError(t, proto.Unmarshal(binary.Bytes(), &message))
 	assert.Equal(t, int32(30), message.GetWindowDays())
 	require.Len(t, message.GetFiles(), 1)
-	assert.Equal(t, "main.go", message.GetFiles()[0].GetPath())
+	assert.Equal(t, testMainPath, message.GetFiles()[0].GetPath())
 	assert.InDelta(t, 0.25, message.GetFiles()[0].GetRiskScore(), 0.00001)
 	assert.Equal(t, int32(12), message.GetFiles()[0].GetSize_())
 	assert.Equal(t, int32(3), message.GetFiles()[0].GetChurn())

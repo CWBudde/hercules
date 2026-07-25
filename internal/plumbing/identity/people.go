@@ -2,6 +2,7 @@ package identity
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"os"
 	"regexp"
@@ -69,7 +70,7 @@ var coAuthorTrailerRE = regexp.MustCompile(`(?im)^Co-authored-by:\s*(.+?)\s*<([^
 type IdentityAudit struct {
 	Threshold      float64                   `json:"threshold"`
 	Identities     []IdentityAuditIdentity   `json:"identities"`
-	MergeDecisions []IdentityMergeDecision   `json:"merge_decisions"`
+	MergeDecisions []IdentityMergeDecision   `json:"mergeDecisions"`
 	Ambiguous      []IdentityMergeSuggestion `json:"ambiguous"`
 }
 
@@ -79,8 +80,102 @@ type IdentityAuditIdentity struct {
 	Primary        string   `json:"primary"`
 	Names          []string `json:"names"`
 	Emails         []string `json:"emails"`
-	PeopleDictLine string   `json:"people_dict_line"`
-	SourceCount    int      `json:"source_count"`
+	PeopleDictLine string   `json:"peopleDictLine"`
+	SourceCount    int      `json:"sourceCount"`
+}
+
+// MarshalJSON preserves the identity audit's established snake_case wire schema.
+func (audit IdentityAudit) MarshalJSON() ([]byte, error) {
+	data, err := json.Marshal(map[string]any{
+		"threshold":       audit.Threshold,
+		"identities":      audit.Identities,
+		"merge_decisions": audit.MergeDecisions,
+		"ambiguous":       audit.Ambiguous,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("encode identity audit: %w", err)
+	}
+
+	return data, nil
+}
+
+// UnmarshalJSON reads the established identity audit wire schema.
+func (audit *IdentityAudit) UnmarshalJSON(data []byte) error {
+	var values map[string]json.RawMessage
+
+	err := json.Unmarshal(data, &values)
+	if err != nil {
+		return fmt.Errorf("decode identity audit: %w", err)
+	}
+
+	fields := []struct {
+		key   string
+		value any
+	}{
+		{"threshold", &audit.Threshold},
+		{"identities", &audit.Identities},
+		{"merge_decisions", &audit.MergeDecisions},
+		{"ambiguous", &audit.Ambiguous},
+	}
+	for _, field := range fields {
+		if raw, exists := values[field.key]; exists {
+			err = json.Unmarshal(raw, field.value)
+			if err != nil {
+				return fmt.Errorf("decode identity audit field %q: %w", field.key, err)
+			}
+		}
+	}
+
+	return nil
+}
+
+// MarshalJSON preserves the identity entry's established snake_case wire schema.
+func (identity IdentityAuditIdentity) MarshalJSON() ([]byte, error) {
+	data, err := json.Marshal(map[string]any{
+		"id":               identity.ID,
+		"primary":          identity.Primary,
+		"names":            identity.Names,
+		"emails":           identity.Emails,
+		"people_dict_line": identity.PeopleDictLine,
+		"source_count":     identity.SourceCount,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("encode identity audit entry: %w", err)
+	}
+
+	return data, nil
+}
+
+// UnmarshalJSON reads the established identity entry wire schema.
+func (identity *IdentityAuditIdentity) UnmarshalJSON(data []byte) error {
+	var values map[string]json.RawMessage
+
+	err := json.Unmarshal(data, &values)
+	if err != nil {
+		return fmt.Errorf("decode identity audit entry: %w", err)
+	}
+
+	fields := []struct {
+		key   string
+		value any
+	}{
+		{"id", &identity.ID},
+		{"primary", &identity.Primary},
+		{"names", &identity.Names},
+		{"emails", &identity.Emails},
+		{"people_dict_line", &identity.PeopleDictLine},
+		{"source_count", &identity.SourceCount},
+	}
+	for _, field := range fields {
+		if raw, exists := values[field.key]; exists {
+			err = json.Unmarshal(raw, field.value)
+			if err != nil {
+				return fmt.Errorf("decode identity audit entry field %q: %w", field.key, err)
+			}
+		}
+	}
+
+	return nil
 }
 
 // IdentityMergeDecision describes one automatic merge.
@@ -226,23 +321,10 @@ func (detector *PeopleDetector) Configure(facts map[string]any) error {
 	}
 
 	detector.PeopleDict = nil
-	if val, exists := facts[FactIdentityDetectorReversedPeopleDict].([]string); exists {
-		detector.ReversedPeopleDict = val
-	}
 
-	if val, exists := facts[ConfigIdentityDetectorExactSignatures].(bool); exists {
-		detector.ExactSignatures = val
-	}
-
-	if val, exists := facts[ConfigIdentityDetectorAnonymity].(bool); exists {
-		detector.Anonymity = val
-	}
-
-	if val, exists := identityMergeThresholdFromFacts(facts); exists {
-		err := detector.setMergeThreshold(val)
-		if err != nil {
-			return err
-		}
+	configureErr := configureIdentityOptions(detector, facts)
+	if configureErr != nil {
+		return configureErr
 	}
 
 	if peopleDictPath, ok := facts[ConfigIdentityDetectorPeopleDictPath].(string); ok && peopleDictPath != "" {
@@ -267,6 +349,26 @@ func (detector *PeopleDetector) Configure(facts map[string]any) error {
 
 	var resolver core.IdentityResolver = peopleResolver{detector}
 	facts[core.FactIdentityResolver] = resolver
+
+	return nil
+}
+
+func configureIdentityOptions(detector *PeopleDetector, facts map[string]any) error {
+	if val, exists := facts[FactIdentityDetectorReversedPeopleDict].([]string); exists {
+		detector.ReversedPeopleDict = val
+	}
+
+	if val, exists := facts[ConfigIdentityDetectorExactSignatures].(bool); exists {
+		detector.ExactSignatures = val
+	}
+
+	if val, exists := facts[ConfigIdentityDetectorAnonymity].(bool); exists {
+		detector.Anonymity = val
+	}
+
+	if val, exists := identityMergeThresholdFromFacts(facts); exists {
+		return detector.setMergeThreshold(val)
+	}
 
 	return nil
 }
@@ -374,36 +476,60 @@ func (detector *PeopleDetector) GeneratePeopleDict(commits []*object.Commit) {
 
 	for _, commit := range commits {
 		if !detector.ExactSignatures {
-			_, addedDecision := detector.addSignature(
-				commit.Author.Name, commit.Author.Email, "commit", &size, dict, names, emails, sourceCounts, &ambiguous,
+			addCommitSignatures(
+				detector,
+				commit, &size, dict, names, emails, sourceCounts, &decisions, &ambiguous,
 			)
-			if addedDecision != nil {
-				decisions = append(decisions, *addedDecision)
-			}
 
-			for _, signature := range parseCoAuthors(commit.Message) {
-				_, addedDecision = detector.addSignature(
-					signature.Name, signature.Email, "co-authored-by", &size, dict, names, emails, sourceCounts, &ambiguous,
-				)
-				if addedDecision != nil {
-					decisions = append(decisions, *addedDecision)
-				}
-			}
-		} else { // !detector.ExactSignatures
-			sig := strings.ToLower(commit.Author.String())
-			if _, exists := dict[sig]; !exists {
-				dict[sig] = size
-				sourceCounts[size]++
-				size++
-			} else {
-				sourceCounts[dict[sig]]++
-			}
+			continue
 		}
+
+		addExactSignature(commit.Author, &size, dict, sourceCounts)
 	}
 
 	detector.PeopleDict = dict
 	detector.ReversedPeopleDict = reversePeopleDictionary(dict, names, emails, size, detector.ExactSignatures)
 	detector.rebuildAuditFromState(names, emails, sourceCounts, decisions, ambiguous)
+}
+
+func addCommitSignatures(
+	detector *PeopleDetector,
+	commit *object.Commit,
+	size *int,
+	dict map[string]int,
+	names, emails map[int][]string,
+	sourceCounts map[int]int,
+	decisions *[]IdentityMergeDecision,
+	ambiguous *[]IdentityMergeSuggestion,
+) {
+	signatures := append([]object.Signature{commit.Author}, parseCoAuthors(commit.Message)...)
+	reasons := append([]string{"commit"}, make([]string, len(signatures)-1)...)
+
+	for index := 1; index < len(reasons); index++ {
+		reasons[index] = "co-authored-by"
+	}
+
+	for index, signature := range signatures {
+		decision := detector.addSignature(
+			signature.Name, signature.Email, reasons[index], size, dict, names, emails, sourceCounts, ambiguous,
+		)
+		if decision != nil {
+			*decisions = append(*decisions, *decision)
+		}
+	}
+}
+
+func addExactSignature(signature object.Signature, size *int, dict map[string]int, sourceCounts map[int]int) {
+	key := strings.ToLower(signature.String())
+	id, exists := dict[key]
+
+	if !exists {
+		id = *size
+		dict[key] = id
+		*size++
+	}
+
+	sourceCounts[id]++
 }
 
 func loadMailmapIdentities(
@@ -678,27 +804,7 @@ func jaroSimilarity(first, second string) float64 {
 		first, second = second, first
 	}
 
-	matchDistance := maxInt(len(second)/2-1, 0)
-	firstMatches := make([]bool, len(first))
-	secondMatches := make([]bool, len(second))
-	matches := 0
-
-	for firstIndex := range first {
-		start := maxInt(firstIndex-matchDistance, 0)
-
-		end := minInt(firstIndex+matchDistance+1, len(second))
-		for secondIndex := start; secondIndex < end; secondIndex++ {
-			if secondMatches[secondIndex] || first[firstIndex] != second[secondIndex] {
-				continue
-			}
-
-			firstMatches[firstIndex] = true
-			secondMatches[secondIndex] = true
-			matches++
-
-			break
-		}
-	}
+	firstMatches, secondMatches, matches := jaroMatches(first, second)
 
 	if matches == 0 {
 		return 0
@@ -727,6 +833,32 @@ func jaroSimilarity(first, second string) float64 {
 
 	return (matchRatio/float64(len(first)) + matchRatio/float64(len(second)) +
 		(matchRatio-float64(transpositions)/2)/matchRatio) / 3
+}
+
+func jaroMatches(first, second string) ([]bool, []bool, int) {
+	matchDistance := maxInt(len(second)/2-1, 0)
+	firstMatches := make([]bool, len(first))
+	secondMatches := make([]bool, len(second))
+	matches := 0
+
+	for firstIndex := range first {
+		start := maxInt(firstIndex-matchDistance, 0)
+		end := minInt(firstIndex+matchDistance+1, len(second))
+
+		for secondIndex := start; secondIndex < end; secondIndex++ {
+			if secondMatches[secondIndex] || first[firstIndex] != second[secondIndex] {
+				continue
+			}
+
+			firstMatches[firstIndex] = true
+			secondMatches[secondIndex] = true
+			matches++
+
+			break
+		}
+	}
+
+	return firstMatches, secondMatches, matches
 }
 
 func minInt(a, b int) int {
@@ -824,26 +956,26 @@ func (detector *PeopleDetector) ensureMergeThreshold() {
 func (detector *PeopleDetector) addSignature(name, email, reason string, size *int,
 	dict map[string]int, names, emails map[int][]string, sourceCounts map[int]int,
 	ambiguous *[]IdentityMergeSuggestion,
-) (int, *IdentityMergeDecision) {
+) *IdentityMergeDecision {
 	name = normalizeIdentityKey(name)
 
 	email = normalizeIdentityKey(email)
 	if name == "" && email == "" {
-		return core.AuthorMissing, nil
+		return nil
 	}
 
-	if id, decision, found := matchExistingSignature(
+	if _, decision, found := matchExistingSignature(
 		name, email, reason, dict, names, emails, sourceCounts,
 	); found {
-		return id, decision
+		return decision
 	}
 
 	if reason == "commit" {
-		id, decision, found := detector.matchFuzzySignature(
+		_, decision, found := detector.matchFuzzySignature(
 			name, email, dict, names, emails, sourceCounts, ambiguous,
 		)
 		if found {
-			return id, decision
+			return decision
 		}
 	}
 
@@ -853,7 +985,7 @@ func (detector *PeopleDetector) addSignature(name, email, reason string, size *i
 	addIdentityKey(id, name, false, dict, names, emails)
 	addIdentityKey(id, email, true, dict, names, emails)
 
-	return id, nil
+	return nil
 }
 
 func (detector *PeopleDetector) matchFuzzySignature(

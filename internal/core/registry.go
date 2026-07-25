@@ -3,6 +3,7 @@ package core
 import (
 	"errors"
 	"fmt"
+	"os"
 	"reflect"
 	"sort"
 	"strings"
@@ -29,12 +30,12 @@ func (registry *PipelineItemRegistry) Register(example PipelineItem) {
 }
 
 func (registry *PipelineItemRegistry) RegisterPreferred(example PipelineItem, preferred bool) {
-	t := reflect.TypeOf(example)
+	itemType := reflect.TypeOf(example)
 	exampleName := example.Name()
 
-	registry.registered[exampleName] = t
+	registry.registered[exampleName] = itemType
 	if fpi, ok := example.(LeafPipelineItem); ok {
-		registry.flags[fpi.Flag()] = t
+		registry.flags[fpi.Flag()] = itemType
 		if preferred {
 			registry.preferred[exampleName] = struct{}{}
 		} else {
@@ -43,15 +44,15 @@ func (registry *PipelineItemRegistry) RegisterPreferred(example PipelineItem, pr
 	}
 
 	for _, dep := range example.Provides() {
-		ts := registry.provided[dep]
-		if preferred && len(ts) > 0 {
-			ts = append(ts, ts[0])
-			ts[0] = t
+		providers := registry.provided[dep]
+		if preferred && len(providers) > 0 {
+			providers = append(providers, providers[0])
+			providers[0] = itemType
 		} else {
-			ts = append(ts, t)
+			providers = append(providers, itemType)
 		}
 
-		registry.provided[dep] = ts
+		registry.provided[dep] = providers
 	}
 }
 
@@ -83,11 +84,11 @@ func (registry *PipelineItemRegistry) Summon(providesOrNames ...string) []Pipeli
 	for _, providesOrName := range providesOrNames {
 		ts := registry.provided[providesOrName]
 		for _, t := range ts {
-			items = append(items, reflect.New(t.Elem()).Interface().(PipelineItem))
+			items = append(items, mustPipelineItem(reflect.New(t.Elem()).Interface()))
 		}
 
 		if t, exists := registry.registered[providesOrName]; exists {
-			items = append(items, reflect.New(t.Elem()).Interface().(PipelineItem))
+			items = append(items, mustPipelineItem(reflect.New(t.Elem()).Interface()))
 		}
 	}
 
@@ -105,7 +106,7 @@ func (registry *PipelineItemRegistry) GetLeaves() []LeafPipelineItem {
 
 	items := make([]LeafPipelineItem, 0, len(keys))
 	for _, key := range keys {
-		items = append(items, reflect.New(registry.flags[key].Elem()).Interface().(LeafPipelineItem))
+		items = append(items, mustLeafPipelineItem(reflect.New(registry.flags[key].Elem()).Interface()))
 	}
 
 	return items
@@ -124,11 +125,29 @@ func (registry *PipelineItemRegistry) GetPlumbingItems() []PipelineItem {
 	for _, key := range keys {
 		iface := reflect.New(registry.registered[key].Elem()).Interface()
 		if _, ok := iface.(LeafPipelineItem); !ok {
-			items = append(items, iface.(PipelineItem))
+			items = append(items, mustPipelineItem(iface))
 		}
 	}
 
 	return items
+}
+
+func mustPipelineItem(value any) PipelineItem {
+	item, ok := value.(PipelineItem)
+	if !ok {
+		panic("registered type does not implement PipelineItem")
+	}
+
+	return item
+}
+
+func mustLeafPipelineItem(value any) LeafPipelineItem {
+	item, ok := value.(LeafPipelineItem)
+	if !ok {
+		panic("registered leaf type does not implement LeafPipelineItem")
+	}
+
+	return item
 }
 
 // GetFeaturedItems returns all FeaturedPipelineItem-s registered.
@@ -136,7 +155,7 @@ func (registry *PipelineItemRegistry) GetFeaturedItems() map[string][]PipelineIt
 	features := map[string][]PipelineItem{}
 
 	for _, t := range registry.registered {
-		item := reflect.New(t.Elem()).Interface().(PipelineItem)
+		item := mustPipelineItem(reflect.New(t.Elem()).Interface())
 		deps := registry.CollectAllDependencies(item)
 		deps = append(deps, item)
 		depFeatures := map[string]bool{}
@@ -223,7 +242,7 @@ func (s *pathValue) Type() string {
 		return "path"
 	}
 
-	return "string"
+	return configurationStringType
 }
 
 func (s *pathValue) String() string {
@@ -257,7 +276,7 @@ func (acf *arrayFeatureFlags) Set(value string) error {
 }
 
 func (acf *arrayFeatureFlags) Type() string {
-	return "string"
+	return configurationStringType
 }
 
 // AddFlags inserts the cmdline options from PipelineItem.ListConfigurationOptions(),
@@ -321,7 +340,7 @@ func (registry *PipelineItemRegistry) addItemFlags(
 	addActivation := func(optionFlag string) {
 		registry.addFlagActivation(flagSet, name, leafFlag, optionFlag, activations)
 	}
-	for _, option := range itemIface.(PipelineItem).ListConfigurationOptions() {
+	for _, option := range mustPipelineItem(itemIface).ListConfigurationOptions() {
 		if option.Shared && registry.reuseOption(name, option, reusableOptions, addActivation) {
 			continue
 		}
@@ -391,7 +410,7 @@ func (registry *PipelineItemRegistry) reuseOption(
 	message := fmt.Sprintf(
 		"Param conflict of the option %s from: %s, %s", option.Flag, reused.Description, itemName,
 	)
-	fmt.Println(message)
+	fmt.Fprintln(os.Stdout, message)
 	panic(message)
 }
 
@@ -405,14 +424,14 @@ func addConfigurationFlag(flagSet *pflag.FlagSet, itemName string, option Config
 	switch option.Type {
 	case BoolConfigurationOption:
 		value = any(true)
-		*(**bool)(valuePointer()) = flagSet.Bool(option.Flag, option.Default.(bool), help)
+		*(**bool)(valuePointer()) = flagSet.Bool(option.Flag, configurationDefault[bool](option), help)
 	case IntConfigurationOption:
 		value = any(0)
-		*(**int)(valuePointer()) = flagSet.Int(option.Flag, option.Default.(int), help)
+		*(**int)(valuePointer()) = flagSet.Int(option.Flag, configurationDefault[int](option), help)
 	case StringConfigurationOption, PathConfigurationOption:
 		value = any("")
 
-		*(**string)(valuePointer()) = flagSet.String(option.Flag, option.Default.(string), help)
+		*(**string)(valuePointer()) = flagSet.String(option.Flag, configurationDefault[string](option), help)
 		if option.Type == PathConfigurationOption {
 			err := cobra.MarkFlagFilename(flagSet, option.Flag)
 			if err != nil {
@@ -423,10 +442,14 @@ func addConfigurationFlag(flagSet *pflag.FlagSet, itemName string, option Config
 		}
 	case FloatConfigurationOption:
 		value = any(float32(0))
-		*(**float32)(valuePointer()) = flagSet.Float32(option.Flag, option.Default.(float32), help)
+		*(**float32)(valuePointer()) = flagSet.Float32(
+			option.Flag, configurationDefault[float32](option), help,
+		)
 	case StringsConfigurationOption:
 		value = any([]string{})
-		*(**[]string)(valuePointer()) = flagSet.StringSlice(option.Flag, option.Default.([]string), help)
+		*(**[]string)(valuePointer()) = flagSet.StringSlice(
+			option.Flag, configurationDefault[[]string](option), help,
+		)
 	}
 
 	return value

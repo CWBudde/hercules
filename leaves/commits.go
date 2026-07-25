@@ -124,20 +124,20 @@ func (ca *CommitsAnalysis) Consume(deps map[string]any) (map[string]any, error) 
 	lineStats := deps[items.DependencyLineStats].(map[object.ChangeEntry]items.LineStats)
 	langs := deps[items.DependencyLanguages].(map[plumbing.Hash]string)
 
-	cs := CommitStat{
+	commitStat := CommitStat{
 		Hash:   commit.Hash.String(),
 		When:   commit.Author.When.Unix(),
 		Author: author,
 	}
 	for entry, stats := range lineStats {
-		cs.Files = append(cs.Files, FileStat{
+		commitStat.Files = append(commitStat.Files, FileStat{
 			Name:      entry.Name,
 			Language:  langs[entry.TreeEntry.Hash],
 			LineStats: stats,
 		})
 	}
 
-	ca.commits = append(ca.commits, &cs)
+	ca.commits = append(ca.commits, &commitStat)
 
 	return noDependencies(), nil
 }
@@ -172,16 +172,16 @@ func (ca *CommitsAnalysis) Serialize(result any, binary bool, writer io.Writer) 
 func (ca *CommitsAnalysis) serializeText(result *CommitsResult, writer io.Writer) {
 	fmt.Fprintln(writer, "  commits:")
 
-	for _, c := range result.Commits {
-		fmt.Fprintf(writer, "    - hash: %s\n", c.Hash)
-		fmt.Fprintf(writer, "      when: %d\n", c.When)
-		fmt.Fprintf(writer, "      author: %d\n", c.Author)
+	for _, commit := range result.Commits {
+		fmt.Fprintf(writer, "    - hash: %s\n", commit.Hash)
+		fmt.Fprintf(writer, "      when: %d\n", commit.When)
+		fmt.Fprintf(writer, "      author: %d\n", commit.Author)
 		fmt.Fprintf(writer, "      files:\n")
 
-		for _, f := range c.Files {
-			fmt.Fprintf(writer, "       - name: %s\n", f.Name)
-			fmt.Fprintf(writer, "         language: %s\n", f.Language)
-			fmt.Fprintf(writer, "         stat: [%d, %d, %d]\n", f.Added, f.Changed, f.Removed)
+		for _, file := range commit.Files {
+			fmt.Fprintf(writer, "       - name: %s\n", file.Name)
+			fmt.Fprintf(writer, "         language: %s\n", file.Language)
+			fmt.Fprintf(writer, "         stat: [%d, %d, %d]\n", file.Added, file.Changed, file.Removed)
 		}
 	}
 
@@ -197,24 +197,40 @@ func (ca *CommitsAnalysis) serializeBinary(result *CommitsResult, writer io.Writ
 	message.AuthorIndex = result.reversedPeopleDict
 
 	message.Commits = make([]*pb.Commit, len(result.Commits))
-	for i, c := range result.Commits {
-		files := make([]*pb.CommitFile, len(c.Files))
-		for i, f := range c.Files {
-			files[i] = &pb.CommitFile{
-				Name:     f.Name,
-				Language: f.Language,
+	for commitIndex, commit := range result.Commits {
+		files := make([]*pb.CommitFile, len(commit.Files))
+		for fileIndex, file := range commit.Files {
+			added, err := intToProtoInt32(file.Added, "commit added-line count")
+			if err != nil {
+				return err
+			}
+			changed, err := intToProtoInt32(file.Changed, "commit changed-line count")
+			if err != nil {
+				return err
+			}
+			removed, err := intToProtoInt32(file.Removed, "commit removed-line count")
+			if err != nil {
+				return err
+			}
+			files[fileIndex] = &pb.CommitFile{
+				Name:     file.Name,
+				Language: file.Language,
 				Stats: &pb.LineStats{
-					Added:   int32(f.Added),
-					Changed: int32(f.Changed),
-					Removed: int32(f.Removed),
+					Added:   added,
+					Changed: changed,
+					Removed: removed,
 				},
 			}
 		}
 
-		message.Commits[i] = &pb.Commit{
-			Hash:         c.Hash,
-			WhenUnixTime: c.When,
-			Author:       int32(c.Author),
+		author, err := intToProtoInt32(commit.Author, "commit author")
+		if err != nil {
+			return err
+		}
+		message.Commits[commitIndex] = &pb.Commit{
+			Hash:         commit.Hash,
+			WhenUnixTime: commit.When,
+			Author:       author,
 			Files:        files,
 		}
 	}

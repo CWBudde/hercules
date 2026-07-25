@@ -46,13 +46,13 @@ func TestTemporalActivityRegistration(t *testing.T) {
 func TestTemporalActivityConfigure(t *testing.T) {
 	ta := TemporalActivityAnalysis{}
 	facts := map[string]any{}
-	facts[identity.FactIdentityDetectorReversedPeopleDict] = []string{"Alice", "Bob"}
+	facts[identity.FactIdentityDetectorReversedPeopleDict] = []string{testPersonAlice, testPersonBob}
 	facts[items.FactTickSize] = 24 * time.Hour
 	logger := core.NewLogger()
 	facts[core.ConfigLogger] = logger
 
 	assert.NoError(t, ta.Configure(facts))
-	assert.Equal(t, []string{"Alice", "Bob"}, ta.reversedPeopleDict)
+	assert.Equal(t, []string{testPersonAlice, testPersonBob}, ta.reversedPeopleDict)
 	assert.Equal(t, 24*time.Hour, ta.tickSize)
 	assert.Equal(t, logger, ta.l)
 }
@@ -311,7 +311,7 @@ func TestTemporalActivityISOWeekEdgeCases(t *testing.T) {
 
 func TestTemporalActivityFinalize(t *testing.T) {
 	ta := TemporalActivityAnalysis{}
-	ta.reversedPeopleDict = []string{"Alice", "Bob"}
+	ta.reversedPeopleDict = []string{testPersonAlice, testPersonBob}
 	ta.tickSize = 24 * time.Hour
 	assert.NoError(t, ta.Initialize(test.Repository))
 
@@ -329,17 +329,17 @@ func TestTemporalActivityFinalize(t *testing.T) {
 	assert.NotNil(t, result)
 
 	tr := result.(TemporalActivityResult)
-	assert.Equal(t, []string{"Alice", "Bob"}, tr.reversedPeopleDict)
+	assert.Equal(t, []string{testPersonAlice, testPersonBob}, tr.reversedPeopleDict)
 	assert.Len(t, tr.Activities, 1)
 	assert.Equal(t, ta.activities[0], tr.Activities[0])
 }
 
 func TestTemporalActivitySerializeText(t *testing.T) {
 	ta := TemporalActivityAnalysis{}
-	ta.reversedPeopleDict = []string{"Alice", "Bob"}
+	ta.reversedPeopleDict = []string{testPersonAlice, testPersonBob}
 
 	result := TemporalActivityResult{
-		reversedPeopleDict: []string{"Alice", "Bob"},
+		reversedPeopleDict: []string{testPersonAlice, testPersonBob},
 		tickSize:           24 * time.Hour,
 		Activities: map[int]*DeveloperTemporalActivity{
 			0: {
@@ -381,15 +381,15 @@ func TestTemporalActivitySerializeText(t *testing.T) {
 	assert.Contains(t, output, "weeks_commits:")
 	assert.Contains(t, output, "weeks_lines:")
 	assert.Contains(t, output, "people:")
-	assert.Contains(t, output, "Alice")
-	assert.Contains(t, output, "Bob")
+	assert.Contains(t, output, testPersonAlice)
+	assert.Contains(t, output, testPersonBob)
 }
 
 func TestTemporalActivitySerializeBinary(t *testing.T) {
 	ta := TemporalActivityAnalysis{}
-	ta.reversedPeopleDict = []string{"Alice"}
+	ta.reversedPeopleDict = []string{testPersonAlice}
 	result := TemporalActivityResult{
-		reversedPeopleDict: []string{"Alice"},
+		reversedPeopleDict: []string{testPersonAlice},
 		tickSize:           24 * time.Hour,
 		Activities: map[int]*DeveloperTemporalActivity{
 			0: {
@@ -440,11 +440,11 @@ func TestTemporalActivityFork(t *testing.T) {
 
 func TestTemporalActivityDeserialize(t *testing.T) {
 	ta := TemporalActivityAnalysis{}
-	ta.reversedPeopleDict = []string{"Alice", "Bob"}
+	ta.reversedPeopleDict = []string{testPersonAlice, testPersonBob}
 
 	// Create test data with multiple developers
 	result := TemporalActivityResult{
-		reversedPeopleDict: []string{"Alice", "Bob"},
+		reversedPeopleDict: []string{testPersonAlice, testPersonBob},
 		tickSize:           24 * time.Hour,
 		Activities: map[int]*DeveloperTemporalActivity{
 			0: {
@@ -454,7 +454,10 @@ func TestTemporalActivityDeserialize(t *testing.T) {
 				},
 				Hours: TemporalDimension{
 					Commits: []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24},
-					Lines:   []int{10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160, 170, 180, 190, 200, 210, 220, 230, 240},
+					Lines: []int{
+						10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120,
+						130, 140, 150, 160, 170, 180, 190, 200, 210, 220, 230, 240,
+					},
 				},
 				Months: TemporalDimension{
 					Commits: []int{10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120},
@@ -527,7 +530,7 @@ func TestTemporalActivityMergeResults(t *testing.T) {
 
 	// Create first result
 	r1 := TemporalActivityResult{
-		reversedPeopleDict: []string{"Alice", "Bob"},
+		reversedPeopleDict: []string{testPersonAlice, testPersonBob},
 		tickSize:           24 * time.Hour,
 		Activities: map[int]*DeveloperTemporalActivity{
 			0: {
@@ -572,7 +575,7 @@ func TestTemporalActivityMergeResults(t *testing.T) {
 
 	// Create second result
 	r2 := TemporalActivityResult{
-		reversedPeopleDict: []string{"Alice", "Bob"},
+		reversedPeopleDict: []string{testPersonAlice, testPersonBob},
 		tickSize:           24 * time.Hour,
 		Activities: map[int]*DeveloperTemporalActivity{
 			0: {

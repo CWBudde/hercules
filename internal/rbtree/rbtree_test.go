@@ -1,7 +1,6 @@
 package rbtree
 
 import (
-	"math/rand"
 	"os"
 	"slices"
 	"sort"
@@ -22,7 +21,8 @@ func testAssert(t *testing.T, b bool, message string) {
 }
 
 func boolInsert(tree *RBTree, item int) bool {
-	status, _ := tree.Insert(Item{uint32(item), uint32(item)})
+	value := checkedTestUint32(item)
+	status, _ := tree.Insert(Item{value, value})
 	return status
 }
 
@@ -155,8 +155,8 @@ func (o *oracle) Insert(key int) bool {
 	return true
 }
 
-func (o *oracle) RandomExistingKey(rand *rand.Rand) int {
-	index := rand.Int31n(int32(len(o.data)))
+func (o *oracle) RandomExistingKey(random *deterministicRandom) int {
+	index := random.Int31n(len(o.data))
 	return o.data[index]
 }
 
@@ -244,7 +244,7 @@ func compareContents(t *testing.T, oiter oracleIterator, titer Iterator) {
 
 	for !oi.Limit() && !ti.Limit() {
 		// log.Print("Item: ", oi.Item(), ti.Item())
-		if ti.Item().Key != uint32(oi.Item()) {
+		if ti.Item().Key != checkedTestUint32(oi.Item()) {
 			t.Fatal("Wrong item", ti.Item(), oi.Item())
 		}
 		oi = oi.Next()
@@ -267,7 +267,7 @@ func compareContents(t *testing.T, oiter oracleIterator, titer Iterator) {
 	}
 
 	for !oi.NegativeLimit() && !ti.NegativeLimit() {
-		if ti.Item().Key != uint32(oi.Item()) {
+		if ti.Item().Key != checkedTestUint32(oi.Item()) {
 			t.Fatal("Wrong item", ti.Item(), oi.Item())
 		}
 		oi = oi.Prev()
@@ -291,27 +291,28 @@ func TestRandomized(t *testing.T) {
 
 	o := newOracle()
 	tree := testNewIntSet()
-	r := rand.New(rand.NewSource(0))
+	r := newDeterministicRandom(0)
 	for range 10000 {
 		op := r.Int31n(100)
-		if op < 50 {
+		switch {
+		case op < 50:
 			key := r.Int31n(numKeys)
-			o.Insert(int(key))
-			boolInsert(tree, int(key))
+			o.Insert(key)
+			boolInsert(tree, key)
 			compareContentsFull(t, o, tree)
-		} else if op < 90 && o.Len() > 0 {
+		case op < 90 && o.Len() > 0:
 			key := o.RandomExistingKey(r)
 			o.Delete(key)
-			if !tree.DeleteWithKey(uint32(key)) {
+			if !tree.DeleteWithKey(checkedTestUint32(key)) {
 				t.Fatal("DeleteExisting", key)
 			}
 			compareContentsFull(t, o, tree)
-		} else if op < 95 {
-			key := int(r.Int31n(numKeys))
-			compareContents(t, o.FindGE(t, key), tree.FindGE(uint32(key)))
-		} else {
-			key := int(r.Int31n(numKeys))
-			compareContents(t, o.FindLE(t, key), tree.FindLE(uint32(key)))
+		case op < 95:
+			key := r.Int31n(numKeys)
+			compareContents(t, o.FindGE(t, key), tree.FindGE(checkedTestUint32(key)))
+		default:
+			key := r.Int31n(numKeys)
+			compareContents(t, o.FindLE(t, key), tree.FindLE(checkedTestUint32(key)))
 		}
 	}
 }
@@ -644,9 +645,9 @@ func TestAllocatorSerializeDeserialize(t *testing.T) {
 	}
 
 	assert.PanicsWithValue(t, "serialization requires the hibernated state",
-		func() { alloc.Serialize("...") })
+		func() { _ = alloc.Serialize("...") })
 	assert.PanicsWithValue(t, "deserialization requires the hibernated state",
-		func() { alloc.Deserialize("...") })
+		func() { _ = alloc.Deserialize("...") })
 
 	alloc.Hibernate()
 	file, err := os.CreateTemp(t.TempDir(), "")

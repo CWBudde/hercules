@@ -56,8 +56,8 @@ func TestTyposTreeSitterConsume(t *testing.T) {
 		core.DependencyCommit: &object.Commit{Hash: plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")},
 		items.DependencyTreeChanges: object.Changes{
 			&object.Change{
-				From: object.ChangeEntry{Name: "demo.go", TreeEntry: object.TreeEntry{Hash: beforeHash}},
-				To:   object.ChangeEntry{Name: "demo.go", TreeEntry: object.TreeEntry{Hash: afterHash}},
+				From: object.ChangeEntry{Name: testDemoPath, TreeEntry: object.TreeEntry{Hash: beforeHash}},
+				To:   object.ChangeEntry{Name: testDemoPath, TreeEntry: object.TreeEntry{Hash: afterHash}},
 			},
 		},
 		items.DependencyBlobCache: map[plumbing.Hash]*items.CachedBlob{
@@ -65,7 +65,7 @@ func TestTyposTreeSitterConsume(t *testing.T) {
 			afterHash:  {Data: []byte(after)},
 		},
 		items.DependencyFileDiff: map[string]items.FileDiffData{
-			"demo.go": diff,
+			testDemoPath: diff,
 		},
 	}
 	_, err = tdb.Consume(deps)
@@ -76,7 +76,7 @@ func TestTyposTreeSitterConsume(t *testing.T) {
 	if len(result.Typos) == 0 {
 		t.Fatal("expected at least one typo")
 	}
-	if result.Typos[0].Wrong != "cnt" || result.Typos[0].Correct != "count" {
+	if result.Typos[0].Wrong != testWrongIdentifier || result.Typos[0].Correct != "count" {
 		t.Fatalf("unexpected typo pair: %+v", result.Typos[0])
 	}
 }
@@ -86,10 +86,10 @@ func TestTyposTreeSitterSerialize(t *testing.T) {
 	result := TyposResult{
 		Typos: []Typo{
 			{
-				Wrong:   "cnt",
+				Wrong:   testWrongIdentifier,
 				Correct: "count",
 				Commit:  plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
-				File:    "demo.go",
+				File:    testDemoPath,
 				Line:    3,
 			},
 		},
@@ -112,7 +112,7 @@ func TestTyposTreeSitterSerialize(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unmarshal failed: %v", err)
 	}
-	if len(msg.GetTypos()) != 1 || msg.GetTypos()[0].GetWrong() != "cnt" {
+	if len(msg.GetTypos()) != 1 || msg.GetTypos()[0].GetWrong() != testWrongIdentifier {
 		t.Fatalf("unexpected protobuf payload: %+v", msg.GetTypos())
 	}
 }

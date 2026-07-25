@@ -22,10 +22,68 @@ type Snapshot struct {
 // Message captures one protobuf message: its live fields plus the reserved
 // field numbers and names that must never be reused.
 type Message struct {
-	Name            string   `json:"name"`
-	Fields          []Field  `json:"fields"`
-	ReservedNumbers []int    `json:"reserved_numbers,omitempty"`
-	ReservedNames   []string `json:"reserved_names,omitempty"`
+	Name            string  `json:"name"`
+	Fields          []Field `json:"fields"`
+	ReservedNumbers []int
+	ReservedNames   []string
+}
+
+// MarshalJSON keeps the checked-in snapshot's established snake_case wire keys
+// without coupling the public Go field names to that external representation.
+func (message Message) MarshalJSON() ([]byte, error) {
+	values := []any{message.Name, message.Fields, message.ReservedNumbers, message.ReservedNames}
+	encoded := make([][]byte, len(values))
+
+	for index, value := range values {
+		data, err := json.Marshal(value)
+		if err != nil {
+			return nil, fmt.Errorf("encode message field: %w", err)
+		}
+
+		encoded[index] = data
+	}
+
+	result := fmt.Sprintf(`{"name":%s,"fields":%s`, encoded[0], encoded[1])
+
+	if len(message.ReservedNumbers) > 0 {
+		result += fmt.Sprintf(`,"reserved_numbers":%s`, encoded[2])
+	}
+
+	if len(message.ReservedNames) > 0 {
+		result += fmt.Sprintf(`,"reserved_names":%s`, encoded[3])
+	}
+
+	return []byte(result + "}"), nil
+}
+
+// UnmarshalJSON accepts the established snapshot representation.
+func (message *Message) UnmarshalJSON(data []byte) error {
+	var values map[string]json.RawMessage
+
+	err := json.Unmarshal(data, &values)
+	if err != nil {
+		return fmt.Errorf("decode message object: %w", err)
+	}
+
+	fields := []struct {
+		key   string
+		value any
+	}{
+		{"name", &message.Name},
+		{"fields", &message.Fields},
+		{"reserved_numbers", &message.ReservedNumbers},
+		{"reserved_names", &message.ReservedNames},
+	}
+	for _, field := range fields {
+		if raw, exists := values[field.key]; exists {
+			err = json.Unmarshal(raw, field.value)
+			if err != nil {
+				return fmt.Errorf("decode message field %q: %w", field.key, err)
+			}
+		}
+	}
+
+	return nil
 }
 
 // Field captures one protobuf field. Map fields use Type "map" with Key/Value

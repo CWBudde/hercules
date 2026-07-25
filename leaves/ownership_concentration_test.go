@@ -41,13 +41,13 @@ func TestOwnershipConcentrationRegistration(t *testing.T) {
 func TestOwnershipConcentrationConfigure(t *testing.T) {
 	oc := OwnershipConcentrationAnalysis{}
 	facts := map[string]any{}
-	facts[identity.FactIdentityDetectorReversedPeopleDict] = []string{"Alice", "Bob"}
+	facts[identity.FactIdentityDetectorReversedPeopleDict] = []string{testPersonAlice, testPersonBob}
 	facts[items.FactTickSize] = 24 * time.Hour
 	logger := core.NewLogger()
 	facts[core.ConfigLogger] = logger
 
 	assert.NoError(t, oc.Configure(facts))
-	assert.Equal(t, []string{"Alice", "Bob"}, oc.reversedPeopleDict)
+	assert.Equal(t, []string{testPersonAlice, testPersonBob}, oc.reversedPeopleDict)
 	assert.Equal(t, 24*time.Hour, oc.tickSize)
 }
 
@@ -193,7 +193,7 @@ func TestComputeHHI(t *testing.T) {
 
 func TestOwnershipConcentrationFinalize(t *testing.T) {
 	oc := OwnershipConcentrationAnalysis{}
-	oc.reversedPeopleDict = []string{"Alice", "Bob"}
+	oc.reversedPeopleDict = []string{testPersonAlice, testPersonBob}
 	oc.tickSize = 24 * time.Hour
 	assert.NoError(t, oc.Initialize(test.Repository))
 
@@ -208,7 +208,7 @@ func TestOwnershipConcentrationFinalize(t *testing.T) {
 	assert.NotNil(t, result)
 
 	ocr := result.(OwnershipConcentrationResult)
-	assert.Equal(t, []string{"Alice", "Bob"}, ocr.reversedPeopleDict)
+	assert.Equal(t, []string{testPersonAlice, testPersonBob}, ocr.reversedPeopleDict)
 	assert.Len(t, ocr.Snapshots, 1)
 	assert.InDelta(t, 0.25, ocr.Snapshots[0].Gini, 0.001)
 	assert.InDelta(t, 0.5, ocr.Snapshots[0].HHI, 0.001)
@@ -222,10 +222,10 @@ func TestOwnershipConcentrationSerializeText(t *testing.T) {
 			5: {Gini: 0.25, HHI: 0.52, TotalLines: 200, AuthorLines: map[int]int64{0: 120, 1: 80}},
 		},
 		SubsystemConcentration: map[string]*SubsystemConcentration{
-			"src":  {Gini: 0.3, HHI: 0.6},
-			"docs": {Gini: 0.0, HHI: 0.5},
+			testSourceDirectory: {Gini: 0.3, HHI: 0.6},
+			testDocsDirectory:   {Gini: 0.0, HHI: 0.5},
 		},
-		reversedPeopleDict: []string{"Alice", "Bob"},
+		reversedPeopleDict: []string{testPersonAlice, testPersonBob},
 		tickSize:           24 * time.Hour,
 	}
 
@@ -241,8 +241,8 @@ func TestOwnershipConcentrationSerializeText(t *testing.T) {
 	assert.Contains(t, output, "gini: 0.2500")
 	assert.Contains(t, output, "per_subsystem:")
 	assert.Contains(t, output, "people:")
-	assert.Contains(t, output, "Alice")
-	assert.Contains(t, output, "Bob")
+	assert.Contains(t, output, testPersonAlice)
+	assert.Contains(t, output, testPersonBob)
 }
 
 func TestOwnershipConcentrationSerializeBinaryRoundtrip(t *testing.T) {
@@ -253,9 +253,9 @@ func TestOwnershipConcentrationSerializeBinaryRoundtrip(t *testing.T) {
 			5: {Gini: 0.25, HHI: 0.52, TotalLines: 200, AuthorLines: map[int]int64{0: 120, 1: 80}},
 		},
 		SubsystemConcentration: map[string]*SubsystemConcentration{
-			"src": {Gini: 0.3, HHI: 0.6},
+			testSourceDirectory: {Gini: 0.3, HHI: 0.6},
 		},
-		reversedPeopleDict: []string{"Alice", "Bob"},
+		reversedPeopleDict: []string{testPersonAlice, testPersonBob},
 		tickSize:           24 * time.Hour,
 	}
 
@@ -281,8 +281,8 @@ func TestOwnershipConcentrationSerializeBinaryRoundtrip(t *testing.T) {
 	assert.InDelta(t, 0.52, result2.Snapshots[5].HHI, 0.001)
 	assert.Equal(t, int64(200), result2.Snapshots[5].TotalLines)
 
-	assert.InDelta(t, 0.3, result2.SubsystemConcentration["src"].Gini, 0.001)
-	assert.InDelta(t, 0.6, result2.SubsystemConcentration["src"].HHI, 0.001)
+	assert.InDelta(t, 0.3, result2.SubsystemConcentration[testSourceDirectory].Gini, 0.001)
+	assert.InDelta(t, 0.6, result2.SubsystemConcentration[testSourceDirectory].HHI, 0.001)
 }
 
 func TestOwnershipConcentrationFork(t *testing.T) {
@@ -309,9 +309,9 @@ func TestOwnershipConcentrationMergeResults(t *testing.T) {
 			5: {Gini: 0.2, HHI: 0.5, TotalLines: 200, AuthorLines: map[int]int64{0: 120, 1: 80}},
 		},
 		SubsystemConcentration: map[string]*SubsystemConcentration{
-			"src": {Gini: 0.3, HHI: 0.6},
+			testSourceDirectory: {Gini: 0.3, HHI: 0.6},
 		},
-		reversedPeopleDict: []string{"Alice", "Bob"},
+		reversedPeopleDict: []string{testPersonAlice, testPersonBob},
 		tickSize:           24 * time.Hour,
 	}
 
@@ -321,10 +321,10 @@ func TestOwnershipConcentrationMergeResults(t *testing.T) {
 			10: {Gini: 0.1, HHI: 0.5, TotalLines: 50, AuthorLines: map[int]int64{2: 50}},
 		},
 		SubsystemConcentration: map[string]*SubsystemConcentration{
-			"src":  {Gini: 0.4, HHI: 0.7},
-			"docs": {Gini: 0.0, HHI: 0.5},
+			testSourceDirectory: {Gini: 0.4, HHI: 0.7},
+			testDocsDirectory:   {Gini: 0.0, HHI: 0.5},
 		},
-		reversedPeopleDict: []string{"Alice", "Bob", "Charlie"},
+		reversedPeopleDict: []string{testPersonAlice, testPersonBob, testPersonCharlie},
 		tickSize:           24 * time.Hour,
 	}
 
@@ -342,6 +342,6 @@ func TestOwnershipConcentrationMergeResults(t *testing.T) {
 	assert.InDelta(t, 0.1, merged.Snapshots[10].Gini, 0.001)
 
 	// Subsystem: r1 takes priority for "src", r2 adds "docs"
-	assert.InDelta(t, 0.3, merged.SubsystemConcentration["src"].Gini, 0.001)
-	assert.InDelta(t, 0.0, merged.SubsystemConcentration["docs"].Gini, 0.001)
+	assert.InDelta(t, 0.3, merged.SubsystemConcentration[testSourceDirectory].Gini, 0.001)
+	assert.InDelta(t, 0.0, merged.SubsystemConcentration[testDocsDirectory].Gini, 0.001)
 }

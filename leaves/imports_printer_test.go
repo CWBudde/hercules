@@ -16,16 +16,17 @@ import (
 	"github.com/cwbudde/hercules/internal/test"
 )
 
-func fixtureImportsPerDev() *ImportsPerDeveloper {
+func fixtureImportsPerDev(t *testing.T) *ImportsPerDeveloper {
+	t.Helper()
 	d := ImportsPerDeveloper{}
-	d.Initialize(test.Repository)
-	people := [...]string{"one@srcd", "two@srcd"}
+	assert.NoError(t, d.Initialize(test.Repository))
+	people := [...]string{testPersonOneSource, testPersonTwoSource}
 	d.reversedPeopleDict = people[:]
 	return &d
 }
 
 func TestImportsPerDeveloperMeta(t *testing.T) {
-	ipd := fixtureImportsPerDev()
+	ipd := fixtureImportsPerDev(t)
 	ass := assert.New(t)
 	ass.Equal("ImportsPerDeveloper", ipd.Name())
 	ass.Empty(ipd.Provides())
@@ -63,7 +64,7 @@ func TestImportsPerDeveloperRegistration(t *testing.T) {
 }
 
 func TestImportsPerDeveloperInitialize(t *testing.T) {
-	ipd := fixtureImportsPerDev()
+	ipd := fixtureImportsPerDev(t)
 	assert.NotNil(t, ipd.imports)
 	assert.Equal(t, time.Hour*24, ipd.TickSize)
 }
@@ -73,36 +74,40 @@ func TestImportsPerDeveloperConsumeFinalize(t *testing.T) {
 	deps[identity.DependencyAuthor] = 0
 	deps[plumbing.DependencyTick] = 1
 	imps := map[gitplumbing.Hash]importslang.File{}
-	imps[gitplumbing.NewHash("291286b4ac41952cbd1389fda66420ec03c1a9fe")] = importslang.File{Lang: "Go", Path: "test.go", Imports: []string{"sys"}}
-	imps[gitplumbing.NewHash("c29112dbd697ad9b401333b80c18a63951bc18d9")] = importslang.File{Lang: "Python", Path: "test.py", Imports: []string{"sys"}}
+	imps[gitplumbing.NewHash("291286b4ac41952cbd1389fda66420ec03c1a9fe")] = importslang.File{
+		Lang: "Go", Path: "test.go", Imports: []string{testSysImport},
+	}
+	imps[gitplumbing.NewHash("c29112dbd697ad9b401333b80c18a63951bc18d9")] = importslang.File{
+		Lang: testPythonLanguage, Path: "test.py", Imports: []string{testSysImport},
+	}
 	deps[imports.DependencyImports] = imps
-	ipd := fixtureImportsPerDev()
+	ipd := fixtureImportsPerDev(t)
 	ipd.reversedPeopleDict = []string{"1", "2"}
 	_, err := ipd.Consume(deps)
 	assert.NoError(t, err)
 	assert.Equal(t, ImportsMap{
-		0: {"Go": {"sys": {1: 1}}, "Python": {"sys": {1: 1}}},
+		0: {"Go": {testSysImport: {1: 1}}, testPythonLanguage: {testSysImport: {1: 1}}},
 	}, ipd.imports)
 	_, err = ipd.Consume(deps)
 	assert.NoError(t, err)
 	assert.Equal(t, ImportsMap{
-		0: {"Go": {"sys": {1: 2}}, "Python": {"sys": {1: 2}}},
+		0: {"Go": {testSysImport: {1: 2}}, testPythonLanguage: {testSysImport: {1: 2}}},
 	}, ipd.imports)
 	deps[identity.DependencyAuthor] = 1
 	_, err = ipd.Consume(deps)
 	assert.NoError(t, err)
 	assert.Equal(t, ImportsMap{
-		0: {"Go": {"sys": {1: 2}}, "Python": {"sys": {1: 2}}},
-		1: {"Go": {"sys": {1: 1}}, "Python": {"sys": {1: 1}}},
+		0: {"Go": {testSysImport: {1: 2}}, testPythonLanguage: {testSysImport: {1: 2}}},
+		1: {"Go": {testSysImport: {1: 1}}, testPythonLanguage: {testSysImport: {1: 1}}},
 	}, ipd.imports)
 }
 
 func TestImportsPerDeveloperSerializeText(t *testing.T) {
-	ipd := fixtureImportsPerDev()
+	ipd := fixtureImportsPerDev(t)
 	res := ImportsPerDeveloperResult{Imports: ImportsMap{
-		0: {"Go": {"sys": {1: 2}}, "Python": {"sys": {1: 2}}},
-		1: {"Go": {"sys": {1: 1}}, "Python": {"sys": {1: 1}}},
-	}, reversedPeopleDict: []string{"one", "two"}}
+		0: {"Go": {testSysImport: {1: 2}}, testPythonLanguage: {testSysImport: {1: 2}}},
+		1: {"Go": {testSysImport: {1: 1}}, testPythonLanguage: {testSysImport: {1: 1}}},
+	}, reversedPeopleDict: []string{testPersonOne, testPersonTwo}}
 	buffer := &bytes.Buffer{}
 	assert.NoError(t, ipd.Serialize(res, false, buffer))
 	assert.Equal(t, `  tick_size: 0
@@ -113,12 +118,12 @@ func TestImportsPerDeveloperSerializeText(t *testing.T) {
 }
 
 func TestImportsPerDeveloperSerializeBinary(t *testing.T) {
-	ipd := fixtureImportsPerDev()
+	ipd := fixtureImportsPerDev(t)
 	ass := assert.New(t)
 	res := ImportsPerDeveloperResult{Imports: ImportsMap{
-		0: {"Go": {"sys": {1: 2}}, "Python": {"sys": {1: 2}}},
-		1: {"Go": {"sys": {1: 1}}, "Python": {"sys": {1: 1}}},
-	}, reversedPeopleDict: []string{"one", "two"}}
+		0: {"Go": {testSysImport: {1: 2}}, testPythonLanguage: {testSysImport: {1: 2}}},
+		1: {"Go": {testSysImport: {1: 1}}, testPythonLanguage: {testSysImport: {1: 1}}},
+	}, reversedPeopleDict: []string{testPersonOne, testPersonTwo}}
 	buffer := &bytes.Buffer{}
 	ass.NoError(ipd.Serialize(res, true, buffer))
 	back, err := ipd.Deserialize(buffer.Bytes())
@@ -127,10 +132,10 @@ func TestImportsPerDeveloperSerializeBinary(t *testing.T) {
 }
 
 func TestImportsPerDeveloperSerializeBinarySparseAuthorIndex(t *testing.T) {
-	ipd := fixtureImportsPerDev()
+	ipd := fixtureImportsPerDev(t)
 	res := ImportsPerDeveloperResult{Imports: ImportsMap{
 		4: {"Go": {"fmt": {1: 1}}},
-	}, reversedPeopleDict: []string{"one", "two"}}
+	}, reversedPeopleDict: []string{testPersonOne, testPersonTwo}}
 	buffer := &bytes.Buffer{}
 
 	assert.NotPanics(t, func() {

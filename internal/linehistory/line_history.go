@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"maps"
+	"math"
 	"os"
 	"path"
 	"runtime/debug"
@@ -92,6 +93,7 @@ var (
 	errDiffDeleteAfterPending          = errors.New("DiffDelete may not appear after DiffInsert/DiffDelete")
 	errUnsupportedDiffOperation        = errors.New("diff operation is not supported")
 	errRenamedFileNotFound             = errors.New("file to rename does not exist")
+	errInvalidDependencyType           = errors.New("line history dependency has an invalid type")
 )
 
 func (p *counterHolder) next() FileId {
@@ -228,11 +230,12 @@ func (analyser *LineHistoryAnalyser) ListConfigurationOptions() []core.Configura
 			Type:        core.BoolConfigurationOption,
 			Default:     false,
 		}, {
-			Name:        ConfigLinesExcludePaths,
-			Description: "Glob patterns of file paths to exclude from line history tracking (e.g. generated files). Repeat the flag or separate with commas.",
-			Flag:        "lines-exclude-paths",
-			Type:        core.StringsConfigurationOption,
-			Default:     []string{},
+			Name: ConfigLinesExcludePaths,
+			Description: "Glob patterns of file paths to exclude from line history tracking (e.g. generated files). " +
+				"Repeat the flag or separate with commas.",
+			Flag:    "lines-exclude-paths",
+			Type:    core.StringsConfigurationOption,
+			Default: []string{},
 		},
 	}
 
@@ -299,13 +302,42 @@ func (analyser *LineHistoryAnalyser) Consume(deps map[string]any) (map[string]an
 		panic("LineHistoryAnalyser.Consume() was called on a hibernated instance")
 	}
 
-	author := core.AuthorId(deps[identity.DependencyAuthor].(int))
-	analyser.tick = core.TickNumber(deps[items.DependencyTick].(int))
-	analyser.onNewTick()
+	authorID, err := lineHistoryDependency[int](deps, identity.DependencyAuthor)
+	if err != nil {
+		return nil, err
+	}
 
-	cache := deps[items.DependencyBlobCache].(map[plumbing.Hash]*items.CachedBlob)
-	treeDiffs := deps[items.DependencyTreeChanges].(object.Changes)
-	fileDiffs := deps[items.DependencyFileDiff].(map[string]items.FileDiffData)
+	tick, err := lineHistoryDependency[int](deps, items.DependencyTick)
+	if err != nil {
+		return nil, err
+	}
+
+	cache, err := lineHistoryDependency[map[plumbing.Hash]*items.CachedBlob](deps, items.DependencyBlobCache)
+	if err != nil {
+		return nil, err
+	}
+
+	treeDiffs, err := lineHistoryDependency[object.Changes](deps, items.DependencyTreeChanges)
+	if err != nil {
+		return nil, err
+	}
+
+	fileDiffs, err := lineHistoryDependency[map[string]items.FileDiffData](deps, items.DependencyFileDiff)
+	if err != nil {
+		return nil, err
+	}
+
+	author, err := intToAuthorID(authorID)
+	if err != nil {
+		return nil, err
+	}
+
+	analyser.tick, err = intToTickNumber(tick)
+	if err != nil {
+		return nil, err
+	}
+
+	analyser.onNewTick()
 
 	analyser.changes = make([]core.LineHistoryChange, 0, len(treeDiffs)*4)
 	for _, change := range treeDiffs {
@@ -340,12 +372,39 @@ func (analyser *LineHistoryAnalyser) Consume(deps map[string]any) (map[string]an
 	return result, nil
 }
 
+func lineHistoryDependency[T any](deps map[string]any, name string) (T, error) {
+	value, ok := deps[name].(T)
+	if !ok {
+		var zero T
+
+		return zero, fmt.Errorf("%w: %q", errInvalidDependencyType, name)
+	}
+
+	return value, nil
+}
+
+func intToAuthorID(value int) (core.AuthorId, error) {
+	if value < math.MinInt32 || value > math.MaxInt32 {
+		return 0, fmt.Errorf("%w: author ID %d is out of range", errInvalidDependencyType, value)
+	}
+
+	return core.AuthorId(value), nil
+}
+
+func intToTickNumber(value int) (core.TickNumber, error) {
+	if value < math.MinInt32 || value > math.MaxInt32 {
+		return 0, fmt.Errorf("%w: tick number %d is out of range", errInvalidDependencyType, value)
+	}
+
+	return core.TickNumber(value), nil
+}
+
 // Fork clones this item. Everything is copied by reference except the files
 // which are copied by value.
 func (analyser *LineHistoryAnalyser) Fork(n int) []core.PipelineItem {
 	result := make([]core.PipelineItem, n)
 
-	for i := range result {
+	for cloneIndex := range result {
 		clone := *analyser
 
 		clone.files = make(map[string]*File, len(analyser.files))
@@ -361,7 +420,7 @@ func (analyser *LineHistoryAnalyser) Fork(n int) []core.PipelineItem {
 
 		clone.changes = nil
 
-		result[i] = &clone
+		result[cloneIndex] = &clone
 	}
 
 	for id, name := range analyser.fileNames {
@@ -556,7 +615,17 @@ func packPersonWithTick(author core.AuthorId, tick core.TickNumber) int {
 }
 
 func unpackPersonWithTick(value int) (core.AuthorId, core.TickNumber) {
-	return core.AuthorId(value >> TreeMaxBinPower), core.TickNumber(value & TreeMergeMark)
+	author, err := intToAuthorID(value >> TreeMaxBinPower)
+	if err != nil {
+		panic(err)
+	}
+
+	tick, err := intToTickNumber(value & TreeMergeMark)
+	if err != nil {
+		panic(err)
+	}
+
+	return author, tick
 }
 
 func (analyser *LineHistoryAnalyser) onNewTick() {
@@ -565,7 +634,7 @@ func (analyser *LineHistoryAnalyser) onNewTick() {
 	}
 }
 
-func (analyser *LineHistoryAnalyser) updateChangeList(f *File, currentTime, previousTime, delta int) {
+func (analyser *LineHistoryAnalyser) updateChangeList(file *File, currentTime, previousTime, delta int) {
 	prevAuthor, prevTick := unpackPersonWithTick(previousTime)
 
 	newAuthor, curTick := unpackPersonWithTick(currentTime)
@@ -575,7 +644,7 @@ func (analyser *LineHistoryAnalyser) updateChangeList(f *File, currentTime, prev
 	}
 
 	change := core.LineHistoryChange{
-		FileId:     f.Id,
+		FileId:     file.Id,
 		CurrTick:   curTick,
 		CurrAuthor: newAuthor,
 		PrevTick:   prevTick,
@@ -599,8 +668,8 @@ func (analyser *LineHistoryAnalyser) updateChangeList(f *File, currentTime, prev
 }
 
 func (analyser *LineHistoryAnalyser) newFile(
-	_ plumbing.Hash, name string, author core.AuthorId, tick core.TickNumber, size int,
-) (*File, error) {
+	name string, author core.AuthorId, tick core.TickNumber, size int,
+) *File {
 	analyser.forgetFileName(name)
 
 	fileId := analyser.fileIdCounter.next()
@@ -608,18 +677,14 @@ func (analyser *LineHistoryAnalyser) newFile(
 	file := NewFile(fileId, packPersonWithTick(author, tick), size, analyser.fileAllocator, analyser.updateChangeList)
 	analyser.files[name] = file
 
-	return file, nil
+	return file
 }
 
-func (analyser *LineHistoryAnalyser) forgetFileName(name string) *File {
+func (analyser *LineHistoryAnalyser) forgetFileName(name string) {
 	if file := analyser.files[name]; file != nil {
 		analyser.addAbandonedName(file.Id, name)
 		delete(analyser.files, name)
-
-		return file
 	}
-
-	return nil
 }
 
 func (analyser *LineHistoryAnalyser) handleInsertion(
@@ -644,10 +709,9 @@ func (analyser *LineHistoryAnalyser) handleInsertion(
 		return fmt.Errorf("%w: %s", errFileAlreadyExists, name)
 	}
 
-	hash := blob.Hash
-	_, err = analyser.newFile(hash, name, author, analyser.tick, lines)
+	analyser.newFile(name, author, analyser.tick, lines)
 
-	return err
+	return nil
 }
 
 func (analyser *LineHistoryAnalyser) handleDeletion(
@@ -886,20 +950,20 @@ func (state *lineHistoryDiffState) debugError(length int, dumpBefore string) {
 	state.analyser.l.Errorf("====TREE AFTER====\n%s====END====\n", state.file.Dump())
 }
 
-func (analyser *LineHistoryAnalyser) handleRename(from, to string) error {
-	if from == to {
+func (analyser *LineHistoryAnalyser) handleRename(sourceName, targetName string) error {
+	if sourceName == targetName {
 		return nil
 	}
 
-	file, exists := analyser.files[from]
+	file, exists := analyser.files[sourceName]
 	if !exists {
-		return fmt.Errorf("%w: %s > %s", errRenamedFileNotFound, from, to)
+		return fmt.Errorf("%w: %s > %s", errRenamedFileNotFound, sourceName, targetName)
 	}
 
-	delete(analyser.files, from)
-	analyser.forgetFileName(to)
-	analyser.fileNames[file.Id] = to
-	analyser.files[to] = file
+	delete(analyser.files, sourceName)
+	analyser.forgetFileName(targetName)
+	analyser.fileNames[file.Id] = targetName
+	analyser.files[targetName] = file
 
 	return nil
 }

@@ -191,16 +191,16 @@ func TestLineHistoryLoaderMerge(t *testing.T) {
 func TestLoadedFileIdResolverNameOf(t *testing.T) {
 	loader := &LineHistoryLoader{}
 	loader.files = map[FileId]fileInfo{
-		1: {Name: "file1.go"},
-		2: {Name: "file2.go"},
+		1: {Name: testFileOnePath},
+		2: {Name: testFileTwoPath},
 		3: {Name: "dir/file3.go"},
 	}
 
 	resolver := loadedFileIdResolver{analyser: loader}
 
 	assert.Empty(t, resolver.NameOf(0))
-	assert.Equal(t, "file1.go", resolver.NameOf(1))
-	assert.Equal(t, "file2.go", resolver.NameOf(2))
+	assert.Equal(t, testFileOnePath, resolver.NameOf(1))
+	assert.Equal(t, testFileTwoPath, resolver.NameOf(2))
 	assert.Equal(t, "dir/file3.go", resolver.NameOf(3))
 	assert.Empty(t, resolver.NameOf(999))
 }
@@ -213,8 +213,8 @@ func TestLoadedFileIdResolverNameOfNil(t *testing.T) {
 func TestLoadedFileIdResolverMergedWith(t *testing.T) {
 	loader := &LineHistoryLoader{}
 	loader.files = map[FileId]fileInfo{
-		1: {Name: "file1.go"},
-		2: {Name: "file2.go"},
+		1: {Name: testFileOnePath},
+		2: {Name: testFileTwoPath},
 	}
 
 	resolver := loadedFileIdResolver{analyser: loader}
@@ -222,7 +222,7 @@ func TestLoadedFileIdResolverMergedWith(t *testing.T) {
 	// Existing file
 	id, name, present := resolver.MergedWith(1)
 	assert.Equal(t, FileId(1), id)
-	assert.Equal(t, "file1.go", name)
+	assert.Equal(t, testFileOnePath, name)
 	assert.True(t, present)
 
 	// Non-existing file
@@ -243,8 +243,8 @@ func TestLoadedFileIdResolverMergedWithNil(t *testing.T) {
 func TestLoadedFileIdResolverForEachFile(t *testing.T) {
 	loader := &LineHistoryLoader{}
 	loader.files = map[FileId]fileInfo{
-		1: {Name: "file1.go"},
-		2: {Name: "file2.go"},
+		1: {Name: testFileOnePath},
+		2: {Name: testFileTwoPath},
 		3: {Name: "file3.go"},
 	}
 
@@ -257,8 +257,8 @@ func TestLoadedFileIdResolverForEachFile(t *testing.T) {
 
 	assert.True(t, result)
 	assert.Len(t, visited, 3)
-	assert.Equal(t, "file1.go", visited[1])
-	assert.Equal(t, "file2.go", visited[2])
+	assert.Equal(t, testFileOnePath, visited[1])
+	assert.Equal(t, testFileTwoPath, visited[2])
 	assert.Equal(t, "file3.go", visited[3])
 }
 
@@ -271,7 +271,7 @@ func TestLoadedFileIdResolverForEachFileNil(t *testing.T) {
 func TestLoadedFileIdResolverScanFileNotImplemented(t *testing.T) {
 	loader := &LineHistoryLoader{}
 	loader.files = map[FileId]fileInfo{
-		1: {Name: "file1.go"},
+		1: {Name: testFileOnePath},
 	}
 
 	resolver := loadedFileIdResolver{analyser: loader}
@@ -299,7 +299,7 @@ func TestLoadedFileIdResolverScanFileNotFound(t *testing.T) {
 
 func TestAuthorResolverMaxCount(t *testing.T) {
 	loader := &LineHistoryLoader{}
-	loader.authors = []string{"Alice", "Bob", "Charlie"}
+	loader.authors = []string{testAuthorAlice, testAuthorBob, testAuthorCharlie}
 
 	resolver := authorResolver{identities: loader}
 	assert.Equal(t, 3, resolver.MaxCount())
@@ -312,7 +312,7 @@ func TestAuthorResolverMaxCountNil(t *testing.T) {
 
 func TestAuthorResolverCount(t *testing.T) {
 	loader := &LineHistoryLoader{}
-	loader.authors = []string{"Alice", "Bob"}
+	loader.authors = []string{testAuthorAlice, testAuthorBob}
 
 	resolver := authorResolver{identities: loader}
 	assert.Equal(t, 2, resolver.Count())
@@ -325,22 +325,22 @@ func TestAuthorResolverCountNil(t *testing.T) {
 
 func TestAuthorResolverPrivateNameOf(t *testing.T) {
 	loader := &LineHistoryLoader{}
-	loader.authors = []string{"Alice", "Bob"}
+	loader.authors = []string{testAuthorAlice, testAuthorBob}
 
 	resolver := authorResolver{identities: loader}
-	assert.Equal(t, "Alice", resolver.PrivateNameOf(0))
-	assert.Equal(t, "Bob", resolver.PrivateNameOf(1))
+	assert.Equal(t, testAuthorAlice, resolver.PrivateNameOf(0))
+	assert.Equal(t, testAuthorBob, resolver.PrivateNameOf(1))
 }
 
 func TestAuthorResolverFriendlyNameOf(t *testing.T) {
 	loader := &LineHistoryLoader{}
-	loader.authors = []string{"Alice", "Bob", "Charlie"}
+	loader.authors = []string{testAuthorAlice, testAuthorBob, testAuthorCharlie}
 
 	resolver := authorResolver{identities: loader}
 
-	assert.Equal(t, "Alice", resolver.FriendlyNameOf(0))
-	assert.Equal(t, "Bob", resolver.FriendlyNameOf(1))
-	assert.Equal(t, "Charlie", resolver.FriendlyNameOf(2))
+	assert.Equal(t, testAuthorAlice, resolver.FriendlyNameOf(0))
+	assert.Equal(t, testAuthorBob, resolver.FriendlyNameOf(1))
+	assert.Equal(t, testAuthorCharlie, resolver.FriendlyNameOf(2))
 
 	// Out of bounds
 	assert.Equal(t, core.AuthorMissingName, resolver.FriendlyNameOf(999))
@@ -355,7 +355,7 @@ func TestAuthorResolverFriendlyNameOfNil(t *testing.T) {
 
 func TestAuthorResolverForEachIdentity(t *testing.T) {
 	loader := &LineHistoryLoader{}
-	loader.authors = []string{"Alice", "Bob", "Charlie"}
+	loader.authors = []string{testAuthorAlice, testAuthorBob, testAuthorCharlie}
 
 	resolver := authorResolver{identities: loader}
 
@@ -366,9 +366,9 @@ func TestAuthorResolverForEachIdentity(t *testing.T) {
 
 	assert.True(t, result)
 	assert.Len(t, visited, 3)
-	assert.Equal(t, "Alice", visited[0])
-	assert.Equal(t, "Bob", visited[1])
-	assert.Equal(t, "Charlie", visited[2])
+	assert.Equal(t, testAuthorAlice, visited[0])
+	assert.Equal(t, testAuthorBob, visited[1])
+	assert.Equal(t, testAuthorCharlie, visited[2])
 }
 
 func TestAuthorResolverForEachIdentityNil(t *testing.T) {
@@ -379,18 +379,18 @@ func TestAuthorResolverForEachIdentityNil(t *testing.T) {
 
 func TestAuthorResolverCopyNames(t *testing.T) {
 	loader := &LineHistoryLoader{}
-	loader.authors = []string{"Alice", "Bob"}
+	loader.authors = []string{testAuthorAlice, testAuthorBob}
 
 	resolver := authorResolver{identities: loader}
 	names := resolver.CopyNames(false)
 
 	assert.Len(t, names, 2)
-	assert.Equal(t, "Alice", names[0])
-	assert.Equal(t, "Bob", names[1])
+	assert.Equal(t, testAuthorAlice, names[0])
+	assert.Equal(t, testAuthorBob, names[1])
 
 	// Verify it's a copy, not the same slice
 	names[0] = "Modified"
-	assert.Equal(t, "Alice", loader.authors[0])
+	assert.Equal(t, testAuthorAlice, loader.authors[0])
 }
 
 func TestAuthorResolverCopyNamesNil(t *testing.T) {
@@ -470,8 +470,8 @@ LineDumper:
 
 	// Check files
 	assert.Len(t, loader.files, 3)
-	assert.Equal(t, "file1.go", loader.files[1].Name)
-	assert.Equal(t, "file2.go", loader.files[2].Name)
+	assert.Equal(t, testFileOnePath, loader.files[1].Name)
+	assert.Equal(t, testFileTwoPath, loader.files[2].Name)
 	assert.Equal(t, "dir/file3.go", loader.files[3].Name)
 
 	// Check commits

@@ -81,28 +81,28 @@ func TestFileDiffConsume(t *testing.T) {
 		"994eac1cd07235bb9815e547a75c84265dea00f5",
 	))
 	changes[0] = &object.Change{From: object.ChangeEntry{
-		Name: "analyser.go",
+		Name: testAnalyserPath,
 		Tree: treeFrom,
 		TreeEntry: object.TreeEntry{
-			Name: "analyser.go",
+			Name: testAnalyserPath,
 			Mode: 0o100644,
 			Hash: plumbing.NewHash("dc248ba2b22048cc730c571a748e8ffcf7085ab9"),
 		},
 	}, To: object.ChangeEntry{
-		Name: "analyser.go",
+		Name: testAnalyserPath,
 		Tree: treeTo,
 		TreeEntry: object.TreeEntry{
-			Name: "analyser.go",
+			Name: testAnalyserPath,
 			Mode: 0o100644,
 			Hash: plumbing.NewHash("334cde09da4afcb74f8d2b3e6fd6cce61228b485"),
 		},
 	}}
 	changes[1] = &object.Change{
 		From: object.ChangeEntry{}, To: object.ChangeEntry{
-			Name: ".travis.yml",
+			Name: testTravisPath,
 			Tree: treeTo,
 			TreeEntry: object.TreeEntry{
-				Name: ".travis.yml",
+				Name: testTravisPath,
 				Mode: 0o100644,
 				Hash: plumbing.NewHash("291286b4ac41952cbd1389fda66420ec03c1a9fe"),
 			},
@@ -124,7 +124,7 @@ func TestFileDiffConsume(t *testing.T) {
 	require.NoError(t, err)
 	diffs := res[items.DependencyFileDiff].(map[string]items.FileDiffData)
 	assert.Len(t, diffs, 1)
-	diff := diffs["analyser.go"]
+	diff := diffs[testAnalyserPath]
 	assert.Equal(t, 307, diff.OldLinesOfCode)
 	assert.Equal(t, 309, diff.NewLinesOfCode)
 	deletions := 0
@@ -160,18 +160,18 @@ func TestFileDiffConsumeInvalidBlob(t *testing.T) {
 		"994eac1cd07235bb9815e547a75c84265dea00f5",
 	))
 	changes[0] = &object.Change{From: object.ChangeEntry{
-		Name: "analyser.go",
+		Name: testAnalyserPath,
 		Tree: treeFrom,
 		TreeEntry: object.TreeEntry{
-			Name: "analyser.go",
+			Name: testAnalyserPath,
 			Mode: 0o100644,
 			Hash: plumbing.NewHash("ffffffffffffffffffffffffffffffffffffffff"),
 		},
 	}, To: object.ChangeEntry{
-		Name: "analyser.go",
+		Name: testAnalyserPath,
 		Tree: treeTo,
 		TreeEntry: object.TreeEntry{
-			Name: "analyser.go",
+			Name: testAnalyserPath,
 			Mode: 0o100644,
 			Hash: plumbing.NewHash("334cde09da4afcb74f8d2b3e6fd6cce61228b485"),
 		},
@@ -181,18 +181,18 @@ func TestFileDiffConsumeInvalidBlob(t *testing.T) {
 	assert.Len(t, res[hercules.DependencyFileDiff].(map[string]items.FileDiffData), 1)
 	require.NoError(t, err)
 	changes[0] = &object.Change{From: object.ChangeEntry{
-		Name: "analyser.go",
+		Name: testAnalyserPath,
 		Tree: treeFrom,
 		TreeEntry: object.TreeEntry{
-			Name: "analyser.go",
+			Name: testAnalyserPath,
 			Mode: 0o100644,
 			Hash: plumbing.NewHash("dc248ba2b22048cc730c571a748e8ffcf7085ab9"),
 		},
 	}, To: object.ChangeEntry{
-		Name: "analyser.go",
+		Name: testAnalyserPath,
 		Tree: treeTo,
 		TreeEntry: object.TreeEntry{
-			Name: "analyser.go",
+			Name: testAnalyserPath,
 			Mode: 0o100644,
 			Hash: plumbing.NewHash("ffffffffffffffffffffffffffffffffffffffff"),
 		},
@@ -208,7 +208,7 @@ func TestCountLines(t *testing.T) {
 	)
 	require.NoError(t, err)
 	cb := &items.CachedBlob{Blob: *blob}
-	cb.Cache()
+	require.NoError(t, cb.Cache())
 	lines, err := cb.CountLines()
 	assert.Equal(t, 12, lines)
 	require.NoError(t, err)
@@ -225,7 +225,7 @@ func TestCountLines(t *testing.T) {
 	)
 	require.NoError(t, err)
 	cb = &items.CachedBlob{Blob: *blob}
-	cb.Cache()
+	require.NoError(t, cb.Cache())
 	lines, err = cb.CountLines()
 	assert.Equal(t, 0, lines)
 	require.Error(t, err)
@@ -280,18 +280,18 @@ func TestFileDiffDarkMagic(t *testing.T) {
 		"eca91acf1fd828f20dcb653a061d8c97d965bc6c",
 	))
 	changes[0] = &object.Change{From: object.ChangeEntry{
-		Name: "test.java",
+		Name: testJavaPath,
 		Tree: treeFrom,
 		TreeEntry: object.TreeEntry{
-			Name: "test.java",
+			Name: testJavaPath,
 			Mode: 0o100644,
 			Hash: plumbing.NewHash("448eb3f312849b0ca766063d06b09481c987b309"),
 		},
 	}, To: object.ChangeEntry{
-		Name: "test.java",
+		Name: testJavaPath,
 		Tree: treeTo,
 		TreeEntry: object.TreeEntry{
-			Name: "test.java",
+			Name: testJavaPath,
 			Mode: 0o100644,
 			Hash: plumbing.NewHash("3312c92f3e8bdfbbdb30bccb6acd1b85bc338dfc"),
 		},
@@ -299,11 +299,11 @@ func TestFileDiffDarkMagic(t *testing.T) {
 	deps[items.DependencyTreeChanges] = changes
 	res, err := fd.Consume(deps)
 	require.NoError(t, err)
-	magicDiffs := res[items.DependencyFileDiff].(map[string]items.FileDiffData)["test.java"]
+	magicDiffs := res[items.DependencyFileDiff].(map[string]items.FileDiffData)[testJavaPath]
 	fd.CleanupDisabled = true
 	res, err = fd.Consume(deps)
 	require.NoError(t, err)
-	plainDiffs := res[items.DependencyFileDiff].(map[string]items.FileDiffData)["test.java"]
+	plainDiffs := res[items.DependencyFileDiff].(map[string]items.FileDiffData)[testJavaPath]
 	assert.NotEqual(t, magicDiffs.Diffs, plainDiffs.Diffs)
 	assert.Equal(t, magicDiffs.OldLinesOfCode, plainDiffs.OldLinesOfCode)
 	assert.Equal(t, magicDiffs.NewLinesOfCode, plainDiffs.NewLinesOfCode)
@@ -338,12 +338,12 @@ func TestFileDiffRefineMaxLinesSkips(t *testing.T) {
 	treeFrom, _ := test.Repository.TreeObject(plumbing.NewHash("f02289bfe843388a1bb3c7dea210374082dd86b9"))
 	treeTo, _ := test.Repository.TreeObject(plumbing.NewHash("eca91acf1fd828f20dcb653a061d8c97d965bc6c"))
 	change := &object.Change{
-		From: object.ChangeEntry{Name: "test.java", Tree: treeFrom, TreeEntry: object.TreeEntry{
-			Name: "test.java", Mode: 0o100644,
+		From: object.ChangeEntry{Name: testJavaPath, Tree: treeFrom, TreeEntry: object.TreeEntry{
+			Name: testJavaPath, Mode: 0o100644,
 			Hash: plumbing.NewHash("448eb3f312849b0ca766063d06b09481c987b309"),
 		}},
-		To: object.ChangeEntry{Name: "test.java", Tree: treeTo, TreeEntry: object.TreeEntry{
-			Name: "test.java", Mode: 0o100644,
+		To: object.ChangeEntry{Name: testJavaPath, Tree: treeTo, TreeEntry: object.TreeEntry{
+			Name: testJavaPath, Mode: 0o100644,
 			Hash: plumbing.NewHash("3312c92f3e8bdfbbdb30bccb6acd1b85bc338dfc"),
 		}},
 	}
@@ -356,13 +356,13 @@ func TestFileDiffRefineMaxLinesSkips(t *testing.T) {
 	fdDisabled.RefineDisabled = true
 	resDisabled, err := fdDisabled.Consume(deps)
 	require.NoError(t, err)
-	wantDiffs := resDisabled[items.DependencyFileDiff].(map[string]items.FileDiffData)["test.java"]
+	wantDiffs := resDisabled[items.DependencyFileDiff].(map[string]items.FileDiffData)[testJavaPath]
 
 	fdLimited := fixtures.FileDiff()
 	fdLimited.RefineMaxLines = 1
 	resLimited, err := fdLimited.Consume(deps)
 	require.NoError(t, err)
-	gotDiffs := resLimited[items.DependencyFileDiff].(map[string]items.FileDiffData)["test.java"]
+	gotDiffs := resLimited[items.DependencyFileDiff].(map[string]items.FileDiffData)[testJavaPath]
 
 	assert.Equal(t, wantDiffs.Diffs, gotDiffs.Diffs)
 }
@@ -382,18 +382,18 @@ func TestFileDiffWhitespaceDarkMagic(t *testing.T) {
 		"eca91acf1fd828f20dcb653a061d8c97d965bc6c",
 	))
 	changes[0] = &object.Change{From: object.ChangeEntry{
-		Name: "test.java",
+		Name: testJavaPath,
 		Tree: treeFrom,
 		TreeEntry: object.TreeEntry{
-			Name: "test.java",
+			Name: testJavaPath,
 			Mode: 0o100644,
 			Hash: plumbing.NewHash("448eb3f312849b0ca766063d06b09481c987b309"),
 		},
 	}, To: object.ChangeEntry{
-		Name: "test.java",
+		Name: testJavaPath,
 		Tree: treeTo,
 		TreeEntry: object.TreeEntry{
-			Name: "test.java",
+			Name: testJavaPath,
 			Mode: 0o100644,
 			Hash: plumbing.NewHash("3312c92f3e8bdfbbdb30bccb6acd1b85bc338dfc"),
 		},
@@ -401,11 +401,11 @@ func TestFileDiffWhitespaceDarkMagic(t *testing.T) {
 	deps[items.DependencyTreeChanges] = changes
 	res, err := fd.Consume(deps)
 	require.NoError(t, err)
-	magicDiffs := res[items.DependencyFileDiff].(map[string]items.FileDiffData)["test.java"]
+	magicDiffs := res[items.DependencyFileDiff].(map[string]items.FileDiffData)[testJavaPath]
 	fd.WhitespaceIgnore = true
 	res, err = fd.Consume(deps)
 	require.NoError(t, err)
-	plainDiffs := res[items.DependencyFileDiff].(map[string]items.FileDiffData)["test.java"]
+	plainDiffs := res[items.DependencyFileDiff].(map[string]items.FileDiffData)[testJavaPath]
 	assert.NotEqual(t, magicDiffs.Diffs, plainDiffs.Diffs)
 	assert.Equal(t, magicDiffs.OldLinesOfCode, plainDiffs.OldLinesOfCode)
 	assert.Equal(t, magicDiffs.NewLinesOfCode, plainDiffs.NewLinesOfCode)

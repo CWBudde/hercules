@@ -41,14 +41,14 @@ func TestBusFactorRegistration(t *testing.T) {
 func TestBusFactorConfigure(t *testing.T) {
 	bf := BusFactorAnalysis{}
 	facts := map[string]any{}
-	facts[identity.FactIdentityDetectorReversedPeopleDict] = []string{"Alice", "Bob"}
+	facts[identity.FactIdentityDetectorReversedPeopleDict] = []string{testPersonAlice, testPersonBob}
 	facts[items.FactTickSize] = 24 * time.Hour
 	facts[ConfigBusFactorThreshold] = float32(0.9)
 	logger := core.NewLogger()
 	facts[core.ConfigLogger] = logger
 
 	assert.NoError(t, bf.Configure(facts))
-	assert.Equal(t, []string{"Alice", "Bob"}, bf.reversedPeopleDict)
+	assert.Equal(t, []string{testPersonAlice, testPersonBob}, bf.reversedPeopleDict)
 	assert.Equal(t, 24*time.Hour, bf.tickSize)
 	assert.InDelta(t, float32(0.9), bf.Threshold, 0.001)
 }
@@ -154,7 +154,7 @@ func TestComputeBusFactor(t *testing.T) {
 
 func TestBusFactorFinalize(t *testing.T) {
 	bf := BusFactorAnalysis{}
-	bf.reversedPeopleDict = []string{"Alice", "Bob"}
+	bf.reversedPeopleDict = []string{testPersonAlice, testPersonBob}
 	bf.tickSize = 24 * time.Hour
 	bf.Threshold = 0.8
 	assert.NoError(t, bf.Initialize(test.Repository))
@@ -171,7 +171,7 @@ func TestBusFactorFinalize(t *testing.T) {
 	assert.NotNil(t, result)
 
 	bfr := result.(BusFactorResult)
-	assert.Equal(t, []string{"Alice", "Bob"}, bfr.reversedPeopleDict)
+	assert.Equal(t, []string{testPersonAlice, testPersonBob}, bfr.reversedPeopleDict)
 	assert.InDelta(t, float32(0.8), bfr.Threshold, 0.001)
 	assert.Len(t, bfr.Snapshots, 1)
 	assert.Equal(t, 2, bfr.Snapshots[0].BusFactor)
@@ -185,11 +185,11 @@ func TestBusFactorSerializeText(t *testing.T) {
 			5: {BusFactor: 2, TotalLines: 200, AuthorLines: map[int]int64{0: 120, 1: 80}},
 		},
 		SubsystemBusFactor: map[string]int{
-			"src":  1,
-			"docs": 2,
+			testSourceDirectory: 1,
+			testDocsDirectory:   2,
 		},
 		Threshold:          0.8,
-		reversedPeopleDict: []string{"Alice", "Bob"},
+		reversedPeopleDict: []string{testPersonAlice, testPersonBob},
 		tickSize:           24 * time.Hour,
 	}
 
@@ -207,8 +207,8 @@ func TestBusFactorSerializeText(t *testing.T) {
 	assert.Contains(t, output, "\"src\": 1")
 	assert.Contains(t, output, "\"docs\": 2")
 	assert.Contains(t, output, "people:")
-	assert.Contains(t, output, "Alice")
-	assert.Contains(t, output, "Bob")
+	assert.Contains(t, output, testPersonAlice)
+	assert.Contains(t, output, testPersonBob)
 }
 
 func TestBusFactorSerializeBinaryRoundtrip(t *testing.T) {
@@ -219,10 +219,10 @@ func TestBusFactorSerializeBinaryRoundtrip(t *testing.T) {
 			5: {BusFactor: 2, TotalLines: 200, AuthorLines: map[int]int64{0: 120, 1: 80}},
 		},
 		SubsystemBusFactor: map[string]int{
-			"src": 1,
+			testSourceDirectory: 1,
 		},
 		Threshold:          0.8,
-		reversedPeopleDict: []string{"Alice", "Bob"},
+		reversedPeopleDict: []string{testPersonAlice, testPersonBob},
 		tickSize:           24 * time.Hour,
 	}
 
@@ -251,7 +251,7 @@ func TestBusFactorSerializeBinaryRoundtrip(t *testing.T) {
 	assert.Equal(t, 2, result2.Snapshots[5].BusFactor)
 	assert.Equal(t, int64(200), result2.Snapshots[5].TotalLines)
 
-	assert.Equal(t, 1, result2.SubsystemBusFactor["src"])
+	assert.Equal(t, 1, result2.SubsystemBusFactor[testSourceDirectory])
 }
 
 func TestBusFactorFork(t *testing.T) {
@@ -278,9 +278,9 @@ func TestBusFactorMergeResults(t *testing.T) {
 			0: {BusFactor: 1, TotalLines: 100, AuthorLines: map[int]int64{0: 100}},
 			5: {BusFactor: 2, TotalLines: 200, AuthorLines: map[int]int64{0: 120, 1: 80}},
 		},
-		SubsystemBusFactor: map[string]int{"src": 1},
+		SubsystemBusFactor: map[string]int{testSourceDirectory: 1},
 		Threshold:          0.8,
-		reversedPeopleDict: []string{"Alice", "Bob"},
+		reversedPeopleDict: []string{testPersonAlice, testPersonBob},
 		tickSize:           24 * time.Hour,
 	}
 
@@ -289,9 +289,9 @@ func TestBusFactorMergeResults(t *testing.T) {
 			5:  {BusFactor: 3, TotalLines: 300, AuthorLines: map[int]int64{0: 150, 1: 100, 2: 50}},
 			10: {BusFactor: 1, TotalLines: 50, AuthorLines: map[int]int64{2: 50}},
 		},
-		SubsystemBusFactor: map[string]int{"src": 2, "docs": 1},
+		SubsystemBusFactor: map[string]int{testSourceDirectory: 2, testDocsDirectory: 1},
 		Threshold:          0.8,
-		reversedPeopleDict: []string{"Alice", "Bob", "Charlie"},
+		reversedPeopleDict: []string{testPersonAlice, testPersonBob, testPersonCharlie},
 		tickSize:           24 * time.Hour,
 	}
 
@@ -309,6 +309,6 @@ func TestBusFactorMergeResults(t *testing.T) {
 	assert.Equal(t, 1, merged.Snapshots[10].BusFactor)
 
 	// Subsystem: max of both
-	assert.Equal(t, 2, merged.SubsystemBusFactor["src"])
-	assert.Equal(t, 1, merged.SubsystemBusFactor["docs"])
+	assert.Equal(t, 2, merged.SubsystemBusFactor[testSourceDirectory])
+	assert.Equal(t, 1, merged.SubsystemBusFactor[testDocsDirectory])
 }

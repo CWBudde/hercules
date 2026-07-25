@@ -22,11 +22,11 @@ type testForkPipelineItem struct {
 }
 
 func (item *testForkPipelineItem) Name() string {
-	return "Test"
+	return testItemName
 }
 
 func (item *testForkPipelineItem) Provides() []string {
-	return []string{"test"}
+	return []string{testFeatureName}
 }
 
 func (item *testForkPipelineItem) Requires() []string {
@@ -59,7 +59,7 @@ func (item *testForkPipelineItem) Initialize(repository *git.Repository) error {
 }
 
 func (item *testForkPipelineItem) Consume(deps map[string]any) (map[string]any, error) {
-	return map[string]any{"test": "foo"}, nil
+	return map[string]any{testFeatureName: "foo"}, nil
 }
 
 func (item *testForkPipelineItem) Fork(n int) []PipelineItem {
@@ -71,7 +71,8 @@ func TestForkCopyPipelineItem(t *testing.T) {
 	require.NoError(t, origin.Initialize(nil))
 	origin.Mutable[2] = true
 	origin.Immutable = "before"
-	clone := origin.Fork(1)[0].(*testForkPipelineItem)
+	clone, ok := origin.Fork(1)[0].(*testForkPipelineItem)
+	require.True(t, ok)
 	origin.Immutable = "after"
 	origin.Mutable[1] = true
 	assert.True(t, clone.Mutable[1])
@@ -121,7 +122,7 @@ func TestRunActionString(t *testing.T) {
 	ra = runAction{runActionMerge, nil, nil, []int{1, 2, 5}}
 	assert.Equal(t, "merge^3", ra.String())
 	ra = runAction{runActionEmerge, nil, nil, nil}
-	assert.Equal(t, "emerge", ra.String())
+	assert.Equal(t, runActionEmergeName, ra.String())
 	ra = runAction{runActionDelete, nil, nil, nil}
 	assert.Equal(t, "delete", ra.String())
 	ra = runAction{runActionHibernate, nil, nil, nil}
@@ -210,7 +211,7 @@ func TestNoopMerger(t *testing.T) {
 }
 
 func TestForkSamePipelineItem(t *testing.T) {
-	origin := &testForkPipelineItem{Immutable: "test"}
+	origin := &testForkPipelineItem{Immutable: testFeatureName}
 
 	t.Run("creates n references to same origin", func(t *testing.T) {
 		clones := ForkSamePipelineItem(origin, 3)
@@ -239,7 +240,8 @@ func TestForkCopyPipelineItemMultiple(t *testing.T) {
 	clones := ForkCopyPipelineItem(origin, 3)
 	assert.Len(t, clones, 3)
 	for i, c := range clones {
-		clone := c.(*testForkPipelineItem)
+		clone, ok := c.(*testForkPipelineItem)
+		require.True(t, ok)
 		assert.Equal(t, "original", clone.Immutable)
 		// each clone is a different pointer
 		for j, other := range clones {
@@ -688,7 +690,7 @@ func TestPrintAction(t *testing.T) {
 		{"commit", runAction{Action: runActionCommit, Commit: commit, Items: []int{1}}, "C 1"},
 		{"fork", runAction{Action: runActionFork, Items: []int{1, 2}}, "F"},
 		{"merge", runAction{Action: runActionMerge, Commit: commit, Items: []int{1, 2}}, "M"},
-		{"emerge", runAction{Action: runActionEmerge, Items: []int{1}}, "E"},
+		{runActionEmergeName, runAction{Action: runActionEmerge, Items: []int{1}}, "E"},
 		{"delete", runAction{Action: runActionDelete, Items: []int{1}}, "D"},
 		{"hibernate", runAction{Action: runActionHibernate, Items: []int{1}}, "H"},
 		{"boot", runAction{Action: runActionBoot, Items: []int{1}}, "B"},

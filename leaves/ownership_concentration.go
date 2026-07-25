@@ -170,13 +170,13 @@ func (oc *OwnershipConcentrationAnalysis) Consume(deps map[string]any) (map[stri
 // Returns 0 for 0 or 1 authors.
 
 func computeGini(authorLines map[int]int64, totalLines int64) float64 {
-	n := len(authorLines)
-	if n <= 1 || totalLines == 0 {
+	authorCount := len(authorLines)
+	if authorCount <= 1 || totalLines == 0 {
 		return 0
 	}
 
 	// Sort line counts ascending
-	counts := make([]int64, 0, n)
+	counts := make([]int64, 0, authorCount)
 	for _, lines := range authorLines {
 		counts = append(counts, lines)
 	}
@@ -185,12 +185,13 @@ func computeGini(authorLines map[int]int64, totalLines int64) float64 {
 
 	// G = (2 * Sum_{i=1}^{n} i * x_i) / (n * S) - (n+1)/n
 	var weightedSum float64
-	for i, c := range counts {
-		weightedSum += float64(i+1) * float64(c)
+	for index, count := range counts {
+		weightedSum += float64(index+1) * float64(count)
 	}
 
-	nf := float64(n)
-	gini := (2.0*weightedSum)/(nf*float64(totalLines)) - (nf+1.0)/nf
+	authorCountFloat := float64(authorCount)
+	gini := (2.0*weightedSum)/(authorCountFloat*float64(totalLines)) -
+		(authorCountFloat+1.0)/authorCountFloat
 	// Clamp to [0,1] to handle floating point imprecision
 	return math.Max(0, math.Min(1, gini))
 }
@@ -325,7 +326,10 @@ func (oc *OwnershipConcentrationAnalysis) MergeResults(
 	return merged
 }
 
-func (oc *OwnershipConcentrationAnalysis) serializeBinary(result *OwnershipConcentrationResult, writer io.Writer) error {
+func (oc *OwnershipConcentrationAnalysis) serializeBinary(
+	result *OwnershipConcentrationResult,
+	writer io.Writer,
+) error {
 	message := pb.OwnershipConcentrationResults{
 		DevIndex: result.reversedPeopleDict,
 		TickSize: int64(result.tickSize),
@@ -340,15 +344,19 @@ func (oc *OwnershipConcentrationAnalysis) serializeBinary(result *OwnershipConce
 			AuthorLines: make(map[int32]int64, len(snapshot.AuthorLines)),
 		}
 		for author, lines := range snapshot.AuthorLines {
-			authorID := int32(author)
-			if author == core.AuthorMissing {
-				authorID = -1
+			authorID, err := intToProtoInt32(author, "ownership-concentration author")
+			if err != nil {
+				return err
 			}
 
 			pbSnapshot.AuthorLines[authorID] = lines
 		}
 
-		message.Snapshots[int32(tick)] = pbSnapshot
+		tickID, err := intToProtoInt32(tick, "ownership-concentration tick")
+		if err != nil {
+			return err
+		}
+		message.Snapshots[tickID] = pbSnapshot
 	}
 
 	message.SubsystemGini = make(map[string]float64, len(result.SubsystemConcentration))

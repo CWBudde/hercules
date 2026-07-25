@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"html/template"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -15,114 +14,141 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/spf13/cobra"
+	"golang.org/x/sys/execabs"
 
 	"github.com/cwbudde/hercules"
 	"github.com/cwbudde/hercules/internal/pb"
 	"github.com/cwbudde/hercules/internal/render"
 )
 
+const (
+	reportAnalysisBurndown               = "burndown"
+	reportAnalysisBurndownFiles          = "burndown-files"
+	reportAnalysisBurndownPeople         = "burndown-people"
+	reportAnalysisDevs                   = "devs"
+	reportAnalysisTemporalActivity       = "temporal-activity"
+	reportAnalysisBusFactor              = "bus-factor"
+	reportAnalysisOwnershipConcentration = "ownership-concentration"
+	reportAnalysisKnowledgeDiffusion     = "knowledge-diffusion"
+	reportAnalysisOnboarding             = "onboarding"
+	reportAnalysisHotspotRisk            = "hotspot-risk"
+	reportAnalysisRefactoringProxy       = "refactoring-proxy"
+	reportAnalysisShotness               = "shotness"
+	reportAnalysisSentiment              = "sentiment"
+	reportModeBurndownProject            = "burndown-project"
+	reportModeBurndownFile               = "burndown-file"
+	reportModeBurndownPerson             = "burndown-person"
+	reportModeOverwritesMatrix           = "overwrites-matrix"
+	reportModeOwnership                  = "ownership"
+	reportModeCouplesFiles               = "couples-files"
+	reportModeCouplesPeople              = "couples-people"
+	reportModeDevsEfforts                = "devs-efforts"
+	reportModeOldVsNew                   = "old-vs-new"
+	reportModeLanguages                  = "languages"
+)
+
 var reportDefaultAnalysisFlags = []string{
-	"burndown",
-	"burndown-files",
-	"burndown-people",
+	reportAnalysisBurndown,
+	reportAnalysisBurndownFiles,
+	reportAnalysisBurndownPeople,
 	"couples",
-	"devs",
-	"temporal-activity",
-	"bus-factor",
-	"ownership-concentration",
-	"knowledge-diffusion",
-	"onboarding",
-	"hotspot-risk",
-	"refactoring-proxy",
+	reportAnalysisDevs,
+	reportAnalysisTemporalActivity,
+	reportAnalysisBusFactor,
+	reportAnalysisOwnershipConcentration,
+	reportAnalysisKnowledgeDiffusion,
+	reportAnalysisOnboarding,
+	reportAnalysisHotspotRisk,
+	reportAnalysisRefactoringProxy,
 }
 
 var reportAllAnalysisFlags = []string{
-	"burndown",
-	"burndown-files",
-	"burndown-people",
+	reportAnalysisBurndown,
+	reportAnalysisBurndownFiles,
+	reportAnalysisBurndownPeople,
 	"couples",
-	"shotness",
-	"devs",
-	"temporal-activity",
-	"bus-factor",
-	"ownership-concentration",
-	"knowledge-diffusion",
-	"onboarding",
-	"hotspot-risk",
-	"refactoring-proxy",
-	"sentiment",
+	reportAnalysisShotness,
+	reportAnalysisDevs,
+	reportAnalysisTemporalActivity,
+	reportAnalysisBusFactor,
+	reportAnalysisOwnershipConcentration,
+	reportAnalysisKnowledgeDiffusion,
+	reportAnalysisOnboarding,
+	reportAnalysisHotspotRisk,
+	reportAnalysisRefactoringProxy,
+	reportAnalysisSentiment,
 }
 
 var reportDefaultModes = []string{
-	"burndown-project",
-	"burndown-file",
-	"burndown-person",
-	"overwrites-matrix",
-	"ownership",
-	"couples-files",
-	"couples-people",
-	"devs",
-	"devs-efforts",
-	"old-vs-new",
-	"languages",
-	"temporal-activity",
-	"bus-factor",
-	"ownership-concentration",
-	"knowledge-diffusion",
-	"hotspot-risk",
-	"refactoring-proxy",
+	reportModeBurndownProject,
+	reportModeBurndownFile,
+	reportModeBurndownPerson,
+	reportModeOverwritesMatrix,
+	reportModeOwnership,
+	reportModeCouplesFiles,
+	reportModeCouplesPeople,
+	reportAnalysisDevs,
+	reportModeDevsEfforts,
+	reportModeOldVsNew,
+	reportModeLanguages,
+	reportAnalysisTemporalActivity,
+	reportAnalysisBusFactor,
+	reportAnalysisOwnershipConcentration,
+	reportAnalysisKnowledgeDiffusion,
+	reportAnalysisHotspotRisk,
+	reportAnalysisRefactoringProxy,
 }
 
 var reportAllModes = []string{
-	"burndown-project",
-	"burndown-file",
-	"burndown-person",
+	reportModeBurndownProject,
+	reportModeBurndownFile,
+	reportModeBurndownPerson,
 	"burndown-repository",
 	"burndown-repos-combined",
-	"overwrites-matrix",
-	"ownership",
-	"couples-files",
-	"couples-people",
+	reportModeOverwritesMatrix,
+	reportModeOwnership,
+	reportModeCouplesFiles,
+	reportModeCouplesPeople,
 	"couples-shotness",
-	"shotness",
-	"sentiment",
-	"temporal-activity",
-	"devs",
-	"devs-efforts",
-	"old-vs-new",
-	"languages",
+	reportAnalysisShotness,
+	reportAnalysisSentiment,
+	reportAnalysisTemporalActivity,
+	reportAnalysisDevs,
+	reportModeDevsEfforts,
+	reportModeOldVsNew,
+	reportModeLanguages,
 	"devs-parallel",
-	"bus-factor",
-	"ownership-concentration",
-	"knowledge-diffusion",
-	"hotspot-risk",
-	"refactoring-proxy",
+	reportAnalysisBusFactor,
+	reportAnalysisOwnershipConcentration,
+	reportAnalysisKnowledgeDiffusion,
+	reportAnalysisHotspotRisk,
+	reportAnalysisRefactoringProxy,
 }
 
 var reportValidModes = map[string]struct{}{
-	"burndown-project":        {},
-	"burndown-file":           {},
-	"burndown-person":         {},
-	"burndown-repository":     {},
-	"burndown-repos-combined": {},
-	"overwrites-matrix":       {},
-	"ownership":               {},
-	"couples-files":           {},
-	"couples-people":          {},
-	"couples-shotness":        {},
-	"shotness":                {},
-	"sentiment":               {},
-	"temporal-activity":       {},
-	"devs":                    {},
-	"devs-efforts":            {},
-	"old-vs-new":              {},
-	"languages":               {},
-	"devs-parallel":           {},
-	"bus-factor":              {},
-	"ownership-concentration": {},
-	"knowledge-diffusion":     {},
-	"hotspot-risk":            {},
-	"refactoring-proxy":       {},
+	reportModeBurndownProject:            {},
+	reportModeBurndownFile:               {},
+	reportModeBurndownPerson:             {},
+	"burndown-repository":                {},
+	"burndown-repos-combined":            {},
+	reportModeOverwritesMatrix:           {},
+	reportModeOwnership:                  {},
+	reportModeCouplesFiles:               {},
+	reportModeCouplesPeople:              {},
+	"couples-shotness":                   {},
+	reportAnalysisShotness:               {},
+	reportAnalysisSentiment:              {},
+	reportAnalysisTemporalActivity:       {},
+	reportAnalysisDevs:                   {},
+	reportModeDevsEfforts:                {},
+	reportModeOldVsNew:                   {},
+	reportModeLanguages:                  {},
+	"devs-parallel":                      {},
+	reportAnalysisBusFactor:              {},
+	reportAnalysisOwnershipConcentration: {},
+	reportAnalysisKnowledgeDiffusion:     {},
+	reportAnalysisHotspotRisk:            {},
+	reportAnalysisRefactoringProxy:       {},
 }
 
 // reportCmd generates a complete labours report in one command.
@@ -358,8 +384,8 @@ func finalizeReport(options reportOptions, message pb.AnalysisResults, analysisF
 // reportAnalysisFlagParents maps analysis flags that are sub-options of another
 // leaf (not registry leaves themselves) to the leaf whose availability governs them.
 var reportAnalysisFlagParents = map[string]string{
-	"burndown-files":  "burndown",
-	"burndown-people": "burndown",
+	reportAnalysisBurndownFiles:  reportAnalysisBurndown,
+	reportAnalysisBurndownPeople: reportAnalysisBurndown,
 }
 
 func selectReportAnalysisFlags(
@@ -409,7 +435,7 @@ func reportAnalysisSource(requested []string, includeAll bool) ([]string, bool) 
 }
 
 func reportAnalysisSupported(flag string) bool {
-	return flag != "sentiment" || tensorflowEnabled
+	return flag != reportAnalysisSentiment || tensorflowEnabled
 }
 
 func reportAnalysisAvailable(available map[string]struct{}, flag string) bool {
@@ -465,7 +491,7 @@ func resolveLaboursCommand(override string) ([]string, error) {
 }
 
 func runAndCapture(ctx context.Context, command string, args, env []string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, command, args...)
+	cmd := execabs.CommandContext(ctx, command, args...)
 	cmd.Stderr = os.Stderr
 	if len(env) > 0 {
 		cmd.Env = append(os.Environ(), env...)
@@ -479,7 +505,7 @@ func runAndCapture(ctx context.Context, command string, args, env []string) ([]b
 }
 
 func runAndCaptureTo(ctx context.Context, writer *os.File, command string, args, env []string) error {
-	cmd := exec.CommandContext(ctx, command, args...)
+	cmd := execabs.CommandContext(ctx, command, args...)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 	if len(env) > 0 {
@@ -775,5 +801,6 @@ func init() {
 	reportCmd.Flags().StringArray("labours-arg", nil,
 		"Additional argument passed through to each labours mode run (requires --labours-cmd).")
 	reportCmd.Flags().String("labours-cmd", "",
-		"Render with an external drop-in labours command instead of the built-in in-process renderer, e.g. \"labours\" or \"/path/to/labours\".")
+		"Render with an external drop-in labours command instead of the built-in in-process renderer, "+
+			"e.g. \"labours\" or \"/path/to/labours\".")
 }

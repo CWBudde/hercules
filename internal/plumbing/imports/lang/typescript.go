@@ -7,6 +7,8 @@ import (
 
 var tsLang = grammars.TypescriptLanguage()
 
+const tsStringNodeType = "string"
+
 var _ = RegisterLanguage(tsExtractor{})
 
 type tsExtractor struct{}
@@ -25,11 +27,11 @@ func (tsExtractor) Imports(content []byte) ([]string, error) {
 	}
 	var out []string
 
-	eachNodeOfTypes(root, tsLang, func(n *sitter.Node) bool {
-		if n.Type(tsLang) == "export_statement" {
-			for i := range n.ChildCount() {
-				child := n.Child(i)
-				if child.Type(tsLang) != "string" {
+	eachNodeOfTypes(root, tsLang, func(node *sitter.Node) bool {
+		if node.Type(tsLang) == "export_statement" {
+			for i := range node.ChildCount() {
+				child := node.Child(i)
+				if child.Type(tsLang) != tsStringNodeType {
 					continue
 				}
 
@@ -39,15 +41,15 @@ func (tsExtractor) Imports(content []byte) ([]string, error) {
 			return false
 		}
 		// import_statement
-		for i := range n.ChildCount() {
-			child := n.Child(i)
+		for i := range node.ChildCount() {
+			child := node.Child(i)
 			switch child.Type(tsLang) {
-			case "string":
+			case tsStringNodeType:
 				out = append(out, stripStringQuotes(child, content))
 			case "import_require_clause":
 				for j := range child.ChildCount() {
 					inner := child.Child(j)
-					if inner.Type(tsLang) != "string" {
+					if inner.Type(tsLang) != tsStringNodeType {
 						continue
 					}
 

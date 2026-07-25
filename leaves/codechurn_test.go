@@ -56,7 +56,7 @@ func TestCodeChurnConfigure(t *testing.T) {
 	logger := core.NewLogger()
 	facts[core.ConfigLogger] = logger
 
-	resolver := core.NewIdentityResolver([]string{"Alice", "Bob"}, nil)
+	resolver := core.NewIdentityResolver([]string{testPersonAlice, testPersonBob}, nil)
 	facts[core.FactIdentityResolver] = resolver
 
 	assert.NoError(t, cc.Configure(facts))
@@ -126,7 +126,7 @@ func TestCodeChurnInitializeNegativeValues(t *testing.T) {
 
 func TestCodeChurnInitializeWithPeopleResolver(t *testing.T) {
 	cc := CodeChurnAnalysis{}
-	cc.peopleResolver = core.NewIdentityResolver([]string{"Alice", "Bob"}, nil)
+	cc.peopleResolver = core.NewIdentityResolver([]string{testPersonAlice, testPersonBob}, nil)
 	assert.NoError(t, cc.Initialize(test.Repository))
 	assert.Len(t, cc.codeChurns, 2)
 }
@@ -146,7 +146,7 @@ func TestCodeChurnFork(t *testing.T) {
 
 func TestCodeChurnConsumeSkipsDeletes(t *testing.T) {
 	cc := CodeChurnAnalysis{}
-	cc.peopleResolver = core.NewIdentityResolver([]string{"Alice"}, nil)
+	cc.peopleResolver = core.NewIdentityResolver([]string{testPersonAlice}, nil)
 	assert.NoError(t, cc.Initialize(test.Repository))
 
 	changes := core.LineHistoryChanges{
@@ -166,7 +166,7 @@ func TestCodeChurnConsumeSkipsDeletes(t *testing.T) {
 
 func TestCodeChurnConsumeBasicInsert(t *testing.T) {
 	cc := CodeChurnAnalysis{}
-	cc.peopleResolver = core.NewIdentityResolver([]string{"Alice"}, nil)
+	cc.peopleResolver = core.NewIdentityResolver([]string{testPersonAlice}, nil)
 	assert.NoError(t, cc.Initialize(test.Repository))
 
 	changes := core.LineHistoryChanges{
@@ -198,7 +198,7 @@ func TestCodeChurnConsumeBasicInsert(t *testing.T) {
 
 func TestCodeChurnConsumeDeleteByOther(t *testing.T) {
 	cc := CodeChurnAnalysis{}
-	cc.peopleResolver = core.NewIdentityResolver([]string{"Alice", "Bob"}, nil)
+	cc.peopleResolver = core.NewIdentityResolver([]string{testPersonAlice, testPersonBob}, nil)
 	assert.NoError(t, cc.Initialize(test.Repository))
 
 	// First: Alice inserts lines
@@ -247,7 +247,7 @@ func TestCodeChurnConsumeDeleteByOther(t *testing.T) {
 
 func TestCodeChurnConsumeDeleteBySelf(t *testing.T) {
 	cc := CodeChurnAnalysis{}
-	cc.peopleResolver = core.NewIdentityResolver([]string{"Alice"}, nil)
+	cc.peopleResolver = core.NewIdentityResolver([]string{testPersonAlice}, nil)
 	require.NoError(t, cc.Initialize(test.Repository))
 
 	// Alice inserts lines
@@ -295,7 +295,7 @@ func TestCodeChurnConsumeDeleteBySelf(t *testing.T) {
 
 func TestCodeChurnConsumeSkipsMissingAuthor(t *testing.T) {
 	cc := CodeChurnAnalysis{}
-	cc.peopleResolver = core.NewIdentityResolver([]string{"Alice"}, nil)
+	cc.peopleResolver = core.NewIdentityResolver([]string{testPersonAlice}, nil)
 	assert.NoError(t, cc.Initialize(test.Repository))
 
 	// Change from AuthorMissing (should be skipped in updateAuthor)
@@ -325,7 +325,7 @@ func TestCodeChurnConsumeSkipsMissingAuthor(t *testing.T) {
 
 func TestCodeChurnConsumeSkipsZeroDelta(t *testing.T) {
 	cc := CodeChurnAnalysis{}
-	cc.peopleResolver = core.NewIdentityResolver([]string{"Alice"}, nil)
+	cc.peopleResolver = core.NewIdentityResolver([]string{testPersonAlice}, nil)
 	assert.NoError(t, cc.Initialize(test.Repository))
 
 	changes := core.LineHistoryChanges{
@@ -353,7 +353,7 @@ func TestCodeChurnConsumeSkipsZeroDelta(t *testing.T) {
 
 func TestCodeChurnConsumeAuthorOutOfRange(t *testing.T) {
 	cc := CodeChurnAnalysis{}
-	cc.peopleResolver = core.NewIdentityResolver([]string{"Alice"}, nil)
+	cc.peopleResolver = core.NewIdentityResolver([]string{testPersonAlice}, nil)
 	assert.NoError(t, cc.Initialize(test.Repository))
 
 	// PrevAuthor is out of range (not AuthorMissing), should be remapped to AuthorMissing
@@ -383,7 +383,7 @@ func TestCodeChurnConsumeAuthorOutOfRange(t *testing.T) {
 
 func TestCodeChurnConsumeMultipleFiles(t *testing.T) {
 	cc := CodeChurnAnalysis{}
-	cc.peopleResolver = core.NewIdentityResolver([]string{"Alice"}, nil)
+	cc.peopleResolver = core.NewIdentityResolver([]string{testPersonAlice}, nil)
 	assert.NoError(t, cc.Initialize(test.Repository))
 
 	changes := core.LineHistoryChanges{
@@ -419,7 +419,7 @@ func TestCodeChurnConsumeMultipleFiles(t *testing.T) {
 
 func TestCodeChurnFinalize(t *testing.T) {
 	cc := CodeChurnAnalysis{}
-	cc.peopleResolver = core.NewIdentityResolver([]string{"Alice", "Bob"}, nil)
+	cc.peopleResolver = core.NewIdentityResolver([]string{testPersonAlice, testPersonBob}, nil)
 	assert.NoError(t, cc.Initialize(test.Repository))
 
 	// Populate some data
@@ -431,7 +431,7 @@ func TestCodeChurnFinalize(t *testing.T) {
 	}
 
 	result := cc.Finalize().(CodeChurnResult)
-	assert.Equal(t, []string{"Alice", "Bob"}, result.GetIdentities())
+	assert.Equal(t, []string{testPersonAlice, testPersonBob}, result.GetIdentities())
 	assert.Len(t, result.Authors, 2)
 	assert.Equal(t, int32(50), result.Authors[0].Files["#0"].InsertedLines)
 	assert.Equal(t, int32(25), result.Authors[1].Files["#0"].OwnedLines)
@@ -442,7 +442,7 @@ func TestCodeChurnSerialize(t *testing.T) {
 	result := CodeChurnResult{
 		Authors: []CodeChurnAuthorResult{{
 			Files: map[string]CodeChurnFileResult{
-				"main.go": {
+				testMainPath: {
 					InsertedLines: 10,
 					OwnedLines:    7,
 					Memorability:  0.5,
@@ -450,14 +450,14 @@ func TestCodeChurnSerialize(t *testing.T) {
 				},
 			},
 		}},
-		people:      []string{"Alice"},
+		people:      []string{testPersonAlice},
 		tickSize:    24 * time.Hour,
 		sampling:    10,
 		granularity: 30,
 	}
 	var text bytes.Buffer
 	assert.NoError(t, cc.Serialize(result, false, &text))
-	assert.Contains(t, text.String(), "main.go")
+	assert.Contains(t, text.String(), testMainPath)
 
 	var binary bytes.Buffer
 	assert.NoError(t, cc.Serialize(result, true, &binary))
@@ -469,7 +469,7 @@ func TestCodeChurnDeserialize(t *testing.T) {
 	original := CodeChurnResult{
 		Authors: []CodeChurnAuthorResult{{
 			Files: map[string]CodeChurnFileResult{
-				"main.go": {
+				testMainPath: {
 					InsertedLines: 10,
 					OwnedLines:    7,
 					Memorability:  0.5,
@@ -482,7 +482,7 @@ func TestCodeChurnDeserialize(t *testing.T) {
 				},
 			},
 		}},
-		people:      []string{"Alice", "Bob"},
+		people:      []string{testPersonAlice, testPersonBob},
 		tickSize:    24 * time.Hour,
 		sampling:    10,
 		granularity: 30,
@@ -494,8 +494,12 @@ func TestCodeChurnDeserialize(t *testing.T) {
 	assert.NoError(t, err)
 	decoded := result.(CodeChurnResult)
 	assert.Equal(t, original.GetIdentities(), decoded.GetIdentities())
-	assert.Equal(t, original.Authors[0].Files["main.go"].InsertedLines, decoded.Authors[0].Files["main.go"].InsertedLines)
-	assert.Equal(t, int64(-3), decoded.Authors[0].Files["main.go"].DeleteHistory[1][2].deltas[1])
+	assert.Equal(
+		t,
+		original.Authors[0].Files[testMainPath].InsertedLines,
+		decoded.Authors[0].Files[testMainPath].InsertedLines,
+	)
+	assert.Equal(t, int64(-3), decoded.Authors[0].Files[testMainPath].DeleteHistory[1][2].deltas[1])
 }
 
 func TestCodeChurnMergeResults(t *testing.T) {
@@ -503,10 +507,10 @@ func TestCodeChurnMergeResults(t *testing.T) {
 	r1 := CodeChurnResult{
 		Authors: []CodeChurnAuthorResult{{
 			Files: map[string]CodeChurnFileResult{
-				"main.go": {InsertedLines: 10, OwnedLines: 7},
+				testMainPath: {InsertedLines: 10, OwnedLines: 7},
 			},
 		}},
-		people:      []string{"Alice"},
+		people:      []string{testPersonAlice},
 		tickSize:    24 * time.Hour,
 		sampling:    10,
 		granularity: 30,
@@ -514,24 +518,24 @@ func TestCodeChurnMergeResults(t *testing.T) {
 	r2 := CodeChurnResult{
 		Authors: []CodeChurnAuthorResult{{
 			Files: map[string]CodeChurnFileResult{
-				"main.go": {InsertedLines: 4, OwnedLines: 2},
-				"util.go": {InsertedLines: 6, OwnedLines: 6},
+				testMainPath: {InsertedLines: 4, OwnedLines: 2},
+				"util.go":    {InsertedLines: 6, OwnedLines: 6},
 			},
 		}, {
 			Files: map[string]CodeChurnFileResult{
-				"main.go": {InsertedLines: 3, OwnedLines: 1},
+				testMainPath: {InsertedLines: 3, OwnedLines: 1},
 			},
 		}},
-		people:      []string{"Alice", "Bob"},
+		people:      []string{testPersonAlice, testPersonBob},
 		tickSize:    24 * time.Hour,
 		sampling:    15,
 		granularity: 40,
 	}
 	result := cc.MergeResults(r1, r2, nil, nil).(CodeChurnResult)
-	assert.Equal(t, []string{"Alice", "Bob"}, result.GetIdentities())
-	assert.Equal(t, int32(14), result.Authors[0].Files["main.go"].InsertedLines)
+	assert.Equal(t, []string{testPersonAlice, testPersonBob}, result.GetIdentities())
+	assert.Equal(t, int32(14), result.Authors[0].Files[testMainPath].InsertedLines)
 	assert.Equal(t, int32(6), result.Authors[0].Files["util.go"].OwnedLines)
-	assert.Equal(t, int32(3), result.Authors[1].Files["main.go"].InsertedLines)
+	assert.Equal(t, int32(3), result.Authors[1].Files[testMainPath].InsertedLines)
 	assert.Equal(t, 15, result.sampling)
 	assert.Equal(t, 40, result.granularity)
 }
@@ -648,7 +652,7 @@ func TestCodeChurnCalculateAwareness(t *testing.T) {
 
 func TestCodeChurnUpdateAwareness(t *testing.T) {
 	cc := CodeChurnAnalysis{}
-	cc.peopleResolver = core.NewIdentityResolver([]string{"Alice", "Bob"}, nil)
+	cc.peopleResolver = core.NewIdentityResolver([]string{testPersonAlice, testPersonBob}, nil)
 	assert.NoError(t, cc.Initialize(test.Repository))
 
 	t.Run("new delta key is created", func(t *testing.T) {
@@ -663,7 +667,7 @@ func TestCodeChurnUpdateAwareness(t *testing.T) {
 			PrevAuthor: 0,
 			Delta:      10,
 		}
-		cc.updateAwareness(change, &entry)
+		cc.updateAwareness(change, &entry, 10)
 		key := churnDeltaKey{0, 0}
 		delta, exists := cc.churnDeltas[key]
 		assert.True(t, exists)
@@ -673,7 +677,7 @@ func TestCodeChurnUpdateAwareness(t *testing.T) {
 
 	t.Run("delete by others tracks deletedByOthers", func(t *testing.T) {
 		cc2 := CodeChurnAnalysis{}
-		cc2.peopleResolver = core.NewIdentityResolver([]string{"Alice", "Bob"}, nil)
+		cc2.peopleResolver = core.NewIdentityResolver([]string{testPersonAlice, testPersonBob}, nil)
 		assert.NoError(t, cc2.Initialize(test.Repository))
 
 		entry := churnFileEntry{
@@ -687,7 +691,7 @@ func TestCodeChurnUpdateAwareness(t *testing.T) {
 			PrevAuthor: 0, // Alice's lines
 			Delta:      -5,
 		}
-		cc2.updateAwareness(change, &entry)
+		cc2.updateAwareness(change, &entry, -5)
 		key := churnDeltaKey{0, 0}
 		delta, exists := cc2.churnDeltas[key]
 		assert.True(t, exists)
@@ -697,7 +701,7 @@ func TestCodeChurnUpdateAwareness(t *testing.T) {
 
 func TestCodeChurnConsumeIntegration(t *testing.T) {
 	cc := CodeChurnAnalysis{}
-	cc.peopleResolver = core.NewIdentityResolver([]string{"Alice", "Bob"}, nil)
+	cc.peopleResolver = core.NewIdentityResolver([]string{testPersonAlice, testPersonBob}, nil)
 	assert.NoError(t, cc.Initialize(test.Repository))
 
 	// Simulate a series of changes across ticks

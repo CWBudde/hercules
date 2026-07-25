@@ -26,11 +26,15 @@ const (
 	ValidationLenient  ValidationLevel = "lenient"  // >85% similarity
 )
 
-// SimilarityThresholds defines the minimum similarity scores for each level.
-var SimilarityThresholds = map[ValidationLevel]float64{
-	ValidationStrict:   0.95,
-	ValidationStandard: 0.90,
-	ValidationLenient:  0.85,
+func similarityThreshold(level ValidationLevel) float64 {
+	switch level {
+	case ValidationStrict:
+		return 0.95
+	case ValidationLenient:
+		return 0.85
+	default:
+		return 0.90
+	}
 }
 
 // CompareImages performs comprehensive similarity analysis between two images.
@@ -51,7 +55,7 @@ func CompareImages(img1Path, img2Path string) (*SimilarityMetrics, error) {
 	bounds2 := img2.Bounds()
 
 	if bounds1.Dx() != bounds2.Dx() || bounds1.Dy() != bounds2.Dy() {
-		return nil, fmt.Errorf("image dimensions don't match: %dx%d vs %dx%d",
+		return nil, fmt.Errorf("%w: %dx%d vs %dx%d", errImageDimensionsMismatch,
 			bounds1.Dx(), bounds1.Dy(), bounds2.Dx(), bounds2.Dy())
 	}
 
@@ -70,17 +74,12 @@ func CompareImages(img1Path, img2Path string) (*SimilarityMetrics, error) {
 
 // IsValidationPassing checks if the similarity meets the specified validation level.
 func (m *SimilarityMetrics) IsValidationPassing(level ValidationLevel) bool {
-	threshold, exists := SimilarityThresholds[level]
-	if !exists {
-		threshold = SimilarityThresholds[ValidationStandard]
-	}
-
-	return m.OverallSimilarity >= threshold
+	return m.OverallSimilarity >= similarityThreshold(level)
 }
 
 // GetDetailedReport returns a human-readable report of the similarity analysis.
 func (m *SimilarityMetrics) GetDetailedReport(level ValidationLevel) string {
-	threshold := SimilarityThresholds[level]
+	threshold := similarityThreshold(level)
 	passed := m.IsValidationPassing(level)
 
 	status := "PASS"
@@ -165,14 +164,14 @@ func buildColorHistogram(img image.Image) map[string]float64 {
 
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			c := color.RGBAModel.Convert(img.At(x, y)).(color.RGBA)
+			pixelColor := rgbaColor(img.At(x, y))
 
 			// Quantize colors to reduce histogram size
-			r := (c.R / 8) * 8
-			g := (c.G / 8) * 8
-			b := (c.B / 8) * 8
+			red := (pixelColor.R / 8) * 8
+			green := (pixelColor.G / 8) * 8
+			blue := (pixelColor.B / 8) * 8
 
-			key := fmt.Sprintf("%d,%d,%d", r, g, b)
+			key := fmt.Sprintf("%d,%d,%d", red, green, blue)
 			histogram[key]++
 			totalPixels++
 		}
@@ -191,25 +190,25 @@ func calculateSSIM(img1, img2 image.Image) float64 {
 	bounds := img1.Bounds()
 
 	var meanX, meanY, varX, varY, covXY float64
-	var n float64
+	var pixelCount float64
 
 	// Calculate means
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			c1 := color.GrayModel.Convert(img1.At(x, y)).(color.Gray)
-			c2 := color.GrayModel.Convert(img2.At(x, y)).(color.Gray)
+			firstColor := grayColor(img1.At(x, y))
+			secondColor := grayColor(img2.At(x, y))
 
-			val1 := float64(c1.Y)
-			val2 := float64(c2.Y)
+			val1 := float64(firstColor.Y)
+			val2 := float64(secondColor.Y)
 
 			meanX += val1
 			meanY += val2
-			n++
+			pixelCount++
 		}
 	}
 
-	meanX /= n
-	meanY /= n
+	meanX /= pixelCount
+	meanY /= pixelCount
 
 	// Calculate variances and covariance
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
@@ -229,19 +228,20 @@ func calculateSSIM(img1, img2 image.Image) float64 {
 		}
 	}
 
-	varX /= n - 1
-	varY /= n - 1
-	covXY /= n - 1
+	varX /= pixelCount - 1
+	varY /= pixelCount - 1
+	covXY /= pixelCount - 1
 
 	// SSIM constants for numerical stability
 	const (
-		c1 = 6.5025  // (0.01 * 255)^2
-		c2 = 58.5225 // (0.03 * 255)^2
+		luminanceStability = 6.5025  // (0.01 * 255)^2
+		contrastStability  = 58.5225 // (0.03 * 255)^2
 	)
 
 	// Calculate SSIM
-	numerator := (2*meanX*meanY + c1) * (2*covXY + c2)
-	denominator := (meanX*meanX + meanY*meanY + c1) * (varX + varY + c2)
+	numerator := (2*meanX*meanY + luminanceStability) * (2*covXY + contrastStability)
+	denominator := (meanX*meanX + meanY*meanY + luminanceStability) *
+		(varX + varY + contrastStability)
 
 	if denominator == 0 {
 		return 1.0 // Identical images
@@ -256,29 +256,29 @@ func calculateSSIM(img1, img2 image.Image) float64 {
 func calculateColorDistanceRMS(img1, img2 image.Image) float64 {
 	bounds := img1.Bounds()
 	var totalDist float64
-	var n float64
+	var pixelCount float64
 
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			c1 := color.RGBAModel.Convert(img1.At(x, y)).(color.RGBA)
-			c2 := color.RGBAModel.Convert(img2.At(x, y)).(color.RGBA)
+			firstColor := rgbaColor(img1.At(x, y))
+			secondColor := rgbaColor(img2.At(x, y))
 
 			// Calculate Euclidean distance in RGB space
-			dr := float64(c1.R) - float64(c2.R)
-			dg := float64(c1.G) - float64(c2.G)
-			db := float64(c1.B) - float64(c2.B)
+			dr := float64(firstColor.R) - float64(secondColor.R)
+			dg := float64(firstColor.G) - float64(secondColor.G)
+			db := float64(firstColor.B) - float64(secondColor.B)
 
 			dist := math.Sqrt(dr*dr + dg*dg + db*db)
 			totalDist += dist * dist
-			n++
+			pixelCount++
 		}
 	}
 
-	return math.Sqrt(totalDist / n)
+	return math.Sqrt(totalDist / pixelCount)
 }
 
 // calculateOverallSimilarity computes a weighted combination of all metrics.
-func calculateOverallSimilarity(m *SimilarityMetrics) float64 {
+func calculateOverallSimilarity(metrics *SimilarityMetrics) float64 {
 	// Weights based on importance for chart validation
 	const (
 		histogramWeight = 0.4 // Color distribution is important
@@ -288,22 +288,22 @@ func calculateOverallSimilarity(m *SimilarityMetrics) float64 {
 
 	// Normalize color distance to 0-1 scale (lower distance = higher similarity)
 	// Assuming max reasonable RMS distance is 100 for 8-bit RGB
-	colorSimilarity := math.Max(0, 1.0-m.ColorDistanceRMS/100.0)
+	colorSimilarity := math.Max(0, 1.0-metrics.ColorDistanceRMS/100.0)
 
-	overall := histogramWeight*m.HistogramIntersection +
-		ssimWeight*m.SSIM +
+	overall := histogramWeight*metrics.HistogramIntersection +
+		ssimWeight*metrics.SSIM +
 		colorWeight*colorSimilarity
 
 	return math.Min(1.0, overall) // Cap at 1.0
 }
 
 // getAssessment provides human-readable assessment of the similarity result.
-func getAssessment(m *SimilarityMetrics, passed bool) string {
+func getAssessment(metrics *SimilarityMetrics, passed bool) string {
 	if passed {
 		switch {
-		case m.OverallSimilarity >= 0.98:
+		case metrics.OverallSimilarity >= 0.98:
 			return "Images are nearly identical - excellent compatibility"
-		case m.OverallSimilarity >= 0.95:
+		case metrics.OverallSimilarity >= 0.95:
 			return "Images are very similar - minor rendering differences only"
 		default:
 			return "Images are adequately similar - functional compatibility maintained"
@@ -311,11 +311,29 @@ func getAssessment(m *SimilarityMetrics, passed bool) string {
 	}
 
 	switch {
-	case m.OverallSimilarity >= 0.80:
+	case metrics.OverallSimilarity >= 0.80:
 		return "Images are similar but below threshold - review for acceptable differences"
-	case m.OverallSimilarity >= 0.60:
+	case metrics.OverallSimilarity >= 0.60:
 		return "Images show significant differences - investigate chart generation logic"
 	default:
 		return "Images are substantially different - major compatibility issues detected"
 	}
+}
+
+func rgbaColor(value color.Color) color.RGBA {
+	converted, ok := color.RGBAModel.Convert(value).(color.RGBA)
+	if !ok {
+		panic("RGBA color model returned an unexpected type")
+	}
+
+	return converted
+}
+
+func grayColor(value color.Color) color.Gray {
+	converted, ok := color.GrayModel.Convert(value).(color.Gray)
+	if !ok {
+		panic("gray color model returned an unexpected type")
+	}
+
+	return converted
 }

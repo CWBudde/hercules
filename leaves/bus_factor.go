@@ -483,26 +483,38 @@ func (bf *BusFactorAnalysis) serializeBinary(result *BusFactorResult, writer io.
 
 	message.Snapshots = make(map[int32]*pb.BusFactorTickSnapshot, len(result.Snapshots))
 	for tick, snapshot := range result.Snapshots {
+		busFactor, err := intToProtoInt32(snapshot.BusFactor, "bus factor")
+		if err != nil {
+			return err
+		}
 		pbSnapshot := &pb.BusFactorTickSnapshot{
-			BusFactor:   int32(snapshot.BusFactor),
+			BusFactor:   busFactor,
 			TotalLines:  snapshot.TotalLines,
 			AuthorLines: make(map[int32]int64, len(snapshot.AuthorLines)),
 		}
 		for author, lines := range snapshot.AuthorLines {
-			authorID := int32(author)
-			if author == core.AuthorMissing {
-				authorID = -1
+			authorID, err := intToProtoInt32(author, "bus factor author")
+			if err != nil {
+				return err
 			}
 
 			pbSnapshot.AuthorLines[authorID] = lines
 		}
 
-		message.Snapshots[int32(tick)] = pbSnapshot
+		tickID, err := intToProtoInt32(tick, "bus factor tick")
+		if err != nil {
+			return err
+		}
+		message.Snapshots[tickID] = pbSnapshot
 	}
 
 	message.SubsystemBusFactor = make(map[string]int32, len(result.SubsystemBusFactor))
-	for dir, bf := range result.SubsystemBusFactor {
-		message.SubsystemBusFactor[dir] = int32(bf)
+	for dir, factor := range result.SubsystemBusFactor {
+		pbFactor, err := intToProtoInt32(factor, "subsystem bus factor")
+		if err != nil {
+			return err
+		}
+		message.SubsystemBusFactor[dir] = pbFactor
 	}
 
 	serialized, err := proto.Marshal(&message)

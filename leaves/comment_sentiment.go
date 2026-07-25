@@ -69,7 +69,7 @@ var (
 
 // Name of this PipelineItem. Uniquely identifies the type, used for mapping keys, etc.
 func (sent *CommentSentimentAnalysis) Name() string {
-	return "Sentiment"
+	return commentSentimentAnalysisName
 }
 
 // Provides returns the list of names of entities which are produced by this PipelineItem.
@@ -345,11 +345,15 @@ func (sent *CommentSentimentAnalysis) serializeBinary(
 		SentimentByTick: map[int32]*pb.Sentiment{},
 	}
 	for key, val := range result.EmotionsByTick {
+		tickID, err := intToProtoInt32(key, "comment-sentiment tick")
+		if err != nil {
+			return err
+		}
 		commits := make([]string, len(result.commitsByTick[key]))
 		for i, commit := range result.commitsByTick[key] {
 			commits[i] = commit.String()
 		}
-		message.SentimentByTick[int32(key)] = &pb.Sentiment{
+		message.SentimentByTick[tickID] = &pb.Sentiment{
 			Value:    val,
 			Comments: result.CommentsByTick[key],
 			Commits:  commits,

@@ -1,6 +1,7 @@
 package leaves
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -19,6 +20,8 @@ import (
 	"github.com/cwbudde/hercules/internal/plumbing/identity"
 	"github.com/cwbudde/hercules/internal/yaml"
 )
+
+var errUnexpectedCodeChurnResult = errors.New("result is not a CodeChurnResult")
 
 // CodeChurnAnalysis allows to gather the code churn statistics for a Git repository.
 // It is a LeafPipelineItem.
@@ -230,6 +233,10 @@ func (analyser *CodeChurnAnalysis) Consume(deps map[string]any) (map[string]any,
 		if change.IsDelete() {
 			continue
 		}
+		lineDelta, err := intToProtoInt32(change.Delta, "code churn line delta")
+		if err != nil {
+			return nil, err
+		}
 
 		if int(change.PrevAuthor) >= peopleCount && change.PrevAuthor != core.AuthorMissing {
 			change.PrevAuthor = core.AuthorMissing
@@ -239,7 +246,7 @@ func (analyser *CodeChurnAnalysis) Consume(deps map[string]any) (map[string]any,
 			change.CurrAuthor = core.AuthorMissing
 		}
 
-		analyser.updateAuthor(change)
+		analyser.updateAuthor(change, lineDelta)
 	}
 
 	return noDependencies(), nil
@@ -328,7 +335,7 @@ func (analyser *CodeChurnAnalysis) Finalize() any {
 func (analyser *CodeChurnAnalysis) Serialize(result any, binary bool, writer io.Writer) error {
 	churnResult, ok := result.(CodeChurnResult)
 	if !ok {
-		return fmt.Errorf("result is not a CodeChurnResult: '%v'", result)
+		return fmt.Errorf("%w: '%v'", errUnexpectedCodeChurnResult, result)
 	}
 
 	if binary {
@@ -404,9 +411,9 @@ func (analyser *CodeChurnAnalysis) MergeResults(
 	return merged
 }
 
-func (analyser *CodeChurnAnalysis) updateAwareness(change core.LineHistoryChange, fileEntry *churnFileEntry) {
-	lineDelta := int32(change.Delta)
-
+func (analyser *CodeChurnAnalysis) updateAwareness(
+	change core.LineHistoryChange, fileEntry *churnFileEntry, lineDelta int32,
+) {
 	deltaKey := churnDeltaKey{change.PrevAuthor, change.FileId}
 	delta, hasDelta := analyser.churnDeltas[deltaKey]
 
@@ -444,16 +451,14 @@ func (analyser *CodeChurnAnalysis) updateAwareness(change core.LineHistoryChange
 	analyser.churnDeltas[deltaKey] = delta
 }
 
-func (analyser *CodeChurnAnalysis) updateAuthor(change core.LineHistoryChange) {
+func (analyser *CodeChurnAnalysis) updateAuthor(change core.LineHistoryChange, lineDelta int32) {
 	if change.PrevAuthor == core.AuthorMissing || change.Delta == 0 {
 		return
 	}
 
 	fileEntry := analyser.codeChurns[change.PrevAuthor].getFileEntry(change.FileId)
 
-	analyser.updateAwareness(change, &fileEntry)
-
-	lineDelta := int32(change.Delta)
+	analyser.updateAwareness(change, &fileEntry, lineDelta)
 
 	fileEntry.ownedLines += lineDelta
 	if change.Delta > 0 {
@@ -551,9 +556,17 @@ func (analyser *CodeChurnAnalysis) serializeText(result *CodeChurnResult, writer
 }
 
 func (analyser *CodeChurnAnalysis) serializeBinary(result *CodeChurnResult, writer io.Writer) error {
+	granularity, err := intToProtoInt32(result.granularity, "code churn granularity")
+	if err != nil {
+		return err
+	}
+	sampling, err := intToProtoInt32(result.sampling, "code churn sampling")
+	if err != nil {
+		return err
+	}
 	message := pb.CodeChurnAnalysisResults{
-		Granularity: int32(result.granularity),
-		Sampling:    int32(result.sampling),
+		Granularity: granularity,
+		Sampling:    sampling,
 		TickSize:    int64(result.tickSize),
 		People:      append([]string(nil), result.people...),
 		Authors:     make([]*pb.CodeChurnAuthorStat, len(result.Authors)),
@@ -567,13 +580,18 @@ func (analyser *CodeChurnAnalysis) serializeBinary(result *CodeChurnResult, writ
 		}
 		for _, fileName := range fileNames {
 			stats := author.Files[fileName]
+
+			deleteHistory, err := serializeDeleteHistory(stats.DeleteHistory)
+			if err != nil {
+				return err
+			}
 			pbAuthor.Files = append(pbAuthor.Files, &pb.CodeChurnFileStat{
 				File:          fileName,
 				InsertedLines: stats.InsertedLines,
 				OwnedLines:    stats.OwnedLines,
 				Memorability:  stats.Memorability,
 				Awareness:     stats.Awareness,
-				DeleteHistory: serializeDeleteHistory(stats.DeleteHistory),
+				DeleteHistory: deleteHistory,
 			})
 		}
 
@@ -666,9 +684,9 @@ func mergeDeleteHistory(left, right map[int]sparseHistory) map[int]sparseHistory
 	return result
 }
 
-func serializeDeleteHistory(history map[int]sparseHistory) []*pb.CodeChurnDeleteHistory {
+func serializeDeleteHistory(history map[int]sparseHistory) ([]*pb.CodeChurnDeleteHistory, error) {
 	if len(history) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	authors := make([]int, 0, len(history))
@@ -690,6 +708,15 @@ func serializeDeleteHistory(history map[int]sparseHistory) []*pb.CodeChurnDelete
 		for _, currentTick := range currentTicks {
 			entry := history[author][currentTick]
 
+			authorID, err := intToProtoInt32(author, "code churn delete-history author")
+			if err != nil {
+				return nil, err
+			}
+			pbCurrentTick, err := intToProtoInt32(currentTick, "code churn delete-history current tick")
+			if err != nil {
+				return nil, err
+			}
+
 			previousTicks := make([]int, 0, len(entry.deltas))
 			for previousTick := range entry.deltas {
 				previousTicks = append(previousTicks, previousTick)
@@ -698,13 +725,17 @@ func serializeDeleteHistory(history map[int]sparseHistory) []*pb.CodeChurnDelete
 			sort.Ints(previousTicks)
 
 			pbEntry := &pb.CodeChurnDeleteHistory{
-				Author:      int32(author),
-				CurrentTick: int32(currentTick),
+				Author:      authorID,
+				CurrentTick: pbCurrentTick,
 				Entries:     make([]*pb.CodeChurnSparseHistoryEntry, 0, len(previousTicks)),
 			}
 			for _, previousTick := range previousTicks {
+				pbPreviousTick, err := intToProtoInt32(previousTick, "code churn delete-history previous tick")
+				if err != nil {
+					return nil, err
+				}
 				pbEntry.Entries = append(pbEntry.Entries, &pb.CodeChurnSparseHistoryEntry{
-					PreviousTick: int32(previousTick),
+					PreviousTick: pbPreviousTick,
 					Delta:        entry.deltas[previousTick],
 				})
 			}
@@ -713,7 +744,7 @@ func serializeDeleteHistory(history map[int]sparseHistory) []*pb.CodeChurnDelete
 		}
 	}
 
-	return result
+	return result, nil
 }
 
 func deserializeDeleteHistory(entries []*pb.CodeChurnDeleteHistory) map[int]sparseHistory {

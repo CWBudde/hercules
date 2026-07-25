@@ -41,26 +41,26 @@ func main() {
 	result := schema.Evaluate(oldSnapshot, newSnapshot, *changelogUpdated)
 
 	if len(result.Changes) == 0 {
-		fmt.Println("schema-guard: no PB schema changes")
+		fmt.Fprintln(os.Stdout, "schema-guard: no PB schema changes")
 		return
 	}
 
-	fmt.Printf("schema-guard: %d PB schema change(s) vs baseline (schema version %d -> %d):\n",
+	fmt.Fprintf(os.Stdout, "schema-guard: %d PB schema change(s) vs baseline (schema version %d -> %d):\n",
 		len(result.Changes), oldSnapshot.Version, newSnapshot.Version)
 	for _, change := range result.Changes {
 		kind := "compatible"
 		if change.Breaking {
 			kind = "BREAKING"
 		}
-		fmt.Printf("  [%-10s] %s\n", kind, change.Description)
+		fmt.Fprintf(os.Stdout, "  [%-10s] %s\n", kind, change.Description)
 	}
 
 	if len(result.Errors) > 0 {
-		fmt.Println("\nschema-guard: policy violations (see docs/SCHEMAS.md \"PB Schema Change Policy\"):")
+		fmt.Fprintln(os.Stdout, "\nschema-guard: policy violations (see docs/SCHEMAS.md \"PB Schema Change Policy\"):")
 		for _, msg := range result.Errors {
-			fmt.Printf("  - %s\n", msg)
+			fmt.Fprintf(os.Stdout, "  - %s\n", msg)
 		}
 		os.Exit(1)
 	}
-	fmt.Println("schema-guard: OK (changes are recorded per policy)")
+	fmt.Fprintln(os.Stdout, "schema-guard: OK (changes are recorded per policy)")
 }

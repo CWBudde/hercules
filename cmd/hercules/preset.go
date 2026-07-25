@@ -7,17 +7,19 @@ import (
 	"github.com/spf13/pflag"
 )
 
+const presetEnabled = "true"
+
 // presetDefaults maps preset names to their flag defaults.
 var presetDefaults = map[string]map[string]string{
 	"large-repo": {
-		"first-parent":                "true",
+		"first-parent":                presetEnabled,
 		"lines-hibernation-threshold": "200000",
-		"lines-hibernation-disk":      "true",
+		"lines-hibernation-disk":      presetEnabled,
 		"granularity":                 "30",
 		"sampling":                    "30",
 	},
 	"quick": {
-		"head": "true",
+		"head": presetEnabled,
 	},
 }
 

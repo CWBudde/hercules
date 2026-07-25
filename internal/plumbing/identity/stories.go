@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"os"
 	"strings"
 	"time"
@@ -14,6 +15,11 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/cwbudde/hercules/internal/core"
+)
+
+var (
+	errInvalidNextMergeDependency = errors.New("invalid next merge dependency")
+	errMergeAuthorRange           = errors.New("merge author ID is out of range")
 )
 
 // StoryDetector determines the author of a commit. Same person can commit under different
@@ -207,7 +213,12 @@ func (detector *StoryDetector) Features() []string {
 // This function returns the mapping with analysis results. The keys must be the same as
 // in Provides(). If there was an error, nil is returned.
 func (detector *StoryDetector) Consume(deps map[string]any) (map[string]any, error) {
-	author, err := detector.putAuthorId(deps[core.DependencyNextMerge].(*object.Commit))
+	commit, ok := deps[core.DependencyNextMerge].(*object.Commit)
+	if !ok {
+		return nil, errInvalidNextMergeDependency
+	}
+
+	author, err := detector.putAuthorId(commit)
 	if err != nil {
 		return nil, err
 	}
@@ -286,6 +297,10 @@ func (detector *StoryDetector) putAuthorId(nextMerge *object.Commit) (core.Autho
 	}
 
 	if author, ok := detector.MergeHashDict[nextMerge.Hash]; ok {
+		if author < math.MinInt32 || author > math.MaxInt32 {
+			return core.AuthorMissing, fmt.Errorf("%w: %d", errMergeAuthorRange, author)
+		}
+
 		return core.AuthorId(author), nil
 	}
 
@@ -297,12 +312,16 @@ func (detector *StoryDetector) putAuthorId(nextMerge *object.Commit) (core.Autho
 		return core.AuthorMissing, errors.New("number of merge hashes exceeded")
 	}
 
-	n := len(detector.MergeNames)
-	name := detector.makeMergeName(n, nextMerge)
-	detector.MergeHashDict[nextMerge.Hash] = n
+	mergeIndex := len(detector.MergeNames)
+	if mergeIndex > math.MaxInt32 {
+		return core.AuthorMissing, fmt.Errorf("%w: %d", errMergeAuthorRange, mergeIndex)
+	}
+
+	name := detector.makeMergeName(mergeIndex, nextMerge)
+	detector.MergeHashDict[nextMerge.Hash] = mergeIndex
 	detector.MergeNames = append(detector.MergeNames, name)
 
-	return core.AuthorId(n), nil
+	return core.AuthorId(mergeIndex), nil
 }
 
 func (detector *StoryDetector) makeMergeName(index int, merge *object.Commit) string {

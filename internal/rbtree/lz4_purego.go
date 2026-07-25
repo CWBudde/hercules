@@ -15,8 +15,8 @@ func CompressUInt32Slice(data []uint32) []byte {
 	dst := make([]byte, lz4.CompressBlockBound(len(src))+8)
 	binary.LittleEndian.PutUint64(dst, uint64(len(src)))
 
-	n, err := lz4.CompressBlockHC(src, dst[8:], lz4.CompressionLevel(12), nil, nil)
-	if err != nil || n == 0 {
+	compressedSize, err := lz4.CompressBlockHC(src, dst[8:], lz4.CompressionLevel(12), nil, nil)
+	if err != nil || compressedSize == 0 {
 		// incompressible: store raw with n=0 sentinel
 		result := make([]byte, 8+len(src))
 		binary.LittleEndian.PutUint64(result, uint64(len(src))|incompressibleFlag)
@@ -25,7 +25,7 @@ func CompressUInt32Slice(data []uint32) []byte {
 		return result
 	}
 
-	return dst[:8+n]
+	return dst[:8+compressedSize]
 }
 
 // DecompressUInt32Slice decompresses a slice of uint32-s previously compressed

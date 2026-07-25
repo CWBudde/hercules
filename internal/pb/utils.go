@@ -1,8 +1,25 @@
 package pb
 
 import (
+	"math"
 	"sort"
 )
+
+func checkedInt32(value int, field string) int32 {
+	if value < math.MinInt32 || value > math.MaxInt32 {
+		panic(field + " exceeds the protobuf int32 range")
+	}
+
+	return int32(value)
+}
+
+func checkedUint32(value int64, field string) uint32 {
+	if value < 0 || value > math.MaxUint32 {
+		panic(field + " exceeds the protobuf uint32 range")
+	}
+
+	return uint32(value)
+}
 
 // ToBurndownSparseMatrix converts a rectangular integer matrix to the corresponding Protobuf object.
 // It is specific to hercules.BurndownAnalysis.
@@ -13,8 +30,8 @@ func ToBurndownSparseMatrix(matrix [][]int64, name string) *BurndownSparseMatrix
 
 	result := BurndownSparseMatrix{
 		Name:            name,
-		NumberOfRows:    int32(len(matrix)),
-		NumberOfColumns: int32(len(matrix[len(matrix)-1])),
+		NumberOfRows:    checkedInt32(len(matrix), "burndown matrix row count"),
+		NumberOfColumns: checkedInt32(len(matrix[len(matrix)-1]), "burndown matrix column count"),
 		Rows:            make([]*BurndownSparseMatrixRow, len(matrix)),
 	}
 	for rowIndex, status := range matrix {
@@ -29,7 +46,7 @@ func ToBurndownSparseMatrix(matrix [][]int64, name string) *BurndownSparseMatrix
 			}
 
 			if changed {
-				nnz = append(nnz, uint32(value))
+				nnz = append(nnz, checkedUint32(value, "burndown matrix value"))
 			}
 		}
 
@@ -48,8 +65,8 @@ func ToBurndownSparseMatrix(matrix [][]int64, name string) *BurndownSparseMatrix
 // CSR format: https://en.wikipedia.org/wiki/Sparse_matrix#Compressed_sparse_row_.28CSR.2C_CRS_or_Yale_format.29
 func DenseToCompressedSparseRowMatrix(matrix [][]int64) *CompressedSparseRowMatrix {
 	result := CompressedSparseRowMatrix{
-		NumberOfRows:    int32(len(matrix)),
-		NumberOfColumns: int32(len(matrix[0])),
+		NumberOfRows:    checkedInt32(len(matrix), "dense matrix row count"),
+		NumberOfColumns: checkedInt32(len(matrix[0]), "dense matrix column count"),
 		Data:            make([]int64, 0),
 		Indices:         make([]int32, 0),
 		Indptr:          make([]int64, 1),
@@ -62,7 +79,7 @@ func DenseToCompressedSparseRowMatrix(matrix [][]int64) *CompressedSparseRowMatr
 		for x, col := range row {
 			if col != 0 {
 				result.Data = append(result.Data, col)
-				result.Indices = append(result.Indices, int32(x))
+				result.Indices = append(result.Indices, checkedInt32(x, "dense matrix column index"))
 				nnz++
 			}
 		}
@@ -78,8 +95,8 @@ func DenseToCompressedSparseRowMatrix(matrix [][]int64) *CompressedSparseRowMatr
 // CSR format: https://en.wikipedia.org/wiki/Sparse_matrix#Compressed_sparse_row_.28CSR.2C_CRS_or_Yale_format.29
 func MapToCompressedSparseRowMatrix(matrix []map[int]int64) *CompressedSparseRowMatrix {
 	result := CompressedSparseRowMatrix{
-		NumberOfRows:    int32(len(matrix)),
-		NumberOfColumns: int32(len(matrix)),
+		NumberOfRows:    checkedInt32(len(matrix), "sparse matrix row count"),
+		NumberOfColumns: checkedInt32(len(matrix), "sparse matrix column count"),
 		Data:            make([]int64, 0),
 		Indices:         make([]int32, 0),
 		Indptr:          make([]int64, 1),
@@ -100,7 +117,7 @@ func MapToCompressedSparseRowMatrix(matrix []map[int]int64) *CompressedSparseRow
 		for _, col := range order {
 			val := row[col]
 			result.Data = append(result.Data, val)
-			result.Indices = append(result.Indices, int32(col))
+			result.Indices = append(result.Indices, checkedInt32(col, "sparse matrix column index"))
 		}
 
 		result.Indptr = append(result.Indptr, result.GetIndptr()[len(result.GetIndptr())-1]+int64(len(row)))

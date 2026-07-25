@@ -80,18 +80,18 @@ func TestBlobCacheConsumeModification(t *testing.T) {
 		"63076fa0dfd93e94b6d2ef0fc8b1fdf9092f83c4",
 	))
 	changes[0] = &object.Change{From: object.ChangeEntry{
-		Name: "labours.py",
+		Name: testLaboursPath,
 		Tree: treeFrom,
 		TreeEntry: object.TreeEntry{
-			Name: "labours.py",
+			Name: testLaboursPath,
 			Mode: 0o100644,
 			Hash: plumbing.NewHash("1cacfc1bf0f048eb2f31973750983ae5d8de647a"),
 		},
 	}, To: object.ChangeEntry{
-		Name: "labours.py",
+		Name: testLaboursPath,
 		Tree: treeTo,
 		TreeEntry: object.TreeEntry{
-			Name: "labours.py",
+			Name: testLaboursPath,
 			Mode: 0o100644,
 			Hash: plumbing.NewHash("c872b8d2291a5224e2c9f6edd7f46039b96b4742"),
 		},
@@ -127,10 +127,10 @@ func TestBlobCacheConsumeInsertionDeletion(t *testing.T) {
 	))
 	changes[0] = &object.Change{
 		From: object.ChangeEntry{
-			Name: "analyser.go",
+			Name: testAnalyserPath,
 			Tree: treeFrom,
 			TreeEntry: object.TreeEntry{
-				Name: "analyser.go",
+				Name: testAnalyserPath,
 				Mode: 0o100644,
 				Hash: plumbing.NewHash("baa64828831d174f40140e4b3cfa77d1e917a2c1"),
 			},
@@ -138,10 +138,10 @@ func TestBlobCacheConsumeInsertionDeletion(t *testing.T) {
 	}
 	changes[1] = &object.Change{
 		From: object.ChangeEntry{}, To: object.ChangeEntry{
-			Name: "pipeline.go",
+			Name: testPipelinePath,
 			Tree: treeTo,
 			TreeEntry: object.TreeEntry{
-				Name: "pipeline.go",
+				Name: testPipelinePath,
 				Mode: 0o100644,
 				Hash: plumbing.NewHash("db99e1890f581ad69e1527fe8302978c661eb473"),
 			},
@@ -184,11 +184,11 @@ func TestBlobCacheConsumeNoAction(t *testing.T) {
 	assert.Nil(t, result)
 	require.Error(t, err)
 	changes[0] = &object.Change{From: object.ChangeEntry{
-		Name:      "labours.py",
+		Name:      testLaboursPath,
 		Tree:      treeFrom,
 		TreeEntry: object.TreeEntry{},
 	}, To: object.ChangeEntry{
-		Name:      "labours.py",
+		Name:      testLaboursPath,
 		Tree:      treeTo,
 		TreeEntry: object.TreeEntry{},
 	}}
@@ -209,11 +209,11 @@ func TestBlobCacheConsumeBadHashes(t *testing.T) {
 		"63076fa0dfd93e94b6d2ef0fc8b1fdf9092f83c4",
 	))
 	changes[0] = &object.Change{From: object.ChangeEntry{
-		Name:      "labours.py",
+		Name:      testLaboursPath,
 		Tree:      treeFrom,
 		TreeEntry: object.TreeEntry{},
 	}, To: object.ChangeEntry{
-		Name:      "labours.py",
+		Name:      testLaboursPath,
 		Tree:      treeTo,
 		TreeEntry: object.TreeEntry{},
 	}}
@@ -224,7 +224,7 @@ func TestBlobCacheConsumeBadHashes(t *testing.T) {
 	assert.Nil(t, result)
 	require.Error(t, err)
 	changes[0] = &object.Change{From: object.ChangeEntry{
-		Name:      "labours.py",
+		Name:      testLaboursPath,
 		Tree:      treeFrom,
 		TreeEntry: object.TreeEntry{},
 	}, To: object.ChangeEntry{}}
@@ -235,7 +235,7 @@ func TestBlobCacheConsumeBadHashes(t *testing.T) {
 	changes[0] = &object.Change{
 		From: object.ChangeEntry{},
 		To: object.ChangeEntry{
-			Name:      "labours.py",
+			Name:      testLaboursPath,
 			Tree:      treeTo,
 			TreeEntry: object.TreeEntry{},
 		},
@@ -257,15 +257,15 @@ func TestBlobCacheConsumeInvalidHash(t *testing.T) {
 		"63076fa0dfd93e94b6d2ef0fc8b1fdf9092f83c4",
 	))
 	changes[0] = &object.Change{From: object.ChangeEntry{
-		Name: "labours.py",
+		Name: testLaboursPath,
 		Tree: treeFrom,
 		TreeEntry: object.TreeEntry{
-			Name: "labours.py",
+			Name: testLaboursPath,
 			Mode: 0o100644,
 			Hash: plumbing.NewHash("ffffffffffffffffffffffffffffffffffffffff"),
 		},
 	}, To: object.ChangeEntry{
-		Name:      "labours.py",
+		Name:      testLaboursPath,
 		Tree:      treeTo,
 		TreeEntry: object.TreeEntry{},
 	}}
@@ -283,10 +283,10 @@ func TestBlobCacheGetBlob(t *testing.T) {
 		"80fe25955b8e725feee25c08ea5759d74f8b670d",
 	))
 	entry := object.ChangeEntry{
-		Name: "labours.py",
+		Name: testLaboursPath,
 		Tree: treeFrom,
 		TreeEntry: object.TreeEntry{
-			Name: "labours.py",
+			Name: testLaboursPath,
 			Mode: 0o100644,
 			Hash: plumbing.NewHash("80fe25955b8e725feee25c08ea5759d74f8b670d"),
 		},
@@ -323,10 +323,10 @@ func TestBlobCacheDeleteInvalidBlob(t *testing.T) {
 	))
 	changes[0] = &object.Change{
 		From: object.ChangeEntry{
-			Name: "analyser.go",
+			Name: testAnalyserPath,
 			Tree: treeFrom,
 			TreeEntry: object.TreeEntry{
-				Name: "analyser.go",
+				Name: testAnalyserPath,
 				Mode: 0o100644,
 				Hash: plumbing.NewHash("ffffffffffffffffffffffffffffffffffffffff"),
 			},
@@ -357,10 +357,10 @@ func TestBlobCacheInsertInvalidBlob(t *testing.T) {
 	))
 	changes[0] = &object.Change{
 		From: object.ChangeEntry{}, To: object.ChangeEntry{
-			Name: "pipeline.go",
+			Name: testPipelinePath,
 			Tree: treeTo,
 			TreeEntry: object.TreeEntry{
-				Name: "pipeline.go",
+				Name: testPipelinePath,
 				Mode: 0o100644,
 				Hash: plumbing.NewHash("ffffffffffffffffffffffffffffffffffffffff"),
 			},
@@ -413,9 +413,9 @@ func TestBlobCacheGetBlobGitModulesErrors(t *testing.T) {
 	cache := fixtureBlobCache()
 	cache.FailOnMissingSubmodules = true
 	entry := object.ChangeEntry{
-		Name: "labours.py",
+		Name: testLaboursPath,
 		TreeEntry: object.TreeEntry{
-			Name: "labours.py",
+			Name: testLaboursPath,
 			Mode: 0o160000,
 			Hash: plumbing.NewHash("ffffffffffffffffffffffffffffffffffffffff"),
 		},
@@ -458,10 +458,10 @@ func TestBlobCacheFork(t *testing.T) {
 	))
 	hash := plumbing.NewHash("db99e1890f581ad69e1527fe8302978c661eb473")
 	changes[0] = &object.Change{From: object.ChangeEntry{}, To: object.ChangeEntry{
-		Name: "pipeline.go",
+		Name: testPipelinePath,
 		Tree: treeTo,
 		TreeEntry: object.TreeEntry{
-			Name: "pipeline.go",
+			Name: testPipelinePath,
 			Mode: 0o100644,
 			Hash: hash,
 		},

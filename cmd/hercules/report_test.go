@@ -10,29 +10,29 @@ import (
 
 func TestSelectReportAnalysisFlagsDefault(t *testing.T) {
 	available := map[string]struct{}{
-		"burndown":            {},
-		"burndown-files":      {},
-		"devs":                {},
-		"onboarding":          {},
-		"refactoring-proxy":   {},
-		"temporal-activity":   {},
-		"hotspot-risk":        {},
-		"knowledge-diffusion": {},
+		reportAnalysisBurndown:           {},
+		reportAnalysisBurndownFiles:      {},
+		reportAnalysisDevs:               {},
+		reportAnalysisOnboarding:         {},
+		reportAnalysisRefactoringProxy:   {},
+		reportAnalysisTemporalActivity:   {},
+		reportAnalysisHotspotRisk:        {},
+		reportAnalysisKnowledgeDiffusion: {},
 	}
 	flags, err := selectReportAnalysisFlags(available, nil, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	expected := []string{
-		"burndown",
-		"burndown-files",
-		"burndown-people",
-		"devs",
-		"hotspot-risk",
-		"knowledge-diffusion",
-		"onboarding",
-		"refactoring-proxy",
-		"temporal-activity",
+		reportAnalysisBurndown,
+		reportAnalysisBurndownFiles,
+		reportAnalysisBurndownPeople,
+		reportAnalysisDevs,
+		reportAnalysisHotspotRisk,
+		reportAnalysisKnowledgeDiffusion,
+		reportAnalysisOnboarding,
+		reportAnalysisRefactoringProxy,
+		reportAnalysisTemporalActivity,
 	}
 	if !reflect.DeepEqual(flags, expected) {
 		t.Fatalf("unexpected flags: got %v want %v", flags, expected)
@@ -45,7 +45,11 @@ func TestSelectReportModesDefaultIncludesMilestoneFourEasyPath(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	for _, expected := range []string{"knowledge-diffusion", "refactoring-proxy", "hotspot-risk"} {
+	for _, expected := range []string{
+		reportAnalysisKnowledgeDiffusion,
+		reportAnalysisRefactoringProxy,
+		reportAnalysisHotspotRisk,
+	} {
 		found := slices.Contains(modes, expected)
 		if !found {
 			t.Fatalf("default report modes do not include %q: %v", expected, modes)
@@ -54,7 +58,7 @@ func TestSelectReportModesDefaultIncludesMilestoneFourEasyPath(t *testing.T) {
 }
 
 func TestSelectReportAnalysisFlagsRequestedUnknown(t *testing.T) {
-	available := map[string]struct{}{"devs": {}}
+	available := map[string]struct{}{reportAnalysisDevs: {}}
 	_, err := selectReportAnalysisFlags(available, []string{"missing"}, false)
 	if err == nil {
 		t.Fatal("expected error for unknown analysis flag")
@@ -63,15 +67,21 @@ func TestSelectReportAnalysisFlagsRequestedUnknown(t *testing.T) {
 
 func TestSelectReportAnalysisFlagsAllUsesReportList(t *testing.T) {
 	available := map[string]struct{}{
-		"burndown": {},
-		"shotness": {},
-		"devs":     {},
+		reportAnalysisBurndown: {},
+		reportAnalysisShotness: {},
+		reportAnalysisDevs:     {},
 	}
 	flags, err := selectReportAnalysisFlags(available, nil, true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	expected := []string{"burndown", "burndown-files", "burndown-people", "devs", "shotness"}
+	expected := []string{
+		reportAnalysisBurndown,
+		reportAnalysisBurndownFiles,
+		reportAnalysisBurndownPeople,
+		reportAnalysisDevs,
+		reportAnalysisShotness,
+	}
 	if !reflect.DeepEqual(flags, expected) {
 		t.Fatalf("unexpected flags: got %v want %v", flags, expected)
 	}

@@ -21,7 +21,7 @@ import (
 )
 
 func TestLoadGitRepository(t *testing.T) {
-	repo, repoUri, repoFeature := loadRepository("https://github.com/src-d/hercules", "", true, "")
+	repo, repoUri, repoFeature := loadRepository("https://github.com/src-d/hercules")
 	assert.NotNil(t, repo)
 	assert.Equal(t, core.FeatureGitCommits, repoFeature)
 	assert.Equal(t, "https://github.com/src-d/hercules", repoUri)
@@ -42,7 +42,7 @@ func TestLoadLocalRepository(t *testing.T) {
 	_, err := git.Clone(backend, nil, cloneOptions)
 	require.NoError(t, err)
 
-	repo, repoUri, repoFeature := loadRepository(tempdir, "", true, "")
+	repo, repoUri, repoFeature := loadRepository(tempdir)
 	assert.NotNil(t, repo)
 	assert.Equal(t, repoUri, tempdir)
 	assert.Equal(t, core.FeatureGitCommits, repoFeature)
@@ -52,17 +52,17 @@ func TestLoadSivaRepository(t *testing.T) {
 	_, filename, _, ok := runtime.Caller(0)
 	assert.True(t, ok)
 	sivafile := filepath.Join(filepath.Dir(filename), "test_data", "hercules.siva")
-	repo, _, repoFeature := loadRepository(sivafile, "", true, "")
+	repo, _, repoFeature := loadRepository(sivafile)
 	assert.NotNil(t, repo)
 	assert.Equal(t, core.FeatureGitCommits, repoFeature)
 
-	assert.Panics(t, func() { loadRepository("https://github.com/src-d/porn", "", true, "") })
-	assert.Panics(t, func() { loadRepository(filepath.Dir(filename), "", true, "") })
-	assert.Panics(t, func() { loadRepository("/xxx", "", true, "") })
+	assert.Panics(t, func() { loadRepository("https://github.com/src-d/porn") })
+	assert.Panics(t, func() { loadRepository(filepath.Dir(filename)) })
+	assert.Panics(t, func() { loadRepository("/xxx") })
 }
 
 func TestLoadStubRepository(t *testing.T) {
-	repo, repoUri, repoFeature := loadRepository("-", "", true, "")
+	repo, repoUri, repoFeature := loadRepository("-")
 	assert.NotNil(t, repo)
 	assert.Equal(t, "-", repoUri)
 	assert.Equal(t, core.FeatureGitStub, repoFeature)

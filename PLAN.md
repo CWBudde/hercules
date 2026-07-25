@@ -975,6 +975,73 @@ Acceptance criteria:
   figure to the plot area alone;
 - a visual test covers a data set large enough to trigger offset notation.
 
+### DOC-03: People-based charts leak raw identity strings into labels
+
+`devs`, `devs-efforts`, `burndown-person`, `ownership` and `overwrites-matrix` label each series with
+the identity string as the detector built it — `vadim markovtsev|gmarkhor@gmail.com|vadim@athenian.co`
+— so every rendered chart publishes its contributors' email addresses. On the hercules self-analysis
+that is 29 addresses, and the same person appears several times over when their commits span more
+than one address, which also splits their totals.
+
+`--people-dict` is the existing escape hatch (`scripts/self-analysis-people.txt` is the merged dict
+that `just devs-chart` passes), but it has to be maintained by hand, and the leak is the default
+behaviour rather than an opt-in.
+
+- Label series with the canonical name only; keep the full identity string for tooltips/JSON output.
+- Consider making `--people-anonymity` composable with rendering, so a chart can be published
+  without maintaining a dict at all.
+
+Acceptance criteria:
+
+- rendering a people-based mode without `--people-dict` produces labels containing no `@`;
+- a test asserts the label for a multi-address identity is a single name.
+
+### DOC-04: devs-efforts wastes ~40% of the canvas and dips below zero
+
+`labours -m devs-efforts` on the hercules self-analysis renders the stacked effort area across the
+top ~60% of the figure and leaves the bottom ~40% empty: the y-limits are computed from downward
+spikes that reach roughly -5e4, but the axis extends to about -3.5e5, so most of the plot area is
+blank. The spikes themselves are the second half of the problem — a cumulative "changed lines of
+code" series should not go negative at all, which points at the delta accumulation rather than the
+axis code.
+
+Reproduce with:
+
+```sh
+just hercules labours
+./hercules --burndown --burndown-people --devs --pb . > /tmp/pd.pb
+./labours -i /tmp/pd.pb -m devs-efforts --max-people 8 -o /tmp/efforts.png
+```
+
+- Find why per-developer effort accumulates negative values, and fix the accumulation or clamp it.
+- Derive the y-limits from the rendered data extent, not from a value that ignores it.
+
+Acceptance criteria:
+
+- the plotted area fills the axes box, verifiable by comparing the data extent to the axis limits;
+- a visual test covers a repository whose history triggers the negative spikes.
+
+### DOC-05: burndown-person emits one figure per developer with an unreadable legend
+
+`labours -m burndown-person -o chart.png` does not write `chart.png`; it writes one file per
+contributor (`chart_vadim markovtsev_gmarkhor@gmail_com.png`, 29 files for this repository), with
+spaces and mangled addresses in the filenames. Each figure carries the full 40-band quarterly legend
+whether or not that developer touched those quarters, so a contributor with a few hundred surviving
+lines gets a chart that is roughly 80% legend and 20% data, on an axis spanning the whole project
+history rather than their own.
+
+- Document the fan-out in `--help` (the single `-o` path reads as a single output file), and derive
+  filenames that are safe to serve.
+- Drop empty bands from the per-person legend, and consider defaulting the x range to the
+  developer's own activity window.
+- Offer a combined per-developer view for the common case of "who owns what": a single figure
+  stacking developers, which is what `-m ownership` already approximates.
+
+Acceptance criteria:
+
+- `--help` states that `burndown-person` writes one file per developer;
+- a per-person figure's legend lists only bands with data.
+
 ## Recommended pull request sequence
 
 The phases above describe dependencies; the following PR slices keep review scope manageable:

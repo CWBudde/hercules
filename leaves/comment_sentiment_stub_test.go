@@ -12,7 +12,7 @@ import (
 
 func TestCommentSentimentStubMeta(t *testing.T) {
 	sent := &CommentSentimentAnalysis{}
-	if sent.Name() != "Sentiment" {
+	if sent.Name() != commentSentimentAnalysisName {
 		t.Fatalf("unexpected name: %s", sent.Name())
 	}
 	if sent.Flag() != "sentiment" {
@@ -42,7 +42,7 @@ func TestCommentSentimentStubRegistration(t *testing.T) {
 	if len(summoned) != 1 {
 		t.Fatalf("expected sentiment in registry, got %d", len(summoned))
 	}
-	if summoned[0].Name() != "Sentiment" {
+	if summoned[0].Name() != commentSentimentAnalysisName {
 		t.Fatalf("unexpected registry item: %s", summoned[0].Name())
 	}
 }

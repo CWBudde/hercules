@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"maps"
+	"math"
 	"os"
 	"path/filepath"
 	"runtime/debug"
@@ -47,6 +48,8 @@ const (
 	FeatureGitStub    = "git.stub"
 )
 
+const configurationStringType = "string"
+
 var errNegativeHibernationDistance = errors.New("--hibernation-distance cannot be negative")
 
 // String() returns an empty string for the boolean type, "int" for integers and "string" for
@@ -58,11 +61,11 @@ func (opt ConfigurationOptionType) String() string {
 	case IntConfigurationOption:
 		return "int"
 	case StringConfigurationOption:
-		return "string"
+		return configurationStringType
 	case FloatConfigurationOption:
 		return "float"
 	case StringsConfigurationOption:
-		return "string"
+		return configurationStringType
 	case PathConfigurationOption:
 		return "path"
 	}
@@ -92,7 +95,7 @@ type ConfigurationOption struct {
 // Used in the command line interface to show the argument's default value.
 func (opt ConfigurationOption) FormatDefault() string {
 	if opt.Type == StringsConfigurationOption {
-		return fmt.Sprintf("\"%s\"", strings.Join(opt.Default.([]string), ","))
+		return fmt.Sprintf("\"%s\"", strings.Join(configurationDefault[[]string](opt), ","))
 	}
 
 	if opt.Type != StringConfigurationOption {
@@ -100,6 +103,15 @@ func (opt ConfigurationOption) FormatDefault() string {
 	}
 
 	return fmt.Sprintf("\"%s\"", opt.Default)
+}
+
+func configurationDefault[T any](option ConfigurationOption) T {
+	value, ok := option.Default.(T)
+	if !ok {
+		panic("configuration option has an invalid default type")
+	}
+
+	return value
 }
 
 // PipelineItem is the interface for all the units in the Git commits analysis pipeline.
@@ -204,8 +216,8 @@ type CommonAnalysisResult struct {
 }
 
 // Copy produces a deep clone of the object.
-func (car CommonAnalysisResult) Copy() CommonAnalysisResult {
-	result := car
+func (car *CommonAnalysisResult) Copy() CommonAnalysisResult {
+	result := *car
 
 	result.RunTimePerItem = map[string]float64{}
 	maps.Copy(result.RunTimePerItem, car.RunTimePerItem)
@@ -249,6 +261,10 @@ func (car *CommonAnalysisResult) Merge(other *CommonAnalysisResult) {
 
 // FillMetadata copies the data to a Protobuf message.
 func (car *CommonAnalysisResult) FillMetadata(meta *pb.Metadata) *pb.Metadata {
+	if car.CommitsNumber < math.MinInt32 || car.CommitsNumber > math.MaxInt32 {
+		panic("commit count exceeds the protobuf int32 range")
+	}
+
 	meta.BeginUnixTime = car.BeginTime
 	meta.EndUnixTime = car.EndTime
 	meta.Commits = int32(car.CommitsNumber)
@@ -393,11 +409,13 @@ func (pipeline *Pipeline) SetFeature(name string) {
 // See also: AddItem().
 func (pipeline *Pipeline) SetFeaturesFromFlags(registry ...*PipelineItemRegistry) {
 	var ffr *PipelineItemRegistry
-	if len(registry) == 0 {
+
+	switch len(registry) {
+	case 0:
 		ffr = Registry
-	} else if len(registry) == 1 {
+	case 1:
 		ffr = registry[0]
-	} else {
+	default:
 		panic("Zero or one registry is allowed to be passed.")
 	}
 
@@ -555,15 +573,16 @@ func wireAmbiguousInputs(
 		cycle := graph.FindCycle(input)
 		nextNode := input
 
-		if len(cycle) == 0 {
+		switch {
+		case len(cycle) == 0:
 			if reverseIndex != 0 {
 				continue
 			}
 
 			nextNode = key
-		} else if len(cycle) == 1 || cycle[1] != key {
+		case len(cycle) == 1 || cycle[1] != key:
 			panic("unexpected")
-		} else {
+		default:
 			if len(cycle) > 2 {
 				nextNode = cycle[2]
 			}
@@ -921,19 +940,19 @@ func (pipeline *Pipeline) removeEquivalentInputs(
 	excludes := map[string]struct{}{}
 
 	last, lastLevel := len(inputs), 0
-	for i := last - 1; i >= -1; i-- {
+	for inputIndex := last - 1; inputIndex >= -1; inputIndex-- {
 		level := -1
-		if i >= 0 {
-			level = bfsIndex[inputs[i]].Level
+		if inputIndex >= 0 {
+			level = bfsIndex[inputs[inputIndex]].Level
 		}
 
 		if level != lastLevel {
-			if alternatives := inputs[i+1 : last]; len(alternatives) > 1 {
+			if alternatives := inputs[inputIndex+1 : last]; len(alternatives) > 1 {
 				graph.Sort(alternatives)
 				pipeline.resolveAlternatives(graph, alternatives, name2item, priorityFn, excludes)
 			}
 
-			lastLevel, last = level, i+1
+			lastLevel, last = level, inputIndex+1
 		}
 	}
 

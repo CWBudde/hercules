@@ -57,12 +57,12 @@ func (csharpExtractor) Imports(content []byte) ([]string, error) {
 // csharpJoinName flattens a qualified_name / identifier_name subtree into
 // its dotted source representation, skipping generic-argument noise.
 func csharpJoinName(node *sitter.Node, content []byte) string {
-	var b []byte
-	var walk func(n *sitter.Node)
-	walk = func(n *sitter.Node) {
-		typ := n.Type(csharpLang)
+	var joinedName []byte
+	var walk func(currentNode *sitter.Node)
+	walk = func(currentNode *sitter.Node) {
+		typ := currentNode.Type(csharpLang)
 		if _, ok := csharpIncludeTypes[typ]; ok {
-			b = append(b, content[n.StartByte():n.EndByte()]...)
+			joinedName = append(joinedName, content[currentNode.StartByte():currentNode.EndByte()]...)
 			return
 		}
 
@@ -70,11 +70,11 @@ func csharpJoinName(node *sitter.Node, content []byte) string {
 			return
 		}
 
-		for i := range n.ChildCount() {
-			walk(n.Child(i))
+		for i := range currentNode.ChildCount() {
+			walk(currentNode.Child(i))
 		}
 	}
 	walk(node)
 
-	return string(b)
+	return string(joinedName)
 }

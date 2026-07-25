@@ -21,6 +21,8 @@ import (
 	"github.com/cwbudde/hercules/internal/levenshtein"
 )
 
+var errNegativeRenameTimeout = errors.New("negative renames detection timeout is not allowed")
+
 // RenameAnalysis improves TreeDiff's results by searching for changed blobs under different
 // paths which are likely to be the result of a rename with subsequent edits.
 // RenameAnalysis is a PipelineItem.
@@ -126,7 +128,7 @@ func (ra *RenameAnalysis) Configure(facts map[string]any) error {
 
 	if val, exists := facts[ConfigRenameAnalysisTimeout].(int); exists {
 		if val < 0 {
-			return fmt.Errorf("negative renames detection timeout is not allowed: %d", val)
+			return fmt.Errorf("%w: %d", errNegativeRenameTimeout, val)
 		}
 
 		ra.Timeout = time.Duration(val) * time.Millisecond
@@ -377,9 +379,9 @@ func (ra *RenameAnalysis) matchSimilarRenames(
 	addedBlobsB := cloneSortableBlobs(addedBlobs)
 	deletedBlobsB := cloneSortableBlobs(deletedBlobs)
 
-	wg := sync.WaitGroup{}
+	waitGroup := sync.WaitGroup{}
 	matchA := func() {
-		defer func() { finished <- true; wg.Done() }()
+		defer func() { finished <- true; waitGroup.Done() }()
 
 		matchesA, addedBlobsA, deletedBlobsA = ra.matchDeletedBlobs(
 			beginTime, addedBlobsA, deletedBlobsA, cache, maxCandidates, finished, errs,
@@ -388,7 +390,7 @@ func (ra *RenameAnalysis) matchSimilarRenames(
 		finishedA <- true
 	}
 	matchB := func() {
-		defer func() { finished <- true; wg.Done() }()
+		defer func() { finished <- true; waitGroup.Done() }()
 
 		matchesB, addedBlobsB, deletedBlobsB = ra.matchAddedBlobs(
 			beginTime, addedBlobsB, deletedBlobsB, cache, maxCandidates, finished, errs,
@@ -397,12 +399,12 @@ func (ra *RenameAnalysis) matchSimilarRenames(
 		finishedB <- true
 	}
 	// run two functions in parallel, and take the result from the one which finished earlier
-	wg.Add(2)
+	waitGroup.Add(2)
 
 	go matchA()
 	go matchB()
 
-	wg.Wait()
+	waitGroup.Wait()
 	var matches object.Changes
 
 	select {

@@ -142,21 +142,21 @@ func TestCoverageRatio(t *testing.T) {
 func routingDecision(ranges []ast_items.LineRange, newLOC int, mode string) string {
 	switch mode {
 	case RefineModeFull:
-		return "full"
+		return RefineModeFull
 	case RefineModeRange:
 		if len(ranges) == 0 {
-			return "full"
+			return RefineModeFull
 		}
-		return "range"
+		return RefineModeRange
 	default:
 		if len(ranges) == 0 || newLOC < refineRangeMinLines {
-			return "full"
+			return RefineModeFull
 		}
 		padded := padRanges(ranges, newLOC, refineRangePadding)
 		if coverageRatio(padded, newLOC) >= refineCoverageThreshold {
-			return "full"
+			return RefineModeFull
 		}
-		return "range"
+		return RefineModeRange
 	}
 }
 
@@ -167,10 +167,10 @@ func TestRefineRoutingAuto(t *testing.T) {
 		newLOC int
 		want   string
 	}{
-		{"no ranges → full", nil, 5000, "full"},
-		{"small file → full (size gate)", []ast_items.LineRange{{Start: 1, End: 5}}, 500, "full"},
-		{"large file, tiny diff → range", []ast_items.LineRange{{Start: 1, End: 5}}, 5000, "range"},
-		{"large file, half coverage → full (threshold)", []ast_items.LineRange{{Start: 1, End: 3000}}, 5000, "full"},
+		{"no ranges → full", nil, 5000, RefineModeFull},
+		{"small file → full (size gate)", []ast_items.LineRange{{Start: 1, End: 5}}, 500, RefineModeFull},
+		{"large file, tiny diff → range", []ast_items.LineRange{{Start: 1, End: 5}}, 5000, RefineModeRange},
+		{"large file, half coverage → full (threshold)", []ast_items.LineRange{{Start: 1, End: 3000}}, 5000, RefineModeFull},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -185,18 +185,18 @@ func TestRefineRoutingForcedModes(t *testing.T) {
 	ranges := []ast_items.LineRange{{Start: 1, End: 5}}
 	// RefineModeFull always picks full, regardless of size or coverage.
 	for _, newLOC := range []int{50, 5000, 100000} {
-		if got := routingDecision(ranges, newLOC, RefineModeFull); got != "full" {
+		if got := routingDecision(ranges, newLOC, RefineModeFull); got != RefineModeFull {
 			t.Fatalf("RefineModeFull@%d: got %q, want full", newLOC, got)
 		}
 	}
 	// RefineModeRange always picks range when ranges are present, even on tiny
 	// files where auto would have bailed out.
-	if got := routingDecision(ranges, 50, RefineModeRange); got != "range" {
+	if got := routingDecision(ranges, 50, RefineModeRange); got != RefineModeRange {
 		t.Fatalf("RefineModeRange tiny file: got %q, want range", got)
 	}
 	// RefineModeRange still falls back to full when the heuristic produced no
 	// ranges to parse.
-	if got := routingDecision(nil, 5000, RefineModeRange); got != "full" {
+	if got := routingDecision(nil, 5000, RefineModeRange); got != RefineModeFull {
 		t.Fatalf("RefineModeRange empty ranges: got %q, want full", got)
 	}
 }

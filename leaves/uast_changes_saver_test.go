@@ -81,19 +81,19 @@ func TestUASTChangesSaverConsumeAndSerialize(t *testing.T) {
 	changes := object.Changes{
 		&object.Change{
 			From: object.ChangeEntry{
-				Name: "analyser.go",
+				Name: testAnalyserPath,
 				Tree: treeFrom,
 				TreeEntry: object.TreeEntry{
-					Name: "analyser.go",
+					Name: testAnalyserPath,
 					Mode: 0o100644,
 					Hash: plumbing.NewHash("dc248ba2b22048cc730c571a748e8ffcf7085ab9"),
 				},
 			},
 			To: object.ChangeEntry{
-				Name: "analyser.go",
+				Name: testAnalyserPath,
 				Tree: treeTo,
 				TreeEntry: object.TreeEntry{
-					Name: "analyser.go",
+					Name: testAnalyserPath,
 					Mode: 0o100644,
 					Hash: plumbing.NewHash("334cde09da4afcb74f8d2b3e6fd6cce61228b485"),
 				},
@@ -112,7 +112,7 @@ func TestUASTChangesSaverConsumeAndSerialize(t *testing.T) {
 	result := saver.Finalize().([]UASTChangeRecord)
 	if assert.Len(t, result, 1) {
 		record := result[0]
-		assert.Equal(t, "analyser.go", record.FileName)
+		assert.Equal(t, testAnalyserPath, record.FileName)
 		for _, p := range []string{record.SrcBefore, record.SrcAfter, record.UASTBefore, record.UASTAfter} {
 			_, statErr := os.Stat(p)
 			assert.NoError(t, statErr)

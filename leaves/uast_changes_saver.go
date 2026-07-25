@@ -222,15 +222,8 @@ func (saver *UASTChangesSaver) processChange(
 		return UASTChangeRecord{}, false, nil
 	}
 
-	fromBlob := cache[change.From.TreeEntry.Hash]
-
-	toBlob := cache[change.To.TreeEntry.Hash]
-	if fromBlob == nil || toBlob == nil {
-		return UASTChangeRecord{}, false, nil
-	}
-
-	binary, err := eitherBlobIsBinary(fromBlob, toBlob)
-	if err != nil || binary {
+	fromBlob, toBlob, usable, err := textChangeBlobs(change, cache)
+	if err != nil || !usable {
 		return UASTChangeRecord{}, false, err
 	}
 
@@ -251,6 +244,24 @@ func (saver *UASTChangesSaver) processChange(
 	)
 
 	return record, err == nil, err
+}
+
+func textChangeBlobs(
+	change *object.Change,
+	cache map[plumbing.Hash]*items.CachedBlob,
+) (*items.CachedBlob, *items.CachedBlob, bool, error) {
+	fromBlob := cache[change.From.TreeEntry.Hash]
+	toBlob := cache[change.To.TreeEntry.Hash]
+	if fromBlob == nil || toBlob == nil {
+		return nil, nil, false, nil
+	}
+
+	binary, err := eitherBlobIsBinary(fromBlob, toBlob)
+	if err != nil || binary {
+		return nil, nil, false, err
+	}
+
+	return fromBlob, toBlob, true, nil
 }
 
 func (saver *UASTChangesSaver) extractChangeNodes(

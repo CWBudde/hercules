@@ -208,7 +208,8 @@ func (hra *HotspotRiskAnalysis) Flag() string {
 
 // Description returns the text which explains what the analysis is doing.
 func (hra *HotspotRiskAnalysis) Description() string {
-	return "Identifies high-risk files by combining size, churn rate, coupling degree, and ownership concentration metrics."
+	return "Identifies high-risk files by combining size, churn rate, coupling degree, " +
+		"and ownership concentration metrics."
 }
 
 // Initialize prepares the analysis.
@@ -344,16 +345,7 @@ func calculateGini(authorLines map[int]int) float64 {
 		return 1.0 // Single owner = maximum concentration
 	}
 
-	// Get line counts, filtering out negative values (deleted lines)
-	var values []int
-	totalLines := 0
-
-	for _, lines := range authorLines {
-		if lines > 0 {
-			values = append(values, lines)
-			totalLines += lines
-		}
-	}
+	values, totalLines := positiveLineCounts(authorLines)
 
 	if len(values) == 0 || totalLines == 0 {
 		return 0
@@ -368,25 +360,33 @@ func calculateGini(authorLines map[int]int) float64 {
 
 	// Calculate Gini coefficient using formula:
 	// G = (2 * sum(i * values[i])) / (n * sum(values)) - (n + 1) / n
-	n := len(values)
+	valueCount := len(values)
 
 	var weightedSum int64
 	for i, val := range values {
 		weightedSum += int64(i+1) * int64(val)
 	}
 
-	gini := (2.0*float64(weightedSum))/(float64(n)*float64(totalLines)) - float64(n+1)/float64(n)
+	gini := (2.0*float64(weightedSum))/(float64(valueCount)*float64(totalLines)) -
+		float64(valueCount+1)/float64(valueCount)
 
-	// Clamp to [0, 1] to handle numerical issues
-	if gini < 0 {
-		gini = 0
+	return max(0, min(gini, 1))
+}
+
+func positiveLineCounts(authorLines map[int]int) ([]int, int) {
+	values := make([]int, 0, len(authorLines))
+	totalLines := 0
+
+	for _, lines := range authorLines {
+		if lines <= 0 {
+			continue
+		}
+
+		values = append(values, lines)
+		totalLines += lines
 	}
 
-	if gini > 1 {
-		gini = 1
-	}
-
-	return gini
+	return values, totalLines
 }
 
 // Fork clones this pipeline item.
@@ -501,14 +501,14 @@ func (hra *HotspotRiskAnalysis) updateFileRisk(
 	return fileName, nil
 }
 
-func (hra *HotspotRiskAnalysis) transferFileRisk(from, to string) {
-	if from == to {
+func (hra *HotspotRiskAnalysis) transferFileRisk(sourceName, targetName string) {
+	if sourceName == targetName {
 		return
 	}
 
-	if old, exists := hra.fileMetrics[from]; exists {
-		hra.fileMetrics[to] = old
-		delete(hra.fileMetrics, from)
+	if old, exists := hra.fileMetrics[sourceName]; exists {
+		hra.fileMetrics[targetName] = old
+		delete(hra.fileMetrics, sourceName)
 	}
 }
 
@@ -564,54 +564,22 @@ func (hra *HotspotRiskAnalysis) normalizeAndScore(risks []FileRisk) {
 		return
 	}
 
-	// Find min/max for each factor
-	var maxSize, maxChurn, maxCoupling float64 = 0, 0, 0
-
-	for _, risk := range risks {
-		if float64(risk.Size) > maxSize {
-			maxSize = float64(risk.Size)
-		}
-
-		if float64(risk.Churn) > maxChurn {
-			maxChurn = float64(risk.Churn)
-		}
-
-		if float64(risk.CouplingDegree) > maxCoupling {
-			maxCoupling = float64(risk.CouplingDegree)
-		}
-	}
+	maxSize, maxChurn, maxCoupling := riskFactorMaximums(risks)
 
 	// Normalize and calculate scores
-	for i := range risks {
-		// Size: use log scale, then normalize
-		var sizeNorm float64
-
-		if risks[i].Size > 0 && maxSize > 0 {
-			logSize := math.Log(float64(risks[i].Size) + 1)
-			logMaxSize := math.Log(maxSize + 1)
-			sizeNorm = logSize / logMaxSize
-		}
-
-		// Churn: linear normalization
-		var churnNorm float64
-		if maxChurn > 0 {
-			churnNorm = float64(risks[i].Churn) / maxChurn
-		}
-
-		// Coupling: linear normalization
-		var couplingNorm float64
-		if maxCoupling > 0 {
-			couplingNorm = float64(risks[i].CouplingDegree) / maxCoupling
-		}
+	for riskIndex := range risks {
+		sizeNorm := normalizedLogFactor(risks[riskIndex].Size, maxSize)
+		churnNorm := normalizedLinearFactor(risks[riskIndex].Churn, maxChurn)
+		couplingNorm := normalizedLinearFactor(risks[riskIndex].CouplingDegree, maxCoupling)
 
 		// Ownership: Gini is already in [0,1], higher = more concentrated
-		ownershipNorm := risks[i].OwnershipGini
+		ownershipNorm := risks[riskIndex].OwnershipGini
 
 		// Store normalized values
-		risks[i].SizeNormalized = sizeNorm
-		risks[i].ChurnNormalized = churnNorm
-		risks[i].CouplingNormalized = couplingNorm
-		risks[i].OwnershipNormalized = ownershipNorm
+		risks[riskIndex].SizeNormalized = sizeNorm
+		risks[riskIndex].ChurnNormalized = churnNorm
+		risks[riskIndex].CouplingNormalized = couplingNorm
+		risks[riskIndex].OwnershipNormalized = ownershipNorm
 
 		// Calculate composite score with weights
 		score := 1.0
@@ -620,8 +588,36 @@ func (hra *HotspotRiskAnalysis) normalizeAndScore(risks []FileRisk) {
 		score *= math.Pow(couplingNorm, float64(hra.WeightCoupling))
 		score *= math.Pow(ownershipNorm, float64(hra.WeightOwnership))
 
-		risks[i].RiskScore = score
+		risks[riskIndex].RiskScore = score
 	}
+}
+
+func riskFactorMaximums(risks []FileRisk) (float64, float64, float64) {
+	var maxSize, maxChurn, maxCoupling float64
+
+	for _, risk := range risks {
+		maxSize = max(maxSize, float64(risk.Size))
+		maxChurn = max(maxChurn, float64(risk.Churn))
+		maxCoupling = max(maxCoupling, float64(risk.CouplingDegree))
+	}
+
+	return maxSize, maxChurn, maxCoupling
+}
+
+func normalizedLogFactor(value int, maximum float64) float64 {
+	if value <= 0 || maximum <= 0 {
+		return 0
+	}
+
+	return math.Log(float64(value)+1) / math.Log(maximum+1)
+}
+
+func normalizedLinearFactor(value int, maximum float64) float64 {
+	if maximum <= 0 {
+		return 0
+	}
+
+	return float64(value) / maximum
 }
 
 func (hra *HotspotRiskAnalysis) serializeText(result *HotspotRiskResult, writer io.Writer) {
@@ -644,18 +640,34 @@ func (hra *HotspotRiskAnalysis) serializeText(result *HotspotRiskResult, writer 
 }
 
 func (hra *HotspotRiskAnalysis) serializeBinary(result *HotspotRiskResult, writer io.Writer) error {
+	windowDays, err := intToProtoInt32(result.WindowDays, "hotspot-risk window days")
+	if err != nil {
+		return err
+	}
 	message := pb.HotspotRiskResults{
-		WindowDays: int32(result.WindowDays),
+		WindowDays: windowDays,
 		Files:      make([]*pb.FileRisk, len(result.Files)),
 	}
 
-	for i, file := range result.Files {
-		message.Files[i] = &pb.FileRisk{
+	for fileIndex, file := range result.Files {
+		size, err := intToProtoInt32(file.Size, "hotspot-risk file size")
+		if err != nil {
+			return err
+		}
+		churn, err := intToProtoInt32(file.Churn, "hotspot-risk file churn")
+		if err != nil {
+			return err
+		}
+		couplingDegree, err := intToProtoInt32(file.CouplingDegree, "hotspot-risk coupling degree")
+		if err != nil {
+			return err
+		}
+		message.Files[fileIndex] = &pb.FileRisk{
 			Path:                file.Path,
 			RiskScore:           file.RiskScore,
-			Size_:               int32(file.Size),
-			Churn:               int32(file.Churn),
-			CouplingDegree:      int32(file.CouplingDegree),
+			Size_:               size,
+			Churn:               churn,
+			CouplingDegree:      couplingDegree,
 			OwnershipGini:       file.OwnershipGini,
 			SizeNormalized:      file.SizeNormalized,
 			ChurnNormalized:     file.ChurnNormalized,

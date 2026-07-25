@@ -202,7 +202,8 @@ func (history *FileHistoryAnalysis) recordFileCommit(
 			delete(history.files, change.From.Name)
 		}
 
-		file.Hashes = append(hashes, commit)
+		hashes = append(hashes, commit)
+		file.Hashes = hashes
 	}
 }
 
@@ -265,23 +266,27 @@ func (history *FileHistoryAnalysis) serializeBinary(result *FileHistoryResult, w
 		Files: map[string]*pb.FileHistory{},
 	}
 	for key, vals := range result.Files {
-		fh := &pb.FileHistory{
+		fileHistory := &pb.FileHistory{
 			Commits:            make([]string, len(vals.Hashes)),
 			ChangesByDeveloper: map[int32]*pb.LineStats{},
 		}
 		for i, hash := range vals.Hashes {
-			fh.Commits[i] = hash.String()
+			fileHistory.Commits[i] = hash.String()
 		}
 
 		for key, val := range vals.People {
-			fh.ChangesByDeveloper[int32(key)] = &pb.LineStats{
-				Added:   int32(val.Added),
-				Removed: int32(val.Removed),
-				Changed: int32(val.Changed),
+			developerID, err := intToProtoInt32(key, "file-history author")
+			if err != nil {
+				return err
 			}
+			stats, err := devLineStatsToProto(val.Added, val.Changed, val.Removed)
+			if err != nil {
+				return err
+			}
+			fileHistory.ChangesByDeveloper[developerID] = stats
 		}
 
-		message.Files[key] = fh
+		message.Files[key] = fileHistory
 	}
 
 	serialized, err := proto.Marshal(&message)

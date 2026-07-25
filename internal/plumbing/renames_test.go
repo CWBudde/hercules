@@ -96,10 +96,10 @@ func TestRenameAnalysisConsume(t *testing.T) {
 	))
 	changes[0] = &object.Change{
 		From: object.ChangeEntry{
-			Name: "analyser.go",
+			Name: testAnalyserPath,
 			Tree: treeFrom,
 			TreeEntry: object.TreeEntry{
-				Name: "analyser.go",
+				Name: testAnalyserPath,
 				Mode: 0o100644,
 				Hash: plumbing.NewHash("baa64828831d174f40140e4b3cfa77d1e917a2c1"),
 			},
@@ -107,10 +107,10 @@ func TestRenameAnalysisConsume(t *testing.T) {
 	}
 	changes[1] = &object.Change{
 		From: object.ChangeEntry{}, To: object.ChangeEntry{
-			Name: "burndown.go",
+			Name: testBurndownPath,
 			Tree: treeTo,
 			TreeEntry: object.TreeEntry{
-				Name: "burndown.go",
+				Name: testBurndownPath,
 				Mode: 0o100644,
 				Hash: plumbing.NewHash("29c9fafd6a2fae8cd20298c3f60115bc31a4c0f2"),
 			},
@@ -118,18 +118,18 @@ func TestRenameAnalysisConsume(t *testing.T) {
 	}
 	changes[2] = &object.Change{
 		From: object.ChangeEntry{
-			Name: "cmd/hercules/main.go",
+			Name: testHerculesMainPath,
 			Tree: treeFrom,
 			TreeEntry: object.TreeEntry{
-				Name: "cmd/hercules/main.go",
+				Name: testHerculesMainPath,
 				Mode: 0o100644,
 				Hash: plumbing.NewHash("c29112dbd697ad9b401333b80c18a63951bc18d9"),
 			},
 		}, To: object.ChangeEntry{
-			Name: "cmd/hercules/main.go",
+			Name: testHerculesMainPath,
 			Tree: treeTo,
 			TreeEntry: object.TreeEntry{
-				Name: "cmd/hercules/main.go",
+				Name: testHerculesMainPath,
 				Mode: 0o100644,
 				Hash: plumbing.NewHash("f7d918ec500e2f925ecde79b51cc007bac27de72"),
 			},

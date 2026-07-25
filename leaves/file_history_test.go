@@ -62,25 +62,25 @@ func TestFileHistoryConsume(t *testing.T) {
 	fh := bakeFileHistoryForSerialization(t)
 	validate := func() {
 		assert.Len(t, fh.files, 3)
-		assert.Equal(t, map[int]items.LineStats{1: ls(0, 207, 0)}, fh.files["cmd/hercules/main.go"].People)
-		assert.Equal(t, map[int]items.LineStats{1: ls(12, 0, 0)}, fh.files[".travis.yml"].People)
-		assert.Equal(t, map[int]items.LineStats{1: ls(628, 9, 67)}, fh.files["analyser.go"].People)
-		assert.Len(t, fh.files["analyser.go"].Hashes, 2)
-		assert.Equal(t, fh.files["analyser.go"].Hashes[0], plumbing.NewHash(
+		assert.Equal(t, map[int]items.LineStats{1: ls(0, 207, 0)}, fh.files[testHerculesMainPath].People)
+		assert.Equal(t, map[int]items.LineStats{1: ls(12, 0, 0)}, fh.files[testTravisPath].People)
+		assert.Equal(t, map[int]items.LineStats{1: ls(628, 9, 67)}, fh.files[testAnalyserPath].People)
+		assert.Len(t, fh.files[testAnalyserPath].Hashes, 2)
+		assert.Equal(t, fh.files[testAnalyserPath].Hashes[0], plumbing.NewHash(
 			"ffffffffffffffffffffffffffffffffffffffff",
 		))
-		assert.Equal(t, fh.files["analyser.go"].Hashes[1], plumbing.NewHash(
+		assert.Equal(t, fh.files[testAnalyserPath].Hashes[1], plumbing.NewHash(
 			"2b1ed978194a94edeabbca6de7ff3b5771d4d665",
 		))
-		assert.Len(t, fh.files[".travis.yml"].Hashes, 1)
-		assert.Equal(t, fh.files[".travis.yml"].Hashes[0], plumbing.NewHash(
+		assert.Len(t, fh.files[testTravisPath].Hashes, 1)
+		assert.Equal(t, fh.files[testTravisPath].Hashes[0], plumbing.NewHash(
 			"2b1ed978194a94edeabbca6de7ff3b5771d4d665",
 		))
-		assert.Len(t, fh.files["cmd/hercules/main.go"].Hashes, 2)
-		assert.Equal(t, fh.files["cmd/hercules/main.go"].Hashes[0], plumbing.NewHash(
+		assert.Len(t, fh.files[testHerculesMainPath].Hashes, 2)
+		assert.Equal(t, fh.files[testHerculesMainPath].Hashes[0], plumbing.NewHash(
 			"0000000000000000000000000000000000000000",
 		))
-		assert.Equal(t, fh.files["cmd/hercules/main.go"].Hashes[1], plumbing.NewHash(
+		assert.Equal(t, fh.files[testHerculesMainPath].Hashes[1], plumbing.NewHash(
 			"2b1ed978194a94edeabbca6de7ff3b5771d4d665",
 		))
 	}
@@ -123,20 +123,20 @@ func TestFileHistorySerializeBinary(t *testing.T) {
 	msg := pb.FileHistoryResultMessage{}
 	assert.NoError(t, proto.Unmarshal(buffer.Bytes(), &msg))
 	assert.Len(t, msg.GetFiles(), 2)
-	assert.Len(t, msg.GetFiles()[".travis.yml"].GetCommits(), 1)
-	assert.Equal(t, "2b1ed978194a94edeabbca6de7ff3b5771d4d665", msg.GetFiles()[".travis.yml"].GetCommits()[0])
-	assert.Len(t, msg.GetFiles()["cmd/hercules/main.go"].GetCommits(), 2)
-	assert.Equal(t, "0000000000000000000000000000000000000000", msg.GetFiles()["cmd/hercules/main.go"].GetCommits()[0])
-	assert.Equal(t, "2b1ed978194a94edeabbca6de7ff3b5771d4d665", msg.GetFiles()["cmd/hercules/main.go"].GetCommits()[1])
+	assert.Len(t, msg.GetFiles()[testTravisPath].GetCommits(), 1)
+	assert.Equal(t, "2b1ed978194a94edeabbca6de7ff3b5771d4d665", msg.GetFiles()[testTravisPath].GetCommits()[0])
+	assert.Len(t, msg.GetFiles()[testHerculesMainPath].GetCommits(), 2)
+	assert.Equal(t, "0000000000000000000000000000000000000000", msg.GetFiles()[testHerculesMainPath].GetCommits()[0])
+	assert.Equal(t, "2b1ed978194a94edeabbca6de7ff3b5771d4d665", msg.GetFiles()[testHerculesMainPath].GetCommits()[1])
 	assert.Equal(
 		t,
 		map[int32]*pb.LineStats{1: {Added: 12, Removed: 0, Changed: 0}},
-		msg.GetFiles()[".travis.yml"].GetChangesByDeveloper(),
+		msg.GetFiles()[testTravisPath].GetChangesByDeveloper(),
 	)
 	assert.Equal(
 		t,
 		map[int32]*pb.LineStats{1: {Added: 0, Removed: 207, Changed: 0}},
-		msg.GetFiles()["cmd/hercules/main.go"].GetChangesByDeveloper(),
+		msg.GetFiles()[testHerculesMainPath].GetChangesByDeveloper(),
 	)
 }
 
@@ -158,28 +158,28 @@ func bakeFileHistoryForSerialization(t *testing.T) *FileHistoryAnalysis {
 		"994eac1cd07235bb9815e547a75c84265dea00f5",
 	))
 	changes[0] = &object.Change{From: object.ChangeEntry{
-		Name: "analyser.go",
+		Name: testAnalyserPath,
 		Tree: treeFrom,
 		TreeEntry: object.TreeEntry{
-			Name: "analyser.go",
+			Name: testAnalyserPath,
 			Mode: 0o100644,
 			Hash: plumbing.NewHash("dc248ba2b22048cc730c571a748e8ffcf7085ab9"),
 		},
 	}, To: object.ChangeEntry{
-		Name: "analyser.go",
+		Name: testAnalyserPath,
 		Tree: treeTo,
 		TreeEntry: object.TreeEntry{
-			Name: "analyser.go",
+			Name: testAnalyserPath,
 			Mode: 0o100644,
 			Hash: plumbing.NewHash("baa64828831d174f40140e4b3cfa77d1e917a2c1"),
 		},
 	}}
 	changes[1] = &object.Change{
 		To: object.ChangeEntry{}, From: object.ChangeEntry{
-			Name: "cmd/hercules/main.go",
+			Name: testHerculesMainPath,
 			Tree: treeTo,
 			TreeEntry: object.TreeEntry{
-				Name: "cmd/hercules/main.go",
+				Name: testHerculesMainPath,
 				Mode: 0o100644,
 				Hash: plumbing.NewHash("c29112dbd697ad9b401333b80c18a63951bc18d9"),
 			},
@@ -187,10 +187,10 @@ func bakeFileHistoryForSerialization(t *testing.T) *FileHistoryAnalysis {
 	}
 	changes[2] = &object.Change{
 		From: object.ChangeEntry{}, To: object.ChangeEntry{
-			Name: ".travis.yml",
+			Name: testTravisPath,
 			Tree: treeTo,
 			TreeEntry: object.TreeEntry{
-				Name: ".travis.yml",
+				Name: testTravisPath,
 				Mode: 0o100644,
 				Hash: plumbing.NewHash("291286b4ac41952cbd1389fda66420ec03c1a9fe"),
 			},
@@ -211,10 +211,10 @@ func bakeFileHistoryForSerialization(t *testing.T) *FileHistoryAnalysis {
 	assert.NoError(t, err)
 	deps[items.DependencyLineStats] = lineStats[items.DependencyLineStats]
 
-	fh.files["cmd/hercules/main.go"] = &FileHistory{Hashes: []plumbing.Hash{plumbing.NewHash(
+	fh.files[testHerculesMainPath] = &FileHistory{Hashes: []plumbing.Hash{plumbing.NewHash(
 		"0000000000000000000000000000000000000000",
 	)}}
-	fh.files["analyser.go"] = &FileHistory{Hashes: []plumbing.Hash{plumbing.NewHash(
+	fh.files[testAnalyserPath] = &FileHistory{Hashes: []plumbing.Hash{plumbing.NewHash(
 		"ffffffffffffffffffffffffffffffffffffffff",
 	)}}
 	cres, err := fh.Consume(deps)

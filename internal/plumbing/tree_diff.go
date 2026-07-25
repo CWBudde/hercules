@@ -60,14 +60,6 @@ const (
 	ConfigTreeDiffFilterRegexp = "TreeDiff.FilteredRegexes"
 )
 
-// defaultBlacklistedPrefixes is the list of file path prefixes which should be skipped by default.
-var defaultBlacklistedPrefixes = []string{
-	"vendor/",
-	"vendors/",
-	"package-lock.json",
-	"Gopkg.lock",
-}
-
 var errCommitDoesNotContinue = errors.New("commit does not continue from previous commit")
 
 // Name of this PipelineItem. Uniquely identifies the type, used for mapping keys, etc.
@@ -108,9 +100,14 @@ func (treediff *TreeDiff) ListConfigurationOptions() []core.ConfigurationOption 
 			Description: "List of blacklisted path prefixes (e.g. directories or specific files). " +
 				"Values are in the UNIX format (\"path/to/x\"). Values should *not* start with \"/\". " +
 				"Separated with commas \",\".",
-			Flag:    "blacklisted-prefixes",
-			Type:    core.StringsConfigurationOption,
-			Default: defaultBlacklistedPrefixes,
+			Flag: "blacklisted-prefixes",
+			Type: core.StringsConfigurationOption,
+			Default: []string{
+				"vendor/",
+				"vendors/",
+				"package-lock.json",
+				"Gopkg.lock",
+			},
 		}, {
 			Name: ConfigTreeDiffLanguages,
 			Description: fmt.Sprintf(
@@ -327,13 +324,13 @@ func (treediff *TreeDiff) checkLanguage(name string, blobHash plumbing.Hash) (bo
 
 	buffer := make([]byte, 1024)
 
-	n, err := reader.Read(buffer)
+	bytesRead, err := reader.Read(buffer)
 	if err != nil && (blob.Size != 0 || !errors.Is(err, io.EOF)) {
 		return false, fmt.Errorf("read blob %s to detect language of %q: %w", blobHash, name, err)
 	}
 
-	if n < len(buffer) {
-		buffer = buffer[:n]
+	if bytesRead < len(buffer) {
+		buffer = buffer[:bytesRead]
 	}
 
 	lang := strings.ToLower(normalizeLanguage(name, enry.GetLanguage(path.Base(name), buffer)))

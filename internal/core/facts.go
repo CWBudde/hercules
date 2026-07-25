@@ -38,19 +38,19 @@ var _ IdentityResolver = identityResolver{}
 func NewIdentityResolver(names []string, toIds map[string]int) IdentityResolver {
 	resolver := identityResolver{}
 
-	n := len(names)
-	if n == 0 {
+	nameCount := len(names)
+	if nameCount == 0 {
 		return resolver
 	}
 
-	resolver.toNames = make([]string, n)
+	resolver.toNames = make([]string, nameCount)
 	copy(resolver.toNames, names)
 
 	if len(toIds) != 0 {
-		n = len(toIds)
+		nameCount = len(toIds)
 	}
 
-	resolver.toIds = make(map[string]int, n)
+	resolver.toIds = make(map[string]int, nameCount)
 
 	if len(toIds) != 0 {
 		maps.Copy(resolver.toIds, toIds)
@@ -90,6 +90,10 @@ func (v identityResolver) FriendlyNameOf(id AuthorId) string {
 
 func (v identityResolver) FindIdOf(name string) AuthorId {
 	if id, ok := v.toIds[name]; ok {
+		if id < math.MinInt32 || id > math.MaxInt32 {
+			return AuthorId(-1)
+		}
+
 		return AuthorId(id)
 	}
 

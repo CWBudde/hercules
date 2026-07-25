@@ -107,28 +107,28 @@ func TestLinesConsume(t *testing.T) {
 		"994eac1cd07235bb9815e547a75c84265dea00f5",
 	))
 	changes[0] = &object.Change{From: object.ChangeEntry{
-		Name: "analyser.go",
+		Name: testAnalyserPath,
 		Tree: treeFrom,
 		TreeEntry: object.TreeEntry{
-			Name: "analyser.go",
+			Name: testAnalyserPath,
 			Mode: 0o100644,
 			Hash: plumbing.NewHash("dc248ba2b22048cc730c571a748e8ffcf7085ab9"),
 		},
 	}, To: object.ChangeEntry{
-		Name: "analyser.go",
+		Name: testAnalyserPath,
 		Tree: treeTo,
 		TreeEntry: object.TreeEntry{
-			Name: "analyser.go",
+			Name: testAnalyserPath,
 			Mode: 0o100644,
 			Hash: plumbing.NewHash("baa64828831d174f40140e4b3cfa77d1e917a2c1"),
 		},
 	}}
 	changes[1] = &object.Change{
 		From: object.ChangeEntry{}, To: object.ChangeEntry{
-			Name: "cmd/hercules/main.go",
+			Name: testHerculesMainPath,
 			Tree: treeTo,
 			TreeEntry: object.TreeEntry{
-				Name: "cmd/hercules/main.go",
+				Name: testHerculesMainPath,
 				Mode: 0o100644,
 				Hash: plumbing.NewHash("c29112dbd697ad9b401333b80c18a63951bc18d9"),
 			},
@@ -136,10 +136,10 @@ func TestLinesConsume(t *testing.T) {
 	}
 	changes[2] = &object.Change{
 		From: object.ChangeEntry{}, To: object.ChangeEntry{
-			Name: ".travis.yml",
+			Name: testTravisPath,
 			Tree: treeTo,
 			TreeEntry: object.TreeEntry{
-				Name: ".travis.yml",
+				Name: testTravisPath,
 				Mode: 0o100644,
 				Hash: plumbing.NewHash("291286b4ac41952cbd1389fda66420ec03c1a9fe"),
 			},
@@ -181,9 +181,9 @@ func TestLinesConsume(t *testing.T) {
 		resolver := resultChanges.Resolver
 		assert.Empty(t, resolver.NameOf(0))
 		assert.Empty(t, resolver.NameOf(0))
-		assert.Equal(t, "analyser.go", resolver.NameOf(1))
-		assert.Equal(t, "cmd/hercules/main.go", resolver.NameOf(2))
-		assert.Equal(t, ".travis.yml", resolver.NameOf(3))
+		assert.Equal(t, testAnalyserPath, resolver.NameOf(1))
+		assert.Equal(t, testHerculesMainPath, resolver.NameOf(2))
+		assert.Equal(t, testTravisPath, resolver.NameOf(3))
 		assert.Empty(t, resolver.NameOf(4))
 
 		id, name, present := resolver.MergedWith(4)
@@ -193,7 +193,7 @@ func TestLinesConsume(t *testing.T) {
 
 		id, name, present = resolver.MergedWith(3)
 		assert.Equal(t, FileId(3), id)
-		assert.Equal(t, ".travis.yml", name)
+		assert.Equal(t, testTravisPath, name)
 		assert.True(t, present)
 
 		assert.Len(t, bd.files, len(expectedChanges))
@@ -220,18 +220,18 @@ func TestLinesConsume(t *testing.T) {
 	changes = make(object.Changes, 3)
 	changes[0] = &object.Change{
 		From: object.ChangeEntry{
-			Name: "analyser.go",
+			Name: testAnalyserPath,
 			Tree: treeFrom,
 			TreeEntry: object.TreeEntry{
-				Name: "analyser.go",
+				Name: testAnalyserPath,
 				Mode: 0o100644,
 				Hash: plumbing.NewHash("baa64828831d174f40140e4b3cfa77d1e917a2c1"),
 			},
 		}, To: object.ChangeEntry{
-			Name: "burndown.go",
+			Name: testBurndownPath,
 			Tree: treeTo,
 			TreeEntry: object.TreeEntry{
-				Name: "burndown.go",
+				Name: testBurndownPath,
 				Mode: 0o100644,
 				Hash: plumbing.NewHash("29c9fafd6a2fae8cd20298c3f60115bc31a4c0f2"),
 			},
@@ -239,18 +239,18 @@ func TestLinesConsume(t *testing.T) {
 	}
 	changes[1] = &object.Change{
 		From: object.ChangeEntry{
-			Name: "cmd/hercules/main.go",
+			Name: testHerculesMainPath,
 			Tree: treeFrom,
 			TreeEntry: object.TreeEntry{
-				Name: "cmd/hercules/main.go",
+				Name: testHerculesMainPath,
 				Mode: 0o100644,
 				Hash: plumbing.NewHash("c29112dbd697ad9b401333b80c18a63951bc18d9"),
 			},
 		}, To: object.ChangeEntry{
-			Name: "cmd/hercules/main.go",
+			Name: testHerculesMainPath,
 			Tree: treeTo,
 			TreeEntry: object.TreeEntry{
-				Name: "cmd/hercules/main.go",
+				Name: testHerculesMainPath,
 				Mode: 0o100644,
 				Hash: plumbing.NewHash("f7d918ec500e2f925ecde79b51cc007bac27de72"),
 			},
@@ -258,10 +258,10 @@ func TestLinesConsume(t *testing.T) {
 	}
 	changes[2] = &object.Change{
 		From: object.ChangeEntry{
-			Name: ".travis.yml",
+			Name: testTravisPath,
 			Tree: treeTo,
 			TreeEntry: object.TreeEntry{
-				Name: ".travis.yml",
+				Name: testTravisPath,
 				Mode: 0o100644,
 				Hash: plumbing.NewHash("291286b4ac41952cbd1389fda66420ec03c1a9fe"),
 			},
@@ -285,14 +285,14 @@ func TestLinesConsume(t *testing.T) {
 
 		resolver := resultChanges.Resolver
 		assert.Empty(t, resolver.NameOf(0))
-		assert.Equal(t, "burndown.go", resolver.NameOf(1))
-		assert.Equal(t, "cmd/hercules/main.go", resolver.NameOf(2))
-		assert.Equal(t, ".travis.yml", resolver.NameOf(3))
+		assert.Equal(t, testBurndownPath, resolver.NameOf(1))
+		assert.Equal(t, testHerculesMainPath, resolver.NameOf(2))
+		assert.Equal(t, testTravisPath, resolver.NameOf(3))
 		assert.Empty(t, resolver.NameOf(4))
 
 		id, name, present := resolver.MergedWith(3)
 		assert.Zero(t, id)
-		assert.Equal(t, ".travis.yml", name)
+		assert.Equal(t, testTravisPath, name)
 		assert.False(t, present)
 		assert.Len(t, bd.fileNames, 2)
 	}
@@ -317,10 +317,10 @@ func TestLinesConsume(t *testing.T) {
 			assert.Equal(t, core.TickNumber(30), c.CurrTick)
 		}
 
-		assert.Equal(t, 543, bd.files["burndown.go"].Len())
+		assert.Equal(t, 543, bd.files[testBurndownPath].Len())
 		assert.Equal(t, 543, lines[1])
 
-		assert.Equal(t, 290, bd.files["cmd/hercules/main.go"].Len())
+		assert.Equal(t, 290, bd.files[testHerculesMainPath].Len())
 		assert.Equal(t, 290, lines[2])
 
 		assert.Equal(t, 0, lines[3])
@@ -350,28 +350,28 @@ func bakeBurndownForSerialization(t *testing.T, firstAuthor, secondAuthor int) *
 		"994eac1cd07235bb9815e547a75c84265dea00f5",
 	))
 	changes[0] = &object.Change{From: object.ChangeEntry{
-		Name: "analyser.go",
+		Name: testAnalyserPath,
 		Tree: treeFrom,
 		TreeEntry: object.TreeEntry{
-			Name: "analyser.go",
+			Name: testAnalyserPath,
 			Mode: 0o100644,
 			Hash: plumbing.NewHash("dc248ba2b22048cc730c571a748e8ffcf7085ab9"),
 		},
 	}, To: object.ChangeEntry{
-		Name: "analyser.go",
+		Name: testAnalyserPath,
 		Tree: treeTo,
 		TreeEntry: object.TreeEntry{
-			Name: "analyser.go",
+			Name: testAnalyserPath,
 			Mode: 0o100644,
 			Hash: plumbing.NewHash("baa64828831d174f40140e4b3cfa77d1e917a2c1"),
 		},
 	}}
 	changes[1] = &object.Change{
 		From: object.ChangeEntry{}, To: object.ChangeEntry{
-			Name: "cmd/hercules/main.go",
+			Name: testHerculesMainPath,
 			Tree: treeTo,
 			TreeEntry: object.TreeEntry{
-				Name: "cmd/hercules/main.go",
+				Name: testHerculesMainPath,
 				Mode: 0o100644,
 				Hash: plumbing.NewHash("c29112dbd697ad9b401333b80c18a63951bc18d9"),
 			},
@@ -379,10 +379,10 @@ func bakeBurndownForSerialization(t *testing.T, firstAuthor, secondAuthor int) *
 	}
 	changes[2] = &object.Change{
 		From: object.ChangeEntry{}, To: object.ChangeEntry{
-			Name: ".travis.yml",
+			Name: testTravisPath,
 			Tree: treeTo,
 			TreeEntry: object.TreeEntry{
-				Name: ".travis.yml",
+				Name: testTravisPath,
 				Mode: 0o100644,
 				Hash: plumbing.NewHash("291286b4ac41952cbd1389fda66420ec03c1a9fe"),
 			},
@@ -417,18 +417,18 @@ func bakeBurndownForSerialization(t *testing.T, firstAuthor, secondAuthor int) *
 	))
 	changes[0] = &object.Change{
 		From: object.ChangeEntry{
-			Name: "analyser.go",
+			Name: testAnalyserPath,
 			Tree: treeFrom,
 			TreeEntry: object.TreeEntry{
-				Name: "analyser.go",
+				Name: testAnalyserPath,
 				Mode: 0o100644,
 				Hash: plumbing.NewHash("baa64828831d174f40140e4b3cfa77d1e917a2c1"),
 			},
 		}, To: object.ChangeEntry{
-			Name: "burndown.go",
+			Name: testBurndownPath,
 			Tree: treeTo,
 			TreeEntry: object.TreeEntry{
-				Name: "burndown.go",
+				Name: testBurndownPath,
 				Mode: 0o100644,
 				Hash: plumbing.NewHash("29c9fafd6a2fae8cd20298c3f60115bc31a4c0f2"),
 			},
@@ -436,18 +436,18 @@ func bakeBurndownForSerialization(t *testing.T, firstAuthor, secondAuthor int) *
 	}
 	changes[1] = &object.Change{
 		From: object.ChangeEntry{
-			Name: "cmd/hercules/main.go",
+			Name: testHerculesMainPath,
 			Tree: treeFrom,
 			TreeEntry: object.TreeEntry{
-				Name: "cmd/hercules/main.go",
+				Name: testHerculesMainPath,
 				Mode: 0o100644,
 				Hash: plumbing.NewHash("c29112dbd697ad9b401333b80c18a63951bc18d9"),
 			},
 		}, To: object.ChangeEntry{
-			Name: "cmd/hercules/main.go",
+			Name: testHerculesMainPath,
 			Tree: treeTo,
 			TreeEntry: object.TreeEntry{
-				Name: "cmd/hercules/main.go",
+				Name: testHerculesMainPath,
 				Mode: 0o100644,
 				Hash: plumbing.NewHash("f7d918ec500e2f925ecde79b51cc007bac27de72"),
 			},
@@ -455,10 +455,10 @@ func bakeBurndownForSerialization(t *testing.T, firstAuthor, secondAuthor int) *
 	}
 	changes[2] = &object.Change{
 		From: object.ChangeEntry{
-			Name: ".travis.yml",
+			Name: testTravisPath,
 			Tree: treeTo,
 			TreeEntry: object.TreeEntry{
-				Name: ".travis.yml",
+				Name: testTravisPath,
 				Mode: 0o100644,
 				Hash: plumbing.NewHash("291286b4ac41952cbd1389fda66420ec03c1a9fe"),
 			},

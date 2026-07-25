@@ -22,6 +22,7 @@ package core
 // redundant merge parents.
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"testing"
@@ -36,6 +37,8 @@ import (
 )
 
 type lineageState = map[plumbing.Hash]bool
+
+var errInvalidLineageDependencyType = errors.New("invalid lineage dependency type")
 
 // lineageConsumeRecord captures a single Consume() call on any branch.
 type lineageConsumeRecord struct {
@@ -102,11 +105,25 @@ func (item *lineageTestItem) Initialize(repository *git.Repository) error {
 }
 
 func (item *lineageTestItem) Consume(deps map[string]any) (map[string]any, error) {
-	commit := deps[DependencyCommit].(*object.Commit)
+	commit, ok := deps[DependencyCommit].(*object.Commit)
+	if !ok {
+		return nil, fmt.Errorf("%w: %s", errInvalidLineageDependencyType, DependencyCommit)
+	}
+
+	index, ok := deps[DependencyIndex].(int)
+	if !ok {
+		return nil, fmt.Errorf("%w: %s", errInvalidLineageDependencyType, DependencyIndex)
+	}
+
+	isMerge, ok := deps[DependencyIsMerge].(bool)
+	if !ok {
+		return nil, fmt.Errorf("%w: %s", errInvalidLineageDependencyType, DependencyIsMerge)
+	}
+
 	record := lineageConsumeRecord{
 		hash:    commit.Hash,
-		index:   deps[DependencyIndex].(int),
-		isMerge: deps[DependencyIsMerge].(bool),
+		index:   index,
+		isMerge: isMerge,
 		state:   copyLineageState(item.seen),
 	}
 	if nextMerge, exists := deps[DependencyNextMerge]; exists {
@@ -133,15 +150,24 @@ func (item *lineageTestItem) Merge(branches []PipelineItem) {
 	item.recorder.merges++
 	union := copyLineageState(item.seen)
 	for _, branch := range branches {
-		for hash := range branch.(*lineageTestItem).seen {
+		for hash := range mustLineageTestItem(branch).seen {
 			union[hash] = true
 		}
 	}
 	item.seen = union
 	// The PipelineItem contract requires updating all the branches, not only self.
 	for _, branch := range branches {
-		branch.(*lineageTestItem).seen = copyLineageState(union)
+		mustLineageTestItem(branch).seen = copyLineageState(union)
 	}
+}
+
+func mustLineageTestItem(item PipelineItem) *lineageTestItem {
+	lineage, ok := item.(*lineageTestItem)
+	if !ok {
+		panic("pipeline item is not a lineage test item")
+	}
+
+	return lineage
 }
 
 func (item *lineageTestItem) Hibernate() error {
@@ -618,39 +644,39 @@ func TestMergeTracksRequiresPreparedPlan(t *testing.T) {
 // (reused branch indices, missed deletes) historically surfaced.
 func TestMergeTrackingStress(t *testing.T) {
 	var commits []*object.Commit
-	newCommit := func(id int, parents ...string) (*object.Commit, string) {
+	newCommit := func(id int, parents ...string) string {
 		hash := fmt.Sprintf("%08x", id+1) // zero hash is not a valid commit
 		commit := makeTestCommit(hash, parents...)
 		commits = append(commits, commit)
-		return commit, hash
+		return hash
 	}
 
 	id := 0
 	nextID := func() int { id++; return id }
 
-	_, tip := newCommit(nextID())
+	tip := newCommit(nextID())
 	// Five stacked diamonds with growing branch lengths.
 	for width := 1; width <= 5; width++ {
 		heads := make([]string, 0, 2)
 		for range 2 {
 			parent := tip
 			for range width {
-				_, parent = newCommit(nextID(), parent)
+				parent = newCommit(nextID(), parent)
 			}
 			heads = append(heads, parent)
 		}
-		_, tip = newCommit(nextID(), heads...)
+		tip = newCommit(nextID(), heads...)
 	}
 	// One octopus across four branches.
 	heads := make([]string, 0, 4)
 	for range 4 {
-		_, head := newCommit(nextID(), tip)
+		head := newCommit(nextID(), tip)
 		heads = append(heads, head)
 	}
-	_, tip = newCommit(nextID(), heads...)
+	tip = newCommit(nextID(), heads...)
 	// Linear tail.
 	for range 3 {
-		_, tip = newCommit(nextID(), tip)
+		tip = newCommit(nextID(), tip)
 	}
 
 	recorder, finalState := runLineagePipeline(t, commits, 0)

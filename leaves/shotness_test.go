@@ -86,7 +86,7 @@ func beta() int {
 		items.DependencyTreeChanges: object.Changes{
 			&object.Change{
 				To: object.ChangeEntry{
-					Name: "demo.go",
+					Name: testDemoPath,
 					TreeEntry: object.TreeEntry{
 						Hash: newHash,
 					},
@@ -97,7 +97,7 @@ func beta() int {
 			newHash: {Data: []byte(oldText)},
 		},
 		items.DependencyFileDiff: map[string]items.FileDiffData{
-			"demo.go": fileDiff,
+			testDemoPath: fileDiff,
 		},
 	}
 	_, err = sh.Consume(insertDeps)
@@ -110,13 +110,13 @@ func beta() int {
 		items.DependencyTreeChanges: object.Changes{
 			&object.Change{
 				From: object.ChangeEntry{
-					Name: "demo.go",
+					Name: testDemoPath,
 					TreeEntry: object.TreeEntry{
 						Hash: oldHash,
 					},
 				},
 				To: object.ChangeEntry{
-					Name: "demo.go",
+					Name: testDemoPath,
 					TreeEntry: object.TreeEntry{
 						Hash: newHash,
 					},
@@ -128,7 +128,7 @@ func beta() int {
 			newHash: {Data: []byte(newText)},
 		},
 		items.DependencyFileDiff: map[string]items.FileDiffData{
-			"demo.go": fileDiff,
+			testDemoPath: fileDiff,
 		},
 	}
 	_, err = sh.Consume(modifyDeps)
@@ -152,7 +152,7 @@ func beta() int {
 func TestShotnessSerializeTreeSitter(t *testing.T) {
 	sh := &ShotnessAnalysis{}
 	result := ShotnessResult{
-		Nodes: []NodeSummary{{Type: "ast:function_declaration", Name: "alpha", File: "demo.go"}},
+		Nodes: []NodeSummary{{Type: "ast:function_declaration", Name: "alpha", File: testDemoPath}},
 		Counters: []map[int]int{
 			{0: 1},
 		},

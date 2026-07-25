@@ -172,25 +172,29 @@ func (diff *FileDiff) ListConfigurationOptions() []core.ConfigurationOption {
 			Default:     false,
 		},
 		{
-			Name:        ConfigFileDiffRefineMaxFileSize,
-			Description: "Maximum file size in bytes for tree-sitter diff refinement. Files larger than this are skipped to bound memory usage. 0 means unlimited.",
-			Flag:        "diff-refine-max-file-size",
-			Type:        core.IntConfigurationOption,
-			Default:     DefaultFileDiffRefineMaxFileSize,
+			Name: ConfigFileDiffRefineMaxFileSize,
+			Description: "Maximum file size in bytes for tree-sitter diff refinement. " +
+				"Files larger than this are skipped to bound memory usage. 0 means unlimited.",
+			Flag:    "diff-refine-max-file-size",
+			Type:    core.IntConfigurationOption,
+			Default: DefaultFileDiffRefineMaxFileSize,
 		},
 		{
-			Name:        ConfigFileDiffRefineMaxLines,
-			Description: "Maximum line count for tree-sitter diff refinement. Files with more lines than this are skipped to bound memory usage. 0 means unlimited.",
-			Flag:        "diff-refine-max-lines",
-			Type:        core.IntConfigurationOption,
-			Default:     DefaultFileDiffRefineMaxLines,
+			Name: ConfigFileDiffRefineMaxLines,
+			Description: "Maximum line count for tree-sitter diff refinement. " +
+				"Files with more lines than this are skipped to bound memory usage. 0 means unlimited.",
+			Flag:    "diff-refine-max-lines",
+			Type:    core.IntConfigurationOption,
+			Default: DefaultFileDiffRefineMaxLines,
 		},
 		{
-			Name:        ConfigFileDiffRefineMode,
-			Description: "Strategy for tree-sitter refinement parsing: \"auto\" picks per-file (default, fast on large files), \"full\" always parses the entire file (bit-identical pre-Phase-2 output), \"range\" always uses included-ranges parsing.",
-			Flag:        "diff-refine-mode",
-			Type:        core.StringConfigurationOption,
-			Default:     RefineModeAuto,
+			Name: ConfigFileDiffRefineMode,
+			Description: "Strategy for tree-sitter refinement parsing: \"auto\" picks per-file " +
+				"(default, fast on large files), \"full\" always parses the entire file " +
+				"(bit-identical pre-Phase-2 output), \"range\" always uses included-ranges parsing.",
+			Flag:    "diff-refine-mode",
+			Type:    core.StringConfigurationOption,
+			Default: RefineModeAuto,
 		},
 	}
 
@@ -223,30 +227,36 @@ func (diff *FileDiff) Configure(facts map[string]any) error {
 		diff.RefineDisabled = val
 	}
 
+	configureRefinement(diff, facts)
+
+	return nil
+}
+
+func configureRefinement(diff *FileDiff, facts map[string]any) {
+	diff.RefineMaxFileSize = DefaultFileDiffRefineMaxFileSize
 	if val, exists := facts[ConfigFileDiffRefineMaxFileSize].(int); exists {
 		diff.RefineMaxFileSize = val
-	} else {
-		diff.RefineMaxFileSize = DefaultFileDiffRefineMaxFileSize
 	}
+
+	diff.RefineMaxLines = DefaultFileDiffRefineMaxLines
 
 	if val, exists := facts[ConfigFileDiffRefineMaxLines].(int); exists {
 		diff.RefineMaxLines = val
-	} else {
-		diff.RefineMaxLines = DefaultFileDiffRefineMaxLines
 	}
 
 	diff.RefineMode = RefineModeAuto
+	val, exists := facts[ConfigFileDiffRefineMode].(string)
 
-	if val, exists := facts[ConfigFileDiffRefineMode].(string); exists && val != "" {
-		switch val {
-		case RefineModeAuto, RefineModeFull, RefineModeRange:
-			diff.RefineMode = val
-		default:
-			diff.l.Warnf("invalid diff-refine-mode %q; using %q", val, RefineModeAuto)
-		}
+	if !exists || val == "" {
+		return
 	}
 
-	return nil
+	switch val {
+	case RefineModeAuto, RefineModeFull, RefineModeRange:
+		diff.RefineMode = val
+	default:
+		diff.l.Warnf("invalid diff-refine-mode %q; using %q", val, RefineModeAuto)
+	}
 }
 
 func (*FileDiff) ConfigureUpstream(facts map[string]any) error {
@@ -285,63 +295,76 @@ func (diff *FileDiff) Consume(deps map[string]any) (map[string]any, error) {
 			return nil, fmt.Errorf("determine change action: %w", err)
 		}
 
-		switch action {
-		case merkletrie.Modify:
-			blobFrom := cache[change.From.TreeEntry.Hash]
-			blobTo := cache[change.To.TreeEntry.Hash]
-
-			// Skip binary files; diffmatchpatch treats them as text and would produce noisy line counts.
-			_, err = blobFrom.CountLines()
-			if errors.Is(err, ErrBinary) {
-				continue
-			}
-
-			if err != nil {
-				return nil, err
-			}
-
-			_, err = blobTo.CountLines()
-			if errors.Is(err, ErrBinary) {
-				continue
-			}
-
-			if err != nil {
-				return nil, err
-			}
-
-			// we are not validating UTF-8 here because for example
-			// git/git 4f7770c87ce3c302e1639a7737a6d2531fe4b160 fetch-pack.c is invalid UTF-8
-			strFrom, strTo := string(blobFrom.Data), string(blobTo.Data)
-			dmp := diffmatchpatch.New()
-			dmp.DiffTimeout = diff.Timeout
-			src, dst, _ := dmp.DiffLinesToRunes(
-				stripWhitespace(strFrom, diff.WhitespaceIgnore),
-				stripWhitespace(strTo, diff.WhitespaceIgnore),
-			)
-
-			diffs := dmp.DiffMainRunes(src, dst, false)
-			if !diff.CleanupDisabled {
-				diffs = dmp.DiffCleanupMerge(dmp.DiffCleanupSemanticLossless(diffs))
-			}
-
-			fileDiffData := FileDiffData{
-				OldLinesOfCode: len(src),
-				NewLinesOfCode: len(dst),
-				Diffs:          diffs,
-			}
-			if !diff.RefineDisabled &&
-				(diff.RefineMaxFileSize == 0 || len(blobTo.Data) <= diff.RefineMaxFileSize) &&
-				(diff.RefineMaxLines == 0 || fileDiffData.NewLinesOfCode <= diff.RefineMaxLines) {
-				fileDiffData = diff.refineWithTreeSitter(change.To.Name, blobTo.Data, fileDiffData)
-			}
-
-			result[change.To.Name] = fileDiffData
-		default:
+		if action != merkletrie.Modify {
 			continue
+		}
+
+		fileDiffData, usable, err := processModifiedFile(diff, change, cache)
+		if err != nil {
+			return nil, err
+		}
+
+		if usable {
+			result[change.To.Name] = fileDiffData
 		}
 	}
 
 	return map[string]any{DependencyFileDiff: result}, nil
+}
+
+func processModifiedFile(
+	diff *FileDiff,
+	change *object.Change,
+	cache map[plumbing.Hash]*CachedBlob,
+) (FileDiffData, bool, error) {
+	blobFrom := cache[change.From.TreeEntry.Hash]
+	blobTo := cache[change.To.TreeEntry.Hash]
+
+	usable, err := blobsAreText(blobFrom, blobTo)
+	if err != nil || !usable {
+		return FileDiffData{}, usable, err
+	}
+
+	// We are not validating UTF-8 here because git repositories can contain invalid UTF-8 source files.
+	dmp := diffmatchpatch.New()
+	dmp.DiffTimeout = diff.Timeout
+	src, dst, _ := dmp.DiffLinesToRunes(
+		stripWhitespace(string(blobFrom.Data), diff.WhitespaceIgnore),
+		stripWhitespace(string(blobTo.Data), diff.WhitespaceIgnore),
+	)
+
+	diffs := dmp.DiffMainRunes(src, dst, false)
+	if !diff.CleanupDisabled {
+		diffs = dmp.DiffCleanupMerge(dmp.DiffCleanupSemanticLossless(diffs))
+	}
+
+	fileDiffData := FileDiffData{OldLinesOfCode: len(src), NewLinesOfCode: len(dst), Diffs: diffs}
+	if shouldRefine(diff, blobTo, fileDiffData) {
+		fileDiffData = diff.refineWithTreeSitter(change.To.Name, blobTo.Data, fileDiffData)
+	}
+
+	return fileDiffData, true, nil
+}
+
+func blobsAreText(blobs ...*CachedBlob) (bool, error) {
+	for _, blob := range blobs {
+		_, err := blob.CountLines()
+		if errors.Is(err, ErrBinary) {
+			return false, nil
+		}
+
+		if err != nil {
+			return false, err
+		}
+	}
+
+	return true, nil
+}
+
+func shouldRefine(diff *FileDiff, blob *CachedBlob, fileDiffData FileDiffData) bool {
+	return !diff.RefineDisabled &&
+		(diff.RefineMaxFileSize == 0 || len(blob.Data) <= diff.RefineMaxFileSize) &&
+		(diff.RefineMaxLines == 0 || fileDiffData.NewLinesOfCode <= diff.RefineMaxLines)
 }
 
 // extractNodesForRefinement chooses between full-file and range-limited
@@ -367,55 +390,43 @@ func extractNodesForRefinement(
 ) ([]ast_items.Node, error) {
 	switch mode {
 	case RefineModeFull:
-		nodes, err := ast_items.ExtractNamedNodes(path, source)
-		if err != nil {
-			return nil, fmt.Errorf("extract named nodes: %w", err)
-		}
-
-		return nodes, nil
+		return extractAllNodes(path, source)
 	case RefineModeRange:
 		if len(ranges) == 0 {
-			nodes, err := ast_items.ExtractNamedNodes(path, source)
-			if err != nil {
-				return nil, fmt.Errorf("extract named nodes: %w", err)
-			}
-
-			return nodes, nil
+			return extractAllNodes(path, source)
 		}
 
-		nodes, err := ast_items.ExtractNamedNodesInRanges(path, source, padRanges(ranges, newLOC, refineRangePadding))
-		if err != nil {
-			return nil, fmt.Errorf("extract named nodes in ranges: %w", err)
-		}
-
-		return nodes, nil
+		return extractNodesInRanges(path, source, padRanges(ranges, newLOC, refineRangePadding))
 	default: // RefineModeAuto and anything unrecognized
 		if len(ranges) == 0 || newLOC < refineRangeMinLines {
-			nodes, err := ast_items.ExtractNamedNodes(path, source)
-			if err != nil {
-				return nil, fmt.Errorf("extract named nodes: %w", err)
-			}
-
-			return nodes, nil
+			return extractAllNodes(path, source)
 		}
 
 		padded := padRanges(ranges, newLOC, refineRangePadding)
 		if coverageRatio(padded, newLOC) >= refineCoverageThreshold {
-			nodes, err := ast_items.ExtractNamedNodes(path, source)
-			if err != nil {
-				return nil, fmt.Errorf("extract named nodes: %w", err)
-			}
-
-			return nodes, nil
+			return extractAllNodes(path, source)
 		}
 
-		nodes, err := ast_items.ExtractNamedNodesInRanges(path, source, padded)
-		if err != nil {
-			return nil, fmt.Errorf("extract named nodes in ranges: %w", err)
-		}
-
-		return nodes, nil
+		return extractNodesInRanges(path, source, padded)
 	}
+}
+
+func extractAllNodes(path string, source []byte) ([]ast_items.Node, error) {
+	nodes, err := ast_items.ExtractNamedNodes(path, source)
+	if err != nil {
+		return nil, fmt.Errorf("extract named nodes: %w", err)
+	}
+
+	return nodes, nil
+}
+
+func extractNodesInRanges(path string, source []byte, ranges []ast_items.LineRange) ([]ast_items.Node, error) {
+	nodes, err := ast_items.ExtractNamedNodesInRanges(path, source, ranges)
+	if err != nil {
+		return nil, fmt.Errorf("extract named nodes in ranges: %w", err)
+	}
+
+	return nodes, nil
 }
 
 // padRanges extends each LineRange by `pad` lines on either side, clamping to
@@ -508,18 +519,18 @@ func collectSuspiciousBoundaries(diffs []diffmatchpatch.Diff) []suspiciousBounda
 	var out []suspiciousBoundary
 	line := 0
 
-	for i, edit := range diffs {
-		if i == len(diffs)-1 {
+	for diffIndex, edit := range diffs {
+		if diffIndex == len(diffs)-1 {
 			break
 		}
 
 		size := utf8.RuneCountInString(edit.Text)
 		if edit.Type == diffmatchpatch.DiffInsert &&
-			diffs[i+1].Type == diffmatchpatch.DiffEqual {
-			matched := commonPrefixRunes(edit.Text, diffs[i+1].Text)
+			diffs[diffIndex+1].Type == diffmatchpatch.DiffEqual {
+			matched := commonPrefixRunes(edit.Text, diffs[diffIndex+1].Text)
 			if matched > 0 {
 				out = append(out, suspiciousBoundary{
-					diffIndex: i,
+					diffIndex: diffIndex,
 					line:      line,
 					size:      size,
 					matched:   matched,
@@ -546,13 +557,13 @@ func boundariesToRanges(boundaries []suspiciousBoundary, newLOC int) []ast_items
 	}
 
 	out := make([]ast_items.LineRange, 0, len(boundaries))
-	for _, b := range boundaries {
+	for _, boundary := range boundaries {
 		// The heuristic reads countNodesInInterval(line2node, b.line, b.line+size)
 		// and (b.line+matched, b.line+size+matched). Their union, expressed in
 		// 1-indexed inclusive line numbers, is [b.line+1, b.line+size+matched].
-		start := b.line + 1
+		start := boundary.line + 1
 
-		end := min(max(b.line+b.size+b.matched, start), newLOC)
+		end := min(max(boundary.line+boundary.size+boundary.matched, start), newLOC)
 
 		if start > newLOC {
 			continue
@@ -578,17 +589,17 @@ func coverageRatio(ranges []ast_items.LineRange, newLOC int) float64 {
 	total := 0
 
 	curStart, curEnd := sorted[0].Start, sorted[0].End
-	for _, r := range sorted[1:] {
-		if r.Start <= curEnd+1 {
-			if r.End > curEnd {
-				curEnd = r.End
+	for _, lineRange := range sorted[1:] {
+		if lineRange.Start <= curEnd+1 {
+			if lineRange.End > curEnd {
+				curEnd = lineRange.End
 			}
 
 			continue
 		}
 
 		total += curEnd - curStart + 1
-		curStart, curEnd = r.Start, r.End
+		curStart, curEnd = lineRange.Start, lineRange.End
 	}
 
 	total += curEnd - curStart + 1
@@ -612,25 +623,18 @@ func refineDiffByNodeDensityWithBoundaries(
 		return original
 	}
 
-	suspicious := make(map[int]suspiciousBoundary, len(boundaries))
-	for _, b := range boundaries {
-		suspicious[b.diffIndex] = b
-	}
+	suspicious := suspiciousBoundariesByIndex(boundaries)
 
-	refined := FileDiffData{
-		OldLinesOfCode: original.OldLinesOfCode,
-		NewLinesOfCode: original.NewLinesOfCode,
-		Diffs:          make([]diffmatchpatch.Diff, 0, len(original.Diffs)+len(suspicious)),
-	}
+	refined := newRefinedFileDiffData(original, len(suspicious))
 
 	skipNext := false
-	for i, edit := range original.Diffs {
+	for diffIndex, edit := range original.Diffs {
 		if skipNext {
 			skipNext = false
 			continue
 		}
 
-		info, ok := suspicious[i]
+		info, ok := suspicious[diffIndex]
 		if !ok {
 			refined.Diffs = append(refined.Diffs, edit)
 			continue
@@ -658,7 +662,7 @@ func refineDiffByNodeDensityWithBoundaries(
 			Text: string(runes[matched:]) + string(runes[:matched]),
 		})
 
-		nextEqual := []rune(original.Diffs[i+1].Text)
+		nextEqual := []rune(original.Diffs[diffIndex+1].Text)
 		if len(nextEqual) > matched {
 			refined.Diffs = append(refined.Diffs, diffmatchpatch.Diff{
 				Type: diffmatchpatch.DiffEqual,
@@ -668,6 +672,23 @@ func refineDiffByNodeDensityWithBoundaries(
 	}
 
 	return refined
+}
+
+func newRefinedFileDiffData(original FileDiffData, extraCapacity int) FileDiffData {
+	return FileDiffData{
+		OldLinesOfCode: original.OldLinesOfCode,
+		NewLinesOfCode: original.NewLinesOfCode,
+		Diffs:          make([]diffmatchpatch.Diff, 0, len(original.Diffs)+extraCapacity),
+	}
+}
+
+func suspiciousBoundariesByIndex(boundaries []suspiciousBoundary) map[int]suspiciousBoundary {
+	result := make(map[int]suspiciousBoundary, len(boundaries))
+	for _, boundary := range boundaries {
+		result[boundary.diffIndex] = boundary
+	}
+
+	return result
 }
 
 func commonPrefixRunes(left, right string) int {

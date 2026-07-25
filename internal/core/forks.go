@@ -28,7 +28,11 @@ func (proc *OneShotMergeProcessor) Initialize() {
 // ShouldConsumeCommit returns true on regular commits. It also returns true upon
 // the first occurrence of a particular merge commit.
 func (proc *OneShotMergeProcessor) ShouldConsumeCommit(deps map[string]any) bool {
-	commit := deps[DependencyCommit].(*object.Commit)
+	commit, ok := deps[DependencyCommit].(*object.Commit)
+	if !ok {
+		panic("commit dependency has an invalid type")
+	}
+
 	if commit.NumParents() <= 1 {
 		return true
 	}
@@ -68,7 +72,7 @@ func ForkCopyPipelineItem(origin PipelineItem, n int) []PipelineItem {
 	for i := range n {
 		cloneValue := reflect.New(originType).Elem()
 		cloneValue.Set(originValue)
-		clones[i] = cloneValue.Addr().Interface().(PipelineItem)
+		clones[i] = mustPipelineItem(cloneValue.Addr().Interface())
 	}
 
 	return clones
@@ -94,6 +98,8 @@ const (
 // rootBranchIndex is the minimum branch index in the plan.
 const rootBranchIndex = 1
 
+const runActionEmergeName = "emerge"
+
 // planPrintFunc is used to print the execution plan in prepareRunPlan().
 var planPrintFunc = func(args ...any) {
 	//	fmt.Fprintln(os.Stderr)
@@ -116,7 +122,7 @@ func (ra runAction) String() string {
 	case runActionMerge:
 		return fmt.Sprintf("merge^%d", len(ra.Items))
 	case runActionEmerge:
-		return "emerge"
+		return runActionEmergeName
 	case runActionDelete:
 		return "delete"
 	case runActionHibernate:
@@ -130,15 +136,15 @@ func (ra runAction) String() string {
 
 type orderer = func(reverse, direction bool) []string
 
-func cloneItems(origin []PipelineItem, n int) [][]PipelineItem {
-	clones := make([][]PipelineItem, n)
-	for j := range n {
+func cloneItems(origin []PipelineItem, cloneCount int) [][]PipelineItem {
+	clones := make([][]PipelineItem, cloneCount)
+	for j := range cloneCount {
 		clones[j] = make([]PipelineItem, len(origin))
 	}
 
 	for i, item := range origin {
-		itemClones := item.Fork(n)
-		for j := range n {
+		itemClones := item.Fork(cloneCount)
+		for j := range cloneCount {
 			clones[j][i] = itemClones[j]
 		}
 	}
@@ -205,19 +211,19 @@ func prepareRunPlan(commits []*object.Commit, hibernationDistance int, traceback
 }
 
 // printAction prints the specified action to stderr.
-func printAction(p runAction) {
-	firstItem := p.Items[0]
-	switch p.Action {
+func printAction(action runAction) {
+	firstItem := action.Items[0]
+	switch action.Action {
 	case runActionCommit:
-		planPrintFunc("C", firstItem, p.Commit.Hash.String())
+		planPrintFunc("C", firstItem, action.Commit.Hash.String())
 	case runActionFork:
-		planPrintFunc("F", p.Items)
+		planPrintFunc("F", action.Items)
 	case runActionMerge:
-		planPrintFunc("M", p.Items, p.Commit.Hash.String())
+		planPrintFunc("M", action.Items, action.Commit.Hash.String())
 	case runActionEmerge:
-		planPrintFunc("E", p.Items)
+		planPrintFunc("E", action.Items)
 	case runActionDelete:
-		planPrintFunc("D", p.Items)
+		planPrintFunc("D", action.Items)
 	case runActionHibernate:
 		planPrintFunc("H", firstItem)
 	case runActionBoot:
@@ -441,9 +447,9 @@ func mergeDag(
 			continue
 		}
 
-		c := head
+		current := head
 		for {
-			nextParents := parents[c]
+			nextParents := parents[current]
 
 			var next plumbing.Hash
 			for p := range nextParents {
@@ -455,22 +461,22 @@ func mergeDag(
 				break
 			}
 
-			c = next
+			current = next
 		}
 
-		head = c
+		head = current
 		var seq []*object.Commit
 
 		for {
-			visited[c] = true
+			visited[current] = true
 
-			seq = append(seq, hashes[c.String()])
-			if len(dag[c]) != 1 {
+			seq = append(seq, hashes[current.String()])
+			if len(dag[current]) != 1 {
 				break
 			}
 
-			c = dag[c][0].Hash
-			if len(parents[c]) != 1 {
+			current = dag[current][0].Hash
+			if len(parents[current]) != 1 {
 				break
 			}
 		}
@@ -829,23 +835,23 @@ func collectGarbage(plan []runAction) []runAction {
 	// lastMentioned maps branch index to the index inside `plan` when that branch was last used
 	lastMentioned := map[int]int{}
 
-	for i, p := range plan {
-		firstItem := p.Items[0]
-		switch p.Action {
+	for actionIndex, action := range plan {
+		firstItem := action.Items[0]
+		switch action.Action {
 		case runActionCommit:
-			lastMentioned[firstItem] = i
+			lastMentioned[firstItem] = actionIndex
 			if firstItem < rootBranchIndex {
 				log.Panicf("commit %s does not have an assigned branch",
-					p.Commit.Hash.String())
+					action.Commit.Hash.String())
 			}
 		case runActionFork:
-			lastMentioned[firstItem] = i
+			lastMentioned[firstItem] = actionIndex
 		case runActionMerge:
-			for _, item := range p.Items {
-				lastMentioned[item] = i
+			for _, item := range action.Items {
+				lastMentioned[item] = actionIndex
 			}
 		case runActionEmerge:
-			lastMentioned[firstItem] = i
+			lastMentioned[firstItem] = actionIndex
 		}
 	}
 	var garbageCollectedPlan []runAction

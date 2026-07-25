@@ -9,9 +9,9 @@ import (
 
 func TestSelectReportAnalysisFlagsSentimentUnavailableWithoutTensorflow(t *testing.T) {
 	available := map[string]struct{}{
-		"sentiment": {},
+		reportAnalysisSentiment: {},
 	}
-	_, err := selectReportAnalysisFlags(available, []string{"sentiment"}, false)
+	_, err := selectReportAnalysisFlags(available, []string{reportAnalysisSentiment}, false)
 	if err == nil {
 		t.Fatal("expected sentiment-unavailable error")
 	}
@@ -22,15 +22,15 @@ func TestSelectReportAnalysisFlagsSentimentUnavailableWithoutTensorflow(t *testi
 
 func TestSelectReportAnalysisFlagsAllSkipsSentimentWithoutTensorflow(t *testing.T) {
 	available := map[string]struct{}{
-		"burndown":  {},
-		"sentiment": {},
+		reportAnalysisBurndown:  {},
+		reportAnalysisSentiment: {},
 	}
 	flags, err := selectReportAnalysisFlags(available, nil, true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	for _, flag := range flags {
-		if flag == "sentiment" {
+		if flag == reportAnalysisSentiment {
 			t.Fatalf("sentiment should be skipped in non-tensorflow builds: %v", flags)
 		}
 	}

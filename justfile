@@ -92,6 +92,35 @@ burndown-chart RESAMPLE="3M" GRANULARITY="30" SAMPLING="30" OUTPUT="self-analysi
     fi
     echo "chart written to {{OUTPUT}}"
 
+# The joyplot of per-developer activity over time: one ridge per contributor,
+# ordered by commit count, with a cmts/delta/changed summary column. MAX_PEOPLE
+# trims the ridge count; the renderer clips the bottom row's ridge against the x
+# axis, so pick a value whose last row is someone with a near-invisible ridge (12
+# lands on a 3-commit contributor). The people-dict is not optional: without it
+# labours labels each ridge with the raw `name|email|email` identity string, which
+# publishes every contributor's address and splits Christian across four
+# identities. scripts/self-analysis-people.txt merges them and gives display-only
+# names. Unlike burndown-chart there is no title to blank out.
+#
+# SIZE/FONT_SIZE matter for anything embedded in a page: the mode defaults to
+# 32x16 inches, and a 3200px-wide figure scaled into an ~800px content column
+# renders its developer names about 4px tall. 16x10 matches the burndown chart's
+# scale and stays legible.
+#
+# Regenerate the self-analysis developer-activity chart (who committed when)
+devs-chart MAX_PEOPLE="12" SIZE="16,10" FONT_SIZE="15" OUTPUT="self-analysis/hercules-devs.png": hercules labours
+    #!/usr/bin/env sh
+    set -eu
+    dir=$(dirname "{{OUTPUT}}")
+    mkdir -p "$dir"
+    ./hercules{{exe}} --burndown --burndown-people --devs --granularity 30 --sampling 30 \
+        --people-dict scripts/self-analysis-people.txt \
+        --skip-blacklist --blacklisted-prefixes docs/linux.svg --pb . > "$dir/people-devs.pb"
+    ./labours{{exe}} -i "$dir/people-devs.pb" -m devs \
+        --max-people {{MAX_PEOPLE}} --size "{{SIZE}}" --font-size {{FONT_SIZE}} \
+        -q -o "{{OUTPUT}}"
+    echo "chart written to {{OUTPUT}}"
+
 # Format code using treefmt
 fmt:
     treefmt --allow-missing-formatter

@@ -371,16 +371,16 @@ func (couples *CouplesAnalysis) MergeResults(r1, r2 any, c1, c2 *core.CommonAnal
 	addMergedPeopleFiles(peopleFilesDicts, cr1, people, files)
 	addMergedPeopleFiles(peopleFilesDicts, cr2, people, files)
 
-	for i, m := range peopleFilesDicts {
-		merged.PeopleFiles[i] = make([]int, len(m))
+	for personIndex, personFiles := range peopleFilesDicts {
+		merged.PeopleFiles[personIndex] = make([]int, len(personFiles))
 
-		j := 0
-		for f := range m {
-			merged.PeopleFiles[i][j] = f
-			j++
+		fileIndex := 0
+		for file := range personFiles {
+			merged.PeopleFiles[personIndex][fileIndex] = file
+			fileIndex++
 		}
 
-		sort.Ints(merged.PeopleFiles[i])
+		sort.Ints(merged.PeopleFiles[personIndex])
 	}
 
 	merged.PeopleMatrix = make([]map[int]int64, len(merged.reversedPeopleDict)+1)
@@ -396,7 +396,7 @@ func (couples *CouplesAnalysis) MergeResults(r1, r2 any, c1, c2 *core.CommonAnal
 
 func (couples *CouplesAnalysis) fileLineCounts(files []string) ([]int, error) {
 	lines := make([]int, len(files))
-	for i, name := range files {
+	for fileIndex, name := range files {
 		file, err := couples.lastCommit.File(name)
 		if err != nil {
 			err := fmt.Errorf("cannot find file %s in commit %s: %w",
@@ -417,7 +417,7 @@ func (couples *CouplesAnalysis) fileLineCounts(files []string) ([]int, error) {
 			return nil, err
 		}
 
-		lines[i], _ = blob.CountLines()
+		lines[fileIndex], _ = blob.CountLines()
 	}
 
 	return lines, nil
@@ -628,7 +628,11 @@ func (couples *CouplesAnalysis) serializeBinary(result *CouplesResult, writer io
 
 		int32Files := make([]int32, len(files))
 		for i, f := range files {
-			int32Files[i] = int32(f)
+			fileID, err := intToProtoInt32(f, "couples touched-file index")
+			if err != nil {
+				return err
+			}
+			int32Files[i] = fileID
 		}
 
 		message.PeopleFiles[key] = &pb.TouchedFiles{
@@ -638,7 +642,11 @@ func (couples *CouplesAnalysis) serializeBinary(result *CouplesResult, writer io
 
 	message.FilesLines = make([]int32, len(result.FilesLines))
 	for i, l := range result.FilesLines {
-		message.FilesLines[i] = int32(l)
+		lineCount, err := intToProtoInt32(l, "couples file line count")
+		if err != nil {
+			return err
+		}
+		message.FilesLines[i] = lineCount
 	}
 
 	serialized, err := proto.Marshal(&message)

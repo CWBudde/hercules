@@ -20,11 +20,11 @@ type Context struct {
 // It is based on the optimized C version found here:
 // http://en.wikibooks.org/wiki/Algorithm_implementation/Strings/Levenshtein_distance#C
 func (c *Context) Distance(str1, str2 string) int {
-	s1 := []rune(str1)
-	s2 := []rune(str2)
+	runes1 := []rune(str1)
+	runes2 := []rune(str2)
 
-	lenS1 := len(s1)
-	lenS2 := len(s2)
+	lenS1 := len(runes1)
+	lenS2 := len(runes2)
 
 	if lenS2 == 0 {
 		return lenS1
@@ -38,21 +38,21 @@ func (c *Context) Distance(str1, str2 string) int {
 	}
 
 	for x := range lenS2 {
-		s2Rune := s2[x]
+		s2Rune := runes2[x]
 		column[0] = x + 1
 		lastdiag := x
 
-		for y := range lenS1 {
-			olddiag := column[y+1]
+		for runeIndex := range lenS1 {
+			olddiag := column[runeIndex+1]
 
 			cost := 0
-			if s1[y] != s2Rune {
+			if runes1[runeIndex] != s2Rune {
 				cost = 1
 			}
 
-			column[y+1] = minInt(
-				column[y+1]+1,
-				column[y]+1,
+			column[runeIndex+1] = minInt(
+				column[runeIndex+1]+1,
+				column[runeIndex]+1,
 				lastdiag+cost,
 			)
 			lastdiag = olddiag
@@ -70,16 +70,16 @@ func (c *Context) getIntSlice(l int) []int {
 	return c.intSlice[:l]
 }
 
-func minInt(a, b, c int) int {
-	if a < b {
-		if a < c {
-			return a
+func minInt(first, second, third int) int {
+	if first < second {
+		if first < third {
+			return first
 		}
 	} else {
-		if b < c {
-			return b
+		if second < third {
+			return second
 		}
 	}
 
-	return c
+	return third
 }

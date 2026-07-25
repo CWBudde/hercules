@@ -67,22 +67,22 @@ func TestOnboardingAnalysis_BasicTracking(t *testing.T) {
 
 	// Commit 1 at tick 0: 2 files, 15 lines each
 	deps1 := makeTestDeps(author, 0, map[string]int{
-		"file1.go": 15,
-		"file2.go": 15,
+		testFileOnePath: 15,
+		testFileTwoPath: 15,
 	})
 	_, err := oa.Consume(deps1)
 	require.NoError(t, err)
 
 	// Commit 2 at tick 3: 1 file, 20 lines
 	deps2 := makeTestDeps(author, 3, map[string]int{
-		"file3.go": 20,
+		testFileThreePath: 20,
 	})
 	_, err = oa.Consume(deps2)
 	require.NoError(t, err)
 
 	// Commit 3 at tick 40 (after 40 days): 1 file, 25 lines
 	deps3 := makeTestDeps(author, 40, map[string]int{
-		"file4.go": 25,
+		testFileFourPath: 25,
 	})
 	_, err = oa.Consume(deps3)
 	require.NoError(t, err)
@@ -123,28 +123,28 @@ func TestOnboardingAnalysis_MultipleAuthors(t *testing.T) {
 		WindowDays:          []int{7, 30},
 		MeaningfulThreshold: 10,
 		tickSize:            24 * time.Hour,
-		reversedPeopleDict:  []string{"author0", "author1", "author2"},
+		reversedPeopleDict:  []string{testAuthorZero, "author1", "author2"},
 	}
 
 	require.NoError(t, oa.Initialize(test.Repository))
 
 	// Author 0: first commit at tick 0
-	deps1 := makeTestDeps(0, 0, map[string]int{"file1.go": 20})
+	deps1 := makeTestDeps(0, 0, map[string]int{testFileOnePath: 20})
 	_, err := oa.Consume(deps1)
 	require.NoError(t, err)
 
 	// Author 1: first commit at tick 10
-	deps2 := makeTestDeps(1, 10, map[string]int{"file2.go": 15})
+	deps2 := makeTestDeps(1, 10, map[string]int{testFileTwoPath: 15})
 	_, err = oa.Consume(deps2)
 	require.NoError(t, err)
 
 	// Author 2: first commit at tick 20
-	deps3 := makeTestDeps(2, 20, map[string]int{"file3.go": 25})
+	deps3 := makeTestDeps(2, 20, map[string]int{testFileThreePath: 25})
 	_, err = oa.Consume(deps3)
 	require.NoError(t, err)
 
 	// Author 0: second commit at tick 5
-	deps4 := makeTestDeps(0, 5, map[string]int{"file4.go": 30})
+	deps4 := makeTestDeps(0, 5, map[string]int{testFileFourPath: 30})
 	_, err = oa.Consume(deps4)
 	require.NoError(t, err)
 
@@ -186,17 +186,17 @@ func TestOnboardingAnalysis_MeaningfulThreshold(t *testing.T) {
 	author := 0
 
 	// Small commit: 5 lines (below threshold)
-	deps1 := makeTestDeps(author, 0, map[string]int{"file1.go": 5})
+	deps1 := makeTestDeps(author, 0, map[string]int{testFileOnePath: 5})
 	_, err := oa.Consume(deps1)
 	require.NoError(t, err)
 
 	// Large commit: 20 lines (above threshold)
-	deps2 := makeTestDeps(author, 1, map[string]int{"file2.go": 20})
+	deps2 := makeTestDeps(author, 1, map[string]int{testFileTwoPath: 20})
 	_, err = oa.Consume(deps2)
 	require.NoError(t, err)
 
 	// Another small commit: 3 lines
-	deps3 := makeTestDeps(author, 2, map[string]int{"file3.go": 3})
+	deps3 := makeTestDeps(author, 2, map[string]int{testFileThreePath: 3})
 	_, err = oa.Consume(deps3)
 	require.NoError(t, err)
 
@@ -229,22 +229,22 @@ func TestOnboardingAnalysis_WindowBoundaries(t *testing.T) {
 	author := 0
 
 	// Commits at strategic ticks
-	deps1 := makeTestDeps(author, 0, map[string]int{"file1.go": 15})
+	deps1 := makeTestDeps(author, 0, map[string]int{testFileOnePath: 15})
 	_, err := oa.Consume(deps1)
 	require.NoError(t, err)
 
 	// Exactly at 7 days
-	deps2 := makeTestDeps(author, 7, map[string]int{"file2.go": 20})
+	deps2 := makeTestDeps(author, 7, map[string]int{testFileTwoPath: 20})
 	_, err = oa.Consume(deps2)
 	require.NoError(t, err)
 
 	// Day 35 (after 30-day window but before 90)
-	deps3 := makeTestDeps(author, 35, map[string]int{"file3.go": 25})
+	deps3 := makeTestDeps(author, 35, map[string]int{testFileThreePath: 25})
 	_, err = oa.Consume(deps3)
 	require.NoError(t, err)
 
 	// Day 100 (after 90-day window)
-	deps4 := makeTestDeps(author, 100, map[string]int{"file4.go": 30})
+	deps4 := makeTestDeps(author, 100, map[string]int{testFileFourPath: 30})
 	_, err = oa.Consume(deps4)
 	require.NoError(t, err)
 
@@ -271,7 +271,7 @@ func TestOnboardingAnalysis_CohortAggregation(t *testing.T) {
 		WindowDays:          []int{7},
 		MeaningfulThreshold: 10,
 		tickSize:            24 * time.Hour,
-		reversedPeopleDict:  []string{"author0", "author1", "author2"},
+		reversedPeopleDict:  []string{testAuthorZero, "author1", "author2"},
 	}
 
 	require.NoError(t, oa.Initialize(test.Repository))
@@ -367,17 +367,17 @@ func TestOnboardingAnalysis_Serialization(t *testing.T) {
 		WindowDays:          []int{7, 30},
 		MeaningfulThreshold: 10,
 		tickSize:            24 * time.Hour,
-		reversedPeopleDict:  []string{"author0"},
+		reversedPeopleDict:  []string{testAuthorZero},
 	}
 
 	require.NoError(t, oa.Initialize(test.Repository))
 
 	// Create simple test data
-	deps1 := makeTestDeps(0, 0, map[string]int{"file1.go": 20})
+	deps1 := makeTestDeps(0, 0, map[string]int{testFileOnePath: 20})
 	_, err := oa.Consume(deps1)
 	require.NoError(t, err)
 
-	deps2 := makeTestDeps(0, 5, map[string]int{"file2.go": 15})
+	deps2 := makeTestDeps(0, 5, map[string]int{testFileTwoPath: 15})
 	_, err = oa.Consume(deps2)
 	require.NoError(t, err)
 

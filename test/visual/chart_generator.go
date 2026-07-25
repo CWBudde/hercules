@@ -1,6 +1,7 @@
 package visual
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +11,23 @@ import (
 
 	"github.com/cwbudde/hercules/internal/render/modes"
 	"github.com/cwbudde/hercules/internal/render/readers"
+)
+
+const (
+	chartModeBurndownProject         = "burndown-project"
+	chartModeBurndownProjectRelative = "burndown-project-relative"
+	chartModeOwnership               = "ownership"
+)
+
+var (
+	errUnsupportedChartMode    = errors.New("unsupported chart mode")
+	errChartNotCreated         = errors.New("chart file was not created")
+	errChartDimensionsTooSmall = errors.New("chart dimensions too small")
+	errChartDimensionsTooLarge = errors.New("chart dimensions too large")
+	errTooFewChartColors       = errors.New("chart has too few colors")
+	errChartMostlyWhite        = errors.New("chart is mostly white")
+	errChartMostlyBlack        = errors.New("chart is mostly black")
+	errImageDimensionsMismatch = errors.New("image dimensions don't match")
 )
 
 // ChartGenerator handles chart generation for visual testing.
@@ -38,12 +56,7 @@ func (cg *ChartGenerator) GenerateChart(t *testing.T, mode, inputFile string) (s
 	outputPath := filepath.Join(cg.OutputDir, fmt.Sprintf("test_%s.png", mode))
 
 	// Read input data - auto-detect format
-	var reader readers.Reader
-	if filepath.Ext(inputFile) == ".yaml" || filepath.Ext(inputFile) == ".yml" {
-		reader = &readers.YamlReader{}
-	} else {
-		reader = &readers.ProtobufReader{}
-	}
+	reader := chartReader(inputFile)
 
 	file, err := os.Open(inputFile) // #nosec G304 - visual test input path is provided by test setup.
 	if err != nil {
@@ -56,28 +69,7 @@ func (cg *ChartGenerator) GenerateChart(t *testing.T, mode, inputFile string) (s
 		return "", fmt.Errorf("failed to read input data: %w", err)
 	}
 
-	// Generate chart based on mode
-	switch mode {
-	case "burndown-project":
-		err = cg.generateBurndownProject(reader, outputPath, false)
-	case "burndown-project-relative":
-		err = cg.generateBurndownProject(reader, outputPath, true)
-	case "burndown-file":
-		err = cg.generateBurndownFile(reader, outputPath)
-	case "burndown-person":
-		err = cg.generateBurndownPerson(reader, outputPath)
-	case "ownership":
-		err = cg.generateOwnership(reader, outputPath)
-	case "devs":
-		err = cg.generateDevs(reader, outputPath)
-	case "couples-people":
-		err = cg.generateCouplesPeople(reader, outputPath)
-	case "couples-files":
-		err = cg.generateCouplesFiles(reader, outputPath)
-	default:
-		return "", fmt.Errorf("unsupported chart mode: %s", mode)
-	}
-
+	err = generateChartByMode(cg, mode, reader, outputPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to generate %s chart: %w", mode, err)
 	}
@@ -85,10 +77,42 @@ func (cg *ChartGenerator) GenerateChart(t *testing.T, mode, inputFile string) (s
 	// Verify output file was created
 	_, err = os.Stat(outputPath)
 	if os.IsNotExist(err) {
-		return "", fmt.Errorf("chart file was not created: %s", outputPath)
+		return "", fmt.Errorf("%w: %s", errChartNotCreated, outputPath)
 	}
 
 	return outputPath, nil
+}
+
+func chartReader(inputFile string) readers.Reader {
+	switch filepath.Ext(inputFile) {
+	case ".yaml", ".yml":
+		return &readers.YamlReader{}
+	default:
+		return &readers.ProtobufReader{}
+	}
+}
+
+func generateChartByMode(generator *ChartGenerator, mode string, reader readers.Reader, outputPath string) error {
+	switch mode {
+	case chartModeBurndownProject:
+		return generator.generateBurndownProject(reader, outputPath, false)
+	case chartModeBurndownProjectRelative:
+		return generator.generateBurndownProject(reader, outputPath, true)
+	case "burndown-file":
+		return generator.generateBurndownFile(reader, outputPath)
+	case "burndown-person":
+		return generator.generateBurndownPerson(reader, outputPath)
+	case chartModeOwnership:
+		return generator.generateOwnership(reader, outputPath)
+	case "devs":
+		return generator.generateDevs(reader, outputPath)
+	case "couples-people":
+		return generator.generateCouplesPeople(reader, outputPath)
+	case "couples-files":
+		return generator.generateCouplesFiles(reader, outputPath)
+	default:
+		return fmt.Errorf("%w: %s", errUnsupportedChartMode, mode)
+	}
 }
 
 // GenerateReferenceSet creates a complete set of reference images for golden file testing.
@@ -99,9 +123,9 @@ func (cg *ChartGenerator) GenerateReferenceSet(t *testing.T, inputFile string) m
 
 	// List of modes to generate reference images for
 	modes := []string{
-		"burndown-project",
-		"burndown-project-relative",
-		"ownership",
+		chartModeBurndownProject,
+		chartModeBurndownProjectRelative,
+		chartModeOwnership,
 		"devs",
 	}
 
@@ -133,13 +157,9 @@ func (cg *ChartGenerator) ValidateChartStructure(t *testing.T, chartPath string)
 	width := bounds.Dx()
 	height := bounds.Dy()
 
-	// Basic structural validations
-	if width < 400 || height < 200 {
-		return fmt.Errorf("chart dimensions too small: %dx%d", width, height)
-	}
-
-	if width > 4000 || height > 4000 {
-		return fmt.Errorf("chart dimensions too large: %dx%d", width, height)
+	err = validateImageDimensions(width, height)
+	if err != nil {
+		return err
 	}
 
 	// Check for reasonable aspect ratio (should be wider than tall for most charts)
@@ -151,27 +171,45 @@ func (cg *ChartGenerator) ValidateChartStructure(t *testing.T, chartPath string)
 	// Validate color usage
 	histogram := buildColorHistogram(img)
 
-	// Check for sufficient color diversity (should have multiple distinct colors)
-	if len(histogram) < 5 {
-		return fmt.Errorf("chart has too few colors (%d), may be incorrectly rendered", len(histogram))
-	}
-
-	// Look for pure white/black dominance (may indicate rendering issues)
-	whitePixels := histogram["248,248,248"] + histogram["255,255,255"]
-	blackPixels := histogram["0,0,0"] + histogram["8,8,8"]
-
-	if whitePixels > 0.9 {
-		return fmt.Errorf("chart is mostly white (%.1f%%), may be empty", whitePixels*100)
-	}
-
-	if blackPixels > 0.9 {
-		return fmt.Errorf("chart is mostly black (%.1f%%), may have rendering issues", blackPixels*100)
+	whitePixels, err := validateChartColors(histogram)
+	if err != nil {
+		return err
 	}
 
 	t.Logf("Chart structure validation passed: %dx%d, %d colors, %.1f%% white",
 		width, height, len(histogram), whitePixels*100)
 
 	return nil
+}
+
+func validateImageDimensions(width, height int) error {
+	if width < 400 || height < 200 {
+		return fmt.Errorf("%w: %dx%d", errChartDimensionsTooSmall, width, height)
+	}
+
+	if width > 4000 || height > 4000 {
+		return fmt.Errorf("%w: %dx%d", errChartDimensionsTooLarge, width, height)
+	}
+
+	return nil
+}
+
+func validateChartColors(histogram map[string]float64) (float64, error) {
+	if len(histogram) < 5 {
+		return 0, fmt.Errorf("%w (%d), may be incorrectly rendered", errTooFewChartColors, len(histogram))
+	}
+
+	whitePixels := histogram["248,248,248"] + histogram["255,255,255"]
+	if whitePixels > 0.9 {
+		return 0, fmt.Errorf("%w (%.1f%%), may be empty", errChartMostlyWhite, whitePixels*100)
+	}
+
+	blackPixels := histogram["0,0,0"] + histogram["8,8,8"]
+	if blackPixels > 0.9 {
+		return 0, fmt.Errorf("%w (%.1f%%), may have rendering issues", errChartMostlyBlack, blackPixels*100)
+	}
+
+	return whitePixels, nil
 }
 
 // generateBurndownProject creates a project burndown chart.
@@ -181,7 +219,8 @@ func (cg *ChartGenerator) generateBurndownProject(reader readers.Reader, outputP
 	viper.Set("resample", "year") // Default resampling for consistency
 
 	// Call the actual burndown project generation using Python-compatible version
-	if err := modes.GenerateBurndownProjectPython(reader, outputPath, relative, "year"); err != nil {
+	err := modes.GenerateBurndownProjectPython(reader, outputPath, relative, "year")
+	if err != nil {
 		return fmt.Errorf("generate project burndown chart: %w", err)
 	}
 
@@ -194,7 +233,8 @@ func (cg *ChartGenerator) generateBurndownFile(reader readers.Reader, outputPath
 	viper.Set("relative", false) // Default to absolute
 	viper.Set("resample", "year")
 
-	if err := modes.GenerateBurndownFilePython(reader, outputPath, false, "year"); err != nil {
+	err := modes.GenerateBurndownFilePython(reader, outputPath, false, "year")
+	if err != nil {
 		return fmt.Errorf("generate file burndown chart: %w", err)
 	}
 
@@ -204,7 +244,8 @@ func (cg *ChartGenerator) generateBurndownFile(reader readers.Reader, outputPath
 // generateBurndownPerson creates person-level burndown charts.
 func (cg *ChartGenerator) generateBurndownPerson(reader readers.Reader, outputPath string) error {
 	// Use regular burndown person function with nil time parameters for defaults
-	if err := modes.BurndownPerson(reader, outputPath, false, nil, nil, "year"); err != nil {
+	err := modes.BurndownPerson(reader, outputPath, false, nil, nil, "year")
+	if err != nil {
 		return fmt.Errorf("generate person burndown chart: %w", err)
 	}
 
@@ -214,7 +255,8 @@ func (cg *ChartGenerator) generateBurndownPerson(reader readers.Reader, outputPa
 // generateOwnership creates code ownership visualization.
 func (cg *ChartGenerator) generateOwnership(reader readers.Reader, outputPath string) error {
 	// Call the ownership mode
-	if err := modes.OwnershipBurndown(reader, outputPath); err != nil {
+	err := modes.OwnershipBurndown(reader, outputPath)
+	if err != nil {
 		return fmt.Errorf("generate ownership chart: %w", err)
 	}
 
@@ -224,7 +266,8 @@ func (cg *ChartGenerator) generateOwnership(reader readers.Reader, outputPath st
 // generateDevs creates developer statistics visualization.
 func (cg *ChartGenerator) generateDevs(reader readers.Reader, outputPath string) error {
 	// Call the devs mode with default max people (20)
-	if err := modes.Devs(reader, outputPath, 20); err != nil {
+	err := modes.Devs(reader, outputPath, 20)
+	if err != nil {
 		return fmt.Errorf("generate developers chart: %w", err)
 	}
 
@@ -234,7 +277,8 @@ func (cg *ChartGenerator) generateDevs(reader readers.Reader, outputPath string)
 // generateCouplesPeople creates people coupling visualization.
 func (cg *ChartGenerator) generateCouplesPeople(reader readers.Reader, outputPath string) error {
 	// Call the couples-people mode
-	if err := modes.CouplesPeople(reader, outputPath); err != nil {
+	err := modes.CouplesPeople(reader, outputPath)
+	if err != nil {
 		return fmt.Errorf("generate people coupling chart: %w", err)
 	}
 
@@ -244,7 +288,8 @@ func (cg *ChartGenerator) generateCouplesPeople(reader readers.Reader, outputPat
 // generateCouplesFiles creates file coupling visualization.
 func (cg *ChartGenerator) generateCouplesFiles(reader readers.Reader, outputPath string) error {
 	// Call the couples-files mode
-	if err := modes.CouplesFiles(reader, outputPath); err != nil {
+	err := modes.CouplesFiles(reader, outputPath)
+	if err != nil {
 		return fmt.Errorf("generate file coupling chart: %w", err)
 	}
 

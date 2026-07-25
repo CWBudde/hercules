@@ -62,25 +62,25 @@ func LanguageByName(name string) Language {
 func Extract(path string, content []byte) (*File, error) {
 	langName := enry.GetLanguage(path, content)
 
-	f := &File{Path: path, Lang: langName}
+	file := &File{Path: path, Lang: langName}
 	if langName == enry.OtherLanguage {
-		return f, nil
+		return file, nil
 	}
 
-	l := LanguageByName(langName)
-	if l == nil {
-		return f, nil
+	language := LanguageByName(langName)
+	if language == nil {
+		return file, nil
 	}
 
-	list, err := l.Imports(content)
+	list, err := language.Imports(content)
 	if err != nil {
-		return f, fmt.Errorf("extract %s imports from %q: %w", langName, path, err)
+		return file, fmt.Errorf("extract %s imports from %q: %w", langName, path, err)
 	}
 
 	sort.Strings(list)
-	f.Imports = dedup(list)
+	file.Imports = dedup(list)
 
-	return f, nil
+	return file, nil
 }
 
 // dedup removes consecutive duplicates from a sorted slice in place.
@@ -89,15 +89,15 @@ func dedup(sorted []string) []string {
 		return []string{}
 	}
 
-	j := 0
-	for i := 1; i < len(sorted); i++ {
-		if sorted[j] == sorted[i] {
+	writeIndex := 0
+	for readIndex := 1; readIndex < len(sorted); readIndex++ {
+		if sorted[writeIndex] == sorted[readIndex] {
 			continue
 		}
 
-		j++
-		sorted[j] = sorted[i]
+		writeIndex++
+		sorted[writeIndex] = sorted[readIndex]
 	}
 
-	return sorted[:j+1]
+	return sorted[:writeIndex+1]
 }

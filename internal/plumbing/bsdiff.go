@@ -33,110 +33,111 @@ import (
 func swap(a []int, i, j int) { a[i], a[j] = a[j], a[i] }
 
 //nolint:funlen // Keep the partition steps aligned with the upstream binarydist algorithm.
-func split(I, V []int, start, length, h int) {
-	var i, j, k, x, jj, kk int
+func split(indexes, values []int, start, length, offset int) {
+	var currentIndex, equalCount, groupIndex, pivotValue, lowerBound, upperBound int
 
 	if length < 16 {
-		for k = start; k < start+length; k += j {
-			j = 1
+		for groupIndex = start; groupIndex < start+length; groupIndex += equalCount {
+			equalCount = 1
 
-			x = V[I[k]+h]
-			for i = 1; k+i < start+length; i++ {
-				if V[I[k+i]+h] < x {
-					x = V[I[k+i]+h]
-					j = 0
+			pivotValue = values[indexes[groupIndex]+offset]
+			for currentIndex = 1; groupIndex+currentIndex < start+length; currentIndex++ {
+				if values[indexes[groupIndex+currentIndex]+offset] < pivotValue {
+					pivotValue = values[indexes[groupIndex+currentIndex]+offset]
+					equalCount = 0
 				}
 
-				if V[I[k+i]+h] == x {
-					swap(I, k+i, k+j)
-					j++
+				if values[indexes[groupIndex+currentIndex]+offset] == pivotValue {
+					swap(indexes, groupIndex+currentIndex, groupIndex+equalCount)
+					equalCount++
 				}
 			}
 
-			for i = range j {
-				V[I[k+i]] = k + j - 1
+			for currentIndex = range equalCount {
+				values[indexes[groupIndex+currentIndex]] = groupIndex + equalCount - 1
 			}
 
-			if j == 1 {
-				I[k] = -1
+			if equalCount == 1 {
+				indexes[groupIndex] = -1
 			}
 		}
 
 		return
 	}
 
-	x = V[I[start+length/2]+h]
-	jj = 0
-	kk = 0
+	pivotValue = values[indexes[start+length/2]+offset]
+	lowerBound = 0
+	upperBound = 0
 
-	for i = start; i < start+length; i++ {
-		if V[I[i]+h] < x {
-			jj++
+	for currentIndex = start; currentIndex < start+length; currentIndex++ {
+		if values[indexes[currentIndex]+offset] < pivotValue {
+			lowerBound++
 		}
 
-		if V[I[i]+h] == x {
-			kk++
+		if values[indexes[currentIndex]+offset] == pivotValue {
+			upperBound++
 		}
 	}
 
-	jj += start
-	kk += jj
+	lowerBound += start
+	upperBound += lowerBound
 
-	i = start
-	j = 0
-	k = 0
+	currentIndex = start
+	equalCount = 0
+	groupIndex = 0
 
-	for i < jj {
-		if V[I[i]+h] < x {
-			i++
-		} else if V[I[i]+h] == x {
-			swap(I, i, jj+j)
-			j++
+	for currentIndex < lowerBound {
+		switch {
+		case values[indexes[currentIndex]+offset] < pivotValue:
+			currentIndex++
+		case values[indexes[currentIndex]+offset] == pivotValue:
+			swap(indexes, currentIndex, lowerBound+equalCount)
+			equalCount++
+		default:
+			swap(indexes, currentIndex, upperBound+groupIndex)
+			groupIndex++
+		}
+	}
+
+	for lowerBound+equalCount < upperBound {
+		if values[indexes[lowerBound+equalCount]+offset] == pivotValue {
+			equalCount++
 		} else {
-			swap(I, i, kk+k)
-			k++
+			swap(indexes, lowerBound+equalCount, upperBound+groupIndex)
+			groupIndex++
 		}
 	}
 
-	for jj+j < kk {
-		if V[I[jj+j]+h] == x {
-			j++
-		} else {
-			swap(I, jj+j, kk+k)
-			k++
-		}
+	if lowerBound > start {
+		split(indexes, values, start, lowerBound-start, offset)
 	}
 
-	if jj > start {
-		split(I, V, start, jj-start, h)
+	for currentIndex = range upperBound - lowerBound {
+		values[indexes[lowerBound+currentIndex]] = upperBound - 1
 	}
 
-	for i = range kk - jj {
-		V[I[jj+i]] = kk - 1
+	if lowerBound == upperBound-1 {
+		indexes[lowerBound] = -1
 	}
 
-	if jj == kk-1 {
-		I[jj] = -1
-	}
-
-	if start+length > kk {
-		split(I, V, kk, start+length-kk, h)
+	if start+length > upperBound {
+		split(indexes, values, upperBound, start+length-upperBound, offset)
 	}
 }
 
 //nolint:funlen // Keep suffix-array construction aligned with the upstream binarydist algorithm.
 func qsufsort(obuf []byte) []int {
 	var buckets [256]int
-	var i, h int
-	I := make([]int, len(obuf)+1)
-	V := make([]int, len(obuf)+1)
+	var bucketIndex, offset int
+	suffixArray := make([]int, len(obuf)+1)
+	ranks := make([]int, len(obuf)+1)
 
 	for _, c := range obuf {
 		buckets[c]++
 	}
 
-	for i = 1; i < 256; i++ {
-		buckets[i] += buckets[i-1]
+	for bucketIndex = 1; bucketIndex < 256; bucketIndex++ {
+		buckets[bucketIndex] += buckets[bucketIndex-1]
 	}
 
 	copy(buckets[1:], buckets[:])
@@ -144,53 +145,53 @@ func qsufsort(obuf []byte) []int {
 
 	for i, c := range obuf {
 		buckets[c]++
-		I[buckets[c]] = i
+		suffixArray[buckets[c]] = i
 	}
 
-	I[0] = len(obuf)
+	suffixArray[0] = len(obuf)
 	for i, c := range obuf {
-		V[i] = buckets[c]
+		ranks[i] = buckets[c]
 	}
 
-	V[len(obuf)] = 0
+	ranks[len(obuf)] = 0
 
-	for i = 1; i < 256; i++ {
-		if buckets[i] == buckets[i-1]+1 {
-			I[buckets[i]] = -1
+	for bucketIndex = 1; bucketIndex < 256; bucketIndex++ {
+		if buckets[bucketIndex] == buckets[bucketIndex-1]+1 {
+			suffixArray[buckets[bucketIndex]] = -1
 		}
 	}
 
-	I[0] = -1
+	suffixArray[0] = -1
 
-	for h = 1; I[0] != -(len(obuf) + 1); h += h {
-		var n int
+	for offset = 1; suffixArray[0] != -(len(obuf) + 1); offset += offset {
+		var groupLength int
 
-		for i = 0; i < len(obuf)+1; {
-			if I[i] < 0 {
-				n -= I[i]
-				i -= I[i]
+		for index := 0; index < len(obuf)+1; {
+			if suffixArray[index] < 0 {
+				groupLength -= suffixArray[index]
+				index -= suffixArray[index]
 			} else {
-				if n != 0 {
-					I[i-n] = -n
+				if groupLength != 0 {
+					suffixArray[index-groupLength] = -groupLength
 				}
 
-				n = V[I[i]] + 1 - i
-				split(I, V, i, n, h)
-				i += n
-				n = 0
+				groupLength = ranks[suffixArray[index]] + 1 - index
+				split(suffixArray, ranks, index, groupLength, offset)
+				index += groupLength
+				groupLength = 0
 			}
 		}
 
-		if n != 0 {
-			I[i-n] = -n
+		if groupLength != 0 {
+			suffixArray[len(obuf)+1-groupLength] = -groupLength
 		}
 	}
 
-	for i = range len(obuf) + 1 {
-		I[V[i]] = i
+	for index := range len(obuf) + 1 {
+		suffixArray[ranks[index]] = index
 	}
 
-	return I
+	return suffixArray
 }
 
 func matchlen(a, b []byte) int {
@@ -202,24 +203,24 @@ func matchlen(a, b []byte) int {
 	return i
 }
 
-func search(index []int, obuf, nbuf []byte, st, en int) (int, int) {
-	if en-st < 2 {
-		x := matchlen(obuf[index[st]:], nbuf)
-		y := matchlen(obuf[index[en]:], nbuf)
+func search(index []int, obuf, nbuf []byte, start, end int) (int, int) {
+	if end-start < 2 {
+		startLength := matchlen(obuf[index[start]:], nbuf)
+		endLength := matchlen(obuf[index[end]:], nbuf)
 
-		if x > y {
-			return index[st], x
+		if startLength > endLength {
+			return index[start], startLength
 		}
 
-		return index[en], y
+		return index[end], endLength
 	}
 
-	x := st + (en-st)/2
-	if bytes.Compare(obuf[index[x]:], nbuf) < 0 {
-		return search(index, obuf, nbuf, x, en)
+	middle := start + (end-start)/2
+	if bytes.Compare(obuf[index[middle]:], nbuf) < 0 {
+		return search(index, obuf, nbuf, middle, end)
 	}
 
-	return search(index, obuf, nbuf, st, x)
+	return search(index, obuf, nbuf, start, middle)
 }
 
 // DiffBytes calculates the approximated number of different bytes between two binary buffers.
@@ -232,7 +233,7 @@ func DiffBytes(obuf, nbuf []byte) int {
 		obuf, nbuf = nbuf, obuf
 	}
 	var lenf int
-	I := qsufsort(obuf)
+	suffixArray := qsufsort(obuf)
 	var dblen, eblen int
 
 	// Compute the differences, writing ctrl as we go
@@ -244,7 +245,7 @@ func DiffBytes(obuf, nbuf []byte) int {
 
 		scan += length
 		for scsc := scan; scan < len(nbuf); scan++ {
-			pos, length = search(I, obuf, nbuf[scan:], 0, len(obuf))
+			pos, length = search(suffixArray, obuf, nbuf[scan:], 0, len(obuf))
 
 			for ; scsc < scan+length; scsc++ {
 				if scsc+lastoffset < len(obuf) &&
@@ -263,56 +264,56 @@ func DiffBytes(obuf, nbuf []byte) int {
 		}
 
 		if length != oldscore || scan == len(nbuf) {
-			var s, Sf int
+			var score, bestForwardScore int
 			lenf = 0
 
-			for i := 0; lastscan+i < scan && lastpos+i < len(obuf); {
-				if obuf[lastpos+i] == nbuf[lastscan+i] {
-					s++
+			for forwardLength := 0; lastscan+forwardLength < scan && lastpos+forwardLength < len(obuf); {
+				if obuf[lastpos+forwardLength] == nbuf[lastscan+forwardLength] {
+					score++
 				}
 
-				i++
-				if s*2-i > Sf*2-lenf {
-					Sf = s
-					lenf = i
+				forwardLength++
+				if score*2-forwardLength > bestForwardScore*2-lenf {
+					bestForwardScore = score
+					lenf = forwardLength
 				}
 			}
 
 			lenb := 0
 
 			if scan < len(nbuf) {
-				var s, Sb int
+				var score, bestBackwardScore int
 
-				for i := 1; (scan >= lastscan+i) && (pos >= i); i++ {
-					if obuf[pos-i] == nbuf[scan-i] {
-						s++
+				for backwardLength := 1; (scan >= lastscan+backwardLength) && (pos >= backwardLength); backwardLength++ {
+					if obuf[pos-backwardLength] == nbuf[scan-backwardLength] {
+						score++
 					}
 
-					if s*2-i > Sb*2-lenb {
-						Sb = s
-						lenb = i
+					if score*2-backwardLength > bestBackwardScore*2-lenb {
+						bestBackwardScore = score
+						lenb = backwardLength
 					}
 				}
 			}
 
 			if lastscan+lenf > scan-lenb {
 				overlap := (lastscan + lenf) - (scan - lenb)
-				s := 0
-				Ss := 0
+				score := 0
+				bestOverlapScore := 0
 				lens := 0
 
-				for i := range overlap {
-					if nbuf[lastscan+lenf-overlap+i] == obuf[lastpos+lenf-overlap+i] {
-						s++
+				for overlapIndex := range overlap {
+					if nbuf[lastscan+lenf-overlap+overlapIndex] == obuf[lastpos+lenf-overlap+overlapIndex] {
+						score++
 					}
 
-					if nbuf[scan-lenb+i] == obuf[pos-lenb+i] {
-						s--
+					if nbuf[scan-lenb+overlapIndex] == obuf[pos-lenb+overlapIndex] {
+						score--
 					}
 
-					if s > Ss {
-						Ss = s
-						lens = i + 1
+					if score > bestOverlapScore {
+						bestOverlapScore = score
+						lens = overlapIndex + 1
 					}
 				}
 

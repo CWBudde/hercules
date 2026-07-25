@@ -64,10 +64,10 @@ func TestLinesStatsConsume(t *testing.T) {
 		"994eac1cd07235bb9815e547a75c84265dea00f5",
 	))
 	changes[0] = &object.Change{From: object.ChangeEntry{
-		Name: "analyser.go",
+		Name: testAnalyserPath,
 		Tree: treeFrom,
 		TreeEntry: object.TreeEntry{
-			Name: "analyser.go",
+			Name: testAnalyserPath,
 			Mode: 0o100644,
 			Hash: plumbing.NewHash("dc248ba2b22048cc730c571a748e8ffcf7085ab9"),
 		},
@@ -82,10 +82,10 @@ func TestLinesStatsConsume(t *testing.T) {
 	}}
 	changes[1] = &object.Change{
 		From: object.ChangeEntry{}, To: object.ChangeEntry{
-			Name: "cmd/hercules/main.go",
+			Name: testHerculesMainPath,
 			Tree: treeTo,
 			TreeEntry: object.TreeEntry{
-				Name: "cmd/hercules/main.go",
+				Name: testHerculesMainPath,
 				Mode: 0o100644,
 				Hash: plumbing.NewHash("c29112dbd697ad9b401333b80c18a63951bc18d9"),
 			},
@@ -93,10 +93,10 @@ func TestLinesStatsConsume(t *testing.T) {
 	}
 	changes[2] = &object.Change{
 		From: object.ChangeEntry{
-			Name: ".travis.yml",
+			Name: testTravisPath,
 			Tree: treeTo,
 			TreeEntry: object.TreeEntry{
-				Name: ".travis.yml",
+				Name: testTravisPath,
 				Mode: 0o100644,
 				Hash: plumbing.NewHash("291286b4ac41952cbd1389fda66420ec03c1a9fe"),
 			},
@@ -129,10 +129,10 @@ func TestLinesStatsConsume(t *testing.T) {
 		Added:   0,
 		Removed: 12,
 		Changed: 0,
-	}, nameMap[".travis.yml"])
+	}, nameMap[testTravisPath])
 	assert.Equal(t, items.LineStats{
 		Added:   207,
 		Removed: 0,
 		Changed: 0,
-	}, nameMap["cmd/hercules/main.go"])
+	}, nameMap[testHerculesMainPath])
 }

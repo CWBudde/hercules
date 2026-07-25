@@ -86,28 +86,28 @@ func TestCommitsConsume(t *testing.T) {
 		"994eac1cd07235bb9815e547a75c84265dea00f5",
 	))
 	changes[0] = &object.Change{From: object.ChangeEntry{
-		Name: "analyser.go",
+		Name: testAnalyserPath,
 		Tree: treeFrom,
 		TreeEntry: object.TreeEntry{
-			Name: "analyser.go",
+			Name: testAnalyserPath,
 			Mode: 0o100644,
 			Hash: plumbing.NewHash("dc248ba2b22048cc730c571a748e8ffcf7085ab9"),
 		},
 	}, To: object.ChangeEntry{
-		Name: "analyser.go",
+		Name: testAnalyserPath,
 		Tree: treeTo,
 		TreeEntry: object.TreeEntry{
-			Name: "analyser.go",
+			Name: testAnalyserPath,
 			Mode: 0o100644,
 			Hash: plumbing.NewHash("baa64828831d174f40140e4b3cfa77d1e917a2c1"),
 		},
 	}}
 	changes[1] = &object.Change{
 		From: object.ChangeEntry{}, To: object.ChangeEntry{
-			Name: "cmd/hercules/main.go",
+			Name: testHerculesMainPath,
 			Tree: treeTo,
 			TreeEntry: object.TreeEntry{
-				Name: "cmd/hercules/main.go",
+				Name: testHerculesMainPath,
 				Mode: 0o100644,
 				Hash: plumbing.NewHash("c29112dbd697ad9b401333b80c18a63951bc18d9"),
 			},
@@ -115,10 +115,10 @@ func TestCommitsConsume(t *testing.T) {
 	}
 	changes[2] = &object.Change{
 		From: object.ChangeEntry{}, To: object.ChangeEntry{
-			Name: ".travis.yml",
+			Name: testTravisPath,
 			Tree: treeTo,
 			TreeEntry: object.TreeEntry{
-				Name: ".travis.yml",
+				Name: testTravisPath,
 				Mode: 0o100644,
 				Hash: plumbing.NewHash("291286b4ac41952cbd1389fda66420ec03c1a9fe"),
 			},
@@ -147,26 +147,27 @@ func TestCommitsConsume(t *testing.T) {
 	assert.Equal(t, 0, c.Author)
 	assert.Len(t, c.Files, 3)
 	sort.Slice(c.Files, func(i, j int) bool { return c.Files[i].Name < c.Files[j].Name })
-	assert.Equal(t, ".travis.yml", c.Files[0].Name)
+	assert.Equal(t, testTravisPath, c.Files[0].Name)
 	assert.Equal(t, "Go", c.Files[0].Language)
 	assert.Equal(t, 12, c.Files[0].Added)
 	assert.Equal(t, 0, c.Files[0].Removed)
 	assert.Equal(t, 0, c.Files[0].Changed)
-	assert.Equal(t, "analyser.go", c.Files[1].Name)
+	assert.Equal(t, testAnalyserPath, c.Files[1].Name)
 	assert.Equal(t, "Go", c.Files[1].Language)
 	assert.Equal(t, 628, c.Files[1].Added)
 	assert.Equal(t, 9, c.Files[1].Removed)
 	assert.Equal(t, 67, c.Files[1].Changed)
-	assert.Equal(t, "cmd/hercules/main.go", c.Files[2].Name)
+	assert.Equal(t, testHerculesMainPath, c.Files[2].Name)
 	assert.Equal(t, "Go", c.Files[2].Language)
 	assert.Equal(t, 207, c.Files[2].Added)
 	assert.Equal(t, 0, c.Files[2].Removed)
 	assert.Equal(t, 0, c.Files[2].Changed)
 }
 
-func fixtureCommits() *CommitsAnalysis {
+func fixtureCommits(t *testing.T) *CommitsAnalysis {
+	t.Helper()
 	ca := CommitsAnalysis{}
-	ca.Initialize(test.Repository)
+	assert.NoError(t, ca.Initialize(test.Repository))
 	ca.commits = []*CommitStat{
 		{
 			Hash:   "cce947b98a050c6d356bc6ba95030254914027b1",
@@ -174,7 +175,7 @@ func fixtureCommits() *CommitsAnalysis {
 			Author: 0,
 			Files: []FileStat{
 				{
-					Name:     ".travis.yml",
+					Name:     testTravisPath,
 					Language: "Yaml",
 					LineStats: items.LineStats{
 						Added:   12,
@@ -183,7 +184,7 @@ func fixtureCommits() *CommitsAnalysis {
 					},
 				},
 				{
-					Name:     "analyser.go",
+					Name:     testAnalyserPath,
 					Language: "Go",
 					LineStats: items.LineStats{
 						Added:   628,
@@ -199,7 +200,7 @@ func fixtureCommits() *CommitsAnalysis {
 			Author: 1,
 			Files: []FileStat{
 				{
-					Name:     "cmd/hercules/main.go",
+					Name:     testHerculesMainPath,
 					Language: "Go",
 					LineStats: items.LineStats{
 						Added:   1,
@@ -210,21 +211,21 @@ func fixtureCommits() *CommitsAnalysis {
 			},
 		},
 	}
-	people := [...]string{"one@srcd", "two@srcd"}
+	people := [...]string{testPersonOneSource, testPersonTwoSource}
 	ca.reversedPeopleDict = people[:]
 
 	return &ca
 }
 
 func TestCommitsFinalize(t *testing.T) {
-	ca := fixtureCommits()
+	ca := fixtureCommits(t)
 	x := ca.Finalize().(CommitsResult)
 	assert.Equal(t, x.Commits, ca.commits)
 	assert.Equal(t, x.reversedPeopleDict, ca.reversedPeopleDict)
 }
 
 func TestCommitsSerialize(t *testing.T) {
-	ca := fixtureCommits()
+	ca := fixtureCommits(t)
 	res := ca.Finalize().(CommitsResult)
 	buffer := &bytes.Buffer{}
 	err := ca.Serialize(res, false, buffer)
@@ -264,12 +265,12 @@ func TestCommitsSerialize(t *testing.T) {
 	assert.Equal(t, int32(0), msg.GetCommits()[0].GetAuthor())
 	assert.Len(t, msg.GetCommits()[0].GetFiles(), 2)
 	assert.Equal(t, &pb.CommitFile{
-		Name:     ".travis.yml",
+		Name:     testTravisPath,
 		Stats:    &pb.LineStats{Added: 12, Removed: 0, Changed: 0},
 		Language: "Yaml",
 	}, msg.GetCommits()[0].GetFiles()[0])
 	assert.Equal(t, &pb.CommitFile{
-		Name:     "analyser.go",
+		Name:     testAnalyserPath,
 		Stats:    &pb.LineStats{Added: 628, Removed: 9, Changed: 67},
 		Language: "Go",
 	}, msg.GetCommits()[0].GetFiles()[1])
@@ -278,7 +279,7 @@ func TestCommitsSerialize(t *testing.T) {
 	assert.Equal(t, int32(1), msg.GetCommits()[1].GetAuthor())
 	assert.Len(t, msg.GetCommits()[1].GetFiles(), 1)
 	assert.Equal(t, &pb.CommitFile{
-		Name:     "cmd/hercules/main.go",
+		Name:     testHerculesMainPath,
 		Stats:    &pb.LineStats{Added: 1, Removed: 0, Changed: 0},
 		Language: "Go",
 	}, msg.GetCommits()[1].GetFiles()[0])

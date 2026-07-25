@@ -21,6 +21,11 @@ import (
 	"github.com/cwbudde/hercules/internal/yaml"
 )
 
+var (
+	errTickSizeUnspecified      = errors.New("tick size must be specified")
+	errDevsMismatchingTickSizes = errors.New("mismatching tick sizes")
+)
+
 // DevsAnalysis calculates the number of commits through time per developer.
 // It also records the numbers of added, deleted and changed lines through time per developer.
 // Those numbers are additionally measured per language.
@@ -144,7 +149,7 @@ func (devs *DevsAnalysis) Description() string {
 // calls. The repository which is going to be analysed is supplied as an argument.
 func (devs *DevsAnalysis) Initialize(repository *git.Repository) error {
 	if devs.tickSize == 0 {
-		return errors.New("tick size must be specified")
+		return errTickSizeUnspecified
 	}
 
 	devs.l = core.NewLogger()
@@ -291,8 +296,8 @@ func (devs *DevsAnalysis) MergeResults(result1, result2 any,
 
 	cr2 := result2.(DevsResult)
 	if cr1.tickSize != cr2.tickSize {
-		return fmt.Errorf("mismatching tick sizes (r1: %d, r2: %d) received",
-			cr1.tickSize, cr2.tickSize)
+		return fmt.Errorf("%w (r1: %d, r2: %d) received",
+			errDevsMismatchingTickSizes, cr1.tickSize, cr2.tickSize)
 	}
 
 	firstStart := items.FloorTime(commonResult1.BeginTimeAsTime(), cr1.tickSize)
@@ -431,8 +436,12 @@ func (devs *DevsAnalysis) serializeBinary(result *DevsResult, writer io.Writer) 
 
 	message.Ticks = map[int32]*pb.TickDevs{}
 	for tick, devs := range result.Ticks {
+		tickID, err := intToProtoInt32(tick, "developer statistics tick")
+		if err != nil {
+			return err
+		}
 		tickDevs := &pb.TickDevs{}
-		message.Ticks[int32(tick)] = tickDevs
+		message.Ticks[tickID] = tickDevs
 		tickDevs.Devs = map[int32]*pb.DevTick{}
 
 		for dev, stats := range devs {
@@ -440,23 +449,31 @@ func (devs *DevsAnalysis) serializeBinary(result *DevsResult, writer io.Writer) 
 				dev = -1
 			}
 
+			developerID, err := intToProtoInt32(dev, "developer statistics author")
+			if err != nil {
+				return err
+			}
+			commits, err := intToProtoInt32(stats.Commits, "developer commit count")
+			if err != nil {
+				return err
+			}
+			lineStats, err := devLineStatsToProto(stats.Added, stats.Changed, stats.Removed)
+			if err != nil {
+				return err
+			}
 			languages := map[string]*pb.LineStats{}
 
-			tickDevs.Devs[int32(dev)] = &pb.DevTick{
-				Commits: int32(stats.Commits),
-				Stats: &pb.LineStats{
-					Added:   int32(stats.Added),
-					Changed: int32(stats.Changed),
-					Removed: int32(stats.Removed),
-				},
+			tickDevs.Devs[developerID] = &pb.DevTick{
+				Commits:   commits,
+				Stats:     lineStats,
 				Languages: languages,
 			}
 			for lang, ls := range stats.Languages {
-				languages[lang] = &pb.LineStats{
-					Added:   int32(ls.Added),
-					Changed: int32(ls.Changed),
-					Removed: int32(ls.Removed),
+				languageStats, err := devLineStatsToProto(ls.Added, ls.Changed, ls.Removed)
+				if err != nil {
+					return err
 				}
+				languages[lang] = languageStats
 			}
 		}
 	}
@@ -472,6 +489,23 @@ func (devs *DevsAnalysis) serializeBinary(result *DevsResult, writer io.Writer) 
 	}
 
 	return nil
+}
+
+func devLineStatsToProto(added, changed, removed int) (*pb.LineStats, error) {
+	pbAdded, err := intToProtoInt32(added, "developer added-line count")
+	if err != nil {
+		return nil, err
+	}
+	pbChanged, err := intToProtoInt32(changed, "developer changed-line count")
+	if err != nil {
+		return nil, err
+	}
+	pbRemoved, err := intToProtoInt32(removed, "developer removed-line count")
+	if err != nil {
+		return nil, err
+	}
+
+	return &pb.LineStats{Added: pbAdded, Changed: pbChanged, Removed: pbRemoved}, nil
 }
 
 // GetTickSize returns the tick size used to generate this devs analysis result.

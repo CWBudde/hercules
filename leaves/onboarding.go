@@ -157,15 +157,15 @@ func (oa *OnboardingAnalysis) Configure(facts map[string]any) error {
 		parts := strings.Split(val, ",")
 
 		oa.WindowDays = make([]int, 0, len(parts))
-		for _, p := range parts {
-			p = strings.TrimSpace(p)
-			if p == "" {
+		for _, part := range parts {
+			part = strings.TrimSpace(part)
+			if part == "" {
 				continue
 			}
 
-			days, err := strconv.Atoi(p)
+			days, err := strconv.Atoi(part)
 			if err != nil {
-				return fmt.Errorf("invalid window days value '%s': %w", p, err)
+				return fmt.Errorf("invalid window days value '%s': %w", part, err)
 			}
 
 			oa.WindowDays = append(oa.WindowDays, days)
@@ -201,7 +201,8 @@ func (oa *OnboardingAnalysis) Flag() string {
 
 // Description returns the text which explains what the analysis is doing.
 func (oa *OnboardingAnalysis) Description() string {
-	return "Measures how quickly new contributors ramp up: time-to-first-change, breadth-of-files in first N days, convergence to stable contribution patterns."
+	return "Measures how quickly new contributors ramp up: time-to-first-change, " +
+		"breadth-of-files in first N days, convergence to stable contribution patterns."
 }
 
 // Initialize resets the temporary caches and prepares this PipelineItem for a series of Consume() calls.
@@ -290,20 +291,21 @@ func newCumulativeMetrics() *cumulativeMetrics {
 }
 
 // accumulate adds tick metrics to cumulative totals.
-func (cm *cumulativeMetrics) accumulate(tm *onboardingTickMetrics) {
-	cm.commits += tm.Commits
-	for file := range tm.Files {
+func (cm *cumulativeMetrics) accumulate(tickMetrics *onboardingTickMetrics) {
+	cm.commits += tickMetrics.Commits
+	for file := range tickMetrics.Files {
 		cm.files[file] = true
 	}
 
-	cm.lines += tm.LinesAdded + tm.LinesRemoved + tm.LinesChanged
+	cm.lines += tickMetrics.LinesAdded + tickMetrics.LinesRemoved + tickMetrics.LinesChanged
 
-	cm.meaningfulCommits += tm.MeaningfulCommits
-	for file := range tm.MeaningfulFiles {
+	cm.meaningfulCommits += tickMetrics.MeaningfulCommits
+	for file := range tickMetrics.MeaningfulFiles {
 		cm.meaningfulFiles[file] = true
 	}
 
-	cm.meaningfulLines += tm.MeaningfulLinesAdded + tm.MeaningfulLinesRemoved + tm.MeaningfulLinesChanged
+	cm.meaningfulLines += tickMetrics.MeaningfulLinesAdded +
+		tickMetrics.MeaningfulLinesRemoved + tickMetrics.MeaningfulLinesChanged
 }
 
 // findClosestTick finds the tick <= targetTick in sorted ticks array.
@@ -453,7 +455,8 @@ func writeOnboardingSnapshots(writer io.Writer, snapshots map[int]*OnboardingSna
 		snapshot := snapshots[days]
 		fmt.Fprintf(
 			writer,
-			"          %d: {days: %d, commits: %d, files: %d, lines: %d, meaningful_commits: %d, meaningful_files: %d, meaningful_lines: %d}\n",
+			"          %d: {days: %d, commits: %d, files: %d, lines: %d, "+
+				"meaningful_commits: %d, meaningful_files: %d, meaningful_lines: %d}\n",
 			days,
 			snapshot.DaysSinceJoin,
 			snapshot.TotalCommits,
@@ -468,59 +471,109 @@ func writeOnboardingSnapshots(writer io.Writer, snapshots map[int]*OnboardingSna
 
 func onboardingAuthorsToProto(
 	authors map[int]*AuthorOnboardingData,
-) map[int32]*pb.AuthorOnboardingData {
+) (map[int32]*pb.AuthorOnboardingData, error) {
 	result := make(map[int32]*pb.AuthorOnboardingData, len(authors))
 	for authorID, author := range authors {
+		firstCommitTick, err := intToProtoInt32(author.FirstCommitTick, "onboarding first commit tick")
+		if err != nil {
+			return nil, err
+		}
 		pbAuthor := &pb.AuthorOnboardingData{
-			FirstCommitTick: int32(author.FirstCommitTick),
+			FirstCommitTick: firstCommitTick,
 			JoinCohort:      author.JoinCohort,
 			Snapshots:       make(map[int32]*pb.OnboardingSnapshot, len(author.Snapshots)),
 		}
 		for days, snap := range author.Snapshots {
-			pbAuthor.Snapshots[int32(days)] = onboardingSnapshotToProto(snap)
+			pbDays, err := intToProtoInt32(days, "onboarding snapshot day")
+			if err != nil {
+				return nil, err
+			}
+			pbSnapshot, err := onboardingSnapshotToProto(snap)
+			if err != nil {
+				return nil, err
+			}
+			pbAuthor.Snapshots[pbDays] = pbSnapshot
 		}
 
-		result[protobufAuthorID(authorID)] = pbAuthor
+		pbAuthorID, err := intToProtoInt32(authorID, "onboarding author")
+		if err != nil {
+			return nil, err
+		}
+
+		if authorID == core.AuthorMissing {
+			pbAuthorID = -1
+		}
+		result[pbAuthorID] = pbAuthor
 	}
 
-	return result
+	return result, nil
 }
 
-func onboardingSnapshotToProto(snapshot *OnboardingSnapshot) *pb.OnboardingSnapshot {
+func onboardingSnapshotToProto(snapshot *OnboardingSnapshot) (*pb.OnboardingSnapshot, error) {
+	values := []int{
+		snapshot.DaysSinceJoin, snapshot.TotalCommits, snapshot.TotalFiles, snapshot.TotalLines,
+		snapshot.MeaningfulCommits, snapshot.MeaningfulFiles, snapshot.MeaningfulLines,
+	}
+
+	converted := make([]int32, len(values))
+	for i, value := range values {
+		pbValue, err := intToProtoInt32(value, "onboarding snapshot value")
+		if err != nil {
+			return nil, err
+		}
+		converted[i] = pbValue
+	}
+
 	return &pb.OnboardingSnapshot{
-		DaysSinceJoin: int32(snapshot.DaysSinceJoin), TotalCommits: int32(snapshot.TotalCommits),
-		TotalFiles: int32(snapshot.TotalFiles), TotalLines: int32(snapshot.TotalLines),
-		MeaningfulCommits: int32(snapshot.MeaningfulCommits),
-		MeaningfulFiles:   int32(snapshot.MeaningfulFiles), MeaningfulLines: int32(snapshot.MeaningfulLines),
-	}
+		DaysSinceJoin: converted[0], TotalCommits: converted[1],
+		TotalFiles: converted[2], TotalLines: converted[3],
+		MeaningfulCommits: converted[4], MeaningfulFiles: converted[5], MeaningfulLines: converted[6],
+	}, nil
 }
 
-func onboardingCohortsToProto(cohorts map[string]*CohortStats) map[string]*pb.CohortStats {
+func onboardingCohortsToProto(cohorts map[string]*CohortStats) (map[string]*pb.CohortStats, error) {
 	result := make(map[string]*pb.CohortStats, len(cohorts))
 	for cohortName, cohort := range cohorts {
+		authorCount, err := intToProtoInt32(cohort.AuthorCount, "onboarding cohort author count")
+		if err != nil {
+			return nil, err
+		}
 		pbCohort := &pb.CohortStats{
 			Cohort:           cohort.Cohort,
-			AuthorCount:      int32(cohort.AuthorCount),
+			AuthorCount:      authorCount,
 			AverageSnapshots: make(map[int32]*pb.OnboardingAverageSnapshot, len(cohort.AverageSnapshots)),
 		}
 		for days, snap := range cohort.AverageSnapshots {
-			pbCohort.AverageSnapshots[int32(days)] = onboardingAverageToProto(snap)
+			pbDays, err := intToProtoInt32(days, "onboarding cohort snapshot day")
+			if err != nil {
+				return nil, err
+			}
+			pbSnapshot, err := onboardingAverageToProto(snap)
+			if err != nil {
+				return nil, err
+			}
+			pbCohort.AverageSnapshots[pbDays] = pbSnapshot
 		}
 
 		result[cohortName] = pbCohort
 	}
 
-	return result
+	return result, nil
 }
 
-func onboardingAverageToProto(snapshot *OnboardingSnapshot) *pb.OnboardingAverageSnapshot {
+func onboardingAverageToProto(snapshot *OnboardingSnapshot) (*pb.OnboardingAverageSnapshot, error) {
+	daysSinceJoin, err := intToProtoInt32(snapshot.DaysSinceJoin, "onboarding average days since join")
+	if err != nil {
+		return nil, err
+	}
+
 	return &pb.OnboardingAverageSnapshot{
-		DaysSinceJoin: int32(snapshot.DaysSinceJoin), AvgTotalCommits: float64(snapshot.TotalCommits),
+		DaysSinceJoin: daysSinceJoin, AvgTotalCommits: float64(snapshot.TotalCommits),
 		AvgTotalFiles: float64(snapshot.TotalFiles), AvgTotalLines: float64(snapshot.TotalLines),
 		AvgMeaningfulCommits: float64(snapshot.MeaningfulCommits),
 		AvgMeaningfulFiles:   float64(snapshot.MeaningfulFiles),
 		AvgMeaningfulLines:   float64(snapshot.MeaningfulLines),
-	}
+	}, nil
 }
 
 // Serialize converts the analysis result as returned by Finalize() to text or bytes.
@@ -692,19 +745,33 @@ func (oa *OnboardingAnalysis) serializeText(result *OnboardingResult, writer io.
 
 // serializeBinary outputs Protocol Buffers format.
 func (oa *OnboardingAnalysis) serializeBinary(result *OnboardingResult, writer io.Writer) error {
+	meaningfulThreshold, err := intToProtoInt32(result.MeaningfulThreshold, "onboarding meaningful threshold")
+	if err != nil {
+		return err
+	}
 	message := pb.OnboardingResults{
 		DevIndex:            result.reversedPeopleDict,
 		TickSize:            int64(result.tickSize),
 		WindowDays:          make([]int32, len(result.WindowDays)),
-		MeaningfulThreshold: int32(result.MeaningfulThreshold),
+		MeaningfulThreshold: meaningfulThreshold,
 	}
 
 	for i, days := range result.WindowDays {
-		message.WindowDays[i] = int32(days)
+		pbDays, err := intToProtoInt32(days, "onboarding window days")
+		if err != nil {
+			return err
+		}
+		message.WindowDays[i] = pbDays
 	}
 
-	message.Authors = onboardingAuthorsToProto(result.Authors)
-	message.Cohorts = onboardingCohortsToProto(result.Cohorts)
+	message.Authors, err = onboardingAuthorsToProto(result.Authors)
+	if err != nil {
+		return err
+	}
+	message.Cohorts, err = onboardingCohortsToProto(result.Cohorts)
+	if err != nil {
+		return err
+	}
 
 	serialized, err := proto.Marshal(&message)
 	if err != nil {
@@ -724,10 +791,6 @@ func onboardingAuthorsFromProto(
 ) map[int]*AuthorOnboardingData {
 	result := make(map[int]*AuthorOnboardingData, len(authors))
 	for authorID, pbAuthor := range authors {
-		if authorID == -1 {
-			authorID = int32(core.AuthorMissing)
-		}
-
 		author := &AuthorOnboardingData{
 			FirstCommitTick: int(pbAuthor.GetFirstCommitTick()),
 			JoinCohort:      pbAuthor.GetJoinCohort(),

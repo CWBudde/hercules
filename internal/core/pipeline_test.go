@@ -44,14 +44,16 @@ var (
 	errTestHibernate         = errors.New("error")
 	errTestBoot              = errors.New("error")
 	errTestConfigureUpstream = errors.New("upstream config error")
+	errInvalidTestCommit     = errors.New("invalid test commit dependency")
+	errInvalidTestIndex      = errors.New("invalid test index dependency")
 )
 
 func (item *testPipelineItem) Name() string {
-	return "Test"
+	return testItemName
 }
 
 func (item *testPipelineItem) Provides() []string {
-	return []string{"test"}
+	return []string{testFeatureName}
 }
 
 func (item *testPipelineItem) Requires() []string {
@@ -75,7 +77,7 @@ func (item *testPipelineItem) ConfigureUpstream(facts map[string]any) error {
 func (item *testPipelineItem) ListConfigurationOptions() []ConfigurationOption {
 	options := [...]ConfigurationOption{{
 		Name:        "TestOption",
-		Description: "The option description.",
+		Description: testOptionDescription,
 		Flag:        "test-option",
 		Type:        IntConfigurationOption,
 		Default:     10,
@@ -92,7 +94,7 @@ func (item *testPipelineItem) Description() string {
 }
 
 func (item *testPipelineItem) Features() []string {
-	f := [...]string{"power"}
+	f := [...]string{testPowerFeature}
 	return f[:]
 }
 
@@ -119,13 +121,20 @@ func (item *testPipelineItem) Consume(deps map[string]any) (map[string]any, erro
 	obj, exists := deps[DependencyCommit]
 	item.DepsConsumed = exists
 	if item.DepsConsumed {
-		commit := obj.(*object.Commit)
+		commit, ok := obj.(*object.Commit)
+		if !ok {
+			return nil, errInvalidTestCommit
+		}
 		item.CommitMatches = commit.Hash == plumbing.NewHash(
 			"af9ddc0db70f09f3f27b4b98e415592a7485171c",
 		)
 		obj, item.DepsConsumed = deps[DependencyIndex]
 		if item.DepsConsumed {
-			item.IndexMatches = obj.(int) == 0
+			index, ok := obj.(int)
+			if !ok {
+				return nil, errInvalidTestIndex
+			}
+			item.IndexMatches = index == 0
 		}
 	}
 
@@ -135,7 +144,7 @@ func (item *testPipelineItem) Consume(deps map[string]any) (map[string]any, erro
 			*item.MergeState++
 		}
 	}
-	return map[string]any{"test": item}, nil
+	return map[string]any{testFeatureName: item}, nil
 }
 
 func (item *testPipelineItem) Dispose() {
@@ -181,13 +190,13 @@ func (item *dependingTestPipelineItem) Provides() []string {
 }
 
 func (item *dependingTestPipelineItem) Requires() []string {
-	return []string{"test"}
+	return []string{testFeatureName}
 }
 
 func (item *dependingTestPipelineItem) ListConfigurationOptions() []ConfigurationOption {
 	options := [...]ConfigurationOption{{
 		Name:        "TestOption2",
-		Description: "The option description.",
+		Description: testOptionDescription,
 		Flag:        "test-option2",
 		Type:        IntConfigurationOption,
 		Default:     10,
@@ -216,7 +225,7 @@ func (item *dependingTestPipelineItem) Description() string {
 }
 
 func (item *dependingTestPipelineItem) Consume(deps map[string]any) (map[string]any, error) {
-	_, exists := deps["test"]
+	_, exists := deps[testFeatureName]
 	item.DependencySatisfied = exists
 	if !item.TestNilConsumeReturn {
 		return map[string]any{"test2": item}, nil
@@ -403,7 +412,7 @@ func TestPipelineOnProgress(t *testing.T) {
 	progressOk := 0
 
 	onProgress := func(step, total int, action string) {
-		if step == 1 && total == 4 && action == "emerge" {
+		if step == 1 && total == 4 && action == runActionEmergeName {
 			progressOk++
 		}
 		if step == 2 && total == 4 && action == "af9ddc0" {
@@ -537,7 +546,7 @@ func TestPipelineDeps(t *testing.T) {
 func TestPipelineDeployFeatures(t *testing.T) {
 	pipeline := NewPipeline(test.FixtureRepository())
 	pipeline.DeployItem(&testPipelineItem{})
-	f, _ := pipeline.GetFeature("power")
+	f, _ := pipeline.GetFeature(testPowerFeature)
 	assert.True(t, f)
 }
 
@@ -637,37 +646,37 @@ C 1 af9ddc0db70f09f3f27b4b98e415592a7485171c
 func TestCommonAnalysisResultCopy(t *testing.T) {
 	c1 := CommonAnalysisResult{
 		BeginTime: 1513620635, EndTime: 1513720635, CommitsNumber: 1, RunTime: 100,
-		RunTimePerItem: map[string]float64{"one": 1, "two": 2},
+		RunTimePerItem: map[string]float64{testFirstItem: 1, testSecondItem: 2},
 	}
 	c2 := c1.Copy()
 	assert.Equal(t, c1, c2)
-	c2.RunTimePerItem["one"] = 100500
-	assert.InDelta(t, float64(1), c1.RunTimePerItem["one"], 0.00001)
+	c2.RunTimePerItem[testFirstItem] = 100500
+	assert.InDelta(t, float64(1), c1.RunTimePerItem[testFirstItem], 0.00001)
 }
 
 func TestCommonAnalysisResultMerge(t *testing.T) {
 	c1 := CommonAnalysisResult{
 		BeginTime: 1513620635, EndTime: 1513720635, CommitsNumber: 1, RunTime: 100,
-		RunTimePerItem: map[string]float64{"one": 1, "two": 2},
+		RunTimePerItem: map[string]float64{testFirstItem: 1, testSecondItem: 2},
 	}
 	assert.Equal(t, int64(1513620635), c1.BeginTimeAsTime().Unix())
 	assert.Equal(t, int64(1513720635), c1.EndTimeAsTime().Unix())
 	c2 := CommonAnalysisResult{
 		BeginTime: 1513620535, EndTime: 1513730635, CommitsNumber: 2, RunTime: 200,
-		RunTimePerItem: map[string]float64{"two": 4, "three": 8},
+		RunTimePerItem: map[string]float64{testSecondItem: 4, "three": 8},
 	}
 	c1.Merge(&c2)
 	assert.Equal(t, int64(1513620535), c1.BeginTime)
 	assert.Equal(t, int64(1513730635), c1.EndTime)
 	assert.Equal(t, 3, c1.CommitsNumber)
 	assert.Equal(t, int64(300), c1.RunTime.Nanoseconds())
-	assert.Equal(t, map[string]float64{"one": 1, "two": 6, "three": 8}, c1.RunTimePerItem)
+	assert.Equal(t, map[string]float64{testFirstItem: 1, testSecondItem: 6, "three": 8}, c1.RunTimePerItem)
 }
 
 func TestCommonAnalysisResultMetadata(t *testing.T) {
 	c1 := &CommonAnalysisResult{
 		BeginTime: 1513620635, EndTime: 1513720635, CommitsNumber: 1, RunTime: 100 * 1e6,
-		RunTimePerItem: map[string]float64{"one": 1, "two": 2},
+		RunTimePerItem: map[string]float64{testFirstItem: 1, testSecondItem: 2},
 	}
 	meta := &pb.Metadata{}
 	c1 = MetadataToCommonAnalysisResult(c1.FillMetadata(meta))
@@ -675,7 +684,7 @@ func TestCommonAnalysisResultMetadata(t *testing.T) {
 	assert.Equal(t, int64(1513720635), c1.EndTimeAsTime().Unix())
 	assert.Equal(t, 1, c1.CommitsNumber)
 	assert.Equal(t, c1.RunTime.Nanoseconds(), int64(100*1e6))
-	assert.Equal(t, map[string]float64{"one": 1, "two": 2}, c1.RunTimePerItem)
+	assert.Equal(t, map[string]float64{testFirstItem: 1, testSecondItem: 2}, c1.RunTimePerItem)
 }
 
 func TestConfigurationOptionTypeString(t *testing.T) {
@@ -684,11 +693,11 @@ func TestConfigurationOptionTypeString(t *testing.T) {
 	opt = ConfigurationOptionType(1)
 	assert.Equal(t, "int", opt.String())
 	opt = ConfigurationOptionType(2)
-	assert.Equal(t, "string", opt.String())
+	assert.Equal(t, configurationStringType, opt.String())
 	opt = ConfigurationOptionType(3)
 	assert.Equal(t, "float", opt.String())
 	opt = ConfigurationOptionType(4)
-	assert.Equal(t, "string", opt.String())
+	assert.Equal(t, configurationStringType, opt.String())
 	opt = ConfigurationOptionType(5)
 	assert.Equal(t, "path", opt.String())
 	opt = ConfigurationOptionType(6)
@@ -1219,9 +1228,11 @@ type circularDepItem struct {
 }
 
 func (item *circularDepItem) Name() string       { return "Circular" }
-func (item *circularDepItem) Provides() []string { return []string{"circular"} }
+func (item *circularDepItem) Provides() []string { return []string{testCircularDependency} }
 
-func (item *circularDepItem) Requires() []string                              { return []string{"circular"} }
+func (item *circularDepItem) Requires() []string {
+	return []string{testCircularDependency}
+}
 func (item *circularDepItem) ListConfigurationOptions() []ConfigurationOption { return nil }
 func (item *circularDepItem) Configure(facts map[string]any) error            { return nil }
 func (item *circularDepItem) ConfigureUpstream(facts map[string]any) error {
@@ -1229,7 +1240,7 @@ func (item *circularDepItem) ConfigureUpstream(facts map[string]any) error {
 }
 func (item *circularDepItem) Initialize(repository *git.Repository) error { return nil }
 func (item *circularDepItem) Consume(deps map[string]any) (map[string]any, error) {
-	return map[string]any{"circular": true}, nil
+	return map[string]any{testCircularDependency: true}, nil
 }
 
 func (item *circularDepItem) Fork(n int) []PipelineItem {

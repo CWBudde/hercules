@@ -26,14 +26,14 @@ func (goExtractor) Imports(content []byte) ([]string, error) {
 	var out []string
 
 	runQuery(goQuery, root, goLang, content, func(captures []sitter.QueryCapture) {
-		for _, c := range captures {
+		for _, capture := range captures {
 			// `interpreted_string_literal` includes the surrounding quotes;
 			// strip them to match the smacker-era behavior.
-			if c.Node.EndByte()-c.Node.StartByte() < 2 {
+			if capture.Node.EndByte()-capture.Node.StartByte() < 2 {
 				continue
 			}
 
-			out = append(out, string(content[c.Node.StartByte()+1:c.Node.EndByte()-1]))
+			out = append(out, string(content[capture.Node.StartByte()+1:capture.Node.EndByte()-1]))
 		}
 	})
 

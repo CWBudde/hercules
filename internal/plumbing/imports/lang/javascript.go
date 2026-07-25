@@ -9,25 +9,30 @@ const jsImportsQuery = `
 (import_statement source: (string) @path)
 `
 
-var (
-	jsLang  = grammars.JavascriptLanguage()
-	jsQuery = mustQuery(jsImportsQuery, jsLang)
-)
+type jsExtractor struct {
+	language *sitter.Language
+	query    *sitter.Query
+}
 
-var _ = RegisterLanguage(jsExtractor{})
+func newJSExtractor() jsExtractor {
+	language := grammars.JavascriptLanguage()
 
-type jsExtractor struct{}
+	return jsExtractor{
+		language: language,
+		query:    mustQuery(jsImportsQuery, language),
+	}
+}
 
 func (jsExtractor) Aliases() []string { return []string{"JavaScript"} }
 
-func (jsExtractor) Imports(content []byte) ([]string, error) {
-	root := parseFull(jsLang, content)
+func (extractor jsExtractor) Imports(content []byte) ([]string, error) {
+	root := parseFull(extractor.language, content)
 	if root == nil {
 		return nil, nil
 	}
 	var out []string
 
-	runQuery(jsQuery, root, jsLang, content, func(captures []sitter.QueryCapture) {
+	runQuery(extractor.query, root, extractor.language, content, func(captures []sitter.QueryCapture) {
 		for _, c := range captures {
 			if c.Node.EndByte()-c.Node.StartByte() < 2 {
 				continue

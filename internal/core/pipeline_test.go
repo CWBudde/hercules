@@ -118,33 +118,44 @@ func (item *testPipelineItem) Consume(deps map[string]any) (map[string]any, erro
 	if item.ConsumePanics {
 		panic("!")
 	}
-	obj, exists := deps[DependencyCommit]
-	item.DepsConsumed = exists
-	if item.DepsConsumed {
-		commit, ok := obj.(*object.Commit)
-		if !ok {
-			return nil, errInvalidTestCommit
-		}
-		item.CommitMatches = commit.Hash == plumbing.NewHash(
-			"af9ddc0db70f09f3f27b4b98e415592a7485171c",
-		)
-		obj, item.DepsConsumed = deps[DependencyIndex]
-		if item.DepsConsumed {
-			index, ok := obj.(int)
-			if !ok {
-				return nil, errInvalidTestIndex
-			}
-			item.IndexMatches = index == 0
-		}
+	err := consumeTestDependencies(item, deps)
+	if err != nil {
+		return nil, err
 	}
 
-	if obj, exists = deps[DependencyIsMerge]; exists {
+	if obj, exists := deps[DependencyIsMerge]; exists {
 		*item.MergeState++
 		if b, ok := obj.(bool); ok && b {
 			*item.MergeState++
 		}
 	}
 	return map[string]any{testFeatureName: item}, nil
+}
+
+func consumeTestDependencies(item *testPipelineItem, deps map[string]any) error {
+	obj, exists := deps[DependencyCommit]
+	item.DepsConsumed = exists
+	if !item.DepsConsumed {
+		return nil
+	}
+
+	commit, ok := obj.(*object.Commit)
+	if !ok {
+		return errInvalidTestCommit
+	}
+	item.CommitMatches = commit.Hash == plumbing.NewHash(
+		"af9ddc0db70f09f3f27b4b98e415592a7485171c",
+	)
+	obj, item.DepsConsumed = deps[DependencyIndex]
+	if item.DepsConsumed {
+		index, indexOK := obj.(int)
+		if !indexOK {
+			return errInvalidTestIndex
+		}
+		item.IndexMatches = index == 0
+	}
+
+	return nil
 }
 
 func (item *testPipelineItem) Dispose() {
@@ -542,7 +553,9 @@ func TestPipelineDeps(t *testing.T) {
 	))
 	result, err := pipeline.Run(commits)
 	require.NoError(t, err)
-	assert.True(t, result[item1].(bool))
+	itemResult, ok := result[item1].(bool)
+	require.True(t, ok)
+	assert.True(t, itemResult)
 	assert.Equal(t, result[item2], item2)
 	item1.TestNilConsumeReturn = true
 	_, err = pipeline.Run(commits)
@@ -628,13 +641,7 @@ func TestPipelineDumpPlanConfigure(t *testing.T) {
 	require.NoError(t, pipeline.Initialize(map[string]any{ConfigPipelineDumpPlan: true}))
 	assert.True(t, pipeline.DumpPlan)
 	stream := &bytes.Buffer{}
-	backupPlanPrintFunc := planPrintFunc
-	planPrintFunc = func(args ...any) {
-		fmt.Fprintln(stream, args...)
-	}
-	defer func() {
-		planPrintFunc = backupPlanPrintFunc
-	}()
+	pipeline.output = stream
 	commits := make([]*object.Commit, 1)
 	commits[0], _ = test.FixtureRepository().CommitObject(plumbing.NewHash(
 		"af9ddc0db70f09f3f27b4b98e415592a7485171c",

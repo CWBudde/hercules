@@ -146,28 +146,45 @@ func (detector *StoryDetector) Configure(facts map[string]any) error {
 	}
 
 	detector.expandMergeDict = false
-	if val, exists := facts[FactStoryDetectorMergeDict].(map[plumbing.Hash]string); exists {
-		detector.MergeHashDict, detector.MergeNames = splitMergeDict(val)
-		detector.mergeNameCount = len(detector.MergeNames)
-	} else if dictPath, ok := facts[ConfigStoryDetectorMergeDictPath].(string); ok && dictPath != "" {
-		err := detector.LoadMergeDict(dictPath)
-		if err != nil {
-			return errors.Errorf("failed to load %s: %v", dictPath, err)
-		}
-
-		detector.mergeNameCount = len(detector.MergeNames)
-	} else if mergeCount, ok := facts[core.FactMergeHashCount].(int); ok {
-		detector.MergeHashDict = make(map[plumbing.Hash]int, mergeCount)
-		detector.mergeNameCount = mergeCount
-		detector.expandMergeDict = true
-	} else {
-		return errors.Errorf("merge tracks are not available")
+	err := configureMergeTracks(detector, facts)
+	if err != nil {
+		return err
 	}
 
 	var resolver core.IdentityResolver = storyResolver{detector}
 	facts[core.FactIdentityResolver] = resolver
 
 	return nil
+}
+
+func configureMergeTracks(detector *StoryDetector, facts map[string]any) error {
+	if val, exists := facts[FactStoryDetectorMergeDict].(map[plumbing.Hash]string); exists {
+		detector.MergeHashDict, detector.MergeNames = splitMergeDict(val)
+		detector.mergeNameCount = len(detector.MergeNames)
+
+		return nil
+	}
+
+	if dictPath, ok := facts[ConfigStoryDetectorMergeDictPath].(string); ok && dictPath != "" {
+		err := detector.LoadMergeDict(dictPath)
+		if err != nil {
+			return errors.Errorf("failed to load %s: %v", dictPath, err)
+		}
+
+		detector.mergeNameCount = len(detector.MergeNames)
+
+		return nil
+	}
+
+	if mergeCount, ok := facts[core.FactMergeHashCount].(int); ok {
+		detector.MergeHashDict = make(map[plumbing.Hash]int, mergeCount)
+		detector.mergeNameCount = mergeCount
+		detector.expandMergeDict = true
+
+		return nil
+	}
+
+	return errors.Errorf("merge tracks are not available")
 }
 
 func splitMergeDict(dict map[plumbing.Hash]string) (map[plumbing.Hash]int, []string) {

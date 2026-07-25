@@ -282,7 +282,7 @@ func (tdb *TyposDatasetBuilder) typosFromChange(
 	after := cache[change.To.TreeEntry.Hash]
 
 	diff, exists := diffs[change.To.Name]
-	if before == nil || after == nil || !exists {
+	if !validTypoInput(before, after, exists) {
 		return nil, nil
 	}
 
@@ -303,16 +303,34 @@ func (tdb *TyposDatasetBuilder) typosFromChange(
 	var typos []Typo
 
 	for _, candidate := range candidates {
-		removed, added := beforeIDs[candidate.Before], afterIDs[candidate.After]
-		if len(removed) == 1 && len(added) == 1 && removed[0] != added[0] {
-			typos = append(typos, Typo{
-				Wrong: removed[0], Correct: added[0], Commit: commit,
-				File: change.To.Name, Line: candidate.After,
-			})
+		typo, found := typoFromCandidate(candidate, beforeIDs, afterIDs, commit, change.To.Name)
+		if found {
+			typos = append(typos, typo)
 		}
 	}
 
 	return typos, nil
+}
+
+func validTypoInput(before, after *items.CachedBlob, diffExists bool) bool {
+	return before != nil && after != nil && diffExists
+}
+
+func typoFromCandidate(
+	candidate candidate,
+	beforeIDs, afterIDs map[int][]string,
+	commit plumbing.Hash,
+	file string,
+) (Typo, bool) {
+	removed, added := beforeIDs[candidate.Before], afterIDs[candidate.After]
+	if len(removed) != 1 || len(added) != 1 || removed[0] == added[0] {
+		return Typo{}, false
+	}
+
+	return Typo{
+		Wrong: removed[0], Correct: added[0], Commit: commit,
+		File: file, Line: candidate.After,
+	}, true
 }
 
 func (tdb *TyposDatasetBuilder) typoCandidates(

@@ -17,11 +17,12 @@ var errFeatureNotRegistered = errors.New("is not registered")
 
 // PipelineItemRegistry contains all the known PipelineItem-s.
 type PipelineItemRegistry struct {
-	provided     map[string][]reflect.Type
-	registered   map[string]reflect.Type
-	preferred    map[string]struct{}
-	flags        map[string]reflect.Type
-	featureFlags arrayFeatureFlags
+	provided               map[string][]reflect.Type
+	registered             map[string]reflect.Type
+	preferred              map[string]struct{}
+	flags                  map[string]reflect.Type
+	featureFlags           arrayFeatureFlags
+	pathFlagTypeMasquerade bool
 }
 
 // Register adds another PipelineItem to the registry.
@@ -212,20 +213,19 @@ func (registry *PipelineItemRegistry) CollectAllDependencies(item PipelineItem) 
 	return result
 }
 
-var pathFlagTypeMasquerade bool
-
 // EnablePathFlagTypeMasquerade changes the type of all "path" command line arguments from "string"
 // to "path". This operation cannot be canceled and is intended to be used for better --help output.
 func EnablePathFlagTypeMasquerade() {
-	pathFlagTypeMasquerade = true
+	Registry.pathFlagTypeMasquerade = true
 }
 
 type pathValue struct {
-	origin pflag.Value
+	origin   pflag.Value
+	registry *PipelineItemRegistry
 }
 
 func wrapPathValue(val pflag.Value) pflag.Value {
-	return &pathValue{val}
+	return &pathValue{origin: val, registry: Registry}
 }
 
 func (s *pathValue) Set(val string) error {
@@ -238,7 +238,7 @@ func (s *pathValue) Set(val string) error {
 }
 
 func (s *pathValue) Type() string {
-	if pathFlagTypeMasquerade {
+	if s.registry.pathFlagTypeMasquerade {
 		return "path"
 	}
 

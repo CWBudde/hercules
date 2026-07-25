@@ -15,39 +15,32 @@ const csharpImportsQuery = `
 (using_directive (qualified_name) @name)
 `
 
-var (
-	csharpLang  = grammars.CSharpLanguage()
-	csharpQuery = mustQuery(csharpImportsQuery, csharpLang)
+type csharpExtractor struct {
+	language *sitter.Language
+	query    *sitter.Query
+}
 
-	// Identifier-shaped tokens whose text contributes directly to the
-	// reconstructed dotted import path.
-	csharpIncludeTypes = map[string]struct{}{
-		"identifier": {},
-		".":          {},
-	}
-	// Subtrees we drop wholesale (generic argument syntax leaks into
-	// using_static directives in newer C# versions).
-	csharpExcludeTypes = map[string]struct{}{
-		"type_argument_list": {},
-		"<":                  {},
-		">":                  {},
-	}
-)
+func newCSharpExtractor() csharpExtractor {
+	language := grammars.CSharpLanguage()
 
-type csharpExtractor struct{}
+	return csharpExtractor{
+		language: language,
+		query:    mustQuery(csharpImportsQuery, language),
+	}
+}
 
 func (csharpExtractor) Aliases() []string { return []string{"C#"} }
 
-func (csharpExtractor) Imports(content []byte) ([]string, error) {
-	root := parseFull(csharpLang, content)
+func (extractor csharpExtractor) Imports(content []byte) ([]string, error) {
+	root := parseFull(extractor.language, content)
 	if root == nil {
 		return nil, nil
 	}
 	var out []string
 
-	runQuery(csharpQuery, root, csharpLang, content, func(captures []sitter.QueryCapture) {
+	runQuery(extractor.query, root, extractor.language, content, func(captures []sitter.QueryCapture) {
 		for _, c := range captures {
-			out = append(out, csharpJoinName(c.Node, content))
+			out = append(out, csharpJoinName(c.Node, extractor.language, content))
 		}
 	})
 
@@ -56,17 +49,24 @@ func (csharpExtractor) Imports(content []byte) ([]string, error) {
 
 // csharpJoinName flattens a qualified_name / identifier_name subtree into
 // its dotted source representation, skipping generic-argument noise.
-func csharpJoinName(node *sitter.Node, content []byte) string {
+func csharpJoinName(
+	node *sitter.Node,
+	language *sitter.Language,
+	content []byte,
+) string {
 	var joinedName []byte
 	var walk func(currentNode *sitter.Node)
 	walk = func(currentNode *sitter.Node) {
-		typ := currentNode.Type(csharpLang)
-		if _, ok := csharpIncludeTypes[typ]; ok {
+		nodeType := currentNode.Type(language)
+		if nodeType == "identifier" || nodeType == "." {
 			joinedName = append(joinedName, content[currentNode.StartByte():currentNode.EndByte()]...)
+
 			return
 		}
 
-		if _, ok := csharpExcludeTypes[typ]; ok {
+		// Drop generic argument syntax wholesale; it leaks into using_static
+		// directives in newer C# grammar versions.
+		if nodeType == "type_argument_list" || nodeType == "<" || nodeType == ">" {
 			return
 		}
 

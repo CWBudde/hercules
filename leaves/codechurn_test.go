@@ -43,7 +43,7 @@ func TestCodeChurnRegistration(t *testing.T) {
 func TestCodeChurnListConfigurationOptions(t *testing.T) {
 	cc := CodeChurnAnalysis{}
 	opts := cc.ListConfigurationOptions()
-	assert.Len(t, opts, len(BurndownSharedOptions))
+	assert.Len(t, opts, len(burndownSharedOptions()))
 }
 
 func TestCodeChurnConfigure(t *testing.T) {

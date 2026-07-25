@@ -59,8 +59,25 @@ const (
 	nodeTypePrivatePropertyIdentifier    = "private_property_identifier"
 )
 
-var languageByExtension = map[string]languageSpec{
-	".go": {
+func languageSpecForExtension(extension string) (languageSpec, bool) {
+	switch extension {
+	case ".go":
+		return goLanguageSpec(), true
+	case ".py":
+		return pythonLanguageSpec(), true
+	case ".js", ".jsx", ".mjs", ".cjs":
+		return javascriptLanguageSpec(), true
+	case ".ts", ".tsx":
+		return typescriptLanguageSpec(), true
+	case ".java":
+		return javaLanguageSpec(), true
+	default:
+		return languageSpec{}, false
+	}
+}
+
+func goLanguageSpec() languageSpec {
+	return languageSpec{
 		language: grammars.GoLanguage(),
 		functionNodeTypes: map[string]struct{}{
 			nodeTypeFunctionDeclaration: {},
@@ -71,23 +88,23 @@ var languageByExtension = map[string]languageSpec{
 			"field_identifier":     {},
 			nodeTypeTypeIdentifier: {},
 		},
-		commentNodeTypes: map[string]struct{}{
-			nodeTypeComment: {},
-		},
-	},
-	".py": {
+		commentNodeTypes: map[string]struct{}{nodeTypeComment: {}},
+	}
+}
+
+func pythonLanguageSpec() languageSpec {
+	return languageSpec{
 		language: grammars.PythonLanguage(),
 		functionNodeTypes: map[string]struct{}{
 			"function_definition": {},
 		},
-		identifierNodeTypes: map[string]struct{}{
-			nodeTypeIdentifier: {},
-		},
-		commentNodeTypes: map[string]struct{}{
-			nodeTypeComment: {},
-		},
-	},
-	".js": {
+		identifierNodeTypes: map[string]struct{}{nodeTypeIdentifier: {}},
+		commentNodeTypes:    map[string]struct{}{nodeTypeComment: {}},
+	}
+}
+
+func javascriptLanguageSpec() languageSpec {
+	return languageSpec{
 		language: grammars.JavascriptLanguage(),
 		functionNodeTypes: map[string]struct{}{
 			nodeTypeFunctionDeclaration:          {},
@@ -99,59 +116,12 @@ var languageByExtension = map[string]languageSpec{
 			nodeTypePropertyIdentifier:        {},
 			nodeTypePrivatePropertyIdentifier: {},
 		},
-		commentNodeTypes: map[string]struct{}{
-			nodeTypeComment: {},
-		},
-	},
-	".jsx": {
-		language: grammars.JavascriptLanguage(),
-		functionNodeTypes: map[string]struct{}{
-			nodeTypeFunctionDeclaration:          {},
-			nodeTypeGeneratorFunctionDeclaration: {},
-			nodeTypeMethodDefinition:             {},
-		},
-		identifierNodeTypes: map[string]struct{}{
-			nodeTypeIdentifier:                {},
-			nodeTypePropertyIdentifier:        {},
-			nodeTypePrivatePropertyIdentifier: {},
-		},
-		commentNodeTypes: map[string]struct{}{
-			nodeTypeComment: {},
-		},
-	},
-	".mjs": {
-		language: grammars.JavascriptLanguage(),
-		functionNodeTypes: map[string]struct{}{
-			nodeTypeFunctionDeclaration:          {},
-			nodeTypeGeneratorFunctionDeclaration: {},
-			nodeTypeMethodDefinition:             {},
-		},
-		identifierNodeTypes: map[string]struct{}{
-			nodeTypeIdentifier:                {},
-			nodeTypePropertyIdentifier:        {},
-			nodeTypePrivatePropertyIdentifier: {},
-		},
-		commentNodeTypes: map[string]struct{}{
-			nodeTypeComment: {},
-		},
-	},
-	".cjs": {
-		language: grammars.JavascriptLanguage(),
-		functionNodeTypes: map[string]struct{}{
-			nodeTypeFunctionDeclaration:          {},
-			nodeTypeGeneratorFunctionDeclaration: {},
-			nodeTypeMethodDefinition:             {},
-		},
-		identifierNodeTypes: map[string]struct{}{
-			nodeTypeIdentifier:                {},
-			nodeTypePropertyIdentifier:        {},
-			nodeTypePrivatePropertyIdentifier: {},
-		},
-		commentNodeTypes: map[string]struct{}{
-			nodeTypeComment: {},
-		},
-	},
-	".ts": {
+		commentNodeTypes: map[string]struct{}{nodeTypeComment: {}},
+	}
+}
+
+func typescriptLanguageSpec() languageSpec {
+	return languageSpec{
 		language: grammars.TypescriptLanguage(),
 		functionNodeTypes: map[string]struct{}{
 			"function":                           {},
@@ -165,42 +135,23 @@ var languageByExtension = map[string]languageSpec{
 			nodeTypePrivatePropertyIdentifier: {},
 			nodeTypeTypeIdentifier:            {},
 		},
-		commentNodeTypes: map[string]struct{}{
-			nodeTypeComment: {},
-		},
-	},
-	".tsx": {
-		language: grammars.TypescriptLanguage(),
-		functionNodeTypes: map[string]struct{}{
-			"function":                           {},
-			nodeTypeFunctionDeclaration:          {},
-			nodeTypeGeneratorFunctionDeclaration: {},
-			nodeTypeMethodDefinition:             {},
-		},
-		identifierNodeTypes: map[string]struct{}{
-			nodeTypeIdentifier:                {},
-			nodeTypePropertyIdentifier:        {},
-			nodeTypePrivatePropertyIdentifier: {},
-			nodeTypeTypeIdentifier:            {},
-		},
-		commentNodeTypes: map[string]struct{}{
-			nodeTypeComment: {},
-		},
-	},
-	".java": {
+		commentNodeTypes: map[string]struct{}{nodeTypeComment: {}},
+	}
+}
+
+func javaLanguageSpec() languageSpec {
+	return languageSpec{
 		language: grammars.JavaLanguage(),
 		functionNodeTypes: map[string]struct{}{
 			"method_declaration":      {},
 			"constructor_declaration": {},
 		},
-		identifierNodeTypes: map[string]struct{}{
-			nodeTypeIdentifier: {},
-		},
+		identifierNodeTypes: map[string]struct{}{nodeTypeIdentifier: {}},
 		commentNodeTypes: map[string]struct{}{
 			"line_comment":  {},
 			"block_comment": {},
 		},
-	},
+	}
 }
 
 // TreeSitterExtractor implements Extractor with tree-sitter grammars.
@@ -256,7 +207,7 @@ func parseFull(source []byte, lang *sitter.Language) (*sitter.Node, error) {
 // ExtractNamedNodes returns all named syntax nodes for supported languages.
 // This is intended for line-level structural heuristics where broad node coverage is needed.
 func ExtractNamedNodes(path string, source []byte) ([]Node, error) {
-	spec, ok := languageByExtension[strings.ToLower(filepath.Ext(path))]
+	spec, ok := languageSpecForExtension(strings.ToLower(filepath.Ext(path)))
 	if !ok {
 		return nil, nil
 	}
@@ -277,7 +228,7 @@ func ExtractNamedNodes(path string, source []byte) ([]Node, error) {
 // requires non-overlapping, sorted ranges). Returns (nil, nil) for unsupported
 // extensions or when the resulting range set is empty.
 func ExtractNamedNodesInRanges(path string, source []byte, ranges []LineRange) ([]Node, error) {
-	spec, ok := languageByExtension[strings.ToLower(filepath.Ext(path))]
+	spec, ok := languageSpecForExtension(strings.ToLower(filepath.Ext(path)))
 	if !ok {
 		return nil, nil
 	}
@@ -490,7 +441,7 @@ func extractByTypes(
 	requireName bool,
 	namedOnlyWalk bool,
 ) ([]Node, error) {
-	spec, ok := languageByExtension[strings.ToLower(filepath.Ext(path))]
+	spec, ok := languageSpecForExtension(strings.ToLower(filepath.Ext(path)))
 	if !ok {
 		return nil, nil
 	}

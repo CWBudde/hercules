@@ -2,9 +2,9 @@ package core
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"math"
-	"os"
 	"reflect"
 	"slices"
 	"sort"
@@ -99,12 +99,6 @@ const (
 const rootBranchIndex = 1
 
 const runActionEmergeName = "emerge"
-
-// planPrintFunc is used to print the execution plan in prepareRunPlan().
-var planPrintFunc = func(args ...any) {
-	//	fmt.Fprintln(os.Stderr)
-	_, _ = fmt.Fprintln(os.Stderr, args...)
-}
 
 type runAction struct {
 	Action    int
@@ -210,24 +204,24 @@ func prepareRunPlan(commits []*object.Commit, hibernationDistance int, traceback
 	return plan, mergeHashCount
 }
 
-// printAction prints the specified action to stderr.
-func printAction(action runAction) {
+// printAction prints the specified action.
+func printAction(writer io.Writer, action runAction) {
 	firstItem := action.Items[0]
 	switch action.Action {
 	case runActionCommit:
-		planPrintFunc("C", firstItem, action.Commit.Hash.String())
+		_, _ = fmt.Fprintln(writer, "C", firstItem, action.Commit.Hash.String())
 	case runActionFork:
-		planPrintFunc("F", action.Items)
+		_, _ = fmt.Fprintln(writer, "F", action.Items)
 	case runActionMerge:
-		planPrintFunc("M", action.Items, action.Commit.Hash.String())
+		_, _ = fmt.Fprintln(writer, "M", action.Items, action.Commit.Hash.String())
 	case runActionEmerge:
-		planPrintFunc("E", action.Items)
+		_, _ = fmt.Fprintln(writer, "E", action.Items)
 	case runActionDelete:
-		planPrintFunc("D", action.Items)
+		_, _ = fmt.Fprintln(writer, "D", action.Items)
 	case runActionHibernate:
-		planPrintFunc("H", firstItem)
+		_, _ = fmt.Fprintln(writer, "H", firstItem)
 	case runActionBoot:
-		planPrintFunc("B", firstItem)
+		_, _ = fmt.Fprintln(writer, "B", firstItem)
 	}
 }
 
@@ -778,23 +772,27 @@ func (builder *planBuilder) appendCommitSequence(
 	}
 
 	for index, offspring := range sequence {
-		if index == 0 {
-			mergeBranch, items := builder.mergeBranches(commit, branch)
-			if mergeBranch != branch {
-				builder.branches[commit.Hash], branch = mergeBranch, mergeBranch
-			} else if !branchExists(branch) {
-				log.Panicf("head of the sequence does not have an assigned branch: %s", commit.Hash.String())
+		if index != 0 {
+			if branchExists(branch) {
+				builder.appendCommit(offspring, branch)
 			}
 
-			builder.appendCommit(offspring, mergeBranch)
+			continue
+		}
 
-			if len(items) > 0 {
-				builder.plan = append(builder.plan, runAction{
-					Action: runActionMerge, Commit: commit, Items: items,
-				})
-			}
-		} else if branchExists(branch) {
-			builder.appendCommit(offspring, branch)
+		mergeBranch, items := builder.mergeBranches(commit, branch)
+		if mergeBranch != branch {
+			builder.branches[commit.Hash], branch = mergeBranch, mergeBranch
+		} else if !branchExists(branch) {
+			log.Panicf("head of the sequence does not have an assigned branch: %s", commit.Hash.String())
+		}
+
+		builder.appendCommit(offspring, mergeBranch)
+
+		if len(items) > 0 {
+			builder.plan = append(builder.plan, runAction{
+				Action: runActionMerge, Commit: commit, Items: items,
+			})
 		}
 	}
 

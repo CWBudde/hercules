@@ -32,25 +32,24 @@ type Language interface {
 	Imports(content []byte) ([]string, error)
 }
 
-var registry = map[string]Language{
-	"C#":   csharpExtractor{},
-	"Go":   goExtractor{},
-	"Java": javaExtractor{},
-}
-
-// RegisterLanguage adds a language extractor to the global registry and
-// returns a value suitable for declaration-time registration.
-func RegisterLanguage(l Language) struct{} {
-	for _, name := range l.Aliases() {
-		registry[name] = l
-	}
-
-	return struct{}{}
-}
-
-// LanguageByName looks up a registered extractor by its enry alias.
+// LanguageByName constructs the extractor registered for an enry alias.
 func LanguageByName(name string) Language {
-	return registry[name]
+	switch name {
+	case "C#":
+		return newCSharpExtractor()
+	case "Go":
+		return newGoExtractor()
+	case "Java":
+		return newJavaExtractor()
+	case "JavaScript":
+		return newJSExtractor()
+	case "Python":
+		return newPyExtractor()
+	case "TypeScript":
+		return newTSExtractor()
+	default:
+		return nil
+	}
 }
 
 // Extract runs language detection on (path, content) and dispatches to the

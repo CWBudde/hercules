@@ -5,13 +5,15 @@ import (
 	"github.com/odvcencio/gotreesitter/grammars"
 )
 
-var tsLang = grammars.TypescriptLanguage()
-
 const tsStringNodeType = "string"
 
-var _ = RegisterLanguage(tsExtractor{})
+type tsExtractor struct {
+	language *sitter.Language
+}
 
-type tsExtractor struct{}
+func newTSExtractor() tsExtractor {
+	return tsExtractor{language: grammars.TypescriptLanguage()}
+}
 
 func (tsExtractor) Aliases() []string { return []string{"TypeScript"} }
 
@@ -20,15 +22,15 @@ func (tsExtractor) Aliases() []string { return []string{"TypeScript"} }
 // re-exports (`export { x } from "y"`) and CommonJS-style
 // `import x = require("y")`, so we handle both shapes here rather than via
 // a single S-expression query.
-func (tsExtractor) Imports(content []byte) ([]string, error) {
-	root := parseFull(tsLang, content)
+func (extractor tsExtractor) Imports(content []byte) ([]string, error) {
+	root := parseFull(extractor.language, content)
 	if root == nil {
 		return nil, nil
 	}
 	var out []string
 
-	eachNodeOfTypes(root, tsLang, func(node *sitter.Node) bool {
-		out = append(out, tsModuleSpecifiers(node, content)...)
+	eachNodeOfTypes(root, extractor.language, func(node *sitter.Node) bool {
+		out = append(out, tsModuleSpecifiers(node, extractor.language, content)...)
 
 		return false
 	}, "import_statement", "export_statement")
@@ -36,32 +38,40 @@ func (tsExtractor) Imports(content []byte) ([]string, error) {
 	return out, nil
 }
 
-func tsModuleSpecifiers(statement *sitter.Node, content []byte) []string {
-	if statement.Type(tsLang) == "export_statement" {
-		return tsStringChildren(statement, content)
+func tsModuleSpecifiers(
+	statement *sitter.Node,
+	language *sitter.Language,
+	content []byte,
+) []string {
+	if statement.Type(language) == "export_statement" {
+		return tsStringChildren(statement, language, content)
 	}
 
 	var specifiers []string
 
 	for i := range statement.ChildCount() {
 		child := statement.Child(i)
-		switch child.Type(tsLang) {
+		switch child.Type(language) {
 		case tsStringNodeType:
 			specifiers = append(specifiers, stripStringQuotes(child, content))
 		case "import_require_clause":
-			specifiers = append(specifiers, tsStringChildren(child, content)...)
+			specifiers = append(specifiers, tsStringChildren(child, language, content)...)
 		}
 	}
 
 	return specifiers
 }
 
-func tsStringChildren(node *sitter.Node, content []byte) []string {
+func tsStringChildren(
+	node *sitter.Node,
+	language *sitter.Language,
+	content []byte,
+) []string {
 	var strings []string
 
 	for i := range node.ChildCount() {
 		child := node.Child(i)
-		if child.Type(tsLang) == tsStringNodeType {
+		if child.Type(language) == tsStringNodeType {
 			strings = append(strings, stripStringQuotes(child, content))
 		}
 	}

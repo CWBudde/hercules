@@ -323,6 +323,8 @@ type Pipeline struct {
 
 	// The logger for printing output.
 	l Logger
+
+	output io.Writer
 }
 
 type preparedRun struct {
@@ -388,6 +390,7 @@ func NewPipeline(repository *git.Repository) *Pipeline {
 		items:      []PipelineItem{},
 		features:   map[string]bool{},
 		l:          NewLogger(),
+		output:     os.Stderr,
 	}
 }
 
@@ -652,27 +655,12 @@ func (pipeline *Pipeline) InitializeExt(facts map[string]any,
 	cleanReturn := false
 	defer pipeline.logInitializationFailure(&cleanReturn)
 
-	err := pipeline.applyConfigurationFacts(facts)
-	if err != nil {
-		return err
-	}
-
-	dumpPath, _ := facts[ConfigPipelineDAGPath].(string)
-
-	err = pipeline.resolve(dumpPath, priorityFn)
+	err := prepareInitialization(pipeline, facts, priorityFn, preparePlan)
 	if err != nil {
 		return err
 	}
 
 	mergeTracks, _ := pipeline.GetFeature(FeatureMergeTracks)
-	if !preparePlan && mergeTracks {
-		return errors.New("merge tracks mode is not allowed")
-	}
-
-	if preparePlan {
-		pipeline.prepareRun(facts, mergeTracks)
-	}
-
 	if pipeline.DryRun {
 		cleanReturn = true
 		return nil
@@ -703,6 +691,34 @@ func (pipeline *Pipeline) InitializeExt(facts map[string]any,
 	}
 
 	cleanReturn = true
+
+	return nil
+}
+
+func prepareInitialization(
+	pipeline *Pipeline,
+	facts map[string]any, priorityFn DependencyPriorityFunc, preparePlan bool,
+) error {
+	err := pipeline.applyConfigurationFacts(facts)
+	if err != nil {
+		return err
+	}
+
+	dumpPath, _ := facts[ConfigPipelineDAGPath].(string)
+
+	err = pipeline.resolve(dumpPath, priorityFn)
+	if err != nil {
+		return err
+	}
+
+	mergeTracks, _ := pipeline.GetFeature(FeatureMergeTracks)
+	if !preparePlan && mergeTracks {
+		return errors.New("merge tracks mode is not allowed")
+	}
+
+	if preparePlan {
+		pipeline.prepareRun(facts, mergeTracks)
+	}
 
 	return nil
 }
@@ -1126,7 +1142,7 @@ func (pipeline *Pipeline) dumpRunPlan(plan []runAction) {
 	}
 
 	for _, action := range plan {
-		printAction(action)
+		printAction(pipeline.output, action)
 	}
 }
 
@@ -1156,7 +1172,7 @@ func (state *pipelineRunState) executePlan(plan []runAction, progressSteps int,
 		}
 
 		if state.pipeline.PrintActions {
-			printAction(step)
+			printAction(state.pipeline.output, step)
 		}
 
 		if index > 0 && index%100 == 0 && state.pipeline.HibernationDistance > 0 {

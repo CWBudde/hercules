@@ -563,7 +563,7 @@ func writeCouplesMatrix(writer io.Writer, matrix []map[int]int64) {
 	for _, row := range matrix {
 		fmt.Fprint(writer, "      - {")
 
-		var indices []int
+		indices := make([]int, 0, len(row))
 		for index := range row {
 			indices = append(indices, index)
 		}

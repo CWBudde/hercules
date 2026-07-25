@@ -9,23 +9,30 @@ const goImportsQuery = `
 (import_spec (interpreted_string_literal) @name)
 `
 
-var (
-	goLang  = grammars.GoLanguage()
-	goQuery = mustQuery(goImportsQuery, goLang)
-)
+type goExtractor struct {
+	language *sitter.Language
+	query    *sitter.Query
+}
 
-type goExtractor struct{}
+func newGoExtractor() goExtractor {
+	language := grammars.GoLanguage()
+
+	return goExtractor{
+		language: language,
+		query:    mustQuery(goImportsQuery, language),
+	}
+}
 
 func (goExtractor) Aliases() []string { return []string{"Go"} }
 
-func (goExtractor) Imports(content []byte) ([]string, error) {
-	root := parseFull(goLang, content)
+func (extractor goExtractor) Imports(content []byte) ([]string, error) {
+	root := parseFull(extractor.language, content)
 	if root == nil {
 		return nil, nil
 	}
 	var out []string
 
-	runQuery(goQuery, root, goLang, content, func(captures []sitter.QueryCapture) {
+	runQuery(extractor.query, root, extractor.language, content, func(captures []sitter.QueryCapture) {
 		for _, capture := range captures {
 			// `interpreted_string_literal` includes the surrounding quotes;
 			// strip them to match the smacker-era behavior.
@@ -40,8 +47,8 @@ func (goExtractor) Imports(content []byte) ([]string, error) {
 	return out, nil
 }
 
-// mustQuery panics on compile failure — invalid grammar queries are a
-// programmer error caught at init time, not a runtime condition.
+// mustQuery panics on compile failure because invalid grammar queries are a
+// programmer error.
 func mustQuery(src string, lang *sitter.Language) *sitter.Query {
 	q, err := sitter.NewQuery(src, lang)
 	if err != nil {

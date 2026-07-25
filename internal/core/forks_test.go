@@ -2,7 +2,6 @@ package core
 
 import (
 	"bytes"
-	"fmt"
 	"testing"
 
 	"github.com/go-git/go-git/v5"
@@ -674,11 +673,6 @@ func TestTracebackMerges(t *testing.T) {
 
 func TestPrintAction(t *testing.T) {
 	var buf bytes.Buffer
-	old := planPrintFunc
-	planPrintFunc = func(args ...any) {
-		fmt.Fprintln(&buf, args...)
-	}
-	defer func() { planPrintFunc = old }()
 
 	commit, _ := test.FixtureRepository().CommitObject(plumbing.NewHash("cce947b98a050c6d356bc6ba95030254914027b1"))
 
@@ -699,7 +693,7 @@ func TestPrintAction(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			buf.Reset()
-			printAction(tt.action)
+			printAction(&buf, tt.action)
 			assert.Contains(t, buf.String(), tt.contains)
 		})
 	}

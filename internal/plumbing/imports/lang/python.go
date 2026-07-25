@@ -7,8 +7,6 @@ import (
 	"github.com/odvcencio/gotreesitter/grammars"
 )
 
-var _ = RegisterLanguage(newPyExtractor())
-
 type pyExtractor struct {
 	language      *sitter.Language
 	staticQueries []*sitter.Query

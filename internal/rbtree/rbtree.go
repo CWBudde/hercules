@@ -967,17 +967,23 @@ func (tree *RBTree) doDelete(nodeIndex uint32) {
 	tree.allocator.free(nodeIndex)
 
 	tree.count--
+	tree.updateBoundsAfterDelete(nodeIndex)
+}
+
+func (tree *RBTree) updateBoundsAfterDelete(nodeIndex uint32) {
 	if tree.count == 0 {
 		tree.minNode = 0
 		tree.maxNode = 0
-	} else {
-		if tree.minNode == nodeIndex {
-			tree.recomputeMinNode()
-		}
 
-		if tree.maxNode == nodeIndex {
-			tree.recomputeMaxNode()
-		}
+		return
+	}
+
+	if tree.minNode == nodeIndex {
+		tree.recomputeMinNode()
+	}
+
+	if tree.maxNode == nodeIndex {
+		tree.recomputeMaxNode()
 	}
 }
 

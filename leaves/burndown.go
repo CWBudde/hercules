@@ -31,6 +31,7 @@ var (
 	errUnexpectedBurndownResult     = errors.New("result is not a burndown result")
 	errBurndownMismatchingTickSizes = errors.New("mismatching tick sizes")
 	errProtoInt32Range              = errors.New("value exceeds the protobuf int32 range")
+	errUnexpectedDependencyType     = errors.New("unexpected dependency type")
 )
 
 // BurndownAnalysis allows to gather the line burndown statistics for a Git repository.
@@ -113,8 +114,7 @@ func (analyser *BurndownAnalysis) Requires() []string {
 
 // ListConfigurationOptions returns the list of changeable public properties of this PipelineItem.
 func (analyser *BurndownAnalysis) ListConfigurationOptions() []core.ConfigurationOption {
-	opts := make([]core.ConfigurationOption, len(BurndownSharedOptions), len(BurndownSharedOptions)+2)
-	copy(opts, BurndownSharedOptions[:])
+	opts := burndownSharedOptions()
 	opts = append(opts, core.ConfigurationOption{
 		Name:        ConfigBurndownHibernationDisk,
 		Description: "Save hibernated burndown data to disk rather than keep in memory.",
@@ -134,27 +134,10 @@ func (analyser *BurndownAnalysis) ListConfigurationOptions() []core.Configuratio
 
 // Configure sets the properties previously published by ListConfigurationOptions().
 func (analyser *BurndownAnalysis) Configure(facts map[string]any) error {
-	if l, exists := facts[core.ConfigLogger].(core.Logger); exists {
-		analyser.l = l
-	} else {
-		analyser.l = core.NewLogger()
-	}
-
-	if val, exists := facts[items.FactTickSize].(time.Duration); exists {
-		analyser.tickSize = val
-	}
-
-	if val, exists := facts[ConfigBurndownGranularity].(int); exists {
-		analyser.Granularity = val
-	}
-
-	if val, exists := facts[ConfigBurndownSampling].(int); exists {
-		analyser.Sampling = val
-	}
-
-	if val, exists := facts[ConfigBurndownTrackFiles].(bool); exists {
-		analyser.TrackFiles = val
-	}
+	configureBurndownBasics(
+		facts, &analyser.l, &analyser.tickSize, &analyser.Granularity,
+		&analyser.Sampling, &analyser.TrackFiles,
+	)
 
 	if people, ok := facts[ConfigBurndownTrackPeople].(bool); people {
 		if val, ok := facts[core.FactIdentityResolver].(core.IdentityResolver); ok {
@@ -170,15 +153,53 @@ func (analyser *BurndownAnalysis) Configure(facts map[string]any) error {
 
 	analyser.fileResolver = analyser.primaryResolver
 
-	if val, exists := facts[ConfigBurndownHibernationDisk].(bool); exists {
-		analyser.HibernationToDisk = val
-	}
-
-	if val, exists := facts[ConfigBurndownHibernationDir].(string); exists {
-		analyser.HibernationDirectory = val
-	}
+	configureBurndownHibernation(
+		facts, &analyser.HibernationToDisk, &analyser.HibernationDirectory,
+	)
 
 	return nil
+}
+
+func configureBurndownBasics(
+	facts map[string]any,
+	logger *core.Logger,
+	tickSize *time.Duration,
+	granularity, sampling *int,
+	trackFiles *bool,
+) {
+	*logger = core.NewLogger()
+	if value, ok := facts[core.ConfigLogger].(core.Logger); ok {
+		*logger = value
+	}
+
+	assignFact(facts, items.FactTickSize, tickSize)
+	assignFact(facts, ConfigBurndownGranularity, granularity)
+	assignFact(facts, ConfigBurndownSampling, sampling)
+	assignFact(facts, ConfigBurndownTrackFiles, trackFiles)
+}
+
+func configureBurndownHibernation(facts map[string]any, toDisk *bool, directory *string) {
+	assignFact(facts, ConfigBurndownHibernationDisk, toDisk)
+	assignFact(facts, ConfigBurndownHibernationDir, directory)
+}
+
+func assignFact[T any](facts map[string]any, key string, destination *T) {
+	if value, ok := facts[key].(T); ok {
+		*destination = value
+	}
+}
+
+func requiredFact[T any](facts map[string]any, key string) (T, error) {
+	value, ok := facts[key].(T)
+	if ok {
+		return value, nil
+	}
+
+	var zero T
+
+	return zero, fmt.Errorf(
+		"%w: %q has type %T", errUnexpectedDependencyType, key, facts[key],
+	)
 }
 
 func (analyser *BurndownAnalysis) ConfigureUpstream(_ map[string]any) error {
@@ -254,7 +275,17 @@ func (analyser *BurndownAnalysis) Merge([]core.PipelineItem) {
 // This function returns the mapping with analysis results. The keys must be the same as
 // in Provides(). If there was an error, nil is returned.
 func (analyser *BurndownAnalysis) Consume(deps map[string]any) (map[string]any, error) {
-	changes := deps[linehistory.DependencyLineHistory].(core.LineHistoryChanges)
+	changes, err := requiredFact[core.LineHistoryChanges](deps, linehistory.DependencyLineHistory)
+	if err != nil {
+		return nil, err
+	}
+
+	consumeLineHistory(analyser, changes)
+
+	return noDependencies(), nil
+}
+
+func consumeLineHistory(analyser *BurndownAnalysis, changes core.LineHistoryChanges) {
 	if analyser.primaryResolver == nil {
 		analyser.primaryResolver = changes.Resolver
 	}
@@ -290,8 +321,6 @@ func (analyser *BurndownAnalysis) Consume(deps map[string]any) (map[string]any, 
 	}
 
 	analyser.fileResolver = analyser.primaryResolver
-
-	return noDependencies(), nil
 }
 
 // burndownState holds the serializable state for hibernation.
@@ -569,9 +598,16 @@ func denseInteractionMatrix(matrix *pb.CompressedSparseRowMatrix) burndown.Dense
 func (analyser *BurndownAnalysis) MergeResults(
 	firstResult, secondResult any, commonFirst, commonSecond *core.CommonAnalysisResult,
 ) any {
-	bar1 := firstResult.(BurndownResult)
+	bar1, ok := firstResult.(BurndownResult)
+	if !ok {
+		return fmt.Errorf("%w: first result has type %T", errUnexpectedBurndownResult, firstResult)
+	}
 
-	bar2 := secondResult.(BurndownResult)
+	bar2, ok := secondResult.(BurndownResult)
+	if !ok {
+		return fmt.Errorf("%w: second result has type %T", errUnexpectedBurndownResult, secondResult)
+	}
+
 	if bar1.tickSize != bar2.tickSize {
 		return fmt.Errorf("%w (r1: %d, r2: %d) received",
 			errBurndownMismatchingTickSizes, bar1.tickSize, bar2.tickSize)
@@ -1022,7 +1058,28 @@ func (analyser *BurndownAnalysis) serializeBinary(result *BurndownResult, writer
 		return err
 	}
 
-	message := pb.BurndownAnalysisResults{
+	message, err := burndownResultToProto(result, granularity, sampling)
+	if err != nil {
+		return err
+	}
+
+	serialized, err := proto.Marshal(message)
+	if err != nil {
+		return fmt.Errorf("marshal burndown protobuf: %w", err)
+	}
+
+	_, err = writer.Write(serialized)
+	if err != nil {
+		return fmt.Errorf("write burndown protobuf: %w", err)
+	}
+
+	return nil
+}
+
+func burndownResultToProto(
+	result *BurndownResult, granularity, sampling int32,
+) (*pb.BurndownAnalysisResults, error) {
+	message := &pb.BurndownAnalysisResults{
 		Granularity: granularity,
 		Sampling:    sampling,
 		TickSize:    int64(result.tickSize),
@@ -1032,10 +1089,13 @@ func (analyser *BurndownAnalysis) serializeBinary(result *BurndownResult, writer
 	}
 
 	if len(result.FileHistories) > 0 {
-		message.Files, message.FilesOwnership, err = burndownFilesToProto(result)
+		files, ownership, err := burndownFilesToProto(result)
 		if err != nil {
-			return err
+			return nil, err
 		}
+
+		message.Files = files
+		message.FilesOwnership = ownership
 	}
 
 	if len(result.PeopleHistories) > 0 {
@@ -1053,17 +1113,7 @@ func (analyser *BurndownAnalysis) serializeBinary(result *BurndownResult, writer
 		)
 	}
 
-	serialized, err := proto.Marshal(&message)
-	if err != nil {
-		return fmt.Errorf("marshal burndown protobuf: %w", err)
-	}
-
-	_, err = writer.Write(serialized)
-	if err != nil {
-		return fmt.Errorf("write burndown protobuf: %w", err)
-	}
-
-	return nil
+	return message, nil
 }
 
 func burndownFilesToProto(

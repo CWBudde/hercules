@@ -433,7 +433,7 @@ func (analyser *LineHistoryAnalyser) Fork(n int) []core.PipelineItem {
 
 	if abandonedNames := analyser.inheritAbandonedNames(); len(abandonedNames) > 0 {
 		for _, item := range result {
-			item.(*LineHistoryAnalyser).fileAbandonedNamesOfParent = abandonedNames
+			mustLineHistoryAnalyser(item).fileAbandonedNamesOfParent = abandonedNames
 		}
 	}
 
@@ -446,7 +446,7 @@ func (analyser *LineHistoryAnalyser) Merge(items []core.PipelineItem) {
 
 	// clones := make([]*LineHistoryAnalyser, len(items))
 	for _, item := range items {
-		clone := item.(*LineHistoryAnalyser)
+		clone := mustLineHistoryAnalyser(item)
 
 		for name, file := range clone.files {
 			if _, ok := analyser.fileNames[file.Id]; !ok {
@@ -460,6 +460,15 @@ func (analyser *LineHistoryAnalyser) Merge(items []core.PipelineItem) {
 			}
 		}
 	}
+}
+
+func mustLineHistoryAnalyser(item core.PipelineItem) *LineHistoryAnalyser {
+	analyser, ok := item.(*LineHistoryAnalyser)
+	if !ok {
+		panic("line history branch has an unexpected type")
+	}
+
+	return analyser
 }
 
 // Hibernate compresses the bound RBTree memory with the files.

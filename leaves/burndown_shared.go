@@ -30,8 +30,8 @@ const (
 	ConfigBurndownHibernationDir = "Burndown.HibernationDir"
 )
 
-var BurndownSharedOptions = [...]core.ConfigurationOption{
-	{
+func burndownSharedOptions() []core.ConfigurationOption {
+	return []core.ConfigurationOption{{
 		Name:        ConfigBurndownGranularity,
 		Description: "How many time ticks there are in a single band.",
 		Flag:        "granularity",
@@ -59,7 +59,7 @@ var BurndownSharedOptions = [...]core.ConfigurationOption{
 		Type:        core.BoolConfigurationOption,
 		Shared:      true,
 		Default:     false,
-	},
+	}}
 }
 
 // BurndownResult carries the result of running BurndownAnalysis - it is returned by

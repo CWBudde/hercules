@@ -82,6 +82,14 @@ text = 'G601:'
 linters = ['gochecknoglobals', 'gochecknoinits']
 path = 'cmd/.*\.go'
 
+# These are deliberate public process-wide APIs: the pipeline registry is the
+# plugin registration point, while the version variables are read by clients
+# and BinaryGitHash is populated by the linker.
+[[linters.exclusions.rules]]
+linters = ['gochecknoglobals']
+path = '(^|/)(core|version|internal/core/registry)\.go$'
+text = '(Registry|BinaryGitHash|BinaryVersion) is a global variable'
+
 [[linters.exclusions.rules]]
 linters = ['err113', 'wrapcheck']
 path = 'cmd/.*\.go'
@@ -114,6 +122,13 @@ path = '_test\.go'
 [[linters.exclusions.rules]]
 linters = ['lll']
 path = 'internal/linehistory/file_test\.go'
+
+# This legacy integration suite intentionally keeps its shared stateful fixture
+# tests together; production files remain subject to revive's length limit.
+[[linters.exclusions.rules]]
+linters = ['revive']
+path = 'leaves/burndown_legacy_test\.go'
+text = 'file-length-limit'
 
 [severity]
 default = 'warn'

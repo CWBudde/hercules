@@ -328,27 +328,36 @@ func prepareUpdatedRange(tree *rbtree.RBTree, iter rbtree.Iterator,
 	position := checkedUint32(pos)
 
 	if insLength > 0 && (origin.Value != timestamp || origin.Key == position) {
-		// insert our new interval
-		if iter.Item().Value == timestamp && int(iter.Item().Key)-delLength == pos {
-			prev := iter.Prev()
-			if prev.NegativeLimit() || prev.Item().Value != timestamp {
-				iter.Item().Key = position
-			} else {
-				tree.DeleteWithIterator(iter)
-				iter = prev
-			}
-
-			origin.Value = timestamp // cancels the insertion after applying the delta
-		} else {
-			_, iter = tree.Insert(rbtree.Item{Key: position, Value: timestamp})
-		}
-	} else {
-		// rollback 1 position back, see "for true" deletion cycle ^
-		iter = iter.Prev()
-		previous = iter.Item()
+		iter, origin = insertUpdatedInterval(tree, iter, origin, timestamp, position, pos, delLength)
+		return iter, origin, nil
 	}
 
+	// rollback 1 position back, see "for true" deletion cycle ^
+	iter = iter.Prev()
+	previous = iter.Item()
+
 	return iter, origin, previous
+}
+
+func insertUpdatedInterval(tree *rbtree.RBTree, iter rbtree.Iterator, origin rbtree.Item,
+	timestamp, position uint32, pos, delLength int,
+) (rbtree.Iterator, rbtree.Item) {
+	if iter.Item().Value != timestamp || int(iter.Item().Key)-delLength != pos {
+		_, iter = tree.Insert(rbtree.Item{Key: position, Value: timestamp})
+		return iter, origin
+	}
+
+	prev := iter.Prev()
+	if prev.NegativeLimit() || prev.Item().Value != timestamp {
+		iter.Item().Key = position
+	} else {
+		tree.DeleteWithIterator(iter)
+		iter = prev
+	}
+
+	origin.Value = timestamp // cancels the insertion after applying the delta
+
+	return iter, origin
 }
 
 func shiftUpdatedKeys(iter rbtree.Iterator, origin rbtree.Item, pos, delta int) rbtree.Item {

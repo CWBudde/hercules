@@ -129,7 +129,7 @@ func (analyser *CodeChurnAnalysis) Requires() []string {
 
 // ListConfigurationOptions returns the list of changeable public properties of this PipelineItem.
 func (analyser *CodeChurnAnalysis) ListConfigurationOptions() []core.ConfigurationOption {
-	return BurndownSharedOptions[:]
+	return burndownSharedOptions()
 }
 
 // Configure sets the properties previously published by ListConfigurationOptions().
@@ -419,37 +419,46 @@ func (analyser *CodeChurnAnalysis) updateAwareness(
 	delta, hasDelta := analyser.churnDeltas[deltaKey]
 
 	if delta.lastTouch != change.CurrTick {
-		if hasDelta {
-			if change.PrevAuthor != change.CurrAuthor {
-				delta.deletedByOthers -= lineDelta
-				lineDelta = 0
-			}
-
-			awareness, memorability := analyser.calculateAwareness(*fileEntry, change, delta.lastTouch, delta.churnLines)
-			fileEntry.awareness, fileEntry.memorability = float32(awareness), float32(memorability)
-		}
-
+		delta, lineDelta = analyser.advanceChurnDelta(change, fileEntry, delta, lineDelta, hasDelta)
 		if lineDelta == 0 {
 			delete(analyser.churnDeltas, deltaKey)
 			return
 		}
+	}
 
-		delta = churnDelta{lastTouch: change.CurrTick}
+	updateChurnDelta(&delta, change, lineDelta)
+
+	analyser.churnDeltas[deltaKey] = delta
+}
+
+func (analyser *CodeChurnAnalysis) advanceChurnDelta(
+	change core.LineHistoryChange, fileEntry *churnFileEntry, delta churnDelta,
+	lineDelta int32, hasDelta bool,
+) (churnDelta, int32) {
+	if !hasDelta {
+		return churnDelta{lastTouch: change.CurrTick}, lineDelta
 	}
 
 	if change.PrevAuthor != change.CurrAuthor {
-		if lineDelta < 0 {
-			delta.deletedByOthers -= lineDelta
-		}
-	} else {
-		if lineDelta > 0 {
-			delta.inserted += lineDelta
-		} else {
-			delta.deletedBySelf -= lineDelta
-		}
+		delta.deletedByOthers -= lineDelta
+		lineDelta = 0
 	}
 
-	analyser.churnDeltas[deltaKey] = delta
+	awareness, memorability := analyser.calculateAwareness(*fileEntry, change, delta.lastTouch, delta.churnLines)
+	fileEntry.awareness, fileEntry.memorability = float32(awareness), float32(memorability)
+
+	return churnDelta{lastTouch: change.CurrTick}, lineDelta
+}
+
+func updateChurnDelta(delta *churnDelta, change core.LineHistoryChange, lineDelta int32) {
+	switch {
+	case change.PrevAuthor != change.CurrAuthor && lineDelta < 0:
+		delta.deletedByOthers -= lineDelta
+	case change.PrevAuthor == change.CurrAuthor && lineDelta > 0:
+		delta.inserted += lineDelta
+	case change.PrevAuthor == change.CurrAuthor:
+		delta.deletedBySelf -= lineDelta
+	}
 }
 
 func (analyser *CodeChurnAnalysis) updateAuthor(change core.LineHistoryChange, lineDelta int32) {

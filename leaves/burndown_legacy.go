@@ -199,32 +199,15 @@ func (analyser *LegacyBurndownAnalysis) ListConfigurationOptions() []core.Config
 		},
 	}
 
-	return append(BurndownSharedOptions[:], options[:]...)
+	return append(burndownSharedOptions(), options[:]...)
 }
 
 // Configure sets the properties previously published by ListConfigurationOptions().
 func (analyser *LegacyBurndownAnalysis) Configure(facts map[string]any) error {
-	if l, exists := facts[core.ConfigLogger].(core.Logger); exists {
-		analyser.l = l
-	} else {
-		analyser.l = core.NewLogger()
-	}
-
-	if val, exists := facts[items.FactTickSize].(time.Duration); exists {
-		analyser.tickSize = val
-	}
-
-	if val, exists := facts[ConfigBurndownGranularity].(int); exists {
-		analyser.Granularity = val
-	}
-
-	if val, exists := facts[ConfigBurndownSampling].(int); exists {
-		analyser.Sampling = val
-	}
-
-	if val, exists := facts[ConfigBurndownTrackFiles].(bool); exists {
-		analyser.TrackFiles = val
-	}
+	configureBurndownBasics(
+		facts, &analyser.l, &analyser.tickSize, &analyser.Granularity,
+		&analyser.Sampling, &analyser.TrackFiles,
+	)
 
 	if people, exists := facts[ConfigBurndownTrackPeople].(bool); people {
 		if val, exists := facts[identity.FactIdentityDetectorReversedPeopleDict].([]string); exists {
@@ -235,21 +218,10 @@ func (analyser *LegacyBurndownAnalysis) Configure(facts map[string]any) error {
 		analyser.PeopleNumber = 0
 	}
 
-	if val, exists := facts[ConfigLegacyBurndownHibernationThreshold].(int); exists {
-		analyser.HibernationThreshold = val
-	}
-
-	if val, exists := facts[ConfigLegacyBurndownHibernationToDisk].(bool); exists {
-		analyser.HibernationToDisk = val
-	}
-
-	if val, exists := facts[ConfigLegacyBurndownHibernationDirectory].(string); exists {
-		analyser.HibernationDirectory = val
-	}
-
-	if val, exists := facts[ConfigLegacyBurndownDebug].(bool); exists {
-		analyser.Debug = val
-	}
+	assignFact(facts, ConfigLegacyBurndownHibernationThreshold, &analyser.HibernationThreshold)
+	assignFact(facts, ConfigLegacyBurndownHibernationToDisk, &analyser.HibernationToDisk)
+	assignFact(facts, ConfigLegacyBurndownHibernationDirectory, &analyser.HibernationDirectory)
+	assignFact(facts, ConfigLegacyBurndownDebug, &analyser.Debug)
 
 	return nil
 }
@@ -325,37 +297,73 @@ func (analyser *LegacyBurndownAnalysis) Consume(deps map[string]any) (map[string
 		panic("LegacyBurndownAnalysis.Consume() was called on a hibernated instance")
 	}
 
-	author := deps[identity.DependencyAuthor].(int)
-	tick := deps[items.DependencyTick].(int)
+	author, tick, cache, treeDiffs, fileDiffs, err := legacyBurndownDependencies(deps)
+	if err != nil {
+		return nil, err
+	}
 
 	analyser.tick = tick
 	analyser.onNewTick()
 
-	cache := deps[items.DependencyBlobCache].(map[plumbing.Hash]*items.CachedBlob)
-	treeDiffs := deps[items.DependencyTreeChanges].(object.Changes)
-	fileDiffs := deps[items.DependencyFileDiff].(map[string]items.FileDiffData)
-
 	for _, change := range treeDiffs {
 		action, _ := change.Action()
-		var err error
+		var changeErr error
 
 		switch action {
 		case merkletrie.Insert:
-			err = analyser.handleInsertion(change, author, cache)
+			changeErr = analyser.handleInsertion(change, author, cache)
 		case merkletrie.Delete:
-			err = analyser.handleDeletion(change, author, cache)
+			changeErr = analyser.handleDeletion(change, author, cache)
 		case merkletrie.Modify:
-			err = analyser.handleModification(change, author, cache, fileDiffs)
+			changeErr = analyser.handleModification(change, author, cache, fileDiffs)
 		}
 
-		if err != nil {
-			return nil, err
+		if changeErr != nil {
+			return nil, changeErr
 		}
 	}
 	// in case there is a merge analyser.tick equals to TreeMergeMark
 	analyser.tick = tick
 
 	return noDependencies(), nil
+}
+
+func legacyBurndownDependencies(
+	deps map[string]any,
+) (
+	int,
+	int,
+	map[plumbing.Hash]*items.CachedBlob,
+	object.Changes,
+	map[string]items.FileDiffData,
+	error,
+) {
+	author, err := requiredFact[int](deps, identity.DependencyAuthor)
+	if err != nil {
+		return 0, 0, nil, nil, nil, err
+	}
+
+	tick, err := requiredFact[int](deps, items.DependencyTick)
+	if err != nil {
+		return 0, 0, nil, nil, nil, err
+	}
+
+	cache, err := requiredFact[map[plumbing.Hash]*items.CachedBlob](deps, items.DependencyBlobCache)
+	if err != nil {
+		return 0, 0, nil, nil, nil, err
+	}
+
+	treeDiffs, err := requiredFact[object.Changes](deps, items.DependencyTreeChanges)
+	if err != nil {
+		return 0, 0, nil, nil, nil, err
+	}
+
+	fileDiffs, err := requiredFact[map[string]items.FileDiffData](deps, items.DependencyFileDiff)
+	if err != nil {
+		return 0, 0, nil, nil, nil, err
+	}
+
+	return author, tick, cache, treeDiffs, fileDiffs, nil
 }
 
 // Fork clones this item. Everything is copied by reference except the files
@@ -396,7 +404,12 @@ func legacyBurndownBranches(
 	all[0] = analyser
 
 	for index, branch := range branches {
-		all[index+1] = branch.(*LegacyBurndownAnalysis)
+		legacyBranch, ok := branch.(*LegacyBurndownAnalysis)
+		if !ok {
+			panic("legacy burndown branch has an unexpected type")
+		}
+
+		all[index+1] = legacyBranch
 	}
 
 	return all
@@ -1126,6 +1139,16 @@ func (analyser *LegacyBurndownAnalysis) handleDeletion(
 	delete(analyser.files, name)
 	delete(analyser.fileHistories, name)
 
+	analyser.clearRenameChain(name)
+
+	if analyser.tick == linehistory.TreeMergeMark {
+		analyser.mergedFiles[name] = false
+	}
+
+	return nil
+}
+
+func (analyser *LegacyBurndownAnalysis) clearRenameChain(name string) {
 	stack := []string{name}
 	for len(stack) > 0 {
 		head := stack[len(stack)-1]
@@ -1138,12 +1161,6 @@ func (analyser *LegacyBurndownAnalysis) handleDeletion(
 			}
 		}
 	}
-
-	if analyser.tick == linehistory.TreeMergeMark {
-		analyser.mergedFiles[name] = false
-	}
-
-	return nil
 }
 
 func (analyser *LegacyBurndownAnalysis) handleModification(
@@ -1168,25 +1185,9 @@ func (analyser *LegacyBurndownAnalysis) handleModification(
 		}
 	}
 
-	// Check for binary changes
-	blobFrom := cache[change.From.TreeEntry.Hash]
-	_, errFrom := blobFrom.CountLines()
-	blobTo := cache[change.To.TreeEntry.Hash]
-
-	_, errTo := blobTo.CountLines()
-	if !errors.Is(errFrom, errTo) {
-		if errFrom != nil {
-			// the file is no longer binary
-			return analyser.handleInsertion(change, author, cache)
-		}
-		// the file became binary
-		return analyser.handleDeletion(change, author, cache)
-	} else if errFrom != nil {
-		if errors.Is(errFrom, items.ErrBinary) {
-			return nil
-		}
-
-		return fmt.Errorf("count lines in modified file %s: %w", change.To.Name, errFrom)
+	handled, err := analyser.handleBinaryModification(change, author, cache)
+	if handled || err != nil {
+		return err
 	}
 
 	thisDiffs := diffs[change.To.Name]
@@ -1198,7 +1199,7 @@ func (analyser *LegacyBurndownAnalysis) handleModification(
 			change.From.TreeEntry.Hash.String(), change.To.TreeEntry.Hash.String())
 	}
 
-	err := analyser.applyModificationDiffs(file, change, author, thisDiffs.Diffs)
+	err = analyser.applyModificationDiffs(file, change, author, thisDiffs.Diffs)
 	if err != nil {
 		return err
 	}
@@ -1210,6 +1211,33 @@ func (analyser *LegacyBurndownAnalysis) handleModification(
 	}
 
 	return nil
+}
+
+func (analyser *LegacyBurndownAnalysis) handleBinaryModification(
+	change *object.Change, author int, cache map[plumbing.Hash]*items.CachedBlob,
+) (bool, error) {
+	_, errFrom := cache[change.From.TreeEntry.Hash].CountLines()
+
+	_, errTo := cache[change.To.TreeEntry.Hash].CountLines()
+	if !errors.Is(errFrom, errTo) {
+		if errFrom != nil {
+			// The file is no longer binary.
+			return true, analyser.handleInsertion(change, author, cache)
+		}
+
+		// The file became binary.
+		return true, analyser.handleDeletion(change, author, cache)
+	}
+
+	if errFrom == nil {
+		return false, nil
+	}
+
+	if errors.Is(errFrom, items.ErrBinary) {
+		return true, nil
+	}
+
+	return true, fmt.Errorf("count lines in modified file %s: %w", change.To.Name, errFrom)
 }
 
 func (analyser *LegacyBurndownAnalysis) applyModificationDiffs(

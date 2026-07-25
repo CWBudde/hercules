@@ -39,6 +39,9 @@ In order for a PR to be accepted it needs to pass a list of requirements:
 - If the PR is a new feature, it has to come with a suite of unit tests, that tests the new functionality.
 - In any case, all the PRs have to pass the personal evaluation of a maintainer.
 
+Dependency upgrades follow the repository's [dependency update policy](docs/DEPENDENCIES.md),
+including the transport, plugin, and vulnerability checks required for Go module changes.
+
 ### Format of the commit message
 
 The commit summary must start with a capital letter and with a verb in present tense. No dot in the end.

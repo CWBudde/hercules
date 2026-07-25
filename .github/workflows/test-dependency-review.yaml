@@ -1,0 +1,19 @@
+name: test-dependency-review
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Reject newly introduced vulnerable dependencies
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: low

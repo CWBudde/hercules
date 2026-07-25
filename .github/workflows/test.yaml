@@ -1,6 +1,8 @@
 name: tests
 
-on: [push]
+on:
+  push:
+  pull_request:
 
 permissions:
   contents: read
@@ -16,11 +18,18 @@ jobs:
   test-format:
     uses: ./.github/workflows/test-format.yaml
 
+  test-dependency-review:
+    if: github.event_name == 'pull_request'
+    uses: ./.github/workflows/test-dependency-review.yaml
+
   test-unit:
     uses: ./.github/workflows/test-unit.yaml
 
   test-schema:
     uses: ./.github/workflows/test-schema.yaml
+
+  test-vulnerability:
+    uses: ./.github/workflows/test-vulnerability.yaml
 
   test-crosscompile:
     uses: ./.github/workflows/test-crosscompile.yaml

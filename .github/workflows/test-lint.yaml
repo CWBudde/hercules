@@ -38,6 +38,7 @@ jobs:
         # pre-existing `default = all` debt from blocking while flagging regressions.
         env:
           CGO_ENABLED: "0"
+          GOFLAGS: -mod=mod
         with:
           version: v2.12.2
           only-new-issues: true

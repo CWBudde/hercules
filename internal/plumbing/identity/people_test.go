@@ -438,8 +438,9 @@ func (obj fakeTreeEncodedObject) Size() int64 {
 func (obj fakeTreeEncodedObject) SetSize(int64) {}
 
 func (obj fakeTreeEncodedObject) Reader() (io.ReadCloser, error) {
+	hash := plumbing.NewHash("ffffffffffffffffffffffffffffffffffffffff")
 	return io.NopCloser(strings.NewReader(
-		"100644 " + obj.Name + "\x00ffffffffffffffffffffffffffffffffffffffff",
+		"100644 " + obj.Name + "\x00" + string(hash[:]),
 	)), nil
 }
 
@@ -483,6 +484,10 @@ func (strr fakeEncodedObjectStorer) IterEncodedObjects(plumbing.ObjectType) (sto
 
 func (strr fakeEncodedObjectStorer) EncodedObjectSize(plumbing.Hash) (int64, error) {
 	return 0, nil
+}
+
+func (strr fakeEncodedObjectStorer) AddAlternate(string) error {
+	return errUnsupportedFakeOperation
 }
 
 func getFakeCommitWithFile(name, contents string) *object.Commit {

@@ -179,6 +179,10 @@ Acceptance criteria:
 
 ### SEC-02: Upgrade and continuously audit dependencies
 
+Status: completed 2026-07-25
+
+Verification report: [`docs/audits/2026-07-25-sec-02.md`](docs/audits/2026-07-25-sec-02.md)
+
 Affected code:
 
 - `go.mod`
@@ -198,9 +202,9 @@ Work:
 
 Acceptance criteria:
 
-- [ ] no reachable known vulnerability is reported for the default build;
-- [ ] remote HTTPS, SSH, and local/file transport behavior is covered;
-- [ ] future vulnerable direct dependencies fail CI.
+- [x] no reachable known vulnerability is reported for the default build;
+- [x] remote HTTPS, SSH, and local/file transport behavior is covered;
+- [x] future vulnerable direct dependencies fail CI.
 
 ### REL-01: Make hard CLI failures return nonzero
 
@@ -1105,7 +1109,7 @@ regenerations of the same chart weeks apart can therefore disagree about how the
 Acceptance criteria:
 
 - [ ] a rendered burndown chart states its magnitude within the axes box, verifiable by cropping the
-  figure to the plot area alone;
+      figure to the plot area alone;
 - [ ] a visual test covers a data set large enough to trigger offset notation.
 
 ### DOC-03: People-based charts leak raw identity strings into labels
@@ -1181,21 +1185,21 @@ Audit date: 2026-07-25
 Scope: tracked source, tests, templates, and documentation; generated protobuf and vendored LZ4
 sources were classified separately.
 
-| Marker or related unfinished behavior | Disposition |
-| --- | --- |
-| Graph ordering in `internal/toposort/toposort.go` and `internal/core/pipeline.go` | One issue; covered by `CORE-01`. |
-| Negative-value clamping in `internal/yaml/utils.go` | The clamp hides the symptom; root-cause work is `METRIC-10`. |
-| Text/binary conversion in `internal/linehistory/line_history.go` | Correct transition semantics and downstream invariants are covered by `CORE-07` and `METRIC-10`. |
-| Code Churn description and constant reinforcement factor in `leaves/codechurn.go` | Both are parts of the unfinished metric contract in `METRIC-09`. |
-| Empty-string rename tombstones in `leaves/burndown_legacy.go` | Covered by `CORE-07`; test rename chains and cycles before changing the map behavior. |
-| Ignored survival flag and placeholder Kaplan–Meier output in the renderer | One parity gap; covered by `DATA-07`. |
-| RB-tree “delay creating” comment in `internal/rbtree/rbtree.go` | Behavior is already implemented by `doInsert`; remove the stale marker and prove duplicate inserts do not allocate under `CORE-06`. |
-| Plugin-template description text | Intentional generated-code customization point, not Hercules backlog. Keep it unless `DATA-05` replaces it with a generator parameter. |
-| `LineHistory` loader's `not implemented` panic | Related unfinished work already covered by `CORE-04`. |
-| Packed tick/author “hack” comments | The capacity and host-process failure risk is covered by `CORE-05`. |
-| Parallel branch deletion comments in line history and legacy burndown | Folded into the merge cases in `CORE-07`. |
-| Basic `FloorDateTime` implementation | Include in the historical-renderer comparison under `DATA-07`. |
-| `XXX_*` protobuf members and LZ4 `DEBUGLOG` macros | Generated/vendored API names, not task markers; do not edit them by hand. |
+| Marker or related unfinished behavior                                             | Disposition                                                                                                                            |
+| --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Graph ordering in `internal/toposort/toposort.go` and `internal/core/pipeline.go` | One issue; covered by `CORE-01`.                                                                                                       |
+| Negative-value clamping in `internal/yaml/utils.go`                               | The clamp hides the symptom; root-cause work is `METRIC-10`.                                                                           |
+| Text/binary conversion in `internal/linehistory/line_history.go`                  | Correct transition semantics and downstream invariants are covered by `CORE-07` and `METRIC-10`.                                       |
+| Code Churn description and constant reinforcement factor in `leaves/codechurn.go` | Both are parts of the unfinished metric contract in `METRIC-09`.                                                                       |
+| Empty-string rename tombstones in `leaves/burndown_legacy.go`                     | Covered by `CORE-07`; test rename chains and cycles before changing the map behavior.                                                  |
+| Ignored survival flag and placeholder Kaplan–Meier output in the renderer         | One parity gap; covered by `DATA-07`.                                                                                                  |
+| RB-tree “delay creating” comment in `internal/rbtree/rbtree.go`                   | Behavior is already implemented by `doInsert`; remove the stale marker and prove duplicate inserts do not allocate under `CORE-06`.    |
+| Plugin-template description text                                                  | Intentional generated-code customization point, not Hercules backlog. Keep it unless `DATA-05` replaces it with a generator parameter. |
+| `LineHistory` loader's `not implemented` panic                                    | Related unfinished work already covered by `CORE-04`.                                                                                  |
+| Packed tick/author “hack” comments                                                | The capacity and host-process failure risk is covered by `CORE-05`.                                                                    |
+| Parallel branch deletion comments in line history and legacy burndown             | Folded into the merge cases in `CORE-07`.                                                                                              |
+| Basic `FloorDateTime` implementation                                              | Include in the historical-renderer comparison under `DATA-07`.                                                                         |
+| `XXX_*` protobuf members and LZ4 `DEBUGLOG` macros                                | Generated/vendored API names, not task markers; do not edit them by hand.                                                              |
 
 When the referenced work item is completed, remove its TODO/placeholder wording in the same change.
 Do not close a marker merely by deleting the comment: the acceptance criteria above are the closure

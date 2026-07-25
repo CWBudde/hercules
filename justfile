@@ -129,19 +129,23 @@ fmt:
 lint:
     # Match CI: check changed code only and use the cgo-free build.
     # Force module mode because vendor/ is ignored and may be stale locally.
-    CGO_ENABLED=0 golangci-lint run --config ./.golangci.toml --timeout 2m --modules-download-mode=mod --new
+    CGO_ENABLED=0 GOFLAGS=-mod=mod golangci-lint run --config ./.golangci.toml --timeout 2m --modules-download-mode=mod --new
+
+# Run the same reachable-vulnerability audit as CI.
+vuln:
+    CGO_ENABLED=0 GOFLAGS=-mod=mod go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
 
 # Audit structural complexity across an entire package scope, including
 # pre-existing issues. Pass a narrower scope while paying down legacy debt,
 # for example: `just lint-complexity ./internal/join`.
 lint-complexity scope="./...":
-    CGO_ENABLED=0 golangci-lint run --config ./.golangci.toml --timeout 2m \
+    CGO_ENABLED=0 GOFLAGS=-mod=mod golangci-lint run --config ./.golangci.toml --timeout 2m \
         --modules-download-mode=mod --enable-only cyclop,funlen,gocognit,nestif \
         --tests=false --uniq-by-line=false "{{scope}}"
 
 # Run linter with fix
 lint-fix:
-    CGO_ENABLED=0 golangci-lint run --config ./.golangci.toml --timeout 2m --modules-download-mode=mod --new --fix
+    CGO_ENABLED=0 GOFLAGS=-mod=mod golangci-lint run --config ./.golangci.toml --timeout 2m --modules-download-mode=mod --new --fix
 
 # Check if code is formatted (error if changes needed)
 check-formatted:

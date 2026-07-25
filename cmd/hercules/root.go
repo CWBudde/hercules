@@ -203,20 +203,14 @@ func loadRepositoryWithError(uri, cachePath string, disableStatus bool, sshIdent
 func cloneRemoteRepository(uri, cachePath string, disableStatus bool, sshIdentity string,
 ) (*git.Repository, string, error) {
 	backend := remoteCloneStorage(cachePath)
-	cloneOptions := &git.CloneOptions{URL: uri}
-	repoURI := sanitizedRepositoryURI(uri)
+	cloneOptions, repoURI, authErr := repositoryCloneOptions(uri, sshIdentity)
+	if authErr != nil {
+		log.Printf("Failed loading SSH Identity: %v\n", authErr)
+	}
 
 	if !disableStatus {
 		_, _ = fmt.Fprint(os.Stderr, "connecting...\r")
 		cloneOptions.Progress = oneLineWriter{Writer: os.Stderr}
-	}
-	if sshIdentity != "" {
-		auth, err := loadSSHIdentity(sshIdentity)
-		if err != nil {
-			log.Printf("Failed loading SSH Identity: %v\n", err)
-		} else {
-			cloneOptions.Auth = auth
-		}
 	}
 
 	repository, err := git.Clone(backend, nil, cloneOptions)
@@ -224,6 +218,21 @@ func cloneRemoteRepository(uri, cachePath string, disableStatus bool, sshIdentit
 		_, _ = fmt.Fprint(os.Stderr, "\033[2K\r")
 	}
 	return repository, repoURI, err
+}
+
+func repositoryCloneOptions(uri, sshIdentity string) (*git.CloneOptions, string, error) {
+	options := &git.CloneOptions{URL: uri}
+	repoURI := sanitizedRepositoryURI(uri)
+	if sshIdentity == "" {
+		return options, repoURI, nil
+	}
+
+	auth, err := loadSSHIdentity(sshIdentity)
+	if err != nil {
+		return options, repoURI, err
+	}
+	options.Auth = auth
+	return options, repoURI, nil
 }
 
 func remoteCloneStorage(cachePath string) storage.Storer {

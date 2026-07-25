@@ -161,14 +161,14 @@ func (devs *DevsAnalysis) Initialize(repository *git.Repository) error {
 // in Provides(). If there was an error, nil is returned.
 func (devs *DevsAnalysis) Consume(deps map[string]any) (map[string]any, error) {
 	if !devs.ShouldConsumeCommit(deps) {
-		return nil, nil
+		return noDependencies(), nil
 	}
 
 	author := deps[identity.DependencyAuthor].(int)
 
 	treeDiff := deps[items.DependencyTreeChanges].(object.Changes)
 	if len(treeDiff) == 0 && !devs.ConsiderEmptyCommits {
-		return nil, nil
+		return noDependencies(), nil
 	}
 
 	tick := deps[items.DependencyTick].(int)
@@ -202,10 +202,11 @@ func (devs *DevsAnalysis) Consume(deps map[string]any) (map[string]any, error) {
 		}
 	}
 
-	return nil, nil
+	return noDependencies(), nil
 }
 
 // Finalize returns the result of the analysis. Further Consume() calls are not expected.
+
 func (devs *DevsAnalysis) Finalize() any {
 	return DevsResult{
 		Ticks:              devs.ticks,

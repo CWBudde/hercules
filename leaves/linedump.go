@@ -147,7 +147,7 @@ func (analyser *LineDumper) Consume(deps map[string]any) (map[string]any, error)
 	}
 
 	if len(changes.Changes) == 0 {
-		return nil, nil
+		return noDependencies(), nil
 	}
 
 	analyser.commits = append(analyser.commits, LineDumperCommit{
@@ -155,10 +155,11 @@ func (analyser *LineDumper) Consume(deps map[string]any) (map[string]any, error)
 		Changes:    append([]core.LineHistoryChange(nil), changes.Changes...),
 	})
 
-	return nil, nil
+	return noDependencies(), nil
 }
 
 // Finalize returns the result of the analysis. Further calls to Consume() are not expected.
+
 func (analyser *LineDumper) Finalize() any {
 	if analyser.AuthorDictOut != "" {
 		names := analyser.peopleResolver.CopyNames(true)

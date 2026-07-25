@@ -181,11 +181,12 @@ func (bf *BusFactorAnalysis) Consume(deps map[string]any) (map[string]any, error
 		bf.lastTick = tick
 	}
 
-	return nil, nil
+	return noDependencies(), nil
 }
 
 // computeBusFactor returns the smallest k such that the top-k authors own >= threshold of totalLines.
 // Returns 0 if totalLines is 0.
+
 func computeBusFactor(authorLines map[int]int64, totalLines int64, threshold float32) int {
 	if totalLines == 0 {
 		return 0

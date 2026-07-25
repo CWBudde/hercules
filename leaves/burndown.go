@@ -288,7 +288,7 @@ func (analyser *BurndownAnalysis) Consume(deps map[string]any) (map[string]any, 
 
 	analyser.fileResolver = analyser.primaryResolver
 
-	return nil, nil
+	return noDependencies(), nil
 }
 
 // burndownState holds the serializable state for hibernation.

@@ -248,7 +248,7 @@ func (hra *HotspotRiskAnalysis) Initialize(repository *git.Repository) error {
 // Consume processes the next commit.
 func (hra *HotspotRiskAnalysis) Consume(deps map[string]any) (map[string]any, error) {
 	if !hra.ShouldConsumeCommit(deps) {
-		return nil, nil
+		return noDependencies(), nil
 	}
 
 	hra.lastCommit = deps[core.DependencyCommit].(*object.Commit)
@@ -274,10 +274,11 @@ func (hra *HotspotRiskAnalysis) Consume(deps map[string]any) (map[string]any, er
 
 	hra.updateFileCoupling(changedFiles)
 
-	return nil, nil
+	return noDependencies(), nil
 }
 
 // Finalize returns the result of the analysis.
+
 func (hra *HotspotRiskAnalysis) Finalize() any {
 	if hra.lastCommit == nil {
 		return HotspotRiskResult{Files: []FileRisk{}, WindowDays: hra.WindowDays}

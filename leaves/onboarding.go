@@ -225,7 +225,7 @@ func (oa *OnboardingAnalysis) Initialize(repository *git.Repository) error {
 // Consume runs this PipelineItem on the next commit data.
 func (oa *OnboardingAnalysis) Consume(deps map[string]any) (map[string]any, error) {
 	if !oa.ShouldConsumeCommit(deps) {
-		return nil, nil
+		return noDependencies(), nil
 	}
 
 	author := deps[identity.DependencyAuthor].(int)
@@ -234,7 +234,7 @@ func (oa *OnboardingAnalysis) Consume(deps map[string]any) (map[string]any, erro
 	lineStats := deps[items.DependencyLineStats].(map[object.ChangeEntry]items.LineStats)
 
 	if len(treeChanges) == 0 {
-		return nil, nil
+		return noDependencies(), nil
 	}
 
 	metrics := oa.getOrCreateTickMetrics(author, tick)
@@ -267,10 +267,11 @@ func (oa *OnboardingAnalysis) Consume(deps map[string]any) (map[string]any, erro
 		metrics.MeaningfulCommits++
 	}
 
-	return nil, nil
+	return noDependencies(), nil
 }
 
 // cumulativeMetrics represents running totals across an author's timeline.
+
 type cumulativeMetrics struct {
 	commits           int
 	files             map[string]bool
@@ -616,10 +617,10 @@ func (oa *OnboardingAnalysis) buildOnboardingSnapshots(
 	tickToMetrics := make(map[int]*cumulativeMetrics, len(sortedTicks))
 	for _, tick := range sortedTicks {
 		cumulative.accumulate(timeline[tick])
-		copy := *cumulative
-		copy.files = copyFileSet(cumulative.files)
-		copy.meaningfulFiles = copyFileSet(cumulative.meaningfulFiles)
-		tickToMetrics[tick] = &copy
+		metricsCopy := *cumulative
+		metricsCopy.files = copyFileSet(cumulative.files)
+		metricsCopy.meaningfulFiles = copyFileSet(cumulative.meaningfulFiles)
+		tickToMetrics[tick] = &metricsCopy
 	}
 
 	snapshots := map[int]*OnboardingSnapshot{}

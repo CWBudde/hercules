@@ -130,7 +130,7 @@ func (shotness *ShotnessAnalysis) Initialize(repository *git.Repository) error {
 // in Provides(). If there was an error, nil is returned.
 func (shotness *ShotnessAnalysis) Consume(deps map[string]any) (map[string]any, error) {
 	if !shotness.ShouldConsumeCommit(deps) {
-		return nil, nil
+		return noDependencies(), nil
 	}
 
 	commit := deps[core.DependencyCommit].(*object.Commit)
@@ -156,7 +156,7 @@ func (shotness *ShotnessAnalysis) Consume(deps map[string]any) (map[string]any, 
 		}
 	}
 
-	return nil, nil
+	return noDependencies(), nil
 }
 
 func genLine2Node(nodes map[string]ast_items.Node, linesNum int) [][]ast_items.Node {
@@ -444,7 +444,7 @@ func (shotness *ShotnessAnalysis) extractNodes(
 ) (map[string]ast_items.Node, error) {
 	blob := cache[hash]
 	if blob == nil {
-		return map[string]ast_items.Node{}, nil
+		return map[string]ast_items.Node(nil), nil
 	}
 
 	nodes, err := shotness.extractor.Extract(path, blob.Data)

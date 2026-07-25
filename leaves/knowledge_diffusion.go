@@ -189,10 +189,11 @@ func (kd *KnowledgeDiffusionAnalysis) Consume(deps map[string]any) (map[string]a
 
 	kd.lastTick = tick
 
-	return nil, nil
+	return noDependencies(), nil
 }
 
 // Finalize returns the result of the analysis.
+
 func (kd *KnowledgeDiffusionAnalysis) Finalize() any {
 	files := make(map[string]*KnowledgeDiffusionFileResult, len(kd.fileAuthors))
 	distribution := map[int]int{}

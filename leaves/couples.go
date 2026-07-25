@@ -215,10 +215,11 @@ func (couples *CouplesAnalysis) Consume(deps map[string]any) (map[string]any, er
 		}
 	}
 
-	return nil, nil
+	return noDependencies(), nil
 }
 
 // Finalize returns the result of the analysis. Further Consume() calls are not expected.
+
 func (couples *CouplesAnalysis) Finalize() any {
 	currentFiles, err := couples.currentFilesWithError()
 	if err != nil {

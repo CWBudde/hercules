@@ -92,7 +92,7 @@ func (sent *CommentSentimentAnalysis) Initialize(repository *git.Repository) err
 }
 
 func (sent *CommentSentimentAnalysis) Consume(deps map[string]any) (map[string]any, error) {
-	return nil, nil
+	return noDependencies(), nil
 }
 
 func (sent *CommentSentimentAnalysis) Fork(n int) []core.PipelineItem {

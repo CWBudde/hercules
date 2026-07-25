@@ -144,14 +144,14 @@ func isRename(change *object.Change) bool {
 // Consume runs on next commit data.
 func (rp *RefactoringProxy) Consume(deps map[string]any) (map[string]any, error) {
 	if !rp.ShouldConsumeCommit(deps) {
-		return nil, nil
+		return noDependencies(), nil
 	}
 
 	tick := deps[items.DependencyTick].(int)
 	treeChanges := deps[items.DependencyTreeChanges].(object.Changes)
 
 	if len(treeChanges) == 0 {
-		return nil, nil
+		return noDependencies(), nil
 	}
 
 	metrics := rp.getOrCreateTickMetrics(tick)
@@ -164,10 +164,11 @@ func (rp *RefactoringProxy) Consume(deps map[string]any) (map[string]any, error)
 		}
 	}
 
-	return nil, nil
+	return noDependencies(), nil
 }
 
 // Finalize returns the analysis result.
+
 func (rp *RefactoringProxy) Finalize() any {
 	ticks := make([]int, 0, len(rp.tickMetrics))
 	for tick := range rp.tickMetrics {

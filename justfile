@@ -61,17 +61,22 @@ report REPO OUTPUT="./report": hercules
     ./hercules{{exe}} report -o "{{OUTPUT}}" "{{REPO}}"
 
 # RESAMPLE takes a pandas-style offset alias: "3M" for quarterly bands (the
-# default), "year", "month", ... The giant docs/linux.svg example is excluded
-# because it dwarfs the real history. The chart title is cropped off when
-# ImageMagick is available, since the page embedding it carries its own caption.
+# default), "year", "month", ... GRANULARITY (band width) and SAMPLING (how
+# often the state is recorded) are in ticks/days and control how smooth the
+# curves are; 7/7 is noticeably smoother than the 30/30 default. NOTE: as of
+# now BurndownAnalysis.Initialize() overwrites both with the default of 30, so
+# these two have no effect until that override is lifted. The giant
+# docs/linux.svg example is excluded because it dwarfs the real history. The
+# chart title is cropped off when ImageMagick is available, since the page
+# embedding it carries its own caption.
 #
 # Regenerate the self-analysis burndown chart (hercules replaying its own history)
-burndown-chart RESAMPLE="3M" OUTPUT="self-analysis/hercules-burndown.png": hercules labours
+burndown-chart RESAMPLE="3M" GRANULARITY="7" SAMPLING="7" OUTPUT="self-analysis/hercules-burndown.png": hercules labours
     #!/usr/bin/env sh
     set -eu
     dir=$(dirname "{{OUTPUT}}")
     mkdir -p "$dir"
-    ./hercules{{exe}} --burndown --granularity 30 --sampling 30 \
+    ./hercules{{exe}} --burndown --granularity {{GRANULARITY}} --sampling {{SAMPLING}} \
         --skip-blacklist --blacklisted-prefixes docs/linux.svg --pb . > "$dir/burndown.pb"
     ./labours{{exe}} -i "$dir/burndown.pb" -m burndown-project \
         --resample "{{RESAMPLE}}" -q -o "{{OUTPUT}}"

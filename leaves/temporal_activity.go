@@ -162,7 +162,7 @@ func (ta *TemporalActivityAnalysis) Initialize(repository *git.Repository) error
 // Consume runs this PipelineItem on the next commit data.
 func (ta *TemporalActivityAnalysis) Consume(deps map[string]any) (map[string]any, error) {
 	if !ta.ShouldConsumeCommit(deps) {
-		return nil, nil
+		return noDependencies(), nil
 	}
 
 	commit := deps[core.DependencyCommit].(*object.Commit)
@@ -205,7 +205,7 @@ func (ta *TemporalActivityAnalysis) Consume(deps map[string]any) (map[string]any
 	tickActivity.Commits += 1
 	tickActivity.Lines += totalLines
 
-	return nil, nil
+	return noDependencies(), nil
 }
 
 func temporalIndices(commitTime time.Time) (weekday, hour, month, week int) {
@@ -538,8 +538,8 @@ func mergeTemporalTicks(
 		for developer, activity := range developers {
 			existing := target[tick][developer]
 			if existing == nil {
-				copy := *activity
-				target[tick][developer] = &copy
+				activityCopy := *activity
+				target[tick][developer] = &activityCopy
 			} else {
 				existing.Commits += activity.Commits
 				existing.Lines += activity.Lines

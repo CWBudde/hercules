@@ -124,10 +124,11 @@ func (history *FileHistoryAnalysis) Consume(deps map[string]any) (map[string]any
 		history.recordAuthorStats(changeEntry.Name, author, stats)
 	}
 
-	return nil, nil
+	return noDependencies(), nil
 }
 
 // Finalize returns the result of the analysis. Further Consume() calls are not expected.
+
 func (history *FileHistoryAnalysis) Finalize() any {
 	files := map[string]FileHistory{}
 

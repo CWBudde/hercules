@@ -123,7 +123,7 @@ func (saver *UASTChangesSaver) Initialize(repository *git.Repository) error {
 // Consume runs this PipelineItem on the next commit data.
 func (saver *UASTChangesSaver) Consume(deps map[string]any) (map[string]any, error) {
 	if !saver.ShouldConsumeCommit(deps) {
-		return nil, nil
+		return noDependencies(), nil
 	}
 
 	commit := deps[core.DependencyCommit].(*object.Commit)
@@ -141,7 +141,7 @@ func (saver *UASTChangesSaver) Consume(deps map[string]any) (map[string]any, err
 		}
 	}
 
-	return nil, nil
+	return noDependencies(), nil
 }
 
 func eitherBlobIsBinary(blobs ...*items.CachedBlob) (bool, error) {

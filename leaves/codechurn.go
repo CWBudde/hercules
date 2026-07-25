@@ -241,7 +241,7 @@ func (analyser *CodeChurnAnalysis) Consume(deps map[string]any) (map[string]any,
 		analyser.updateAuthor(change)
 	}
 
-	return nil, nil
+	return noDependencies(), nil
 }
 
 type churnDeltaKey struct {

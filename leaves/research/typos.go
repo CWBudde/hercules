@@ -174,7 +174,7 @@ func collectIdentifiersByLine(nodes []ast_items.Node, focused map[int]bool) map[
 func (tdb *TyposDatasetBuilder) Consume(deps map[string]any) (map[string]any, error) {
 	// Skip merge commits
 	if isMerge, exists := deps[core.DependencyIsMerge].(bool); exists && isMerge {
-		return nil, nil
+		return noDependencies(), nil
 	}
 
 	commit := deps[core.DependencyCommit].(*object.Commit).Hash
@@ -191,10 +191,11 @@ func (tdb *TyposDatasetBuilder) Consume(deps map[string]any) (map[string]any, er
 		tdb.typos = append(tdb.typos, typos...)
 	}
 
-	return nil, nil
+	return noDependencies(), nil
 }
 
 // Finalize returns the result of the analysis. Further Consume() calls are not expected.
+
 func (tdb *TyposDatasetBuilder) Finalize() any {
 	// deduplicate
 	typos := make([]Typo, 0, len(tdb.typos))
@@ -256,12 +257,12 @@ func (tdb *TyposDatasetBuilder) typosFromChange(
 
 	beforeIDs, err := tdb.identifiersForTypo(commit, change.From.Name, "before", before.Data, focusedBefore)
 	if err != nil {
-		return nil, nil
+		return nil, fmt.Errorf("extract identifiers before change: %w", err)
 	}
 
 	afterIDs, err := tdb.identifiersForTypo(commit, change.To.Name, "after", after.Data, focusedAfter)
 	if err != nil {
-		return nil, nil
+		return nil, fmt.Errorf("extract identifiers after change: %w", err)
 	}
 	var typos []Typo
 

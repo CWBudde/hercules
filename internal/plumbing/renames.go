@@ -522,12 +522,12 @@ func (ra *RenameAnalysis) matchDeletedCandidate(
 			break
 		}
 
-		close, err := ra.blobsAreClose(blob, cache[added[index].change.To.TreeEntry.Hash])
+		areClose, err := ra.blobsAreClose(blob, cache[added[index].change.To.TreeEntry.Hash])
 		if err != nil {
 			return -1, err
 		}
 
-		if close {
+		if areClose {
 			return index, nil
 		}
 	}
@@ -550,9 +550,9 @@ func (ra *RenameAnalysis) matchAddedCandidate(
 			break
 		}
 
-		close, err := ra.blobsAreClose(blob, cache[deleted[index].change.From.TreeEntry.Hash])
-		if err != nil || close {
-			if close {
+		areClose, err := ra.blobsAreClose(blob, cache[deleted[index].change.From.TreeEntry.Hash])
+		if err != nil || areClose {
+			if areClose {
 				return index, err
 			}
 

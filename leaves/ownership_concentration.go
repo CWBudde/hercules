@@ -161,13 +161,14 @@ func (oc *OwnershipConcentrationAnalysis) Consume(deps map[string]any) (map[stri
 		oc.lastTick = tick
 	}
 
-	return nil, nil
+	return noDependencies(), nil
 }
 
 // computeGini computes the Gini coefficient from author line counts.
 // Uses the standard formula: G = (2 * Sum(i * x_i)) / (n * S) - (n+1)/n
 // where x_i are sorted ascending and S is the total.
 // Returns 0 for 0 or 1 authors.
+
 func computeGini(authorLines map[int]int64, totalLines int64) float64 {
 	n := len(authorLines)
 	if n <= 1 || totalLines == 0 {

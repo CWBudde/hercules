@@ -139,10 +139,11 @@ func (ca *CommitsAnalysis) Consume(deps map[string]any) (map[string]any, error) 
 
 	ca.commits = append(ca.commits, &cs)
 
-	return nil, nil
+	return noDependencies(), nil
 }
 
 // Finalize returns the result of the analysis. Further Consume() calls are not expected.
+
 func (ca *CommitsAnalysis) Finalize() any {
 	return CommitsResult{
 		Commits:            ca.commits,

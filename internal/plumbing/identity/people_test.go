@@ -21,6 +21,8 @@ import (
 
 const vadimMarkovtsev = "Vadim Markovtsev"
 
+var errUnsupportedFakeOperation = errors.New("unsupported fake object operation")
+
 func fixturePeopleDetector() *PeopleDetector {
 	peopleDict := map[string]int{}
 	peopleDict["vadim@sourced.tech"] = 0
@@ -403,7 +405,7 @@ func (obj fakeBlobEncodedObject) Reader() (io.ReadCloser, error) {
 }
 
 func (obj fakeBlobEncodedObject) Writer() (io.WriteCloser, error) {
-	return nil, nil
+	return nil, errUnsupportedFakeOperation
 }
 
 type fakeTreeEncodedObject struct {
@@ -433,7 +435,7 @@ func (obj fakeTreeEncodedObject) Reader() (io.ReadCloser, error) {
 }
 
 func (obj fakeTreeEncodedObject) Writer() (io.WriteCloser, error) {
-	return nil, nil
+	return nil, errUnsupportedFakeOperation
 }
 
 type fakeEncodedObjectStorer struct {
@@ -463,11 +465,11 @@ func (strr fakeEncodedObjectStorer) EncodedObject(
 	case plumbing.BlobObject:
 		return fakeBlobEncodedObject{Contents: strr.Contents}, nil
 	}
-	return nil, nil
+	return nil, errUnsupportedFakeOperation
 }
 
 func (strr fakeEncodedObjectStorer) IterEncodedObjects(plumbing.ObjectType) (storer.EncodedObjectIter, error) {
-	return nil, nil
+	return nil, errUnsupportedFakeOperation
 }
 
 func (strr fakeEncodedObjectStorer) EncodedObjectSize(plumbing.Hash) (int64, error) {

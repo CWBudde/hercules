@@ -65,7 +65,7 @@ func parseProtoLine(snapshot *Snapshot, current *Message, line string) (*Message
 	if current == nil {
 		matches := messageRe.FindStringSubmatch(line)
 		if matches == nil {
-			return nil, nil
+			return nil, nil //nolint:nilnil // No message is open and this line is intentionally ignored.
 		}
 
 		snapshot.Messages = append(snapshot.Messages, Message{Name: matches[1]})
@@ -74,7 +74,7 @@ func parseProtoLine(snapshot *Snapshot, current *Message, line string) (*Message
 	}
 
 	if line == "}" {
-		return nil, nil
+		return nil, nil //nolint:nilnil // Closing a message intentionally clears the current message.
 	}
 
 	if matches := reservedRe.FindStringSubmatch(line); matches != nil {

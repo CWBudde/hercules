@@ -344,11 +344,12 @@ func (analyser *LegacyBurndownAnalysis) Consume(deps map[string]any) (map[string
 	// in case there is a merge analyser.tick equals to TreeMergeMark
 	analyser.tick = tick
 
-	return nil, nil
+	return noDependencies(), nil
 }
 
 // Fork clones this item. Everything is copied by reference except the files
 // which are copied by value.
+
 func (analyser *LegacyBurndownAnalysis) Fork(n int) []core.PipelineItem {
 	result := make([]core.PipelineItem, n)
 	for i := range result {
@@ -964,8 +965,11 @@ func (analyser *LegacyBurndownAnalysis) handleInsertion(
 
 	lines, err := blob.CountLines()
 	if err != nil {
-		// binary
-		return nil
+		if errors.Is(err, items.ErrBinary) {
+			return nil
+		}
+
+		return fmt.Errorf("count lines in inserted file %s: %w", change.To.Name, err)
 	}
 
 	name := change.To.Name
@@ -1085,8 +1089,11 @@ func (analyser *LegacyBurndownAnalysis) handleModification(
 		// the file became binary
 		return analyser.handleDeletion(change, author, cache)
 	} else if errFrom != nil {
-		// what are we doing here?!
-		return nil
+		if errors.Is(errFrom, items.ErrBinary) {
+			return nil
+		}
+
+		return fmt.Errorf("count lines in modified file %s: %w", change.To.Name, errFrom)
 	}
 
 	thisDiffs := diffs[change.To.Name]

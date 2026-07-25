@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"runtime/pprof"
 	"sort"
 	"strings"
@@ -56,6 +57,15 @@ const (
 	progressModeNone  progressMode = "none"
 
 	progressEventWriteStart = "write-start"
+
+	remoteCacheMarkerName    = ".hercules-cache"
+	remoteCacheMarkerContent = "hercules remote cache\nversion=1\n"
+)
+
+var (
+	errAtomicCacheReplacement   = errors.New("atomic cache replacement is unavailable")
+	installRemoteCacheDirectory = atomicInstallCacheDirectory
+	swapRemoteCacheDirectories  = atomicSwapCacheDirectories
 )
 
 type progressEvent struct {
@@ -183,12 +193,20 @@ func loadRepository(uri string) (*git.Repository, string, string) {
 
 func loadRepositoryWithError(uri, cachePath string, disableStatus bool, sshIdentity string,
 ) (*git.Repository, string, string, error) {
+	return loadRepositoryWithCachePolicy(uri, cachePath, disableStatus, sshIdentity, false)
+}
+
+func loadRepositoryWithCachePolicy(
+	uri, cachePath string, disableStatus bool, sshIdentity string, forceCacheReplace bool,
+) (*git.Repository, string, string, error) {
 	switch {
 	case uri == "-" && cachePath == "":
 		repository, err := createStubRepository()
 		return repository, uri, core.FeatureGitStub, err
 	case strings.Contains(uri, "://") || regexUri.MatchString(uri):
-		repository, repoURI, err := cloneRemoteRepository(uri, cachePath, disableStatus, sshIdentity)
+		repository, repoURI, err := cloneRemoteRepositoryWithPolicy(
+			uri, cachePath, disableStatus, sshIdentity, forceCacheReplace,
+		)
 		return repository, repoURI, core.FeatureGitCommits, err
 	case isSivaRepository(uri):
 		repository, err := openSivaRepository(uri)
@@ -202,12 +220,49 @@ func loadRepositoryWithError(uri, cachePath string, disableStatus bool, sshIdent
 
 func cloneRemoteRepository(uri, cachePath string, disableStatus bool, sshIdentity string,
 ) (*git.Repository, string, error) {
-	backend := remoteCloneStorage(cachePath)
+	return cloneRemoteRepositoryWithPolicy(uri, cachePath, disableStatus, sshIdentity, false)
+}
+
+func cloneRemoteRepositoryWithPolicy(
+	uri, cachePath string, disableStatus bool, sshIdentity string, forceCacheReplace bool,
+) (*git.Repository, string, error) {
 	cloneOptions, repoURI, authErr := repositoryCloneOptions(uri, sshIdentity)
 	if authErr != nil {
 		log.Printf("Failed loading SSH Identity: %v\n", authErr)
 	}
 
+	if cachePath == "" {
+		repository, err := cloneIntoStorage(
+			memory.NewStorage(), cloneOptions, disableStatus,
+		)
+		return repository, repoURI, err
+	}
+
+	destination, stagingPath, err := prepareRemoteCache(cachePath, forceCacheReplace)
+	if err != nil {
+		return nil, repoURI, err
+	}
+	backend := remoteCloneStorage(stagingPath)
+	_, cloneErr := cloneIntoStorage(backend, cloneOptions, disableStatus)
+	if cloneErr != nil {
+		cleanupErr := removeManagedRemoteCache(stagingPath)
+		return nil, repoURI, errors.Join(cloneErr, cleanupErr)
+	}
+	if err := installRemoteCache(stagingPath, destination); err != nil {
+		cleanupErr := removeManagedRemoteCache(stagingPath)
+		return nil, repoURI, errors.Join(err, cleanupErr)
+	}
+
+	repository, err := git.Open(remoteCloneStorage(destination.path), nil)
+	if err != nil {
+		return nil, repoURI, fmt.Errorf("open installed cache %s: %w", destination.path, err)
+	}
+	return repository, repoURI, nil
+}
+
+func cloneIntoStorage(
+	backend storage.Storer, cloneOptions *git.CloneOptions, disableStatus bool,
+) (*git.Repository, error) {
 	if !disableStatus {
 		_, _ = fmt.Fprint(os.Stderr, "connecting...\r")
 		cloneOptions.Progress = oneLineWriter{Writer: os.Stderr}
@@ -217,7 +272,7 @@ func cloneRemoteRepository(uri, cachePath string, disableStatus bool, sshIdentit
 	if !disableStatus {
 		_, _ = fmt.Fprint(os.Stderr, "\033[2K\r")
 	}
-	return repository, repoURI, err
+	return repository, err
 }
 
 func repositoryCloneOptions(uri, sshIdentity string) (*git.CloneOptions, string, error) {
@@ -239,12 +294,256 @@ func remoteCloneStorage(cachePath string) storage.Storer {
 	if cachePath == "" {
 		return memory.NewStorage()
 	}
-	backend := filesystem.NewStorage(osfs.New(cachePath), cache.NewObjectLRUDefault())
-	if _, err := os.Stat(cachePath); !os.IsNotExist(err) {
-		log.Printf("warning: deleted %s\n", cachePath)
-		_ = os.RemoveAll(cachePath)
+	return filesystem.NewStorage(osfs.New(cachePath), cache.NewObjectLRUDefault())
+}
+
+type remoteCacheDestination struct {
+	path     string
+	exists   bool
+	nonEmpty bool
+}
+
+func prepareRemoteCache(cachePath string, forceCacheReplace bool) (
+	remoteCacheDestination, string, error,
+) {
+	destination, err := inspectRemoteCacheDestination(cachePath, forceCacheReplace)
+	if err != nil {
+		return remoteCacheDestination{}, "", err
 	}
-	return backend
+	stagingPath, err := os.MkdirTemp(
+		filepath.Dir(destination.path), "."+filepath.Base(destination.path)+".hercules-",
+	)
+	if err != nil {
+		return remoteCacheDestination{}, "", fmt.Errorf("create cache staging directory: %w", err)
+	}
+	if err := writeRemoteCacheMarker(stagingPath); err != nil {
+		_ = os.Remove(stagingPath)
+		return remoteCacheDestination{}, "", err
+	}
+	return destination, stagingPath, nil
+}
+
+func inspectRemoteCacheDestination(
+	cachePath string, forceCacheReplace bool,
+) (remoteCacheDestination, error) {
+	path, info, exists, err := resolveRemoteCachePath(cachePath)
+	if err != nil {
+		return remoteCacheDestination{}, err
+	}
+	if err := validateRemoteCacheReplacementPath(path); err != nil {
+		return remoteCacheDestination{}, err
+	}
+	destination := remoteCacheDestination{path: path, exists: exists}
+	if !exists {
+		return destination, nil
+	}
+	if !info.IsDir() {
+		return remoteCacheDestination{}, fmt.Errorf("cache destination %s is not a directory", path)
+	}
+
+	destination.nonEmpty, err = remoteCacheDirectoryNonEmpty(path)
+	if err != nil {
+		return remoteCacheDestination{}, err
+	}
+	if !destination.nonEmpty {
+		return destination, nil
+	}
+	if !forceCacheReplace {
+		return remoteCacheDestination{}, fmt.Errorf(
+			"cache destination %s is not empty; pass --force-cache-replace to replace a Hercules-managed cache",
+			path,
+		)
+	}
+	if err := verifyRemoteCacheMarker(path); err != nil {
+		return remoteCacheDestination{}, err
+	}
+	return destination, nil
+}
+
+func remoteCacheDirectoryNonEmpty(path string) (bool, error) {
+	directory, err := os.Open(path)
+	if err != nil {
+		return false, fmt.Errorf("inspect cache destination %s: %w", path, err)
+	}
+	entries, readErr := directory.ReadDir(1)
+	closeErr := directory.Close()
+	if readErr != nil && !errors.Is(readErr, io.EOF) {
+		return false, fmt.Errorf("inspect cache destination %s: %w", path, readErr)
+	}
+	if closeErr != nil {
+		return false, fmt.Errorf("close cache destination %s: %w", path, closeErr)
+	}
+	return len(entries) != 0, nil
+}
+
+func resolveRemoteCachePath(cachePath string) (string, os.FileInfo, bool, error) {
+	absolutePath, err := filepath.Abs(cachePath)
+	if err != nil {
+		return "", nil, false, fmt.Errorf("resolve cache destination %s: %w", cachePath, err)
+	}
+	absolutePath = filepath.Clean(absolutePath)
+	info, err := os.Lstat(absolutePath)
+	if err == nil {
+		if info.Mode()&os.ModeSymlink != 0 {
+			return "", nil, false, fmt.Errorf(
+				"cache destination %s must not be a symbolic link", absolutePath,
+			)
+		}
+		resolvedPath, resolveErr := filepath.EvalSymlinks(absolutePath)
+		if resolveErr != nil {
+			return "", nil, false, fmt.Errorf(
+				"resolve cache destination %s: %w", absolutePath, resolveErr,
+			)
+		}
+		return resolvedPath, info, true, nil
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return "", nil, false, fmt.Errorf("inspect cache destination %s: %w", absolutePath, err)
+	}
+
+	parent := filepath.Dir(absolutePath)
+	if err := os.MkdirAll(parent, 0o755); err != nil {
+		return "", nil, false, fmt.Errorf("create cache parent %s: %w", parent, err)
+	}
+	resolvedParent, err := filepath.EvalSymlinks(parent)
+	if err != nil {
+		return "", nil, false, fmt.Errorf("resolve cache parent %s: %w", parent, err)
+	}
+	return filepath.Join(resolvedParent, filepath.Base(absolutePath)), nil, false, nil
+}
+
+func validateRemoteCacheReplacementPath(path string) error {
+	if isFilesystemRoot(path) {
+		return fmt.Errorf("refusing to use filesystem root %s as a cache replacement target", path)
+	}
+	currentDirectory, err := canonicalExistingPath(".")
+	if err != nil {
+		return fmt.Errorf("resolve current working directory: %w", err)
+	}
+	if sameCachePath(path, currentDirectory) {
+		return fmt.Errorf("refusing to use current working directory %s as a cache replacement target", path)
+	}
+	homeDirectory, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("resolve home directory: %w", err)
+	}
+	homeDirectory, err = canonicalExistingPath(homeDirectory)
+	if err != nil {
+		return fmt.Errorf("resolve home directory: %w", err)
+	}
+	if sameCachePath(path, homeDirectory) {
+		return fmt.Errorf("refusing to use home directory %s as a cache replacement target", path)
+	}
+	return nil
+}
+
+func canonicalExistingPath(path string) (string, error) {
+	absolutePath, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	return filepath.EvalSymlinks(absolutePath)
+}
+
+func isFilesystemRoot(path string) bool {
+	cleanPath := filepath.Clean(path)
+	volume := filepath.VolumeName(cleanPath)
+	root := string(os.PathSeparator)
+	if volume != "" {
+		root = volume + root
+	}
+	return sameCachePath(cleanPath, root)
+}
+
+func sameCachePath(left, right string) bool {
+	left = filepath.Clean(left)
+	right = filepath.Clean(right)
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(left, right)
+	}
+	return left == right
+}
+
+func writeRemoteCacheMarker(path string) error {
+	if err := os.WriteFile(
+		filepath.Join(path, remoteCacheMarkerName), []byte(remoteCacheMarkerContent), 0o600,
+	); err != nil {
+		return fmt.Errorf("write Hercules cache marker in %s: %w", path, err)
+	}
+	return nil
+}
+
+func verifyRemoteCacheMarker(path string) error {
+	markerPath := filepath.Join(path, remoteCacheMarkerName)
+	info, err := os.Lstat(markerPath)
+	if err != nil {
+		return fmt.Errorf(
+			"refusing to replace cache destination %s without a valid Hercules marker: %w",
+			path, err,
+		)
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf(
+			"refusing to replace cache destination %s: Hercules marker is not a regular file",
+			path,
+		)
+	}
+	content, err := os.ReadFile(markerPath)
+	if err != nil {
+		return fmt.Errorf(
+			"refusing to replace cache destination %s without a valid Hercules marker: %w",
+			path, err,
+		)
+	}
+	if string(content) != remoteCacheMarkerContent {
+		return fmt.Errorf(
+			"refusing to replace cache destination %s: invalid Hercules marker", path,
+		)
+	}
+	return nil
+}
+
+func installRemoteCache(stagingPath string, destination remoteCacheDestination) error {
+	if !destination.exists {
+		if err := installRemoteCacheDirectory(stagingPath, destination.path); err != nil {
+			return fmt.Errorf("install cache at %s: %w", destination.path, err)
+		}
+		return nil
+	}
+	currentDestination, err := inspectRemoteCacheDestination(
+		destination.path, destination.nonEmpty,
+	)
+	if err != nil {
+		return fmt.Errorf("revalidate cache destination: %w", err)
+	}
+	if !currentDestination.exists || currentDestination.nonEmpty != destination.nonEmpty {
+		return fmt.Errorf("cache destination %s changed while cloning", destination.path)
+	}
+	if err := swapRemoteCacheDirectories(stagingPath, destination.path); err != nil {
+		return fmt.Errorf(
+			"%w for %s: %w", errAtomicCacheReplacement, destination.path, err,
+		)
+	}
+	if destination.nonEmpty {
+		if err := removeManagedRemoteCache(stagingPath); err != nil {
+			return fmt.Errorf("remove replaced Hercules cache: %w", err)
+		}
+		return nil
+	}
+	if err := os.Remove(stagingPath); err != nil {
+		return fmt.Errorf("remove replaced empty cache directory: %w", err)
+	}
+	return nil
+}
+
+func removeManagedRemoteCache(path string) error {
+	if err := verifyRemoteCacheMarker(path); err != nil {
+		return err
+	}
+	if err := os.RemoveAll(path); err != nil {
+		return fmt.Errorf("remove Hercules-managed cache %s: %w", path, err)
+	}
+	return nil
 }
 
 func sanitizedRepositoryURI(uri string) string {
@@ -336,6 +635,7 @@ type rootOptions struct {
 	sshIdentity        string
 	uri                string
 	cachePath          string
+	forceCacheReplace  bool
 }
 
 type commandFlagReader struct {
@@ -393,6 +693,7 @@ func readRootOptions(cmd *cobra.Command, args []string) (rootOptions, error) {
 	peopleDictTemplate := reader.string("people-dict-template")
 	progressValue := reader.string("progress")
 	sshIdentity := reader.string("ssh-identity")
+	forceCacheReplace := reader.bool("force-cache-replace")
 	if reader.err != nil {
 		return rootOptions{}, reader.err
 	}
@@ -410,6 +711,9 @@ func readRootOptions(cmd *cobra.Command, args []string) (rootOptions, error) {
 	if len(args) == 2 {
 		cachePath = args[1]
 	}
+	if forceCacheReplace && cachePath == "" {
+		return rootOptions{}, errors.New("--force-cache-replace requires a cache destination argument")
+	}
 	return rootOptions{
 		firstParent:        firstParent,
 		commitsFile:        commitsFile,
@@ -423,6 +727,7 @@ func readRootOptions(cmd *cobra.Command, args []string) (rootOptions, error) {
 		sshIdentity:        sshIdentity,
 		uri:                args[0],
 		cachePath:          cachePath,
+		forceCacheReplace:  forceCacheReplace,
 	}, nil
 }
 
@@ -437,8 +742,12 @@ func runRoot(cmd *cobra.Command, args []string) error {
 	}
 	defer stopProfile()
 
-	repository, repoURI, repoFeature, err := loadRepositoryWithError(
-		options.uri, options.cachePath, options.quiet, options.sshIdentity,
+	repository, repoURI, repoFeature, err := loadRepositoryWithCachePolicy(
+		options.uri,
+		options.cachePath,
+		options.quiet,
+		options.sshIdentity,
+		options.forceCacheReplace,
 	)
 	if err != nil {
 		return fmt.Errorf("open repository %s: %w", options.uri, err)
@@ -1139,6 +1448,11 @@ func init() {
 		panic(err)
 	}
 	hercules.PathifyFlagValue(rootFlags.Lookup("ssh-identity"))
+	rootFlags.Bool(
+		"force-cache-replace",
+		false,
+		"Replace an existing non-empty remote cache after verifying its Hercules ownership marker.",
+	)
 	rootFlags.String("people-dict-template", "",
 		"Write detected identities to a people-dict template file and exit.")
 	err = rootCmd.MarkFlagFilename("people-dict-template")

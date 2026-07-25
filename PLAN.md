@@ -112,11 +112,15 @@ Priority: P0
 
 ### SAFE-01: Make remote cache handling non-destructive
 
+Status: completed 2026-07-25
+Verification: [`docs/audits/2026-07-25-safe-01.md`](docs/audits/2026-07-25-safe-01.md)
+
 Affected code:
 
 - `cmd/hercules/root.go`
 - `cmd/hercules/root_test.go`
 - `README.md`
+- `.github/workflows/test-crosscompile.yaml`
 
 Work:
 
@@ -143,8 +147,8 @@ Tests:
 
 Acceptance criteria:
 
-- [ ] no path is recursively removed without explicit intent and a verified Hercules marker;
-- [ ] all safety tests run on Linux, macOS, and Windows-compatible path logic.
+- [x] no path is recursively removed without explicit intent and a verified Hercules marker;
+- [x] all safety tests run on Linux, macOS, and Windows-compatible path logic.
 
 ### SEC-01: Remove shell injection from the composite GitHub Action
 

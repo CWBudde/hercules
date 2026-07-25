@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -27,6 +28,8 @@ import (
 	"github.com/cwbudde/hercules/internal/core"
 	"github.com/cwbudde/hercules/internal/plumbing/identity"
 )
+
+const testFileScheme = "file"
 
 func TestLoadRemoteRepositories(t *testing.T) {
 	origin, head := createTestRepository(t)
@@ -55,6 +58,156 @@ func TestLoadRemoteRepositories(t *testing.T) {
 		_, err = repo.CommitObject(head)
 		require.NoError(t, err)
 	}
+}
+
+func TestRemoteCacheCreatesManagedDestination(t *testing.T) {
+	origin, head := createTestRepository(t)
+	cachePath := filepath.Join(t.TempDir(), "remote-cache")
+
+	repository, _, err := cloneRemoteRepository(
+		testRepositoryURI(t, origin), cachePath, true, "",
+	)
+
+	require.NoError(t, err)
+	requireRemoteCacheMarker(t, cachePath)
+	_, err = repository.CommitObject(head)
+	require.NoError(t, err)
+
+	reopened, _, feature, err := loadRepositoryWithError(cachePath, "", true, "")
+	require.NoError(t, err)
+	assert.Equal(t, core.FeatureGitCommits, feature)
+	_, err = reopened.CommitObject(head)
+	require.NoError(t, err)
+}
+
+func TestRemoteCacheAcceptsExistingEmptyTarget(t *testing.T) {
+	origin, _ := createTestRepository(t)
+	cachePath := filepath.Join(t.TempDir(), "remote-cache")
+	require.NoError(t, os.Mkdir(cachePath, 0o755))
+
+	_, _, err := cloneRemoteRepository(
+		testRepositoryURI(t, origin), cachePath, true, "",
+	)
+	if err != nil {
+		require.ErrorIs(t, err, errAtomicCacheReplacement)
+		entries, readErr := os.ReadDir(cachePath)
+		require.NoError(t, readErr)
+		assert.Empty(t, entries)
+		return
+	}
+	requireRemoteCacheMarker(t, cachePath)
+}
+
+func TestRemoteCacheReplacementRequiresForceAndMarker(t *testing.T) {
+	origin, _ := createTestRepository(t)
+	uri := testRepositoryURI(t, origin)
+	cachePath := filepath.Join(t.TempDir(), "remote-cache")
+	_, _, err := cloneRemoteRepository(uri, cachePath, true, "")
+	require.NoError(t, err)
+	sentinelPath := filepath.Join(cachePath, "stale-sentinel")
+	require.NoError(t, os.WriteFile(sentinelPath, []byte("keep until replaced"), 0o600))
+
+	_, _, err = cloneRemoteRepository(uri, cachePath, true, "")
+	require.ErrorContains(t, err, "--force-cache-replace")
+	assert.FileExists(t, sentinelPath)
+
+	_, _, err = cloneRemoteRepositoryWithPolicy(uri, cachePath, true, "", true)
+	if err != nil {
+		require.ErrorIs(t, err, errAtomicCacheReplacement)
+		assert.FileExists(t, sentinelPath)
+		return
+	}
+	requireRemoteCacheMarker(t, cachePath)
+	assert.NoFileExists(t, sentinelPath)
+}
+
+func TestRemoteCacheRefusesUnrelatedDirectory(t *testing.T) {
+	origin, _ := createTestRepository(t)
+	cachePath := filepath.Join(t.TempDir(), "unrelated")
+	require.NoError(t, os.Mkdir(cachePath, 0o755))
+	sentinelPath := filepath.Join(cachePath, "sentinel")
+	require.NoError(t, os.WriteFile(sentinelPath, []byte("do not delete"), 0o600))
+
+	for _, force := range []bool{false, true} {
+		_, _, err := cloneRemoteRepositoryWithPolicy(
+			testRepositoryURI(t, origin), cachePath, true, "", force,
+		)
+		require.Error(t, err)
+		assert.FileExists(t, sentinelPath)
+	}
+}
+
+func TestRemoteCacheRefusesUnsafeReplacementTargets(t *testing.T) {
+	currentDirectory, err := os.Getwd()
+	require.NoError(t, err)
+	homeDirectory, err := os.UserHomeDir()
+	require.NoError(t, err)
+	filesystemRoot := filepath.VolumeName(currentDirectory) + string(os.PathSeparator)
+
+	for name, path := range map[string]string{
+		"filesystem root":           filesystemRoot,
+		"current working directory": currentDirectory,
+		"home directory":            homeDirectory,
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := inspectRemoteCacheDestination(path, true)
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "refusing")
+		})
+	}
+}
+
+func TestFailedRemoteCloneLeavesManagedCacheIntact(t *testing.T) {
+	cachePath := filepath.Join(t.TempDir(), "remote-cache")
+	require.NoError(t, os.Mkdir(cachePath, 0o755))
+	require.NoError(t, writeRemoteCacheMarker(cachePath))
+	sentinelPath := filepath.Join(cachePath, "sentinel")
+	require.NoError(t, os.WriteFile(sentinelPath, []byte("original"), 0o600))
+	missingURI := (&url.URL{
+		Scheme: testFileScheme,
+		Path:   filepath.ToSlash(filepath.Join(t.TempDir(), "missing-origin")),
+	}).String()
+
+	_, _, err := cloneRemoteRepositoryWithPolicy(missingURI, cachePath, true, "", true)
+
+	require.Error(t, err)
+	assert.FileExists(t, sentinelPath)
+	requireRemoteCacheMarker(t, cachePath)
+}
+
+func TestRemoteCacheReplacementFailureIsSurfaced(t *testing.T) {
+	origin, _ := createTestRepository(t)
+	cachePath := filepath.Join(t.TempDir(), "remote-cache")
+	require.NoError(t, os.Mkdir(cachePath, 0o755))
+	require.NoError(t, writeRemoteCacheMarker(cachePath))
+	sentinelPath := filepath.Join(cachePath, "sentinel")
+	require.NoError(t, os.WriteFile(sentinelPath, []byte("original"), 0o600))
+
+	previousSwap := swapRemoteCacheDirectories
+	swapRemoteCacheDirectories = func(_, _ string) error {
+		return errors.New("injected atomic replacement failure")
+	}
+	t.Cleanup(func() {
+		swapRemoteCacheDirectories = previousSwap
+	})
+
+	_, _, err := cloneRemoteRepositoryWithPolicy(
+		testRepositoryURI(t, origin), cachePath, true, "", true,
+	)
+
+	require.ErrorIs(t, err, errAtomicCacheReplacement)
+	assert.ErrorContains(t, err, "injected atomic replacement failure")
+	assert.FileExists(t, sentinelPath)
+	requireRemoteCacheMarker(t, cachePath)
+}
+
+func TestRemoteCacheStatErrorsAreHardFailures(t *testing.T) {
+	parentFile := filepath.Join(t.TempDir(), "not-a-directory")
+	require.NoError(t, os.WriteFile(parentFile, []byte("fixture"), 0o600))
+
+	_, err := inspectRemoteCacheDestination(filepath.Join(parentFile, "cache"), false)
+
+	require.Error(t, err)
 }
 
 func TestRepositoryCloneOptionsHTTPSCredentials(t *testing.T) {
@@ -91,7 +244,10 @@ func TestLoadFileRepository(t *testing.T) {
 	origin, head := createTestRepository(t)
 	worktree, err := origin.Worktree()
 	require.NoError(t, err)
-	uri := (&url.URL{Scheme: "file", Path: filepath.ToSlash(worktree.Filesystem.Root())}).String()
+	uri := (&url.URL{
+		Scheme: testFileScheme,
+		Path:   filepath.ToSlash(worktree.Filesystem.Root()),
+	}).String()
 
 	repo, repoURI, repoFeature, err := loadRepositoryWithError(uri, "", true, "")
 
@@ -176,6 +332,7 @@ func TestIdentityWorkflowFlagsRegistered(t *testing.T) {
 	assert.NotNil(t, rootCmd.Flags().Lookup("identity-audit"))
 	assert.NotNil(t, rootCmd.Flags().Lookup("identity-merge-threshold"))
 	assert.NotNil(t, rootCmd.Flags().Lookup("people-dict-template"))
+	assert.NotNil(t, rootCmd.Flags().Lookup("force-cache-replace"))
 }
 
 func TestIdentityAuditWorkflowWritesJSON(t *testing.T) {
@@ -244,4 +401,23 @@ func createTestRepository(t *testing.T) (*git.Repository, plumbing.Hash) {
 	})
 	require.NoError(t, err)
 	return repo, head
+}
+
+func testRepositoryURI(t *testing.T, repository *git.Repository) string {
+	t.Helper()
+
+	worktree, err := repository.Worktree()
+	require.NoError(t, err)
+	return (&url.URL{
+		Scheme: testFileScheme,
+		Path:   filepath.ToSlash(worktree.Filesystem.Root()),
+	}).String()
+}
+
+func requireRemoteCacheMarker(t *testing.T, cachePath string) {
+	t.Helper()
+
+	content, err := os.ReadFile(filepath.Join(cachePath, remoteCacheMarkerName))
+	require.NoError(t, err)
+	assert.Equal(t, remoteCacheMarkerContent, string(content))
 }

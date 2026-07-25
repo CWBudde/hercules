@@ -225,7 +225,8 @@ Some examples:
 hercules --burndown https://github.com/go-git/go-git | labours -m burndown-project --resample month
 # Use "file system" go-git backend and print some basic information about the repository.
 hercules /path/to/cloned/go-git
-# Use "file system" go-git backend, cache the cloned repository to /tmp/repo-cache, use Protocol Buffers and display the burndown plot without resampling.
+# Use the file-system go-git backend, create a Hercules-managed clone cache at /tmp/repo-cache,
+# use Protocol Buffers, and display the burndown plot without resampling.
 hercules --burndown --pb https://github.com/git/git /tmp/repo-cache | labours -m burndown-project -f pb --resample raw
 
 # Now something fun
@@ -284,6 +285,19 @@ hercules https://github.com/git/git /tmp/repo-cache
 # Second time - use the cache
 hercules --some-analysis /tmp/repo-cache
 ```
+
+Hercules clones into a temporary sibling and moves the completed clone into place, so a failed
+clone does not leave a partial cache. It refuses to overwrite an existing non-empty path by
+default. To intentionally refresh a cache previously created and marked by Hercules, pass
+`--force-cache-replace`:
+
+```bash
+hercules --force-cache-replace https://github.com/git/git /tmp/repo-cache
+```
+
+The force flag never permits replacing an unrelated directory, a symbolic link, a filesystem
+root, the current working directory, or the user's home directory. On a platform or filesystem
+without atomic directory exchange, replacement fails and the existing cache remains untouched.
 
 ### GitHub Action
 

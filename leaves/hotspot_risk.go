@@ -394,6 +394,7 @@ func (hra *HotspotRiskAnalysis) fileRisk(file *object.File, startTick int) (File
 	}
 
 	blob := items.CachedBlob{Blob: file.Blob}
+
 	err := blob.Cache()
 	if err != nil {
 		return FileRisk{}, false

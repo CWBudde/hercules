@@ -453,6 +453,7 @@ func (analyser *BurndownAnalysis) persistHibernation(data []byte) error {
 		_ = file.Close()
 		_ = os.Remove(file.Name())
 	}
+
 	_, err = file.Write(data)
 	if err != nil {
 		cleanup()

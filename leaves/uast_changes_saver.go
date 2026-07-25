@@ -185,6 +185,7 @@ func eitherBlobIsBinary(blobs ...*items.CachedBlob) (bool, error) {
 		if errors.Is(err, items.ErrBinary) {
 			return true, nil
 		}
+
 		if err != nil {
 			return false, err
 		}

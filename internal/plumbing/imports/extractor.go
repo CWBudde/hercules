@@ -145,44 +145,58 @@ func (ex *Extractor) Consume(deps map[string]any) (map[string]any, error) {
 	waitGroup := sync.WaitGroup{}
 	waitGroup.Add(ex.Goroutines)
 
-	finishJobs := func() {
-		close(jobs)
-		waitGroup.Wait()
-	}
-
 	for range ex.Goroutines {
-		go func() {
-			for change := range jobs {
-				blob := cache[change.To.TreeEntry.Hash]
-				if blob.Size > int64(ex.MaxFileSize) {
-					ex.l.Warnf("skipped %s %s: size is too big: %d > %d",
-						change.To.TreeEntry.Name, change.To.TreeEntry.Hash.String(),
-						blob.Size, ex.MaxFileSize)
-
-					continue
-				}
-
-				file, err := lang.Extract(change.To.TreeEntry.Name, blob.Data)
-				if err != nil {
-					ex.l.Errorf("failed to extract imports from %s %s: %v",
-						change.To.TreeEntry.Name, change.To.TreeEntry.Hash.String(), err)
-				} else {
-					resultSync.Lock()
-					result[change.To.TreeEntry.Hash] = *file
-					resultSync.Unlock()
-				}
-			}
-
-			waitGroup.Done()
-		}()
+		go ex.extractImports(jobs, cache, result, &resultSync, &waitGroup)
 	}
 
+	err := enqueueImportChanges(changes, jobs)
+	close(jobs)
+	waitGroup.Wait()
+	if err != nil {
+		return nil, err
+	}
+
+	return map[string]any{DependencyImports: result}, nil
+}
+
+func (ex *Extractor) extractImports(
+	jobs <-chan *object.Change,
+	cache map[gitplumbing.Hash]*plumbing.CachedBlob,
+	result map[gitplumbing.Hash]lang.File,
+	resultSync *sync.Mutex,
+	waitGroup *sync.WaitGroup,
+) {
+	defer waitGroup.Done()
+
+	for change := range jobs {
+		blob := cache[change.To.TreeEntry.Hash]
+		if blob.Size > int64(ex.MaxFileSize) {
+			ex.l.Warnf("skipped %s %s: size is too big: %d > %d",
+				change.To.TreeEntry.Name, change.To.TreeEntry.Hash.String(),
+				blob.Size, ex.MaxFileSize)
+
+			continue
+		}
+
+		file, err := lang.Extract(change.To.TreeEntry.Name, blob.Data)
+		if err != nil {
+			ex.l.Errorf("failed to extract imports from %s %s: %v",
+				change.To.TreeEntry.Name, change.To.TreeEntry.Hash.String(), err)
+
+			continue
+		}
+
+		resultSync.Lock()
+		result[change.To.TreeEntry.Hash] = *file
+		resultSync.Unlock()
+	}
+}
+
+func enqueueImportChanges(changes object.Changes, jobs chan<- *object.Change) error {
 	for _, change := range changes {
 		action, err := change.Action()
 		if err != nil {
-			finishJobs()
-
-			return nil, fmt.Errorf(
+			return fmt.Errorf(
 				"determine action for import change %q -> %q: %w",
 				change.From.Name,
 				change.To.Name,
@@ -198,9 +212,7 @@ func (ex *Extractor) Consume(deps map[string]any) (map[string]any, error) {
 		}
 	}
 
-	finishJobs()
-
-	return map[string]any{DependencyImports: result}, nil
+	return nil
 }
 
 // Fork clones this PipelineItem.

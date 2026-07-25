@@ -28,40 +28,45 @@ func (tsExtractor) Imports(content []byte) ([]string, error) {
 	var out []string
 
 	eachNodeOfTypes(root, tsLang, func(node *sitter.Node) bool {
-		if node.Type(tsLang) == "export_statement" {
-			for i := range node.ChildCount() {
-				child := node.Child(i)
-				if child.Type(tsLang) != tsStringNodeType {
-					continue
-				}
-
-				out = append(out, stripStringQuotes(child, content))
-			}
-
-			return false
-		}
-		// import_statement
-		for i := range node.ChildCount() {
-			child := node.Child(i)
-			switch child.Type(tsLang) {
-			case tsStringNodeType:
-				out = append(out, stripStringQuotes(child, content))
-			case "import_require_clause":
-				for j := range child.ChildCount() {
-					inner := child.Child(j)
-					if inner.Type(tsLang) != tsStringNodeType {
-						continue
-					}
-
-					out = append(out, stripStringQuotes(inner, content))
-				}
-			}
-		}
+		out = append(out, tsModuleSpecifiers(node, content)...)
 
 		return false
 	}, "import_statement", "export_statement")
 
 	return out, nil
+}
+
+func tsModuleSpecifiers(statement *sitter.Node, content []byte) []string {
+	if statement.Type(tsLang) == "export_statement" {
+		return tsStringChildren(statement, content)
+	}
+
+	var specifiers []string
+
+	for i := range statement.ChildCount() {
+		child := statement.Child(i)
+		switch child.Type(tsLang) {
+		case tsStringNodeType:
+			specifiers = append(specifiers, stripStringQuotes(child, content))
+		case "import_require_clause":
+			specifiers = append(specifiers, tsStringChildren(child, content)...)
+		}
+	}
+
+	return specifiers
+}
+
+func tsStringChildren(node *sitter.Node, content []byte) []string {
+	var strings []string
+
+	for i := range node.ChildCount() {
+		child := node.Child(i)
+		if child.Type(tsLang) == tsStringNodeType {
+			strings = append(strings, stripStringQuotes(child, content))
+		}
+	}
+
+	return strings
 }
 
 // stripStringQuotes returns the contents of a `string` AST node minus the

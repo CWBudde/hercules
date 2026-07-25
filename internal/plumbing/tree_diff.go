@@ -267,42 +267,56 @@ func (treediff *TreeDiff) filterDiffs(diffs object.Changes) object.Changes {
 	// filter without allocation
 	filteredDiffs := make(object.Changes, 0, len(diffs))
 
-OUTER:
 	for _, change := range diffs {
-		if len(treediff.SkipFiles) > 0 && (enry.IsVendor(change.To.Name) || enry.IsVendor(change.From.Name)) {
-			continue
+		if treediff.diffPassesFilters(change) {
+			filteredDiffs = append(filteredDiffs, change)
 		}
-
-		for _, dir := range treediff.SkipFiles {
-			if strings.HasPrefix(change.To.Name, dir) || strings.HasPrefix(change.From.Name, dir) {
-				continue OUTER
-			}
-		}
-
-		if treediff.NameFilter != nil {
-			matchedTo := treediff.NameFilter.MatchString(change.To.Name)
-			matchedFrom := treediff.NameFilter.MatchString(change.From.Name)
-
-			if !matchedTo && !matchedFrom {
-				continue
-			}
-		}
-
-		var changeEntry object.ChangeEntry
-		if change.To.Tree == nil {
-			changeEntry = change.From
-		} else {
-			changeEntry = change.To
-		}
-
-		if pass, _ := treediff.checkLanguage(changeEntry.Name, changeEntry.TreeEntry.Hash); !pass {
-			continue
-		}
-
-		filteredDiffs = append(filteredDiffs, change)
 	}
 
 	return filteredDiffs
+}
+
+func (treediff *TreeDiff) diffPassesFilters(change *object.Change) bool {
+	if treediff.isSkippedPath(change) || !treediff.matchesNameFilter(change) {
+		return false
+	}
+
+	changeEntry := change.To
+	if changeEntry.Tree == nil {
+		changeEntry = change.From
+	}
+
+	pass, _ := treediff.checkLanguage(changeEntry.Name, changeEntry.TreeEntry.Hash)
+
+	return pass
+}
+
+func (treediff *TreeDiff) isSkippedPath(change *object.Change) bool {
+	if len(treediff.SkipFiles) == 0 {
+		return false
+	}
+
+	if enry.IsVendor(change.To.Name) || enry.IsVendor(change.From.Name) {
+		return true
+	}
+
+	for _, skippedPath := range treediff.SkipFiles {
+		if strings.HasPrefix(change.To.Name, skippedPath) ||
+			strings.HasPrefix(change.From.Name, skippedPath) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (treediff *TreeDiff) matchesNameFilter(change *object.Change) bool {
+	if treediff.NameFilter == nil {
+		return true
+	}
+
+	return treediff.NameFilter.MatchString(change.To.Name) ||
+		treediff.NameFilter.MatchString(change.From.Name)
 }
 
 // checkLanguage returns whether the blob corresponds to the list of required languages.

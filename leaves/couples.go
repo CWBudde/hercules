@@ -174,48 +174,71 @@ func (couples *CouplesAnalysis) Consume(deps map[string]any) (map[string]any, er
 
 	context := make([]string, 0, len(treeDiff))
 	for _, change := range treeDiff {
-		action, err := change.Action()
+		contextFile, includeInContext, err := couples.consumeFileChange(change, author)
 		if err != nil {
-			return nil, fmt.Errorf("determine action for tree change: %w", err)
+			return nil, err
 		}
 
-		toName := change.To.Name
-		fromName := change.From.Name
-
-		switch action {
-		case merkletrie.Insert:
-			context = append(context, toName)
-			couples.people[author][toName]++
-		case merkletrie.Delete:
-			couples.people[author][fromName]++
-		case merkletrie.Modify:
-			if fromName != toName {
-				// renamed
-				*couples.renames = append(
-					*couples.renames, rename{ToName: toName, FromName: fromName},
-				)
-			}
-
-			context = append(context, toName)
-			couples.people[author][toName]++
+		if includeInContext {
+			context = append(context, contextFile)
 		}
 	}
 
 	if len(context) <= CouplesMaximumMeaningfulContextSize {
-		for _, file := range context {
-			for _, otherFile := range context {
-				lane, exists := couples.files[file]
-				if !exists {
-					lane = map[string]int{}
-					couples.files[file] = lane
-				}
-
-				lane[otherFile]++
-			}
-		}
+		couples.updateFileCouplings(context)
 	}
 
 	return noDependencies(), nil
+}
+
+func (couples *CouplesAnalysis) consumeFileChange(
+	change *object.Change,
+	author int,
+) (string, bool, error) {
+	action, err := change.Action()
+	if err != nil {
+		return "", false, fmt.Errorf("determine action for tree change: %w", err)
+	}
+
+	targetName := change.To.Name
+	sourceName := change.From.Name
+
+	switch action {
+	case merkletrie.Insert:
+		couples.people[author][targetName]++
+
+		return targetName, true, nil
+	case merkletrie.Delete:
+		couples.people[author][sourceName]++
+
+		return "", false, nil
+	case merkletrie.Modify:
+		if sourceName != targetName {
+			*couples.renames = append(
+				*couples.renames, rename{ToName: targetName, FromName: sourceName},
+			)
+		}
+
+		couples.people[author][targetName]++
+
+		return targetName, true, nil
+	default:
+		return "", false, nil
+	}
+}
+
+func (couples *CouplesAnalysis) updateFileCouplings(context []string) {
+	for _, file := range context {
+		lane := couples.files[file]
+		if lane == nil {
+			lane = map[string]int{}
+			couples.files[file] = lane
+		}
+
+		for _, otherFile := range context {
+			lane[otherFile]++
+		}
+	}
 }
 
 // Finalize returns the result of the analysis. Further Consume() calls are not expected.
@@ -820,31 +843,40 @@ func (couples *CouplesAnalysis) reducePeopleFiles(
 	files map[string]bool, aliases map[string]map[string]bool, pointers map[string]string,
 ) []map[string]int {
 	people := make([]map[string]int, len(couples.people))
-	for i, counts := range couples.people {
-		reducedCounts := map[string]int{}
-		people[i] = reducedCounts
-
-		for file := range files {
-			count := counts[file]
-			for alias := range aliases[file] {
-				count += counts[alias]
-			}
-
-			if count > 0 {
-				reducedCounts[file] = count
-			}
-		}
-
-		for key, val := range counts {
-			if _, exists := files[key]; !exists {
-				if _, exists = pointers[key]; !exists {
-					reducedCounts[key] = val
-				}
-			}
-		}
+	for personIndex, counts := range couples.people {
+		people[personIndex] = reducePersonFileCounts(counts, files, aliases, pointers)
 	}
 
 	return people
+}
+
+func reducePersonFileCounts(
+	counts map[string]int,
+	files map[string]bool,
+	aliases map[string]map[string]bool,
+	pointers map[string]string,
+) map[string]int {
+	reducedCounts := map[string]int{}
+	for file := range files {
+		count := counts[file]
+		for alias := range aliases[file] {
+			count += counts[alias]
+		}
+
+		if count > 0 {
+			reducedCounts[file] = count
+		}
+	}
+
+	for file, count := range counts {
+		_, isFile := files[file]
+		_, isPointer := pointers[file]
+		if !isFile && !isPointer {
+			reducedCounts[file] = count
+		}
+	}
+
+	return reducedCounts
 }
 
 var _ = core.RegisterPipelineItem(&CouplesAnalysis{})

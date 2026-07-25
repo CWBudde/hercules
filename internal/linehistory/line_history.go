@@ -302,64 +302,18 @@ func (analyser *LineHistoryAnalyser) Consume(deps map[string]any) (map[string]an
 		panic("LineHistoryAnalyser.Consume() was called on a hibernated instance")
 	}
 
-	authorID, err := lineHistoryDependency[int](deps, identity.DependencyAuthor)
+	author, tick, cache, treeDiffs, fileDiffs, err := lineHistoryDependencies(deps)
 	if err != nil {
 		return nil, err
 	}
 
-	tick, err := lineHistoryDependency[int](deps, items.DependencyTick)
-	if err != nil {
-		return nil, err
-	}
-
-	cache, err := lineHistoryDependency[map[plumbing.Hash]*items.CachedBlob](deps, items.DependencyBlobCache)
-	if err != nil {
-		return nil, err
-	}
-
-	treeDiffs, err := lineHistoryDependency[object.Changes](deps, items.DependencyTreeChanges)
-	if err != nil {
-		return nil, err
-	}
-
-	fileDiffs, err := lineHistoryDependency[map[string]items.FileDiffData](deps, items.DependencyFileDiff)
-	if err != nil {
-		return nil, err
-	}
-
-	author, err := intToAuthorID(authorID)
-	if err != nil {
-		return nil, err
-	}
-
-	analyser.tick, err = intToTickNumber(tick)
-	if err != nil {
-		return nil, err
-	}
-
+	analyser.tick = tick
 	analyser.onNewTick()
-
 	analyser.changes = make([]core.LineHistoryChange, 0, len(treeDiffs)*4)
-	for _, change := range treeDiffs {
-		if analyser.isExcluded(change.From.Name, change.To.Name) {
-			continue
-		}
 
-		action, _ := change.Action()
-		var err error
-
-		switch action {
-		case merkletrie.Insert:
-			err = analyser.handleInsertion(change, author, cache)
-		case merkletrie.Delete:
-			err = analyser.handleDeletion(change, author, cache)
-		case merkletrie.Modify:
-			err = analyser.handleModification(change, author, cache, fileDiffs)
-		}
-
-		if err != nil {
-			return nil, err
-		}
+	err = analyser.consumeTreeDiffs(treeDiffs, author, cache, fileDiffs)
+	if err != nil {
+		return nil, err
 	}
 
 	result := map[string]any{DependencyLineHistory: core.LineHistoryChanges{
@@ -370,6 +324,52 @@ func (analyser *LineHistoryAnalyser) Consume(deps map[string]any) (map[string]an
 	analyser.changes = nil
 
 	return result, nil
+}
+
+func lineHistoryDependencies(deps map[string]any) (
+	core.AuthorId,
+	core.TickNumber,
+	map[plumbing.Hash]*items.CachedBlob,
+	object.Changes,
+	map[string]items.FileDiffData,
+	error,
+) {
+	authorID, err := lineHistoryDependency[int](deps, identity.DependencyAuthor)
+	if err != nil {
+		return 0, 0, nil, nil, nil, err
+	}
+
+	tick, err := lineHistoryDependency[int](deps, items.DependencyTick)
+	if err != nil {
+		return 0, 0, nil, nil, nil, err
+	}
+
+	cache, err := lineHistoryDependency[map[plumbing.Hash]*items.CachedBlob](deps, items.DependencyBlobCache)
+	if err != nil {
+		return 0, 0, nil, nil, nil, err
+	}
+
+	treeDiffs, err := lineHistoryDependency[object.Changes](deps, items.DependencyTreeChanges)
+	if err != nil {
+		return 0, 0, nil, nil, nil, err
+	}
+
+	fileDiffs, err := lineHistoryDependency[map[string]items.FileDiffData](deps, items.DependencyFileDiff)
+	if err != nil {
+		return 0, 0, nil, nil, nil, err
+	}
+
+	author, err := intToAuthorID(authorID)
+	if err != nil {
+		return 0, 0, nil, nil, nil, err
+	}
+
+	tickNumber, err := intToTickNumber(tick)
+	if err != nil {
+		return 0, 0, nil, nil, nil, err
+	}
+
+	return author, tickNumber, cache, treeDiffs, fileDiffs, nil
 }
 
 func lineHistoryDependency[T any](deps map[string]any, name string) (T, error) {
@@ -509,6 +509,46 @@ func (analyser *LineHistoryAnalyser) Boot() error {
 	}
 
 	analyser.fileAllocator.Boot()
+
+	return nil
+}
+
+func (analyser *LineHistoryAnalyser) consumeTreeDiffs(
+	treeDiffs object.Changes,
+	author core.AuthorId,
+	cache map[plumbing.Hash]*items.CachedBlob,
+	fileDiffs map[string]items.FileDiffData,
+) error {
+	for _, change := range treeDiffs {
+		if analyser.isExcluded(change.From.Name, change.To.Name) {
+			continue
+		}
+
+		err := analyser.consumeTreeDiff(change, author, cache, fileDiffs)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (analyser *LineHistoryAnalyser) consumeTreeDiff(
+	change *object.Change,
+	author core.AuthorId,
+	cache map[plumbing.Hash]*items.CachedBlob,
+	fileDiffs map[string]items.FileDiffData,
+) error {
+	action, _ := change.Action()
+
+	switch action {
+	case merkletrie.Insert:
+		return analyser.handleInsertion(change, author, cache)
+	case merkletrie.Delete:
+		return analyser.handleDeletion(change, author, cache)
+	case merkletrie.Modify:
+		return analyser.handleModification(change, author, cache, fileDiffs)
+	}
 
 	return nil
 }

@@ -198,32 +198,9 @@ func (ca *CommitsAnalysis) serializeBinary(result *CommitsResult, writer io.Writ
 
 	message.Commits = make([]*pb.Commit, len(result.Commits))
 	for commitIndex, commit := range result.Commits {
-		files := make([]*pb.CommitFile, len(commit.Files))
-		for fileIndex, file := range commit.Files {
-			added, err := intToProtoInt32(file.Added, "commit added-line count")
-			if err != nil {
-				return err
-			}
-
-			changed, err := intToProtoInt32(file.Changed, "commit changed-line count")
-			if err != nil {
-				return err
-			}
-
-			removed, err := intToProtoInt32(file.Removed, "commit removed-line count")
-			if err != nil {
-				return err
-			}
-
-			files[fileIndex] = &pb.CommitFile{
-				Name:     file.Name,
-				Language: file.Language,
-				Stats: &pb.LineStats{
-					Added:   added,
-					Changed: changed,
-					Removed: removed,
-				},
-			}
+		files, err := commitFilesToProto(commit.Files)
+		if err != nil {
+			return err
 		}
 
 		author, err := intToProtoInt32(commit.Author, "commit author")
@@ -250,6 +227,39 @@ func (ca *CommitsAnalysis) serializeBinary(result *CommitsResult, writer io.Writ
 	}
 
 	return nil
+}
+
+func commitFilesToProto(files []FileStat) ([]*pb.CommitFile, error) {
+	result := make([]*pb.CommitFile, len(files))
+	for fileIndex, file := range files {
+		stats, err := commitLineStatsToProto(file)
+		if err != nil {
+			return nil, err
+		}
+
+		result[fileIndex] = &pb.CommitFile{Name: file.Name, Language: file.Language, Stats: stats}
+	}
+
+	return result, nil
+}
+
+func commitLineStatsToProto(file FileStat) (*pb.LineStats, error) {
+	added, err := intToProtoInt32(file.Added, "commit added-line count")
+	if err != nil {
+		return nil, err
+	}
+
+	changed, err := intToProtoInt32(file.Changed, "commit changed-line count")
+	if err != nil {
+		return nil, err
+	}
+
+	removed, err := intToProtoInt32(file.Removed, "commit removed-line count")
+	if err != nil {
+		return nil, err
+	}
+
+	return &pb.LineStats{Added: added, Changed: changed, Removed: removed}, nil
 }
 
 var _ = core.RegisterPipelineItem(&CommitsAnalysis{})

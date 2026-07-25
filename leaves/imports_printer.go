@@ -242,48 +242,23 @@ func (ipd *ImportsPerDeveloper) serializeText(result *ImportsPerDeveloperResult,
 }
 
 func (ipd *ImportsPerDeveloper) serializeBinary(result *ImportsPerDeveloperResult, writer io.Writer) error {
-	authorsLen := len(result.reversedPeopleDict)
-	for key := range result.Imports {
-		if key >= authorsLen {
-			authorsLen = key + 1
-		}
-	}
-
+	authorsLen := importsAuthorCount(result)
 	authorIndex := make([]string, authorsLen)
 	copy(authorIndex, result.reversedPeopleDict)
+
 	message := pb.ImportsPerDeveloperResults{
-		Imports:     make([]*pb.ImportsPerDeveloper, authorsLen),
+		Imports:     initializedDeveloperImports(authorsLen),
 		AuthorIndex: authorIndex,
 		TickSize:    int64(result.tickSize),
 	}
-	// Initialize all entries to avoid nil elements in the repeated protobuf field
-	for i := range message.GetImports() {
-		message.Imports[i] = &pb.ImportsPerDeveloper{Languages: map[string]*pb.ImportsPerLanguage{}}
-	}
 
 	for key, dev := range result.Imports {
-		pbdev := &pb.ImportsPerDeveloper{Languages: map[string]*pb.ImportsPerLanguage{}}
-		message.Imports[key] = pbdev
-
-		for lang, ticks := range dev {
-			pbticks := map[string]*pb.ImportsPerTick{}
-			pbdev.Languages[lang] = &pb.ImportsPerLanguage{Ticks: pbticks}
-
-			for imp, tick := range ticks {
-				counts := map[int32]int64{}
-
-				pbticks[imp] = &pb.ImportsPerTick{Counts: counts}
-
-				for ti, val := range tick {
-					tickID, err := intToProtoInt32(ti, "imports tick")
-					if err != nil {
-						return err
-					}
-
-					counts[tickID] = val
-				}
-			}
+		protoDeveloper, err := developerImportsToProto(dev)
+		if err != nil {
+			return err
 		}
+
+		message.Imports[key] = protoDeveloper
 	}
 
 	serialized, err := proto.Marshal(&message)
@@ -297,6 +272,66 @@ func (ipd *ImportsPerDeveloper) serializeBinary(result *ImportsPerDeveloperResul
 	}
 
 	return nil
+}
+
+func importsAuthorCount(result *ImportsPerDeveloperResult) int {
+	authorsLen := len(result.reversedPeopleDict)
+	for key := range result.Imports {
+		authorsLen = max(authorsLen, key+1)
+	}
+
+	return authorsLen
+}
+
+func initializedDeveloperImports(count int) []*pb.ImportsPerDeveloper {
+	result := make([]*pb.ImportsPerDeveloper, count)
+	for index := range result {
+		result[index] = &pb.ImportsPerDeveloper{Languages: map[string]*pb.ImportsPerLanguage{}}
+	}
+
+	return result
+}
+
+func developerImportsToProto(developer map[string]map[string]map[int]int64) (*pb.ImportsPerDeveloper, error) {
+	languages := make(map[string]*pb.ImportsPerLanguage, len(developer))
+	for language, ticks := range developer {
+		protoTicks, err := importsTicksToProto(ticks)
+		if err != nil {
+			return nil, err
+		}
+
+		languages[language] = &pb.ImportsPerLanguage{Ticks: protoTicks}
+	}
+
+	return &pb.ImportsPerDeveloper{Languages: languages}, nil
+}
+
+func importsTicksToProto(ticks map[string]map[int]int64) (map[string]*pb.ImportsPerTick, error) {
+	result := make(map[string]*pb.ImportsPerTick, len(ticks))
+	for importedPackage, tick := range ticks {
+		counts, err := importCountsToProto(tick)
+		if err != nil {
+			return nil, err
+		}
+
+		result[importedPackage] = &pb.ImportsPerTick{Counts: counts}
+	}
+
+	return result, nil
+}
+
+func importCountsToProto(tick map[int]int64) (map[int32]int64, error) {
+	counts := make(map[int32]int64, len(tick))
+	for tickIndex, value := range tick {
+		tickID, err := intToProtoInt32(tickIndex, "imports tick")
+		if err != nil {
+			return nil, err
+		}
+
+		counts[tickID] = value
+	}
+
+	return counts, nil
 }
 
 var _ = core.RegisterPipelineItem(&ImportsPerDeveloper{})

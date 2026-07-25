@@ -420,52 +420,9 @@ func temporalTicksToProto(
 ) (map[int32]*pb.TemporalActivityTickDevs, error) {
 	result := make(map[int32]*pb.TemporalActivityTickDevs, len(ticks))
 	for tick, developers := range ticks {
-		pbDevelopers := &pb.TemporalActivityTickDevs{Devs: make(map[int32]*pb.TemporalActivityTick)}
-
-		for developer, activity := range developers {
-			developerID, err := intToProtoInt32(developer, "temporal author")
-			if err != nil {
-				return nil, err
-			}
-
-			if developer == core.AuthorMissing {
-				developerID = -1
-			}
-
-			commits, err := intToProtoInt32(activity.Commits, "temporal tick commit count")
-			if err != nil {
-				return nil, err
-			}
-
-			lines, err := intToProtoInt32(activity.Lines, "temporal tick line count")
-			if err != nil {
-				return nil, err
-			}
-
-			weekday, err := intToProtoInt32(activity.Weekday, "temporal weekday")
-			if err != nil {
-				return nil, err
-			}
-
-			hour, err := intToProtoInt32(activity.Hour, "temporal hour")
-			if err != nil {
-				return nil, err
-			}
-
-			month, err := intToProtoInt32(activity.Month, "temporal month")
-			if err != nil {
-				return nil, err
-			}
-
-			week, err := intToProtoInt32(activity.Week, "temporal ISO week")
-			if err != nil {
-				return nil, err
-			}
-
-			pbDevelopers.Devs[developerID] = &pb.TemporalActivityTick{
-				Commits: commits, Lines: lines,
-				Weekday: weekday, Hour: hour, Month: month, Week: week,
-			}
+		protoDevelopers, err := temporalDevelopersToProto(developers)
+		if err != nil {
+			return nil, err
 		}
 
 		tickID, err := intToProtoInt32(tick, "temporal tick")
@@ -473,10 +430,72 @@ func temporalTicksToProto(
 			return nil, err
 		}
 
-		result[tickID] = pbDevelopers
+		result[tickID] = &pb.TemporalActivityTickDevs{Devs: protoDevelopers}
 	}
 
 	return result, nil
+}
+
+func temporalDevelopersToProto(
+	developers map[int]*TemporalActivityTick,
+) (map[int32]*pb.TemporalActivityTick, error) {
+	result := make(map[int32]*pb.TemporalActivityTick, len(developers))
+	for developer, activity := range developers {
+		developerID, err := intToProtoInt32(developer, "temporal author")
+		if err != nil {
+			return nil, err
+		}
+
+		if developer == core.AuthorMissing {
+			developerID = -1
+		}
+
+		protoActivity, err := temporalTickToProto(activity)
+		if err != nil {
+			return nil, err
+		}
+
+		result[developerID] = protoActivity
+	}
+
+	return result, nil
+}
+
+func temporalTickToProto(activity *TemporalActivityTick) (*pb.TemporalActivityTick, error) {
+	commits, err := intToProtoInt32(activity.Commits, "temporal tick commit count")
+	if err != nil {
+		return nil, err
+	}
+
+	lines, err := intToProtoInt32(activity.Lines, "temporal tick line count")
+	if err != nil {
+		return nil, err
+	}
+
+	weekday, err := intToProtoInt32(activity.Weekday, "temporal weekday")
+	if err != nil {
+		return nil, err
+	}
+
+	hour, err := intToProtoInt32(activity.Hour, "temporal hour")
+	if err != nil {
+		return nil, err
+	}
+
+	month, err := intToProtoInt32(activity.Month, "temporal month")
+	if err != nil {
+		return nil, err
+	}
+
+	week, err := intToProtoInt32(activity.Week, "temporal ISO week")
+	if err != nil {
+		return nil, err
+	}
+
+	return &pb.TemporalActivityTick{
+		Commits: commits, Lines: lines,
+		Weekday: weekday, Hour: hour, Month: month, Week: week,
+	}, nil
 }
 
 var _ = core.RegisterPipelineItem(&TemporalActivityAnalysis{})

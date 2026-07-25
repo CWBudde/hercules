@@ -5,7 +5,6 @@ import (
 	"io"
 	"maps"
 	"math"
-	"path"
 	"slices"
 	"sort"
 	"time"
@@ -438,35 +437,7 @@ func (oc *OwnershipConcentrationAnalysis) computeSubsystemConcentration() map[st
 	subsystems := map[string]map[int]int64{} // dir -> author -> lines
 
 	oc.fileResolver.ForEachFile(func(fileId core.FileId, fileName string) {
-		dir := path.Dir(fileName)
-		if dir == "." {
-			dir = "/"
-		}
-
-		previousLine := 0
-		previousAuthor := int(core.AuthorMissing)
-
-		oc.fileResolver.ScanFile(fileId,
-			func(line int, _ core.TickNumber, author core.AuthorId) {
-				length := line - previousLine
-				if length > 0 && previousAuthor != int(core.AuthorMissing) {
-					dirAuthors := subsystems[dir]
-					if dirAuthors == nil {
-						dirAuthors = map[int]int64{}
-						subsystems[dir] = dirAuthors
-					}
-
-					dirAuthors[previousAuthor] += int64(length)
-				}
-
-				previousLine = line
-
-				if author >= core.AuthorMissing {
-					previousAuthor = int(core.AuthorMissing)
-				} else {
-					previousAuthor = int(author)
-				}
-			})
+		oc.accumulateSubsystemOwnership(fileId, subsystemDirectory(fileName), subsystems)
 	})
 
 	result := make(map[string]*SubsystemConcentration, len(subsystems))
@@ -483,6 +454,35 @@ func (oc *OwnershipConcentrationAnalysis) computeSubsystemConcentration() map[st
 	}
 
 	return result
+}
+
+func (oc *OwnershipConcentrationAnalysis) accumulateSubsystemOwnership(
+	fileID core.FileId,
+	directory string,
+	subsystems map[string]map[int]int64,
+) {
+	previousLine := 0
+	previousAuthor := int(core.AuthorMissing)
+
+	oc.fileResolver.ScanFile(fileID, func(line int, _ core.TickNumber, author core.AuthorId) {
+		length := line - previousLine
+		if length > 0 && previousAuthor != int(core.AuthorMissing) {
+			directoryAuthors := subsystems[directory]
+			if directoryAuthors == nil {
+				directoryAuthors = map[int]int64{}
+				subsystems[directory] = directoryAuthors
+			}
+
+			directoryAuthors[previousAuthor] += int64(length)
+		}
+
+		previousLine = line
+		if author >= core.AuthorMissing {
+			previousAuthor = int(core.AuthorMissing)
+		} else {
+			previousAuthor = int(author)
+		}
+	})
 }
 
 func (oc *OwnershipConcentrationAnalysis) serializeText(result *OwnershipConcentrationResult, writer io.Writer) {

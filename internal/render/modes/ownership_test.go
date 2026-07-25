@@ -11,6 +11,7 @@ import (
 	"github.com/cwbudde/matplotlib-go/core"
 	"github.com/cwbudde/matplotlib-go/render"
 	"github.com/cwbudde/matplotlib-go/style"
+	"github.com/spf13/viper"
 )
 
 func TestGenerateOwnershipPlot(t *testing.T) {
@@ -395,6 +396,85 @@ func calculateOwnershipConcentration(ownershipMatrix [][]int) float64 {
 	}
 
 	return concentration / float64(timePoints)
+}
+
+func TestOwnershipChartTitle(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		repo string
+		want string
+	}{
+		{"named repository", "hercules", "hercules code ownership through time"},
+		{"current directory", ".", "Code ownership through time"},
+		{"unnamed", "", "Code ownership through time"},
+		{"padded", "  hercules  ", "hercules code ownership through time"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ownershipChartTitle(tc.repo); got != tc.want {
+				t.Fatalf("ownershipChartTitle(%q) = %q, want %q", tc.repo, got, tc.want)
+			}
+		})
+	}
+}
+
+// The subplot padding is a fraction of the figure, so too small a value silently
+// pushes the tick labels outside the canvas: five-digit y labels were cut to
+// "0000" and the rotated date labels disappeared entirely. Assert that both
+// margins actually receive ink at the smallest figure size the CLI is used with.
+func TestPlotOwnershipBurndownKeepsTickLabelsInsideCanvas(t *testing.T) {
+	viper.Set("size", "16,10")
+	t.Cleanup(func() { viper.Set("size", "") })
+
+	start := time.Date(2017, 1, 11, 0, 0, 0, 0, time.UTC)
+	points := 24
+	dates := make([]time.Time, points)
+	owned := make([]float64, points)
+	for i := range dates {
+		dates[i] = start.AddDate(0, i, 0)
+		// Five-digit values, so the y labels are as wide as they get in practice.
+		owned[i] = float64(80000 - i*100)
+	}
+
+	output := filepath.Join(t.TempDir(), "ownership.png")
+	if err := plotOwnershipBurndown(
+		".", []string{"Alice"}, [][]float64{owned}, dates, dates[points-1], output,
+	); err != nil {
+		t.Fatalf("plotOwnershipBurndown: %v", err)
+	}
+
+	file, err := os.Open(output)
+	if err != nil {
+		t.Fatalf("open rendered chart: %v", err)
+	}
+	defer func() { _ = file.Close() }()
+	img, err := png.Decode(file)
+	if err != nil {
+		t.Fatalf("decode rendered chart: %v", err)
+	}
+
+	bounds := img.Bounds()
+	inked := func(xMin, yMin, xMax, yMax int) int {
+		count := 0
+		for y := yMin; y < yMax; y++ {
+			for x := xMin; x < xMax; x++ {
+				r, g, b, a := img.At(x, y).RGBA()
+				if a > 0 && r>>8 < 200 && g>>8 < 200 && b>>8 < 200 {
+					count++
+				}
+			}
+		}
+		return count
+	}
+
+	width, height := bounds.Dx(), bounds.Dy()
+	// The left 5% and bottom 6% sit outside the axes, so any dark pixel there is
+	// a tick label rather than plotted data.
+	if got := inked(0, 0, width*5/100, height); got == 0 {
+		t.Error("no ink in the left margin: y tick labels are clipped off-canvas")
+	}
+	if got := inked(0, height*94/100, width, height); got == 0 {
+		t.Error("no ink in the bottom margin: x tick labels are clipped off-canvas")
+	}
 }
 
 // Mock function for testing

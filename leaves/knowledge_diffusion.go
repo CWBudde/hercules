@@ -437,63 +437,18 @@ func (kd *KnowledgeDiffusionAnalysis) serializeBinary(result *KnowledgeDiffusion
 		WindowMonths: windowMonths,
 	}
 
-	message.Files = make(map[string]*pb.KnowledgeDiffusionFileData, len(result.Files))
-	for fileName, fileData := range result.Files {
-		uniqueEditors, err := intToProtoInt32(fileData.UniqueEditorsCount, "knowledge-diffusion unique editors")
-		if err != nil {
-			return err
-		}
-
-		recentEditors, err := intToProtoInt32(fileData.RecentEditorsCount, "knowledge-diffusion recent editors")
-		if err != nil {
-			return err
-		}
-
-		pbFile := &pb.KnowledgeDiffusionFileData{
-			UniqueEditorsCount:    uniqueEditors,
-			RecentEditorsCount:    recentEditors,
-			UniqueEditorsOverTime: make(map[int32]int32, len(fileData.UniqueEditorsOverTime)),
-			Authors:               make([]int32, len(fileData.Authors)),
-		}
-		for tick, count := range fileData.UniqueEditorsOverTime {
-			tickID, err := intToProtoInt32(tick, "knowledge-diffusion tick")
-			if err != nil {
-				return err
-			}
-
-			editorCount, err := intToProtoInt32(count, "knowledge-diffusion editor count")
-			if err != nil {
-				return err
-			}
-
-			pbFile.UniqueEditorsOverTime[tickID] = editorCount
-		}
-
-		for i, a := range fileData.Authors {
-			authorID, err := intToProtoInt32(a, "knowledge-diffusion author")
-			if err != nil {
-				return err
-			}
-
-			pbFile.Authors[i] = authorID
-		}
-
-		message.Files[fileName] = pbFile
+	message.Files, err = knowledgeDiffusionFilesToProto(result.Files)
+	if err != nil {
+		return err
 	}
 
-	message.Distribution = make(map[int32]int32, len(result.Distribution))
-	for editorCount, fileCount := range result.Distribution {
-		pbEditorCount, err := intToProtoInt32(editorCount, "knowledge-diffusion distribution editor count")
-		if err != nil {
-			return err
-		}
-
-		pbFileCount, err := intToProtoInt32(fileCount, "knowledge-diffusion distribution file count")
-		if err != nil {
-			return err
-		}
-
-		message.Distribution[pbEditorCount] = pbFileCount
+	message.Distribution, err = knowledgeDiffusionIntMapToProto(
+		result.Distribution,
+		"knowledge-diffusion distribution editor count",
+		"knowledge-diffusion distribution file count",
+	)
+	if err != nil {
+		return err
 	}
 
 	serialized, err := proto.Marshal(&message)
@@ -507,6 +462,84 @@ func (kd *KnowledgeDiffusionAnalysis) serializeBinary(result *KnowledgeDiffusion
 	}
 
 	return nil
+}
+
+func knowledgeDiffusionFilesToProto(
+	files map[string]*KnowledgeDiffusionFileResult,
+) (map[string]*pb.KnowledgeDiffusionFileData, error) {
+	result := make(map[string]*pb.KnowledgeDiffusionFileData, len(files))
+	for fileName, fileData := range files {
+		protoFile, err := knowledgeDiffusionFileToProto(fileData)
+		if err != nil {
+			return nil, err
+		}
+
+		result[fileName] = protoFile
+	}
+
+	return result, nil
+}
+
+func knowledgeDiffusionFileToProto(fileData *KnowledgeDiffusionFileResult) (*pb.KnowledgeDiffusionFileData, error) {
+	uniqueEditors, err := intToProtoInt32(fileData.UniqueEditorsCount, "knowledge-diffusion unique editors")
+	if err != nil {
+		return nil, err
+	}
+
+	recentEditors, err := intToProtoInt32(fileData.RecentEditorsCount, "knowledge-diffusion recent editors")
+	if err != nil {
+		return nil, err
+	}
+
+	editorsOverTime, err := knowledgeDiffusionIntMapToProto(
+		fileData.UniqueEditorsOverTime, "knowledge-diffusion tick", "knowledge-diffusion editor count",
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	authors, err := knowledgeDiffusionAuthorsToProto(fileData.Authors)
+	if err != nil {
+		return nil, err
+	}
+
+	return &pb.KnowledgeDiffusionFileData{
+		UniqueEditorsCount: uniqueEditors, RecentEditorsCount: recentEditors,
+		UniqueEditorsOverTime: editorsOverTime, Authors: authors,
+	}, nil
+}
+
+func knowledgeDiffusionIntMapToProto(values map[int]int, keyField, valueField string) (map[int32]int32, error) {
+	result := make(map[int32]int32, len(values))
+	for key, value := range values {
+		protoKey, err := intToProtoInt32(key, keyField)
+		if err != nil {
+			return nil, err
+		}
+
+		protoValue, err := intToProtoInt32(value, valueField)
+		if err != nil {
+			return nil, err
+		}
+
+		result[protoKey] = protoValue
+	}
+
+	return result, nil
+}
+
+func knowledgeDiffusionAuthorsToProto(authors []int) ([]int32, error) {
+	result := make([]int32, len(authors))
+	for index, author := range authors {
+		authorID, err := intToProtoInt32(author, "knowledge-diffusion author")
+		if err != nil {
+			return nil, err
+		}
+
+		result[index] = authorID
+	}
+
+	return result, nil
 }
 
 // recordEdit records that an author edited a file at the given tick.

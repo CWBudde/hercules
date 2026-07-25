@@ -285,47 +285,59 @@ func (analyser *LineHistoryLoader) loadChangesFromYaml(decoder *yaml.Decoder) er
 		return fmt.Errorf("decode line history YAML: %w", err)
 	}
 
-	lineDumper := yamlMapValue(document, "LineDumper")
-	dumper, ok := lineDumper.(yaml.MapSlice)
-
+	dumper, ok := yamlMapValue(document, "LineDumper").(yaml.MapSlice)
 	if !ok {
 		return errInvalidLineHistoryYAML
 	}
 
-	commitsValue := yamlMapValue(dumper, "commits")
-	commits, commitsOK := commitsValue.(yaml.MapSlice)
+	commits, commitsOK := yamlMapValue(dumper, "commits").(yaml.MapSlice)
+	authors, authorsOK := yamlMapValue(dumper, "author_sequence").([]any)
 
-	authorsValue := yamlMapValue(dumper, "author_sequence")
-	authors, authorsOK := authorsValue.([]any)
-
-	filesValue := yamlMapValue(dumper, "file_sequence")
-	files, filesOK := filesValue.(yaml.MapSlice)
-
+	files, filesOK := yamlMapValue(dumper, "file_sequence").(yaml.MapSlice)
 	if !commitsOK || !authorsOK || !filesOK {
 		return errInvalidLineHistoryYAML
 	}
 
+	analyser.loadAuthors(authors)
+
+	err = analyser.loadFiles(files)
+	if err != nil {
+		return err
+	}
+
+	return analyser.loadCommits(commits)
+}
+
+func (analyser *LineHistoryLoader) loadAuthors(authors []any) {
 	analyser.authors = make([]string, 0, len(authors))
 	for _, author := range authors {
 		if value, ok := author.(string); ok {
 			analyser.authors = append(analyser.authors, value)
 		}
 	}
+}
 
+func (analyser *LineHistoryLoader) loadFiles(files yaml.MapSlice) error {
 	analyser.files = make(map[FileId]fileInfo, len(files))
 	for _, item := range files {
 		id, idOK := item.Key.(int)
 		name, nameOK := item.Value.(string)
 
-		if idOK && nameOK {
-			if id < math.MinInt32 || id > math.MaxInt32 {
-				return fmt.Errorf("%w: file ID %d", errLineHistoryIntegerRange, id)
-			}
-
-			analyser.files[FileId(id)] = fileInfo{Name: name}
+		if !idOK || !nameOK {
+			continue
 		}
+
+		if id < math.MinInt32 || id > math.MaxInt32 {
+			return fmt.Errorf("%w: file ID %d", errLineHistoryIntegerRange, id)
+		}
+
+		analyser.files[FileId(id)] = fileInfo{Name: name}
 	}
 
+	return nil
+}
+
+func (analyser *LineHistoryLoader) loadCommits(commits yaml.MapSlice) error {
 	analyser.commits = make([]commitInfo, 0, len(commits))
 	for _, yamlCommit := range commits {
 		info, err := parseLineHistoryCommit(yamlCommit)

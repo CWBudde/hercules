@@ -183,6 +183,11 @@ type nodePosSorter struct {
 	positions map[string]NodePosition
 }
 
+type cycleEdge struct {
+	node   string
+	parent string
+}
+
 func (v nodePosSorter) Len() int {
 	return len(v.nodes)
 }
@@ -237,45 +242,48 @@ func (g *Graph) BreadthSort() map[string]NodePosition {
 
 // FindCycle returns the cycle in the graph which contains "seed" node.
 func (g *Graph) FindCycle(seed string) []string {
-	type edge struct {
-		node   string
-		parent string
-	}
-	queue := make([]edge, 0, len(g.outputs))
-	queue = append(queue, edge{seed, ""})
+	queue := make([]cycleEdge, 0, len(g.outputs))
+	queue = append(queue, cycleEdge{seed, ""})
 	visited := map[string]string{}
 
 	for len(queue) > 0 {
 		currentEdge := queue[0]
 		queue = queue[1:]
 
-		if parent, exists := visited[currentEdge.node]; !exists || parent == "" {
+		if shouldVisitCycleEdge(currentEdge, visited) {
 			visited[currentEdge.node] = currentEdge.parent
 			for child := range g.outputs[currentEdge.node] {
-				queue = append(queue, edge{child, currentEdge.node})
+				queue = append(queue, cycleEdge{child, currentEdge.node})
 			}
 		}
 
 		if currentEdge.node == seed && currentEdge.parent != "" {
-			var result []string
-
-			node := currentEdge.parent
-			for node != seed {
-				result = append(result, node)
-				node = visited[node]
-			}
-
-			result = append(result, seed)
-			// reverse
-			for left, right := 0, len(result)-1; left < right; left, right = left+1, right-1 {
-				result[left], result[right] = result[right], result[left]
-			}
-
-			return result
+			return buildCycle(seed, currentEdge.parent, visited)
 		}
 	}
 
 	return []string{}
+}
+
+func shouldVisitCycleEdge(edge cycleEdge, visited map[string]string) bool {
+	parent, exists := visited[edge.node]
+
+	return !exists || parent == ""
+}
+
+func buildCycle(seed, parent string, visited map[string]string) []string {
+	var result []string
+
+	for node := parent; node != seed; node = visited[node] {
+		result = append(result, node)
+	}
+
+	result = append(result, seed)
+	for left, right := 0, len(result)-1; left < right; left, right = left+1, right-1 {
+		result[left], result[right] = result[right], result[left]
+	}
+
+	return result
 }
 
 // FindParents returns the other ends of incoming edges.

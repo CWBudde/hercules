@@ -372,51 +372,18 @@ func mergeDevTick(target map[int]*DevTick, developer int, source *DevTick) {
 func (devs *DevsAnalysis) serializeText(result *DevsResult, writer io.Writer) {
 	fmt.Fprintln(writer, "  ticks:")
 
-	ticks := make([]int, len(result.Ticks))
-	{
-		i := 0
-		for tick := range result.Ticks {
-			ticks[i] = tick
-			i++
-		}
-	}
-
-	sort.Ints(ticks)
-
-	for _, tick := range ticks {
+	for _, tick := range sortedDevTickKeys(result.Ticks) {
 		fmt.Fprintf(writer, "    %d:\n", tick)
-		rtick := result.Ticks[tick]
-		devseq := make([]int, len(rtick))
-		{
-			i := 0
-			for dev := range rtick {
-				devseq[i] = dev
-				i++
+
+		tickStats := result.Ticks[tick]
+		for _, developer := range sortedDeveloperKeys(tickStats) {
+			stats := tickStats[developer]
+			if developer == core.AuthorMissing {
+				developer = -1
 			}
-		}
-
-		sort.Ints(devseq)
-
-		for _, dev := range devseq {
-			stats := rtick[dev]
-			if dev == core.AuthorMissing {
-				dev = -1
-			}
-			var langs []string
-
-			for lang, languageStats := range stats.Languages {
-				if lang == "" {
-					lang = "none"
-				}
-
-				langs = append(langs,
-					fmt.Sprintf("%s: [%d, %d, %d]", lang, languageStats.Added, languageStats.Removed, languageStats.Changed))
-			}
-
-			sort.Strings(langs)
 			fmt.Fprintf(writer, "      %d: [%d, %d, %d, %d, {%s}]\n",
-				dev, stats.Commits, stats.Added, stats.Removed, stats.Changed,
-				strings.Join(langs, ", "))
+				developer, stats.Commits, stats.Added, stats.Removed, stats.Changed,
+				strings.Join(formatLanguageStats(stats.Languages), ", "))
 		}
 	}
 
@@ -429,59 +396,56 @@ func (devs *DevsAnalysis) serializeText(result *DevsResult, writer io.Writer) {
 	fmt.Fprintln(writer, "  tick_size:", int(result.tickSize.Seconds()))
 }
 
+func sortedDevTickKeys(ticks map[int]map[int]*DevTick) []int {
+	keys := make([]int, 0, len(ticks))
+	for tick := range ticks {
+		keys = append(keys, tick)
+	}
+
+	sort.Ints(keys)
+
+	return keys
+}
+
+func sortedDeveloperKeys(stats map[int]*DevTick) []int {
+	keys := make([]int, 0, len(stats))
+	for developer := range stats {
+		keys = append(keys, developer)
+	}
+
+	sort.Ints(keys)
+
+	return keys
+}
+
+func formatLanguageStats(languages map[string]items.LineStats) []string {
+	formatted := make([]string, 0, len(languages))
+	for language, stats := range languages {
+		if language == "" {
+			language = "none"
+		}
+
+		formatted = append(formatted, fmt.Sprintf(
+			"%s: [%d, %d, %d]", language, stats.Added, stats.Removed, stats.Changed,
+		))
+	}
+
+	sort.Strings(formatted)
+
+	return formatted
+}
+
 func (devs *DevsAnalysis) serializeBinary(result *DevsResult, writer io.Writer) error {
 	message := pb.DevsAnalysisResults{}
 	message.DevIndex = result.reversedPeopleDict
 	message.TickSize = int64(result.tickSize)
 
-	message.Ticks = map[int32]*pb.TickDevs{}
-	for tick, devs := range result.Ticks {
-		tickID, err := intToProtoInt32(tick, "developer statistics tick")
-		if err != nil {
-			return err
-		}
-
-		tickDevs := &pb.TickDevs{}
-		message.Ticks[tickID] = tickDevs
-		tickDevs.Devs = map[int32]*pb.DevTick{}
-
-		for dev, stats := range devs {
-			if dev == core.AuthorMissing {
-				dev = -1
-			}
-
-			developerID, err := intToProtoInt32(dev, "developer statistics author")
-			if err != nil {
-				return err
-			}
-
-			commits, err := intToProtoInt32(stats.Commits, "developer commit count")
-			if err != nil {
-				return err
-			}
-
-			lineStats, err := devLineStatsToProto(stats.Added, stats.Changed, stats.Removed)
-			if err != nil {
-				return err
-			}
-
-			languages := map[string]*pb.LineStats{}
-
-			tickDevs.Devs[developerID] = &pb.DevTick{
-				Commits:   commits,
-				Stats:     lineStats,
-				Languages: languages,
-			}
-			for lang, ls := range stats.Languages {
-				languageStats, err := devLineStatsToProto(ls.Added, ls.Changed, ls.Removed)
-				if err != nil {
-					return err
-				}
-
-				languages[lang] = languageStats
-			}
-		}
+	ticks, err := devTicksToProto(result.Ticks)
+	if err != nil {
+		return err
 	}
+
+	message.Ticks = ticks
 
 	serialized, err := proto.Marshal(&message)
 	if err != nil {
@@ -494,6 +458,81 @@ func (devs *DevsAnalysis) serializeBinary(result *DevsResult, writer io.Writer) 
 	}
 
 	return nil
+}
+
+func devTicksToProto(ticks map[int]map[int]*DevTick) (map[int32]*pb.TickDevs, error) {
+	result := make(map[int32]*pb.TickDevs, len(ticks))
+	for tick, developers := range ticks {
+		tickID, err := intToProtoInt32(tick, "developer statistics tick")
+		if err != nil {
+			return nil, err
+		}
+
+		protoDevelopers, err := developersToProto(developers)
+		if err != nil {
+			return nil, err
+		}
+
+		result[tickID] = &pb.TickDevs{Devs: protoDevelopers}
+	}
+
+	return result, nil
+}
+
+func developersToProto(developers map[int]*DevTick) (map[int32]*pb.DevTick, error) {
+	result := make(map[int32]*pb.DevTick, len(developers))
+	for developer, stats := range developers {
+		if developer == core.AuthorMissing {
+			developer = -1
+		}
+
+		developerID, err := intToProtoInt32(developer, "developer statistics author")
+		if err != nil {
+			return nil, err
+		}
+
+		protoStats, err := devTickToProto(stats)
+		if err != nil {
+			return nil, err
+		}
+
+		result[developerID] = protoStats
+	}
+
+	return result, nil
+}
+
+func devTickToProto(stats *DevTick) (*pb.DevTick, error) {
+	commits, err := intToProtoInt32(stats.Commits, "developer commit count")
+	if err != nil {
+		return nil, err
+	}
+
+	lineStats, err := devLineStatsToProto(stats.Added, stats.Changed, stats.Removed)
+	if err != nil {
+		return nil, err
+	}
+
+	languages, err := devLanguagesToProto(stats.Languages)
+	if err != nil {
+		return nil, err
+	}
+
+	return &pb.DevTick{Commits: commits, Stats: lineStats, Languages: languages}, nil
+}
+
+func devLanguagesToProto(languages map[string]items.LineStats) (map[string]*pb.LineStats, error) {
+	result := make(map[string]*pb.LineStats, len(languages))
+	for language, stats := range languages {
+		protoStats, err := devLineStatsToProto(stats.Added, stats.Changed, stats.Removed)
+		if err != nil {
+			return nil, err
+		}
+
+		result[language] = protoStats
+	}
+
+	return result, nil
 }
 
 func devLineStatsToProto(added, changed, removed int) (*pb.LineStats, error) {

@@ -246,40 +246,11 @@ func (detector *StoryDetector) LoadMergeDict(path string) error {
 	var reverseDict []string
 
 	for scanner.Scan() {
-		textLine := scanner.Text()
-		values := strings.Split(textLine, "|")
 		id := len(reverseDict)
-		valueIndex := 0
 
-		for ; valueIndex < len(values); valueIndex++ {
-			value := values[valueIndex]
-			var key plumbing.Hash
-
-			n, err := hex.Decode(key[:], []byte(value))
-			if err == nil && n != len(key) {
-				err = errors.Errorf("hash must be of %d bytes: %s", len(key), value)
-			}
-
-			if err != nil {
-				if valueIndex == len(values)-1 {
-					break
-				}
-
-				return err
-			}
-
-			if id2, found := dict[key]; found {
-				return errors.Errorf("ambigous hash: %s = (%d) %s", value, id2, reverseDict[id2])
-			}
-
-			dict[key] = id
-		}
-
-		var name string
-		if valueIndex == len(values) {
-			name = fmt.Sprintf("Merge #%d", id)
-		} else {
-			name = values[valueIndex]
+		name, err := parseMergeDictLine(scanner.Text(), id, dict, reverseDict)
+		if err != nil {
+			return err
 		}
 
 		reverseDict = append(reverseDict, name)
@@ -289,6 +260,63 @@ func (detector *StoryDetector) LoadMergeDict(path string) error {
 	detector.MergeNames = reverseDict
 
 	return nil
+}
+
+func parseMergeDictLine(
+	line string,
+	id int,
+	dict map[plumbing.Hash]int,
+	names []string,
+) (string, error) {
+	values := strings.Split(line, "|")
+
+	nameIndex, err := addMergeHashes(values, id, dict, names)
+	if err != nil {
+		return "", err
+	}
+
+	if nameIndex < len(values) {
+		return values[nameIndex], nil
+	}
+
+	return fmt.Sprintf("Merge #%d", id), nil
+}
+
+func addMergeHashes(
+	values []string,
+	id int,
+	dict map[plumbing.Hash]int,
+	names []string,
+) (int, error) {
+	for valueIndex, value := range values {
+		key, err := decodeMergeHash(value)
+		if err != nil {
+			if valueIndex == len(values)-1 {
+				return valueIndex, nil
+			}
+
+			return 0, err
+		}
+
+		if existingID, found := dict[key]; found {
+			return 0, errors.Errorf("ambigous hash: %s = (%d) %s", value, existingID, names[existingID])
+		}
+
+		dict[key] = id
+	}
+
+	return len(values), nil
+}
+
+func decodeMergeHash(value string) (plumbing.Hash, error) {
+	var key plumbing.Hash
+
+	n, err := hex.Decode(key[:], []byte(value))
+	if err == nil && n != len(key) {
+		err = errors.Errorf("hash must be of %d bytes: %s", len(key), value)
+	}
+
+	return key, err
 }
 
 func (detector *StoryDetector) putAuthorId(nextMerge *object.Commit) (core.AuthorId, error) {

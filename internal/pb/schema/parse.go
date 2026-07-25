@@ -135,39 +135,69 @@ func sortSnapshot(snapshot *Snapshot) {
 func parseReserved(message *Message, spec string) error {
 	for part := range strings.SplitSeq(spec, ",") {
 		part = strings.TrimSpace(part)
-		if matches := reservedNameRe.FindStringSubmatch(part); matches != nil {
-			message.ReservedNames = append(message.ReservedNames, matches[1])
-			continue
-		}
 
-		matches := reservedRangeRe.FindStringSubmatch(part)
-		if matches == nil {
-			return fmt.Errorf("%w %q in message %s", errUnsupportedReservedEntry, part, message.Name)
-		}
-
-		rangeStart, err := strconv.Atoi(matches[1])
+		err := parseReservedPart(message, part)
 		if err != nil {
-			return fmt.Errorf("parse reserved range start %q: %w", matches[1], err)
-		}
-
-		rangeEnd := rangeStart
-		if matches[2] != "" {
-			rangeEnd, err = strconv.Atoi(matches[2])
-			if err != nil {
-				return fmt.Errorf("parse reserved range end %q: %w", matches[2], err)
-			}
-		}
-
-		if rangeEnd < rangeStart {
-			return fmt.Errorf("%w %q in message %s", errInvalidReservedRange, part, message.Name)
-		}
-
-		for n := rangeStart; n <= rangeEnd; n++ {
-			message.ReservedNumbers = append(message.ReservedNumbers, n)
+			return err
 		}
 	}
 
 	return nil
+}
+
+func parseReservedPart(message *Message, part string) error {
+	if matches := reservedNameRe.FindStringSubmatch(part); matches != nil {
+		message.ReservedNames = append(message.ReservedNames, matches[1])
+
+		return nil
+	}
+
+	rangeStart, rangeEnd, err := parseReservedRange(part, message.Name)
+	if err != nil {
+		return err
+	}
+
+	for n := rangeStart; n <= rangeEnd; n++ {
+		message.ReservedNumbers = append(message.ReservedNumbers, n)
+	}
+
+	return nil
+}
+
+func parseReservedRange(part, messageName string) (int, int, error) {
+	matches := reservedRangeRe.FindStringSubmatch(part)
+	if matches == nil {
+		return 0, 0, fmt.Errorf("%w %q in message %s", errUnsupportedReservedEntry, part, messageName)
+	}
+
+	rangeStart, err := strconv.Atoi(matches[1])
+	if err != nil {
+		return 0, 0, fmt.Errorf("parse reserved range start %q: %w", matches[1], err)
+	}
+
+	rangeEnd, err := parseReservedRangeEnd(matches[2], rangeStart)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	if rangeEnd < rangeStart {
+		return 0, 0, fmt.Errorf("%w %q in message %s", errInvalidReservedRange, part, messageName)
+	}
+
+	return rangeStart, rangeEnd, nil
+}
+
+func parseReservedRangeEnd(raw string, rangeStart int) (int, error) {
+	if raw == "" {
+		return rangeStart, nil
+	}
+
+	rangeEnd, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, fmt.Errorf("parse reserved range end %q: %w", raw, err)
+	}
+
+	return rangeEnd, nil
 }
 
 func stripLineComment(line string) string {

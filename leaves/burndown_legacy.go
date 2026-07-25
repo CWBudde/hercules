@@ -9,7 +9,6 @@ import (
 	"os"
 	"runtime"
 	"runtime/debug"
-	"sort"
 	"time"
 	"unicode/utf8"
 
@@ -1299,30 +1298,7 @@ func (analyser *LegacyBurndownAnalysis) historyAfterRename(sourceName, targetNam
 	}
 
 	known := map[string]bool{sourceName: true}
-
-	future, exists := analyser.renames[sourceName]
-	for exists {
-		next, nextExists := analyser.renames[future]
-		if !nextExists {
-			break
-		}
-
-		if known[next] {
-			future = ""
-
-			for name := range known {
-				if analyser.fileHistories[name] != nil {
-					future = name
-					break
-				}
-			}
-
-			break
-		}
-
-		known[future] = true
-		future, exists = next, true
-	}
+	future := analyser.futureHistoryName(sourceName, known)
 
 	if future == "" {
 		return sparseHistory{}, nil
@@ -1336,6 +1312,35 @@ func (analyser *LegacyBurndownAnalysis) historyAfterRename(sourceName, targetNam
 	return history, nil
 }
 
+func (analyser *LegacyBurndownAnalysis) futureHistoryName(sourceName string, known map[string]bool) string {
+	future, exists := analyser.renames[sourceName]
+	for exists {
+		next, nextExists := analyser.renames[future]
+		if !nextExists {
+			return future
+		}
+
+		if known[next] {
+			return analyser.knownHistoryName(known)
+		}
+
+		known[future] = true
+		future, exists = next, true
+	}
+
+	return future
+}
+
+func (analyser *LegacyBurndownAnalysis) knownHistoryName(known map[string]bool) string {
+	for name := range known {
+		if analyser.fileHistories[name] != nil {
+			return name
+		}
+	}
+
+	return ""
+}
+
 func (analyser *LegacyBurndownAnalysis) groupSparseHistory(
 	history sparseHistory, lastTick int,
 ) (DenseHistory, int) {
@@ -1343,22 +1348,8 @@ func (analyser *LegacyBurndownAnalysis) groupSparseHistory(
 		panic("empty history")
 	}
 
-	var ticks []int
-	for tick := range history {
-		ticks = append(ticks, tick)
-	}
+	ticks, lastTick := prepareSparseHistoryTicks(history, lastTick)
 
-	sort.Ints(ticks)
-
-	if lastTick >= 0 {
-		if ticks[len(ticks)-1] < lastTick {
-			ticks = append(ticks, lastTick)
-		} else if ticks[len(ticks)-1] > lastTick {
-			panic("ticks corruption")
-		}
-	} else {
-		lastTick = ticks[len(ticks)-1]
-	}
 	// [y][x]
 	// y - sampling
 	// x - granularity
@@ -1370,24 +1361,7 @@ func (analyser *LegacyBurndownAnalysis) groupSparseHistory(
 		result[i] = make([]int64, bands)
 	}
 
-	prevsi := 0
-
-	for _, tick := range ticks {
-		sampleIndex := tick / analyser.Sampling
-		if sampleIndex > prevsi {
-			state := result[prevsi]
-			for i := prevsi + 1; i <= sampleIndex; i++ {
-				copy(result[i], state)
-			}
-
-			prevsi = sampleIndex
-		}
-
-		sample := result[sampleIndex]
-		for t, value := range history[tick].deltas {
-			sample[t/analyser.Granularity] += value
-		}
-	}
+	populateGroupedHistory(result, history, ticks, analyser.Sampling, analyser.Granularity)
 
 	return result, lastTick
 }

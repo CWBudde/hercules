@@ -391,6 +391,26 @@ func buildSitterRanges(ranges []LineRange, lineStarts []int, numLines int) []sit
 		return nil
 	}
 
+	clamped := clampLineRanges(ranges, numLines)
+	if len(clamped) == 0 {
+		return nil
+	}
+
+	sort.Slice(clamped, func(i, j int) bool {
+		return clamped[i].Start < clamped[j].Start
+	})
+
+	merged := mergeLineRanges(clamped)
+
+	out := make([]sitter.Range, 0, len(merged))
+	for _, lineRange := range merged {
+		out = append(out, makeSitterRange(lineRange, lineStarts))
+	}
+
+	return out
+}
+
+func clampLineRanges(ranges []LineRange, numLines int) []LineRange {
 	clamped := make([]LineRange, 0, len(ranges))
 	for _, lineRange := range ranges {
 		start, end := lineRange.Start, lineRange.End
@@ -409,14 +429,10 @@ func buildSitterRanges(ranges []LineRange, lineStarts []int, numLines int) []sit
 		clamped = append(clamped, LineRange{Start: start, End: end})
 	}
 
-	if len(clamped) == 0 {
-		return nil
-	}
+	return clamped
+}
 
-	sort.Slice(clamped, func(i, j int) bool {
-		return clamped[i].Start < clamped[j].Start
-	})
-
+func mergeLineRanges(clamped []LineRange) []LineRange {
 	merged := clamped[:1]
 	for _, lineRange := range clamped[1:] {
 		last := &merged[len(merged)-1]
@@ -431,19 +447,19 @@ func buildSitterRanges(ranges []LineRange, lineStarts []int, numLines int) []sit
 		merged = append(merged, lineRange)
 	}
 
-	out := make([]sitter.Range, 0, len(merged))
-	for _, r := range merged {
-		startByte := lineStarts[r.Start-1]
-		endByte := lineStarts[r.End]
-		out = append(out, sitter.Range{
-			StartPoint: pointAt(startByte, lineStarts),
-			EndPoint:   pointAt(endByte, lineStarts),
-			StartByte:  checkedSitterUint32(startByte),
-			EndByte:    checkedSitterUint32(endByte),
-		})
-	}
+	return merged
+}
 
-	return out
+func makeSitterRange(lineRange LineRange, lineStarts []int) sitter.Range {
+	startByte := lineStarts[lineRange.Start-1]
+	endByte := lineStarts[lineRange.End]
+
+	return sitter.Range{
+		StartPoint: pointAt(startByte, lineStarts),
+		EndPoint:   pointAt(endByte, lineStarts),
+		StartByte:  checkedSitterUint32(startByte),
+		EndByte:    checkedSitterUint32(endByte),
+	}
 }
 
 // pointAt converts a byte offset into a tree-sitter Point using the precomputed
@@ -487,37 +503,63 @@ func extractByTypes(
 	}
 
 	nodes := make([]Node, 0, 32)
-	var walk func(*sitter.Node)
-	walk = func(node *sitter.Node) {
-		if node == nil {
-			return
-		}
-
-		if _, ok := nodeTypes[node.Type(spec.language)]; ok {
-			name := extractedNodeName(node, source, spec.language)
-			if requireName && name == "" {
-				goto recurse
-			}
-
-			nodes = append(nodes, extractedNode(node, name, source, spec.language))
-		}
-
-	recurse:
-		if namedOnlyWalk {
-			for i := range node.NamedChildCount() {
-				walk(node.NamedChild(i))
-			}
-
-			return
-		}
-
-		for i := range node.ChildCount() {
-			walk(node.Child(i))
-		}
-	}
-	walk(root)
+	walkExtractedNodes(
+		root, source, spec.language, nodeTypes, requireName, namedOnlyWalk, &nodes,
+	)
 
 	return nodes, nil
+}
+
+func walkExtractedNodes(
+	node *sitter.Node,
+	source []byte,
+	language *sitter.Language,
+	nodeTypes map[string]struct{},
+	requireName bool,
+	namedOnlyWalk bool,
+	nodes *[]Node,
+) {
+	if node == nil {
+		return
+	}
+
+	appendExtractedNode(node, source, language, nodeTypes, requireName, nodes)
+
+	if namedOnlyWalk {
+		for i := range node.NamedChildCount() {
+			walkExtractedNodes(
+				node.NamedChild(i), source, language, nodeTypes, requireName, true, nodes,
+			)
+		}
+
+		return
+	}
+
+	for i := range node.ChildCount() {
+		walkExtractedNodes(
+			node.Child(i), source, language, nodeTypes, requireName, false, nodes,
+		)
+	}
+}
+
+func appendExtractedNode(
+	node *sitter.Node,
+	source []byte,
+	language *sitter.Language,
+	nodeTypes map[string]struct{},
+	requireName bool,
+	nodes *[]Node,
+) {
+	if _, ok := nodeTypes[node.Type(language)]; !ok {
+		return
+	}
+
+	name := extractedNodeName(node, source, language)
+	if requireName && name == "" {
+		return
+	}
+
+	*nodes = append(*nodes, extractedNode(node, name, source, language))
 }
 
 func extractedNodeName(node *sitter.Node, source []byte, language *sitter.Language) string {

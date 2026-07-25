@@ -93,57 +93,61 @@ func (lsc *LinesStatsCalculator) Consume(deps map[string]any) (map[string]any, e
 	fileDiffs := deps[DependencyFileDiff].(map[string]FileDiffData)
 
 	for _, change := range treeDiff {
-		action, err := change.Action()
+		entry, stats, include, err := lineStatsForChange(change, cache, fileDiffs)
 		if err != nil {
-			return nil, fmt.Errorf("determine change action: %w", err)
-		}
-		// Skip binary files completely; they do not contribute line counts.
-		if action == merkletrie.Modify {
-			binary, err := modificationIsBinary(change, cache)
-			if err != nil {
-				return nil, err
-			}
-
-			if binary {
-				continue
-			}
+			return nil, err
 		}
 
-		switch action {
-		case merkletrie.Insert:
-			blob := cache[change.To.TreeEntry.Hash]
-
-			lines, err := blob.CountLines()
-			if err != nil {
-				// binary
-				continue
-			}
-
-			result[change.To] = LineStats{
-				Added:   lines,
-				Removed: 0,
-				Changed: 0,
-			}
-		case merkletrie.Delete:
-			blob := cache[change.From.TreeEntry.Hash]
-
-			lines, err := blob.CountLines()
-			if err != nil {
-				// binary
-				continue
-			}
-
-			result[change.From] = LineStats{
-				Added:   0,
-				Removed: lines,
-				Changed: 0,
-			}
-		case merkletrie.Modify:
-			result[change.To] = countModifiedLines(fileDiffs[change.To.Name])
+		if include {
+			result[entry] = stats
 		}
 	}
 
 	return map[string]any{DependencyLineStats: result}, nil
+}
+
+func lineStatsForChange(
+	change *object.Change,
+	cache map[plumbing.Hash]*CachedBlob,
+	fileDiffs map[string]FileDiffData,
+) (object.ChangeEntry, LineStats, bool, error) {
+	action, err := change.Action()
+	if err != nil {
+		return object.ChangeEntry{}, LineStats{}, false, fmt.Errorf("determine change action: %w", err)
+	}
+
+	switch action {
+	case merkletrie.Insert:
+		stats, include := countChangedBlob(cache[change.To.TreeEntry.Hash], true)
+
+		return change.To, stats, include, nil
+	case merkletrie.Delete:
+		stats, include := countChangedBlob(cache[change.From.TreeEntry.Hash], false)
+
+		return change.From, stats, include, nil
+	case merkletrie.Modify:
+		binary, err := modificationIsBinary(change, cache)
+		if err != nil || binary {
+			return object.ChangeEntry{}, LineStats{}, false, err
+		}
+
+		return change.To, countModifiedLines(fileDiffs[change.To.Name]), true, nil
+	default:
+		return object.ChangeEntry{}, LineStats{}, false, nil
+	}
+}
+
+func countChangedBlob(blob *CachedBlob, inserted bool) (LineStats, bool) {
+	lines, err := blob.CountLines()
+	if err != nil {
+		return LineStats{}, false
+	}
+
+	if inserted {
+		return LineStats{Added: lines}, true
+	}
+
+	return LineStats{Removed: lines}, true
 }
 
 func modificationIsBinary(

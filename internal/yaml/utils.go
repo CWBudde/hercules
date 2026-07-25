@@ -21,62 +21,87 @@ func SafeString(str string) string {
 // `name` is the name of the corresponding YAML block. If empty, no separate block is created.
 // `fixNegative` changes all negative values to 0.
 func PrintMatrix(writer io.Writer, matrix [][]int64, indent int, name string, fixNegative bool) {
-	// determine the maximum length of each value
-	var maxnum int64 = -(1 << 32)
-	var minnum int64 = 1 << 32
-
-	for _, status := range matrix {
-		for _, val := range status {
-			if val > maxnum {
-				maxnum = val
-			}
-
-			if val < minnum {
-				minnum = val
-			}
-		}
-	}
-
-	width := len(strconv.FormatInt(maxnum, 10))
-	if !fixNegative && minnum < 0 {
-		negativeWidth := len(strconv.FormatInt(minnum, 10))
-		if negativeWidth > width {
-			width = negativeWidth
-		}
-	}
-
+	width := matrixColumnWidth(matrix, fixNegative)
 	last := len(matrix[len(matrix)-1])
 
 	if name != "" {
 		fmt.Fprintf(writer, "%s%s: |-\n", strings.Repeat(" ", indent), SafeString(name))
 		indent += 2
 	}
-	// print the resulting triangular matrix
+
+	printMatrixRows(writer, matrix, indent, last, width, fixNegative)
+}
+
+func matrixColumnWidth(matrix [][]int64, fixNegative bool) int {
+	maxnum, minnum := matrixValueBounds(matrix)
+	width := len(strconv.FormatInt(maxnum, 10))
+
+	if !fixNegative && minnum < 0 {
+		width = max(width, len(strconv.FormatInt(minnum, 10)))
+	}
+
+	return width
+}
+
+func matrixValueBounds(matrix [][]int64) (int64, int64) {
+	var maxnum int64 = -(1 << 32)
+	var minnum int64 = 1 << 32
+
+	for _, status := range matrix {
+		for _, val := range status {
+			maxnum = max(maxnum, val)
+			minnum = min(minnum, val)
+		}
+	}
+
+	return maxnum, minnum
+}
+
+func printMatrixRows(
+	writer io.Writer,
+	matrix [][]int64,
+	indent int,
+	last int,
+	width int,
+	fixNegative bool,
+) {
 	first := true
 
 	for _, status := range matrix {
 		fmt.Fprint(writer, strings.Repeat(" ", indent-1))
 
 		for i := range last {
-			var val int64
-			if i < len(status) {
-				val = status[i]
-				// not sure why this sometimes happens...
-				// TODO(vmarkovtsev): find the root cause of tiny negative balances
-				if fixNegative && val < 0 {
-					val = 0
-				}
-			}
+			val := printableMatrixValue(status, i, fixNegative)
+			if first {
+				printFirstMatrixValue(writer, val, width)
 
-			if !first {
-				fmt.Fprintf(writer, " %[1]*[2]d", width, val)
-			} else {
 				first = false
 
-				fmt.Fprintf(writer, " %d%s", val, strings.Repeat(" ", width-len(strconv.FormatInt(val, 10))))
+				continue
 			}
+
+			fmt.Fprintf(writer, " %[1]*[2]d", width, val)
 		}
 
 		fmt.Fprintln(writer)
 	}
+}
+
+func printableMatrixValue(status []int64, index int, fixNegative bool) int64 {
+	if index >= len(status) {
+		return 0
+	}
+
+	val := status[index]
+	// not sure why this sometimes happens...
+	// TODO(vmarkovtsev): find the root cause of tiny negative balances
+	if fixNegative && val < 0 {
+		return 0
+	}
+
+	return val
+}
+
+func printFirstMatrixValue(writer io.Writer, val int64, width int) {
+	fmt.Fprintf(writer, " %d%s", val, strings.Repeat(" ", width-len(strconv.FormatInt(val, 10))))
 }

@@ -386,35 +386,7 @@ func (bf *BusFactorAnalysis) computeSubsystemBusFactor() map[string]int {
 	subsystems := map[string]map[int]int64{} // dir -> author -> lines
 
 	bf.fileResolver.ForEachFile(func(fileId core.FileId, fileName string) {
-		dir := path.Dir(fileName)
-		if dir == "." {
-			dir = "/"
-		}
-
-		previousLine := 0
-		previousAuthor := int(core.AuthorMissing)
-
-		bf.fileResolver.ScanFile(fileId,
-			func(line int, _ core.TickNumber, author core.AuthorId) {
-				length := line - previousLine
-				if length > 0 && previousAuthor != int(core.AuthorMissing) {
-					dirAuthors := subsystems[dir]
-					if dirAuthors == nil {
-						dirAuthors = map[int]int64{}
-						subsystems[dir] = dirAuthors
-					}
-
-					dirAuthors[previousAuthor] += int64(length)
-				}
-
-				previousLine = line
-
-				if author >= core.AuthorMissing {
-					previousAuthor = int(core.AuthorMissing)
-				} else {
-					previousAuthor = int(author)
-				}
-			})
+		bf.accumulateSubsystemOwnership(fileId, subsystemDirectory(fileName), subsystems)
 	})
 
 	result := make(map[string]int, len(subsystems))
@@ -428,6 +400,44 @@ func (bf *BusFactorAnalysis) computeSubsystemBusFactor() map[string]int {
 	}
 
 	return result
+}
+
+func subsystemDirectory(fileName string) string {
+	directory := path.Dir(fileName)
+	if directory == "." {
+		return "/"
+	}
+
+	return directory
+}
+
+func (bf *BusFactorAnalysis) accumulateSubsystemOwnership(
+	fileID core.FileId,
+	directory string,
+	subsystems map[string]map[int]int64,
+) {
+	previousLine := 0
+	previousAuthor := int(core.AuthorMissing)
+
+	bf.fileResolver.ScanFile(fileID, func(line int, _ core.TickNumber, author core.AuthorId) {
+		length := line - previousLine
+		if length > 0 && previousAuthor != int(core.AuthorMissing) {
+			directoryAuthors := subsystems[directory]
+			if directoryAuthors == nil {
+				directoryAuthors = map[int]int64{}
+				subsystems[directory] = directoryAuthors
+			}
+
+			directoryAuthors[previousAuthor] += int64(length)
+		}
+
+		previousLine = line
+		if author >= core.AuthorMissing {
+			previousAuthor = int(core.AuthorMissing)
+		} else {
+			previousAuthor = int(author)
+		}
+	})
 }
 
 func (bf *BusFactorAnalysis) serializeText(result *BusFactorResult, writer io.Writer) {

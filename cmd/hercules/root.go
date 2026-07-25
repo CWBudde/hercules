@@ -736,6 +736,19 @@ func deployItemsToPipeline(pipeline *core.Pipeline, flags *pflag.FlagSet,
 	priorityFn func(items []core.PipelineItem) core.PipelineItem,
 ) []hercules.LeafPipelineItem {
 	deployed := []hercules.LeafPipelineItem{}
+	for _, names := range pipelineDeploymentList(flags) {
+		summoned := summonPipelineItem(names, priorityFn)
+		item := pipeline.DeployItemOnce(summoned)
+
+		if leaf, ok := deployedLeaf(pipeline, item, summoned); ok {
+			deployed = append(deployed, leaf)
+		}
+	}
+
+	return deployed
+}
+
+func pipelineDeploymentList(flags *pflag.FlagSet) [][]string {
 	deployList := make([][]string, 0, len(cmdlineDeployed))
 	for name, valPtr := range cmdlineDeployed {
 		if *valPtr {
@@ -749,30 +762,46 @@ func deployItemsToPipeline(pipeline *core.Pipeline, flags *pflag.FlagSet,
 		}
 	})
 
-	for _, names := range deployList {
-		switch summons := hercules.Registry.Summon(names...); {
-		case len(summons) == 0:
-			log.Fatalf("missing item(s): %v", names)
-		case len(summons) > 1:
-			if len(names) == 2 {
-				log.Printf("ambigous item: %v", names)
-			}
-			summons[0] = priorityFn(summons)
-			summons = summons[:1]
-			fallthrough
-		default:
-			item := pipeline.DeployItemOnce(summons[0])
-			if !pipeline.DryRun && item == summons[0] {
-				leaf, ok := item.(hercules.LeafPipelineItem)
-				if !ok {
-					log.Fatalf("deployed item %q is not a leaf", item.Name())
-				}
-				deployed = append(deployed, leaf)
-			}
+	return deployList
+}
+
+func summonPipelineItem(
+	names []string,
+	priorityFn func(items []core.PipelineItem) core.PipelineItem,
+) core.PipelineItem {
+	summons := hercules.Registry.Summon(names...)
+
+	switch {
+	case len(summons) == 0:
+		log.Fatalf("missing item(s): %v", names)
+	case len(summons) > 1:
+		if len(names) == 2 {
+			log.Printf("ambigous item: %v", names)
 		}
+
+		return priorityFn(summons)
+	default:
+		return summons[0]
 	}
 
-	return deployed
+	return nil
+}
+
+func deployedLeaf(
+	pipeline *core.Pipeline,
+	item core.PipelineItem,
+	summoned core.PipelineItem,
+) (hercules.LeafPipelineItem, bool) {
+	if pipeline.DryRun || item != summoned {
+		return nil, false
+	}
+
+	leaf, ok := item.(hercules.LeafPipelineItem)
+	if !ok {
+		log.Fatalf("deployed item %q is not a leaf", item.Name())
+	}
+
+	return leaf, true
 }
 
 type flagSorter struct {

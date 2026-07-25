@@ -693,61 +693,65 @@ func serializeDeleteHistory(history map[int]sparseHistory) ([]*pb.CodeChurnDelet
 		return nil, nil
 	}
 
-	authors := make([]int, 0, len(history))
-	for author := range history {
-		authors = append(authors, author)
-	}
-
-	sort.Ints(authors)
-
+	authors := sortedCodeChurnIntKeys(history)
 	result := make([]*pb.CodeChurnDeleteHistory, 0, len(authors))
 	for _, author := range authors {
-		currentTicks := make([]int, 0, len(history[author]))
-		for currentTick := range history[author] {
-			currentTicks = append(currentTicks, currentTick)
-		}
-
-		sort.Ints(currentTicks)
-
-		for _, currentTick := range currentTicks {
-			entry := history[author][currentTick]
-
-			authorID, err := intToProtoInt32(author, "code churn delete-history author")
+		for _, currentTick := range sortedCodeChurnIntKeys(history[author]) {
+			entry, err := serializeDeleteHistoryEntry(author, currentTick, history[author][currentTick])
 			if err != nil {
 				return nil, err
 			}
 
-			pbCurrentTick, err := intToProtoInt32(currentTick, "code churn delete-history current tick")
-			if err != nil {
-				return nil, err
-			}
-
-			previousTicks := make([]int, 0, len(entry.deltas))
-			for previousTick := range entry.deltas {
-				previousTicks = append(previousTicks, previousTick)
-			}
-
-			sort.Ints(previousTicks)
-
-			pbEntry := &pb.CodeChurnDeleteHistory{
-				Author:      authorID,
-				CurrentTick: pbCurrentTick,
-				Entries:     make([]*pb.CodeChurnSparseHistoryEntry, 0, len(previousTicks)),
-			}
-			for _, previousTick := range previousTicks {
-				pbPreviousTick, err := intToProtoInt32(previousTick, "code churn delete-history previous tick")
-				if err != nil {
-					return nil, err
-				}
-
-				pbEntry.Entries = append(pbEntry.Entries, &pb.CodeChurnSparseHistoryEntry{
-					PreviousTick: pbPreviousTick,
-					Delta:        entry.deltas[previousTick],
-				})
-			}
-
-			result = append(result, pbEntry)
+			result = append(result, entry)
 		}
+	}
+
+	return result, nil
+}
+
+func sortedCodeChurnIntKeys[V any](values map[int]V) []int {
+	keys := make([]int, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+
+	sort.Ints(keys)
+
+	return keys
+}
+
+func serializeDeleteHistoryEntry(
+	author int,
+	currentTick int,
+	entry sparseHistoryEntry,
+) (*pb.CodeChurnDeleteHistory, error) {
+	authorID, err := intToProtoInt32(author, "code churn delete-history author")
+	if err != nil {
+		return nil, err
+	}
+
+	pbCurrentTick, err := intToProtoInt32(currentTick, "code churn delete-history current tick")
+	if err != nil {
+		return nil, err
+	}
+
+	result := &pb.CodeChurnDeleteHistory{
+		Author:      authorID,
+		CurrentTick: pbCurrentTick,
+		Entries:     make([]*pb.CodeChurnSparseHistoryEntry, 0, len(entry.deltas)),
+	}
+	for _, previousTick := range sortedCodeChurnIntKeys(entry.deltas) {
+		pbPreviousTick, conversionErr := intToProtoInt32(
+			previousTick, "code churn delete-history previous tick",
+		)
+		if conversionErr != nil {
+			return nil, conversionErr
+		}
+
+		result.Entries = append(result.Entries, &pb.CodeChurnSparseHistoryEntry{
+			PreviousTick: pbPreviousTick,
+			Delta:        entry.deltas[previousTick],
+		})
 	}
 
 	return result, nil

@@ -331,15 +331,10 @@ func (tdb *TyposDatasetBuilder) typoCandidates(
 			removedSize = size
 		case diffmatchpatch.DiffInsert:
 			if size == removedSize {
-				for i := range size {
-					left, right := beforeLine-size+i, afterLine+i
-					if left >= 0 && left < len(beforeLines) && right >= 0 && right < len(afterLines) &&
-						tdb.lcontext.Distance(string(beforeLines[left]), string(afterLines[right])) <=
-							tdb.MaximumAllowedDistance {
-						candidates = append(candidates, candidate{left, right})
-						focusedBefore[left], focusedAfter[right] = true, true
-					}
-				}
+				candidates = tdb.appendTypoCandidates(
+					candidates, beforeLines, afterLines, beforeLine-size, afterLine, size,
+					focusedBefore, focusedAfter,
+				)
 			}
 
 			afterLine += size
@@ -350,6 +345,35 @@ func (tdb *TyposDatasetBuilder) typoCandidates(
 	}
 
 	return candidates, focusedBefore, focusedAfter
+}
+
+func (tdb *TyposDatasetBuilder) appendTypoCandidates(
+	candidates []candidate,
+	beforeLines, afterLines [][]byte,
+	beforeStart, afterStart, size int,
+	focusedBefore, focusedAfter map[int]bool,
+) []candidate {
+	for offset := range size {
+		beforeIndex, afterIndex := beforeStart+offset, afterStart+offset
+		if !validLinePair(beforeIndex, afterIndex, beforeLines, afterLines) {
+			continue
+		}
+
+		if tdb.lcontext.Distance(string(beforeLines[beforeIndex]), string(afterLines[afterIndex])) >
+			tdb.MaximumAllowedDistance {
+			continue
+		}
+
+		candidates = append(candidates, candidate{beforeIndex, afterIndex})
+		focusedBefore[beforeIndex], focusedAfter[afterIndex] = true, true
+	}
+
+	return candidates
+}
+
+func validLinePair(beforeIndex, afterIndex int, beforeLines, afterLines [][]byte) bool {
+	return beforeIndex >= 0 && beforeIndex < len(beforeLines) &&
+		afterIndex >= 0 && afterIndex < len(afterLines)
 }
 
 func (tdb *TyposDatasetBuilder) identifiersForTypo(

@@ -369,12 +369,18 @@ func plotOwnershipBurndown(repoName string, names []string, people [][]float64, 
 			foreground,
 		),
 	)
-	grid := fig.Subplots(1, 1, core.WithSubplotPadding(0.032, 0.991, 0.033, 0.968))
+	// The padding is a fraction of the figure, so it has to leave room for the
+	// widest y tick label ("80000") and for rotated date labels at the smallest
+	// figure size anyone renders. The previous 0.032/0.033 left ~50px and ~33px:
+	// enough at no size, so y labels were cut to "0000" and the rotated x labels
+	// vanished entirely below the axes. The right edge needs slack too, because a
+	// rotated label on the last tick extends past the end of the axis.
+	grid := fig.Subplots(1, 1, core.WithSubplotPadding(0.075, 0.965, 0.11, 0.968))
 	if len(grid) == 0 || len(grid[0]) == 0 || grid[0][0] == nil {
 		return fmt.Errorf("failed to create ownership axes")
 	}
 	ax := grid[0][0]
-	ax.SetTitle(fmt.Sprintf("%s code ownership through time", repoName))
+	ax.SetTitle(ownershipChartTitle(repoName))
 	colors := graphics.PythonLaboursColorPalette(len(matrix))
 	renderColors := make([]render.Color, len(colors))
 	for i, color := range colors {
@@ -407,6 +413,18 @@ func plotOwnershipBurndown(repoName string, names []string, people [][]float64, 
 	}
 
 	return saveOwnershipMatplotlibFigure(fig, output, width, height, transparentBackground)
+}
+
+// ownershipChartTitle builds the chart title, tolerating the repository names
+// that reach it in practice. Analysing the current directory gives a name of "."
+// (and an unnamed input gives ""), which used to render as ". code ownership
+// through time".
+func ownershipChartTitle(repoName string) string {
+	name := strings.TrimSpace(repoName)
+	if name == "" || name == "." {
+		return "Code ownership through time"
+	}
+	return name + " code ownership through time"
 }
 
 func ownershipSamplingDuration(sampling int, tickSize float64) time.Duration {

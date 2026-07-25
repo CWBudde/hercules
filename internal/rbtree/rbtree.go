@@ -903,34 +903,22 @@ func (tree *RBTree) findGE(key uint32) (uint32, bool) {
 	alloc := tree.storage()
 
 	nodeIndex := tree.root
-	for {
-		if nodeIndex == 0 {
-			return 0, false
-		}
+	candidate := uint32(0)
 
-		comp := int(key) - int(alloc[nodeIndex].item.Key)
+	for nodeIndex != 0 {
+		nodeKey := alloc[nodeIndex].item.Key
 		switch {
-		case comp == 0:
+		case key == nodeKey:
 			return nodeIndex, true
-		case comp < 0:
-			if alloc[nodeIndex].left != 0 {
-				nodeIndex = alloc[nodeIndex].left
-			} else {
-				return nodeIndex, false
-			}
+		case key < nodeKey:
+			candidate = nodeIndex
+			nodeIndex = alloc[nodeIndex].left
 		default:
-			if alloc[nodeIndex].right != 0 {
-				nodeIndex = alloc[nodeIndex].right
-			} else {
-				succ := doNext(nodeIndex, alloc)
-				if succ == 0 {
-					return 0, false
-				}
-
-				return succ, key == alloc[succ].item.Key
-			}
+			nodeIndex = alloc[nodeIndex].right
 		}
 	}
+
+	return candidate, false
 }
 
 // Delete N from the tree.

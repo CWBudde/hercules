@@ -1126,22 +1126,8 @@ func (analyser *BurndownAnalysis) groupSparseHistory(
 		panic("empty history")
 	}
 
-	var ticks []int
-	for tick := range history {
-		ticks = append(ticks, tick)
-	}
+	ticks, lastTick := prepareSparseHistoryTicks(history, lastTick)
 
-	sort.Ints(ticks)
-
-	if lastTick >= 0 {
-		if ticks[len(ticks)-1] < lastTick {
-			ticks = append(ticks, lastTick)
-		} else if ticks[len(ticks)-1] > lastTick {
-			panic("ticks corruption")
-		}
-	} else {
-		lastTick = ticks[len(ticks)-1]
-	}
 	// [y][x]
 	// y - sampling
 	// x - granularity
@@ -1153,26 +1139,56 @@ func (analyser *BurndownAnalysis) groupSparseHistory(
 		result[i] = make([]int64, bands)
 	}
 
-	prevSi := 0
+	populateGroupedHistory(result, history, ticks, analyser.Sampling, analyser.Granularity)
+
+	return result, lastTick
+}
+
+func prepareSparseHistoryTicks(history sparseHistory, lastTick int) ([]int, int) {
+	ticks := make([]int, 0, len(history)+1)
+	for tick := range history {
+		ticks = append(ticks, tick)
+	}
+
+	sort.Ints(ticks)
+	latestTick := ticks[len(ticks)-1]
+
+	switch {
+	case lastTick < 0:
+		lastTick = latestTick
+	case latestTick < lastTick:
+		ticks = append(ticks, lastTick)
+	case latestTick > lastTick:
+		panic("ticks corruption")
+	}
+
+	return ticks, lastTick
+}
+
+func populateGroupedHistory(
+	result burndown.DenseHistory,
+	history sparseHistory,
+	ticks []int,
+	sampling, granularity int,
+) {
+	previousSampleIndex := 0
 
 	for _, tick := range ticks {
-		sampleIndex := tick / analyser.Sampling
-		if sampleIndex > prevSi {
-			state := result[prevSi]
-			for i := prevSi + 1; i <= sampleIndex; i++ {
-				copy(result[i], state)
+		sampleIndex := tick / sampling
+		if sampleIndex > previousSampleIndex {
+			state := result[previousSampleIndex]
+			for index := previousSampleIndex + 1; index <= sampleIndex; index++ {
+				copy(result[index], state)
 			}
 
-			prevSi = sampleIndex
+			previousSampleIndex = sampleIndex
 		}
 
 		sample := result[sampleIndex]
-		for t, value := range history[tick].deltas {
-			sample[t/analyser.Granularity] += value
+		for bandTick, value := range history[tick].deltas {
+			sample[bandTick/granularity] += value
 		}
 	}
-
-	return result, lastTick
 }
 
 var _ = core.RegisterPreferredPipelineItem(&BurndownAnalysis{}, true)

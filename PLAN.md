@@ -81,6 +81,10 @@ Purpose: make later changes measurable and prevent the known flaky test from hid
 
 ### BASE-01: Capture current behavior
 
+Status: in progress
+
+Baseline report: [`docs/audits/2026-07-25-base-01.md`](docs/audits/2026-07-25-base-01.md)
+
 - Record the current commit, Go version, operating system, and cgo setting in the remediation PR.
 - Save baseline results for:
 
@@ -98,9 +102,9 @@ Purpose: make later changes measurable and prevent the known flaky test from hid
 
 Acceptance criteria:
 
-- baseline output is attached to or summarized in the first remediation PR;
-- known failures are isolated in named tests and are not converted into blanket skips;
-- all later phases can compare against a stable benchmark and test command set.
+- [ ] baseline output is attached to or summarized in the first remediation PR;
+- [x] known failures are isolated in named tests and are not converted into blanket skips;
+- [x] all later phases can compare against a stable benchmark and test command set.
 
 ## Phase 1 — Eliminate immediate safety and automation hazards
 
@@ -139,8 +143,8 @@ Tests:
 
 Acceptance criteria:
 
-- no path is recursively removed without explicit intent and a verified Hercules marker;
-- all safety tests run on Linux, macOS, and Windows-compatible path logic.
+- [ ] no path is recursively removed without explicit intent and a verified Hercules marker;
+- [ ] all safety tests run on Linux, macOS, and Windows-compatible path logic.
 
 ### SEC-01: Remove shell injection from the composite GitHub Action
 
@@ -170,8 +174,8 @@ Tests:
 
 Acceptance criteria:
 
-- caller inputs are data, never executable shell source;
-- hostile input tests prove that no sentinel command is executed.
+- [x] caller inputs are data, never executable shell source;
+- [x] hostile input tests prove that no sentinel command is executed.
 
 ### SEC-02: Upgrade and continuously audit dependencies
 
@@ -194,9 +198,9 @@ Work:
 
 Acceptance criteria:
 
-- no reachable known vulnerability is reported for the default build;
-- remote HTTPS, SSH, and local/file transport behavior is covered;
-- future vulnerable direct dependencies fail CI.
+- [ ] no reachable known vulnerability is reported for the default build;
+- [ ] remote HTTPS, SSH, and local/file transport behavior is covered;
+- [ ] future vulnerable direct dependencies fail CI.
 
 ### REL-01: Make hard CLI failures return nonzero
 
@@ -235,9 +239,9 @@ Tests:
 
 Acceptance criteria:
 
-- hard failures never exit zero;
-- optional missing analysis remains a warning;
-- automation can distinguish success, warning-only success, and failure without parsing text.
+- [ ] hard failures never exit zero;
+- [ ] optional missing analysis remains a warning;
+- [ ] automation can distinguish success, warning-only success, and failure without parsing text.
 
 ## Phase 2 — Restore metric correctness
 
@@ -279,9 +283,9 @@ Tests:
 
 Acceptance criteria:
 
-- a real pipeline fixture produces nonzero, explainable, hand-verifiable scores;
-- changing `WindowDays` changes the included churn exactly as documented;
-- no test fabricates a dependency type or key shape that differs from its producer.
+- [ ] a real pipeline fixture produces nonzero, explainable, hand-verifiable scores;
+- [ ] changing `WindowDays` changes the included churn exactly as documented;
+- [ ] no test fabricates a dependency type or key shape that differs from its producer.
 
 ### METRIC-02: Correct Onboarding time and window semantics
 
@@ -309,8 +313,8 @@ Tests:
 
 Acceptance criteria:
 
-- cohort keys match actual commit months;
-- window snapshots never include activity after their documented boundary.
+- [ ] cohort keys match actual commit months;
+- [ ] window snapshots never include activity after their documented boundary.
 
 ### METRIC-03: Correct Bus Factor and Ownership Concentration snapshots
 
@@ -339,8 +343,8 @@ Tests:
 
 Acceptance criteria:
 
-- each snapshot contains only commits from its labeled tick or earlier;
-- bus factor is the smallest author count whose exact share meets the threshold.
+- [ ] each snapshot contains only commits from its labeled tick or earlier;
+- [ ] bus factor is the smallest author count whose exact share meets the threshold.
 
 ### METRIC-04: Preserve File History across renames
 
@@ -358,8 +362,8 @@ Work:
 
 Acceptance criteria:
 
-- totals before and after a rename are conserved;
-- serialization and merged results preserve the same history.
+- [ ] totals before and after a rename are conserved;
+- [ ] serialization and merged results preserve the same history.
 
 ### METRIC-05: Fix Couples merging
 
@@ -378,8 +382,8 @@ Work:
 
 Acceptance criteria:
 
-- merged file/people matrices match a hand-computed fixture;
-- merging order does not change the result.
+- [ ] merged file/people matrices match a hand-computed fixture;
+- [ ] merging order does not change the result.
 
 ### METRIC-06: Define and implement real `couples-shotness`
 
@@ -400,9 +404,9 @@ Work:
 
 Acceptance criteria:
 
-- every displayed row and column represents the labeled entity;
-- top pairs and heatmap cells agree with the same source matrix;
-- PB and YAML readers produce identical matrices.
+- [ ] every displayed row and column represents the labeled entity;
+- [ ] top pairs and heatmap cells agree with the same source matrix;
+- [ ] PB and YAML readers produce identical matrices.
 
 ### METRIC-07: Preserve distinct structural entities in Shotness
 
@@ -420,8 +424,8 @@ Work:
 
 Acceptance criteria:
 
-- distinct same-named entities never overwrite one another;
-- counters and coupling remain stable across serialization round trips.
+- [ ] distinct same-named entities never overwrite one another;
+- [ ] counters and coupling remain stable across serialization round trips.
 
 ### METRIC-08: Correct filter-boundary transitions
 
@@ -440,8 +444,8 @@ Work:
 
 Acceptance criteria:
 
-- stateful analyses exactly match the filtered repository view after cross-boundary renames;
-- vendor, blacklist, and language filters share the same transition rules.
+- [ ] stateful analyses exactly match the filtered repository view after cross-boundary renames;
+- [ ] vendor, blacklist, and language filters share the same transition rules.
 
 ### METRIC-09: Finish and validate Code Churn semantics
 
@@ -466,9 +470,9 @@ Work:
 
 Acceptance criteria:
 
-- `--help` and schema documentation describe the metric actually emitted;
-- every factor in the awareness/memorability calculation has a documented meaning and a test;
-- the implementation contains no placeholder formula or unexplained neutral factor.
+- [ ] `--help` and schema documentation describe the metric actually emitted;
+- [ ] every factor in the awareness/memorability calculation has a documented meaning and a test;
+- [ ] the implementation contains no placeholder formula or unexplained neutral factor.
 
 ### METRIC-10: Find and eliminate negative burndown balances
 
@@ -494,9 +498,9 @@ Work:
 
 Acceptance criteria:
 
-- valid histories never depend on output-time clamping;
-- a regression fixture demonstrates the original negative balance and the corrected transition;
-- invalid internal histories fail with a useful diagnostic instead of silently changing data.
+- [ ] valid histories never depend on output-time clamping;
+- [ ] a regression fixture demonstrates the original negative balance and the corrected transition;
+- [ ] invalid internal histories fail with a useful diagnostic instead of silently changing data.
 
 ## Phase 3 — Make the core deterministic and lifecycle-safe
 
@@ -524,8 +528,8 @@ Work:
 
 Acceptance criteria:
 
-- `go test -count=100 ./internal/toposort ./internal/core` passes;
-- randomized insertion and map order produce byte-identical plans.
+- [ ] `go test -count=100 ./internal/toposort ./internal/core` passes;
+- [ ] randomized insertion and map order produce byte-identical plans.
 
 ### CORE-02: Replace lossy identity joining
 
@@ -551,9 +555,9 @@ Tests:
 
 Acceptance criteria:
 
-- no valid identity is omitted;
-- no two unrelated identities receive the same final index;
-- output is deterministic.
+- [ ] no valid identity is omitted;
+- [ ] no two unrelated identities receive the same final index;
+- [ ] output is deterministic.
 
 ### CORE-03: Reject empty, duplicate, and disconnected commit input cleanly
 
@@ -574,9 +578,9 @@ Work:
 
 Acceptance criteria:
 
-- no empty or malformed input path panics;
-- metadata commit counts exactly equal consumed commits;
-- component selection is never implicit or map-order-dependent.
+- [ ] no empty or malformed input path panics;
+- [ ] metadata commit counts exactly equal consumed commits;
+- [ ] component selection is never implicit or map-order-dependent.
 
 ### CORE-04: Complete Line History replay
 
@@ -598,9 +602,9 @@ Work:
 
 Acceptance criteria:
 
-- an exported history can be loaded and consumed through the normal pipeline lifecycle;
-- `NameOf`, `ForEachFile`, and `ScanFile` work after initialization;
-- export→load→export is semantically equivalent.
+- [ ] an exported history can be loaded and consumed through the normal pipeline lifecycle;
+- [ ] `NameOf`, `ForEachFile`, and `ScanFile` work after initialization;
+- [ ] export→load→export is semantically equivalent.
 
 ### CORE-05: Remove process termination and leaked global state
 
@@ -623,8 +627,8 @@ Work:
 
 Acceptance criteria:
 
-- library use never terminates the host process for data/configuration limits;
-- failed runs leave no temporary artifacts and do not change process GC settings.
+- [ ] library use never terminates the host process for data/configuration limits;
+- [ ] failed runs leave no temporary artifacts and do not change process GC settings.
 
 ### CORE-06: Harden foundational boundary behavior
 
@@ -652,9 +656,9 @@ Work:
 
 Acceptance criteria:
 
-- truncated or oversized allocator data returns an error;
-- numerical boundary behavior is explicit;
-- repeated analysis initialization and serialization are deterministic.
+- [ ] truncated or oversized allocator data returns an error;
+- [ ] numerical boundary behavior is explicit;
+- [ ] repeated analysis initialization and serialization are deterministic.
 
 ### CORE-07: Define line-history behavior for binary transitions and branch deletions
 
@@ -687,9 +691,9 @@ Tests:
 
 Acceptance criteria:
 
-- transition and merge behavior is documented and identical across line-history consumers;
-- no valid sequence loses a live branch's state or creates a synthetic empty filename;
-- file IDs and line totals satisfy the documented invariants after every transition.
+- [ ] transition and merge behavior is documented and identical across line-history consumers;
+- [ ] no valid sequence loses a live branch's state or creates a synthetic empty filename;
+- [ ] file IDs and line totals satisfy the documented invariants after every transition.
 
 ## Phase 4 — Harden readers, formats, and report generation
 
@@ -724,8 +728,8 @@ Tests:
 
 Acceptance criteria:
 
-- malformed input returns a bounded error without panic or excessive allocation;
-- valid historical fixtures continue to load.
+- [ ] malformed input returns a bounded error without panic or excessive allocation;
+- [ ] valid historical fixtures continue to load.
 
 ### DATA-02: Enforce schema compatibility
 
@@ -746,8 +750,8 @@ Work:
 
 Acceptance criteria:
 
-- supported old, current, newer, missing, and malformed versions have explicit tests;
-- combine never emits current-version metadata for unvalidated contents.
+- [ ] supported old, current, newer, missing, and malformed versions have explicit tests;
+- [ ] combine never emits current-version metadata for unvalidated contents.
 
 ### DATA-03: Make report output transactional and collision-free
 
@@ -769,9 +773,9 @@ Work:
 
 Acceptance criteria:
 
-- rerunning with fewer modes cannot retain stale charts;
-- colliding paths and long Unicode names produce unique stable filenames;
-- strict mode leaves the previous complete report intact on failure.
+- [ ] rerunning with fewer modes cannot retain stale charts;
+- [ ] colliding paths and long Unicode names produce unique stable filenames;
+- [ ] strict mode leaves the previous complete report intact on failure.
 
 ### DATA-04: Correct `labours --from-repo`
 
@@ -791,8 +795,8 @@ Work:
 
 Acceptance criteria:
 
-- every valid mode either renders that exact mode or returns a precise unsupported error;
-- temporal, bus-factor, hotspot, couples-people, and burndown-file integration tests pass.
+- [ ] every valid mode either renders that exact mode or returns a precise unsupported error;
+- [ ] temporal, bus-factor, hotspot, couples-people, and burndown-file integration tests pass.
 
 ### DATA-05: Make plugin and protobuf generation reproducible
 
@@ -814,8 +818,8 @@ Work:
 
 Acceptance criteria:
 
-- a generated example plugin builds using only documented commands;
-- generation is byte-reproducible with pinned tooling.
+- [ ] a generated example plugin builds using only documented commands;
+- [ ] generation is byte-reproducible with pinned tooling.
 
 ### DATA-06: Harden repository-supplied text and configuration
 
@@ -841,9 +845,9 @@ Work:
 
 Acceptance criteria:
 
-- committed repository text cannot panic configuration or identity detection;
-- truncated input is never accepted as a complete identity map;
-- identical input produces identical identity IDs.
+- [ ] committed repository text cannot panic configuration or identity detection;
+- [ ] truncated input is never accepted as a complete identity map;
+- [ ] identical input produces identical identity IDs.
 
 ### DATA-07: Complete burndown survival-analysis parity
 
@@ -868,10 +872,10 @@ Work:
 
 Acceptance criteria:
 
-- golden fixtures match the historical Python survival output for raw and resampled matrices;
-- toggling `reportSurvival` has observable, tested behavior;
-- survival output order is stable across repeated runs;
-- no placeholder survival path remains.
+- [ ] golden fixtures match the historical Python survival output for raw and resampled matrices;
+- [ ] toggling `reportSurvival` has observable, tested behavior;
+- [ ] survival output order is stable across repeated runs;
+- [ ] no placeholder survival path remains.
 
 ## Phase 5 — Bound resource use and improve large-repository scaling
 
@@ -886,8 +890,8 @@ Priority: P2
 
 Acceptance criteria:
 
-- top-K ranking is `O(nonzero × log K)`;
-- memory is proportional to sparse nonzero entries plus bounded rendering data.
+- [ ] top-K ranking is `O(nonzero × log K)`;
+- [ ] memory is proportional to sparse nonzero entries plus bounded rendering data.
 
 ### PERF-02: Stream burndown merges
 
@@ -898,8 +902,8 @@ Acceptance criteria:
 
 Acceptance criteria:
 
-- output remains numerically equivalent within documented rounding tolerance;
-- peak memory grows sub-quadratically with history duration.
+- [ ] output remains numerically equivalent within documented rounding tolerance;
+- [ ] peak memory grows sub-quadratically with history duration.
 
 ### PERF-03: Incremental ownership snapshots
 
@@ -909,7 +913,7 @@ Acceptance criteria:
 
 Acceptance criteria:
 
-- work scales primarily with changed ownership runs plus snapshot output size.
+- [ ] work scales primarily with changed ownership runs plus snapshot output size.
 
 ### PERF-04: Bound blob and rename processing
 
@@ -930,9 +934,9 @@ Work:
 
 Acceptance criteria:
 
-- configured time and memory limits are real upper bounds;
-- rename errors cannot deadlock;
-- worker-leak tests pass under `-race`.
+- [ ] configured time and memory limits are real upper bounds;
+- [ ] rename errors cannot deadlock;
+- [ ] worker-leak tests pass under `-race`.
 
 ## Phase 6 — Isolate configuration and simplify architecture
 
@@ -957,8 +961,8 @@ Work:
 
 Acceptance criteria:
 
-- parallel renders with opposite options do not leak configuration;
-- `go test -race ./internal/render/... ./cmd/labours` passes.
+- [ ] parallel renders with opposite options do not leak configuration;
+- [ ] `go test -race ./internal/render/... ./cmd/labours` passes.
 
 ### ARCH-02: Replace unsafe flag fact aliasing
 
@@ -978,8 +982,8 @@ Work:
 
 Acceptance criteria:
 
-- registry code contains no interface-layout pointer arithmetic;
-- invalid fact types fail configuration with a descriptive error rather than silently falling back.
+- [ ] registry code contains no interface-layout pointer arithmetic;
+- [ ] invalid fact types fail configuration with a descriptive error rather than silently falling back.
 
 ### ARCH-03: Make lifecycle and cleanup contracts explicit
 
@@ -992,9 +996,9 @@ Acceptance criteria:
 
 Acceptance criteria:
 
-- repeated initialization is idempotent and clears only run state;
-- every item with resources is disposed on success and failure;
-- lifecycle tests cover all registered default items.
+- [ ] repeated initialization is idempotent and clears only run state;
+- [ ] every item with resources is disposed on success and failure;
+- [ ] lifecycle tests cover all registered default items.
 
 ## Phase 7 — Strengthen CI, release, and documentation
 
@@ -1018,7 +1022,7 @@ Work:
 
 Acceptance criteria:
 
-- fork pull requests receive the same required correctness and security gates as pushes.
+- [ ] fork pull requests receive the same required correctness and security gates as pushes.
 
 ### CI-02: Make visual parity a real regression gate
 
@@ -1029,7 +1033,7 @@ Acceptance criteria:
 
 Acceptance criteria:
 
-- layout, artifact-set, and major color/label regressions fail CI.
+- [ ] layout, artifact-set, and major color/label regressions fail CI.
 
 ### CI-03: Pay down and enforce lint debt
 
@@ -1041,8 +1045,8 @@ Acceptance criteria:
 
 Acceptance criteria:
 
-- high-signal correctness/security linters run repository-wide;
-- no production error return is silently ignored without an explicit justification.
+- [ ] high-signal correctness/security linters run repository-wide;
+- [ ] no production error return is silently ignored without an explicit justification.
 
 ### OPS-01: Align build documentation and actual build behavior
 
@@ -1056,8 +1060,8 @@ Acceptance criteria:
 
 Acceptance criteria:
 
-- a clean supported machine can follow documentation verbatim;
-- container builds are reproducible and architecture-correct.
+- [ ] a clean supported machine can follow documentation verbatim;
+- [ ] container builds are reproducible and architecture-correct.
 
 ### DOC-01: Correct user-visible contracts
 
@@ -1069,8 +1073,8 @@ Acceptance criteria:
 
 Acceptance criteria:
 
-- automated help/README examples execute successfully in CI;
-- each default analysis links to a precise metric definition.
+- [ ] automated help/README examples execute successfully in CI;
+- [ ] each default analysis links to a precise metric definition.
 
 ### DOC-02: Make the burndown y-axis magnitude self-contained
 
@@ -1100,9 +1104,9 @@ regenerations of the same chart weeks apart can therefore disagree about how the
 
 Acceptance criteria:
 
-- a rendered burndown chart states its magnitude within the axes box, verifiable by cropping the
+- [ ] a rendered burndown chart states its magnitude within the axes box, verifiable by cropping the
   figure to the plot area alone;
-- a visual test covers a data set large enough to trigger offset notation.
+- [ ] a visual test covers a data set large enough to trigger offset notation.
 
 ### DOC-03: People-based charts leak raw identity strings into labels
 
@@ -1122,8 +1126,8 @@ behaviour rather than an opt-in.
 
 Acceptance criteria:
 
-- rendering a people-based mode without `--people-dict` produces labels containing no `@`;
-- a test asserts the label for a multi-address identity is a single name.
+- [ ] rendering a people-based mode without `--people-dict` produces labels containing no `@`;
+- [ ] a test asserts the label for a multi-address identity is a single name.
 
 ### DOC-04: devs-efforts wastes ~40% of the canvas and dips below zero
 
@@ -1147,8 +1151,8 @@ just hercules labours
 
 Acceptance criteria:
 
-- the plotted area fills the axes box, verifiable by comparing the data extent to the axis limits;
-- a visual test covers a repository whose history triggers the negative spikes.
+- [ ] the plotted area fills the axes box, verifiable by comparing the data extent to the axis limits;
+- [ ] a visual test covers a repository whose history triggers the negative spikes.
 
 ### DOC-05: burndown-person emits one figure per developer with an unreadable legend
 
@@ -1168,8 +1172,8 @@ history rather than their own.
 
 Acceptance criteria:
 
-- `--help` states that `burndown-person` writes one file per developer;
-- a per-person figure's legend lists only bands with data.
+- [ ] `--help` states that `burndown-person` writes one file per developer;
+- [ ] a per-person figure's legend lists only bands with data.
 
 ## TODO-marker audit
 

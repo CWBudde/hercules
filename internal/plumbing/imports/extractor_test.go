@@ -7,6 +7,7 @@ import (
 	gitplumbing "github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/cwbudde/hercules/internal/core"
 	"github.com/cwbudde/hercules/internal/plumbing"
@@ -16,7 +17,10 @@ import (
 
 func fixtureExtractor() *Extractor {
 	ex := &Extractor{}
-	ex.Initialize(test.Repository)
+	err := ex.Initialize(test.Repository)
+	if err != nil {
+		panic(err)
+	}
 	return ex
 }
 
@@ -92,12 +96,12 @@ func TestExtractorConsumeModification(t *testing.T) {
 	deps[core.DependencyCommit] = commit
 	deps[plumbing.DependencyTreeChanges] = changes
 	cache := &plumbing.BlobCache{}
-	assert.NoError(t, cache.Initialize(test.Repository))
+	require.NoError(t, cache.Initialize(test.Repository))
 	blobs, err := cache.Consume(deps)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	deps[plumbing.DependencyBlobCache] = blobs[plumbing.DependencyBlobCache]
 	result, err := fixtureExtractor().Consume(deps)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Len(t, result, 1)
 	exIface, exists := result[DependencyImports]
 	assert.True(t, exists)

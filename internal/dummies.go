@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"fmt"
 	"io"
 
 	"github.com/go-git/go-git/v5/plumbing"
@@ -73,5 +74,10 @@ func CreateDummyBlob(hash plumbing.Hash, fails ...bool) (*object.Blob, error) {
 		realFails = fails[0]
 	}
 
-	return object.DecodeBlob(dummyEncodedObject{FakeHash: hash, Fails: realFails})
+	blob, err := object.DecodeBlob(dummyEncodedObject{FakeHash: hash, Fails: realFails})
+	if err != nil {
+		return nil, fmt.Errorf("decode dummy blob: %w", err)
+	}
+
+	return blob, nil
 }

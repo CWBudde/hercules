@@ -1,11 +1,17 @@
 package schema
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+)
+
+var (
+	errUnsupportedReservedEntry = errors.New("unsupported reserved entry")
+	errInvalidReservedRange     = errors.New("invalid reserved range")
 )
 
 var (
@@ -130,24 +136,24 @@ func parseReserved(message *Message, spec string) error {
 
 		matches := reservedRangeRe.FindStringSubmatch(part)
 		if matches == nil {
-			return fmt.Errorf("unsupported reserved entry %q in message %s", part, message.Name)
+			return fmt.Errorf("%w %q in message %s", errUnsupportedReservedEntry, part, message.Name)
 		}
 
 		lo, err := strconv.Atoi(matches[1])
 		if err != nil {
-			return err
+			return fmt.Errorf("parse reserved range start %q: %w", matches[1], err)
 		}
 
 		hi := lo
 		if matches[2] != "" {
 			hi, err = strconv.Atoi(matches[2])
 			if err != nil {
-				return err
+				return fmt.Errorf("parse reserved range end %q: %w", matches[2], err)
 			}
 		}
 
 		if hi < lo {
-			return fmt.Errorf("invalid reserved range %q in message %s", part, message.Name)
+			return fmt.Errorf("%w %q in message %s", errInvalidReservedRange, part, message.Name)
 		}
 
 		for n := lo; n <= hi; n++ {

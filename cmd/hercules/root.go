@@ -750,7 +750,11 @@ func deployItemsToPipeline(pipeline *core.Pipeline, flags *pflag.FlagSet,
 		default:
 			item := pipeline.DeployItemOnce(summons[0])
 			if !pipeline.DryRun && item == summons[0] {
-				deployed = append(deployed, item.(hercules.LeafPipelineItem))
+				leaf, ok := item.(hercules.LeafPipelineItem)
+				if !ok {
+					log.Fatalf("deployed item %q is not a leaf", item.Name())
+				}
+				deployed = append(deployed, leaf)
 			}
 		}
 	}
@@ -819,7 +823,10 @@ func printResults(
 	uri string, deployed []hercules.LeafPipelineItem,
 	results map[hercules.LeafPipelineItem]any,
 ) error {
-	commonResult := results[nil].(*hercules.CommonAnalysisResult)
+	commonResult, ok := results[nil].(*hercules.CommonAnalysisResult)
+	if !ok {
+		return fmt.Errorf("unexpected common analysis result type %T", results[nil])
+	}
 
 	output := bufio.NewWriter(os.Stdout)
 	if err := writeResultsHeader(output, uri, commonResult); err != nil {
@@ -879,7 +886,11 @@ func protobufResults(
 		Hash:       hercules.BinaryGitHash,
 		Repository: uri,
 	}
-	results[nil].(*hercules.CommonAnalysisResult).FillMetadata(&header)
+	commonResult, ok := results[nil].(*hercules.CommonAnalysisResult)
+	if !ok {
+		return fmt.Errorf("unexpected common analysis result type %T", results[nil])
+	}
+	commonResult.FillMetadata(&header)
 
 	message := pb.AnalysisResults{
 		Header:   &header,

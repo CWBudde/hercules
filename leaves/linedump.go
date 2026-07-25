@@ -17,6 +17,11 @@ import (
 	"github.com/cwbudde/hercules/internal/yaml"
 )
 
+var (
+	errUnexpectedLineDumperResult  = errors.New("result is not a line dumper result")
+	errLineDumperBinaryUnsupported = errors.New("binary is not supported")
+)
+
 type LineDumperCommit struct {
 	CommitHash plumbing.Hash
 	Changes    []core.LineHistoryChange
@@ -180,7 +185,7 @@ func (analyser *LineDumper) Finalize() any {
 func writeLines(lines []string, out string) error {
 	authors, err := os.Create(out)
 	if err != nil {
-		return err
+		return fmt.Errorf("create author dictionary %q: %w", out, err)
 	}
 
 	defer func() {
@@ -190,7 +195,7 @@ func writeLines(lines []string, out string) error {
 	for _, name := range lines {
 		_, err = authors.WriteString(name + "\n")
 		if err != nil {
-			return err
+			return fmt.Errorf("write author dictionary %q: %w", out, err)
 		}
 	}
 
@@ -202,11 +207,11 @@ func writeLines(lines []string, out string) error {
 func (analyser *LineDumper) Serialize(result any, binary bool, writer io.Writer) error {
 	typedResult, ok := result.(LineDumperResult)
 	if !ok {
-		return fmt.Errorf("result is not a line dumper result: '%v'", result)
+		return fmt.Errorf("%w: '%v'", errUnexpectedLineDumperResult, result)
 	}
 
 	if binary {
-		return errors.New("binary is not supported")
+		return errLineDumperBinaryUnsupported
 	}
 
 	analyser.serializeText(typedResult, writer)

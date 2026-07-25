@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/cwbudde/hercules/internal/core"
 	"github.com/cwbudde/hercules/internal/linehistory"
@@ -247,7 +248,7 @@ func TestCodeChurnConsumeDeleteByOther(t *testing.T) {
 func TestCodeChurnConsumeDeleteBySelf(t *testing.T) {
 	cc := CodeChurnAnalysis{}
 	cc.peopleResolver = core.NewIdentityResolver([]string{"Alice"}, nil)
-	assert.NoError(t, cc.Initialize(test.Repository))
+	require.NoError(t, cc.Initialize(test.Repository))
 
 	// Alice inserts lines
 	changes1 := core.LineHistoryChanges{
@@ -266,7 +267,7 @@ func TestCodeChurnConsumeDeleteBySelf(t *testing.T) {
 		linehistory.DependencyLineHistory: changes1,
 	}
 	_, err := cc.Consume(deps1)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	// Alice deletes some of her own lines
 	changes2 := core.LineHistoryChanges{
@@ -285,7 +286,7 @@ func TestCodeChurnConsumeDeleteBySelf(t *testing.T) {
 		linehistory.DependencyLineHistory: changes2,
 	}
 	_, err = cc.Consume(deps2)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	entry := cc.codeChurns[0].files[core.FileId(0)]
 	assert.Equal(t, int32(10), entry.insertedLines)

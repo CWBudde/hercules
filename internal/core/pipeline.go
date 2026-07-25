@@ -47,6 +47,8 @@ const (
 	FeatureGitStub    = "git.stub"
 )
 
+var errNegativeHibernationDistance = errors.New("--hibernation-distance cannot be negative")
+
 // String() returns an empty string for the boolean type, "int" for integers and "string" for
 // strings. It is used in the command line interface to show the argument's type.
 func (opt ConfigurationOptionType) String() string {
@@ -534,8 +536,11 @@ func (pipeline *Pipeline) Commits(firstParent bool) ([]*object.Commit, error) {
 		result = append(result, commit)
 		return nil
 	})
+	if err != nil {
+		return nil, errors.Wrap(err, "unable to iterate the commit history")
+	}
 
-	return result, err
+	return result, nil
 }
 
 // HeadCommit returns the latest commit in the repository (HEAD).
@@ -577,7 +582,7 @@ func (pipeline *Pipeline) HeadCommit() ([]*object.Commit, error) {
 
 	commit, err := repository.CommitObject(head.Hash())
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "unable to load the head commit")
 	}
 
 	return []*object.Commit{commit}, nil
@@ -946,7 +951,7 @@ func (pipeline *Pipeline) applyConfigurationFacts(facts map[string]any) error {
 	pipeline.DryRun, _ = facts[ConfigPipelineDryRun].(bool)
 	if distance, exists := facts[ConfigPipelineHibernationDistance].(int); exists {
 		if distance < 0 {
-			err := fmt.Errorf("--hibernation-distance cannot be negative (got %d)", distance)
+			err := fmt.Errorf("%w (got %d)", errNegativeHibernationDistance, distance)
 			pipeline.l.Error(err)
 
 			return err
@@ -1366,7 +1371,7 @@ func LoadCommitsFromFile(path string, repository *git.Repository) ([]*object.Com
 
 		file, err = os.Open(path)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("open commits file %q: %w", path, err)
 		}
 
 		defer func() { _ = file.Close() }()
@@ -1382,10 +1387,15 @@ func LoadCommitsFromFile(path string, repository *git.Repository) ([]*object.Com
 
 		commit, err := repository.CommitObject(hash)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("load commit %s: %w", hash, err)
 		}
 
 		commits = append(commits, commit)
+	}
+
+	scanErr := scanner.Err()
+	if scanErr != nil {
+		return nil, fmt.Errorf("scan commits file %q: %w", path, scanErr)
 	}
 
 	return commits, nil

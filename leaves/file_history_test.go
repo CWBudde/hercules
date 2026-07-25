@@ -19,7 +19,10 @@ import (
 
 func fixtureFileHistory() *FileHistoryAnalysis {
 	fh := FileHistoryAnalysis{}
-	fh.Initialize(test.Repository)
+	err := fh.Initialize(test.Repository)
+	if err != nil {
+		panic(err)
+	}
 	return &fh
 }
 
@@ -56,7 +59,7 @@ func TestFileHistoryRegistration(t *testing.T) {
 }
 
 func TestFileHistoryConsume(t *testing.T) {
-	fh, _ := bakeFileHistoryForSerialization(t)
+	fh := bakeFileHistoryForSerialization(t)
 	validate := func() {
 		assert.Len(t, fh.files, 3)
 		assert.Equal(t, map[int]items.LineStats{1: ls(0, 207, 0)}, fh.files["cmd/hercules/main.go"].People)
@@ -99,7 +102,7 @@ func TestFileHistoryFork(t *testing.T) {
 }
 
 func TestFileHistorySerializeText(t *testing.T) {
-	fh, _ := bakeFileHistoryForSerialization(t)
+	fh := bakeFileHistoryForSerialization(t)
 	res := fh.Finalize().(FileHistoryResult)
 	buffer := &bytes.Buffer{}
 	assert.NoError(t, fh.Serialize(res, false, buffer))
@@ -113,7 +116,7 @@ func TestFileHistorySerializeText(t *testing.T) {
 }
 
 func TestFileHistorySerializeBinary(t *testing.T) {
-	fh, _ := bakeFileHistoryForSerialization(t)
+	fh := bakeFileHistoryForSerialization(t)
 	res := fh.Finalize().(FileHistoryResult)
 	buffer := &bytes.Buffer{}
 	assert.NoError(t, fh.Serialize(res, true, buffer))
@@ -137,7 +140,7 @@ func TestFileHistorySerializeBinary(t *testing.T) {
 	)
 }
 
-func bakeFileHistoryForSerialization(t *testing.T) (*FileHistoryAnalysis, map[string]any) {
+func bakeFileHistoryForSerialization(t *testing.T) *FileHistoryAnalysis {
 	t.Helper()
 	fh := fixtureFileHistory()
 	deps := map[string]any{}
@@ -217,5 +220,5 @@ func bakeFileHistoryForSerialization(t *testing.T) (*FileHistoryAnalysis, map[st
 	cres, err := fh.Consume(deps)
 	assert.Nil(t, cres)
 	assert.NoError(t, err)
-	return fh, deps
+	return fh
 }

@@ -187,7 +187,8 @@ func (history *FileHistoryAnalysis) Finalize() any {
 	fileIter, err := history.lastCommit.Files()
 	if err != nil {
 		history.l.Errorf("Failed to iterate files of %s", history.lastCommit.Hash.String())
-		return err
+
+		return fmt.Errorf("list files for commit %s: %w", history.lastCommit.Hash.String(), err)
 	}
 
 	err = fileIter.ForEach(func(file *object.File) error {
@@ -199,7 +200,8 @@ func (history *FileHistoryAnalysis) Finalize() any {
 	})
 	if err != nil {
 		history.l.Errorf("Failed to iterate files of %s", history.lastCommit.Hash.String())
-		return err
+
+		return fmt.Errorf("iterate files for commit %s: %w", history.lastCommit.Hash.String(), err)
 	}
 
 	return FileHistoryResult{Files: files}

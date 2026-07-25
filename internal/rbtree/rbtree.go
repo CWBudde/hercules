@@ -1,6 +1,7 @@
 package rbtree
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -8,6 +9,8 @@ import (
 
 	"github.com/go-git/go-git/v5/utils/binary"
 )
+
+var errIncompleteRead = errors.New("incomplete read")
 
 //
 // Public definitions
@@ -205,24 +208,24 @@ func (allocator *Allocator) Serialize(path string) error {
 
 	file, err := os.Create(path)
 	if err != nil {
-		return err
+		return fmt.Errorf("create serialized allocator %q: %w", path, err)
 	}
 	defer file.Close()
 
 	err = binary.WriteVariableWidthInt(file, int64(allocator.hibernatedStorageLen))
 	if err != nil {
-		return err
+		return fmt.Errorf("write allocator storage length: %w", err)
 	}
 
 	for i, hse := range allocator.hibernatedData {
 		err = binary.WriteVariableWidthInt(file, int64(len(hse)))
 		if err != nil {
-			return err
+			return fmt.Errorf("write allocator buffer %d length: %w", i, err)
 		}
 
 		_, err = file.Write(hse)
 		if err != nil {
-			return err
+			return fmt.Errorf("write allocator buffer %d: %w", i, err)
 		}
 
 		allocator.hibernatedData[i] = nil
@@ -239,31 +242,31 @@ func (allocator *Allocator) Deserialize(path string) error {
 
 	file, err := os.Open(path)
 	if err != nil {
-		return err
+		return fmt.Errorf("open serialized allocator %q: %w", path, err)
 	}
 	defer file.Close()
 
 	x, err := binary.ReadVariableWidthInt(file)
 	if err != nil {
-		return err
+		return fmt.Errorf("read allocator storage length: %w", err)
 	}
 
 	allocator.hibernatedStorageLen = int(x)
 	for i := range allocator.hibernatedData {
 		x, err = binary.ReadVariableWidthInt(file)
 		if err != nil {
-			return err
+			return fmt.Errorf("read allocator buffer %d length: %w", i, err)
 		}
 
 		allocator.hibernatedData[i] = make([]byte, int(x))
 
 		n, err := file.Read(allocator.hibernatedData[i])
 		if err != nil {
-			return err
+			return fmt.Errorf("read allocator buffer %d: %w", i, err)
 		}
 
 		if n != int(x) {
-			return fmt.Errorf("incomplete read %d: %d instead of %d", i, n, x)
+			return fmt.Errorf("%w %d: %d instead of %d", errIncompleteRead, i, n, x)
 		}
 	}
 

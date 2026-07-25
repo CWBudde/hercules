@@ -275,7 +275,16 @@ func mergeResults(mergedResults map[string]any,
 			mergedResults[key] = val
 			continue
 		}
-		item := hercules.Registry.Summon(key)[0].(hercules.ResultMergeablePipelineItem)
+		summoned := hercules.Registry.Summon(key)
+		if len(summoned) == 0 {
+			errors = append(errors, fmt.Errorf("could not merge %s: analysis is not registered", key))
+			continue
+		}
+		item, ok := summoned[0].(hercules.ResultMergeablePipelineItem)
+		if !ok {
+			errors = append(errors, fmt.Errorf("could not merge %s: analysis does not support merging", key))
+			continue
+		}
 		mergedResult = item.MergeResults(mergedResult, val, mergedCommons, anotherCommons)
 		if err, isErr := mergedResult.(error); isErr {
 			errors = append(errors, fmt.Errorf("could not merge %s: %w", item.Name(), err))

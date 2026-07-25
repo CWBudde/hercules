@@ -25,6 +25,11 @@ import (
 	"github.com/cwbudde/hercules/internal/yaml"
 )
 
+var (
+	errBurndownNotHibernated    = errors.New("burndown: Boot() called without prior Hibernate()")
+	errUnexpectedBurndownResult = errors.New("result is not a burndown result")
+)
+
 // BurndownAnalysis allows to gather the line burndown statistics for a Git repository.
 // It is a LeafPipelineItem.
 // Reference: https://erikbern.com/2016/12/05/the-half-life-of-code.html
@@ -426,18 +431,19 @@ func compressBurndownState(state burndownState) ([]byte, error) {
 
 	fw, err := flate.NewWriter(&buf, flate.DefaultCompression)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("create burndown compressor: %w", err)
 	}
 
 	err = gob.NewEncoder(fw).Encode(state)
 	if err != nil {
-		fw.Close()
-		return nil, err
+		_ = fw.Close()
+
+		return nil, fmt.Errorf("encode burndown hibernation state: %w", err)
 	}
 
 	err = fw.Close()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("close burndown compressor: %w", err)
 	}
 
 	return buf.Bytes(), nil
@@ -446,7 +452,7 @@ func compressBurndownState(state burndownState) ([]byte, error) {
 func (analyser *BurndownAnalysis) persistHibernation(data []byte) error {
 	file, err := os.CreateTemp(analyser.HibernationDirectory, "*-hercules-burndown.bin")
 	if err != nil {
-		return err
+		return fmt.Errorf("create burndown hibernation file: %w", err)
 	}
 
 	cleanup := func() {
@@ -457,13 +463,15 @@ func (analyser *BurndownAnalysis) persistHibernation(data []byte) error {
 	_, err = file.Write(data)
 	if err != nil {
 		cleanup()
-		return err
+
+		return fmt.Errorf("write burndown hibernation file: %w", err)
 	}
 
 	err = file.Close()
 	if err != nil {
 		_ = os.Remove(file.Name())
-		return err
+
+		return fmt.Errorf("close burndown hibernation file: %w", err)
 	}
 
 	analyser.hibernatedFileName = file.Name()
@@ -480,12 +488,12 @@ func (analyser *BurndownAnalysis) Boot() error {
 
 		data, err = os.ReadFile(analyser.hibernatedFileName)
 		if err != nil {
-			return err
+			return fmt.Errorf("read burndown hibernation file: %w", err)
 		}
 
 		err = os.Remove(analyser.hibernatedFileName)
 		if err != nil {
-			return err
+			return fmt.Errorf("remove burndown hibernation file: %w", err)
 		}
 
 		analyser.hibernatedFileName = ""
@@ -495,7 +503,7 @@ func (analyser *BurndownAnalysis) Boot() error {
 	}
 
 	if len(data) == 0 {
-		return errors.New("burndown: Boot() called without prior Hibernate()")
+		return errBurndownNotHibernated
 	}
 
 	fr := flate.NewReader(bytes.NewReader(data))
@@ -505,7 +513,7 @@ func (analyser *BurndownAnalysis) Boot() error {
 
 	err := gob.NewDecoder(fr).Decode(&state)
 	if err != nil {
-		return err
+		return fmt.Errorf("decode burndown hibernation state: %w", err)
 	}
 
 	analyser.globalHistory = mapToSparseHistory(state.GlobalHistory)
@@ -647,7 +655,7 @@ func (analyser *BurndownAnalysis) collectFileOwnership(fileOwnership map[string]
 func (analyser *BurndownAnalysis) Serialize(result any, binary bool, writer io.Writer) error {
 	burndownResult, ok := result.(BurndownResult)
 	if !ok {
-		return fmt.Errorf("result is not a burndown result: '%v'", result)
+		return fmt.Errorf("%w: '%v'", errUnexpectedBurndownResult, result)
 	}
 
 	if binary {
@@ -665,7 +673,7 @@ func (analyser *BurndownAnalysis) Deserialize(message []byte) (any, error) {
 
 	err := proto.Unmarshal(message, &msg)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("unmarshal burndown protobuf: %w", err)
 	}
 
 	result := BurndownResult{
@@ -1031,12 +1039,15 @@ func (analyser *BurndownAnalysis) serializeBinary(result *BurndownResult, writer
 
 	serialized, err := proto.Marshal(&message)
 	if err != nil {
-		return err
+		return fmt.Errorf("marshal burndown protobuf: %w", err)
 	}
 
 	_, err = writer.Write(serialized)
+	if err != nil {
+		return fmt.Errorf("write burndown protobuf: %w", err)
+	}
 
-	return err
+	return nil
 }
 
 func burndownFilesToProto(

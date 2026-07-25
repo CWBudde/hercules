@@ -45,7 +45,7 @@ func repoRoot(t *testing.T) string {
 // goEnv returns the value of `go env <name>`.
 func goEnv(t *testing.T, name string) string {
 	t.Helper()
-	out, err := exec.Command("go", "env", name).Output()
+	out, err := exec.CommandContext(t.Context(), "go", "env", name).Output()
 	require.NoError(t, err, "go env %s", name)
 	return strings.TrimSpace(string(out))
 }
@@ -53,7 +53,7 @@ func goEnv(t *testing.T, name string) string {
 // runGo executes a go command in the repository root with cgo enabled.
 func runGo(t *testing.T, root string, args ...string) {
 	t.Helper()
-	cmd := exec.Command("go", args...)
+	cmd := exec.CommandContext(t.Context(), "go", args...)
 	cmd.Dir = root
 	cmd.Env = append(os.Environ(), "CGO_ENABLED=1")
 	out, err := cmd.CombinedOutput()
@@ -122,7 +122,7 @@ func TestPluginCompatibilitySmoke(t *testing.T) {
 	// The plugin must load and register its command line flag. loadPlugins()
 	// only logs loading failures, so grepping --help for the flag is the
 	// actual compatibility check.
-	helpCmd := exec.Command(binaryPath, "--plugin", pluginPath, "--help")
+	helpCmd := exec.CommandContext(t.Context(), binaryPath, "--plugin", pluginPath, "--help")
 	helpOut, err := helpCmd.CombinedOutput()
 	require.NoError(t, err, "hercules --plugin --help failed:\n%s", string(helpOut))
 	assert.NotContains(t, string(helpOut), "Failed to load plugin",
@@ -135,7 +135,7 @@ func TestPluginCompatibilitySmoke(t *testing.T) {
 
 	// The plugin analysis must actually run and serialize its result.
 	repoPath := makeTinyRepo(t)
-	runCmd := exec.Command(binaryPath,
+	runCmd := exec.CommandContext(t.Context(), binaryPath,
 		"--plugin", pluginPath, "--minimal-plugin-test", "--quiet", repoPath)
 	runOut, err := runCmd.CombinedOutput()
 	require.NoError(t, err, "hercules --minimal-plugin-test failed:\n%s", string(runOut))

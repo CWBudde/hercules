@@ -13,6 +13,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/cwbudde/hercules/internal/core"
 	"github.com/cwbudde/hercules/internal/test"
@@ -20,7 +21,10 @@ import (
 
 func fixtureRenameAnalysis() *RenameAnalysis {
 	ra := RenameAnalysis{SimilarityThreshold: 80}
-	ra.Initialize(test.Repository)
+	err := ra.Initialize(test.Repository)
+	if err != nil {
+		panic(err)
+	}
 	return &ra
 }
 
@@ -69,15 +73,15 @@ func TestRenameAnalysisRegistration(t *testing.T) {
 
 func TestRenameAnalysisInitializeInvalidThreshold(t *testing.T) {
 	ra := RenameAnalysis{SimilarityThreshold: -10}
-	ra.Initialize(test.Repository)
+	require.NoError(t, ra.Initialize(test.Repository))
 	assert.Equal(t, RenameAnalysisDefaultThreshold, ra.SimilarityThreshold)
 	ra = RenameAnalysis{SimilarityThreshold: 110}
-	ra.Initialize(test.Repository)
+	require.NoError(t, ra.Initialize(test.Repository))
 	assert.Equal(t, RenameAnalysisDefaultThreshold, ra.SimilarityThreshold)
 	ra = RenameAnalysis{SimilarityThreshold: 0}
-	ra.Initialize(test.Repository)
+	require.NoError(t, ra.Initialize(test.Repository))
 	ra = RenameAnalysis{SimilarityThreshold: 100}
-	ra.Initialize(test.Repository)
+	require.NoError(t, ra.Initialize(test.Repository))
 }
 
 func TestRenameAnalysisConsume(t *testing.T) {
@@ -273,7 +277,7 @@ func TestBlobsAreCloseText(t *testing.T) {
 	blob2.Size = int64(len(blob2.Data))
 	ra := fixtureRenameAnalysis()
 	result, err := ra.blobsAreClose(blob1, blob2)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.True(t, result)
 
 	blob1.Data = []byte("hello, mloncode")
@@ -288,7 +292,7 @@ func TestBlobsAreCloseBinary(t *testing.T) {
 	blob2 := &CachedBlob{}
 	ra := fixtureRenameAnalysis()
 	result, err := ra.blobsAreClose(blob1, blob2)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.True(t, result)
 
 	blob1.Data = make([]byte, 100)

@@ -11,6 +11,11 @@ import (
 	"github.com/odvcencio/gotreesitter/grammars"
 )
 
+var (
+	errTreeSitterNilTree = errors.New("tree-sitter returned nil tree")
+	errTreeSitterNilRoot = errors.New("tree-sitter returned nil root")
+)
+
 // LineRange describes a 1-indexed, inclusive line interval in a source file.
 // Used by ExtractNamedNodesInRanges to scope tree-sitter parsing to specific lines.
 type LineRange struct {
@@ -221,16 +226,16 @@ func parseFull(source []byte, lang *sitter.Language) (*sitter.Node, error) {
 
 	tree, err := parser.Parse(source)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("parse source with tree-sitter: %w", err)
 	}
 
 	if tree == nil {
-		return nil, errors.New("tree-sitter returned nil tree")
+		return nil, errTreeSitterNilTree
 	}
 
 	root := tree.RootNode()
 	if root == nil {
-		return nil, errors.New("tree-sitter returned nil root")
+		return nil, errTreeSitterNilRoot
 	}
 
 	return root, nil
@@ -286,12 +291,12 @@ func ExtractNamedNodesInRanges(path string, source []byte, ranges []LineRange) (
 	}
 
 	if tree == nil {
-		return nil, fmt.Errorf("tree-sitter returned nil tree for %s", path)
+		return nil, fmt.Errorf("%w for %s", errTreeSitterNilTree, path)
 	}
 
 	root := tree.RootNode()
 	if root == nil {
-		return nil, fmt.Errorf("tree-sitter returned nil root for %s", path)
+		return nil, fmt.Errorf("%w for %s", errTreeSitterNilRoot, path)
 	}
 
 	return collectNamedNodes(root, spec.language), nil

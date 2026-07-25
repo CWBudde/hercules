@@ -433,9 +433,7 @@ func TestBurndownConsumeFinalize(t *testing.T) {
 	}
 }
 
-func prepareBDForSerialization(t *testing.T, firstAuthor, secondAuthor int) (
-	BurndownResult, *BurndownAnalysis,
-) {
+func prepareBDForSerialization(t *testing.T, firstAuthor, secondAuthor int) BurndownResult {
 	t.Helper()
 	bd := BurndownAnalysis{
 		Granularity:    30,
@@ -613,11 +611,11 @@ func prepareBDForSerialization(t *testing.T, firstAuthor, secondAuthor int) (
 	}
 
 	out := bd.Finalize().(BurndownResult)
-	return out, &bd
+	return out
 }
 
 func TestBurndownSerialize(t *testing.T) {
-	out, _ := prepareBDForSerialization(t, 0, 1)
+	out := prepareBDForSerialization(t, 0, 1)
 	bd := &BurndownAnalysis{}
 
 	buffer := &bytes.Buffer{}
@@ -706,7 +704,7 @@ func TestBurndownSerialize(t *testing.T) {
 }
 
 func TestBurndownSerializeAuthorMissing(t *testing.T) {
-	out, _ := prepareBDForSerialization(t, 0, core.AuthorMissing)
+	out := prepareBDForSerialization(t, 0, core.AuthorMissing)
 	bd := &BurndownAnalysis{}
 
 	buffer := &bytes.Buffer{}

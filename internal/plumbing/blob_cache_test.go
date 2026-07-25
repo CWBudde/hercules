@@ -6,6 +6,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/cwbudde/hercules/internal"
 	"github.com/cwbudde/hercules/internal/core"
@@ -14,7 +15,10 @@ import (
 
 func fixtureBlobCache() *BlobCache {
 	cache := &BlobCache{}
-	cache.Initialize(test.Repository)
+	err := cache.Initialize(test.Repository)
+	if err != nil {
+		panic(err)
+	}
 	return cache
 }
 
@@ -22,7 +26,7 @@ func AddHash(t *testing.T, cache map[plumbing.Hash]*CachedBlob, hash string) {
 	t.Helper()
 	objhash := plumbing.NewHash(hash)
 	blob, err := test.Repository.BlobObject(objhash)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	cb := &CachedBlob{Blob: *blob}
 	err = cb.Cache()
 	assert.NoError(t, err)
@@ -35,10 +39,10 @@ func TestBlobCacheConfigureInitialize(t *testing.T) {
 	assert.False(t, cache.FailOnMissingSubmodules)
 	facts := map[string]any{}
 	facts[ConfigBlobCacheFailOnMissingSubmodules] = true
-	cache.Configure(facts)
+	require.NoError(t, cache.Configure(facts))
 	assert.True(t, cache.FailOnMissingSubmodules)
 	facts = map[string]any{}
-	cache.Configure(facts)
+	require.NoError(t, cache.Configure(facts))
 	assert.True(t, cache.FailOnMissingSubmodules)
 }
 
@@ -178,7 +182,7 @@ func TestBlobCacheConsumeNoAction(t *testing.T) {
 	deps[DependencyTreeChanges] = changes
 	result, err := fixtureBlobCache().Consume(deps)
 	assert.Nil(t, result)
-	assert.Error(t, err)
+	require.Error(t, err)
 	changes[0] = &object.Change{From: object.ChangeEntry{
 		Name:      "labours.py",
 		Tree:      treeFrom,
@@ -190,7 +194,7 @@ func TestBlobCacheConsumeNoAction(t *testing.T) {
 	}}
 	result, err = fixtureBlobCache().Consume(deps)
 	assert.Nil(t, result)
-	assert.Error(t, err)
+	require.Error(t, err)
 }
 
 func TestBlobCacheConsumeBadHashes(t *testing.T) {
@@ -470,7 +474,8 @@ func TestBlobCacheFork(t *testing.T) {
 	deps[DependencyTreeChanges] = changes
 	cache1 := fixtureBlobCache()
 	cache1.FailOnMissingSubmodules = true
-	cache1.Consume(deps)
+	_, err := cache1.Consume(deps)
+	require.NoError(t, err)
 	clones := cache1.Fork(1)
 	assert.Len(t, clones, 1)
 	cache2 := clones[0].(*BlobCache)

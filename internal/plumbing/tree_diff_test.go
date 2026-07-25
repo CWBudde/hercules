@@ -7,6 +7,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/utils/merkletrie"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/cwbudde/hercules/internal/core"
 	"github.com/cwbudde/hercules/internal/test"
@@ -14,8 +15,14 @@ import (
 
 func fixtureTreeDiff() *TreeDiff {
 	td := TreeDiff{}
-	td.Configure(nil)
-	td.Initialize(test.Repository)
+	err := td.Configure(nil)
+	if err != nil {
+		panic(err)
+	}
+	err = td.Initialize(test.Repository)
+	if err != nil {
+		panic(err)
+	}
 	return &td
 }
 
@@ -28,7 +35,7 @@ func TestTreeDiffMeta(t *testing.T) {
 	opts := td.ListConfigurationOptions()
 	assert.Len(t, opts, 4)
 	logger := core.NewLogger()
-	assert.NoError(t, td.Configure(map[string]any{
+	require.NoError(t, td.Configure(map[string]any{
 		core.ConfigLogger: logger,
 	}))
 	assert.Equal(t, logger, td.l)
@@ -81,7 +88,7 @@ func TestTreeDiffConsume(t *testing.T) {
 	))
 	td.previousTree, _ = prevCommit.Tree()
 	res, err := td.Consume(deps)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Len(t, res, 1)
 	changes := res[DependencyTreeChanges].(object.Changes)
 	assert.Len(t, changes, 12)
@@ -166,10 +173,10 @@ func TestTreeDiffConsumeSkip(t *testing.T) {
 	// consume with skipping
 	td = fixtureTreeDiff()
 	td.previousTree, _ = prevCommit.Tree()
-	td.Configure(map[string]any{
+	require.NoError(t, td.Configure(map[string]any{
 		ConfigTreeDiffEnableBlacklist:     true,
 		ConfigTreeDiffBlacklistedPrefixes: []string{"vendor/"},
-	})
+	}))
 	res, err = td.Consume(deps)
 	assert.NoError(t, err)
 	assert.Len(t, res, 1)
@@ -199,11 +206,11 @@ func TestTreeDiffConsumeOnlyFilesThatMatchFilter(t *testing.T) {
 	// consume with skipping
 	td = fixtureTreeDiff()
 	td.previousTree, _ = prevCommit.Tree()
-	td.Configure(map[string]any{
+	require.NoError(t, td.Configure(map[string]any{
 		ConfigTreeDiffFilterRegexp: ".*go",
-	})
+	}))
 	res, err = td.Consume(deps)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Len(t, res, 1)
 	changes = res[DependencyTreeChanges].(object.Changes)
 	assert.Len(t, changes, 27)
@@ -211,7 +218,7 @@ func TestTreeDiffConsumeOnlyFilesThatMatchFilter(t *testing.T) {
 
 func TestTreeDiffConsumeLanguageFilterFirst(t *testing.T) {
 	td := fixtureTreeDiff()
-	td.Configure(map[string]any{ConfigTreeDiffLanguages: []string{"Go"}})
+	require.NoError(t, td.Configure(map[string]any{ConfigTreeDiffLanguages: []string{"Go"}}))
 	commit, _ := test.Repository.CommitObject(plumbing.NewHash(
 		"fbe766ffdc3f87f6affddc051c6f8b419beea6a2",
 	))
@@ -278,7 +285,7 @@ func TestTreeDiffCheckLanguage(t *testing.T) {
 	lang, err := td.checkLanguage(
 		"version.go", plumbing.NewHash("975f35a1412b8ae79b5ba2558f71f41e707fd5a9"),
 	)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.True(t, lang)
 	td.Languages["go"] = true
 	delete(td.Languages, allLanguages)

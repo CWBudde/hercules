@@ -1,6 +1,7 @@
 package core
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"sort"
@@ -10,6 +11,8 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
+
+var errFeatureNotRegistered = errors.New("is not registered")
 
 // PipelineItemRegistry contains all the known PipelineItem-s.
 type PipelineItemRegistry struct {
@@ -191,7 +194,12 @@ func wrapPathValue(val pflag.Value) pflag.Value {
 }
 
 func (s *pathValue) Set(val string) error {
-	return s.origin.Set(val)
+	err := s.origin.Set(val)
+	if err != nil {
+		return fmt.Errorf("set path value: %w", err)
+	}
+
+	return nil
 }
 
 func (s *pathValue) Type() string {
@@ -224,7 +232,7 @@ func (acf *arrayFeatureFlags) String() string {
 
 func (acf *arrayFeatureFlags) Set(value string) error {
 	if _, exists := acf.Choices[value]; !exists {
-		return fmt.Errorf("feature \"%s\" is not registered", value)
+		return fmt.Errorf("feature %q %w", value, errFeatureNotRegistered)
 	}
 
 	acf.Flags = append(acf.Flags, value)

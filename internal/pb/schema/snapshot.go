@@ -6,6 +6,7 @@ package schema
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 )
 
@@ -42,14 +43,14 @@ type Field struct {
 func Load(path string) (Snapshot, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return Snapshot{}, err
+		return Snapshot{}, fmt.Errorf("read schema snapshot %q: %w", path, err)
 	}
 
 	var snapshot Snapshot
 
 	err = json.Unmarshal(data, &snapshot)
 	if err != nil {
-		return Snapshot{}, err
+		return Snapshot{}, fmt.Errorf("decode schema snapshot %q: %w", path, err)
 	}
 
 	return snapshot, nil
@@ -59,10 +60,15 @@ func Load(path string) (Snapshot, error) {
 func Write(path string, snapshot Snapshot) error {
 	data, err := json.MarshalIndent(snapshot, "", "  ")
 	if err != nil {
-		return err
+		return fmt.Errorf("encode schema snapshot: %w", err)
 	}
 
 	data = append(data, '\n')
 
-	return os.WriteFile(path, data, 0o600)
+	err = os.WriteFile(path, data, 0o600)
+	if err != nil {
+		return fmt.Errorf("write schema snapshot %q: %w", path, err)
+	}
+
+	return nil
 }

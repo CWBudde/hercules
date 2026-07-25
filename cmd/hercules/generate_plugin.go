@@ -249,7 +249,9 @@ func init() {
 	generatePluginCmd.SetUsageFunc(generatePluginCmd.UsageFunc())
 	gpFlags := generatePluginCmd.Flags()
 	gpFlags.StringP("name", "n", "", "Name of the plugin, CamelCase. Required.")
-	generatePluginCmd.MarkFlagRequired("name")
+	if err := generatePluginCmd.MarkFlagRequired("name"); err != nil {
+		panic(err)
+	}
 	gpFlags.StringP("output", "o", ".", "Output directory for the generated plugin files.")
 	gpFlags.String("varname", "", "Name of the plugin instance variable, If not "+
 		"specified, inferred from -n.")

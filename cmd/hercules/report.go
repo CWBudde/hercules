@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"html/template"
@@ -153,11 +154,11 @@ func runReport(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	reportPB, message, err := generateReportInput(options, analysisFlags)
+	reportPB, message, err := generateReportInput(cmd.Context(), options, analysisFlags)
 	if err != nil {
 		return err
 	}
-	modeResults, err := renderReportModes(options, reportPB, modes)
+	modeResults, err := renderReportModes(cmd.Context(), options, reportPB, modes)
 	if err != nil {
 		return err
 	}
@@ -227,7 +228,7 @@ func availableReportAnalysisFlags() map[string]struct{} {
 	return available
 }
 
-func generateReportInput(options reportOptions, analysisFlags []string) (
+func generateReportInput(ctx context.Context, options reportOptions, analysisFlags []string) (
 	string, pb.AnalysisResults, error,
 ) {
 	if err := os.MkdirAll(options.outputDir, 0o755); err != nil {
@@ -246,7 +247,7 @@ func generateReportInput(options reportOptions, analysisFlags []string) (
 	herculesArgs = append(herculesArgs, options.repositoryArgs...)
 
 	_, _ = fmt.Fprintf(os.Stderr, "report: running hercules (%d analysis flags)...\n", len(analysisFlags))
-	payload, err := runAndCapture(os.Args[0], herculesArgs, nil)
+	payload, err := runAndCapture(ctx, os.Args[0], herculesArgs, nil)
 	if err != nil {
 		return "", pb.AnalysisResults{}, fmt.Errorf("run hercules for report: %w", err)
 	}
@@ -261,7 +262,9 @@ func generateReportInput(options reportOptions, analysisFlags []string) (
 	return reportPB, message, nil
 }
 
-func renderReportModes(options reportOptions, reportPB string, modes []string) ([]reportModeFailure, error) {
+func renderReportModes(ctx context.Context, options reportOptions, reportPB string,
+	modes []string,
+) ([]reportModeFailure, error) {
 	chartsRoot := filepath.Join(options.outputDir, "charts")
 	if err := os.MkdirAll(chartsRoot, 0o755); err != nil {
 		return nil, err
@@ -269,7 +272,7 @@ func renderReportModes(options reportOptions, reportPB string, modes []string) (
 	if options.laboursCommand == "" {
 		return renderReportInProcess(options, reportPB, chartsRoot, modes)
 	}
-	return renderReportExternally(options, reportPB, chartsRoot, modes)
+	return renderReportExternally(ctx, options, reportPB, chartsRoot, modes)
 }
 
 func renderReportInProcess(options reportOptions, reportPB, chartsRoot string,
@@ -297,7 +300,7 @@ func renderReportInProcess(options reportOptions, reportPB, chartsRoot string,
 	return failures, nil
 }
 
-func renderReportExternally(options reportOptions, reportPB, chartsRoot string,
+func renderReportExternally(ctx context.Context, options reportOptions, reportPB, chartsRoot string,
 	modes []string,
 ) ([]reportModeFailure, error) {
 	command, err := resolveLaboursCommand(options.laboursCommand)
@@ -310,7 +313,7 @@ func renderReportExternally(options reportOptions, reportPB, chartsRoot string,
 			command, options.laboursExtra, reportPB, reportModeOutput(chartsRoot, mode, options.format), mode,
 		)
 		_, _ = fmt.Fprintf(os.Stderr, "report: running labours mode %s...\n", mode)
-		if err := runAndCaptureTo(os.Stderr, command[0], args, nil); err != nil {
+		if err := runAndCaptureTo(ctx, os.Stderr, command[0], args, nil); err != nil {
 			failures = append(failures, reportModeFailure{Mode: mode, Error: err.Error()})
 			if options.strict {
 				return nil, fmt.Errorf("labours mode %s failed: %w", mode, err)
@@ -461,8 +464,8 @@ func resolveLaboursCommand(override string) ([]string, error) {
 	return parts, nil
 }
 
-func runAndCapture(command string, args, env []string) ([]byte, error) {
-	cmd := exec.Command(command, args...)
+func runAndCapture(ctx context.Context, command string, args, env []string) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, command, args...)
 	cmd.Stderr = os.Stderr
 	if len(env) > 0 {
 		cmd.Env = append(os.Environ(), env...)
@@ -475,8 +478,8 @@ func runAndCapture(command string, args, env []string) ([]byte, error) {
 	return output.Bytes(), nil
 }
 
-func runAndCaptureTo(writer *os.File, command string, args, env []string) error {
-	cmd := exec.Command(command, args...)
+func runAndCaptureTo(ctx context.Context, writer *os.File, command string, args, env []string) error {
+	cmd := exec.CommandContext(ctx, command, args...)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 	if len(env) > 0 {

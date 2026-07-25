@@ -1,6 +1,7 @@
 package leaves
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"sort"
@@ -17,6 +18,8 @@ import (
 	"github.com/cwbudde/hercules/internal/plumbing/identity"
 	"github.com/cwbudde/hercules/internal/yaml"
 )
+
+var errCouplesPBIntegrity = errors.New("couples PB message integrity violation")
 
 // CouplesAnalysis calculates the number of common commits for files and authors.
 // The results are matrices, where cell at row X and column Y is the number of commits which
@@ -173,7 +176,7 @@ func (couples *CouplesAnalysis) Consume(deps map[string]any) (map[string]any, er
 	for _, change := range treeDiff {
 		action, err := change.Action()
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("determine action for tree change: %w", err)
 		}
 
 		toName := change.To.Name
@@ -217,7 +220,12 @@ func (couples *CouplesAnalysis) Consume(deps map[string]any) (map[string]any, er
 
 // Finalize returns the result of the analysis. Further Consume() calls are not expected.
 func (couples *CouplesAnalysis) Finalize() any {
-	files, people := couples.propagateRenames(couples.currentFiles())
+	currentFiles, err := couples.currentFilesWithError()
+	if err != nil {
+		return err
+	}
+
+	files, people := couples.propagateRenames(currentFiles)
 	filesSequence := make([]string, len(files))
 
 	i := 0
@@ -341,7 +349,7 @@ func (couples *CouplesAnalysis) Deserialize(pbmessage []byte) (any, error) {
 
 	err := proto.Unmarshal(pbmessage, &message)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("unmarshal couples protobuf: %w", err)
 	}
 
 	result := CouplesResult{
@@ -360,8 +368,8 @@ func (couples *CouplesAnalysis) Deserialize(pbmessage []byte) (any, error) {
 	}
 
 	if len(message.GetFileCouples().GetIndex()) != len(message.GetFilesLines()) {
-		err := fmt.Errorf("couples PB message integrity violation: file_couples (%d) != file_lines (%d)",
-			len(message.GetFileCouples().GetIndex()), len(message.GetFilesLines()))
+		err := fmt.Errorf("%w: file_couples (%d) != file_lines (%d)",
+			errCouplesPBIntegrity, len(message.GetFileCouples().GetIndex()), len(message.GetFilesLines()))
 		couples.l.Critical(err)
 
 		return nil, err
@@ -634,31 +642,58 @@ func (couples *CouplesAnalysis) serializeBinary(result *CouplesResult, writer io
 
 	serialized, err := proto.Marshal(&message)
 	if err != nil {
-		return err
+		return fmt.Errorf("marshal couples protobuf: %w", err)
 	}
 
 	_, err = writer.Write(serialized)
+	if err != nil {
+		return fmt.Errorf("write couples protobuf: %w", err)
+	}
 
-	return err
+	return nil
 }
 
 // currentFiles return the list of files in the last consumed commit.
 func (couples *CouplesAnalysis) currentFiles() map[string]bool {
+	files, err := couples.currentFilesWithError()
+	if err != nil {
+		couples.l.Critical(err)
+	}
+
+	return files
+}
+
+func (couples *CouplesAnalysis) currentFilesWithError() (map[string]bool, error) {
 	files := map[string]bool{}
 	if couples.lastCommit == nil {
 		for key := range couples.files {
 			files[key] = true
 		}
+
+		return files, nil
 	}
 
-	tree, _ := couples.lastCommit.Tree()
+	tree, err := couples.lastCommit.Tree()
+	if err != nil {
+		return nil, fmt.Errorf(
+			"load tree for commit %s: %w", couples.lastCommit.Hash.String(), err,
+		)
+	}
+
 	fileIter := tree.Files()
-	fileIter.ForEach(func(fobj *object.File) error {
+
+	err = fileIter.ForEach(func(fobj *object.File) error {
 		files[fobj.Name] = true
+
 		return nil
 	})
+	if err != nil {
+		return nil, fmt.Errorf(
+			"iterate files for commit %s: %w", couples.lastCommit.Hash.String(), err,
+		)
+	}
 
-	return files
+	return files, nil
 }
 
 // propagateRenames applies `renames` over the files from `lastCommit`.

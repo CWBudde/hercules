@@ -23,6 +23,8 @@ const (
 	ConfigUASTChangesSaverOutputPath = "ChangesSaver.OutputPath"
 )
 
+var errUnexpectedUASTChangesResult = errors.New("result is not []UASTChangeRecord")
+
 // UASTChangeRecord points to files written for a changed source file.
 // Field names are intentionally preserved for compatibility with historical output keys.
 type UASTChangeRecord struct {
@@ -110,7 +112,12 @@ func (saver *UASTChangesSaver) Initialize(repository *git.Repository) error {
 		saver.OutputPath = "."
 	}
 
-	return os.MkdirAll(saver.OutputPath, 0o755)
+	err := os.MkdirAll(saver.OutputPath, 0o755)
+	if err != nil {
+		return fmt.Errorf("create UAST changes output directory %q: %w", saver.OutputPath, err)
+	}
+
+	return nil
 }
 
 // Consume runs this PipelineItem on the next commit data.
@@ -144,8 +151,12 @@ func (saver *UASTChangesSaver) processChange(
 	cache map[plumbing.Hash]*items.CachedBlob,
 ) (UASTChangeRecord, bool, error) {
 	action, err := change.Action()
-	if err != nil || action != merkletrie.Modify {
-		return UASTChangeRecord{}, false, err
+	if err != nil {
+		return UASTChangeRecord{}, false, fmt.Errorf("determine action for tree change: %w", err)
+	}
+
+	if action != merkletrie.Modify {
+		return UASTChangeRecord{}, false, nil
 	}
 
 	fromBlob := cache[change.From.TreeEntry.Hash]
@@ -187,7 +198,7 @@ func eitherBlobIsBinary(blobs ...*items.CachedBlob) (bool, error) {
 		}
 
 		if err != nil {
-			return false, err
+			return false, fmt.Errorf("count blob lines: %w", err)
 		}
 	}
 
@@ -238,32 +249,32 @@ func (saver *UASTChangesSaver) dumpChangeFiles(
 
 	err := os.WriteFile(srcBeforePath, srcBefore, 0o600)
 	if err != nil {
-		return UASTChangeRecord{}, err
+		return UASTChangeRecord{}, fmt.Errorf("write source before change to %q: %w", srcBeforePath, err)
 	}
 
 	err = os.WriteFile(srcAfterPath, srcAfter, 0o600)
 	if err != nil {
-		return UASTChangeRecord{}, err
+		return UASTChangeRecord{}, fmt.Errorf("write source after change to %q: %w", srcAfterPath, err)
 	}
 
 	beforeJSON, err := json.MarshalIndent(nodesBefore, "", "  ")
 	if err != nil {
-		return UASTChangeRecord{}, err
+		return UASTChangeRecord{}, fmt.Errorf("marshal AST before change for %q: %w", fileName, err)
 	}
 
 	afterJSON, err := json.MarshalIndent(nodesAfter, "", "  ")
 	if err != nil {
-		return UASTChangeRecord{}, err
+		return UASTChangeRecord{}, fmt.Errorf("marshal AST after change for %q: %w", fileName, err)
 	}
 
 	err = os.WriteFile(uastBeforePath, beforeJSON, 0o600)
 	if err != nil {
-		return UASTChangeRecord{}, err
+		return UASTChangeRecord{}, fmt.Errorf("write AST before change to %q: %w", uastBeforePath, err)
 	}
 
 	err = os.WriteFile(uastAfterPath, afterJSON, 0o600)
 	if err != nil {
-		return UASTChangeRecord{}, err
+		return UASTChangeRecord{}, fmt.Errorf("write AST after change to %q: %w", uastAfterPath, err)
 	}
 
 	return UASTChangeRecord{
@@ -289,17 +300,26 @@ func (saver *UASTChangesSaver) Finalize() any {
 func (saver *UASTChangesSaver) Serialize(result any, binary bool, writer io.Writer) error {
 	records, ok := result.([]UASTChangeRecord)
 	if !ok {
-		return fmt.Errorf("result is not []UASTChangeRecord: %T", result)
+		return fmt.Errorf("%w: %T", errUnexpectedUASTChangesResult, result)
 	}
 
 	if binary {
 		payload := map[string]any{"changes": records}
-		return json.NewEncoder(writer).Encode(payload)
+
+		err := json.NewEncoder(writer).Encode(payload)
+		if err != nil {
+			return fmt.Errorf("encode UAST changes JSON: %w", err)
+		}
+
+		return nil
 	}
 
 	for _, sc := range records {
-		fmt.Fprintf(writer, "  - {file: %s, src0: %s, src1: %s, uast0: %s, uast1: %s}\n",
+		_, err := fmt.Fprintf(writer, "  - {file: %s, src0: %s, src1: %s, uast0: %s, uast1: %s}\n",
 			sc.FileName, sc.SrcBefore, sc.SrcAfter, sc.UASTBefore, sc.UASTAfter)
+		if err != nil {
+			return fmt.Errorf("write UAST changes text: %w", err)
+		}
 	}
 
 	return nil

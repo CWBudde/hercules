@@ -482,7 +482,8 @@ func (analyser *BurndownAnalysis) Boot() error {
 			return err
 		}
 
-		if err := os.Remove(analyser.hibernatedFileName); err != nil {
+		err = os.Remove(analyser.hibernatedFileName)
+		if err != nil {
 			return err
 		}
 

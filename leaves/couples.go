@@ -261,8 +261,9 @@ func (couples *CouplesAnalysis) fileLineCounts(files []string) ([]int, error) {
 		}
 
 		blob := items.CachedBlob{Blob: file.Blob}
-		if err := blob.Cache(); err != nil {
-			err := fmt.Errorf("cannot read blob %s of file %s: %w",
+		err = blob.Cache()
+		if err != nil {
+			err = fmt.Errorf("cannot read blob %s of file %s: %w",
 				blob.Hash.String(), name, err)
 			couples.l.Critical(err)
 

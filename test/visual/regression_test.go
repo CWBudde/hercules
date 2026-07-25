@@ -99,7 +99,8 @@ func TestChartStructuralValidation(t *testing.T) {
 
 	// Validate chart structure and components
 	t.Run("ChartFileGeneration", func(t *testing.T) {
-		if _, err := os.Stat(outputPath); os.IsNotExist(err) {
+		_, err := os.Stat(outputPath)
+		if os.IsNotExist(err) {
 			t.Errorf("Chart file was not generated: %s", outputPath)
 		}
 	})

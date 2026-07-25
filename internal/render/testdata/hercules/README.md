@@ -35,6 +35,11 @@ Generated on 2026-04-26 from:
 The source repository fixture is `../hercules/cmd/hercules/test_data/hercules.siva`.
 This file represents the default analysis flag set used by `../hercules/cmd/hercules/report.go`.
 
+The `HotspotRisk` payload was refreshed on 2026-07-25 from the same Siva
+fixture for the METRIC-01 semantic correction. The other payloads and header
+were retained byte-for-byte so the fixture update isolates the Hotspot Risk
+value and ranking changes.
+
 ## `shotness.pb`
 
 Generated on 2026-04-26 from:

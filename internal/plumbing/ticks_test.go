@@ -39,6 +39,17 @@ func TestTicksSinceStartMeta(t *testing.T) {
 	assert.Equal(t, logger, tss.l)
 }
 
+func TestTicksSinceStartRejectsNonPositiveTickSize(t *testing.T) {
+	for _, hours := range []int{0, -1} {
+		ticks := TicksSinceStart{}
+		err := ticks.Configure(map[string]any{ConfigTicksSinceStartTickSize: hours})
+		assert.Error(t, err)
+	}
+
+	ticks := TicksSinceStart{TickSize: -time.Hour}
+	assert.Error(t, ticks.Initialize(test.Repository))
+}
+
 func TestTicksSinceStartRegistration(t *testing.T) {
 	summoned := core.Registry.Summon((&TicksSinceStart{}).Name())
 	assert.Len(t, summoned, 1)

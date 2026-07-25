@@ -333,6 +333,31 @@ FileHistoryAnalysis:
 
 ### Hotspot Risk (`--hotspot-risk`)
 
+Hotspot Risk reports current text files only. Its factors have the following
+semantics:
+
+- `size` is the current number of text lines.
+- `churn` is the number of added, removed, or changed text lines in ticks whose
+  start is no more than `window_days * 24h` before the latest tick start. Both
+  boundaries are inclusive. The current tick is always included, so when a
+  tick is longer than the configured window the result retains that complete
+  current tick.
+- `coupling_degree` is the number of distinct text-file histories that changed
+  in the same commit at any point in the analysis. Renaming a file moves its
+  churn and coupling histories to the new path and rewrites coupling
+  references to that path. Deleting a file removes it from the output but does
+  not erase its historical coupling from surviving files.
+- `ownership_gini` is calculated from the owners of the file's current lines.
+  Removed lines disappear from their previous owners; they are not assigned to
+  the author who deleted them.
+
+Size uses logarithmic max normalization; churn and coupling use linear max
+normalization; ownership Gini is already in `[0,1]`. `risk_score` is the
+weighted arithmetic mean of the four normalized factors. A zero factor
+contributes zero without collapsing the other factors, and a weight of `0.0`
+removes that factor from both the numerator and denominator. If all weights
+are disabled, the score is zero.
+
 YAML fields:
 
 - `window_days`

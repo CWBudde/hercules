@@ -99,7 +99,7 @@
   "hotspotRisk": {
     "files": 20,
     "windowDays": 90,
-    "topPath": ".gitignore",
-    "topRisk": 0
+    "topPath": "test_data/uast2.pb",
+    "topRisk": 0.7884615384615384
   }
 }

@@ -16,6 +16,16 @@ Each entry should include:
 
 ## Unreleased
 
+- YAML and PB: corrected the `HotspotRisk` metric semantics without changing
+  its fields or wire types. Churn now counts real text-line edits from the
+  producer's full change-entry keys and uses duration-based tick windows;
+  ownership comes from current line history; renames preserve churn and
+  coupling history; binary files do not affect text-file coupling; and the
+  score is a weighted normalized arithmetic mean in which a `0.0` weight
+  disables its factor. Compatibility: semantic breaking change (existing
+  consumers will parse the output unchanged, but should expect corrected
+  values and rankings). User action: recompute stored Hotspot Risk results
+  before comparing scores across this release boundary.
 - Both: the schema version is now emitted from the single constant
   `pb.SchemaVersion` (`internal/pb/version.go`, value 2). This fixes the YAML
   header (`hercules.version`) and `hercules combine` PB output, which had

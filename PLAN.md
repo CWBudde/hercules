@@ -263,6 +263,8 @@ it experimental in help and documentation.
 
 ### METRIC-01: Rebuild Hotspot Risk on correct pipeline contracts
 
+Status: completed 2026-07-25
+
 Affected code:
 
 - `leaves/hotspot_risk.go`
@@ -295,9 +297,9 @@ Tests:
 
 Acceptance criteria:
 
-- [ ] a real pipeline fixture produces nonzero, explainable, hand-verifiable scores;
-- [ ] changing `WindowDays` changes the included churn exactly as documented;
-- [ ] no test fabricates a dependency type or key shape that differs from its producer.
+- [x] a real pipeline fixture produces nonzero, explainable, hand-verifiable scores;
+- [x] changing `WindowDays` changes the included churn exactly as documented;
+- [x] no test fabricates a dependency type or key shape that differs from its producer.
 
 ### METRIC-02: Correct Onboarding time and window semantics
 

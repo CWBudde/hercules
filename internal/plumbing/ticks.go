@@ -1,6 +1,8 @@
 package plumbing
 
 import (
+	"errors"
+	"fmt"
 	"time"
 
 	"github.com/go-git/go-git/v5"
@@ -41,6 +43,11 @@ const (
 
 	// DefaultTicksSinceStartTickSize is the default number of hours in each 'tick' (24*hour = 1day).
 	DefaultTicksSinceStartTickSize = 24
+)
+
+var (
+	errNonPositiveTickSize = errors.New("tick size must be positive")
+	errTickSizeTooLarge    = errors.New("tick size is too large")
 )
 
 // Name of this PipelineItem. Uniquely identifies the type, used for mapping keys, etc.
@@ -86,6 +93,14 @@ func (ticks *TicksSinceStart) Configure(facts map[string]any) error {
 	}
 
 	if val, exists := facts[ConfigTicksSinceStartTickSize].(int); exists {
+		if val <= 0 {
+			return fmt.Errorf("%w: %s got %d", errNonPositiveTickSize, ConfigTicksSinceStartTickSize, val)
+		}
+
+		if int64(val) > int64(time.Duration(1<<63-1)/time.Hour) {
+			return fmt.Errorf("%w: %s got %d", errTickSizeTooLarge, ConfigTicksSinceStartTickSize, val)
+		}
+
 		ticks.TickSize = time.Duration(val) * time.Hour
 	} else {
 		ticks.TickSize = DefaultTicksSinceStartTickSize * time.Hour
@@ -111,6 +126,13 @@ func (ticks *TicksSinceStart) Initialize(repository *git.Repository) error {
 	ticks.l = core.NewLogger()
 	if ticks.TickSize == 0 {
 		ticks.TickSize = DefaultTicksSinceStartTickSize * time.Hour
+	}
+
+	if ticks.TickSize < 0 {
+		return fmt.Errorf(
+			"%w: %s got %s", errNonPositiveTickSize,
+			ConfigTicksSinceStartTickSize, ticks.TickSize,
+		)
 	}
 
 	ticks.tick0 = &time.Time{}

@@ -673,6 +673,4 @@ func (hra *HotspotRiskAnalysis) serializeBinary(result *HotspotRiskResult, write
 	return err
 }
 
-func init() {
-	core.Registry.Register(&HotspotRiskAnalysis{})
-}
+var _ = core.RegisterPipelineItem(&HotspotRiskAnalysis{})

@@ -325,6 +325,4 @@ func (saver *UASTChangesSaver) dumpChangeFiles(
 	}, nil
 }
 
-func init() {
-	core.Registry.Register(&UASTChangesSaver{})
-}
+var _ = core.RegisterPipelineItem(&UASTChangesSaver{})

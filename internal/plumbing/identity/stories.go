@@ -310,6 +310,4 @@ func (detector *StoryDetector) makeMergeName(index int, merge *object.Commit) st
 		index, merge.Hash.String()[:7], merge.Author.When.Format(time.RFC822Z))
 }
 
-func init() {
-	core.Registry.Register(&StoryDetector{})
-}
+var _ = core.RegisterPipelineItem(&StoryDetector{})

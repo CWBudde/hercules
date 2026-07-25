@@ -228,6 +228,4 @@ func (ca *CommitsAnalysis) serializeBinary(result *CommitsResult, writer io.Writ
 	return err
 }
 
-func init() {
-	core.Registry.Register(&CommitsAnalysis{})
-}
+var _ = core.RegisterPipelineItem(&CommitsAnalysis{})

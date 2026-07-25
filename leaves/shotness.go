@@ -518,6 +518,4 @@ func (shotness *ShotnessAnalysis) serializeBinary(result *ShotnessResult, writer
 	return err
 }
 
-func init() {
-	core.Registry.Register(&ShotnessAnalysis{})
-}
+var _ = core.RegisterPipelineItem(&ShotnessAnalysis{})

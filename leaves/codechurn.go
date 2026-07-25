@@ -831,6 +831,4 @@ func (analyser *CodeChurnAnalysis) calculateAwareness(entry churnFileEntry, chan
 	//	awareness = entry.awareness + float32(entry.ownedLines
 }
 
-func init() {
-	core.Registry.Register(&CodeChurnAnalysis{})
-}
+var _ = core.RegisterPipelineItem(&CodeChurnAnalysis{})

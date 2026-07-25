@@ -836,6 +836,4 @@ func (couples *CouplesAnalysis) reducePeopleFiles(
 	return people
 }
 
-func init() {
-	core.Registry.Register(&CouplesAnalysis{})
-}
+var _ = core.RegisterPipelineItem(&CouplesAnalysis{})

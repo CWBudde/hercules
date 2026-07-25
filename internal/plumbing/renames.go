@@ -815,6 +815,4 @@ func sortRenameCandidates(candidates []int, origin string, nameGetter func(int) 
 	}
 }
 
-func init() {
-	core.Registry.Register(&RenameAnalysis{})
-}
+var _ = core.RegisterPipelineItem(&RenameAnalysis{})

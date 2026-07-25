@@ -263,7 +263,7 @@ func ls(added, removed, changed int) items.LineStats {
 func TestDevsFinalize(t *testing.T) {
 	devs := fixtureDevs()
 	devs.ticks[1] = map[int]*DevTick{}
-	devs.ticks[1][1] = &DevTick{10, ls(20, 30, 40), nil}
+	devs.ticks[1][1] = &DevTick{ls(20, 30, 40), 10, nil}
 	x := devs.Finalize().(DevsResult)
 	assert.Equal(t, x.Ticks, devs.ticks)
 	assert.Equal(t, x.reversedPeopleDict, devs.reversedPeopleDict)
@@ -279,12 +279,12 @@ func TestDevsFork(t *testing.T) {
 func TestDevsSerialize(t *testing.T) {
 	devs := fixtureDevs()
 	devs.ticks[1] = map[int]*DevTick{}
-	devs.ticks[1][0] = &DevTick{10, ls(20, 30, 40), map[string]items.LineStats{"Go": ls(2, 3, 4)}}
-	devs.ticks[1][1] = &DevTick{1, ls(2, 3, 4), map[string]items.LineStats{"Go": ls(25, 35, 45)}}
+	devs.ticks[1][0] = &DevTick{ls(20, 30, 40), 10, map[string]items.LineStats{"Go": ls(2, 3, 4)}}
+	devs.ticks[1][1] = &DevTick{ls(2, 3, 4), 1, map[string]items.LineStats{"Go": ls(25, 35, 45)}}
 	devs.ticks[10] = map[int]*DevTick{}
-	devs.ticks[10][0] = &DevTick{11, ls(21, 31, 41), map[string]items.LineStats{"": ls(12, 13, 14)}}
+	devs.ticks[10][0] = &DevTick{ls(21, 31, 41), 11, map[string]items.LineStats{"": ls(12, 13, 14)}}
 	devs.ticks[10][core.AuthorMissing] = &DevTick{
-		100, ls(200, 300, 400), map[string]items.LineStats{"Go": ls(32, 33, 34)},
+		ls(200, 300, 400), 100, map[string]items.LineStats{"Go": ls(32, 33, 34)},
 	}
 	res := devs.Finalize().(DevsResult)
 	buffer := &bytes.Buffer{}
@@ -334,12 +334,12 @@ func TestDevsSerialize(t *testing.T) {
 func TestDevsDeserialize(t *testing.T) {
 	devs := fixtureDevs()
 	devs.ticks[1] = map[int]*DevTick{}
-	devs.ticks[1][0] = &DevTick{10, ls(20, 30, 40), map[string]items.LineStats{"Go": ls(12, 13, 14)}}
-	devs.ticks[1][1] = &DevTick{1, ls(2, 3, 4), map[string]items.LineStats{"Go": ls(22, 23, 24)}}
+	devs.ticks[1][0] = &DevTick{ls(20, 30, 40), 10, map[string]items.LineStats{"Go": ls(12, 13, 14)}}
+	devs.ticks[1][1] = &DevTick{ls(2, 3, 4), 1, map[string]items.LineStats{"Go": ls(22, 23, 24)}}
 	devs.ticks[10] = map[int]*DevTick{}
-	devs.ticks[10][0] = &DevTick{11, ls(21, 31, 41), map[string]items.LineStats{"Go": ls(32, 33, 34)}}
+	devs.ticks[10][0] = &DevTick{ls(21, 31, 41), 11, map[string]items.LineStats{"Go": ls(32, 33, 34)}}
 	devs.ticks[10][core.AuthorMissing] = &DevTick{
-		100, ls(200, 300, 400), map[string]items.LineStats{"Go": ls(42, 43, 44)},
+		ls(200, 300, 400), 100, map[string]items.LineStats{"Go": ls(42, 43, 44)},
 	}
 	res := devs.Finalize().(DevsResult)
 	buffer := &bytes.Buffer{}
@@ -360,32 +360,32 @@ func TestDevsMergeResults(t *testing.T) {
 		tickSize:           24 * time.Hour,
 	}
 	r1.Ticks[1] = map[int]*DevTick{}
-	r1.Ticks[1][0] = &DevTick{10, ls(20, 30, 40), map[string]items.LineStats{"Go": ls(12, 13, 14)}}
-	r1.Ticks[1][1] = &DevTick{1, ls(2, 3, 4), map[string]items.LineStats{"Go": ls(22, 23, 24)}}
+	r1.Ticks[1][0] = &DevTick{ls(20, 30, 40), 10, map[string]items.LineStats{"Go": ls(12, 13, 14)}}
+	r1.Ticks[1][1] = &DevTick{ls(2, 3, 4), 1, map[string]items.LineStats{"Go": ls(22, 23, 24)}}
 	r1.Ticks[10] = map[int]*DevTick{}
-	r1.Ticks[10][0] = &DevTick{11, ls(21, 31, 41), nil}
+	r1.Ticks[10][0] = &DevTick{ls(21, 31, 41), 11, nil}
 	r1.Ticks[10][core.AuthorMissing] = &DevTick{
-		100, ls(200, 300, 400), map[string]items.LineStats{"Go": ls(32, 33, 34)},
+		ls(200, 300, 400), 100, map[string]items.LineStats{"Go": ls(32, 33, 34)},
 	}
 	r1.Ticks[11] = map[int]*DevTick{}
-	r1.Ticks[11][1] = &DevTick{10, ls(20, 30, 40), map[string]items.LineStats{"Go": ls(42, 43, 44)}}
+	r1.Ticks[11][1] = &DevTick{ls(20, 30, 40), 10, map[string]items.LineStats{"Go": ls(42, 43, 44)}}
 	r2 := DevsResult{
 		Ticks:              map[int]map[int]*DevTick{},
 		reversedPeopleDict: people2[:],
 		tickSize:           22 * time.Hour,
 	}
 	r2.Ticks[1] = map[int]*DevTick{}
-	r2.Ticks[1][0] = &DevTick{10, ls(20, 30, 40), map[string]items.LineStats{"Go": ls(12, 13, 14)}}
-	r2.Ticks[1][1] = &DevTick{1, ls(2, 3, 4), map[string]items.LineStats{"Go": ls(22, 23, 24)}}
+	r2.Ticks[1][0] = &DevTick{ls(20, 30, 40), 10, map[string]items.LineStats{"Go": ls(12, 13, 14)}}
+	r2.Ticks[1][1] = &DevTick{ls(2, 3, 4), 1, map[string]items.LineStats{"Go": ls(22, 23, 24)}}
 	r2.Ticks[2] = map[int]*DevTick{}
-	r2.Ticks[2][0] = &DevTick{11, ls(21, 31, 41), map[string]items.LineStats{"Go": ls(32, 33, 34)}}
+	r2.Ticks[2][0] = &DevTick{ls(21, 31, 41), 11, map[string]items.LineStats{"Go": ls(32, 33, 34)}}
 	r2.Ticks[2][core.AuthorMissing] = &DevTick{
-		100, ls(200, 300, 400), map[string]items.LineStats{"Go": ls(42, 43, 44)},
+		ls(200, 300, 400), 100, map[string]items.LineStats{"Go": ls(42, 43, 44)},
 	}
 	r2.Ticks[10] = map[int]*DevTick{}
-	r2.Ticks[10][0] = &DevTick{11, ls(21, 31, 41), map[string]items.LineStats{"Go": ls(52, 53, 54)}}
+	r2.Ticks[10][0] = &DevTick{ls(21, 31, 41), 11, map[string]items.LineStats{"Go": ls(52, 53, 54)}}
 	r2.Ticks[10][core.AuthorMissing] = &DevTick{
-		100, ls(200, 300, 400), map[string]items.LineStats{"Go": ls(62, 63, 64)},
+		ls(200, 300, 400), 100, map[string]items.LineStats{"Go": ls(62, 63, 64)},
 	}
 
 	devs := fixtureDevs()
@@ -399,22 +399,22 @@ func TestDevsMergeResults(t *testing.T) {
 	assert.Equal(t, rm.reversedPeopleDict, peoplerm[:])
 	assert.Len(t, rm.Ticks, 4)
 	assert.Equal(t, map[int]*DevTick{
-		1: {10, ls(20, 30, 40), map[string]items.LineStats{"Go": ls(42, 43, 44)}},
+		1: {ls(20, 30, 40), 10, map[string]items.LineStats{"Go": ls(42, 43, 44)}},
 	}, rm.Ticks[11])
 	assert.Equal(t, map[int]*DevTick{
-		core.AuthorMissing: {100, ls(200, 300, 400), map[string]items.LineStats{"Go": ls(42, 43, 44)}},
-		2:                  {11, ls(21, 31, 41), map[string]items.LineStats{"Go": ls(32, 33, 34)}},
+		core.AuthorMissing: {ls(200, 300, 400), 100, map[string]items.LineStats{"Go": ls(42, 43, 44)}},
+		2:                  {ls(21, 31, 41), 11, map[string]items.LineStats{"Go": ls(32, 33, 34)}},
 	}, rm.Ticks[2])
 	assert.Equal(t, map[int]*DevTick{
-		0: {11, ls(22, 33, 44), map[string]items.LineStats{"Go": ls(34, 36, 38)}},
-		1: {1, ls(2, 3, 4), map[string]items.LineStats{"Go": ls(22, 23, 24)}},
-		2: {10, ls(20, 30, 40), map[string]items.LineStats{"Go": ls(12, 13, 14)}},
+		0: {ls(22, 33, 44), 11, map[string]items.LineStats{"Go": ls(34, 36, 38)}},
+		1: {ls(2, 3, 4), 1, map[string]items.LineStats{"Go": ls(22, 23, 24)}},
+		2: {ls(20, 30, 40), 10, map[string]items.LineStats{"Go": ls(12, 13, 14)}},
 	}, rm.Ticks[1])
 	assert.Equal(t, map[int]*DevTick{
-		0: {11, ls(21, 31, 41), map[string]items.LineStats{}},
-		2: {11, ls(21, 31, 41), map[string]items.LineStats{"Go": ls(52, 53, 54)}},
+		0: {ls(21, 31, 41), 11, map[string]items.LineStats{}},
+		2: {ls(21, 31, 41), 11, map[string]items.LineStats{"Go": ls(52, 53, 54)}},
 		core.AuthorMissing: {
-			100 * 2, ls(200*2, 300*2, 400*2), map[string]items.LineStats{"Go": ls(94, 96, 98)},
+			ls(200*2, 300*2, 400*2), 100 * 2, map[string]items.LineStats{"Go": ls(94, 96, 98)},
 		},
 	}, rm.Ticks[10])
 
@@ -422,25 +422,25 @@ func TestDevsMergeResults(t *testing.T) {
 	rm = devs.MergeResults(r1, r2, &c1, &c2).(DevsResult)
 	assert.Len(t, rm.Ticks, 5)
 	assert.Equal(t, map[int]*DevTick{
-		0: {10, ls(20, 30, 40), map[string]items.LineStats{"Go": ls(12, 13, 14)}},
-		1: {1, ls(2, 3, 4), map[string]items.LineStats{"Go": ls(22, 23, 24)}},
+		0: {ls(20, 30, 40), 10, map[string]items.LineStats{"Go": ls(12, 13, 14)}},
+		1: {ls(2, 3, 4), 1, map[string]items.LineStats{"Go": ls(22, 23, 24)}},
 	}, rm.Ticks[1])
 	assert.Equal(t, map[int]*DevTick{
-		2: {10, ls(20, 30, 40), map[string]items.LineStats{"Go": ls(12, 13, 14)}},
-		0: {1, ls(2, 3, 4), map[string]items.LineStats{"Go": ls(22, 23, 24)}},
+		2: {ls(20, 30, 40), 10, map[string]items.LineStats{"Go": ls(12, 13, 14)}},
+		0: {ls(2, 3, 4), 1, map[string]items.LineStats{"Go": ls(22, 23, 24)}},
 	}, rm.Ticks[2])
 	assert.Equal(t, map[int]*DevTick{
-		2:                  {11, ls(21, 31, 41), map[string]items.LineStats{"Go": ls(32, 33, 34)}},
-		core.AuthorMissing: {100, ls(200, 300, 400), map[string]items.LineStats{"Go": ls(42, 43, 44)}},
+		2:                  {ls(21, 31, 41), 11, map[string]items.LineStats{"Go": ls(32, 33, 34)}},
+		core.AuthorMissing: {ls(200, 300, 400), 100, map[string]items.LineStats{"Go": ls(42, 43, 44)}},
 	}, rm.Ticks[3])
 	assert.Equal(t, map[int]*DevTick{
-		0:                  {11, ls(21, 31, 41), map[string]items.LineStats{}},
-		core.AuthorMissing: {100, ls(200, 300, 400), map[string]items.LineStats{"Go": ls(32, 33, 34)}},
+		0:                  {ls(21, 31, 41), 11, map[string]items.LineStats{}},
+		core.AuthorMissing: {ls(200, 300, 400), 100, map[string]items.LineStats{"Go": ls(32, 33, 34)}},
 	}, rm.Ticks[10])
 	assert.Equal(t, map[int]*DevTick{
-		1:                  {10, ls(20, 30, 40), map[string]items.LineStats{"Go": ls(42, 43, 44)}},
-		2:                  {11, ls(21, 31, 41), map[string]items.LineStats{"Go": ls(52, 53, 54)}},
-		core.AuthorMissing: {100, ls(200, 300, 400), map[string]items.LineStats{"Go": ls(62, 63, 64)}},
+		1:                  {ls(20, 30, 40), 10, map[string]items.LineStats{"Go": ls(42, 43, 44)}},
+		2:                  {ls(21, 31, 41), 11, map[string]items.LineStats{"Go": ls(52, 53, 54)}},
+		core.AuthorMissing: {ls(200, 300, 400), 100, map[string]items.LineStats{"Go": ls(62, 63, 64)}},
 	}, rm.Ticks[11])
 }
 

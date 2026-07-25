@@ -32,14 +32,20 @@ type Language interface {
 	Imports(content []byte) ([]string, error)
 }
 
-var registry = map[string]Language{}
+var registry = map[string]Language{
+	"C#":   csharpExtractor{},
+	"Go":   goExtractor{},
+	"Java": javaExtractor{},
+}
 
-// RegisterLanguage adds a language extractor to the global registry. Called
-// from per-language init() functions.
-func RegisterLanguage(l Language) {
+// RegisterLanguage adds a language extractor to the global registry and
+// returns a value suitable for declaration-time registration.
+func RegisterLanguage(l Language) struct{} {
 	for _, name := range l.Aliases() {
 		registry[name] = l
 	}
+
+	return struct{}{}
 }
 
 // LanguageByName looks up a registered extractor by its enry alias.

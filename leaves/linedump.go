@@ -261,6 +261,4 @@ func (analyser *LineDumper) serializeText(result LineDumperResult, writer io.Wri
 	}
 }
 
-func init() {
-	core.Registry.RegisterPreferred(&LineDumper{}, false)
-}
+var _ = core.RegisterPreferredPipelineItem(&LineDumper{}, false)

@@ -60,6 +60,28 @@ test-visual-parity:
 report REPO OUTPUT="./report": hercules
     ./hercules{{exe}} report -o "{{OUTPUT}}" "{{REPO}}"
 
+# RESAMPLE takes a pandas-style offset alias: "3M" for quarterly bands (the
+# default), "year", "month", ... The giant docs/linux.svg example is excluded
+# because it dwarfs the real history. The chart title is cropped off when
+# ImageMagick is available, since the page embedding it carries its own caption.
+#
+# Regenerate the self-analysis burndown chart (hercules replaying its own history)
+burndown-chart RESAMPLE="3M" OUTPUT="self-analysis/hercules-burndown.png": hercules labours
+    #!/usr/bin/env sh
+    set -eu
+    dir=$(dirname "{{OUTPUT}}")
+    mkdir -p "$dir"
+    ./hercules{{exe}} --burndown --granularity 30 --sampling 30 \
+        --skip-blacklist --blacklisted-prefixes docs/linux.svg --pb . > "$dir/burndown.pb"
+    ./labours{{exe}} -i "$dir/burndown.pb" -m burndown-project \
+        --resample "{{RESAMPLE}}" -q -o "{{OUTPUT}}"
+    if command -v convert >/dev/null 2>&1; then
+        convert "{{OUTPUT}}" -crop 1600x1160+0+40 +repage "{{OUTPUT}}"
+    else
+        echo "note: ImageMagick 'convert' not found, chart title left in place"
+    fi
+    echo "chart written to {{OUTPUT}}"
+
 # Format code using treefmt
 fmt:
     treefmt --allow-missing-formatter

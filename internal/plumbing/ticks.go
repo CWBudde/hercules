@@ -198,6 +198,4 @@ func FloorTime(t time.Time, d time.Duration) time.Time {
 	return result
 }
 
-func init() {
-	core.Registry.Register(&TicksSinceStart{})
-}
+var _ = core.RegisterPipelineItem(&TicksSinceStart{})

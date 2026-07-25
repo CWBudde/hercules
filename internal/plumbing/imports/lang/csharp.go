@@ -34,10 +34,6 @@ var (
 	}
 )
 
-func init() {
-	RegisterLanguage(csharpExtractor{})
-}
-
 type csharpExtractor struct{}
 
 func (csharpExtractor) Aliases() []string { return []string{"C#"} }

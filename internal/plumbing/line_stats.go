@@ -192,6 +192,4 @@ func (lsc *LinesStatsCalculator) Fork(n int) []core.PipelineItem {
 	return core.ForkSamePipelineItem(lsc, n)
 }
 
-func init() {
-	core.Registry.Register(&LinesStatsCalculator{})
-}
+var _ = core.RegisterPipelineItem(&LinesStatsCalculator{})

@@ -365,6 +365,4 @@ func (tdb *TyposDatasetBuilder) serializeBinary(result *TyposResult, writer io.W
 	return err
 }
 
-func init() {
-	core.Registry.Register(&TyposDatasetBuilder{})
-}
+var _ = core.RegisterPipelineItem(&TyposDatasetBuilder{})

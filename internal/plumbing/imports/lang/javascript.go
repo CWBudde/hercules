@@ -14,9 +14,7 @@ var (
 	jsQuery = mustQuery(jsImportsQuery, jsLang)
 )
 
-func init() {
-	RegisterLanguage(jsExtractor{})
-}
+var _ = RegisterLanguage(jsExtractor{})
 
 type jsExtractor struct{}
 

@@ -59,6 +59,7 @@ coverage.txt
 !internal/render/testdata/**/*.golden.json
 /.run/
 /bench-results/
+/self-analysis/
 
 # CGO
 *.cgo1.go

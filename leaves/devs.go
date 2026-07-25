@@ -56,9 +56,11 @@ type DevsResult struct {
 
 // DevTick is the statistics for a development tick and a particular developer.
 type DevTick struct {
+	items.LineStats
+
 	// Commits is the number of commits made by a particular developer in a particular tick.
 	Commits int
-	items.LineStats
+
 	// LanguagesDetection carries fine-grained line stats per programming language.
 	Languages map[string]items.LineStats
 }
@@ -479,6 +481,4 @@ func (dr DevsResult) GetIdentities() []string {
 	return dr.reversedPeopleDict
 }
 
-func init() {
-	core.Registry.Register(&DevsAnalysis{})
-}
+var _ = core.RegisterPipelineItem(&DevsAnalysis{})

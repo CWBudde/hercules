@@ -1049,6 +1049,4 @@ func primaryIdentityValue(names, emails []string) string {
 	return ""
 }
 
-func init() {
-	core.Registry.RegisterPreferred(&PeopleDetector{}, true)
-}
+var _ = core.RegisterPreferredPipelineItem(&PeopleDetector{}, true)

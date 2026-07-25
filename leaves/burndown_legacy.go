@@ -1357,6 +1357,4 @@ func (analyser *LegacyBurndownAnalysis) groupSparseHistory(
 	return result, lastTick
 }
 
-func init() {
-	core.Registry.Register(&LegacyBurndownAnalysis{})
-}
+var _ = core.RegisterPipelineItem(&LegacyBurndownAnalysis{})

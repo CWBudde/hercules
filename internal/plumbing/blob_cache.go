@@ -391,6 +391,4 @@ func createPlaceholderBlob(hash plumbing.Hash) (*object.Blob, error) {
 	return dummy, nil
 }
 
-func init() {
-	core.Registry.Register(&BlobCache{})
-}
+var _ = core.RegisterPipelineItem(&BlobCache{})

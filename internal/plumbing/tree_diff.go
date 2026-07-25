@@ -341,6 +341,4 @@ func (treediff *TreeDiff) checkLanguage(name string, blobHash plumbing.Hash) (bo
 	return treediff.Languages[lang], nil
 }
 
-func init() {
-	core.Registry.Register(&TreeDiff{})
-}
+var _ = core.RegisterPipelineItem(&TreeDiff{})

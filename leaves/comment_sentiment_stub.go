@@ -105,6 +105,4 @@ func (sent *CommentSentimentAnalysis) Serialize(result any, binary bool, writer 
 	return errTensorflowRequired
 }
 
-func init() {
-	core.Registry.Register(&CommentSentimentAnalysis{})
-}
+var _ = core.RegisterPipelineItem(&CommentSentimentAnalysis{})

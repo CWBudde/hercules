@@ -142,6 +142,4 @@ func normalizeLanguage(name, lang string) string {
 	}
 }
 
-func init() {
-	core.Registry.Register(&LanguagesDetection{})
-}
+var _ = core.RegisterPipelineItem(&LanguagesDetection{})

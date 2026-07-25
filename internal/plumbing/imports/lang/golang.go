@@ -14,10 +14,6 @@ var (
 	goQuery = mustQuery(goImportsQuery, goLang)
 )
 
-func init() {
-	RegisterLanguage(goExtractor{})
-}
-
 type goExtractor struct{}
 
 func (goExtractor) Aliases() []string { return []string{"Go"} }

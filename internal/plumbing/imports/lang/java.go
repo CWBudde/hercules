@@ -16,10 +16,6 @@ var (
 	javaQuery = mustQuery(javaImportsQuery, javaLang)
 )
 
-func init() {
-	RegisterLanguage(javaExtractor{})
-}
-
 type javaExtractor struct{}
 
 func (javaExtractor) Aliases() []string { return []string{"Java"} }

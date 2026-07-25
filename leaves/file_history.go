@@ -293,6 +293,4 @@ func (history *FileHistoryAnalysis) serializeBinary(result *FileHistoryResult, w
 	return err
 }
 
-func init() {
-	core.Registry.Register(&FileHistoryAnalysis{})
-}
+var _ = core.RegisterPipelineItem(&FileHistoryAnalysis{})

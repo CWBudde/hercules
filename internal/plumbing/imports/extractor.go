@@ -208,6 +208,4 @@ func (ex *Extractor) Fork(n int) []core.PipelineItem {
 	return core.ForkSamePipelineItem(ex, n)
 }
 
-func init() {
-	core.Registry.Register(&Extractor{})
-}
+var _ = core.RegisterPipelineItem(&Extractor{})

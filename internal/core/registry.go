@@ -55,6 +55,22 @@ func (registry *PipelineItemRegistry) RegisterPreferred(example PipelineItem, pr
 	}
 }
 
+// RegisterPipelineItem registers an item in the global registry and returns a
+// value suitable for declaration-time registration.
+func RegisterPipelineItem(example PipelineItem) struct{} {
+	Registry.Register(example)
+
+	return struct{}{}
+}
+
+// RegisterPreferredPipelineItem registers a preferred item in the global
+// registry and returns a value suitable for declaration-time registration.
+func RegisterPreferredPipelineItem(example PipelineItem, preferred bool) struct{} {
+	Registry.RegisterPreferred(example, preferred)
+
+	return struct{}{}
+}
+
 // Summon searches for PipelineItem-s which provide the specified entity or named after
 // the specified string. It materializes all the found types and returns them.
 func (registry *PipelineItemRegistry) Summon(providesOrNames ...string) []PipelineItem {

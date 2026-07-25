@@ -514,6 +514,4 @@ func (bf *BusFactorAnalysis) serializeBinary(result *BusFactorResult, writer io.
 	return err
 }
 
-func init() {
-	core.Registry.Register(&BusFactorAnalysis{})
-}
+var _ = core.RegisterPipelineItem(&BusFactorAnalysis{})

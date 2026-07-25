@@ -289,6 +289,4 @@ func (ipd *ImportsPerDeveloper) serializeBinary(result *ImportsPerDeveloperResul
 	return err
 }
 
-func init() {
-	core.Registry.Register(&ImportsPerDeveloper{})
-}
+var _ = core.RegisterPipelineItem(&ImportsPerDeveloper{})

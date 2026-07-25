@@ -775,6 +775,4 @@ func onboardingCohortsFromProto(cohorts map[string]*pb.CohortStats) map[string]*
 	return result
 }
 
-func init() {
-	core.Registry.Register(&OnboardingAnalysis{})
-}
+var _ = core.RegisterPipelineItem(&OnboardingAnalysis{})

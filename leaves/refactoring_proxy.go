@@ -349,6 +349,4 @@ func (rp *RefactoringProxy) serializeBinary(result *RefactoringProxyResult, writ
 	return err
 }
 
-func init() {
-	core.Registry.Register(&RefactoringProxy{})
-}
+var _ = core.RegisterPipelineItem(&RefactoringProxy{})

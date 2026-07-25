@@ -1140,6 +1140,4 @@ func (analyser *BurndownAnalysis) groupSparseHistory(
 	return result, lastTick
 }
 
-func init() {
-	core.Registry.RegisterPreferred(&BurndownAnalysis{}, true)
-}
+var _ = core.RegisterPreferredPipelineItem(&BurndownAnalysis{}, true)

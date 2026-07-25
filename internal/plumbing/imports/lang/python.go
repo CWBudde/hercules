@@ -31,7 +31,9 @@ var (
 	}
 )
 
-func init() {
+var _ = initializePythonExtractor()
+
+func initializePythonExtractor() struct{} {
 	RegisterLanguage(pyExtractor{})
 
 	pyStaticQueries = make([]*sitter.Query, len(pyStaticQuerySources))
@@ -40,6 +42,8 @@ func init() {
 	}
 
 	pyDynamicQ = mustQuery(pyDynamicQuery, pyLang)
+
+	return struct{}{}
 }
 
 type pyExtractor struct{}

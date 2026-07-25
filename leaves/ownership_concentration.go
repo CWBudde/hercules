@@ -515,6 +515,4 @@ func (oc *OwnershipConcentrationAnalysis) serializeText(result *OwnershipConcent
 	fmt.Fprintln(writer, "    tick_size:", int(result.tickSize.Seconds()))
 }
 
-func init() {
-	core.Registry.Register(&OwnershipConcentrationAnalysis{})
-}
+var _ = core.RegisterPipelineItem(&OwnershipConcentrationAnalysis{})

@@ -371,6 +371,4 @@ func (analyser *LineHistoryLoader) buildCommits() (result []*object.Commit) {
 	return result
 }
 
-func init() {
-	core.Registry.Register(&LineHistoryLoader{})
-}
+var _ = core.RegisterPipelineItem(&LineHistoryLoader{})

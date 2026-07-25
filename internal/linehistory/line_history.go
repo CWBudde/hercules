@@ -904,6 +904,4 @@ func (analyser *LineHistoryAnalyser) handleRename(from, to string) error {
 	return nil
 }
 
-func init() {
-	core.Registry.Register(&LineHistoryAnalyser{})
-}
+var _ = core.RegisterPipelineItem(&LineHistoryAnalyser{})

@@ -7,9 +7,7 @@ import (
 
 var tsLang = grammars.TypescriptLanguage()
 
-func init() {
-	RegisterLanguage(tsExtractor{})
-}
+var _ = RegisterLanguage(tsExtractor{})
 
 type tsExtractor struct{}
 

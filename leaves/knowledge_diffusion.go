@@ -481,6 +481,4 @@ func (kd *KnowledgeDiffusionAnalysis) recordEdit(fileName string, author, tick i
 	}
 }
 
-func init() {
-	core.Registry.Register(&KnowledgeDiffusionAnalysis{})
-}
+var _ = core.RegisterPipelineItem(&KnowledgeDiffusionAnalysis{})

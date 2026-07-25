@@ -10,11 +10,13 @@ import (
 var BinaryGitHash = "<unknown>"
 
 // BinaryVersion is Hercules' API version. It matches the package name.
-var BinaryVersion = 0
+var BinaryVersion = detectBinaryVersion()
 
 type versionProbe struct{}
 
-func init() {
+func detectBinaryVersion() int {
 	parts := strings.Split(reflect.TypeFor[versionProbe]().PkgPath(), ".")
-	BinaryVersion, _ = strconv.Atoi(parts[len(parts)-1][1:])
+	version, _ := strconv.Atoi(parts[len(parts)-1][1:])
+
+	return version
 }

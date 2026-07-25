@@ -429,6 +429,4 @@ func (sent *CommentSentimentAnalysis) mergeComments(extracted []ast_items.Node) 
 	return filteredComments
 }
 
-func init() {
-	core.Registry.Register(&CommentSentimentAnalysis{})
-}
+var _ = core.RegisterPipelineItem(&CommentSentimentAnalysis{})

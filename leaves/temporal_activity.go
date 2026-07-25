@@ -403,9 +403,7 @@ func temporalTicksToProto(
 	return result
 }
 
-func init() {
-	core.Registry.Register(&TemporalActivityAnalysis{})
-}
+var _ = core.RegisterPipelineItem(&TemporalActivityAnalysis{})
 
 // MergeResults combines two TemporalActivityResult-s together.
 func (ta *TemporalActivityAnalysis) MergeResults(

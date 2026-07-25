@@ -709,6 +709,4 @@ func (diff *FileDiff) refineWithTreeSitter(path string, source []byte, original 
 	return refined
 }
 
-func init() {
-	core.Registry.Register(&FileDiff{})
-}
+var _ = core.RegisterPipelineItem(&FileDiff{})

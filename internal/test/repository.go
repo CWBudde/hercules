@@ -179,7 +179,8 @@ func openFixtureRepository() (*git.Repository, error) {
 	}
 	master := plumbing.ZeroHash
 	err = refs.ForEach(func(ref *plumbing.Reference) error {
-		if err := refStorer.SetReference(ref); err != nil {
+		err := refStorer.SetReference(ref)
+		if err != nil {
 			return err
 		}
 		if master == plumbing.ZeroHash && strings.HasPrefix(ref.Name().String(), "refs/heads/master/") {
@@ -193,7 +194,8 @@ func openFixtureRepository() (*git.Repository, error) {
 	if master == plumbing.ZeroHash {
 		return nil, fmt.Errorf("no master branch found in siva fixture %s", sivaPath)
 	}
-	if err := refStorer.SetReference(plumbing.NewHashReference(plumbing.HEAD, master)); err != nil {
+	err = refStorer.SetReference(plumbing.NewHashReference(plumbing.HEAD, master))
+	if err != nil {
 		return nil, err
 	}
 
@@ -210,7 +212,8 @@ func locateFixtureSiva() (string, error) {
 		// self == <root>/internal/test/repository.go
 		root := filepath.Dir(filepath.Dir(filepath.Dir(self)))
 		candidate := filepath.Join(root, filepath.FromSlash(rel))
-		if _, err := os.Stat(candidate); err == nil {
+		_, err := os.Stat(candidate)
+		if err == nil {
 			return candidate, nil
 		}
 	}

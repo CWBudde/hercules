@@ -268,12 +268,14 @@ func (ra *RenameAnalysis) Consume(deps map[string]any) (map[string]any, error) {
 	}
 
 	addedBlobs, deletedBlobs, smallChanges := classifyRenameBlobs(stillAdded, stillDeleted, cache)
+
 	matches, addedBlobs, deletedBlobs, err := ra.matchSimilarRenames(
 		beginTime, addedBlobs, deletedBlobs, cache, maxCandidates, changes.Len(),
 	)
 	if err != nil {
 		return nil, err
 	}
+
 	reducedChanges = appendRenameResults(
 		reducedChanges, matches, addedBlobs, deletedBlobs, smallChanges,
 	)
@@ -294,12 +296,9 @@ func (ra *RenameAnalysis) matchSimilarRenames(
 	matchesA := make(object.Changes, 0, changeCount)
 	matchesB := make(object.Changes, 0, changeCount)
 	addedBlobsA := addedBlobs
-	addedBlobsB := make(sortableBlobs, len(addedBlobs))
-	copy(addedBlobsB, addedBlobs)
-
 	deletedBlobsA := deletedBlobs
-	deletedBlobsB := make(sortableBlobs, len(deletedBlobs))
-	copy(deletedBlobsB, deletedBlobs)
+	addedBlobsB := cloneSortableBlobs(addedBlobs)
+	deletedBlobsB := cloneSortableBlobs(deletedBlobs)
 
 	wg := sync.WaitGroup{}
 	matchA := func() {
@@ -348,6 +347,13 @@ func (ra *RenameAnalysis) matchSimilarRenames(
 	return matches, addedBlobs, deletedBlobs, nil
 }
 
+func cloneSortableBlobs(blobs sortableBlobs) sortableBlobs {
+	cloned := make(sortableBlobs, len(blobs))
+	copy(cloned, blobs)
+
+	return cloned
+}
+
 func appendRenameResults(
 	reduced, matches object.Changes,
 	addedBlobs, deletedBlobs sortableBlobs,
@@ -357,9 +363,11 @@ func appendRenameResults(
 	for _, blob := range addedBlobs {
 		reduced = append(reduced, blob.change)
 	}
+
 	for _, blob := range deletedBlobs {
 		reduced = append(reduced, blob.change)
 	}
+
 	return append(reduced, small...)
 }
 

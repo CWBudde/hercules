@@ -224,6 +224,7 @@ func search(index []int, obuf, nbuf []byte, st, en int) (pos, n int) {
 // DiffBytes calculates the approximated number of different bytes between two binary buffers.
 // We are not interested in the diff script itself. Instead, we track the sizes of `db` and `eb`
 // from the original implementation.
+//
 //nolint:funlen // Forward/backward match accounting is one invariant-heavy binarydist scan.
 func DiffBytes(obuf, nbuf []byte) int {
 	if len(nbuf) < len(obuf) {

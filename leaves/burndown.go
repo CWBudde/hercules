@@ -765,36 +765,14 @@ func (analyser *BurndownAnalysis) MergeResults(
 		coordinator.merge(&merged.GlobalHistory, bar1.GlobalHistory, bar2.GlobalHistory)
 	}
 
-	if len(merged.reversedPeopleDict) > 0 {
-		if len(bar1.PeopleHistories) > 0 || len(bar2.PeopleHistories) > 0 {
-			merged.PeopleHistories = make([]burndown.DenseHistory, len(merged.reversedPeopleDict))
-			for i, key := range merged.reversedPeopleDict {
-				first, second := joinedBurndownHistories(
-					people[key], bar1.PeopleHistories, bar2.PeopleHistories,
-				)
-				coordinator.merge(&merged.PeopleHistories[i], first, second)
-			}
-		}
-
-		coordinator.run(func() {
-			merged.PeopleMatrix = mergePeopleInteraction(bar1, bar2, merged.reversedPeopleDict, people)
-		})
-	}
+	coordinator.mergePeople(&merged, people)
 
 	var repositories map[string]join.JoinedIndex
 
 	repositories, merged.ReversedRepositoryDict = join.RepositoryIdentities(
 		bar1.ReversedRepositoryDict, bar2.ReversedRepositoryDict,
 	)
-	if len(merged.ReversedRepositoryDict) > 0 {
-		merged.RepositoryHistories = make([]burndown.DenseHistory, len(merged.ReversedRepositoryDict))
-		for i, key := range merged.ReversedRepositoryDict {
-			first, second := joinedBurndownHistories(
-				repositories[key], bar1.RepositoryHistories, bar2.RepositoryHistories,
-			)
-			coordinator.merge(&merged.RepositoryHistories[i], first, second)
-		}
-	}
+	coordinator.mergeRepositories(&merged, repositories)
 
 	coordinator.wg.Wait()
 
@@ -806,6 +784,48 @@ type burndownMergeCoordinator struct {
 	commonFirst, commonSecond *core.CommonAnalysisResult
 	wg                        sync.WaitGroup
 	sem                       chan int
+}
+
+func (coordinator *burndownMergeCoordinator) mergePeople(
+	merged *BurndownResult, people map[string]join.JoinedIndex,
+) {
+	if len(merged.reversedPeopleDict) == 0 {
+		return
+	}
+
+	if len(coordinator.first.PeopleHistories) > 0 || len(coordinator.second.PeopleHistories) > 0 {
+		merged.PeopleHistories = make([]burndown.DenseHistory, len(merged.reversedPeopleDict))
+		for index, key := range merged.reversedPeopleDict {
+			first, second := joinedBurndownHistories(
+				people[key], coordinator.first.PeopleHistories, coordinator.second.PeopleHistories,
+			)
+			coordinator.merge(&merged.PeopleHistories[index], first, second)
+		}
+	}
+
+	coordinator.run(func() {
+		merged.PeopleMatrix = mergePeopleInteraction(
+			coordinator.first, coordinator.second, merged.reversedPeopleDict, people,
+		)
+	})
+}
+
+func (coordinator *burndownMergeCoordinator) mergeRepositories(
+	merged *BurndownResult, repositories map[string]join.JoinedIndex,
+) {
+	if len(merged.ReversedRepositoryDict) == 0 {
+		return
+	}
+
+	merged.RepositoryHistories = make([]burndown.DenseHistory, len(merged.ReversedRepositoryDict))
+	for index, key := range merged.ReversedRepositoryDict {
+		first, second := joinedBurndownHistories(
+			repositories[key],
+			coordinator.first.RepositoryHistories,
+			coordinator.second.RepositoryHistories,
+		)
+		coordinator.merge(&merged.RepositoryHistories[index], first, second)
+	}
 }
 
 func (coordinator *burndownMergeCoordinator) run(operation func()) {

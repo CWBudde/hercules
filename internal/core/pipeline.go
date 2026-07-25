@@ -865,14 +865,7 @@ func (pipeline *Pipeline) InitializeExt(facts map[string]any,
 	priorityFn DependencyPriorityFunc, preparePlan bool,
 ) error {
 	cleanReturn := false
-	defer func() {
-		if !cleanReturn {
-			remotes, _ := pipeline.repository.Remotes()
-			if len(remotes) > 0 {
-				pipeline.l.Errorf("Failed to initialize the pipeline on %s", remotes[0].Config().URLs)
-			}
-		}
-	}()
+	defer pipeline.logInitializationFailure(&cleanReturn)
 
 	err := pipeline.applyConfigurationFacts(facts)
 	if err != nil {
@@ -880,6 +873,7 @@ func (pipeline *Pipeline) InitializeExt(facts map[string]any,
 	}
 
 	dumpPath, _ := facts[ConfigPipelineDAGPath].(string)
+
 	err = pipeline.resolve(dumpPath, priorityFn)
 	if err != nil {
 		return err
@@ -926,6 +920,17 @@ func (pipeline *Pipeline) InitializeExt(facts map[string]any,
 	cleanReturn = true
 
 	return nil
+}
+
+func (pipeline *Pipeline) logInitializationFailure(cleanReturn *bool) {
+	if *cleanReturn {
+		return
+	}
+
+	remotes, _ := pipeline.repository.Remotes()
+	if len(remotes) > 0 {
+		pipeline.l.Errorf("Failed to initialize the pipeline on %s", remotes[0].Config().URLs)
+	}
 }
 
 func (pipeline *Pipeline) applyConfigurationFacts(facts map[string]any) error {

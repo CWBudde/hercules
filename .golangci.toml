@@ -94,6 +94,12 @@ text = 'avoid meaningless package names'
 linters = ['wsl_v5', 'varnamelen', 'funlen', 'cyclop', 'gocognit', 'gocyclo', 'maintidx', 'dupl']
 path = '_test\.go'
 
+# These comments and expected strings are compact snapshots of the line-history
+# tree. Keeping each snapshot on one line makes state transitions comparable.
+[[linters.exclusions.rules]]
+linters = ['lll']
+path = 'internal/linehistory/file_test\.go'
+
 [severity]
 default = 'warn'
 

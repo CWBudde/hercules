@@ -79,7 +79,8 @@ message Bad {
     reserved 2 to max;
 }
 `
-	if _, err := ParseProto([]byte(proto)); err == nil {
+	_, err := ParseProto([]byte(proto))
+	if err == nil {
 		t.Fatal("expected error for 'to max' reserved range")
 	}
 }

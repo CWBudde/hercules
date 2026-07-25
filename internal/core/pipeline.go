@@ -1393,8 +1393,9 @@ func LoadCommitsFromFile(path string, repository *git.Repository) ([]*object.Com
 
 // GetSensibleRemote extracts a remote URL of the repository to identify it.
 func GetSensibleRemote(repository *git.Repository) string {
-	if r, err := repository.Remotes(); err == nil && len(r) > 0 {
-		return r[0].Config().URLs[0]
+	remotes, err := repository.Remotes()
+	if err == nil && len(remotes) > 0 {
+		return remotes[0].Config().URLs[0]
 	}
 
 	return "<no remote>"

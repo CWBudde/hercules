@@ -229,7 +229,9 @@ func (blobCache *BlobCache) cacheTo(
 	}
 
 	cached := &CachedBlob{Blob: *blob}
-	if err := cached.Cache(); err != nil {
+
+	err = cached.Cache()
+	if err != nil {
 		blobCache.l.Errorf("file to %s %s: %v\n", entry.Name, entry.TreeEntry.Hash, err)
 		return err
 	}
@@ -269,7 +271,9 @@ func (blobCache *BlobCache) cacheFrom(
 	}
 
 	cached := &CachedBlob{Blob: *blob}
-	if err := cached.Cache(); err != nil {
+
+	err = cached.Cache()
+	if err != nil {
 		blobCache.l.Errorf("file from %s %s: %v\n", entry.Name, entry.TreeEntry.Hash, err)
 		return err
 	}

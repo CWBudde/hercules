@@ -351,8 +351,8 @@ func parseLineHistoryChange(line string) (core.LineHistoryChange, error) {
 	}, nil
 }
 
-func (analyser *LineHistoryLoader) buildCommits() (result []*object.Commit) {
-	result = make([]*object.Commit, 0, len(analyser.commits))
+func (analyser *LineHistoryLoader) buildCommits() []*object.Commit {
+	result := make([]*object.Commit, 0, len(analyser.commits))
 
 	var parentHash []plumbing.Hash
 	for _, commit := range analyser.commits {

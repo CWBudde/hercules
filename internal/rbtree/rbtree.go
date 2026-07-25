@@ -683,12 +683,12 @@ type node struct {
 }
 
 // Internal node attribute accessors.
-func getColor(n uint32, allocator []node) (c color) {
+func getColor(n uint32, allocator []node) color {
 	if n == 0 {
 		return black
 	}
 
-	c = allocator[n].color
+	c := allocator[n].color
 	doAssert(c < gap)
 
 	return c

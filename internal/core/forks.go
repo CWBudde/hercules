@@ -174,7 +174,7 @@ func getMasterBranch(branches map[int][]PipelineItem) []PipelineItem {
 
 // prepareRunPlan schedules the actions for Pipeline.Run().
 func prepareRunPlan(commits []*object.Commit, hibernationDistance int, traceback bool,
-) (plan []runAction, mergeHashCount int) {
+) ([]runAction, int) {
 	hashes, dag := buildDag(commits)
 	leaveRootComponent(hashes, dag)
 	mergedDag, mergedSeq := mergeDag(hashes, dag)
@@ -189,7 +189,8 @@ func prepareRunPlan(commits []*object.Commit, hibernationDistance int, traceback
 		}
 	}
 	fmt.Printf("}\n")*/
-	plan = generatePlan(orderNodes, hashes, mergedDag, dag, mergedSeq)
+	plan := generatePlan(orderNodes, hashes, mergedDag, dag, mergedSeq)
+	mergeHashCount := 0
 
 	plan = collectGarbage(plan)
 	if traceback {
@@ -428,12 +429,11 @@ func buildParents(dag map[plumbing.Hash][]*object.Commit) map[plumbing.Hash]map[
 // mergeDag turns sequences of consecutive commits into single nodes.
 func mergeDag(
 	hashes map[string]*object.Commit,
-	dag map[plumbing.Hash][]*object.Commit) (
-	mergedDag, mergedSeq map[plumbing.Hash][]*object.Commit,
-) {
+	dag map[plumbing.Hash][]*object.Commit,
+) (map[plumbing.Hash][]*object.Commit, map[plumbing.Hash][]*object.Commit) {
 	parents := buildParents(dag)
-	mergedDag = map[plumbing.Hash][]*object.Commit{}
-	mergedSeq = map[plumbing.Hash][]*object.Commit{}
+	mergedDag := map[plumbing.Hash][]*object.Commit{}
+	mergedSeq := map[plumbing.Hash][]*object.Commit{}
 
 	visited := map[plumbing.Hash]bool{}
 	for head := range dag {

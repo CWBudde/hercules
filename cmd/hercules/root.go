@@ -122,14 +122,15 @@ type oneLineWriter struct {
 	Writer io.Writer
 }
 
-func (writer oneLineWriter) Write(p []byte) (n int, err error) {
+func (writer oneLineWriter) Write(p []byte) (int, error) {
+	var n int
 	strp := strings.TrimSpace(string(p))
 	if strings.HasSuffix(strp, "done.") || len(strp) == 0 {
 		strp = "cloning..."
 	} else {
 		strp = strings.ReplaceAll(strp, "\n", "\033[2K\r")
 	}
-	_, err = writer.Writer.Write([]byte("\033[2K\r"))
+	_, err := writer.Writer.Write([]byte("\033[2K\r"))
 	if err != nil {
 		return n, err
 	}
@@ -722,7 +723,8 @@ func runIdentityWorkflow(options identityWorkflowOptions) error {
 
 func deployItemsToPipeline(pipeline *core.Pipeline, flags *pflag.FlagSet,
 	priorityFn func(items []core.PipelineItem) core.PipelineItem,
-) (deployed []hercules.LeafPipelineItem) {
+) []hercules.LeafPipelineItem {
+	deployed := []hercules.LeafPipelineItem{}
 	deployList := make([][]string, 0, len(cmdlineDeployed))
 	for name, valPtr := range cmdlineDeployed {
 		if *valPtr {

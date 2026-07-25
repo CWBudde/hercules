@@ -81,7 +81,8 @@ type CodeChurnFileResult struct {
 	DeleteHistory map[int]sparseHistory
 }
 
-func (p *personChurnStats) getFileEntry(id core.FileId) (entry churnFileEntry) {
+func (p *personChurnStats) getFileEntry(id core.FileId) churnFileEntry {
+	var entry churnFileEntry
 	if p.files != nil {
 		entry = p.files[id]
 		if entry.deleteHistory != nil {
@@ -773,7 +774,7 @@ func (analyser *CodeChurnAnalysis) memoryLoss(x float64) float64 {
 
 func (analyser *CodeChurnAnalysis) calculateAwareness(entry churnFileEntry, change core.LineHistoryChange,
 	lastTouch core.TickNumber, delta churnLines,
-) (awareness, memorability float64) {
+) (float64, float64) {
 	const awarenessLowCut = 0.5
 	const memorabilityMin = 0.5
 
@@ -782,7 +783,7 @@ func (analyser *CodeChurnAnalysis) calculateAwareness(entry churnFileEntry, chan
 		return 0, memorabilityMin
 	}
 
-	awareness, memorability = float64(entry.awareness), float64(entry.memorability)
+	awareness, memorability := float64(entry.awareness), float64(entry.memorability)
 	if lastTouch >= change.CurrTick {
 		return awareness, memorability
 	}

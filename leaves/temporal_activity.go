@@ -208,12 +208,12 @@ func (ta *TemporalActivityAnalysis) Consume(deps map[string]any) (map[string]any
 	return noDependencies(), nil
 }
 
-func temporalIndices(commitTime time.Time) (weekday, hour, month, week int) {
-	weekday = int(commitTime.Weekday())
-	hour = commitTime.Hour()
-	month = int(commitTime.Month()) - 1
+func temporalIndices(commitTime time.Time) (int, int, int, int) {
+	weekday := int(commitTime.Weekday())
+	hour := commitTime.Hour()
+	month := int(commitTime.Month()) - 1
 	_, isoWeek := commitTime.ISOWeek()
-	week = min(max(isoWeek-1, 0), 52)
+	week := min(max(isoWeek-1, 0), 52)
 
 	return weekday, hour, month, week
 }

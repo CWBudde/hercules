@@ -266,12 +266,12 @@ func (acf *arrayFeatureFlags) Type() string {
 // Returns the "facts" which can be fed into PipelineItem.Configure() and the dictionary of
 // runnable analysis (LeafPipelineItem) choices. E.g. if "BurndownAnalysis" was activated
 // through "-burndown" cmdline argument, this mapping would contain ["BurndownAnalysis"] = *true.
-func (registry *PipelineItemRegistry) AddFlags(flagSet *pflag.FlagSet) (
-	flags map[string]any, deployed map[string]*bool, activations map[string][]string,
-) {
-	flags = map[string]any{}
-	deployed = map[string]*bool{}
-	activations = map[string][]string{}
+func (registry *PipelineItemRegistry) AddFlags(
+	flagSet *pflag.FlagSet,
+) (map[string]any, map[string]*bool, map[string][]string) {
+	flags := map[string]any{}
+	deployed := map[string]*bool{}
+	activations := map[string][]string{}
 	reusableOptions := map[string]ConfigurationOption{}
 
 	for name, it := range registry.registered {

@@ -62,16 +62,18 @@ report REPO OUTPUT="./report": hercules
 
 # RESAMPLE takes a pandas-style offset alias: "3M" for quarterly bands (the
 # default), "year", "month", ... GRANULARITY (band width) and SAMPLING (how
-# often the state is recorded) are in ticks/days and control how smooth the
-# curves are; 7/7 is noticeably smoother than the 30/30 default. NOTE: as of
-# now BurndownAnalysis.Initialize() overwrites both with the default of 30, so
-# these two have no effect until that override is lifted. The giant
-# docs/linux.svg example is excluded because it dwarfs the real history. The
-# chart title is cropped off when ImageMagick is available, since the page
-# embedding it carries its own caption.
+# often the state is recorded) are in ticks/days; 30/30 with a 3M resample is
+# the same combination MeKo/ewws-statistics uses (see its ewws-stats.yaml).
+# Larger values mean fewer real samples and more interpolated filler, so the
+# curves flow more; smaller values approach the day-exact staircase. NOTE: they
+# currently have no effect anyway, because BurndownAnalysis.Initialize() forces
+# both back to the default of 30 — which is what this chart wants, so the recipe
+# is reproducible as it stands. The giant docs/linux.svg example is excluded
+# because it dwarfs the real history. The chart title is cropped off when
+# ImageMagick is available, since the page embedding it carries its own caption.
 #
 # Regenerate the self-analysis burndown chart (hercules replaying its own history)
-burndown-chart RESAMPLE="3M" GRANULARITY="7" SAMPLING="7" OUTPUT="self-analysis/hercules-burndown.png": hercules labours
+burndown-chart RESAMPLE="3M" GRANULARITY="30" SAMPLING="30" OUTPUT="self-analysis/hercules-burndown.png": hercules labours
     #!/usr/bin/env sh
     set -eu
     dir=$(dirname "{{OUTPUT}}")

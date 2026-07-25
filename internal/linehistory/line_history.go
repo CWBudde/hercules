@@ -555,7 +555,7 @@ func packPersonWithTick(author core.AuthorId, tick core.TickNumber) int {
 	return result
 }
 
-func unpackPersonWithTick(value int) (author core.AuthorId, tick core.TickNumber) {
+func unpackPersonWithTick(value int) (core.AuthorId, core.TickNumber) {
 	return core.AuthorId(value >> TreeMaxBinPower), core.TickNumber(value & TreeMergeMark)
 }
 

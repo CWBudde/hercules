@@ -193,7 +193,8 @@ func qsufsort(obuf []byte) []int {
 	return I
 }
 
-func matchlen(a, b []byte) (i int) {
+func matchlen(a, b []byte) int {
+	i := 0
 	for i < len(a) && i < len(b) && a[i] == b[i] {
 		i++
 	}
@@ -201,7 +202,7 @@ func matchlen(a, b []byte) (i int) {
 	return i
 }
 
-func search(index []int, obuf, nbuf []byte, st, en int) (pos, n int) {
+func search(index []int, obuf, nbuf []byte, st, en int) (int, int) {
 	if en-st < 2 {
 		x := matchlen(obuf[index[st]:], nbuf)
 		y := matchlen(obuf[index[en]:], nbuf)

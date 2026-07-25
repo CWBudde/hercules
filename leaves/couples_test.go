@@ -14,7 +14,6 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/cwbudde/hercules/internal/core"
-	"github.com/cwbudde/hercules/internal/join"
 	"github.com/cwbudde/hercules/internal/pb"
 	"github.com/cwbudde/hercules/internal/plumbing"
 	"github.com/cwbudde/hercules/internal/plumbing/identity"
@@ -597,10 +596,7 @@ func TestCouplesMergeRejectsInvalidSourceIndices(t *testing.T) {
 
 func TestAddMergedFilesMatrixRejectsInvalidDestination(t *testing.T) {
 	r1, _, _ := couplesMergeFixtures()
-	files := map[string]join.JoinedIndex{
-		testAlphaPath:     {Final: 0},
-		couplesSharedPath: {Final: 2},
-	}
+	files := []int{0, 2}
 
 	err := addMergedFilesMatrix(make([]map[int]int64, 2), r1, files)
 	assert.ErrorIs(t, err, errCouplesMergeIntegrity)

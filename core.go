@@ -57,6 +57,28 @@ type NoopMerger = core.NoopMerger
 // OneShotMergeProcessor provides the convenience method to consume merges only once.
 type OneShotMergeProcessor = core.OneShotMergeProcessor
 
+// CommitComponent describes one connected component in explicit commit input.
+type CommitComponent = core.CommitComponent
+
+// DuplicateCommitError describes a repeated hash in explicit commit input.
+type DuplicateCommitError = core.DuplicateCommitError
+
+// DisconnectedCommitsError describes disconnected explicit commit input.
+type DisconnectedCommitsError = core.DisconnectedCommitsError
+
+var (
+	// ErrNoCommits indicates that an explicit commit input or execution plan is empty.
+	ErrNoCommits = core.ErrNoCommits
+	// ErrNoReferences indicates that a repository does not contain a usable commit reference.
+	ErrNoReferences = core.ErrNoReferences
+	// ErrInvalidCommit indicates that explicit input contains a nil or zero-hash commit.
+	ErrInvalidCommit = core.ErrInvalidCommit
+	// ErrDuplicateCommits indicates that explicit input repeats a commit hash.
+	ErrDuplicateCommits = core.ErrDuplicateCommits
+	// ErrDisconnectedCommits indicates that explicit input has disconnected components.
+	ErrDisconnectedCommits = core.ErrDisconnectedCommits
+)
+
 // MetadataToCommonAnalysisResult copies the data from a Protobuf message.
 func MetadataToCommonAnalysisResult(meta *core.Metadata) *CommonAnalysisResult {
 	return core.MetadataToCommonAnalysisResult(meta)

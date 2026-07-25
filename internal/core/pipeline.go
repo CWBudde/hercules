@@ -51,8 +51,20 @@ const (
 const configurationStringType = "string"
 
 var (
+	// ErrNoCommits indicates that an explicit commit input or execution plan is empty.
+	ErrNoCommits = errors.New("no commits to analyze")
+	// ErrNoReferences indicates that a repository does not contain a usable commit reference.
+	ErrNoReferences = errors.New("repository has no commit references")
+	// ErrInvalidCommit indicates that an explicit commit input contains a nil or zero-hash commit.
+	ErrInvalidCommit = errors.New("invalid commit")
+	// ErrDuplicateCommits indicates that an explicit commit input repeats a commit hash.
+	ErrDuplicateCommits = errors.New("duplicate commits")
+	// ErrDisconnectedCommits indicates that commit input contains multiple disconnected components.
+	ErrDisconnectedCommits = errors.New("disconnected commit components")
+
 	errGraphEdgeNotFound           = errors.New("toposort: edge not found")
 	errNegativeHibernationDistance = errors.New("--hibernation-distance cannot be negative")
+	errPlanCommitCountMismatch     = errors.New("execution plan commit count mismatch")
 )
 
 // String() returns an empty string for the boolean type, "int" for integers and "string" for
@@ -519,9 +531,15 @@ func (pipeline *Pipeline) HeadCommit() ([]*object.Commit, error) {
 		if errr != nil {
 			return nil, errors.Wrap(errr, "unable to list the references")
 		}
+		defer refs.Close()
+
 		var refnames []string
 		refByName := map[string]*plumbing.Reference{}
 		err = refs.ForEach(func(ref *plumbing.Reference) error {
+			if ref.Hash() == plumbing.ZeroHash {
+				return nil
+			}
+
 			refname := ref.Name().String()
 			refnames = append(refnames, refname)
 
@@ -533,8 +551,15 @@ func (pipeline *Pipeline) HeadCommit() ([]*object.Commit, error) {
 
 			return nil
 		})
+		if err != nil && !errors.Is(err, storer.ErrStop) {
+			return nil, errors.Wrap(err, "unable to iterate the references")
+		}
 
 		if head == nil {
+			if len(refnames) == 0 {
+				return nil, ErrNoReferences
+			}
+
 			sort.Strings(refnames)
 			headName := refnames[len(refnames)-1]
 			pipeline.l.Warnf("could not determine the HEAD, falling back to %s", headName)
@@ -600,7 +625,6 @@ func (pipeline *Pipeline) InitializeExt(facts map[string]any,
 		return err
 	}
 
-	mergeTracks, _ := pipeline.GetFeature(FeatureMergeTracks)
 	if pipeline.DryRun {
 		cleanReturn = true
 		return nil
@@ -610,14 +634,6 @@ func (pipeline *Pipeline) InitializeExt(facts map[string]any,
 	if err != nil {
 		cleanReturn = true
 		return err
-	}
-
-	if pipeline.preparedRun == nil && preparePlan {
-		pipeline.prepareRun(facts, mergeTracks)
-
-		if pipeline.preparedRun == nil {
-			return errors.New("commits are not available")
-		}
 	}
 
 	err = pipeline.initializeItems(facts)
@@ -657,7 +673,17 @@ func prepareInitialization(
 	}
 
 	if preparePlan {
-		pipeline.prepareRun(facts, mergeTracks)
+		return pipeline.prepareRun(facts, mergeTracks)
+	}
+
+	if commitValue, exists := facts[ConfigPipelineCommits]; exists {
+		commits, ok := commitValue.([]*object.Commit)
+		if !ok {
+			return fmt.Errorf("%w: %s has type %T",
+				ErrNoCommits, ConfigPipelineCommits, commitValue)
+		}
+
+		return validateCommitInput(commits)
 	}
 
 	return nil
@@ -670,7 +696,11 @@ func prepareInitialization(
 // Returns the mapping from each LeafPipelineItem to the corresponding analysis result.
 // There is always a "nil" record with CommonAnalysisResult.
 func (pipeline *Pipeline) Run(commits []*object.Commit) (map[LeafPipelineItem]any, error) {
-	plan, _ := prepareRunPlan(commits, pipeline.HibernationDistance, false)
+	plan, _, err := prepareRunPlan(commits, pipeline.HibernationDistance, false)
+	if err != nil {
+		return nil, err
+	}
+
 	return pipeline.runPlan(plan, len(commits), -1)
 }
 
@@ -1001,23 +1031,32 @@ func (pipeline *Pipeline) applyConfigurationFacts(facts map[string]any) error {
 	return nil
 }
 
-func (pipeline *Pipeline) prepareRun(facts map[string]any, mergeTracks bool) {
+func (pipeline *Pipeline) prepareRun(facts map[string]any, mergeTracks bool) error {
 	commits, ok := facts[ConfigPipelineCommits].([]*object.Commit)
 	if !ok {
 		pipeline.preparedRun = nil
-		return
+		return fmt.Errorf("%w: %s is not available", ErrNoCommits, ConfigPipelineCommits)
 	}
 
 	prepared := &preparedRun{commitCount: len(commits)}
 
-	prepared.plan, prepared.mergeHashCount = prepareRunPlan(
+	var err error
+
+	prepared.plan, prepared.mergeHashCount, err = prepareRunPlan(
 		commits, pipeline.HibernationDistance, mergeTracks,
 	)
+	if err != nil {
+		pipeline.preparedRun = nil
+		return err
+	}
+
 	if mergeTracks {
 		facts[FactMergeHashCount] = prepared.mergeHashCount
 	}
 
 	pipeline.preparedRun = prepared
+
+	return nil
 }
 
 func (pipeline *Pipeline) configureItems(facts map[string]any) error {
@@ -1050,6 +1089,10 @@ func (pipeline *Pipeline) initializeItems(facts map[string]any) error {
 }
 
 func (pipeline *Pipeline) runPlan(plan []runAction, commitCount, mergeHashCount int) (map[LeafPipelineItem]any, error) {
+	if len(plan) == 0 {
+		return nil, ErrNoCommits
+	}
+
 	startRunTime := time.Now()
 
 	cleanReturn := false
@@ -1066,16 +1109,25 @@ func (pipeline *Pipeline) runPlan(plan []runAction, commitCount, mergeHashCount 
 		return nil, err
 	}
 
+	if !pipeline.DryRun && state.commitIndex != commitCount {
+		return nil, fmt.Errorf("%w: consumed %d commits, expected %d",
+			errPlanCommitCountMismatch, state.commitIndex, commitCount)
+	}
+
 	onProgress(len(plan)+1, progressSteps, MessageFinalize)
 
 	result := state.finalize()
 
 	onProgress(progressSteps, progressSteps, "")
 
+	consumedCommits := state.commitIndex
+	if pipeline.DryRun {
+		consumedCommits = commitCount
+	}
 	result[nil] = &CommonAnalysisResult{
 		BeginTime:      plan[0].Commit.Committer.When.Unix(),
 		EndTime:        state.newestTime,
-		CommitsNumber:  commitCount,
+		CommitsNumber:  consumedCommits,
 		RunTime:        time.Since(startRunTime),
 		RunTimePerItem: state.runTimePerItem,
 	}
@@ -1425,9 +1477,28 @@ func LoadCommitsFromFile(path string, repository *git.Repository) ([]*object.Com
 
 	scanner := bufio.NewScanner(file)
 	var commits []*object.Commit
+	seen := map[plumbing.Hash]int{}
+	lineNumber := 0
 
 	for scanner.Scan() {
-		hash := plumbing.NewHash(scanner.Text())
+		lineNumber++
+
+		text := strings.TrimSpace(scanner.Text())
+		if !plumbing.IsHash(text) {
+			return nil, fmt.Errorf("%w in commits file %q at line %d: malformed hash %q",
+				ErrInvalidCommit, path, lineNumber, text)
+		}
+
+		hash := plumbing.NewHash(text)
+		if firstLine, exists := seen[hash]; exists {
+			return nil, &DuplicateCommitError{
+				Hash:           hash,
+				FirstPosition:  firstLine,
+				SecondPosition: lineNumber,
+			}
+		}
+
+		seen[hash] = lineNumber
 
 		commit, err := repository.CommitObject(hash)
 		if err != nil {
@@ -1440,6 +1511,10 @@ func LoadCommitsFromFile(path string, repository *git.Repository) ([]*object.Com
 	scanErr := scanner.Err()
 	if scanErr != nil {
 		return nil, fmt.Errorf("scan commits file %q: %w", path, scanErr)
+	}
+
+	if len(commits) == 0 {
+		return nil, fmt.Errorf("%w: commits file %q is empty", ErrNoCommits, path)
 	}
 
 	return commits, nil

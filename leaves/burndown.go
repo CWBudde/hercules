@@ -669,7 +669,7 @@ func (analyser *BurndownAnalysis) MergeResults(
 	merged.sampling = min(bar1.sampling, bar2.sampling)
 
 	merged.granularity = min(bar1.granularity, bar2.granularity)
-	var people map[string]join.JoinedIndex
+	var people join.IdentityMapping
 	people, merged.reversedPeopleDict = join.PeopleIdentities(
 		bar1.reversedPeopleDict, bar2.reversedPeopleDict,
 	)
@@ -684,7 +684,7 @@ func (analyser *BurndownAnalysis) MergeResults(
 
 	coordinator.mergePeople(&merged, people)
 
-	var repositories map[string]join.JoinedIndex
+	var repositories join.IdentityMapping
 
 	repositories, merged.ReversedRepositoryDict = join.RepositoryIdentities(
 		bar1.ReversedRepositoryDict, bar2.ReversedRepositoryDict,
@@ -895,7 +895,7 @@ type burndownMergeCoordinator struct {
 }
 
 func (coordinator *burndownMergeCoordinator) mergePeople(
-	merged *BurndownResult, people map[string]join.JoinedIndex,
+	merged *BurndownResult, people join.IdentityMapping,
 ) {
 	if len(merged.reversedPeopleDict) == 0 {
 		return
@@ -903,9 +903,9 @@ func (coordinator *burndownMergeCoordinator) mergePeople(
 
 	if len(coordinator.first.PeopleHistories) > 0 || len(coordinator.second.PeopleHistories) > 0 {
 		merged.PeopleHistories = make([]burndown.DenseHistory, len(merged.reversedPeopleDict))
-		for index, key := range merged.reversedPeopleDict {
+		for index := range merged.reversedPeopleDict {
 			first, second := joinedBurndownHistories(
-				people[key], coordinator.first.PeopleHistories, coordinator.second.PeopleHistories,
+				index, people, coordinator.first.PeopleHistories, coordinator.second.PeopleHistories,
 			)
 			coordinator.merge(&merged.PeopleHistories[index], first, second)
 		}
@@ -919,16 +919,17 @@ func (coordinator *burndownMergeCoordinator) mergePeople(
 }
 
 func (coordinator *burndownMergeCoordinator) mergeRepositories(
-	merged *BurndownResult, repositories map[string]join.JoinedIndex,
+	merged *BurndownResult, repositories join.IdentityMapping,
 ) {
 	if len(merged.ReversedRepositoryDict) == 0 {
 		return
 	}
 
 	merged.RepositoryHistories = make([]burndown.DenseHistory, len(merged.ReversedRepositoryDict))
-	for index, key := range merged.ReversedRepositoryDict {
+	for index := range merged.ReversedRepositoryDict {
 		first, second := joinedBurndownHistories(
-			repositories[key],
+			index,
+			repositories,
 			coordinator.first.RepositoryHistories,
 			coordinator.second.RepositoryHistories,
 		)
@@ -962,34 +963,70 @@ func (coordinator *burndownMergeCoordinator) merge(
 }
 
 func joinedBurndownHistories(
-	index join.JoinedIndex, first, second []burndown.DenseHistory,
+	destination int, mapping join.IdentityMapping, first, second []burndown.DenseHistory,
 ) (burndown.DenseHistory, burndown.DenseHistory) {
-	var firstHistory, secondHistory burndown.DenseHistory
-	if index.First >= 0 {
-		firstHistory = first[index.First]
+	return joinedBurndownHistory(destination, mapping.First, first),
+		joinedBurndownHistory(destination, mapping.Second, second)
+}
+
+func joinedBurndownHistory(
+	destination int, mapping []int, histories []burndown.DenseHistory,
+) burndown.DenseHistory {
+	var joined burndown.DenseHistory
+	found := false
+
+	for source, target := range mapping {
+		if target != destination || source >= len(histories) {
+			continue
+		}
+
+		if !found {
+			joined = histories[source]
+			found = true
+		} else {
+			joined = addBurndownHistories(joined, histories[source])
+		}
 	}
 
-	if index.Second >= 0 {
-		secondHistory = second[index.Second]
+	return joined
+}
+
+func addBurndownHistories(
+	first, second burndown.DenseHistory,
+) burndown.DenseHistory {
+	rows := max(len(first), len(second))
+	joined := make(burndown.DenseHistory, rows)
+
+	for row := range joined {
+		firstRow := denseHistoryRow(first, row)
+		secondRow := denseHistoryRow(second, row)
+
+		joined[row] = make([]int64, max(len(firstRow), len(secondRow)))
+		for column, value := range firstRow {
+			joined[row][column] += value
+		}
+
+		for column, value := range secondRow {
+			joined[row][column] += value
+		}
 	}
 
-	return firstHistory, secondHistory
+	return joined
+}
+
+func denseHistoryRow(history burndown.DenseHistory, row int) []int64 {
+	if row >= len(history) {
+		return nil
+	}
+
+	return history[row]
 }
 
 func mergePeopleInteraction(
-	first, second BurndownResult, mergedPeople []string, people map[string]join.JoinedIndex,
+	first, second BurndownResult, mergedPeople []string, people join.IdentityMapping,
 ) burndown.DenseHistory {
-	if len(second.PeopleMatrix) == 0 {
-		matrix := first.PeopleMatrix
-		for i := range matrix {
-			matrix[i] = append(matrix[i], make([]int64, len(mergedPeople)-len(first.reversedPeopleDict))...)
-		}
-
-		for len(matrix) < len(mergedPeople) && len(first.PeopleMatrix) > 0 {
-			matrix = append(matrix, make([]int64, len(mergedPeople)+2))
-		}
-
-		return matrix
+	if len(first.PeopleMatrix) == 0 && len(second.PeopleMatrix) == 0 {
+		return nil
 	}
 
 	matrix := make(burndown.DenseHistory, len(mergedPeople))
@@ -997,30 +1034,30 @@ func mergePeopleInteraction(
 		matrix[i] = make([]int64, len(mergedPeople)+2)
 	}
 
-	addPeopleInteraction(matrix, first, people, false)
-	addPeopleInteraction(matrix, second, people, true)
+	addPeopleInteraction(matrix, first, people.First)
+	addPeopleInteraction(matrix, second, people.Second)
 
 	return matrix
 }
 
 func addPeopleInteraction(
 	target burndown.DenseHistory, source BurndownResult,
-	people map[string]join.JoinedIndex, add bool,
+	people []int,
 ) {
-	for i, name := range source.reversedPeopleDict {
-		mergedIndex := people[name].Final
+	for sourceIndex := range source.reversedPeopleDict {
+		if sourceIndex >= len(source.PeopleMatrix) {
+			continue
+		}
 
-		for column, value := range source.PeopleMatrix[i] {
+		mergedIndex := people[sourceIndex]
+
+		for column, value := range source.PeopleMatrix[sourceIndex] {
 			targetColumn := column
 			if column >= 2 {
-				targetColumn = 2 + people[source.reversedPeopleDict[column-2]].Final
+				targetColumn = 2 + people[column-2]
 			}
 
-			if add {
-				target[mergedIndex][targetColumn] += value
-			} else {
-				target[mergedIndex][targetColumn] = value
-			}
+			target[mergedIndex][targetColumn] += value
 		}
 	}
 }

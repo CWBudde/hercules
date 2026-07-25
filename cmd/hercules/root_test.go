@@ -60,6 +60,23 @@ func TestLoadRemoteRepositories(t *testing.T) {
 	}
 }
 
+func TestSelectRootCommitsRejectsEmptyCommitFile(t *testing.T) {
+	repository, _ := createTestRepository(t)
+	commitsPath := filepath.Join(t.TempDir(), "commits")
+	require.NoError(t, os.WriteFile(commitsPath, nil, 0o600))
+
+	commits, err := selectRootCommits(
+		core.NewPipeline(repository),
+		repository,
+		"test-repository",
+		rootOptions{commitsFile: commitsPath},
+		nil,
+	)
+
+	assert.Nil(t, commits)
+	require.ErrorIs(t, err, core.ErrNoCommits)
+}
+
 func TestRemoteCacheCreatesManagedDestination(t *testing.T) {
 	origin, head := createTestRepository(t)
 	cachePath := filepath.Join(t.TempDir(), "remote-cache")

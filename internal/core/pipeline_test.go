@@ -7,6 +7,7 @@ import (
 	"io"
 	"math/rand"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -502,6 +503,55 @@ func TestPipelineHeadCommit(t *testing.T) {
 	assert.Equal(t, head.Hash(), commits[0].Hash)
 }
 
+func TestPipelineEmptyRepository(t *testing.T) {
+	repository, err := git.Init(memory.NewStorage(), nil)
+	require.NoError(t, err)
+
+	pipeline := NewPipeline(repository)
+	commits, err := pipeline.HeadCommit()
+	assert.Nil(t, commits)
+	require.ErrorIs(t, err, ErrNoReferences)
+
+	commits, err = pipeline.Commits(false)
+	assert.Nil(t, commits)
+	require.ErrorIs(t, err, ErrNoReferences)
+}
+
+func TestPipelineRejectsEmptyAndDisconnectedPlans(t *testing.T) {
+	pipeline := NewPipeline(test.FixtureRepository())
+
+	result, err := pipeline.Run(nil)
+	assert.Nil(t, result)
+	require.ErrorIs(t, err, ErrNoCommits)
+
+	a := makeTestCommit("aa")
+	b := makeTestCommit("bb", "aa")
+	c := makeTestCommit("cc")
+	result, err = pipeline.Run([]*object.Commit{a, b, c})
+	assert.Nil(t, result)
+	require.ErrorIs(t, err, ErrDisconnectedCommits)
+}
+
+func TestPipelineMetadataCountsConsumedCommits(t *testing.T) {
+	pipeline := NewPipeline(test.FixtureRepository())
+	a := makeTestCommit("aa")
+	b := makeTestCommit("bb", "aa")
+
+	result, err := pipeline.Run([]*object.Commit{b, a})
+	require.NoError(t, err)
+	common, ok := result[nil].(*CommonAnalysisResult)
+	require.True(t, ok)
+	assert.Equal(t, 2, common.CommitsNumber)
+}
+
+func TestPipelineInitializeRejectsEmptyCommitFact(t *testing.T) {
+	pipeline := NewPipeline(test.FixtureRepository())
+	err := pipeline.Initialize(map[string]any{
+		ConfigPipelineCommits: []*object.Commit{},
+	})
+	require.ErrorIs(t, err, ErrNoCommits)
+}
+
 func TestLoadCommitsFromFile(t *testing.T) {
 	tmp, err := os.CreateTemp(t.TempDir(), "hercules-test-")
 	require.NoError(t, err)
@@ -539,6 +589,30 @@ func TestLoadCommitsFromFile(t *testing.T) {
 	commits, err = LoadCommitsFromFile(tmp.Name(), test.FixtureRepository())
 	assert.Nil(t, commits)
 	require.Error(t, err)
+
+	emptyPath := filepath.Join(t.TempDir(), "empty-commits")
+	require.NoError(t, os.WriteFile(emptyPath, nil, 0o600))
+	commits, err = LoadCommitsFromFile(emptyPath, test.FixtureRepository())
+	assert.Nil(t, commits)
+	require.ErrorIs(t, err, ErrNoCommits)
+
+	duplicatePath := filepath.Join(t.TempDir(), "duplicate-commits")
+	hash := "cce947b98a050c6d356bc6ba95030254914027b1"
+	require.NoError(t, os.WriteFile(duplicatePath, []byte(hash+"\n"+hash+"\n"), 0o600))
+	commits, err = LoadCommitsFromFile(duplicatePath, test.FixtureRepository())
+	assert.Nil(t, commits)
+	require.ErrorIs(t, err, ErrDuplicateCommits)
+	var duplicate *DuplicateCommitError
+	require.ErrorAs(t, err, &duplicate)
+	assert.Equal(t, 1, duplicate.FirstPosition)
+	assert.Equal(t, 2, duplicate.SecondPosition)
+
+	oversizedPath := filepath.Join(t.TempDir(), "oversized-commits")
+	require.NoError(t, os.WriteFile(oversizedPath, []byte(strings.Repeat("a", 70*1024)), 0o600))
+	commits, err = LoadCommitsFromFile(oversizedPath, test.FixtureRepository())
+	assert.Nil(t, commits)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "scan commits file")
 }
 
 func TestPipelineDeps(t *testing.T) {
@@ -737,7 +811,8 @@ func TestPrepareRunPlanTiny(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	plan, _ := prepareRunPlan([]*object.Commit{rootCommit}, 0, false)
+	plan, _, err := prepareRunPlan([]*object.Commit{rootCommit}, 0, false)
+	require.NoError(t, err)
 	assert.Len(t, plan, 2)
 	assert.Equal(t, runActionEmerge, plan[0].Action)
 	assert.Equal(t, rootBranchIndex, plan[0].Items[0])
@@ -764,7 +839,8 @@ func TestPrepareRunPlanSmall(t *testing.T) {
 		}
 		return nil
 	}))
-	plan, _ := prepareRunPlan(commits, 0, false)
+	plan, _, err := prepareRunPlan(commits, 0, false)
+	require.NoError(t, err)
 	/*for _, p := range plan {
 		if p.Commit != nil {
 			fmt.Println(p.Action, p.Commit.Hash.String(), p.Items)
@@ -806,7 +882,7 @@ func TestMergeDag(t *testing.T) {
 		return nil
 	}))
 	hashes, dag := buildDag(commits)
-	leaveRootComponent(hashes, dag)
+	require.Len(t, commitComponents(hashes, dag), 1)
 	mergedDag, _ := mergeDag(hashes, dag)
 	for key, vals := range mergedDag {
 		if key != plumbing.NewHash("a28e9064c70618dc9d68e1401b889975e0680d11") &&
@@ -893,7 +969,12 @@ func TestPrepareRunPlanBig(t *testing.T) {
 				}
 				return nil
 			}))
-			plan, _ := prepareRunPlan(commits, 0, false)
+			plan, _, err := prepareRunPlan(commits, 0, false)
+			if testCase[3] < 0 {
+				require.ErrorIs(t, err, ErrDisconnectedCommits)
+				return
+			}
+			require.NoError(t, err)
 			/*for _, p := range plan {
 				if p.Commit != nil {
 					fmt.Println(p.Action, p.Commit.Hash.String(), p.Items)
@@ -1221,8 +1302,7 @@ func TestPipelineInitializeExtNoCommits(t *testing.T) {
 	pipeline.AddItem(&testPipelineItem{})
 	err := pipeline.InitializeExt(map[string]any{},
 		func(items []PipelineItem) PipelineItem { return items[0] }, true)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "commits are not available")
+	require.ErrorIs(t, err, ErrNoCommits)
 }
 
 func TestPipelineInitializeDryRunSkipsConfigure(t *testing.T) {

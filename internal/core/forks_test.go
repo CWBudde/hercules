@@ -354,18 +354,20 @@ func TestBuildDag(t *testing.T) {
 	})
 }
 
-func TestLeaveRootComponent(t *testing.T) {
+func TestCommitComponents(t *testing.T) {
 	t.Run("single component unchanged", func(t *testing.T) {
 		a := makeTestCommit("aa")
 		b := makeTestCommit("bb", "aa")
 		c := makeTestCommit("cc", "bb")
 
 		hashes, dag := buildDag([]*object.Commit{a, b, c})
-		leaveRootComponent(hashes, dag)
-		assert.Len(t, hashes, 3)
+		components := commitComponents(hashes, dag)
+		require.Len(t, components, 1)
+		assert.Equal(t, []plumbing.Hash{a.Hash}, components[0].Roots)
+		assert.Equal(t, 3, components[0].Size)
 	})
 
-	t.Run("two components keeps larger", func(t *testing.T) {
+	t.Run("two components are reported in root order", func(t *testing.T) {
 		// Component 1: a1 -> b1 -> c1 (3 nodes)
 		a1 := makeTestCommit("a1")
 		b1 := makeTestCommit("b1", "a1")
@@ -375,20 +377,16 @@ func TestLeaveRootComponent(t *testing.T) {
 		e1 := makeTestCommit("e1", "d1")
 
 		hashes, dag := buildDag([]*object.Commit{a1, b1, c1, d1, e1})
-		assert.Len(t, hashes, 5)
-		leaveRootComponent(hashes, dag)
-		assert.Len(t, hashes, 3)
-		// larger component kept
-		assert.Contains(t, hashes, a1.Hash.String())
-		assert.Contains(t, hashes, b1.Hash.String())
-		assert.Contains(t, hashes, c1.Hash.String())
+		components := commitComponents(hashes, dag)
+		require.Len(t, components, 2)
+		assert.Equal(t, CommitComponent{Roots: []plumbing.Hash{a1.Hash}, Size: 3}, components[0])
+		assert.Equal(t, CommitComponent{Roots: []plumbing.Hash{d1.Hash}, Size: 2}, components[1])
 	})
 
 	t.Run("empty dag", func(t *testing.T) {
 		hashes := map[string]*object.Commit{}
 		dag := map[plumbing.Hash][]*object.Commit{}
-		leaveRootComponent(hashes, dag)
-		assert.Empty(t, hashes)
+		assert.Empty(t, commitComponents(hashes, dag))
 	})
 }
 
@@ -700,12 +698,57 @@ func TestPrintAction(t *testing.T) {
 }
 
 func TestPrepareRunPlan(t *testing.T) {
+	t.Run("empty input", func(t *testing.T) {
+		plan, mergeCount, err := prepareRunPlan(nil, 0, false)
+		require.ErrorIs(t, err, ErrNoCommits)
+		assert.Nil(t, plan)
+		assert.Zero(t, mergeCount)
+	})
+
+	t.Run("nil commit", func(t *testing.T) {
+		_, _, err := prepareRunPlan([]*object.Commit{nil}, 0, false)
+		require.ErrorIs(t, err, ErrInvalidCommit)
+	})
+
+	t.Run("duplicate hash", func(t *testing.T) {
+		a := makeTestCommit("aa")
+		_, _, err := prepareRunPlan([]*object.Commit{a, a}, 0, false)
+		require.ErrorIs(t, err, ErrDuplicateCommits)
+
+		var duplicate *DuplicateCommitError
+		require.ErrorAs(t, err, &duplicate)
+		assert.Equal(t, a.Hash, duplicate.Hash)
+		assert.Equal(t, 0, duplicate.FirstPosition)
+		assert.Equal(t, 1, duplicate.SecondPosition)
+	})
+
+	t.Run("disconnected input is deterministic", func(t *testing.T) {
+		a := makeTestCommit("aa")
+		b := makeTestCommit("bb", "aa")
+		c := makeTestCommit("cc")
+		d := makeTestCommit("dd", "cc")
+		e := makeTestCommit("ee", "dd")
+
+		_, _, firstErr := prepareRunPlan([]*object.Commit{e, a, d, b, c}, 0, false)
+		_, _, secondErr := prepareRunPlan([]*object.Commit{c, b, d, a, e}, 0, false)
+		require.ErrorIs(t, firstErr, ErrDisconnectedCommits)
+		require.EqualError(t, secondErr, firstErr.Error())
+
+		var disconnected *DisconnectedCommitsError
+		require.ErrorAs(t, firstErr, &disconnected)
+		require.Equal(t, []CommitComponent{
+			{Roots: []plumbing.Hash{a.Hash}, Size: 2},
+			{Roots: []plumbing.Hash{c.Hash}, Size: 3},
+		}, disconnected.Components)
+	})
+
 	t.Run("linear commits", func(t *testing.T) {
 		a := makeTestCommit("aa")
 		b := makeTestCommit("bb", "aa")
 		c := makeTestCommit("cc", "bb")
 
-		plan, mergeCount := prepareRunPlan([]*object.Commit{a, b, c}, 0, false)
+		plan, mergeCount, err := prepareRunPlan([]*object.Commit{a, b, c}, 0, false)
+		require.NoError(t, err)
 		assert.NotEmpty(t, plan)
 		assert.Equal(t, 0, mergeCount)
 
@@ -726,7 +769,8 @@ func TestPrepareRunPlan(t *testing.T) {
 		c := makeTestCommit("cc", "aa")
 		d := makeTestCommit("dd", "bb", "cc")
 
-		_, mergeCount := prepareRunPlan([]*object.Commit{a, b, c, d}, 0, true)
+		_, mergeCount, err := prepareRunPlan([]*object.Commit{a, b, c, d}, 0, true)
+		require.NoError(t, err)
 		assert.Positive(t, mergeCount)
 	})
 
@@ -734,7 +778,8 @@ func TestPrepareRunPlan(t *testing.T) {
 		a := makeTestCommit("aa")
 		b := makeTestCommit("bb", "aa")
 
-		plan, _ := prepareRunPlan([]*object.Commit{a, b}, 1, false)
+		plan, _, err := prepareRunPlan([]*object.Commit{a, b}, 1, false)
+		require.NoError(t, err)
 		assert.NotEmpty(t, plan)
 	})
 
@@ -744,7 +789,8 @@ func TestPrepareRunPlan(t *testing.T) {
 		c := makeTestCommit("cc", "aa")
 		d := makeTestCommit("dd", "bb", "cc")
 
-		plan, _ := prepareRunPlan([]*object.Commit{a, b, c, d}, 0, false)
+		plan, _, err := prepareRunPlan([]*object.Commit{a, b, c, d}, 0, false)
+		require.NoError(t, err)
 
 		hasFork := false
 		hasMerge := false

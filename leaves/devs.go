@@ -358,15 +358,15 @@ func (devs *DevsAnalysis) MergeResults(result1, result2 any,
 	offset2 := int(secondStart.Sub(startTime) / cr2.tickSize)
 
 	merged := DevsResult{tickSize: cr1.tickSize}
-	var mergedIndex map[string]join.JoinedIndex
+	var mergedIndex join.IdentityMapping
 	mergedIndex, merged.reversedPeopleDict = join.PeopleIdentities(
 		cr1.reversedPeopleDict, cr2.reversedPeopleDict,
 	)
 	newticks := map[int]map[int]*DevTick{}
 
 	merged.Ticks = newticks
-	mergeDevTicks(newticks, cr1, offset1, mergedIndex)
-	mergeDevTicks(newticks, cr2, offset2, mergedIndex)
+	mergeDevTicks(newticks, cr1, offset1, mergedIndex.First)
+	mergeDevTicks(newticks, cr2, offset2, mergedIndex.Second)
 
 	return merged
 }
@@ -375,7 +375,7 @@ func mergeDevTicks(
 	target map[int]map[int]*DevTick,
 	source DevsResult,
 	offset int,
-	peopleIndex map[string]join.JoinedIndex,
+	peopleIndex []int,
 ) {
 	for tick, developers := range source.Ticks {
 		targetTick := tick + offset
@@ -386,7 +386,7 @@ func mergeDevTicks(
 		for developer, stats := range developers {
 			targetDeveloper := developer
 			if developer != core.AuthorMissing {
-				targetDeveloper = peopleIndex[source.reversedPeopleDict[developer]].Final
+				targetDeveloper = peopleIndex[developer]
 			}
 
 			mergeDevTick(target[targetTick], targetDeveloper, stats)

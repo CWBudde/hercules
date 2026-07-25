@@ -275,54 +275,25 @@ Acceptance criteria:
 
 ### CORE-02: Replace lossy identity joining
 
-Affected code:
+Status: completed 2026-07-25
 
-- `internal/join/join.go`
-- all result mergers using `LiteralIdentities` or `PeopleIdentities`
-
-Work:
-
-- Deduplicate literal identities before assigning final indexes.
-- Replace one-index-per-token traversal with union-find over every identity vertex and alias token.
-- Produce a mapping for every original record, including duplicate and transitive overlaps.
-- Define deterministic canonical names and output order.
-
-Tests:
-
-- duplicates within one input;
-- duplicates across inputs;
-- three-way transitive overlap;
-- name-only, email-only, and mixed identities;
-- merge associativity.
-
-Acceptance criteria:
-
-- [ ] no valid identity is omitted;
-- [ ] no two unrelated identities receive the same final index;
-- [ ] output is deterministic.
+Identity joining now returns a destination for every source record and uses union-find across all
+alias tokens, preserving duplicates and transitive overlaps without colliding unrelated people.
+Literal identities are deduplicated in first-seen order; people components use stable first-record
+order and canonical name-before-email lexical ordering. Developers, Couples, and Burndown mergers
+aggregate every mapped source row. Duplicate, transitive, mixed-token, unrelated, deterministic,
+and associative fixtures pass.
 
 ### CORE-03: Reject empty, duplicate, and disconnected commit input cleanly
 
-Affected code:
+Status: completed 2026-07-25
 
-- `internal/core/pipeline.go`
-- `internal/core/forks.go`
-- CLI commit-file handling and tests
-
-Work:
-
-- Return typed `ErrNoCommits`/`ErrNoReferences` errors for empty repositories and plans.
-- Reject duplicate hashes in explicit commit input.
-- Reject disconnected commit components with a diagnostic listing component roots and sizes.
-- If a future mode intentionally permits component selection, expose it explicitly and compute
-  metadata from the retained plan.
-- Check all scanner errors when reading commit files.
-
-Acceptance criteria:
-
-- [ ] no empty or malformed input path panics;
-- [ ] metadata commit counts exactly equal consumed commits;
-- [ ] component selection is never implicit or map-order-dependent.
+Empty repositories, commit files, and plans now return exported typed sentinel errors instead of
+panicking. Explicit input rejects malformed, nil, zero-hash, and duplicate commits; disconnected
+components return stable structured diagnostics with sorted roots and sizes rather than silently
+selecting one component. Commit-file scanner errors propagate, and execution verifies that
+metadata counts exactly match the commits consumed by the accepted plan. Core and CLI hostile-input
+fixtures cover each path and deterministic diagnostics.
 
 ### CORE-04: Complete Line History replay
 

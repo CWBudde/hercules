@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"slices"
 	"sort"
+	"strings"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -107,6 +108,54 @@ type runAction struct {
 	Items     []int
 }
 
+// DuplicateCommitError describes the repeated hash and its zero-based input positions. Commit
+// files use one-based line numbers for these fields.
+type DuplicateCommitError struct {
+	Hash           plumbing.Hash
+	FirstPosition  int
+	SecondPosition int
+}
+
+func (err *DuplicateCommitError) Error() string {
+	return fmt.Sprintf("%v: %s at positions %d and %d",
+		ErrDuplicateCommits, err.Hash, err.FirstPosition, err.SecondPosition)
+}
+
+// Unwrap allows errors.Is(err, ErrDuplicateCommits).
+func (*DuplicateCommitError) Unwrap() error {
+	return ErrDuplicateCommits
+}
+
+// CommitComponent describes one connected component in an explicit commit input.
+type CommitComponent struct {
+	Roots []plumbing.Hash
+	Size  int
+}
+
+// DisconnectedCommitsError describes every disconnected input component in deterministic order.
+type DisconnectedCommitsError struct {
+	Components []CommitComponent
+}
+
+func (err *DisconnectedCommitsError) Error() string {
+	components := make([]string, len(err.Components))
+	for index, component := range err.Components {
+		roots := make([]string, len(component.Roots))
+		for rootIndex, root := range component.Roots {
+			roots[rootIndex] = root.String()
+		}
+
+		components[index] = fmt.Sprintf("roots=[%s] size=%d", strings.Join(roots, ","), component.Size)
+	}
+
+	return fmt.Sprintf("%v: %s", ErrDisconnectedCommits, strings.Join(components, "; "))
+}
+
+// Unwrap allows errors.Is(err, ErrDisconnectedCommits).
+func (*DisconnectedCommitsError) Unwrap() error {
+	return ErrDisconnectedCommits
+}
+
 func (ra runAction) String() string {
 	switch ra.Action {
 	case runActionCommit:
@@ -174,9 +223,13 @@ func getMasterBranch(branches map[int][]PipelineItem) []PipelineItem {
 
 // prepareRunPlan schedules the actions for Pipeline.Run().
 func prepareRunPlan(commits []*object.Commit, hibernationDistance int, traceback bool,
-) ([]runAction, int) {
+) ([]runAction, int, error) {
+	err := validateCommitInput(commits)
+	if err != nil {
+		return nil, 0, err
+	}
+
 	hashes, dag := buildDag(commits)
-	leaveRootComponent(hashes, dag)
 	mergedDag, mergedSeq := mergeDag(hashes, dag)
 	orderNodes := bindOrderNodes(mergedDag)
 	collapseFastForwards(orderNodes, hashes, mergedDag, dag, mergedSeq)
@@ -201,7 +254,39 @@ func prepareRunPlan(commits []*object.Commit, hibernationDistance int, traceback
 		plan = insertHibernateBoot(plan, hibernationDistance)
 	}
 
-	return plan, mergeHashCount
+	return plan, mergeHashCount, nil
+}
+
+func validateCommitInput(commits []*object.Commit) error {
+	if len(commits) == 0 {
+		return ErrNoCommits
+	}
+
+	seen := make(map[plumbing.Hash]int, len(commits))
+	for index, commit := range commits {
+		if commit == nil || commit.Hash == plumbing.ZeroHash {
+			return fmt.Errorf("%w at position %d", ErrInvalidCommit, index)
+		}
+
+		if firstIndex, exists := seen[commit.Hash]; exists {
+			return &DuplicateCommitError{
+				Hash:           commit.Hash,
+				FirstPosition:  firstIndex,
+				SecondPosition: index,
+			}
+		}
+
+		seen[commit.Hash] = index
+	}
+
+	hashes, dag := buildDag(commits)
+
+	components := commitComponents(hashes, dag)
+	if len(components) > 1 {
+		return &DisconnectedCommitsError{Components: components}
+	}
+
+	return nil
 }
 
 // printAction prints the specified action.
@@ -280,16 +365,14 @@ func buildDag(commits []*object.Commit) (
 	return hashes, dag
 }
 
-// leaveRootComponent runs connected components analysis and throws away everything
-// but the part which grows from the root.
-func leaveRootComponent(
+func commitComponents(
 	hashes map[string]*object.Commit,
 	dag map[plumbing.Hash][]*object.Commit,
-) {
+) []CommitComponent {
 	visited := map[plumbing.Hash]bool{}
-	var sets [][]plumbing.Hash
+	sets := make([][]plumbing.Hash, 0, 1)
 
-	for key := range dag {
+	for _, key := range sortedCommitHashes(dag) {
 		if visited[key] {
 			continue
 		}
@@ -297,18 +380,66 @@ func leaveRootComponent(
 		sets = append(sets, walkCommitComponent(key, hashes, dag, visited))
 	}
 
-	largest := largestCommitComponent(sets)
-	for i, set := range sets {
-		if i == largest {
-			continue
+	components := make([]CommitComponent, len(sets))
+	for index, set := range sets {
+		components[index] = describeCommitComponent(set, hashes)
+	}
+
+	sort.Slice(components, func(i, j int) bool {
+		return components[i].Roots[0].String() < components[j].Roots[0].String()
+	})
+
+	return components
+}
+
+func describeCommitComponent(
+	hashes []plumbing.Hash,
+	commits map[string]*object.Commit,
+) CommitComponent {
+	members := make(map[plumbing.Hash]struct{}, len(hashes))
+	for _, hash := range hashes {
+		members[hash] = struct{}{}
+	}
+
+	roots := commitComponentRoots(hashes, commits, members)
+	sort.Slice(roots, func(i, j int) bool {
+		return roots[i].String() < roots[j].String()
+	})
+
+	if len(roots) == 0 {
+		sort.Slice(hashes, func(i, j int) bool {
+			return hashes[i].String() < hashes[j].String()
+		})
+		roots = append(roots, hashes[0])
+	}
+
+	return CommitComponent{Roots: roots, Size: len(hashes)}
+}
+
+func commitComponentRoots(
+	hashes []plumbing.Hash,
+	commits map[string]*object.Commit,
+	members map[plumbing.Hash]struct{},
+) []plumbing.Hash {
+	var roots []plumbing.Hash
+
+	for _, hash := range hashes {
+		hasParent := false
+
+		for _, parent := range getCommitParents(commits[hash.String()]) {
+			if _, exists := members[parent]; exists {
+				hasParent = true
+
+				break
+			}
 		}
 
-		for _, hash := range set {
-			log.Printf("warning: dropped %s from the analysis - disjoint", hash.String())
-			delete(dag, hash)
-			delete(hashes, hash.String())
+		if !hasParent {
+			roots = append(roots, hash)
 		}
 	}
+
+	return roots
 }
 
 func walkCommitComponent(
@@ -328,7 +459,6 @@ func walkCommitComponent(
 		}
 
 		visited[head] = true
-
 		component = append(component, head)
 		queue = appendCommitNeighbors(queue, head, hashes, dag, visited)
 	}
@@ -361,17 +491,6 @@ func appendCommitNeighbors(
 	}
 
 	return queue
-}
-
-func largestCommitComponent(components [][]plumbing.Hash) int {
-	largest, largestSize := -1, 0
-	for index, component := range components {
-		if len(component) > largestSize {
-			largest, largestSize = index, len(component)
-		}
-	}
-
-	return largest
 }
 
 // bindOrderNodes returns curried "orderNodes" function.

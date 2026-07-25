@@ -62,9 +62,9 @@ func TestApplyPresetExplicitFlagWins(t *testing.T) {
 
 	// User explicitly sets threshold to 500000
 	err := flags.Set("preset", "large-repo")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	err = flags.Set("lines-hibernation-threshold", "500000")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	applyPreset(flags)
 

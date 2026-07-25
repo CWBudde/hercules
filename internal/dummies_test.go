@@ -15,7 +15,7 @@ func TestCreateDummyBlob(t *testing.T) {
 	assert.Equal(t, "334cde09da4afcb74f8d2b3e6fd6cce61228b485", dummy.Hash.String())
 	assert.Equal(t, int64(0), dummy.Size)
 	reader, err := dummy.Reader()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	buffer := make([]byte, 1)
 	buffer[0] = 0xff
 	n, err := reader.Read(buffer)
@@ -45,6 +45,6 @@ func TestNotUsedDummyStuff(t *testing.T) {
 	obj.SetSize(int64(100))
 	obj.SetType(plumbing.CommitObject)
 	writer, err := obj.Writer()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.NotNil(t, writer)
 }

@@ -30,12 +30,12 @@ func TestExtractorConfigureInitialize(t *testing.T) {
 	facts := map[string]any{}
 	facts[ConfigImportsGoroutines] = 7
 	facts[ConfigMaxFileSize] = 8
-	assert.NoError(t, ex.Configure(facts))
+	require.NoError(t, ex.Configure(facts))
 	assert.Equal(t, 7, ex.Goroutines)
 	assert.Equal(t, 8, ex.MaxFileSize)
 	facts[ConfigImportsGoroutines] = -1
 	facts[ConfigMaxFileSize] = -8
-	assert.NoError(t, ex.Configure(facts))
+	require.NoError(t, ex.Configure(facts))
 	assert.Equal(t, runtime.NumCPU(), ex.Goroutines)
 	assert.Equal(t, DefaultMaxFileSize, ex.MaxFileSize)
 	assert.NotNil(t, ex.l)

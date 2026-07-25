@@ -29,7 +29,7 @@ func TestLoadGitRepository(t *testing.T) {
 
 func TestLoadGitRepositoryWithCreds(t *testing.T) {
 	_, repoUri, repoFeature, err := loadRepositoryWithError("https://user:user@github.com/src-d/hercules", "", true, "")
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Equal(t, core.FeatureGitCommits, repoFeature)
 	assert.Equal(t, "https://github.com/src-d/hercules", repoUri)
 }
@@ -76,7 +76,7 @@ func TestFormatProgressEventLines(t *testing.T) {
 		Action: "TreeDiff",
 	}, progressModeLines)
 
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, "commit commit=12 total=90 action=TreeDiff\n", line)
 }
 
@@ -86,16 +86,16 @@ func TestFormatProgressEventJSON(t *testing.T) {
 		Output: "protobuf",
 	}, progressModeJSON)
 
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	var decoded progressEvent
-	assert.NoError(t, json.Unmarshal([]byte(line), &decoded))
+	require.NoError(t, json.Unmarshal([]byte(line), &decoded))
 	assert.Equal(t, "write-start", decoded.Event)
 	assert.Equal(t, "protobuf", decoded.Output)
 }
 
 func TestParseProgressModeRejectsUnknownValue(t *testing.T) {
 	_, err := parseProgressMode("loud")
-	assert.Error(t, err)
+	require.Error(t, err)
 }
 
 func TestIdentityWorkflowFlagsRegistered(t *testing.T) {
@@ -118,9 +118,9 @@ func TestIdentityAuditWorkflowWritesJSON(t *testing.T) {
 		Out:   &out,
 	})
 
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	var audit identity.IdentityAudit
-	assert.NoError(t, json.Unmarshal(out.Bytes(), &audit))
+	require.NoError(t, json.Unmarshal(out.Bytes(), &audit))
 	assert.Len(t, audit.Identities, 1)
 	assert.Equal(t, "co-authored-by", audit.MergeDecisions[0].Reason)
 }
@@ -140,8 +140,8 @@ func TestIdentityTemplateWorkflowWritesPeopleDictFile(t *testing.T) {
 		TemplatePath: templatePath,
 	})
 
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	data, err := os.ReadFile(templatePath)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, "alice example|alice@example.com\n", string(data))
 }

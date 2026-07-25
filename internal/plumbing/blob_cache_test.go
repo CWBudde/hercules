@@ -29,7 +29,7 @@ func AddHash(t *testing.T, cache map[plumbing.Hash]*CachedBlob, hash string) {
 	require.NoError(t, err)
 	cb := &CachedBlob{Blob: *blob}
 	err = cb.Cache()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	cache[objhash] = cb
 }
 
@@ -100,7 +100,7 @@ func TestBlobCacheConsumeModification(t *testing.T) {
 	deps[core.DependencyCommit] = commit
 	deps[DependencyTreeChanges] = changes
 	result, err := fixtureBlobCache().Consume(deps)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Len(t, result, 1)
 	cacheIface, exists := result[DependencyBlobCache]
 	assert.True(t, exists)
@@ -151,7 +151,7 @@ func TestBlobCacheConsumeInsertionDeletion(t *testing.T) {
 	deps[core.DependencyCommit] = commit
 	deps[DependencyTreeChanges] = changes
 	result, err := fixtureBlobCache().Consume(deps)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Len(t, result, 1)
 	cacheIface, exists := result[DependencyBlobCache]
 	assert.True(t, exists)
@@ -222,7 +222,7 @@ func TestBlobCacheConsumeBadHashes(t *testing.T) {
 	deps[DependencyTreeChanges] = changes
 	result, err := fixtureBlobCache().Consume(deps)
 	assert.Nil(t, result)
-	assert.Error(t, err)
+	require.Error(t, err)
 	changes[0] = &object.Change{From: object.ChangeEntry{
 		Name:      "labours.py",
 		Tree:      treeFrom,
@@ -231,7 +231,7 @@ func TestBlobCacheConsumeBadHashes(t *testing.T) {
 	result, err = fixtureBlobCache().Consume(deps)
 	// Deleting a missing blob is fine
 	assert.NotNil(t, result)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	changes[0] = &object.Change{
 		From: object.ChangeEntry{},
 		To: object.ChangeEntry{
@@ -242,7 +242,7 @@ func TestBlobCacheConsumeBadHashes(t *testing.T) {
 	}
 	result, err = fixtureBlobCache().Consume(deps)
 	assert.Nil(t, result)
-	assert.Error(t, err)
+	require.Error(t, err)
 }
 
 func TestBlobCacheConsumeInvalidHash(t *testing.T) {
@@ -274,7 +274,7 @@ func TestBlobCacheConsumeInvalidHash(t *testing.T) {
 	deps[DependencyTreeChanges] = changes
 	result, err := fixtureBlobCache().Consume(deps)
 	assert.Nil(t, result)
-	assert.Error(t, err)
+	require.Error(t, err)
 }
 
 func TestBlobCacheGetBlob(t *testing.T) {
@@ -336,7 +336,7 @@ func TestBlobCacheDeleteInvalidBlob(t *testing.T) {
 	deps[core.DependencyCommit] = commit
 	deps[DependencyTreeChanges] = changes
 	result, err := fixtureBlobCache().Consume(deps)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Len(t, result, 1)
 	cacheIface, exists := result[DependencyBlobCache]
 	assert.True(t, exists)
@@ -370,7 +370,7 @@ func TestBlobCacheInsertInvalidBlob(t *testing.T) {
 	deps[core.DependencyCommit] = commit
 	deps[DependencyTreeChanges] = changes
 	result, err := fixtureBlobCache().Consume(deps)
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Empty(t, result)
 }
 
@@ -394,7 +394,7 @@ func TestBlobCacheGetBlobIgnoreMissing(t *testing.T) {
 	}
 	blob, err := cache.getBlob(&entry, getter)
 	assert.NotNil(t, blob)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, int64(0), blob.Size)
 	cache.FailOnMissingSubmodules = true
 	getter = func(path string) (*object.File, error) {
@@ -406,7 +406,7 @@ func TestBlobCacheGetBlobIgnoreMissing(t *testing.T) {
 	}
 	blob, err = cache.getBlob(&entry, getter)
 	assert.Nil(t, blob)
-	assert.Error(t, err)
+	require.Error(t, err)
 }
 
 func TestBlobCacheGetBlobGitModulesErrors(t *testing.T) {
@@ -444,7 +444,7 @@ func TestBlobCacheGetBlobGitModulesErrors(t *testing.T) {
 	}
 	blob, err = cache.getBlob(&entry, getter)
 	assert.Nil(t, blob)
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.NotEqual(t, err.Error(), plumbing.ErrObjectNotFound.Error())
 }
 

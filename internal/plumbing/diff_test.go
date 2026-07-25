@@ -9,6 +9,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/sergi/go-diff/diffmatchpatch"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/cwbudde/hercules"
 	"github.com/cwbudde/hercules/internal"
@@ -34,7 +35,7 @@ func TestFileDiffMeta(t *testing.T) {
 	assert.Equal(t, items.ConfigFileDiffRefineMaxFileSize, fd.ListConfigurationOptions()[4].Name)
 	assert.Equal(t, items.ConfigFileDiffRefineMaxLines, fd.ListConfigurationOptions()[5].Name)
 	assert.Equal(t, items.ConfigFileDiffRefineMode, fd.ListConfigurationOptions()[6].Name)
-	assert.NoError(t, fd.Configure(map[string]any{
+	require.NoError(t, fd.Configure(map[string]any{
 		core.ConfigLogger:                     core.NewLogger(),
 		items.ConfigFileDiffDisableCleanup:    true,
 		items.ConfigFileWhitespaceIgnore:      true,
@@ -120,7 +121,7 @@ func TestFileDiffConsume(t *testing.T) {
 	}
 	deps[items.DependencyTreeChanges] = changes
 	res, err := fd.Consume(deps)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	diffs := res[items.DependencyFileDiff].(map[string]items.FileDiffData)
 	assert.Len(t, diffs, 1)
 	diff := diffs["analyser.go"]
@@ -178,7 +179,7 @@ func TestFileDiffConsumeInvalidBlob(t *testing.T) {
 	deps[items.DependencyTreeChanges] = changes
 	res, err := fd.Consume(deps)
 	assert.Len(t, res[hercules.DependencyFileDiff].(map[string]items.FileDiffData), 1)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	changes[0] = &object.Change{From: object.ChangeEntry{
 		Name: "analyser.go",
 		Tree: treeFrom,
@@ -198,23 +199,23 @@ func TestFileDiffConsumeInvalidBlob(t *testing.T) {
 	}}
 	res, err = fd.Consume(deps)
 	assert.Len(t, res[hercules.DependencyFileDiff].(map[string]items.FileDiffData), 1)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 }
 
 func TestCountLines(t *testing.T) {
 	blob, err := test.Repository.BlobObject(
 		plumbing.NewHash("291286b4ac41952cbd1389fda66420ec03c1a9fe"),
 	)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	cb := &items.CachedBlob{Blob: *blob}
 	cb.Cache()
 	lines, err := cb.CountLines()
 	assert.Equal(t, 12, lines)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	blob, err = internal.CreateDummyBlob(
 		plumbing.NewHash("291286b4ac41952cbd1389fda66420ec03c1a9fe"), true,
 	)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	cb = &items.CachedBlob{Blob: *blob}
 	err = cb.Cache()
 	assert.ErrorContains(t, err, "dummy failure")
@@ -222,12 +223,12 @@ func TestCountLines(t *testing.T) {
 	blob, err = test.Repository.BlobObject(
 		plumbing.NewHash("c86626638e0bc8cf47ca49bb1525b40e9737ee64"),
 	)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	cb = &items.CachedBlob{Blob: *blob}
 	cb.Cache()
 	lines, err = cb.CountLines()
 	assert.Equal(t, 0, lines)
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Equal(t, err.Error(), items.ErrBinary.Error())
 }
 
@@ -237,7 +238,7 @@ func TestBlobToString(t *testing.T) {
 	)
 	cb := &items.CachedBlob{Blob: *blob}
 	err := cb.Cache()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	str := string(cb.Data)
 	assert.Equal(t, `language: go
 
@@ -257,7 +258,7 @@ notifications:
 	)
 	cb = &items.CachedBlob{Blob: *blob}
 	err = cb.Cache()
-	assert.Error(t, err)
+	require.Error(t, err)
 }
 
 func TestFileDiffDarkMagic(t *testing.T) {
@@ -297,11 +298,11 @@ func TestFileDiffDarkMagic(t *testing.T) {
 	}}
 	deps[items.DependencyTreeChanges] = changes
 	res, err := fd.Consume(deps)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	magicDiffs := res[items.DependencyFileDiff].(map[string]items.FileDiffData)["test.java"]
 	fd.CleanupDisabled = true
 	res, err = fd.Consume(deps)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	plainDiffs := res[items.DependencyFileDiff].(map[string]items.FileDiffData)["test.java"]
 	assert.NotEqual(t, magicDiffs.Diffs, plainDiffs.Diffs)
 	assert.Equal(t, magicDiffs.OldLinesOfCode, plainDiffs.OldLinesOfCode)
@@ -312,17 +313,17 @@ func TestFileDiffRefineMaxLines(t *testing.T) {
 	fd := fixtures.FileDiff()
 
 	// default after Configure (no explicit value)
-	assert.NoError(t, fd.Configure(map[string]any{}))
+	require.NoError(t, fd.Configure(map[string]any{}))
 	assert.Equal(t, items.DefaultFileDiffRefineMaxLines, fd.RefineMaxLines)
 
 	// explicit value
-	assert.NoError(t, fd.Configure(map[string]any{
+	require.NoError(t, fd.Configure(map[string]any{
 		items.ConfigFileDiffRefineMaxLines: 3000,
 	}))
 	assert.Equal(t, 3000, fd.RefineMaxLines)
 
 	// 0 means unlimited
-	assert.NoError(t, fd.Configure(map[string]any{
+	require.NoError(t, fd.Configure(map[string]any{
 		items.ConfigFileDiffRefineMaxLines: 0,
 	}))
 	assert.Equal(t, 0, fd.RefineMaxLines)
@@ -354,13 +355,13 @@ func TestFileDiffRefineMaxLinesSkips(t *testing.T) {
 	fdDisabled := fixtures.FileDiff()
 	fdDisabled.RefineDisabled = true
 	resDisabled, err := fdDisabled.Consume(deps)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	wantDiffs := resDisabled[items.DependencyFileDiff].(map[string]items.FileDiffData)["test.java"]
 
 	fdLimited := fixtures.FileDiff()
 	fdLimited.RefineMaxLines = 1
 	resLimited, err := fdLimited.Consume(deps)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	gotDiffs := resLimited[items.DependencyFileDiff].(map[string]items.FileDiffData)["test.java"]
 
 	assert.Equal(t, wantDiffs.Diffs, gotDiffs.Diffs)
@@ -399,11 +400,11 @@ func TestFileDiffWhitespaceDarkMagic(t *testing.T) {
 	}}
 	deps[items.DependencyTreeChanges] = changes
 	res, err := fd.Consume(deps)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	magicDiffs := res[items.DependencyFileDiff].(map[string]items.FileDiffData)["test.java"]
 	fd.WhitespaceIgnore = true
 	res, err = fd.Consume(deps)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	plainDiffs := res[items.DependencyFileDiff].(map[string]items.FileDiffData)["test.java"]
 	assert.NotEqual(t, magicDiffs.Diffs, plainDiffs.Diffs)
 	assert.Equal(t, magicDiffs.OldLinesOfCode, plainDiffs.OldLinesOfCode)

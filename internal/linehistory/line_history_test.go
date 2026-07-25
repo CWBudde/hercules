@@ -22,7 +22,7 @@ func AddHash(t *testing.T, cache map[plumbing.Hash]*items.CachedBlob, hash strin
 	require.NoError(t, err)
 	cb := &items.CachedBlob{Blob: *blob}
 	err = cb.Cache()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	cache[objHash] = cb
 }
 
@@ -64,13 +64,13 @@ func TestLinesConfigure(t *testing.T) {
 	facts[ConfigLinesHibernationThreshold] = 100
 	facts[ConfigLinesHibernationToDisk] = true
 	facts[ConfigLinesHibernationDirectory] = "xxx"
-	assert.NoError(t, bd.Configure(facts))
+	require.NoError(t, bd.Configure(facts))
 	assert.Equal(t, 100, bd.HibernationThreshold)
 	assert.True(t, bd.HibernationToDisk)
 	assert.Equal(t, "xxx", bd.HibernationDirectory)
 	assert.True(t, bd.Debug)
 
-	assert.NoError(t, bd.Configure(map[string]any{}))
+	require.NoError(t, bd.Configure(map[string]any{}))
 	assert.True(t, bd.Debug)
 }
 
@@ -83,7 +83,7 @@ func TestLinesRegistration(t *testing.T) {
 func TestLinesInitialize(t *testing.T) {
 	bd := &LineHistoryAnalyser{}
 	bd.HibernationThreshold = 10
-	assert.NoError(t, bd.Initialize(test.Repository))
+	require.NoError(t, bd.Initialize(test.Repository))
 	assert.Equal(t, 10, bd.fileAllocator.HibernationThreshold)
 }
 
@@ -270,10 +270,10 @@ func TestLinesConsume(t *testing.T) {
 	deps[items.DependencyTreeChanges] = changes
 	fd = fixtures.FileDiff()
 	result, err = fd.Consume(deps)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	deps[items.DependencyFileDiff] = result[items.DependencyFileDiff]
 	result, err = bd.Consume(deps)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, core.TickNumber(30), bd.previousTick)
 
 	assert.Len(t, result, 1)
@@ -331,7 +331,7 @@ func TestLinesConsume(t *testing.T) {
 func bakeBurndownForSerialization(t *testing.T, firstAuthor, secondAuthor int) *LineHistoryAnalyser {
 	t.Helper()
 	bd := &LineHistoryAnalyser{}
-	assert.NoError(t, bd.Initialize(test.Repository))
+	require.NoError(t, bd.Initialize(test.Repository))
 	deps := map[string]any{}
 	// stage 1
 	deps[identity.DependencyAuthor] = firstAuthor
@@ -490,12 +490,12 @@ func TestLinesHibernateBootSerialize(t *testing.T) {
 	assert.Equal(t, 157, bd.fileAllocator.Size())
 	assert.Equal(t, 155, bd.fileAllocator.Used())
 	bd.HibernationToDisk = true
-	assert.NoError(t, bd.Hibernate())
+	require.NoError(t, bd.Hibernate())
 	assert.NotEmpty(t, bd.hibernatedFileName)
 	assert.PanicsWithValue(t, "LineHistoryAnalyser.Consume() was called on a hibernated instance",
 		func() { _, _ = bd.Consume(nil) })
 	assert.Equal(t, 0, bd.fileAllocator.Size())
-	assert.NoError(t, bd.Boot())
+	require.NoError(t, bd.Boot())
 	assert.Equal(t, 157, bd.fileAllocator.Size())
 	assert.Equal(t, 155, bd.fileAllocator.Used())
 	assert.Empty(t, bd.hibernatedFileName)

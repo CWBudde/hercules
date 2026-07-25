@@ -19,6 +19,15 @@ disable = [
 enable = ['gomodguard_v2', 'wsl_v5', "revive"]
 
 [linters.settings]
+[linters.settings.testpackage]
+# Unit tests deliberately exercise package-private implementation details.
+skip-regexp = '.*_test\.go$'
+
+[linters.settings.testifylint]
+# Tests intentionally use non-fatal error assertions when collecting multiple
+# independent failures in one run.
+disable = ['require-error']
+
 [linters.settings.cyclop]
 max-complexity = 10
 
@@ -92,6 +101,12 @@ text = 'avoid meaningless package names'
 # noise in tests (and wsl conflicts with gofumpt's blank-line handling).
 [[linters.exclusions.rules]]
 linters = ['wsl_v5', 'varnamelen', 'funlen', 'cyclop', 'gocognit', 'gocyclo', 'maintidx', 'dupl']
+path = '_test\.go'
+
+# Tests commonly depend on shared package-level state and fixture repositories,
+# so parallel execution is not a project-wide safe default.
+[[linters.exclusions.rules]]
+linters = ['paralleltest']
 path = '_test\.go'
 
 # These comments and expected strings are compact snapshots of the line-history

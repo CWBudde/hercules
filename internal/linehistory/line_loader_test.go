@@ -54,7 +54,7 @@ func TestLineHistoryLoaderConfigure(t *testing.T) {
 	}
 
 	err := loader.Configure(facts)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, logger, loader.l)
 
 	// Check that facts are populated
@@ -75,14 +75,14 @@ func TestLineHistoryLoaderConfigureWithoutLogger(t *testing.T) {
 	facts := map[string]any{}
 
 	err := loader.Configure(facts)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.NotNil(t, loader.l)
 }
 
 func TestLineHistoryLoaderConfigureUpstream(t *testing.T) {
 	loader := &LineHistoryLoader{}
 	err := loader.ConfigureUpstream(map[string]any{})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 }
 
 func TestLineHistoryLoaderInitialize(t *testing.T) {
@@ -91,7 +91,7 @@ func TestLineHistoryLoaderInitialize(t *testing.T) {
 	loader.nextCommit = 5
 
 	err := loader.Initialize(nil)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Empty(t, loader.files)
 	assert.Equal(t, 0, loader.nextCommit)
 	assert.NotNil(t, loader.l)
@@ -103,7 +103,7 @@ func TestLineHistoryLoaderConsumeEmpty(t *testing.T) {
 	loader.nextCommit = 0
 
 	result, err := loader.Consume(map[string]any{})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.NotNil(t, result)
 
 	// When no commits, should return AuthorMissing
@@ -140,7 +140,7 @@ func TestLineHistoryLoaderConsumeWithCommits(t *testing.T) {
 
 	// First consume
 	result, err := loader.Consume(map[string]any{})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, 1, loader.nextCommit)
 	assert.Equal(t, int(core.AuthorId(1)), result[identity.DependencyAuthor])
 	assert.Equal(t, 10, result[items.DependencyTick])
@@ -152,7 +152,7 @@ func TestLineHistoryLoaderConsumeWithCommits(t *testing.T) {
 
 	// Second consume
 	result, err = loader.Consume(map[string]any{})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, 2, loader.nextCommit)
 	assert.Equal(t, int(core.AuthorId(2)), result[identity.DependencyAuthor])
 	assert.Equal(t, 20, result[items.DependencyTick])
@@ -163,7 +163,7 @@ func TestLineHistoryLoaderConsumeWithCommits(t *testing.T) {
 
 	// Third consume (past end)
 	result, err = loader.Consume(map[string]any{})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, int(core.AuthorMissing), result[identity.DependencyAuthor])
 }
 

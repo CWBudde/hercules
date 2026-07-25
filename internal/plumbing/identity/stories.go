@@ -146,6 +146,7 @@ func (detector *StoryDetector) Configure(facts map[string]any) error {
 	}
 
 	detector.expandMergeDict = false
+
 	err := configureMergeTracks(detector, facts)
 	if err != nil {
 		return err

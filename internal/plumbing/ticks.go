@@ -138,9 +138,16 @@ func (ticks *TicksSinceStart) Initialize(repository *git.Repository) error {
 // This function returns the mapping with analysis results. The keys must be the same as
 // in Provides(). If there was an error, nil is returned.
 func (ticks *TicksSinceStart) Consume(deps map[string]any) (map[string]any, error) {
-	commit := deps[core.DependencyCommit].(*object.Commit)
+	commit, err := dependencyValue[*object.Commit](deps, core.DependencyCommit)
+	if err != nil {
+		return nil, err
+	}
 
-	index := deps[core.DependencyIndex].(int)
+	index, err := dependencyValue[int](deps, core.DependencyIndex)
+	if err != nil {
+		return nil, err
+	}
+
 	if index == 0 {
 		// first iteration - initialize the file objects from the tree
 		// our precision is 1 day

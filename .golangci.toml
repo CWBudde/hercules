@@ -117,6 +117,12 @@ path = '_test\.go'
 linters = ['paralleltest']
 path = '_test\.go'
 
+# Test fixtures intentionally assert the concrete values returned through the
+# pipeline's any-typed compatibility API; a mismatch already fails the test.
+[[linters.exclusions.rules]]
+linters = ['forcetypeassert']
+path = '_test\.go'
+
 # These comments and expected strings are compact snapshots of the line-history
 # tree. Keeping each snapshot on one line makes state transitions comparable.
 [[linters.exclusions.rules]]

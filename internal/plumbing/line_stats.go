@@ -88,9 +88,20 @@ func (lsc *LinesStatsCalculator) Initialize(repository *git.Repository) error {
 // in Provides(). If there was an error, nil is returned.
 func (lsc *LinesStatsCalculator) Consume(deps map[string]any) (map[string]any, error) {
 	result := map[object.ChangeEntry]LineStats{}
-	treeDiff := deps[DependencyTreeChanges].(object.Changes)
-	cache := deps[DependencyBlobCache].(map[plumbing.Hash]*CachedBlob)
-	fileDiffs := deps[DependencyFileDiff].(map[string]FileDiffData)
+	treeDiff, err := dependencyValue[object.Changes](deps, DependencyTreeChanges)
+	if err != nil {
+		return nil, err
+	}
+
+	cache, err := dependencyValue[map[plumbing.Hash]*CachedBlob](deps, DependencyBlobCache)
+	if err != nil {
+		return nil, err
+	}
+
+	fileDiffs, err := dependencyValue[map[string]FileDiffData](deps, DependencyFileDiff)
+	if err != nil {
+		return nil, err
+	}
 
 	for _, change := range treeDiff {
 		entry, stats, include, err := lineStatsForChange(change, cache, fileDiffs)

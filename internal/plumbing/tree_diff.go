@@ -138,7 +138,16 @@ func (treediff *TreeDiff) Configure(facts map[string]any) error {
 	}
 
 	if val, exists := facts[ConfigTreeDiffEnableBlacklist].(bool); exists && val {
-		treediff.SkipFiles = facts[ConfigTreeDiffBlacklistedPrefixes].([]string)
+		prefixes, ok := facts[ConfigTreeDiffBlacklistedPrefixes].([]string)
+		if !ok {
+			return fmt.Errorf(
+				"configuration %q has invalid type %T, expected []string",
+				ConfigTreeDiffBlacklistedPrefixes,
+				facts[ConfigTreeDiffBlacklistedPrefixes],
+			)
+		}
+
+		treediff.SkipFiles = prefixes
 	}
 
 	if val, exists := facts[ConfigTreeDiffLanguages].([]string); exists {
@@ -183,7 +192,11 @@ func (treediff *TreeDiff) Initialize(repository *git.Repository) error {
 // This function returns the mapping with analysis results. The keys must be the same as
 // in Provides(). If there was an error, nil is returned.
 func (treediff *TreeDiff) Consume(deps map[string]any) (map[string]any, error) {
-	commit := deps[core.DependencyCommit].(*object.Commit)
+	commit, err := dependencyValue[*object.Commit](deps, core.DependencyCommit)
+	if err != nil {
+		return nil, err
+	}
+
 	if !commitContinuesFrom(commit, treediff.previousCommit) {
 		err := fmt.Errorf(
 			"%w: %s > %s",

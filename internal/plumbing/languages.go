@@ -77,8 +77,16 @@ func (langs *LanguagesDetection) Initialize(repository *git.Repository) error {
 // This function returns the mapping with analysis results. The keys must be the same as
 // in Provides(). If there was an error, nil is returned.
 func (langs *LanguagesDetection) Consume(deps map[string]any) (map[string]any, error) {
-	changes := deps[DependencyTreeChanges].(object.Changes)
-	cache := deps[DependencyBlobCache].(map[plumbing.Hash]*CachedBlob)
+	changes, err := dependencyValue[object.Changes](deps, DependencyTreeChanges)
+	if err != nil {
+		return nil, err
+	}
+
+	cache, err := dependencyValue[map[plumbing.Hash]*CachedBlob](deps, DependencyBlobCache)
+	if err != nil {
+		return nil, err
+	}
+
 	result := map[plumbing.Hash]string{}
 
 	for _, change := range changes {

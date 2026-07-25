@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/cwbudde/hercules/internal/rbtree"
 )
@@ -38,7 +39,9 @@ func testPanicFile(t *testing.T, method func(*File), msg string) {
 		r := recover()
 		assert.NotNil(t, r, "not panic()-ed")
 		assert.IsType(t, "", r)
-		assert.Contains(t, r.(string), msg)
+		panicMessage, ok := r.(string)
+		require.True(t, ok)
+		assert.Contains(t, panicMessage, msg)
 	}()
 	file, _, _ := fixtureFile()
 	method(file)

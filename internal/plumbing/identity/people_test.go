@@ -168,14 +168,18 @@ func TestPeopleDetectorConsumeExact(t *testing.T) {
 	}
 	res, err := id.Consume(deps)
 	assert.NoError(t, err)
-	assert.Equal(t, 1, res[DependencyAuthor].(int))
+	author, ok := res[DependencyAuthor].(int)
+	require.True(t, ok)
+	assert.Equal(t, 1, author)
 	commit, _ = test.Repository.CommitObject(plumbing.NewHash(
 		"8a03b5620b1caa72ec9cb847ea88332621e2950a",
 	))
 	deps[core.DependencyCommit] = commit
 	res, err = id.Consume(deps)
 	assert.NoError(t, err)
-	assert.Equal(t, core.AuthorMissing, res[DependencyAuthor].(int))
+	author, ok = res[DependencyAuthor].(int)
+	require.True(t, ok)
+	assert.Equal(t, core.AuthorMissing, author)
 }
 
 func TestPeopleDetectorLoadPeopleDict(t *testing.T) {
@@ -538,7 +542,8 @@ func TestPeopleDetectorFork(t *testing.T) {
 	id1 := fixturePeopleDetector()
 	clones := id1.Fork(1)
 	assert.Len(t, clones, 1)
-	id2 := clones[0].(*PeopleDetector)
+	id2, ok := clones[0].(*PeopleDetector)
+	require.True(t, ok)
 	assert.Same(t, id1, id2)
 	id1.Merge([]core.PipelineItem{id2})
 }

@@ -176,7 +176,8 @@ func TestLinesConsume(t *testing.T) {
 	assert.Equal(t, core.TickNumber(0), bd.previousTick)
 
 	assert.Len(t, result, 1)
-	resultChanges := result[DependencyLineHistory].(core.LineHistoryChanges)
+	resultChanges, ok := result[DependencyLineHistory].(core.LineHistoryChanges)
+	require.True(t, ok)
 	{
 		resolver := resultChanges.Resolver
 		assert.Empty(t, resolver.NameOf(0))
@@ -277,7 +278,8 @@ func TestLinesConsume(t *testing.T) {
 	assert.Equal(t, core.TickNumber(30), bd.previousTick)
 
 	assert.Len(t, result, 1)
-	resultChanges = result[DependencyLineHistory].(core.LineHistoryChanges)
+	resultChanges, ok = result[DependencyLineHistory].(core.LineHistoryChanges)
+	require.True(t, ok)
 
 	{
 		assert.Len(t, bd.files, 2)

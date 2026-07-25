@@ -40,6 +40,8 @@ const refineRangePadding = 4
 // not worth introducing any potential heuristic drift.
 const refineRangeMinLines = 1000
 
+var errInvalidFileDiffDependency = errors.New("invalid file diff dependency")
+
 // Refine modes for ConfigFileDiffRefineMode.
 const (
 	// RefineModeAuto picks between full-file and range-limited parsing using
@@ -286,9 +288,17 @@ func stripWhitespace(str string, ignoreWhitespace bool) string {
 // in Provides(). If there was an error, nil is returned.
 func (diff *FileDiff) Consume(deps map[string]any) (map[string]any, error) {
 	result := map[string]FileDiffData{}
-	cache := deps[DependencyBlobCache].(map[plumbing.Hash]*CachedBlob)
 
-	treeDiff := deps[DependencyTreeChanges].(object.Changes)
+	cache, ok := deps[DependencyBlobCache].(map[plumbing.Hash]*CachedBlob)
+	if !ok {
+		return nil, fmt.Errorf("%w: %s", errInvalidFileDiffDependency, DependencyBlobCache)
+	}
+
+	treeDiff, ok := deps[DependencyTreeChanges].(object.Changes)
+	if !ok {
+		return nil, fmt.Errorf("%w: %s", errInvalidFileDiffDependency, DependencyTreeChanges)
+	}
+
 	for _, change := range treeDiff {
 		action, err := change.Action()
 		if err != nil {

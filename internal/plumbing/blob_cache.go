@@ -20,7 +20,10 @@ import (
 // ErrBinary is raised in CachedBlob.CountLines() if the file is binary.
 var ErrBinary = errors.New("binary")
 
-var errIncompleteBlobRead = errors.New("incomplete blob read")
+var (
+	errIncompleteBlobRead         = errors.New("incomplete blob read")
+	errInvalidBlobCacheDependency = errors.New("invalid blob cache dependency")
+)
 
 // CachedBlob allows to explicitly cache the binary data associated with the Blob object.
 type CachedBlob struct {
@@ -182,8 +185,16 @@ func (blobCache *BlobCache) Initialize(repository *git.Repository) error {
 // results. The keys must be the same as in Provides(). If there was an error,
 // nil is returned.
 func (blobCache *BlobCache) Consume(deps map[string]any) (map[string]any, error) {
-	commit := deps[core.DependencyCommit].(*object.Commit)
-	changes := deps[DependencyTreeChanges].(object.Changes)
+	commit, ok := deps[core.DependencyCommit].(*object.Commit)
+	if !ok {
+		return nil, fmt.Errorf("%w: %s", errInvalidBlobCacheDependency, core.DependencyCommit)
+	}
+
+	changes, ok := deps[DependencyTreeChanges].(object.Changes)
+	if !ok {
+		return nil, fmt.Errorf("%w: %s", errInvalidBlobCacheDependency, DependencyTreeChanges)
+	}
+
 	cache := map[plumbing.Hash]*CachedBlob{}
 	newCache := map[plumbing.Hash]*CachedBlob{}
 

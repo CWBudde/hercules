@@ -110,7 +110,8 @@ func TestLineHistoryLoaderConsumeEmpty(t *testing.T) {
 	assert.Equal(t, int(core.AuthorMissing), result[identity.DependencyAuthor])
 	assert.Equal(t, 0, result[items.DependencyTick])
 
-	changes := result[DependencyLineHistory].(core.LineHistoryChanges)
+	changes, ok := result[DependencyLineHistory].(core.LineHistoryChanges)
+	require.True(t, ok)
 	assert.Empty(t, changes.Changes)
 	assert.NotNil(t, changes.Resolver)
 }
@@ -145,7 +146,8 @@ func TestLineHistoryLoaderConsumeWithCommits(t *testing.T) {
 	assert.Equal(t, int(core.AuthorId(1)), result[identity.DependencyAuthor])
 	assert.Equal(t, 10, result[items.DependencyTick])
 
-	changes := result[DependencyLineHistory].(core.LineHistoryChanges)
+	changes, ok := result[DependencyLineHistory].(core.LineHistoryChanges)
+	require.True(t, ok)
 	assert.Len(t, changes.Changes, 2)
 	assert.Equal(t, core.FileId(1), changes.Changes[0].FileId)
 	assert.Equal(t, 100, changes.Changes[0].Delta)
@@ -157,7 +159,8 @@ func TestLineHistoryLoaderConsumeWithCommits(t *testing.T) {
 	assert.Equal(t, int(core.AuthorId(2)), result[identity.DependencyAuthor])
 	assert.Equal(t, 20, result[items.DependencyTick])
 
-	changes = result[DependencyLineHistory].(core.LineHistoryChanges)
+	changes, ok = result[DependencyLineHistory].(core.LineHistoryChanges)
+	require.True(t, ok)
 	assert.Len(t, changes.Changes, 1)
 	assert.Equal(t, -10, changes.Changes[0].Delta)
 

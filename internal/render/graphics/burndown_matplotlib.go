@@ -601,7 +601,7 @@ func pythonPlotPixelSize(defaultWidth, defaultHeight float64) (int, int) {
 		if err == nil {
 			width, height = parsedWidth, parsedHeight
 		} else {
-			fmt.Printf("Warning: %v, using default size\n", err)
+			fmt.Fprintf(os.Stderr, "Warning: %v, using default size\n", err)
 		}
 	}
 	return InchesToPixels(width), InchesToPixels(height)

@@ -1,6 +1,7 @@
 package modes
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -120,6 +121,7 @@ func GenerateBurndownFilePython(reader readers.Reader, output string, relative b
 	}
 
 	// Process each file
+	var failures []error
 	for i, file := range files {
 		if !quiet {
 			fmt.Printf("Processing file %d/%d: %s\n", i+1, len(files), file.Filename)
@@ -131,9 +133,7 @@ func GenerateBurndownFilePython(reader readers.Reader, output string, relative b
 
 		processedData, err := burndown.LoadBurndown(header, file.Filename, file.Matrix, resample, false, false)
 		if err != nil {
-			if !quiet {
-				fmt.Printf("Warning: failed to process %s: %v\n", file.Filename, err)
-			}
+			failures = append(failures, fmt.Errorf("process %s: %w", file.Filename, err))
 			continue
 		}
 
@@ -150,9 +150,7 @@ func GenerateBurndownFilePython(reader readers.Reader, output string, relative b
 		}
 
 		if err := graphics.PlotBurndownMatplotlib(processedData, fileOutput, relative); err != nil {
-			if !quiet {
-				fmt.Printf("Warning: failed to create plot for %s: %v\n", file.Filename, err)
-			}
+			failures = append(failures, fmt.Errorf("create plot for %s: %w", file.Filename, err))
 			continue
 		}
 
@@ -161,7 +159,7 @@ func GenerateBurndownFilePython(reader readers.Reader, output string, relative b
 		}
 	}
 
-	return nil
+	return errors.Join(failures...)
 }
 
 // GenerateBurndownRepositoryPython creates Python-compatible repository-level burndown charts.
@@ -178,7 +176,7 @@ func GenerateBurndownRepositoryPython(reader readers.Reader, output string, rela
 		return fmt.Errorf("failed to get repositories burndown data: %w", err)
 	}
 	if len(repositories) == 0 {
-		return fmt.Errorf("no repository burndown data found")
+		return fmt.Errorf("%w: repository burndown", readers.ErrAnalysisMissing)
 	}
 
 	header, _, _, err := reader.GetProjectBurndownWithHeader()
@@ -190,13 +188,14 @@ func GenerateBurndownRepositoryPython(reader readers.Reader, output string, rela
 		output = "."
 	}
 	if err := os.MkdirAll(output, 0o750); err != nil {
-		return fmt.Errorf("failed to create output directory %s: %v", output, err)
+		return fmt.Errorf("failed to create output directory %s: %w", output, err)
 	}
 	if resample == "" {
 		resample = "year"
 	}
 
 	quiet := viper.GetBool("quiet")
+	var failures []error
 	for i, repository := range repositories {
 		if !quiet {
 			fmt.Printf("Processing repository %d/%d: %s\n", i+1, len(repositories), repository.Repository)
@@ -204,25 +203,19 @@ func GenerateBurndownRepositoryPython(reader readers.Reader, output string, rela
 
 		processedData, err := burndown.LoadBurndown(header, repository.Repository, repository.Matrix, resample, false, false)
 		if err != nil {
-			if !quiet {
-				fmt.Printf("Warning: failed to process repository %s: %v\n", repository.Repository, err)
-			}
+			failures = append(failures, fmt.Errorf("process repository %s: %w", repository.Repository, err))
 			continue
 		}
 
 		repoBase := filepath.Join(output, fmt.Sprintf("burndown-repository_%s", sanitizeFilename(repository.Repository)))
 		repoPNG := repoBase + ".png"
 		if err := graphics.PlotBurndownMatplotlib(processedData, repoPNG, relative); err != nil {
-			if !quiet {
-				fmt.Printf("Warning: failed to create plot for repository %s: %v\n", repository.Repository, err)
-			}
+			failures = append(failures, fmt.Errorf("create plot for repository %s: %w", repository.Repository, err))
 			continue
 		}
 		repoSVG := repoBase + ".svg"
 		if err := graphics.PlotBurndownMatplotlib(processedData, repoSVG, relative); err != nil {
-			if !quiet {
-				fmt.Printf("Warning: failed to create SVG plot for repository %s: %v\n", repository.Repository, err)
-			}
+			failures = append(failures, fmt.Errorf("create SVG plot for repository %s: %w", repository.Repository, err))
 			continue
 		}
 		if !quiet {
@@ -230,7 +223,7 @@ func GenerateBurndownRepositoryPython(reader readers.Reader, output string, rela
 		}
 	}
 
-	return nil
+	return errors.Join(failures...)
 }
 
 // GenerateBurndownReposCombinedPython creates one burndown chart from all repository matrices combined.

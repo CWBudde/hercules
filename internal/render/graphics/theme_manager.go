@@ -69,7 +69,7 @@ func (tm *ThemeManager) LoadThemesFromDirectory(dirPath string) error {
 		fullPath := filepath.Join(dirPath, fileName)
 		if err := tm.LoadThemeFromFile(fullPath); err != nil {
 			// Log warning but continue loading other themes
-			fmt.Printf("Warning: failed to load theme from %s: %v\n", fullPath, err)
+			fmt.Fprintf(os.Stderr, "Warning: failed to load theme from %s: %v\n", fullPath, err)
 		}
 	}
 
@@ -192,7 +192,7 @@ func LoadUserThemes() error {
 	// Try to load from current directory themes/
 	if _, err := os.Stat("themes"); err == nil {
 		if err := GlobalThemeManager.LoadThemesFromDirectory("themes"); err != nil {
-			fmt.Printf("Warning: failed to load themes from ./themes: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Warning: failed to load themes from ./themes: %v\n", err)
 		}
 	}
 
@@ -202,7 +202,7 @@ func LoadUserThemes() error {
 		themeDir := filepath.Join(homeDir, ".labours-go", "themes")
 		if _, err := os.Stat(themeDir); err == nil {
 			if err := GlobalThemeManager.LoadThemesFromDirectory(themeDir); err != nil {
-				fmt.Printf("Warning: failed to load themes from %s: %v\n", themeDir, err)
+				fmt.Fprintf(os.Stderr, "Warning: failed to load themes from %s: %v\n", themeDir, err)
 			}
 		}
 	}

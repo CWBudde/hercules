@@ -52,7 +52,7 @@ func processOverwritesMatrix(people []string, matrix [][]int, maxPeople int, nor
 		order := argsort(matrix)
 		matrix = truncateOverwritesMatrix(matrix, order[:maxPeople])
 		people = truncatePeople(people, order[:maxPeople])
-		fmt.Printf("Warning: truncated people to most productive %d\n", maxPeople)
+		fmt.Fprintf(os.Stderr, "Warning: truncated people to most productive %d\n", maxPeople)
 	}
 
 	var normalizedMatrix [][]float64

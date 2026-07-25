@@ -556,7 +556,7 @@ func ownershipPlotPixelSize(defaultWidth, defaultHeight float64) (int, int) {
 		if parsedWidth, parsedHeight, err := parseOwnershipPlotSize(sizeStr); err == nil {
 			width, height = parsedWidth, parsedHeight
 		} else {
-			fmt.Printf("Warning: %v, using default size\n", err)
+			fmt.Fprintf(os.Stderr, "Warning: %v, using default size\n", err)
 		}
 	}
 	return graphics.InchesToPixels(width), graphics.InchesToPixels(height)

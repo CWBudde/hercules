@@ -54,23 +54,35 @@ func Sentiment(reader readers.Reader, output string, allowHeuristicFallback bool
 
 	if len(sentimentResults) == 0 {
 		fmt.Println("Collected sentiment data is missing; using heuristic fallback because --sentiment-fallback is enabled.")
+		var fallbackFailures []error
 		devResults, err := analyzeDeveloperSentiment(reader)
 		if err != nil {
-			fmt.Printf("Warning: Could not analyze developer sentiment: %v\n", err)
+			if errors.Is(err, readers.ErrAnalysisMissing) {
+				fmt.Fprintf(os.Stderr, "Warning: Could not analyze developer sentiment: %v\n", err)
+			} else {
+				fallbackFailures = append(fallbackFailures, err)
+			}
 		} else {
 			sentimentResults = append(sentimentResults, devResults...)
 		}
 
 		langResults, err := analyzeLanguageSentiment(reader)
 		if err != nil {
-			fmt.Printf("Warning: Could not analyze language sentiment: %v\n", err)
+			if errors.Is(err, readers.ErrAnalysisMissing) {
+				fmt.Fprintf(os.Stderr, "Warning: Could not analyze language sentiment: %v\n", err)
+			} else {
+				fallbackFailures = append(fallbackFailures, err)
+			}
 		} else {
 			sentimentResults = append(sentimentResults, langResults...)
+		}
+		if err := errors.Join(fallbackFailures...); err != nil {
+			return fmt.Errorf("sentiment fallback failed: %w", err)
 		}
 	}
 
 	if len(sentimentResults) == 0 {
-		return fmt.Errorf("no sentiment data available - ensure the input contains developer stats or language stats")
+		return fmt.Errorf("%w: sentiment fallback inputs", readers.ErrAnalysisMissing)
 	}
 
 	if len(collectedTicks) > 0 {
@@ -242,8 +254,11 @@ func sentimentColor(r, g, b uint8) color.Color {
 // analyzeDeveloperSentiment analyzes sentiment based on developer activity patterns
 func analyzeDeveloperSentiment(reader readers.Reader) ([]SentimentResult, error) {
 	devStats, err := reader.GetDeveloperStats()
-	if err != nil || len(devStats) == 0 {
-		return nil, fmt.Errorf("no developer statistics available")
+	if err != nil {
+		return nil, fmt.Errorf("get developer statistics: %w", err)
+	}
+	if len(devStats) == 0 {
+		return nil, fmt.Errorf("%w: developer statistics", readers.ErrAnalysisMissing)
 	}
 
 	var results []SentimentResult
@@ -314,8 +329,11 @@ func analyzeDeveloperSentiment(reader readers.Reader) ([]SentimentResult, error)
 // analyzeLanguageSentiment analyzes sentiment based on language usage patterns
 func analyzeLanguageSentiment(reader readers.Reader) ([]SentimentResult, error) {
 	langStats, err := reader.GetLanguageStats()
-	if err != nil || len(langStats) == 0 {
-		return nil, fmt.Errorf("no language statistics available")
+	if err != nil {
+		return nil, fmt.Errorf("get language statistics: %w", err)
+	}
+	if len(langStats) == 0 {
+		return nil, fmt.Errorf("%w: language statistics", readers.ErrAnalysisMissing)
 	}
 
 	var results []SentimentResult
@@ -326,7 +344,7 @@ func analyzeLanguageSentiment(reader readers.Reader) ([]SentimentResult, error) 
 		totalLines += lang.Lines
 	}
 	if totalLines <= 0 {
-		return nil, fmt.Errorf("no non-zero language statistics available")
+		return nil, fmt.Errorf("%w: non-zero language statistics", readers.ErrAnalysisMissing)
 	}
 
 	// Language sentiment heuristics based on common perceptions and usage patterns

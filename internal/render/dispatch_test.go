@@ -290,6 +290,9 @@ func TestRunWithResultsClassifiesOutcomes(t *testing.T) {
 			if (modeResult.Warning != "") != tt.wantWarning {
 				t.Fatalf("result.Warning = %q, wantWarning %v", modeResult.Warning, tt.wantWarning)
 			}
+			if (aggregate.Err() != nil) != tt.wantErr {
+				t.Fatalf("aggregate.Err() = %v, wantErr %v", aggregate.Err(), tt.wantErr)
+			}
 		})
 	}
 }

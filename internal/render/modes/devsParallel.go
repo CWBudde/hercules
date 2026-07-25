@@ -226,7 +226,7 @@ func filterPeopleBurndownByActivity(peopleBurndown []readers.PeopleBurndown, max
 		}
 		return left > right
 	})
-	fmt.Printf("Warning: truncated people to the most active %d\n", maxPeople)
+	fmt.Fprintf(os.Stderr, "Warning: truncated people to the most active %d\n", maxPeople)
 	return filtered[:maxPeople]
 }
 
@@ -249,7 +249,7 @@ func topNamesByValue(values map[string]int, maxPeople int) []string {
 	}
 	sortNamesByValue(names, values)
 	if maxPeople > 0 && len(names) > maxPeople {
-		fmt.Printf("Warning: truncated people to the most active %d\n", maxPeople)
+		fmt.Fprintf(os.Stderr, "Warning: truncated people to the most active %d\n", maxPeople)
 		names = names[:maxPeople]
 	}
 	return names
@@ -635,7 +635,7 @@ func plotParallelActivity(metrics ParallelismMetrics, output string) error {
 		ShowGrid: true,
 		Legend:   true,
 	}); err != nil {
-		return fmt.Errorf("failed to save parallel activity plot: %v", err)
+		return fmt.Errorf("failed to save parallel activity plot: %w", err)
 	}
 
 	fmt.Printf("Saved parallel activity plot to %s\n", output)
@@ -649,12 +649,11 @@ func generateSyntheticParallelAnalysis(reader readers.Reader, output string, det
 	// Try to get basic developer stats for fallback
 	developerStats, err := reader.GetDeveloperStats()
 	if err != nil {
-		fmt.Printf("Warning: could not get developer stats: %v\n", err)
-		return fmt.Errorf("no data available for parallel analysis")
+		return fmt.Errorf("get developer stats for parallel fallback: %w", err)
 	}
 
 	if len(developerStats) == 0 {
-		return fmt.Errorf("no developer data available")
+		return fmt.Errorf("%w: developer stats", readers.ErrAnalysisMissing)
 	}
 
 	// Create synthetic parallel activity data

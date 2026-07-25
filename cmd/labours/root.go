@@ -14,10 +14,12 @@ import (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "labours",
-	Short: "Labours CLI for analyzing git repository data",
-	Long:  "Labours CLI for analyzing git repository data, visualizing trends, and generating reports.",
-	RunE:  runLaboursCommand,
+	Use:           "labours",
+	Short:         "Labours CLI for analyzing git repository data",
+	Long:          "Labours CLI for analyzing git repository data, visualizing trends, and generating reports.",
+	SilenceErrors: true,
+	SilenceUsage:  true,
+	RunE:          runLaboursCommand,
 }
 
 func Execute() error {

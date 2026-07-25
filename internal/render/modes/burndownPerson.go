@@ -1,7 +1,9 @@
 package modes
 
 import (
+	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -21,8 +23,11 @@ func BurndownPerson(reader readers.Reader, output string, relative bool, startDa
 
 	header, _, _, headerErr := reader.GetProjectBurndownWithHeader()
 	usePythonRenderer := headerErr == nil
+	if headerErr != nil && !errors.Is(headerErr, readers.ErrAnalysisMissing) {
+		return fmt.Errorf("get burndown header: %w", headerErr)
+	}
 	if !usePythonRenderer && !viper.GetBool("quiet") {
-		fmt.Printf("Warning: falling back to legacy person burndown renderer: %v\n", headerErr)
+		fmt.Fprintf(os.Stderr, "Warning: falling back to legacy person burndown renderer: %v\n", headerErr)
 	}
 	if resample == "" {
 		resample = "year"
@@ -45,13 +50,13 @@ func BurndownPerson(reader readers.Reader, output string, relative bool, startDa
 		if usePythonRenderer {
 			processedData, err := burndown.LoadBurndown(header, person.Person, person.Matrix, resample, false, false)
 			if err != nil {
-				return fmt.Errorf("failed to process burndown for person %s: %v", person.Person, err)
+				return fmt.Errorf("failed to process burndown for person %s: %w", person.Person, err)
 			}
 			if err := graphics.PlotBurndownMatplotlib(processedData, outputFile, relative); err != nil {
-				return fmt.Errorf("failed to generate burndown for person %s: %v", person.Person, err)
+				return fmt.Errorf("failed to generate burndown for person %s: %w", person.Person, err)
 			}
 		} else if err := generateBurndownPlot(person.Person, person.Matrix, outputFile, relative, startDate, endDate, resample); err != nil {
-			return fmt.Errorf("failed to generate burndown for person %s: %v", person.Person, err)
+			return fmt.Errorf("failed to generate burndown for person %s: %w", person.Person, err)
 		}
 	}
 

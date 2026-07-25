@@ -208,6 +208,10 @@ Acceptance criteria:
 
 ### REL-01: Make hard CLI failures return nonzero
 
+Status: completed 2026-07-25
+
+Verification report: [`docs/audits/2026-07-25-rel-01.md`](docs/audits/2026-07-25-rel-01.md)
+
 Affected code:
 
 - `internal/render/render.go`
@@ -243,9 +247,9 @@ Tests:
 
 Acceptance criteria:
 
-- [ ] hard failures never exit zero;
-- [ ] optional missing analysis remains a warning;
-- [ ] automation can distinguish success, warning-only success, and failure without parsing text.
+- [x] hard failures never exit zero;
+- [x] optional missing analysis remains a warning;
+- [x] automation can distinguish success, warning-only success, and failure without parsing text.
 
 ## Phase 2 — Restore metric correctness
 

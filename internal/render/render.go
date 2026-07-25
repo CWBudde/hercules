@@ -110,8 +110,8 @@ func RunWithResults(reader readers.Reader, modeNames []string, opts Options) []M
 // SetRenderDefaults installs viper defaults for every setting the render
 // modes read from viper globals, mirroring the flag defaults established by
 // the labours CLI (cmd/labours/root.go). Callers that embed the renderer in
-// another CLI (e.g. `hercules report`) should call this once before Run or
-// Run. viper.SetDefault has the lowest precedence, so values
+// another CLI (e.g. `hercules report`) should call this once before Run.
+// viper.SetDefault has the lowest precedence, so values
 // already set or bound to flags are never overridden.
 func SetRenderDefaults() {
 	viper.SetDefault("relative", false)

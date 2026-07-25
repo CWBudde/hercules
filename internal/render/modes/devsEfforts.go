@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image/color"
 	"math"
+	"os"
 	"sort"
 	"time"
 
@@ -273,7 +274,7 @@ func buildDevEffortsMatrix(ts *readers.DeveloperTimeSeriesData, startUnix, endUn
 	if maxPeople > 0 && chosenCount > maxPeople {
 		chosenCount = maxPeople
 		if !quiet {
-			fmt.Printf("Warning: truncated people to the most active %d\n", maxPeople)
+			fmt.Fprintf(os.Stderr, "Warning: truncated people to the most active %d\n", maxPeople)
 		}
 	}
 	chosen := ranked[:chosenCount]

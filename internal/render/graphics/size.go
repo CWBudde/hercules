@@ -2,6 +2,7 @@ package graphics
 
 import (
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 
@@ -38,7 +39,7 @@ func GetPlotSizeInches(chartType ChartType) (width, height float64) {
 
 	width, height, err := parsePlotSizeFloats(sizeStr)
 	if err != nil {
-		fmt.Printf("Warning: %v, using default size\n", err)
+		fmt.Fprintf(os.Stderr, "Warning: %v, using default size\n", err)
 		defaultSize := defaultSizes[chartType]
 		return defaultSize[0], defaultSize[1]
 	}

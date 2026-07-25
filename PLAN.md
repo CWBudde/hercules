@@ -443,6 +443,61 @@ Acceptance criteria:
 - stateful analyses exactly match the filtered repository view after cross-boundary renames;
 - vendor, blacklist, and language filters share the same transition rules.
 
+### METRIC-09: Finish and validate Code Churn semantics
+
+Affected code:
+
+- `leaves/codechurn.go`
+- `leaves/codechurn_test.go`
+- `docs/SCHEMAS.md`
+
+Work:
+
+- Replace the copied line-burndown description with an accurate description of Code Churn,
+  awareness, memorability, and delete-history output.
+- Specify the awareness and memorability equations, their units, bounds, decay interval, and
+  intended treatment of self-deletions versus deletions by other authors.
+- Either define and implement the currently constant reinforcement factor or remove it and the
+  speculative formula comments. Do not leave a tunable-looking constant whose value is always
+  `1.0`.
+- Add hand-calculated, multi-tick fixtures for reinforcement, decay, insertions, self-deletions,
+  other-author deletions, and a serialization round trip.
+- Keep the analysis explicitly experimental until those fixtures establish stable semantics.
+
+Acceptance criteria:
+
+- `--help` and schema documentation describe the metric actually emitted;
+- every factor in the awareness/memorability calculation has a documented meaning and a test;
+- the implementation contains no placeholder formula or unexplained neutral factor.
+
+### METRIC-10: Find and eliminate negative burndown balances
+
+Affected code:
+
+- `internal/yaml/utils.go`
+- `internal/burndown/`
+- `leaves/burndown.go`
+- `leaves/burndown_legacy.go`
+- burndown merge, rename, deletion, and serialization tests
+
+Work:
+
+- Instrument the matrix update and merge paths so the first transition that creates a negative
+  balance reports the file, tick, age band, and operation.
+- Reproduce the issue with focused fixtures covering merges, rename chains, deletions, filter
+  boundaries, and text/binary transitions.
+- Fix the producing state transition rather than treating the YAML serializer's `fixNegative`
+  clamp as the correction.
+- Retain the clamp only as an explicitly documented compatibility safeguard, or replace it with a
+  typed serialization error after proving normal histories cannot reach it.
+- Assert non-negative global, file, person, and repository matrices before serialization.
+
+Acceptance criteria:
+
+- valid histories never depend on output-time clamping;
+- a regression fixture demonstrates the original negative balance and the corrected transition;
+- invalid internal histories fail with a useful diagnostic instead of silently changing data.
+
 ## Phase 3 — Make the core deterministic and lifecycle-safe
 
 Priority: P1
@@ -464,6 +519,8 @@ Work:
 - Make `AddEdge` and `RemoveEdge` update counts only when the edge set changes.
 - Require both endpoints to exist or return an explicit error.
 - Test final pipeline plans, not only intermediate graph positions.
+- Remove the duplicate ordering TODO at the `Pipeline.resolveAmbiguous` call site once the graph
+  contract is implemented.
 
 Acceptance criteria:
 
@@ -589,12 +646,50 @@ Work:
 - Check `scanner.Err()` after commit-list parsing.
 - Reset `CommitsAnalysis` state during repeated initialization.
 - Sort file statistics before appending or serializing commit results.
+- Remove the stale RB-tree insertion TODO: `doInsert` already delays allocation until it finds an
+  empty insertion slot. Add an allocator-count regression test if the existing tests do not prove
+  that duplicate inserts allocate nothing.
 
 Acceptance criteria:
 
 - truncated or oversized allocator data returns an error;
 - numerical boundary behavior is explicit;
 - repeated analysis initialization and serialization are deterministic.
+
+### CORE-07: Define line-history behavior for binary transitions and branch deletions
+
+Affected code:
+
+- `internal/linehistory/line_history.go`
+- `internal/linehistory/line_history_test.go`
+- `leaves/burndown_legacy.go`
+- line-history consumers that interpret insertion and deletion events
+
+Work:
+
+- Define whether a tracked path keeps its file identity and history across
+  text→binary→text transitions.
+- Replace the current text→binary shortcut through ordinary file deletion with transition-specific
+  behavior that preserves the chosen identity and event semantics.
+- Ensure binary→text reconstruction neither loses prior ownership unexpectedly nor double-counts
+  the file as both deleted and newly inserted.
+- Correct merge handling when one branch deletes a file while another independently edits it.
+- Make legacy-burndown rename-chain cleanup delete map entries rather than leaving empty-string
+  tombstones, and prove that an empty path cannot enter rename traversal.
+
+Tests:
+
+- text→binary, binary→text, and text→binary→text;
+- each transition combined with a rename;
+- deletion on one branch and modification on another before merge;
+- rename cycles and deletion after a rename chain;
+- emitted file IDs, ownership deltas, and downstream burndown/churn totals.
+
+Acceptance criteria:
+
+- transition and merge behavior is documented and identical across line-history consumers;
+- no valid sequence loses a live branch's state or creates a synthetic empty filename;
+- file IDs and line totals satisfy the documented invariants after every transition.
 
 ## Phase 4 — Harden readers, formats, and report generation
 
@@ -749,6 +844,34 @@ Acceptance criteria:
 - committed repository text cannot panic configuration or identity detection;
 - truncated input is never accepted as a complete identity map;
 - identical input produces identical identity IDs.
+
+### DATA-07: Complete burndown survival-analysis parity
+
+Affected code:
+
+- `internal/render/burndown/python_compatible.go`
+- `internal/render/graphics/burndown_matplotlib.go`
+- `internal/render/modes/burndown.go`
+- `internal/render/modes/burndown_python.go`
+- renderer parity fixtures
+
+Work:
+
+- Replace the ignored `reportSurvival` branch and placeholder printer with one tested
+  Kaplan–Meier implementation matching the historical Python renderer.
+- Route native and Python-compatible burndown modes through the same survival calculation; remove
+  the current ad-hoc column-ratio implementations if they are not mathematically equivalent.
+- Define censoring, zero-line, empty-matrix, sampling, and granularity behavior.
+- Make survival rows deterministic and send diagnostics to the appropriate output stream.
+- Replace the basic duration truncation in `FloorDateTime` if calendar/tick boundary parity tests
+  show it differs from the Python behavior.
+
+Acceptance criteria:
+
+- golden fixtures match the historical Python survival output for raw and resampled matrices;
+- toggling `reportSurvival` has observable, tested behavior;
+- survival output order is stable across repeated runs;
+- no placeholder survival path remains.
 
 ## Phase 5 — Bound resource use and improve large-repository scaling
 
@@ -1048,6 +1171,32 @@ Acceptance criteria:
 - `--help` states that `burndown-person` writes one file per developer;
 - a per-person figure's legend lists only bands with data.
 
+## TODO-marker audit
+
+Audit date: 2026-07-25  
+Scope: tracked source, tests, templates, and documentation; generated protobuf and vendored LZ4
+sources were classified separately.
+
+| Marker or related unfinished behavior | Disposition |
+| --- | --- |
+| Graph ordering in `internal/toposort/toposort.go` and `internal/core/pipeline.go` | One issue; covered by `CORE-01`. |
+| Negative-value clamping in `internal/yaml/utils.go` | The clamp hides the symptom; root-cause work is `METRIC-10`. |
+| Text/binary conversion in `internal/linehistory/line_history.go` | Correct transition semantics and downstream invariants are covered by `CORE-07` and `METRIC-10`. |
+| Code Churn description and constant reinforcement factor in `leaves/codechurn.go` | Both are parts of the unfinished metric contract in `METRIC-09`. |
+| Empty-string rename tombstones in `leaves/burndown_legacy.go` | Covered by `CORE-07`; test rename chains and cycles before changing the map behavior. |
+| Ignored survival flag and placeholder Kaplan–Meier output in the renderer | One parity gap; covered by `DATA-07`. |
+| RB-tree “delay creating” comment in `internal/rbtree/rbtree.go` | Behavior is already implemented by `doInsert`; remove the stale marker and prove duplicate inserts do not allocate under `CORE-06`. |
+| Plugin-template description text | Intentional generated-code customization point, not Hercules backlog. Keep it unless `DATA-05` replaces it with a generator parameter. |
+| `LineHistory` loader's `not implemented` panic | Related unfinished work already covered by `CORE-04`. |
+| Packed tick/author “hack” comments | The capacity and host-process failure risk is covered by `CORE-05`. |
+| Parallel branch deletion comments in line history and legacy burndown | Folded into the merge cases in `CORE-07`. |
+| Basic `FloorDateTime` implementation | Include in the historical-renderer comparison under `DATA-07`. |
+| `XXX_*` protobuf members and LZ4 `DEBUGLOG` macros | Generated/vendored API names, not task markers; do not edit them by hand. |
+
+When the referenced work item is completed, remove its TODO/placeholder wording in the same change.
+Do not close a marker merely by deleting the comment: the acceptance criteria above are the closure
+conditions.
+
 ## Recommended pull request sequence
 
 The phases above describe dependencies; the following PR slices keep review scope manageable:
@@ -1062,16 +1211,18 @@ The phases above describe dependencies; the following PR slices keep review scop
    `METRIC-07`).
 8. Replace or temporarily disable `couples-shotness` (`METRIC-06`).
 9. Tree-filter boundary transitions (`METRIC-08`).
-10. Deterministic graph and identity joining (`CORE-01`, `CORE-02`).
-11. Empty/disconnected input handling and line-history replay (`CORE-03`, `CORE-04`).
-12. Lifecycle cleanup, capacity errors, and foundational boundaries (`CORE-05`, `CORE-06`,
-    `ARCH-03`).
-13. Reader bounds, schema validation, repository-text hardening, and fuzz tests (`DATA-01`,
+10. Code Churn semantics and negative-burndown diagnosis (`METRIC-09`, `METRIC-10`).
+11. Deterministic graph and identity joining (`CORE-01`, `CORE-02`).
+12. Empty/disconnected input handling and line-history replay (`CORE-03`, `CORE-04`).
+13. Lifecycle cleanup, capacity errors, foundational boundaries, and binary/branch transitions
+    (`CORE-05`, `CORE-06`, `CORE-07`, `ARCH-03`).
+14. Reader bounds, schema validation, repository-text hardening, and fuzz tests (`DATA-01`,
     `DATA-02`, `DATA-06`).
-14. Transactional report generation and exact `--from-repo` behavior (`DATA-03`, `DATA-04`).
-15. Coupling/burndown/blob/rename performance work with benchmarks (`PERF-*`).
-16. Renderer isolation and typed registry configuration (`ARCH-01`, `ARCH-02`).
-17. CI, visual, build, container, plugin, and documentation hardening (`CI-*`, `OPS-01`,
+15. Transactional report generation and exact `--from-repo` behavior (`DATA-03`, `DATA-04`).
+16. Complete and parity-test burndown survival output (`DATA-07`).
+17. Coupling/burndown/blob/rename performance work with benchmarks (`PERF-*`).
+18. Renderer isolation and typed registry configuration (`ARCH-01`, `ARCH-02`).
+19. CI, visual, build, container, plugin, and documentation hardening (`CI-*`, `OPS-01`,
     `DOC-01`, `DATA-05`).
 
 Each PR must leave the supported cgo-free test suite green. If a metric correction intentionally
@@ -1142,18 +1293,22 @@ just bench-large-repo /path/to/representative/repository
 | `couples-shotness` labels ticks as entities                               | `METRIC-06`     |
 | Shotness collapses same-named entities                                    | `METRIC-07`     |
 | Filter-crossing renames corrupt state                                     | `METRIC-08`     |
+| Code Churn has placeholder semantics and an inert reinforcement factor    | `METRIC-09`     |
+| Burndown serialization silently clamps unexplained negative balances      | `METRIC-10`     |
 | Nondeterministic `BreadthSort` and edge counts                            | `CORE-01`       |
 | Identity joining loses duplicates/overlaps                                | `CORE-02`       |
 | Empty/disconnected/duplicate commits panic or disappear                   | `CORE-03`       |
 | Line History loader erases state and panics                               | `CORE-04`       |
 | Packed limits terminate process; cleanup/global GC leaks                  | `CORE-05`       |
 | Truncated allocator/commit input and numerical boundaries                 | `CORE-06`       |
+| Binary transitions and branch deletions lose line-history state           | `CORE-07`       |
 | Malformed YAML/PB panics or allocates excessively                         | `DATA-01`       |
 | Schema versions emitted but not enforced                                  | `DATA-02`       |
 | Stale/colliding report artifacts                                          | `DATA-03`       |
 | `labours --from-repo` renders substitute modes                            | `DATA-04`       |
 | Plugin/protobuf generation drift                                          | `DATA-05`       |
 | Malformed `.mailmap`, dictionaries, or regex configuration panic/truncate | `DATA-06`       |
+| Survival flag ignored and Kaplan–Meier output is a placeholder            | `DATA-07`       |
 | Coupling ranking up to `O(N^4)`                                           | `PERF-01`       |
 | Burndown merge quadratic memory and forced GC                             | `PERF-02`       |
 | Ownership rescanned for every tick                                        | `PERF-03`       |

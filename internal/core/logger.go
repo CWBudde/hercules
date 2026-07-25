@@ -12,14 +12,14 @@ const ConfigLogger = "Core.Logger"
 
 // Logger defines the output interface used by Hercules components.
 type Logger interface {
-	Info(...any)
-	Infof(string, ...any)
-	Warn(...any)
-	Warnf(string, ...any)
-	Error(...any)
-	Errorf(string, ...any)
-	Critical(...any)
-	Criticalf(string, ...any)
+	Info(args ...any)
+	Infof(format string, args ...any)
+	Warn(args ...any)
+	Warnf(format string, args ...any)
+	Error(args ...any)
+	Errorf(format string, args ...any)
+	Critical(args ...any)
+	Criticalf(format string, args ...any)
 }
 
 // DefaultLogger is the default logger used by a pipeline, and wraps the standard

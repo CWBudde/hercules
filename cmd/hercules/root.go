@@ -768,7 +768,7 @@ type flagSorter struct {
 	items      []core.PipelineItem
 	flagSet    *pflag.FlagSet
 	featureSet interface {
-		GetFeature(string) (bool, bool)
+		GetFeature(feature string) (bool, bool)
 	}
 	cache []int
 }

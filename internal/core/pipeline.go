@@ -119,7 +119,7 @@ type PipelineItem interface {
 	ConfigureUpstream(facts map[string]any) error
 	// Initialize prepares and resets the item. Consume() requires Initialize()
 	// to be called at least once beforehand.
-	Initialize(*git.Repository) error
+	Initialize(repository *git.Repository) error
 	// Consume processes the next commit.
 	// deps contains the required entities which match Depends(). Besides, it always includes
 	// DependencyCommit and DependencyIndex.

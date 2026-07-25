@@ -215,31 +215,6 @@ func (detector *StoryDetector) Consume(deps map[string]any) (map[string]any, err
 	return map[string]any{DependencyAuthor: int(author)}, nil
 }
 
-func (detector *StoryDetector) putAuthorId(nextMerge *object.Commit) (core.AuthorId, error) {
-	if nextMerge == nil {
-		return core.AuthorMissing, nil
-	}
-
-	if author, ok := detector.MergeHashDict[nextMerge.Hash]; ok {
-		return core.AuthorId(author), nil
-	}
-
-	if !detector.expandMergeDict {
-		return core.AuthorMissing, nil
-	}
-
-	if len(detector.MergeNames) >= detector.mergeNameCount {
-		return core.AuthorMissing, errors.New("number of merge hashes exceeded")
-	}
-
-	n := len(detector.MergeNames)
-	name := detector.makeMergeName(n, nextMerge)
-	detector.MergeHashDict[nextMerge.Hash] = n
-	detector.MergeNames = append(detector.MergeNames, name)
-
-	return core.AuthorId(n), nil
-}
-
 // Fork clones this PipelineItem.
 func (detector *StoryDetector) Fork(n int) []core.PipelineItem {
 	return core.ForkSamePipelineItem(detector, n)
@@ -303,6 +278,31 @@ func (detector *StoryDetector) LoadMergeDict(path string) error {
 	detector.MergeNames = reverseDict
 
 	return nil
+}
+
+func (detector *StoryDetector) putAuthorId(nextMerge *object.Commit) (core.AuthorId, error) {
+	if nextMerge == nil {
+		return core.AuthorMissing, nil
+	}
+
+	if author, ok := detector.MergeHashDict[nextMerge.Hash]; ok {
+		return core.AuthorId(author), nil
+	}
+
+	if !detector.expandMergeDict {
+		return core.AuthorMissing, nil
+	}
+
+	if len(detector.MergeNames) >= detector.mergeNameCount {
+		return core.AuthorMissing, errors.New("number of merge hashes exceeded")
+	}
+
+	n := len(detector.MergeNames)
+	name := detector.makeMergeName(n, nextMerge)
+	detector.MergeHashDict[nextMerge.Hash] = n
+	detector.MergeNames = append(detector.MergeNames, name)
+
+	return core.AuthorId(n), nil
 }
 
 func (detector *StoryDetector) makeMergeName(index int, merge *object.Commit) string {

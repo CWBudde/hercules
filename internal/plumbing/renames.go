@@ -294,6 +294,72 @@ func (ra *RenameAnalysis) Consume(deps map[string]any) (map[string]any, error) {
 	return map[string]any{DependencyTreeChanges: reducedChanges}, nil
 }
 
+func cloneSortableBlobs(blobs sortableBlobs) sortableBlobs {
+	cloned := make(sortableBlobs, len(blobs))
+	copy(cloned, blobs)
+
+	return cloned
+}
+
+func appendRenameResults(
+	reduced, matches object.Changes,
+	addedBlobs, deletedBlobs sortableBlobs,
+	small object.Changes,
+) object.Changes {
+	reduced = append(reduced, matches...)
+	for _, blob := range addedBlobs {
+		reduced = append(reduced, blob.change)
+	}
+
+	for _, blob := range deletedBlobs {
+		reduced = append(reduced, blob.change)
+	}
+
+	return append(reduced, small...)
+}
+
+type renameCandidateMatcher func(
+	*CachedBlob, []int, sortableBlobs, map[plumbing.Hash]*CachedBlob, int, <-chan bool,
+) (int, error)
+
+func renameBlobHash(blob sortableBlob, deleted bool) plumbing.Hash {
+	if deleted {
+		return blob.change.From.TreeEntry.Hash
+	}
+
+	return blob.change.To.TreeEntry.Hash
+}
+
+func renameBlobName(blob sortableBlob, deleted bool) string {
+	if deleted {
+		return blob.change.From.Name
+	}
+
+	return blob.change.To.Name
+}
+
+func matchedRename(primary, secondary sortableBlob, primaryIsDeleted bool) *object.Change {
+	if primaryIsDeleted {
+		return &object.Change{From: primary.change.From, To: secondary.change.To}
+	}
+
+	return &object.Change{From: secondary.change.From, To: primary.change.To}
+}
+
+func renameCandidates(start, end int, closeEnough func(int) bool) []int {
+	var candidates []int
+	for index := start; index < end && closeEnough(index); index++ {
+		candidates = append(candidates, index)
+	}
+
+	return candidates
+}
+
+// Fork clones this PipelineItem.
+func (ra *RenameAnalysis) Fork(n int) []core.PipelineItem {
+	return core.ForkSamePipelineItem(ra, n)
+}
+
 func (ra *RenameAnalysis) matchSimilarRenames(
 	beginTime time.Time,
 	addedBlobs, deletedBlobs sortableBlobs,
@@ -356,30 +422,6 @@ func (ra *RenameAnalysis) matchSimilarRenames(
 	}
 
 	return matches, addedBlobs, deletedBlobs, nil
-}
-
-func cloneSortableBlobs(blobs sortableBlobs) sortableBlobs {
-	cloned := make(sortableBlobs, len(blobs))
-	copy(cloned, blobs)
-
-	return cloned
-}
-
-func appendRenameResults(
-	reduced, matches object.Changes,
-	addedBlobs, deletedBlobs sortableBlobs,
-	small object.Changes,
-) object.Changes {
-	reduced = append(reduced, matches...)
-	for _, blob := range addedBlobs {
-		reduced = append(reduced, blob.change)
-	}
-
-	for _, blob := range deletedBlobs {
-		reduced = append(reduced, blob.change)
-	}
-
-	return append(reduced, small...)
 }
 
 func (ra *RenameAnalysis) matchDeletedBlobs(
@@ -455,10 +497,6 @@ func (ra *RenameAnalysis) matchBlobs(
 	return matches, primary, secondary
 }
 
-type renameCandidateMatcher func(
-	*CachedBlob, []int, sortableBlobs, map[plumbing.Hash]*CachedBlob, int, <-chan bool,
-) (int, error)
-
 func (ra *RenameAnalysis) renameMatchDirection(
 	added, deleted sortableBlobs, matchDeleted bool,
 ) (sortableBlobs, sortableBlobs, renameCandidateMatcher) {
@@ -467,39 +505,6 @@ func (ra *RenameAnalysis) renameMatchDirection(
 	}
 
 	return added, deleted, ra.matchAddedCandidate
-}
-
-func renameBlobHash(blob sortableBlob, deleted bool) plumbing.Hash {
-	if deleted {
-		return blob.change.From.TreeEntry.Hash
-	}
-
-	return blob.change.To.TreeEntry.Hash
-}
-
-func renameBlobName(blob sortableBlob, deleted bool) string {
-	if deleted {
-		return blob.change.From.Name
-	}
-
-	return blob.change.To.Name
-}
-
-func matchedRename(primary, secondary sortableBlob, primaryIsDeleted bool) *object.Change {
-	if primaryIsDeleted {
-		return &object.Change{From: primary.change.From, To: secondary.change.To}
-	}
-
-	return &object.Change{From: secondary.change.From, To: primary.change.To}
-}
-
-func renameCandidates(start, end int, closeEnough func(int) bool) []int {
-	var candidates []int
-	for index := start; index < end && closeEnough(index); index++ {
-		candidates = append(candidates, index)
-	}
-
-	return candidates
 }
 
 func (ra *RenameAnalysis) matchDeletedCandidate(
@@ -556,11 +561,6 @@ func (ra *RenameAnalysis) matchAddedCandidate(
 	}
 
 	return -1, nil
-}
-
-// Fork clones this PipelineItem.
-func (ra *RenameAnalysis) Fork(n int) []core.PipelineItem {
-	return core.ForkSamePipelineItem(ra, n)
 }
 
 func (ra *RenameAnalysis) sizesAreClose(size1, size2 int64) bool {

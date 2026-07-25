@@ -220,6 +220,23 @@ func (blobCache *BlobCache) Consume(deps map[string]any) (map[string]any, error)
 	return map[string]any{DependencyBlobCache: cache}, nil
 }
 
+// Fork clones this PipelineItem.
+func (blobCache *BlobCache) Fork(n int) []core.PipelineItem {
+	caches := make([]core.PipelineItem, n)
+	for i := range n {
+		cache := map[plumbing.Hash]*CachedBlob{}
+		maps.Copy(cache, blobCache.cache)
+
+		caches[i] = &BlobCache{
+			FailOnMissingSubmodules: blobCache.FailOnMissingSubmodules,
+			repository:              blobCache.repository,
+			cache:                   cache,
+		}
+	}
+
+	return caches
+}
+
 func (blobCache *BlobCache) cacheTo(
 	entry object.ChangeEntry,
 	commit *object.Commit,
@@ -291,23 +308,6 @@ func (blobCache *BlobCache) cacheFrom(
 	cache[entry.TreeEntry.Hash] = cached
 
 	return nil
-}
-
-// Fork clones this PipelineItem.
-func (blobCache *BlobCache) Fork(n int) []core.PipelineItem {
-	caches := make([]core.PipelineItem, n)
-	for i := range n {
-		cache := map[plumbing.Hash]*CachedBlob{}
-		maps.Copy(cache, blobCache.cache)
-
-		caches[i] = &BlobCache{
-			FailOnMissingSubmodules: blobCache.FailOnMissingSubmodules,
-			repository:              blobCache.repository,
-			cache:                   cache,
-		}
-	}
-
-	return caches
 }
 
 // FileGetter defines a function which loads the Git file by

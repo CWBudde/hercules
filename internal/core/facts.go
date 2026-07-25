@@ -116,10 +116,6 @@ type LineHistoryChange struct {
 	Delta                  int
 }
 
-func (v LineHistoryChange) IsDelete() bool {
-	return v.PrevAuthor == AuthorMissing && v.Delta == math.MinInt
-}
-
 func NewLineHistoryDeletion(id FileId, author AuthorId, tick TickNumber) LineHistoryChange {
 	return LineHistoryChange{
 		FileId:     id,
@@ -129,6 +125,10 @@ func NewLineHistoryDeletion(id FileId, author AuthorId, tick TickNumber) LineHis
 		PrevAuthor: AuthorMissing,
 		Delta:      math.MinInt,
 	}
+}
+
+func (v LineHistoryChange) IsDelete() bool {
+	return v.PrevAuthor == AuthorMissing && v.Delta == math.MinInt
 }
 
 type LineHistoryChanges struct {

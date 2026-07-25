@@ -94,57 +94,6 @@ func (allocator *Allocator) Hibernate() {
 	allocator.compressBuffers(buffers)
 }
 
-func (allocator *Allocator) deinterleave() ([6][]uint32, bool) {
-	buffers := [6][]uint32{}
-	for i := range buffers {
-		buffers[i] = make([]uint32, len(allocator.storage))
-	}
-
-	for i, current := range allocator.storage {
-		buffers[5][i] = uint32(current.color)
-		if current.color != gap {
-			buffers[0][i], buffers[1][i] = current.item.Key, current.item.Value
-			buffers[2][i], buffers[3][i], buffers[4][i] = current.left, current.parent, current.right
-
-			continue
-		}
-
-		if i+int(allocator.gapCount) == allocator.hibernatedStorageLen {
-			allocator.gapCount = 0
-			if i <= 1 {
-				allocator.hibernatedStorageLen, allocator.nextGap = 0, 0
-				allocator.storage = allocator.storage[:0]
-
-				return buffers, true
-			}
-
-			allocator.hibernatedStorageLen = i
-
-			break
-		}
-
-		allocator.gapCount--
-	}
-
-	return buffers, false
-}
-
-func (allocator *Allocator) compressBuffers(buffers [6][]uint32) {
-	var wg sync.WaitGroup
-	wg.Add(len(buffers))
-
-	for i, buffer := range buffers {
-		go func(i int, buffer []uint32) {
-			defer wg.Done()
-
-			allocator.hibernatedData[i] = CompressUInt32Slice(buffer[:allocator.hibernatedStorageLen])
-			buffers[i] = nil
-		}(i, buffer)
-	}
-
-	wg.Wait()
-}
-
 // Boot performs the opposite of Hibernate() - decompresses and restores the allocated memory.
 func (allocator *Allocator) Boot() {
 	if allocator.hibernatedStorageLen == 0 {
@@ -350,10 +299,6 @@ func NewRBTree(allocator *Allocator) *RBTree {
 	return &RBTree{allocator: allocator}
 }
 
-func (tree RBTree) storage() []node {
-	return tree.allocator.storage
-}
-
 // Allocator returns the bound nodes allocator.
 func (tree RBTree) Allocator() *Allocator {
 	return tree.allocator
@@ -505,6 +450,81 @@ func (tree *RBTree) Insert(item Item) (bool, Iterator) {
 	return true, Iterator{tree, insN}
 }
 
+// DeleteWithKey deletes an item with the given Key. Returns true iff the item was
+// found.
+func (tree *RBTree) DeleteWithKey(key uint32) bool {
+	n, exact := tree.findGE(key)
+	if exact {
+		tree.doDelete(n)
+		return true
+	}
+
+	return false
+}
+
+// DeleteWithIterator deletes the current item.
+//
+// REQUIRES: !iter.Limit() && !iter.NegativeLimit().
+func (tree *RBTree) DeleteWithIterator(iter Iterator) {
+	doAssert(!iter.Limit() && !iter.NegativeLimit())
+	tree.doDelete(iter.node)
+}
+
+func (allocator *Allocator) deinterleave() ([6][]uint32, bool) {
+	buffers := [6][]uint32{}
+	for i := range buffers {
+		buffers[i] = make([]uint32, len(allocator.storage))
+	}
+
+	for i, current := range allocator.storage {
+		buffers[5][i] = uint32(current.color)
+		if current.color != gap {
+			buffers[0][i], buffers[1][i] = current.item.Key, current.item.Value
+			buffers[2][i], buffers[3][i], buffers[4][i] = current.left, current.parent, current.right
+
+			continue
+		}
+
+		if i+int(allocator.gapCount) == allocator.hibernatedStorageLen {
+			allocator.gapCount = 0
+			if i <= 1 {
+				allocator.hibernatedStorageLen, allocator.nextGap = 0, 0
+				allocator.storage = allocator.storage[:0]
+
+				return buffers, true
+			}
+
+			allocator.hibernatedStorageLen = i
+
+			break
+		}
+
+		allocator.gapCount--
+	}
+
+	return buffers, false
+}
+
+func (allocator *Allocator) compressBuffers(buffers [6][]uint32) {
+	var wg sync.WaitGroup
+	wg.Add(len(buffers))
+
+	for i, buffer := range buffers {
+		go func(i int, buffer []uint32) {
+			defer wg.Done()
+
+			allocator.hibernatedData[i] = CompressUInt32Slice(buffer[:allocator.hibernatedStorageLen])
+			buffers[i] = nil
+		}(i, buffer)
+	}
+
+	wg.Wait()
+}
+
+func (tree RBTree) storage() []node {
+	return tree.allocator.storage
+}
+
 func (tree *RBTree) rebalanceAfterInsert(n uint32, alloc []node) {
 	for {
 		if alloc[n].parent == 0 {
@@ -559,26 +579,6 @@ func (tree *RBTree) rebalanceAfterInsert(n uint32, alloc []node) {
 
 		break
 	}
-}
-
-// DeleteWithKey deletes an item with the given Key. Returns true iff the item was
-// found.
-func (tree *RBTree) DeleteWithKey(key uint32) bool {
-	n, exact := tree.findGE(key)
-	if exact {
-		tree.doDelete(n)
-		return true
-	}
-
-	return false
-}
-
-// DeleteWithIterator deletes the current item.
-//
-// REQUIRES: !iter.Limit() && !iter.NegativeLimit().
-func (tree *RBTree) DeleteWithIterator(iter Iterator) {
-	doAssert(!iter.Limit() && !iter.NegativeLimit())
-	tree.doDelete(iter.node)
 }
 
 // Iterator allows scanning tree elements in sort order.

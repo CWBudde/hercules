@@ -291,59 +291,6 @@ func (analyser *BurndownAnalysis) Consume(deps map[string]any) (map[string]any, 
 	return nil, nil
 }
 
-func (analyser *BurndownAnalysis) updateGlobal(change core.LineHistoryChange) {
-	analyser.globalHistory.updateDelta(int(change.PrevTick), int(change.CurrTick), change.Delta)
-}
-
-// updateFile is bound to the specific `history` in the closure.
-func (analyser *BurndownAnalysis) updateFile(change core.LineHistoryChange) {
-	history := analyser.fileHistories[change.FileId]
-	if history == nil {
-		// can be not nil if the file was created in a future branch
-		history = sparseHistory{}
-		analyser.fileHistories[change.FileId] = history
-	}
-
-	history.updateDelta(int(change.PrevTick), int(change.CurrTick), change.Delta)
-}
-
-func (analyser *BurndownAnalysis) updateFileDelete(change core.LineHistoryChange) {
-	delete(analyser.fileHistories, change.FileId)
-}
-
-func (analyser *BurndownAnalysis) updateAuthor(change core.LineHistoryChange) {
-	if change.PrevAuthor == core.AuthorMissing {
-		return
-	}
-
-	history := analyser.peopleHistories[change.PrevAuthor]
-	if history == nil {
-		history = sparseHistory{}
-		analyser.peopleHistories[change.PrevAuthor] = history
-	}
-
-	history.updateDelta(int(change.PrevTick), int(change.CurrTick), change.Delta)
-}
-
-func (analyser *BurndownAnalysis) updateChurnMatrix(change core.LineHistoryChange) {
-	if change.PrevAuthor == core.AuthorMissing {
-		return
-	}
-
-	newAuthor := change.CurrAuthor
-	if change.Delta > 0 {
-		newAuthor = authorSelf
-	}
-
-	row := analyser.matrix[change.PrevAuthor]
-	if row == nil {
-		row = map[core.AuthorId]int64{}
-		analyser.matrix[change.PrevAuthor] = row
-	}
-
-	row[newAuthor] += int64(change.Delta)
-}
-
 // burndownState holds the serializable state for hibernation.
 type burndownState struct {
 	GlobalHistory   map[int]map[int]int64
@@ -404,28 +351,6 @@ func (analyser *BurndownAnalysis) Hibernate() error {
 	return nil
 }
 
-func (analyser *BurndownAnalysis) hibernationState() burndownState {
-	state := burndownState{
-		GlobalHistory: sparseHistoryToMap(analyser.globalHistory),
-		Matrix:        analyser.matrix,
-	}
-	if analyser.fileHistories != nil {
-		state.FileHistories = make(map[core.FileId]map[int]map[int]int64, len(analyser.fileHistories))
-		for k, v := range analyser.fileHistories {
-			state.FileHistories[k] = sparseHistoryToMap(v)
-		}
-	}
-
-	if analyser.peopleHistories != nil {
-		state.PeopleHistories = make([]map[int]map[int]int64, len(analyser.peopleHistories))
-		for i, v := range analyser.peopleHistories {
-			state.PeopleHistories[i] = sparseHistoryToMap(v)
-		}
-	}
-
-	return state
-}
-
 func compressBurndownState(state burndownState) ([]byte, error) {
 	var buf bytes.Buffer
 
@@ -447,36 +372,6 @@ func compressBurndownState(state burndownState) ([]byte, error) {
 	}
 
 	return buf.Bytes(), nil
-}
-
-func (analyser *BurndownAnalysis) persistHibernation(data []byte) error {
-	file, err := os.CreateTemp(analyser.HibernationDirectory, "*-hercules-burndown.bin")
-	if err != nil {
-		return fmt.Errorf("create burndown hibernation file: %w", err)
-	}
-
-	cleanup := func() {
-		_ = file.Close()
-		_ = os.Remove(file.Name())
-	}
-
-	_, err = file.Write(data)
-	if err != nil {
-		cleanup()
-
-		return fmt.Errorf("write burndown hibernation file: %w", err)
-	}
-
-	err = file.Close()
-	if err != nil {
-		_ = os.Remove(file.Name())
-
-		return fmt.Errorf("close burndown hibernation file: %w", err)
-	}
-
-	analyser.hibernatedFileName = file.Name()
-
-	return nil
 }
 
 // Boot restores the burndown analysis state from hibernation.
@@ -567,87 +462,6 @@ func (analyser *BurndownAnalysis) Finalize() any {
 	}
 
 	return result
-}
-
-func (analyser *BurndownAnalysis) finalizeFileHistories(lastTick int) map[string]burndown.DenseHistory {
-	result := map[string]burndown.DenseHistory{}
-
-	for fileID, history := range analyser.fileHistories {
-		if len(history) > 0 {
-			if name := analyser.fileResolver.NameOf(fileID); name != "" {
-				result[name], _ = analyser.groupSparseHistory(history, lastTick)
-			}
-		}
-	}
-
-	return result
-}
-
-func (analyser *BurndownAnalysis) finalizePeopleHistories(
-	global burndown.DenseHistory, lastTick, peopleNumber int,
-) []burndown.DenseHistory {
-	result := make([]burndown.DenseHistory, peopleNumber)
-	for i := range result {
-		if history := analyser.peopleHistories[i]; len(history) > 0 {
-			result[i], _ = analyser.groupSparseHistory(history, lastTick)
-		} else {
-			result[i] = make(burndown.DenseHistory, len(global))
-			for j, row := range global {
-				result[i][j] = make([]int64, len(row))
-			}
-		}
-	}
-
-	return result
-}
-
-func (analyser *BurndownAnalysis) finalizePeopleMatrix(peopleNumber int) burndown.DenseHistory {
-	if len(analyser.matrix) == 0 {
-		return nil
-	}
-
-	result := make(burndown.DenseHistory, peopleNumber)
-	for i := range result {
-		result[i] = make([]int64, peopleNumber+2)
-		for key, value := range analyser.matrix[i] {
-			switch key {
-			case core.AuthorMissing:
-				key = -1
-			case authorSelf:
-				key = -2
-			}
-
-			result[i][key+2] = value
-		}
-	}
-
-	return result
-}
-
-func (analyser *BurndownAnalysis) collectFileOwnership(fileOwnership map[string]map[int]int) {
-	analyser.fileResolver.ForEachFile(func(fileId core.FileId, fileName string) {
-		previousLine := 0
-		previousAuthor := core.AuthorMissing
-		ownership := map[int]int{}
-
-		if analyser.fileResolver.ScanFile(fileId,
-			func(line int, tick core.TickNumber, author core.AuthorId) {
-				length := line - previousLine
-				if length > 0 {
-					ownership[previousAuthor] += length
-				}
-
-				previousLine = line
-
-				if author >= core.AuthorMissing {
-					previousAuthor = -1
-				} else {
-					previousAuthor = int(author)
-				}
-			}) {
-			fileOwnership[fileName] = ownership
-		}
-	})
 }
 
 // Serialize converts the analysis result as returned by Finalize() to text or bytes.
@@ -791,6 +605,192 @@ func (analyser *BurndownAnalysis) MergeResults(
 	coordinator.wg.Wait()
 
 	return merged
+}
+
+func (analyser *BurndownAnalysis) hibernationState() burndownState {
+	state := burndownState{
+		GlobalHistory: sparseHistoryToMap(analyser.globalHistory),
+		Matrix:        analyser.matrix,
+	}
+	if analyser.fileHistories != nil {
+		state.FileHistories = make(map[core.FileId]map[int]map[int]int64, len(analyser.fileHistories))
+		for k, v := range analyser.fileHistories {
+			state.FileHistories[k] = sparseHistoryToMap(v)
+		}
+	}
+
+	if analyser.peopleHistories != nil {
+		state.PeopleHistories = make([]map[int]map[int]int64, len(analyser.peopleHistories))
+		for i, v := range analyser.peopleHistories {
+			state.PeopleHistories[i] = sparseHistoryToMap(v)
+		}
+	}
+
+	return state
+}
+
+func (analyser *BurndownAnalysis) persistHibernation(data []byte) error {
+	file, err := os.CreateTemp(analyser.HibernationDirectory, "*-hercules-burndown.bin")
+	if err != nil {
+		return fmt.Errorf("create burndown hibernation file: %w", err)
+	}
+
+	cleanup := func() {
+		_ = file.Close()
+		_ = os.Remove(file.Name())
+	}
+
+	_, err = file.Write(data)
+	if err != nil {
+		cleanup()
+
+		return fmt.Errorf("write burndown hibernation file: %w", err)
+	}
+
+	err = file.Close()
+	if err != nil {
+		_ = os.Remove(file.Name())
+
+		return fmt.Errorf("close burndown hibernation file: %w", err)
+	}
+
+	analyser.hibernatedFileName = file.Name()
+
+	return nil
+}
+
+func (analyser *BurndownAnalysis) finalizeFileHistories(lastTick int) map[string]burndown.DenseHistory {
+	result := map[string]burndown.DenseHistory{}
+
+	for fileID, history := range analyser.fileHistories {
+		if len(history) > 0 {
+			if name := analyser.fileResolver.NameOf(fileID); name != "" {
+				result[name], _ = analyser.groupSparseHistory(history, lastTick)
+			}
+		}
+	}
+
+	return result
+}
+
+func (analyser *BurndownAnalysis) finalizePeopleHistories(
+	global burndown.DenseHistory, lastTick, peopleNumber int,
+) []burndown.DenseHistory {
+	result := make([]burndown.DenseHistory, peopleNumber)
+	for i := range result {
+		if history := analyser.peopleHistories[i]; len(history) > 0 {
+			result[i], _ = analyser.groupSparseHistory(history, lastTick)
+		} else {
+			result[i] = make(burndown.DenseHistory, len(global))
+			for j, row := range global {
+				result[i][j] = make([]int64, len(row))
+			}
+		}
+	}
+
+	return result
+}
+
+func (analyser *BurndownAnalysis) finalizePeopleMatrix(peopleNumber int) burndown.DenseHistory {
+	if len(analyser.matrix) == 0 {
+		return nil
+	}
+
+	result := make(burndown.DenseHistory, peopleNumber)
+	for i := range result {
+		result[i] = make([]int64, peopleNumber+2)
+		for key, value := range analyser.matrix[i] {
+			switch key {
+			case core.AuthorMissing:
+				key = -1
+			case authorSelf:
+				key = -2
+			}
+
+			result[i][key+2] = value
+		}
+	}
+
+	return result
+}
+
+func (analyser *BurndownAnalysis) collectFileOwnership(fileOwnership map[string]map[int]int) {
+	analyser.fileResolver.ForEachFile(func(fileId core.FileId, fileName string) {
+		previousLine := 0
+		previousAuthor := core.AuthorMissing
+		ownership := map[int]int{}
+
+		if analyser.fileResolver.ScanFile(fileId,
+			func(line int, tick core.TickNumber, author core.AuthorId) {
+				length := line - previousLine
+				if length > 0 {
+					ownership[previousAuthor] += length
+				}
+
+				previousLine = line
+
+				if author >= core.AuthorMissing {
+					previousAuthor = -1
+				} else {
+					previousAuthor = int(author)
+				}
+			}) {
+			fileOwnership[fileName] = ownership
+		}
+	})
+}
+
+func (analyser *BurndownAnalysis) updateGlobal(change core.LineHistoryChange) {
+	analyser.globalHistory.updateDelta(int(change.PrevTick), int(change.CurrTick), change.Delta)
+}
+
+// updateFile is bound to the specific `history` in the closure.
+func (analyser *BurndownAnalysis) updateFile(change core.LineHistoryChange) {
+	history := analyser.fileHistories[change.FileId]
+	if history == nil {
+		// can be not nil if the file was created in a future branch
+		history = sparseHistory{}
+		analyser.fileHistories[change.FileId] = history
+	}
+
+	history.updateDelta(int(change.PrevTick), int(change.CurrTick), change.Delta)
+}
+
+func (analyser *BurndownAnalysis) updateFileDelete(change core.LineHistoryChange) {
+	delete(analyser.fileHistories, change.FileId)
+}
+
+func (analyser *BurndownAnalysis) updateAuthor(change core.LineHistoryChange) {
+	if change.PrevAuthor == core.AuthorMissing {
+		return
+	}
+
+	history := analyser.peopleHistories[change.PrevAuthor]
+	if history == nil {
+		history = sparseHistory{}
+		analyser.peopleHistories[change.PrevAuthor] = history
+	}
+
+	history.updateDelta(int(change.PrevTick), int(change.CurrTick), change.Delta)
+}
+
+func (analyser *BurndownAnalysis) updateChurnMatrix(change core.LineHistoryChange) {
+	if change.PrevAuthor == core.AuthorMissing {
+		return
+	}
+
+	newAuthor := change.CurrAuthor
+	if change.Delta > 0 {
+		newAuthor = authorSelf
+	}
+
+	row := analyser.matrix[change.PrevAuthor]
+	if row == nil {
+		row = map[core.AuthorId]int64{}
+		analyser.matrix[change.PrevAuthor] = row
+	}
+
+	row[newAuthor] += int64(change.Delta)
 }
 
 type burndownMergeCoordinator struct {

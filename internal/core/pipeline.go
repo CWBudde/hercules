@@ -416,64 +416,6 @@ func (pipeline *Pipeline) DeployItemOnce(item PipelineItem) PipelineItem {
 	return pipeline.deployItem(item, true)
 }
 
-func (pipeline *Pipeline) deployItem(item PipelineItem, once bool) PipelineItem {
-	var queue []PipelineItem
-	queue = append(queue, item)
-
-	added := map[string]PipelineItem{}
-	for _, existingItem := range pipeline.items {
-		added[existingItem.Name()] = existingItem
-	}
-
-	if prevItem, present := added[item.Name()]; once && present {
-		return prevItem
-	}
-
-	added[item.Name()] = item
-
-	fpi, ok := item.(FeaturedPipelineItem)
-	if ok {
-		for _, f := range fpi.Features() {
-			pipeline.SetFeature(f)
-		}
-	}
-
-	pipeline.AddItem(item)
-
-	for len(queue) > 0 {
-		head := queue[0]
-		queue = queue[1:]
-
-		for _, dep := range head.Requires() {
-			summons := Registry.Summon(dep)
-			for _, sibling := range summons {
-				if _, exists := added[sibling.Name()]; !exists {
-					disabled := false
-					// If this item supports features, check them against the activated in pipeline.features
-					if fpi, matches := sibling.(FeaturedPipelineItem); matches {
-						for _, feature := range fpi.Features() {
-							if !pipeline.features[feature] {
-								disabled = true
-								break
-							}
-						}
-					}
-
-					if disabled {
-						continue
-					}
-
-					added[sibling.Name()] = sibling
-					queue = append(queue, sibling)
-					pipeline.AddItem(sibling)
-				}
-			}
-		}
-	}
-
-	return item
-}
-
 // AddItem inserts a PipelineItem into the pipeline. It does not check any dependencies.
 // See also: DeployItem().
 func (pipeline *Pipeline) AddItem(item PipelineItem) PipelineItem {
@@ -600,6 +542,230 @@ func (items sortablePipelineItems) Less(i, j int) bool {
 
 func (items sortablePipelineItems) Swap(i, j int) {
 	items[i], items[j] = items[j], items[i]
+}
+
+func wireAmbiguousInputs(
+	key string, inputs []string, graph *toposort.Graph,
+) map[string]string {
+	replacements := map[string]string{}
+
+	nextCycleNode := key
+	for reverseIndex, input := range slices.Backward(inputs) {
+		graph.AddEdge(input, key)
+		cycle := graph.FindCycle(input)
+		nextNode := input
+
+		if len(cycle) == 0 {
+			if reverseIndex != 0 {
+				continue
+			}
+
+			nextNode = key
+		} else if len(cycle) == 1 || cycle[1] != key {
+			panic("unexpected")
+		} else {
+			if len(cycle) > 2 {
+				nextNode = cycle[2]
+			}
+
+			graph.RemoveEdge(key, nextNode)
+		}
+
+		if nextCycleNode != key {
+			graph.RemoveEdge(input, key)
+			graph.AddEdge(input, nextCycleNode)
+			replacements[nextCycleNode] = input
+		}
+
+		nextCycleNode = nextNode
+	}
+
+	return replacements
+}
+
+func repairAmbiguousChildren(
+	key string, replacements map[string]string, graph *toposort.Graph,
+) {
+	for _, child := range graph.FindChildren(key) {
+		cycle := graph.FindCycle(child)
+		if len(cycle) == 0 {
+			continue
+		}
+
+		if len(cycle) < 3 || cycle[len(cycle)-1] != key {
+			panic("unexpected")
+		}
+
+		replacement := replacements[cycle[len(cycle)-2]]
+		if replacement == "" {
+			panic("unexpected")
+		}
+
+		graph.RemoveEdge(key, child)
+		graph.AddEdge(replacement, child)
+	}
+}
+
+// Initialize prepares the pipeline for the execution (Run()). This function
+// resolves the execution DAG, Configure()-s and Initialize()-s the items in it in the
+// topological dependency order. `facts` are passed inside Configure(). They are mutable.
+func (pipeline *Pipeline) Initialize(facts map[string]any) error {
+	if _, exists := facts[ConfigPipelineCommits]; !exists {
+		var err error
+
+		facts[ConfigPipelineCommits], err = pipeline.Commits(false)
+		if err != nil {
+			pipeline.l.Errorf("failed to list the commits: %v", err)
+			return err
+		}
+	}
+
+	return pipeline.InitializeExt(facts, func(items []PipelineItem) PipelineItem {
+		return items[0]
+	}, false)
+}
+
+type DependencyPriorityFunc = func(items []PipelineItem) PipelineItem
+
+func (pipeline *Pipeline) InitializeExt(facts map[string]any,
+	priorityFn DependencyPriorityFunc, preparePlan bool,
+) error {
+	cleanReturn := false
+	defer pipeline.logInitializationFailure(&cleanReturn)
+
+	err := pipeline.applyConfigurationFacts(facts)
+	if err != nil {
+		return err
+	}
+
+	dumpPath, _ := facts[ConfigPipelineDAGPath].(string)
+
+	err = pipeline.resolve(dumpPath, priorityFn)
+	if err != nil {
+		return err
+	}
+
+	mergeTracks, _ := pipeline.GetFeature(FeatureMergeTracks)
+	if !preparePlan && mergeTracks {
+		return errors.New("merge tracks mode is not allowed")
+	}
+
+	if preparePlan {
+		pipeline.prepareRun(facts, mergeTracks)
+	}
+
+	if pipeline.DryRun {
+		cleanReturn = true
+		return nil
+	}
+
+	err = pipeline.configureItems(facts)
+	if err != nil {
+		cleanReturn = true
+		return err
+	}
+
+	if pipeline.preparedRun == nil && preparePlan {
+		pipeline.prepareRun(facts, mergeTracks)
+
+		if pipeline.preparedRun == nil {
+			return errors.New("commits are not available")
+		}
+	}
+
+	err = pipeline.initializeItems(facts)
+	if err != nil {
+		cleanReturn = true
+		return err
+	}
+
+	if pipeline.HibernationDistance > 0 {
+		debug.SetGCPercent(20)
+	}
+
+	cleanReturn = true
+
+	return nil
+}
+
+// Run method executes the pipeline.
+//
+// `commits` is a slice with the git commits to analyse. Multiple branches are supported.
+//
+// Returns the mapping from each LeafPipelineItem to the corresponding analysis result.
+// There is always a "nil" record with CommonAnalysisResult.
+func (pipeline *Pipeline) Run(commits []*object.Commit) (map[LeafPipelineItem]any, error) {
+	plan, _ := prepareRunPlan(commits, pipeline.HibernationDistance, false)
+	return pipeline.runPlan(plan, len(commits), -1)
+}
+
+func (pipeline *Pipeline) RunPreparedPlan() (map[LeafPipelineItem]any, error) {
+	prepared := pipeline.preparedRun
+	pipeline.preparedRun = nil
+
+	if prepared == nil {
+		return nil, errors.New("run plan was not prepared")
+	}
+
+	return pipeline.runPlan(prepared.plan, prepared.commitCount, prepared.mergeHashCount)
+}
+
+func (pipeline *Pipeline) deployItem(item PipelineItem, once bool) PipelineItem {
+	var queue []PipelineItem
+	queue = append(queue, item)
+
+	added := map[string]PipelineItem{}
+	for _, existingItem := range pipeline.items {
+		added[existingItem.Name()] = existingItem
+	}
+
+	if prevItem, present := added[item.Name()]; once && present {
+		return prevItem
+	}
+
+	added[item.Name()] = item
+
+	fpi, ok := item.(FeaturedPipelineItem)
+	if ok {
+		for _, f := range fpi.Features() {
+			pipeline.SetFeature(f)
+		}
+	}
+
+	pipeline.AddItem(item)
+
+	for len(queue) > 0 {
+		head := queue[0]
+		queue = queue[1:]
+
+		for _, dep := range head.Requires() {
+			summons := Registry.Summon(dep)
+			for _, sibling := range summons {
+				if _, exists := added[sibling.Name()]; !exists {
+					disabled := false
+					// If this item supports features, check them against the activated in pipeline.features
+					if fpi, matches := sibling.(FeaturedPipelineItem); matches {
+						for _, feature := range fpi.Features() {
+							if !pipeline.features[feature] {
+								disabled = true
+								break
+							}
+						}
+					}
+
+					if disabled {
+						continue
+					}
+
+					added[sibling.Name()] = sibling
+					queue = append(queue, sibling)
+					pipeline.AddItem(sibling)
+				}
+			}
+		}
+	}
+
+	return item
 }
 
 func (pipeline *Pipeline) resolve(dumpPath string, priorityFn DependencyPriorityFunc) error {
@@ -783,150 +949,6 @@ func (pipeline *Pipeline) removeEquivalentInputs(
 	return kept
 }
 
-func wireAmbiguousInputs(
-	key string, inputs []string, graph *toposort.Graph,
-) map[string]string {
-	replacements := map[string]string{}
-
-	nextCycleNode := key
-	for reverseIndex, input := range slices.Backward(inputs) {
-		graph.AddEdge(input, key)
-		cycle := graph.FindCycle(input)
-		nextNode := input
-
-		if len(cycle) == 0 {
-			if reverseIndex != 0 {
-				continue
-			}
-
-			nextNode = key
-		} else if len(cycle) == 1 || cycle[1] != key {
-			panic("unexpected")
-		} else {
-			if len(cycle) > 2 {
-				nextNode = cycle[2]
-			}
-
-			graph.RemoveEdge(key, nextNode)
-		}
-
-		if nextCycleNode != key {
-			graph.RemoveEdge(input, key)
-			graph.AddEdge(input, nextCycleNode)
-			replacements[nextCycleNode] = input
-		}
-
-		nextCycleNode = nextNode
-	}
-
-	return replacements
-}
-
-func repairAmbiguousChildren(
-	key string, replacements map[string]string, graph *toposort.Graph,
-) {
-	for _, child := range graph.FindChildren(key) {
-		cycle := graph.FindCycle(child)
-		if len(cycle) == 0 {
-			continue
-		}
-
-		if len(cycle) < 3 || cycle[len(cycle)-1] != key {
-			panic("unexpected")
-		}
-
-		replacement := replacements[cycle[len(cycle)-2]]
-		if replacement == "" {
-			panic("unexpected")
-		}
-
-		graph.RemoveEdge(key, child)
-		graph.AddEdge(replacement, child)
-	}
-}
-
-// Initialize prepares the pipeline for the execution (Run()). This function
-// resolves the execution DAG, Configure()-s and Initialize()-s the items in it in the
-// topological dependency order. `facts` are passed inside Configure(). They are mutable.
-func (pipeline *Pipeline) Initialize(facts map[string]any) error {
-	if _, exists := facts[ConfigPipelineCommits]; !exists {
-		var err error
-
-		facts[ConfigPipelineCommits], err = pipeline.Commits(false)
-		if err != nil {
-			pipeline.l.Errorf("failed to list the commits: %v", err)
-			return err
-		}
-	}
-
-	return pipeline.InitializeExt(facts, func(items []PipelineItem) PipelineItem {
-		return items[0]
-	}, false)
-}
-
-type DependencyPriorityFunc = func(items []PipelineItem) PipelineItem
-
-func (pipeline *Pipeline) InitializeExt(facts map[string]any,
-	priorityFn DependencyPriorityFunc, preparePlan bool,
-) error {
-	cleanReturn := false
-	defer pipeline.logInitializationFailure(&cleanReturn)
-
-	err := pipeline.applyConfigurationFacts(facts)
-	if err != nil {
-		return err
-	}
-
-	dumpPath, _ := facts[ConfigPipelineDAGPath].(string)
-
-	err = pipeline.resolve(dumpPath, priorityFn)
-	if err != nil {
-		return err
-	}
-
-	mergeTracks, _ := pipeline.GetFeature(FeatureMergeTracks)
-	if !preparePlan && mergeTracks {
-		return errors.New("merge tracks mode is not allowed")
-	}
-
-	if preparePlan {
-		pipeline.prepareRun(facts, mergeTracks)
-	}
-
-	if pipeline.DryRun {
-		cleanReturn = true
-		return nil
-	}
-
-	err = pipeline.configureItems(facts)
-	if err != nil {
-		cleanReturn = true
-		return err
-	}
-
-	if pipeline.preparedRun == nil && preparePlan {
-		pipeline.prepareRun(facts, mergeTracks)
-
-		if pipeline.preparedRun == nil {
-			return errors.New("commits are not available")
-		}
-	}
-
-	err = pipeline.initializeItems(facts)
-	if err != nil {
-		cleanReturn = true
-		return err
-	}
-
-	if pipeline.HibernationDistance > 0 {
-		debug.SetGCPercent(20)
-	}
-
-	cleanReturn = true
-
-	return nil
-}
-
 func (pipeline *Pipeline) logInitializationFailure(cleanReturn *bool) {
 	if *cleanReturn {
 		return
@@ -1009,28 +1031,6 @@ func (pipeline *Pipeline) initializeItems(facts map[string]any) error {
 	}
 
 	return nil
-}
-
-// Run method executes the pipeline.
-//
-// `commits` is a slice with the git commits to analyse. Multiple branches are supported.
-//
-// Returns the mapping from each LeafPipelineItem to the corresponding analysis result.
-// There is always a "nil" record with CommonAnalysisResult.
-func (pipeline *Pipeline) Run(commits []*object.Commit) (map[LeafPipelineItem]any, error) {
-	plan, _ := prepareRunPlan(commits, pipeline.HibernationDistance, false)
-	return pipeline.runPlan(plan, len(commits), -1)
-}
-
-func (pipeline *Pipeline) RunPreparedPlan() (map[LeafPipelineItem]any, error) {
-	prepared := pipeline.preparedRun
-	pipeline.preparedRun = nil
-
-	if prepared == nil {
-		return nil, errors.New("run plan was not prepared")
-	}
-
-	return pipeline.runPlan(prepared.plan, prepared.commitCount, prepared.mergeHashCount)
 }
 
 func (pipeline *Pipeline) runPlan(plan []runAction, commitCount, mergeHashCount int) (map[LeafPipelineItem]any, error) {

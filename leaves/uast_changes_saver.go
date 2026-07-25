@@ -144,6 +144,69 @@ func (saver *UASTChangesSaver) Consume(deps map[string]any) (map[string]any, err
 	return nil, nil
 }
 
+func eitherBlobIsBinary(blobs ...*items.CachedBlob) (bool, error) {
+	for _, blob := range blobs {
+		_, err := blob.CountLines()
+		if errors.Is(err, items.ErrBinary) {
+			return true, nil
+		}
+
+		if err != nil {
+			return false, fmt.Errorf("count blob lines: %w", err)
+		}
+	}
+
+	return false, nil
+}
+
+func shortHash(hash plumbing.Hash) string {
+	raw := hash.String()
+	if len(raw) > 12 {
+		return raw[:12]
+	}
+
+	return raw
+}
+
+// Fork clones this PipelineItem.
+func (saver *UASTChangesSaver) Fork(n int) []core.PipelineItem {
+	return core.ForkSamePipelineItem(saver, n)
+}
+
+// Finalize returns the result of the analysis.
+func (saver *UASTChangesSaver) Finalize() any {
+	return saver.result
+}
+
+// Serialize converts the analysis result as returned by Finalize() to text or bytes.
+func (saver *UASTChangesSaver) Serialize(result any, binary bool, writer io.Writer) error {
+	records, ok := result.([]UASTChangeRecord)
+	if !ok {
+		return fmt.Errorf("%w: %T", errUnexpectedUASTChangesResult, result)
+	}
+
+	if binary {
+		payload := map[string]any{"changes": records}
+
+		err := json.NewEncoder(writer).Encode(payload)
+		if err != nil {
+			return fmt.Errorf("encode UAST changes JSON: %w", err)
+		}
+
+		return nil
+	}
+
+	for _, sc := range records {
+		_, err := fmt.Fprintf(writer, "  - {file: %s, src0: %s, src1: %s, uast0: %s, uast1: %s}\n",
+			sc.FileName, sc.SrcBefore, sc.SrcAfter, sc.UASTBefore, sc.UASTAfter)
+		if err != nil {
+			return fmt.Errorf("write UAST changes text: %w", err)
+		}
+	}
+
+	return nil
+}
+
 func (saver *UASTChangesSaver) processChange(
 	commit *object.Commit,
 	index int,
@@ -190,21 +253,6 @@ func (saver *UASTChangesSaver) processChange(
 	return record, err == nil, err
 }
 
-func eitherBlobIsBinary(blobs ...*items.CachedBlob) (bool, error) {
-	for _, blob := range blobs {
-		_, err := blob.CountLines()
-		if errors.Is(err, items.ErrBinary) {
-			return true, nil
-		}
-
-		if err != nil {
-			return false, fmt.Errorf("count blob lines: %w", err)
-		}
-	}
-
-	return false, nil
-}
-
 func (saver *UASTChangesSaver) extractChangeNodes(
 	commit *object.Commit, name, phase string, data []byte,
 ) ([]ast_items.Node, bool) {
@@ -219,15 +267,6 @@ func (saver *UASTChangesSaver) extractChangeNodes(
 	}
 
 	return nodes, true
-}
-
-func shortHash(hash plumbing.Hash) string {
-	raw := hash.String()
-	if len(raw) > 12 {
-		return raw[:12]
-	}
-
-	return raw
 }
 
 func (saver *UASTChangesSaver) dumpChangeFiles(
@@ -284,45 +323,6 @@ func (saver *UASTChangesSaver) dumpChangeFiles(
 		UASTBefore: uastBeforePath,
 		UASTAfter:  uastAfterPath,
 	}, nil
-}
-
-// Fork clones this PipelineItem.
-func (saver *UASTChangesSaver) Fork(n int) []core.PipelineItem {
-	return core.ForkSamePipelineItem(saver, n)
-}
-
-// Finalize returns the result of the analysis.
-func (saver *UASTChangesSaver) Finalize() any {
-	return saver.result
-}
-
-// Serialize converts the analysis result as returned by Finalize() to text or bytes.
-func (saver *UASTChangesSaver) Serialize(result any, binary bool, writer io.Writer) error {
-	records, ok := result.([]UASTChangeRecord)
-	if !ok {
-		return fmt.Errorf("%w: %T", errUnexpectedUASTChangesResult, result)
-	}
-
-	if binary {
-		payload := map[string]any{"changes": records}
-
-		err := json.NewEncoder(writer).Encode(payload)
-		if err != nil {
-			return fmt.Errorf("encode UAST changes JSON: %w", err)
-		}
-
-		return nil
-	}
-
-	for _, sc := range records {
-		_, err := fmt.Fprintf(writer, "  - {file: %s, src0: %s, src1: %s, uast0: %s, uast1: %s}\n",
-			sc.FileName, sc.SrcBefore, sc.SrcAfter, sc.UASTBefore, sc.UASTAfter)
-		if err != nil {
-			return fmt.Errorf("write UAST changes text: %w", err)
-		}
-	}
-
-	return nil
 }
 
 func init() {

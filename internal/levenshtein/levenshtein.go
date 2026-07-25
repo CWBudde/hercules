@@ -10,14 +10,6 @@ type Context struct {
 	intSlice []int
 }
 
-func (c *Context) getIntSlice(l int) []int {
-	if cap(c.intSlice) < l {
-		c.intSlice = make([]int, l)
-	}
-
-	return c.intSlice[:l]
-}
-
 // Distance calculates the Levenshtein distance between two strings which
 // is defined as the minimum number of edits needed to transform one string
 // into the other, with the allowable edit operations being insertion, deletion,
@@ -68,6 +60,14 @@ func (c *Context) Distance(str1, str2 string) int {
 	}
 
 	return column[lenS1]
+}
+
+func (c *Context) getIntSlice(l int) []int {
+	if cap(c.intSlice) < l {
+		c.intSlice = make([]int, l)
+	}
+
+	return c.intSlice[:l]
 }
 
 func minInt(a, b, c int) int {

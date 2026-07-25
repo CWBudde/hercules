@@ -120,28 +120,12 @@ func (v peopleResolver) Count() int {
 	return len(v.identities.ReversedPeopleDict)
 }
 
-func (v peopleResolver) nameOf(id core.AuthorId, anonymity bool) string {
-	if id == core.AuthorMissing || id < 0 || v.identities == nil || int(id) >= len(v.identities.ReversedPeopleDict) {
-		return core.AuthorMissingName
-	}
-
-	if !anonymity {
-		return v.identities.ReversedPeopleDict[id]
-	}
-
-	return v.anonymizeName(id)
-}
-
 func (v peopleResolver) FriendlyNameOf(id core.AuthorId) string {
 	return v.nameOf(id, v.identities.Anonymity)
 }
 
 func (v peopleResolver) PrivateNameOf(id core.AuthorId) string {
 	return v.nameOf(id, false)
-}
-
-func (v peopleResolver) anonymizeName(id core.AuthorId) string {
-	return fmt.Sprintf("Author %3d", id)
 }
 
 func (v peopleResolver) ForEachIdentity(callback func(core.AuthorId, string)) bool {
@@ -285,35 +269,6 @@ func (detector *PeopleDetector) Configure(facts map[string]any) error {
 	facts[core.FactIdentityResolver] = resolver
 
 	return nil
-}
-
-func (detector *PeopleDetector) setMergeThreshold(value float64) error {
-	if value < 0 || value > 1 {
-		return errors.Errorf("%s must be between 0 and 1: %f", ConfigIdentityDetectorMergeThreshold, value)
-	}
-
-	detector.MergeThreshold = value
-	detector.mergeThresholdConfigured = true
-
-	return nil
-}
-
-func (detector *PeopleDetector) ensurePeopleDictionary() {
-	if detector.PeopleDict != nil {
-		return
-	}
-
-	detector.PeopleDict = make(map[string]int, len(detector.ReversedPeopleDict))
-	for index, identity := range detector.ReversedPeopleDict {
-		detector.PeopleDict[identity] = index
-	}
-}
-
-func (detector *PeopleDetector) ensureIdentityAudit() {
-	if len(detector.audit.Identities) == 0 && len(detector.ReversedPeopleDict) > 0 {
-		detector.ensureMergeThreshold()
-		detector.rebuildAuditFromState(nil, nil, nil)
-	}
 }
 
 func (*PeopleDetector) ConfigureUpstream(map[string]any) error {
@@ -508,12 +463,6 @@ func reversePeopleDictionary(
 	return reversed
 }
 
-func (detector *PeopleDetector) ensureMergeThreshold() {
-	if detector.MergeThreshold == 0 && !detector.mergeThresholdConfigured {
-		detector.MergeThreshold = defaultIdentityMergeThreshold
-	}
-}
-
 func identityMergeThresholdFromFacts(facts map[string]any) (float64, bool) {
 	switch val := facts[ConfigIdentityDetectorMergeThreshold].(type) {
 	case float64:
@@ -523,41 +472,6 @@ func identityMergeThresholdFromFacts(facts map[string]any) (float64, bool) {
 	default:
 		return 0, false
 	}
-}
-
-func (detector *PeopleDetector) addSignature(name, email, reason string, size *int,
-	dict map[string]int, names, emails map[int][]string, sourceCounts map[int]int,
-	ambiguous *[]IdentityMergeSuggestion,
-) (int, *IdentityMergeDecision) {
-	name = normalizeIdentityKey(name)
-
-	email = normalizeIdentityKey(email)
-	if name == "" && email == "" {
-		return core.AuthorMissing, nil
-	}
-
-	if id, decision, found := matchExistingSignature(
-		name, email, reason, dict, names, emails, sourceCounts,
-	); found {
-		return id, decision
-	}
-
-	if reason == "commit" {
-		id, decision, found := detector.matchFuzzySignature(
-			name, email, dict, names, emails, sourceCounts, ambiguous,
-		)
-		if found {
-			return id, decision
-		}
-	}
-
-	id := *size
-	*size++
-	sourceCounts[id]++
-	addIdentityKey(id, name, false, dict, names, emails)
-	addIdentityKey(id, email, true, dict, names, emails)
-
-	return id, nil
 }
 
 func matchExistingSignature(
@@ -585,37 +499,6 @@ func matchExistingSignature(
 	return 0, nil, false
 }
 
-func (detector *PeopleDetector) matchFuzzySignature(
-	name, email string,
-	dict map[string]int,
-	names, emails map[int][]string,
-	sourceCounts map[int]int,
-	ambiguous *[]IdentityMergeSuggestion,
-) (int, *IdentityMergeDecision, bool) {
-	candidate, confidence, tied := detector.bestFuzzyCandidate(name, email, names, emails)
-	if candidate == core.AuthorMissing {
-		return 0, nil, false
-	}
-
-	suggestion := IdentityMergeSuggestion{
-		Left:  detector.identityLine(candidate, names, emails),
-		Right: peopleDictLine([]string{name}, []string{email}), Reason: "fuzzy-name", Confidence: confidence,
-	}
-	if tied || confidence < detector.MergeThreshold {
-		*ambiguous = append(*ambiguous, suggestion)
-		return 0, nil, false
-	}
-
-	sourceCounts[candidate]++
-	addIdentityKey(candidate, name, false, dict, names, emails)
-	addIdentityKey(candidate, email, true, dict, names, emails)
-
-	return candidate, &IdentityMergeDecision{
-		Identity: candidate, From: suggestion.Right, To: suggestion.Left,
-		Reason: "fuzzy-name", Confidence: confidence,
-	}, true
-}
-
 func mergeDecisionForReason(id int, name, email, reason, destination string,
 	confidence float64,
 ) *IdentityMergeDecision {
@@ -630,48 +513,6 @@ func mergeDecisionForReason(id int, name, email, reason, destination string,
 		Reason:     reason,
 		Confidence: confidence,
 	}
-}
-
-func (detector *PeopleDetector) bestFuzzyCandidate(name, email string, names map[int][]string,
-	emails map[int][]string,
-) (int, float64, bool) {
-	if name == "" {
-		return core.AuthorMissing, 0, false
-	}
-
-	ids := make([]int, 0, len(names))
-	for id := range names {
-		ids = append(ids, id)
-	}
-
-	sort.Ints(ids)
-
-	bestID := core.AuthorMissing
-	bestScore := 0.0
-	tied := false
-
-	for _, id := range ids {
-		if !sameEmailDomain(email, emails[id]) {
-			continue
-		}
-
-		for _, candidateName := range names[id] {
-			score := jaroWinkler(name, candidateName)
-			if score < ambiguousIdentityThreshold {
-				continue
-			}
-
-			if score > bestScore {
-				bestScore = score
-				bestID = id
-				tied = false
-			} else if score == bestScore {
-				tied = true
-			}
-		}
-	}
-
-	return bestID, bestScore, tied
 }
 
 func addIdentityKey(id int, key string, isEmail bool, dict map[string]int, names map[int][]string,
@@ -927,6 +768,165 @@ func (detector *PeopleDetector) GeneratePeopleDictTemplate() string {
 	}
 
 	return builder.String()
+}
+
+func (v peopleResolver) nameOf(id core.AuthorId, anonymity bool) string {
+	if id == core.AuthorMissing || id < 0 || v.identities == nil || int(id) >= len(v.identities.ReversedPeopleDict) {
+		return core.AuthorMissingName
+	}
+
+	if !anonymity {
+		return v.identities.ReversedPeopleDict[id]
+	}
+
+	return v.anonymizeName(id)
+}
+
+func (v peopleResolver) anonymizeName(id core.AuthorId) string {
+	return fmt.Sprintf("Author %3d", id)
+}
+
+func (detector *PeopleDetector) setMergeThreshold(value float64) error {
+	if value < 0 || value > 1 {
+		return errors.Errorf("%s must be between 0 and 1: %f", ConfigIdentityDetectorMergeThreshold, value)
+	}
+
+	detector.MergeThreshold = value
+	detector.mergeThresholdConfigured = true
+
+	return nil
+}
+
+func (detector *PeopleDetector) ensurePeopleDictionary() {
+	if detector.PeopleDict != nil {
+		return
+	}
+
+	detector.PeopleDict = make(map[string]int, len(detector.ReversedPeopleDict))
+	for index, identity := range detector.ReversedPeopleDict {
+		detector.PeopleDict[identity] = index
+	}
+}
+
+func (detector *PeopleDetector) ensureIdentityAudit() {
+	if len(detector.audit.Identities) == 0 && len(detector.ReversedPeopleDict) > 0 {
+		detector.ensureMergeThreshold()
+		detector.rebuildAuditFromState(nil, nil, nil)
+	}
+}
+
+func (detector *PeopleDetector) ensureMergeThreshold() {
+	if detector.MergeThreshold == 0 && !detector.mergeThresholdConfigured {
+		detector.MergeThreshold = defaultIdentityMergeThreshold
+	}
+}
+
+func (detector *PeopleDetector) addSignature(name, email, reason string, size *int,
+	dict map[string]int, names, emails map[int][]string, sourceCounts map[int]int,
+	ambiguous *[]IdentityMergeSuggestion,
+) (int, *IdentityMergeDecision) {
+	name = normalizeIdentityKey(name)
+
+	email = normalizeIdentityKey(email)
+	if name == "" && email == "" {
+		return core.AuthorMissing, nil
+	}
+
+	if id, decision, found := matchExistingSignature(
+		name, email, reason, dict, names, emails, sourceCounts,
+	); found {
+		return id, decision
+	}
+
+	if reason == "commit" {
+		id, decision, found := detector.matchFuzzySignature(
+			name, email, dict, names, emails, sourceCounts, ambiguous,
+		)
+		if found {
+			return id, decision
+		}
+	}
+
+	id := *size
+	*size++
+	sourceCounts[id]++
+	addIdentityKey(id, name, false, dict, names, emails)
+	addIdentityKey(id, email, true, dict, names, emails)
+
+	return id, nil
+}
+
+func (detector *PeopleDetector) matchFuzzySignature(
+	name, email string,
+	dict map[string]int,
+	names, emails map[int][]string,
+	sourceCounts map[int]int,
+	ambiguous *[]IdentityMergeSuggestion,
+) (int, *IdentityMergeDecision, bool) {
+	candidate, confidence, tied := detector.bestFuzzyCandidate(name, email, names, emails)
+	if candidate == core.AuthorMissing {
+		return 0, nil, false
+	}
+
+	suggestion := IdentityMergeSuggestion{
+		Left:  detector.identityLine(candidate, names, emails),
+		Right: peopleDictLine([]string{name}, []string{email}), Reason: "fuzzy-name", Confidence: confidence,
+	}
+	if tied || confidence < detector.MergeThreshold {
+		*ambiguous = append(*ambiguous, suggestion)
+		return 0, nil, false
+	}
+
+	sourceCounts[candidate]++
+	addIdentityKey(candidate, name, false, dict, names, emails)
+	addIdentityKey(candidate, email, true, dict, names, emails)
+
+	return candidate, &IdentityMergeDecision{
+		Identity: candidate, From: suggestion.Right, To: suggestion.Left,
+		Reason: "fuzzy-name", Confidence: confidence,
+	}, true
+}
+
+func (detector *PeopleDetector) bestFuzzyCandidate(name, email string, names map[int][]string,
+	emails map[int][]string,
+) (int, float64, bool) {
+	if name == "" {
+		return core.AuthorMissing, 0, false
+	}
+
+	ids := make([]int, 0, len(names))
+	for id := range names {
+		ids = append(ids, id)
+	}
+
+	sort.Ints(ids)
+
+	bestID := core.AuthorMissing
+	bestScore := 0.0
+	tied := false
+
+	for _, id := range ids {
+		if !sameEmailDomain(email, emails[id]) {
+			continue
+		}
+
+		for _, candidateName := range names[id] {
+			score := jaroWinkler(name, candidateName)
+			if score < ambiguousIdentityThreshold {
+				continue
+			}
+
+			if score > bestScore {
+				bestScore = score
+				bestID = id
+				tied = false
+			} else if score == bestScore {
+				tied = true
+			}
+		}
+	}
+
+	return bestID, bestScore, tied
 }
 
 func (detector *PeopleDetector) identityLine(id int, names, emails map[int][]string) string {

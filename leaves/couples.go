@@ -256,61 +256,6 @@ func (couples *CouplesAnalysis) Finalize() any {
 	}
 }
 
-func (couples *CouplesAnalysis) fileLineCounts(files []string) ([]int, error) {
-	lines := make([]int, len(files))
-	for i, name := range files {
-		file, err := couples.lastCommit.File(name)
-		if err != nil {
-			err := fmt.Errorf("cannot find file %s in commit %s: %w",
-				name, couples.lastCommit.Hash.String(), err)
-			couples.l.Critical(err)
-
-			return nil, err
-		}
-
-		blob := items.CachedBlob{Blob: file.Blob}
-
-		err = blob.Cache()
-		if err != nil {
-			err = fmt.Errorf("cannot read blob %s of file %s: %w",
-				blob.Hash.String(), name, err)
-			couples.l.Critical(err)
-
-			return nil, err
-		}
-
-		lines[i], _ = blob.CountLines()
-	}
-
-	return lines, nil
-}
-
-func (couples *CouplesAnalysis) peopleCouplingMatrices(
-	people []map[string]int, filesIndex map[string]int,
-) ([]map[int]int64, [][]int) {
-	peopleMatrix := make([]map[int]int64, couples.PeopleNumber+1)
-	peopleFiles := make([][]int, couples.PeopleNumber+1)
-
-	for i := range peopleMatrix {
-		peopleMatrix[i] = map[int]int64{}
-		for file, commits := range people[i] {
-			if fi, exists := filesIndex[file]; exists {
-				peopleFiles[i] = append(peopleFiles[i], fi)
-			}
-
-			for j, otherFiles := range people {
-				if delta := min(otherFiles[file], commits); delta > 0 {
-					peopleMatrix[i][j] += int64(delta)
-				}
-			}
-		}
-
-		sort.Ints(peopleFiles[i])
-	}
-
-	return peopleMatrix, peopleFiles
-}
-
 func fileCouplingMatrix(
 	files map[string]map[string]int, filesSequence []string, filesIndex map[string]int,
 ) []map[int]int64 {
@@ -446,6 +391,61 @@ func (couples *CouplesAnalysis) MergeResults(r1, r2 any, c1, c2 *core.CommonAnal
 	addMergedFilesMatrix(merged.FilesMatrix, cr2, files)
 
 	return merged
+}
+
+func (couples *CouplesAnalysis) fileLineCounts(files []string) ([]int, error) {
+	lines := make([]int, len(files))
+	for i, name := range files {
+		file, err := couples.lastCommit.File(name)
+		if err != nil {
+			err := fmt.Errorf("cannot find file %s in commit %s: %w",
+				name, couples.lastCommit.Hash.String(), err)
+			couples.l.Critical(err)
+
+			return nil, err
+		}
+
+		blob := items.CachedBlob{Blob: file.Blob}
+
+		err = blob.Cache()
+		if err != nil {
+			err = fmt.Errorf("cannot read blob %s of file %s: %w",
+				blob.Hash.String(), name, err)
+			couples.l.Critical(err)
+
+			return nil, err
+		}
+
+		lines[i], _ = blob.CountLines()
+	}
+
+	return lines, nil
+}
+
+func (couples *CouplesAnalysis) peopleCouplingMatrices(
+	people []map[string]int, filesIndex map[string]int,
+) ([]map[int]int64, [][]int) {
+	peopleMatrix := make([]map[int]int64, couples.PeopleNumber+1)
+	peopleFiles := make([][]int, couples.PeopleNumber+1)
+
+	for i := range peopleMatrix {
+		peopleMatrix[i] = map[int]int64{}
+		for file, commits := range people[i] {
+			if fi, exists := filesIndex[file]; exists {
+				peopleFiles[i] = append(peopleFiles[i], fi)
+			}
+
+			for j, otherFiles := range people {
+				if delta := min(otherFiles[file], commits); delta > 0 {
+					peopleMatrix[i][j] += int64(delta)
+				}
+			}
+		}
+
+		sort.Ints(peopleFiles[i])
+	}
+
+	return peopleMatrix, peopleFiles
 }
 
 func addMergedPeopleFiles(

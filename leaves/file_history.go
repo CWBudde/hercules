@@ -127,6 +127,51 @@ func (history *FileHistoryAnalysis) Consume(deps map[string]any) (map[string]any
 	return nil, nil
 }
 
+// Finalize returns the result of the analysis. Further Consume() calls are not expected.
+func (history *FileHistoryAnalysis) Finalize() any {
+	files := map[string]FileHistory{}
+
+	fileIter, err := history.lastCommit.Files()
+	if err != nil {
+		history.l.Errorf("Failed to iterate files of %s", history.lastCommit.Hash.String())
+
+		return fmt.Errorf("list files for commit %s: %w", history.lastCommit.Hash.String(), err)
+	}
+
+	err = fileIter.ForEach(func(file *object.File) error {
+		if fh := history.files[file.Name]; fh != nil {
+			files[file.Name] = *fh
+		}
+
+		return nil
+	})
+	if err != nil {
+		history.l.Errorf("Failed to iterate files of %s", history.lastCommit.Hash.String())
+
+		return fmt.Errorf("iterate files for commit %s: %w", history.lastCommit.Hash.String(), err)
+	}
+
+	return FileHistoryResult{Files: files}
+}
+
+// Fork clones this PipelineItem.
+func (history *FileHistoryAnalysis) Fork(n int) []core.PipelineItem {
+	return core.ForkSamePipelineItem(history, n)
+}
+
+// Serialize converts the analysis result as returned by Finalize() to text or bytes.
+// The text format is YAML and the bytes format is Protocol Buffers.
+func (history *FileHistoryAnalysis) Serialize(result any, binary bool, writer io.Writer) error {
+	historyResult := result.(FileHistoryResult)
+	if binary {
+		return history.serializeBinary(&historyResult, writer)
+	}
+
+	history.serializeText(&historyResult, writer)
+
+	return nil
+}
+
 func (history *FileHistoryAnalysis) recordFileCommit(
 	change *object.Change, action merkletrie.Action, commit plumbing.Hash,
 ) {
@@ -178,51 +223,6 @@ func (history *FileHistoryAnalysis) recordAuthorStats(
 		Added: oldStats.Added + stats.Added, Removed: oldStats.Removed + stats.Removed,
 		Changed: oldStats.Changed + stats.Changed,
 	}
-}
-
-// Finalize returns the result of the analysis. Further Consume() calls are not expected.
-func (history *FileHistoryAnalysis) Finalize() any {
-	files := map[string]FileHistory{}
-
-	fileIter, err := history.lastCommit.Files()
-	if err != nil {
-		history.l.Errorf("Failed to iterate files of %s", history.lastCommit.Hash.String())
-
-		return fmt.Errorf("list files for commit %s: %w", history.lastCommit.Hash.String(), err)
-	}
-
-	err = fileIter.ForEach(func(file *object.File) error {
-		if fh := history.files[file.Name]; fh != nil {
-			files[file.Name] = *fh
-		}
-
-		return nil
-	})
-	if err != nil {
-		history.l.Errorf("Failed to iterate files of %s", history.lastCommit.Hash.String())
-
-		return fmt.Errorf("iterate files for commit %s: %w", history.lastCommit.Hash.String(), err)
-	}
-
-	return FileHistoryResult{Files: files}
-}
-
-// Fork clones this PipelineItem.
-func (history *FileHistoryAnalysis) Fork(n int) []core.PipelineItem {
-	return core.ForkSamePipelineItem(history, n)
-}
-
-// Serialize converts the analysis result as returned by Finalize() to text or bytes.
-// The text format is YAML and the bytes format is Protocol Buffers.
-func (history *FileHistoryAnalysis) Serialize(result any, binary bool, writer io.Writer) error {
-	historyResult := result.(FileHistoryResult)
-	if binary {
-		return history.serializeBinary(&historyResult, writer)
-	}
-
-	history.serializeText(&historyResult, writer)
-
-	return nil
 }
 
 func (history *FileHistoryAnalysis) serializeText(result *FileHistoryResult, writer io.Writer) {

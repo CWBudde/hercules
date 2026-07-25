@@ -271,74 +271,6 @@ type churnFileEntry struct {
 	deleteHistory map[core.AuthorId]sparseHistory
 }
 
-func (analyser *CodeChurnAnalysis) updateAwareness(change core.LineHistoryChange, fileEntry *churnFileEntry) {
-	lineDelta := int32(change.Delta)
-
-	deltaKey := churnDeltaKey{change.PrevAuthor, change.FileId}
-	delta, hasDelta := analyser.churnDeltas[deltaKey]
-
-	if delta.lastTouch != change.CurrTick {
-		if hasDelta {
-			if change.PrevAuthor != change.CurrAuthor {
-				delta.deletedByOthers -= lineDelta
-				lineDelta = 0
-			}
-
-			awareness, memorability := analyser.calculateAwareness(*fileEntry, change, delta.lastTouch, delta.churnLines)
-			fileEntry.awareness, fileEntry.memorability = float32(awareness), float32(memorability)
-		}
-
-		if lineDelta == 0 {
-			delete(analyser.churnDeltas, deltaKey)
-			return
-		}
-
-		delta = churnDelta{lastTouch: change.CurrTick}
-	}
-
-	if change.PrevAuthor != change.CurrAuthor {
-		if lineDelta < 0 {
-			delta.deletedByOthers -= lineDelta
-		}
-	} else {
-		if lineDelta > 0 {
-			delta.inserted += lineDelta
-		} else {
-			delta.deletedBySelf -= lineDelta
-		}
-	}
-
-	analyser.churnDeltas[deltaKey] = delta
-}
-
-func (analyser *CodeChurnAnalysis) updateAuthor(change core.LineHistoryChange) {
-	if change.PrevAuthor == core.AuthorMissing || change.Delta == 0 {
-		return
-	}
-
-	fileEntry := analyser.codeChurns[change.PrevAuthor].getFileEntry(change.FileId)
-
-	analyser.updateAwareness(change, &fileEntry)
-
-	lineDelta := int32(change.Delta)
-
-	fileEntry.ownedLines += lineDelta
-	if change.Delta > 0 {
-		// PrevAuthor == CurrAuthor
-		fileEntry.insertedLines += lineDelta
-	} else {
-		history := fileEntry.deleteHistory[change.CurrAuthor]
-		if history == nil {
-			history = sparseHistory{}
-			fileEntry.deleteHistory[change.CurrAuthor] = history
-		}
-
-		history.updateDelta(int(change.PrevTick), int(change.CurrTick), change.Delta)
-	}
-
-	analyser.codeChurns[change.PrevAuthor].files[change.FileId] = fileEntry
-}
-
 // Finalize returns the result of the analysis. Further calls to Consume() are not expected.
 func (analyser *CodeChurnAnalysis) Finalize() any {
 	result := CodeChurnResult{
@@ -469,6 +401,74 @@ func (analyser *CodeChurnAnalysis) MergeResults(
 	mergeCodeChurnAuthors(&merged, cr2, peopleIndex)
 
 	return merged
+}
+
+func (analyser *CodeChurnAnalysis) updateAwareness(change core.LineHistoryChange, fileEntry *churnFileEntry) {
+	lineDelta := int32(change.Delta)
+
+	deltaKey := churnDeltaKey{change.PrevAuthor, change.FileId}
+	delta, hasDelta := analyser.churnDeltas[deltaKey]
+
+	if delta.lastTouch != change.CurrTick {
+		if hasDelta {
+			if change.PrevAuthor != change.CurrAuthor {
+				delta.deletedByOthers -= lineDelta
+				lineDelta = 0
+			}
+
+			awareness, memorability := analyser.calculateAwareness(*fileEntry, change, delta.lastTouch, delta.churnLines)
+			fileEntry.awareness, fileEntry.memorability = float32(awareness), float32(memorability)
+		}
+
+		if lineDelta == 0 {
+			delete(analyser.churnDeltas, deltaKey)
+			return
+		}
+
+		delta = churnDelta{lastTouch: change.CurrTick}
+	}
+
+	if change.PrevAuthor != change.CurrAuthor {
+		if lineDelta < 0 {
+			delta.deletedByOthers -= lineDelta
+		}
+	} else {
+		if lineDelta > 0 {
+			delta.inserted += lineDelta
+		} else {
+			delta.deletedBySelf -= lineDelta
+		}
+	}
+
+	analyser.churnDeltas[deltaKey] = delta
+}
+
+func (analyser *CodeChurnAnalysis) updateAuthor(change core.LineHistoryChange) {
+	if change.PrevAuthor == core.AuthorMissing || change.Delta == 0 {
+		return
+	}
+
+	fileEntry := analyser.codeChurns[change.PrevAuthor].getFileEntry(change.FileId)
+
+	analyser.updateAwareness(change, &fileEntry)
+
+	lineDelta := int32(change.Delta)
+
+	fileEntry.ownedLines += lineDelta
+	if change.Delta > 0 {
+		// PrevAuthor == CurrAuthor
+		fileEntry.insertedLines += lineDelta
+	} else {
+		history := fileEntry.deleteHistory[change.CurrAuthor]
+		if history == nil {
+			history = sparseHistory{}
+			fileEntry.deleteHistory[change.CurrAuthor] = history
+		}
+
+		history.updateDelta(int(change.PrevTick), int(change.CurrTick), change.Delta)
+	}
+
+	analyser.codeChurns[change.PrevAuthor].files[change.FileId] = fileEntry
 }
 
 func mergeCodeChurnPeople(first, second []string) ([]string, map[string]int) {

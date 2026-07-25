@@ -343,35 +343,6 @@ func (diff *FileDiff) Consume(deps map[string]any) (map[string]any, error) {
 	return map[string]any{DependencyFileDiff: result}, nil
 }
 
-func (diff *FileDiff) refineWithTreeSitter(path string, source []byte, original FileDiffData) FileDiffData {
-	if original.NewLinesOfCode <= 0 || len(original.Diffs) < 2 {
-		return original
-	}
-
-	boundaries := collectSuspiciousBoundaries(original.Diffs)
-	if len(boundaries) == 0 {
-		return original
-	}
-
-	ranges := boundariesToRanges(boundaries, original.NewLinesOfCode)
-
-	nodes, err := extractNodesForRefinement(path, source, ranges, original.NewLinesOfCode, diff.RefineMode)
-	if err != nil {
-		diff.l.Warnf("FileDiff: failed to refine %s: %v", path, err)
-		return original
-	}
-
-	if len(nodes) == 0 {
-		return original
-	}
-
-	line2node := buildLineToNodeIndex(nodes, original.NewLinesOfCode)
-	refined := refineDiffByNodeDensityWithBoundaries(original, line2node, boundaries)
-	refined.Diffs = normalizeDiffs(refined.Diffs)
-
-	return refined
-}
-
 // extractNodesForRefinement chooses between full-file and range-limited
 // tree-sitter parsing per the configured mode and the size/coverage of the
 // suspicious boundaries.
@@ -707,6 +678,35 @@ func countNodesInInterval(line2node [][]ast_items.Node, start, end int) int {
 // Fork clones this PipelineItem.
 func (diff *FileDiff) Fork(n int) []core.PipelineItem {
 	return core.ForkSamePipelineItem(diff, n)
+}
+
+func (diff *FileDiff) refineWithTreeSitter(path string, source []byte, original FileDiffData) FileDiffData {
+	if original.NewLinesOfCode <= 0 || len(original.Diffs) < 2 {
+		return original
+	}
+
+	boundaries := collectSuspiciousBoundaries(original.Diffs)
+	if len(boundaries) == 0 {
+		return original
+	}
+
+	ranges := boundariesToRanges(boundaries, original.NewLinesOfCode)
+
+	nodes, err := extractNodesForRefinement(path, source, ranges, original.NewLinesOfCode, diff.RefineMode)
+	if err != nil {
+		diff.l.Warnf("FileDiff: failed to refine %s: %v", path, err)
+		return original
+	}
+
+	if len(nodes) == 0 {
+		return original
+	}
+
+	line2node := buildLineToNodeIndex(nodes, original.NewLinesOfCode)
+	refined := refineDiffByNodeDensityWithBoundaries(original, line2node, boundaries)
+	refined.Diffs = normalizeDiffs(refined.Diffs)
+
+	return refined
 }
 
 func init() {

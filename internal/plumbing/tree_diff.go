@@ -230,6 +230,11 @@ func commitContinuesFrom(commit *object.Commit, previous plumbing.Hash) bool {
 	return slices.Contains(commit.ParentHashes, previous)
 }
 
+// Fork clones this PipelineItem.
+func (treediff *TreeDiff) Fork(n int) []core.PipelineItem {
+	return core.ForkCopyPipelineItem(treediff, n)
+}
+
 func (treediff *TreeDiff) initialTreeChanges(tree *object.Tree) (object.Changes, error) {
 	var changes object.Changes
 
@@ -301,11 +306,6 @@ OUTER:
 	}
 
 	return filteredDiffs
-}
-
-// Fork clones this PipelineItem.
-func (treediff *TreeDiff) Fork(n int) []core.PipelineItem {
-	return core.ForkCopyPipelineItem(treediff, n)
 }
 
 // checkLanguage returns whether the blob corresponds to the list of required languages.

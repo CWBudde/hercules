@@ -141,17 +141,6 @@ func isRename(change *object.Change) bool {
 	return hasFrom && hasTo && differentNames
 }
 
-// getOrCreateTickMetrics retrieves or creates tick metrics.
-func (rp *RefactoringProxy) getOrCreateTickMetrics(tick int) *tickChangeMetrics {
-	metrics, exists := rp.tickMetrics[tick]
-	if !exists {
-		metrics = &tickChangeMetrics{}
-		rp.tickMetrics[tick] = metrics
-	}
-
-	return metrics
-}
-
 // Consume runs on next commit data.
 func (rp *RefactoringProxy) Consume(deps map[string]any) (map[string]any, error) {
 	if !rp.ShouldConsumeCommit(deps) {
@@ -218,6 +207,60 @@ func (rp *RefactoringProxy) Finalize() any {
 // Fork clones this pipeline item.
 func (rp *RefactoringProxy) Fork(n int) []core.PipelineItem {
 	return core.ForkSamePipelineItem(rp, n)
+}
+
+// Serialize converts analysis result to text or bytes.
+func (rp *RefactoringProxy) Serialize(result any, binary bool, writer io.Writer) error {
+	refactoringResult, ok := result.(RefactoringProxyResult)
+	if !ok {
+		return fmt.Errorf("result is not a RefactoringProxyResult: '%v'", result)
+	}
+
+	if binary {
+		return rp.serializeBinary(&refactoringResult, writer)
+	}
+
+	rp.serializeText(&refactoringResult, writer)
+
+	return nil
+}
+
+// Deserialize converts protobuf bytes to RefactoringProxyResult.
+func (rp *RefactoringProxy) Deserialize(pbmessage []byte) (any, error) {
+	message := pb.RefactoringProxyResults{}
+
+	err := proto.Unmarshal(pbmessage, &message)
+	if err != nil {
+		return nil, err
+	}
+
+	result := RefactoringProxyResult{
+		Ticks:         make([]int, len(message.GetTicks())),
+		RenameRatios:  make([]float64, len(message.GetRenameRatios())),
+		IsRefactoring: message.GetIsRefactoring(),
+		TotalChanges:  make([]int, len(message.GetTotalChanges())),
+		Threshold:     float64(message.GetThreshold()), // Convert float32 from protobuf to float64
+		tickSize:      time.Duration(message.GetTickSize()),
+	}
+
+	for i := range message.GetTicks() {
+		result.Ticks[i] = int(message.GetTicks()[i])
+		result.RenameRatios[i] = float64(message.GetRenameRatios()[i])
+		result.TotalChanges[i] = int(message.GetTotalChanges()[i])
+	}
+
+	return result, nil
+}
+
+// getOrCreateTickMetrics retrieves or creates tick metrics.
+func (rp *RefactoringProxy) getOrCreateTickMetrics(tick int) *tickChangeMetrics {
+	metrics, exists := rp.tickMetrics[tick]
+	if !exists {
+		metrics = &tickChangeMetrics{}
+		rp.tickMetrics[tick] = metrics
+	}
+
+	return metrics
 }
 
 // serializeText outputs YAML format.
@@ -304,49 +347,6 @@ func (rp *RefactoringProxy) serializeBinary(result *RefactoringProxyResult, writ
 	_, err = writer.Write(serialized)
 
 	return err
-}
-
-// Serialize converts analysis result to text or bytes.
-func (rp *RefactoringProxy) Serialize(result any, binary bool, writer io.Writer) error {
-	refactoringResult, ok := result.(RefactoringProxyResult)
-	if !ok {
-		return fmt.Errorf("result is not a RefactoringProxyResult: '%v'", result)
-	}
-
-	if binary {
-		return rp.serializeBinary(&refactoringResult, writer)
-	}
-
-	rp.serializeText(&refactoringResult, writer)
-
-	return nil
-}
-
-// Deserialize converts protobuf bytes to RefactoringProxyResult.
-func (rp *RefactoringProxy) Deserialize(pbmessage []byte) (any, error) {
-	message := pb.RefactoringProxyResults{}
-
-	err := proto.Unmarshal(pbmessage, &message)
-	if err != nil {
-		return nil, err
-	}
-
-	result := RefactoringProxyResult{
-		Ticks:         make([]int, len(message.GetTicks())),
-		RenameRatios:  make([]float64, len(message.GetRenameRatios())),
-		IsRefactoring: message.GetIsRefactoring(),
-		TotalChanges:  make([]int, len(message.GetTotalChanges())),
-		Threshold:     float64(message.GetThreshold()), // Convert float32 from protobuf to float64
-		tickSize:      time.Duration(message.GetTickSize()),
-	}
-
-	for i := range message.GetTicks() {
-		result.Ticks[i] = int(message.GetTicks()[i])
-		result.RenameRatios[i] = float64(message.GetRenameRatios()[i])
-		result.TotalChanges[i] = int(message.GetTotalChanges()[i])
-	}
-
-	return result, nil
 }
 
 func init() {

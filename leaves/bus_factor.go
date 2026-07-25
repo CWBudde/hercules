@@ -184,53 +184,6 @@ func (bf *BusFactorAnalysis) Consume(deps map[string]any) (map[string]any, error
 	return nil, nil
 }
 
-// takeSnapshot scans all files and computes the bus factor for the given tick.
-func (bf *BusFactorAnalysis) takeSnapshot(tick int) {
-	if bf.fileResolver == nil {
-		return
-	}
-
-	authorLines := map[int]int64{}
-
-	bf.fileResolver.ForEachFile(func(fileId core.FileId, fileName string) {
-		previousLine := 0
-		previousAuthor := int(core.AuthorMissing)
-
-		bf.fileResolver.ScanFile(fileId,
-			func(line int, _ core.TickNumber, author core.AuthorId) {
-				length := line - previousLine
-				if length > 0 && previousAuthor != int(core.AuthorMissing) {
-					authorLines[previousAuthor] += int64(length)
-				}
-
-				previousLine = line
-
-				if author >= core.AuthorMissing {
-					previousAuthor = int(core.AuthorMissing)
-				} else {
-					previousAuthor = int(author)
-				}
-			})
-	})
-
-	var totalLines int64
-	for _, lines := range authorLines {
-		totalLines += lines
-	}
-
-	busFactor := computeBusFactor(authorLines, totalLines, bf.Threshold)
-
-	// Copy the map for the snapshot
-	snapshotLines := make(map[int]int64, len(authorLines))
-	maps.Copy(snapshotLines, authorLines)
-
-	bf.snapshots[tick] = &BusFactorSnapshot{
-		BusFactor:   busFactor,
-		TotalLines:  totalLines,
-		AuthorLines: snapshotLines,
-	}
-}
-
 // computeBusFactor returns the smallest k such that the top-k authors own >= threshold of totalLines.
 // Returns 0 if totalLines is 0.
 func computeBusFactor(authorLines map[int]int64, totalLines int64, threshold float32) int {
@@ -259,60 +212,6 @@ func computeBusFactor(authorLines map[int]int64, totalLines int64, threshold flo
 	}
 
 	return len(counts)
-}
-
-// computeSubsystemBusFactor computes bus factor per directory prefix at the final tick.
-func (bf *BusFactorAnalysis) computeSubsystemBusFactor() map[string]int {
-	if bf.fileResolver == nil {
-		return nil
-	}
-
-	// Accumulate per-directory, per-author line counts
-	subsystems := map[string]map[int]int64{} // dir -> author -> lines
-
-	bf.fileResolver.ForEachFile(func(fileId core.FileId, fileName string) {
-		dir := path.Dir(fileName)
-		if dir == "." {
-			dir = "/"
-		}
-
-		previousLine := 0
-		previousAuthor := int(core.AuthorMissing)
-
-		bf.fileResolver.ScanFile(fileId,
-			func(line int, _ core.TickNumber, author core.AuthorId) {
-				length := line - previousLine
-				if length > 0 && previousAuthor != int(core.AuthorMissing) {
-					dirAuthors := subsystems[dir]
-					if dirAuthors == nil {
-						dirAuthors = map[int]int64{}
-						subsystems[dir] = dirAuthors
-					}
-
-					dirAuthors[previousAuthor] += int64(length)
-				}
-
-				previousLine = line
-
-				if author >= core.AuthorMissing {
-					previousAuthor = int(core.AuthorMissing)
-				} else {
-					previousAuthor = int(author)
-				}
-			})
-	})
-
-	result := make(map[string]int, len(subsystems))
-	for dir, authorLines := range subsystems {
-		var totalLines int64
-		for _, lines := range authorLines {
-			totalLines += lines
-		}
-
-		result[dir] = computeBusFactor(authorLines, totalLines, bf.Threshold)
-	}
-
-	return result
 }
 
 // Finalize returns the result of the analysis. Further Consume() calls are not expected.
@@ -391,6 +290,143 @@ func (bf *BusFactorAnalysis) Deserialize(pbmessage []byte) (any, error) {
 	}
 
 	return result, nil
+}
+
+// MergeResults combines two BusFactorResult-s together.
+func (bf *BusFactorAnalysis) MergeResults(
+	r1, r2 any, c1, c2 *core.CommonAnalysisResult,
+) any {
+	bfr1 := r1.(BusFactorResult)
+	bfr2 := r2.(BusFactorResult)
+
+	merged := BusFactorResult{
+		Snapshots:          make(map[int]*BusFactorSnapshot),
+		SubsystemBusFactor: make(map[string]int),
+		Threshold:          bfr1.Threshold,
+		reversedPeopleDict: bfr1.reversedPeopleDict,
+		tickSize:           bfr1.tickSize,
+	}
+
+	// Merge snapshots: take the snapshot with the larger total lines for overlapping ticks
+	maps.Copy(merged.Snapshots, bfr1.Snapshots)
+
+	for tick, snapshot := range bfr2.Snapshots {
+		if existing, ok := merged.Snapshots[tick]; !ok || snapshot.TotalLines > existing.TotalLines {
+			merged.Snapshots[tick] = snapshot
+		}
+	}
+
+	// Merge subsystem bus factors: take the max (worst case)
+	maps.Copy(merged.SubsystemBusFactor, bfr1.SubsystemBusFactor)
+
+	for dir, bf := range bfr2.SubsystemBusFactor {
+		if existing, ok := merged.SubsystemBusFactor[dir]; !ok || bf > existing {
+			merged.SubsystemBusFactor[dir] = bf
+		}
+	}
+
+	return merged
+}
+
+// takeSnapshot scans all files and computes the bus factor for the given tick.
+func (bf *BusFactorAnalysis) takeSnapshot(tick int) {
+	if bf.fileResolver == nil {
+		return
+	}
+
+	authorLines := map[int]int64{}
+
+	bf.fileResolver.ForEachFile(func(fileId core.FileId, fileName string) {
+		previousLine := 0
+		previousAuthor := int(core.AuthorMissing)
+
+		bf.fileResolver.ScanFile(fileId,
+			func(line int, _ core.TickNumber, author core.AuthorId) {
+				length := line - previousLine
+				if length > 0 && previousAuthor != int(core.AuthorMissing) {
+					authorLines[previousAuthor] += int64(length)
+				}
+
+				previousLine = line
+
+				if author >= core.AuthorMissing {
+					previousAuthor = int(core.AuthorMissing)
+				} else {
+					previousAuthor = int(author)
+				}
+			})
+	})
+
+	var totalLines int64
+	for _, lines := range authorLines {
+		totalLines += lines
+	}
+
+	busFactor := computeBusFactor(authorLines, totalLines, bf.Threshold)
+
+	// Copy the map for the snapshot
+	snapshotLines := make(map[int]int64, len(authorLines))
+	maps.Copy(snapshotLines, authorLines)
+
+	bf.snapshots[tick] = &BusFactorSnapshot{
+		BusFactor:   busFactor,
+		TotalLines:  totalLines,
+		AuthorLines: snapshotLines,
+	}
+}
+
+// computeSubsystemBusFactor computes bus factor per directory prefix at the final tick.
+func (bf *BusFactorAnalysis) computeSubsystemBusFactor() map[string]int {
+	if bf.fileResolver == nil {
+		return nil
+	}
+
+	// Accumulate per-directory, per-author line counts
+	subsystems := map[string]map[int]int64{} // dir -> author -> lines
+
+	bf.fileResolver.ForEachFile(func(fileId core.FileId, fileName string) {
+		dir := path.Dir(fileName)
+		if dir == "." {
+			dir = "/"
+		}
+
+		previousLine := 0
+		previousAuthor := int(core.AuthorMissing)
+
+		bf.fileResolver.ScanFile(fileId,
+			func(line int, _ core.TickNumber, author core.AuthorId) {
+				length := line - previousLine
+				if length > 0 && previousAuthor != int(core.AuthorMissing) {
+					dirAuthors := subsystems[dir]
+					if dirAuthors == nil {
+						dirAuthors = map[int]int64{}
+						subsystems[dir] = dirAuthors
+					}
+
+					dirAuthors[previousAuthor] += int64(length)
+				}
+
+				previousLine = line
+
+				if author >= core.AuthorMissing {
+					previousAuthor = int(core.AuthorMissing)
+				} else {
+					previousAuthor = int(author)
+				}
+			})
+	})
+
+	result := make(map[string]int, len(subsystems))
+	for dir, authorLines := range subsystems {
+		var totalLines int64
+		for _, lines := range authorLines {
+			totalLines += lines
+		}
+
+		result[dir] = computeBusFactor(authorLines, totalLines, bf.Threshold)
+	}
+
+	return result
 }
 
 func (bf *BusFactorAnalysis) serializeText(result *BusFactorResult, writer io.Writer) {
@@ -476,42 +512,6 @@ func (bf *BusFactorAnalysis) serializeBinary(result *BusFactorResult, writer io.
 	_, err = writer.Write(serialized)
 
 	return err
-}
-
-// MergeResults combines two BusFactorResult-s together.
-func (bf *BusFactorAnalysis) MergeResults(
-	r1, r2 any, c1, c2 *core.CommonAnalysisResult,
-) any {
-	bfr1 := r1.(BusFactorResult)
-	bfr2 := r2.(BusFactorResult)
-
-	merged := BusFactorResult{
-		Snapshots:          make(map[int]*BusFactorSnapshot),
-		SubsystemBusFactor: make(map[string]int),
-		Threshold:          bfr1.Threshold,
-		reversedPeopleDict: bfr1.reversedPeopleDict,
-		tickSize:           bfr1.tickSize,
-	}
-
-	// Merge snapshots: take the snapshot with the larger total lines for overlapping ticks
-	maps.Copy(merged.Snapshots, bfr1.Snapshots)
-
-	for tick, snapshot := range bfr2.Snapshots {
-		if existing, ok := merged.Snapshots[tick]; !ok || snapshot.TotalLines > existing.TotalLines {
-			merged.Snapshots[tick] = snapshot
-		}
-	}
-
-	// Merge subsystem bus factors: take the max (worst case)
-	maps.Copy(merged.SubsystemBusFactor, bfr1.SubsystemBusFactor)
-
-	for dir, bf := range bfr2.SubsystemBusFactor {
-		if existing, ok := merged.SubsystemBusFactor[dir]; !ok || bf > existing {
-			merged.SubsystemBusFactor[dir] = bf
-		}
-	}
-
-	return merged
 }
 
 func init() {

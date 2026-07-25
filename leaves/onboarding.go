@@ -222,26 +222,6 @@ func (oa *OnboardingAnalysis) Initialize(repository *git.Repository) error {
 	return nil
 }
 
-// getOrCreateTickMetrics retrieves or creates tick metrics for an author.
-func (oa *OnboardingAnalysis) getOrCreateTickMetrics(author, tick int) *onboardingTickMetrics {
-	timeline, exists := oa.authorTimeline[author]
-	if !exists {
-		timeline = map[int]*onboardingTickMetrics{}
-		oa.authorTimeline[author] = timeline
-	}
-
-	metrics, exists := timeline[tick]
-	if !exists {
-		metrics = &onboardingTickMetrics{
-			Files:           map[string]bool{},
-			MeaningfulFiles: map[string]bool{},
-		}
-		timeline[tick] = metrics
-	}
-
-	return metrics
-}
-
 // Consume runs this PipelineItem on the next commit data.
 func (oa *OnboardingAnalysis) Consume(deps map[string]any) (map[string]any, error) {
 	if !oa.ShouldConsumeCommit(deps) {
@@ -370,94 +350,11 @@ func (oa *OnboardingAnalysis) Finalize() any {
 	return oa.finalizeCohorts(authors, cohortGroups)
 }
 
-func (oa *OnboardingAnalysis) finalizeAuthor(
-	timeline map[int]*onboardingTickMetrics,
-) *AuthorOnboardingData {
-	sortedTicks := make([]int, 0, len(timeline))
-	for tick := range timeline {
-		sortedTicks = append(sortedTicks, tick)
-	}
-
-	sort.Ints(sortedTicks)
-
-	if len(sortedTicks) == 0 {
-		return nil
-	}
-
-	firstTick := sortedTicks[0]
-	firstTimestamp := items.FloorTime(
-		time.Unix(0, 0).Add(time.Duration(firstTick)*oa.tickSize), oa.tickSize,
-	)
-
-	return &AuthorOnboardingData{
-		FirstCommitTick: firstTick,
-		JoinCohort:      firstTimestamp.Format("2006-01"),
-		Snapshots:       oa.buildOnboardingSnapshots(timeline, sortedTicks),
-	}
-}
-
-func (oa *OnboardingAnalysis) buildOnboardingSnapshots(
-	timeline map[int]*onboardingTickMetrics, sortedTicks []int,
-) map[int]*OnboardingSnapshot {
-	cumulative := newCumulativeMetrics()
-
-	tickToMetrics := make(map[int]*cumulativeMetrics, len(sortedTicks))
-	for _, tick := range sortedTicks {
-		cumulative.accumulate(timeline[tick])
-		copy := *cumulative
-		copy.files = copyFileSet(cumulative.files)
-		copy.meaningfulFiles = copyFileSet(cumulative.meaningfulFiles)
-		tickToMetrics[tick] = &copy
-	}
-
-	snapshots := map[int]*OnboardingSnapshot{}
-
-	ticksPerDay := int(24 * time.Hour / oa.tickSize)
-	for _, windowDays := range oa.WindowDays {
-		closestTick := findClosestTick(sortedTicks, sortedTicks[0]+windowDays*ticksPerDay)
-		if closestTick >= 0 {
-			snapshots[windowDays] = onboardingSnapshot(windowDays, tickToMetrics[closestTick])
-		}
-	}
-
-	return snapshots
-}
-
 func onboardingSnapshot(days int, metrics *cumulativeMetrics) *OnboardingSnapshot {
 	return &OnboardingSnapshot{
 		DaysSinceJoin: days, TotalCommits: metrics.commits, TotalFiles: len(metrics.files),
 		TotalLines: metrics.lines, MeaningfulCommits: metrics.meaningfulCommits,
 		MeaningfulFiles: len(metrics.meaningfulFiles), MeaningfulLines: metrics.meaningfulLines,
-	}
-}
-
-// finalizeCohorts computes cohort aggregates and returns final result.
-func (oa *OnboardingAnalysis) finalizeCohorts(
-	authors map[int]*AuthorOnboardingData,
-	cohortGroups map[string][]int,
-) OnboardingResult {
-	cohorts := make(map[string]*CohortStats, len(cohortGroups))
-
-	for cohort, authorIDs := range cohortGroups {
-		if len(authorIDs) == 0 {
-			continue
-		}
-
-		authorCount := len(authorIDs)
-		cohorts[cohort] = &CohortStats{
-			Cohort:           cohort,
-			AuthorCount:      authorCount,
-			AverageSnapshots: averageOnboardingSnapshots(authors, authorIDs),
-		}
-	}
-
-	return OnboardingResult{
-		Authors:             authors,
-		Cohorts:             cohorts,
-		WindowDays:          oa.WindowDays,
-		MeaningfulThreshold: oa.MeaningfulThreshold,
-		reversedPeopleDict:  oa.reversedPeopleDict,
-		tickSize:            oa.tickSize,
 	}
 }
 
@@ -504,30 +401,6 @@ func divideOnboardingSnapshot(snapshot *OnboardingSnapshot, count int) {
 // Fork clones this pipeline item.
 func (oa *OnboardingAnalysis) Fork(n int) []core.PipelineItem {
 	return core.ForkSamePipelineItem(oa, n)
-}
-
-// serializeText outputs YAML format.
-func (oa *OnboardingAnalysis) serializeText(result *OnboardingResult, writer io.Writer) {
-	fmt.Fprintln(writer, "  onboarding:")
-
-	// Configuration
-	windowStrs := make([]string, len(result.WindowDays))
-	for i, days := range result.WindowDays {
-		windowStrs[i] = strconv.Itoa(days)
-	}
-
-	fmt.Fprintf(writer, "    window_days: [%s]\n", strings.Join(windowStrs, ", "))
-	fmt.Fprintf(writer, "    meaningful_threshold: %d\n", result.MeaningfulThreshold)
-	writeOnboardingAuthors(writer, result.Authors)
-	writeOnboardingCohorts(writer, result.Cohorts)
-
-	fmt.Fprintln(writer, "    people:")
-
-	for _, person := range result.reversedPeopleDict {
-		fmt.Fprintf(writer, "    - %s\n", yaml.SafeString(person))
-	}
-
-	fmt.Fprintln(writer, "    tick_size:", int(result.tickSize.Seconds()))
 }
 
 func writeOnboardingAuthors(writer io.Writer, authors map[int]*AuthorOnboardingData) {
@@ -590,32 +463,6 @@ func writeOnboardingSnapshots(writer io.Writer, snapshots map[int]*OnboardingSna
 			snapshot.MeaningfulLines,
 		)
 	}
-}
-
-// serializeBinary outputs Protocol Buffers format.
-func (oa *OnboardingAnalysis) serializeBinary(result *OnboardingResult, writer io.Writer) error {
-	message := pb.OnboardingResults{
-		DevIndex:            result.reversedPeopleDict,
-		TickSize:            int64(result.tickSize),
-		WindowDays:          make([]int32, len(result.WindowDays)),
-		MeaningfulThreshold: int32(result.MeaningfulThreshold),
-	}
-
-	for i, days := range result.WindowDays {
-		message.WindowDays[i] = int32(days)
-	}
-
-	message.Authors = onboardingAuthorsToProto(result.Authors)
-	message.Cohorts = onboardingCohortsToProto(result.Cohorts)
-
-	serialized, err := proto.Marshal(&message)
-	if err != nil {
-		return err
-	}
-
-	_, err = writer.Write(serialized)
-
-	return err
 }
 
 func onboardingAuthorsToProto(
@@ -713,6 +560,159 @@ func (oa *OnboardingAnalysis) Deserialize(pbmessage []byte) (any, error) {
 	result.Cohorts = onboardingCohortsFromProto(message.GetCohorts())
 
 	return result, nil
+}
+
+// getOrCreateTickMetrics retrieves or creates tick metrics for an author.
+func (oa *OnboardingAnalysis) getOrCreateTickMetrics(author, tick int) *onboardingTickMetrics {
+	timeline, exists := oa.authorTimeline[author]
+	if !exists {
+		timeline = map[int]*onboardingTickMetrics{}
+		oa.authorTimeline[author] = timeline
+	}
+
+	metrics, exists := timeline[tick]
+	if !exists {
+		metrics = &onboardingTickMetrics{
+			Files:           map[string]bool{},
+			MeaningfulFiles: map[string]bool{},
+		}
+		timeline[tick] = metrics
+	}
+
+	return metrics
+}
+
+func (oa *OnboardingAnalysis) finalizeAuthor(
+	timeline map[int]*onboardingTickMetrics,
+) *AuthorOnboardingData {
+	sortedTicks := make([]int, 0, len(timeline))
+	for tick := range timeline {
+		sortedTicks = append(sortedTicks, tick)
+	}
+
+	sort.Ints(sortedTicks)
+
+	if len(sortedTicks) == 0 {
+		return nil
+	}
+
+	firstTick := sortedTicks[0]
+	firstTimestamp := items.FloorTime(
+		time.Unix(0, 0).Add(time.Duration(firstTick)*oa.tickSize), oa.tickSize,
+	)
+
+	return &AuthorOnboardingData{
+		FirstCommitTick: firstTick,
+		JoinCohort:      firstTimestamp.Format("2006-01"),
+		Snapshots:       oa.buildOnboardingSnapshots(timeline, sortedTicks),
+	}
+}
+
+func (oa *OnboardingAnalysis) buildOnboardingSnapshots(
+	timeline map[int]*onboardingTickMetrics, sortedTicks []int,
+) map[int]*OnboardingSnapshot {
+	cumulative := newCumulativeMetrics()
+
+	tickToMetrics := make(map[int]*cumulativeMetrics, len(sortedTicks))
+	for _, tick := range sortedTicks {
+		cumulative.accumulate(timeline[tick])
+		copy := *cumulative
+		copy.files = copyFileSet(cumulative.files)
+		copy.meaningfulFiles = copyFileSet(cumulative.meaningfulFiles)
+		tickToMetrics[tick] = &copy
+	}
+
+	snapshots := map[int]*OnboardingSnapshot{}
+
+	ticksPerDay := int(24 * time.Hour / oa.tickSize)
+	for _, windowDays := range oa.WindowDays {
+		closestTick := findClosestTick(sortedTicks, sortedTicks[0]+windowDays*ticksPerDay)
+		if closestTick >= 0 {
+			snapshots[windowDays] = onboardingSnapshot(windowDays, tickToMetrics[closestTick])
+		}
+	}
+
+	return snapshots
+}
+
+// finalizeCohorts computes cohort aggregates and returns final result.
+func (oa *OnboardingAnalysis) finalizeCohorts(
+	authors map[int]*AuthorOnboardingData,
+	cohortGroups map[string][]int,
+) OnboardingResult {
+	cohorts := make(map[string]*CohortStats, len(cohortGroups))
+
+	for cohort, authorIDs := range cohortGroups {
+		if len(authorIDs) == 0 {
+			continue
+		}
+
+		authorCount := len(authorIDs)
+		cohorts[cohort] = &CohortStats{
+			Cohort:           cohort,
+			AuthorCount:      authorCount,
+			AverageSnapshots: averageOnboardingSnapshots(authors, authorIDs),
+		}
+	}
+
+	return OnboardingResult{
+		Authors:             authors,
+		Cohorts:             cohorts,
+		WindowDays:          oa.WindowDays,
+		MeaningfulThreshold: oa.MeaningfulThreshold,
+		reversedPeopleDict:  oa.reversedPeopleDict,
+		tickSize:            oa.tickSize,
+	}
+}
+
+// serializeText outputs YAML format.
+func (oa *OnboardingAnalysis) serializeText(result *OnboardingResult, writer io.Writer) {
+	fmt.Fprintln(writer, "  onboarding:")
+
+	// Configuration
+	windowStrs := make([]string, len(result.WindowDays))
+	for i, days := range result.WindowDays {
+		windowStrs[i] = strconv.Itoa(days)
+	}
+
+	fmt.Fprintf(writer, "    window_days: [%s]\n", strings.Join(windowStrs, ", "))
+	fmt.Fprintf(writer, "    meaningful_threshold: %d\n", result.MeaningfulThreshold)
+	writeOnboardingAuthors(writer, result.Authors)
+	writeOnboardingCohorts(writer, result.Cohorts)
+
+	fmt.Fprintln(writer, "    people:")
+
+	for _, person := range result.reversedPeopleDict {
+		fmt.Fprintf(writer, "    - %s\n", yaml.SafeString(person))
+	}
+
+	fmt.Fprintln(writer, "    tick_size:", int(result.tickSize.Seconds()))
+}
+
+// serializeBinary outputs Protocol Buffers format.
+func (oa *OnboardingAnalysis) serializeBinary(result *OnboardingResult, writer io.Writer) error {
+	message := pb.OnboardingResults{
+		DevIndex:            result.reversedPeopleDict,
+		TickSize:            int64(result.tickSize),
+		WindowDays:          make([]int32, len(result.WindowDays)),
+		MeaningfulThreshold: int32(result.MeaningfulThreshold),
+	}
+
+	for i, days := range result.WindowDays {
+		message.WindowDays[i] = int32(days)
+	}
+
+	message.Authors = onboardingAuthorsToProto(result.Authors)
+	message.Cohorts = onboardingCohortsToProto(result.Cohorts)
+
+	serialized, err := proto.Marshal(&message)
+	if err != nil {
+		return err
+	}
+
+	_, err = writer.Write(serialized)
+
+	return err
 }
 
 func onboardingAuthorsFromProto(

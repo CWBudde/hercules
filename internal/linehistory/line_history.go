@@ -116,14 +116,6 @@ func (v FileIdResolver) NameOf(id FileId) string {
 	return v.abandonedNameOf(id)
 }
 
-func (v FileIdResolver) abandonedNameOf(id FileId) string {
-	if n, ok := v.analyser.fileAbandonedNames[id]; ok {
-		return n
-	}
-
-	return v.analyser.fileAbandonedNamesOfParent[id]
-}
-
 func (v FileIdResolver) MergedWith(id FileId) (FileId, string, bool) {
 	if v.analyser == nil {
 		return 0, "", false
@@ -348,74 +340,6 @@ func (analyser *LineHistoryAnalyser) Consume(deps map[string]any) (map[string]an
 	return result, nil
 }
 
-// isExcluded reports whether a file change should be skipped because either
-// the source or destination path matches one of ExcludePathPatterns.
-func (analyser *LineHistoryAnalyser) isExcluded(fromName, toName string) bool {
-	for _, pattern := range analyser.ExcludePathPatterns {
-		if fromName != "" {
-			if ok, _ := path.Match(pattern, fromName); ok {
-				return true
-			}
-		}
-
-		if toName != "" {
-			if ok, _ := path.Match(pattern, toName); ok {
-				return true
-			}
-		}
-	}
-
-	return false
-}
-
-func (analyser *LineHistoryAnalyser) findFileAndName(id FileId) (*File, string) {
-	if n, ok := analyser.fileNames[id]; ok {
-		if f := analyser.files[n]; f != nil {
-			return f, n
-		}
-
-		analyser.addAbandonedName(id, n)
-	}
-
-	return nil, ""
-}
-
-func (analyser *LineHistoryAnalyser) addAbandonedName(id FileId, name string) {
-	if analyser.fileAbandonedNames == nil {
-		analyser.fileAbandonedNames = map[FileId]string{}
-	}
-
-	analyser.fileAbandonedNames[id] = name
-	delete(analyser.fileNames, id)
-}
-
-func (analyser *LineHistoryAnalyser) mergeAbandonedName(id FileId, name string) {
-	if analyser.fileAbandonedNames == nil {
-		analyser.fileAbandonedNames = map[FileId]string{}
-	} else if _, ok := analyser.fileAbandonedNames[id]; ok {
-		return
-	}
-
-	analyser.fileAbandonedNames[id] = name
-}
-
-func (analyser *LineHistoryAnalyser) inheritAbandonedNames() map[FileId]string {
-	if len(analyser.fileAbandonedNamesOfParent) == 0 {
-		return analyser.fileAbandonedNames
-	}
-
-	if len(analyser.fileAbandonedNames) == 0 {
-		return analyser.fileAbandonedNamesOfParent
-	}
-
-	m := make(map[FileId]string, len(analyser.fileAbandonedNames)+len(analyser.fileAbandonedNamesOfParent))
-	maps.Copy(m, analyser.fileAbandonedNamesOfParent)
-
-	maps.Copy(m, analyser.fileAbandonedNames)
-
-	return m
-}
-
 // Fork clones this item. Everything is copied by reference except the files
 // which are copied by value.
 func (analyser *LineHistoryAnalyser) Fork(n int) []core.PipelineItem {
@@ -528,6 +452,82 @@ func (analyser *LineHistoryAnalyser) Boot() error {
 	analyser.fileAllocator.Boot()
 
 	return nil
+}
+
+func (v FileIdResolver) abandonedNameOf(id FileId) string {
+	if n, ok := v.analyser.fileAbandonedNames[id]; ok {
+		return n
+	}
+
+	return v.analyser.fileAbandonedNamesOfParent[id]
+}
+
+// isExcluded reports whether a file change should be skipped because either
+// the source or destination path matches one of ExcludePathPatterns.
+func (analyser *LineHistoryAnalyser) isExcluded(fromName, toName string) bool {
+	for _, pattern := range analyser.ExcludePathPatterns {
+		if fromName != "" {
+			if ok, _ := path.Match(pattern, fromName); ok {
+				return true
+			}
+		}
+
+		if toName != "" {
+			if ok, _ := path.Match(pattern, toName); ok {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+func (analyser *LineHistoryAnalyser) findFileAndName(id FileId) (*File, string) {
+	if n, ok := analyser.fileNames[id]; ok {
+		if f := analyser.files[n]; f != nil {
+			return f, n
+		}
+
+		analyser.addAbandonedName(id, n)
+	}
+
+	return nil, ""
+}
+
+func (analyser *LineHistoryAnalyser) addAbandonedName(id FileId, name string) {
+	if analyser.fileAbandonedNames == nil {
+		analyser.fileAbandonedNames = map[FileId]string{}
+	}
+
+	analyser.fileAbandonedNames[id] = name
+	delete(analyser.fileNames, id)
+}
+
+func (analyser *LineHistoryAnalyser) mergeAbandonedName(id FileId, name string) {
+	if analyser.fileAbandonedNames == nil {
+		analyser.fileAbandonedNames = map[FileId]string{}
+	} else if _, ok := analyser.fileAbandonedNames[id]; ok {
+		return
+	}
+
+	analyser.fileAbandonedNames[id] = name
+}
+
+func (analyser *LineHistoryAnalyser) inheritAbandonedNames() map[FileId]string {
+	if len(analyser.fileAbandonedNamesOfParent) == 0 {
+		return analyser.fileAbandonedNames
+	}
+
+	if len(analyser.fileAbandonedNames) == 0 {
+		return analyser.fileAbandonedNamesOfParent
+	}
+
+	m := make(map[FileId]string, len(analyser.fileAbandonedNames)+len(analyser.fileAbandonedNamesOfParent))
+	maps.Copy(m, analyser.fileAbandonedNamesOfParent)
+
+	maps.Copy(m, analyser.fileAbandonedNames)
+
+	return m
 }
 
 // We do a hack and store the tick in the first 14 bits and the author index in the last 18.

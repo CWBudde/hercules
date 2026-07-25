@@ -192,18 +192,6 @@ func (kd *KnowledgeDiffusionAnalysis) Consume(deps map[string]any) (map[string]a
 	return nil, nil
 }
 
-// windowTicks converts the WindowMonths to ticks based on tickSize.
-func (kd *KnowledgeDiffusionAnalysis) windowTicks() int {
-	if kd.tickSize <= 0 {
-		return 0
-	}
-	// Average month ≈ 30.44 days
-	monthDuration := time.Duration(float64(30.44*24) * float64(time.Hour))
-	windowDuration := time.Duration(kd.WindowMonths) * monthDuration
-
-	return int(windowDuration / kd.tickSize)
-}
-
 // Finalize returns the result of the analysis.
 func (kd *KnowledgeDiffusionAnalysis) Finalize() any {
 	files := make(map[string]*KnowledgeDiffusionFileResult, len(kd.fileAuthors))
@@ -324,6 +312,55 @@ func (kd *KnowledgeDiffusionAnalysis) Deserialize(pbmessage []byte) (any, error)
 	return result, nil
 }
 
+// MergeResults combines two KnowledgeDiffusionResult-s together.
+func (kd *KnowledgeDiffusionAnalysis) MergeResults(
+	r1, r2 any, c1, c2 *core.CommonAnalysisResult,
+) any {
+	kdr1 := r1.(KnowledgeDiffusionResult)
+	kdr2 := r2.(KnowledgeDiffusionResult)
+
+	merged := KnowledgeDiffusionResult{
+		Files:              make(map[string]*KnowledgeDiffusionFileResult),
+		Distribution:       make(map[int]int),
+		WindowMonths:       kdr1.WindowMonths,
+		reversedPeopleDict: kdr1.reversedPeopleDict,
+		tickSize:           kdr1.tickSize,
+	}
+
+	// Merge files: union of authors per file.
+	maps.Copy(merged.Files, kdr1.Files)
+
+	for name, f := range kdr2.Files {
+		if existing, ok := merged.Files[name]; ok {
+			// Merge author sets: keep the one with more editors.
+			if f.UniqueEditorsCount > existing.UniqueEditorsCount {
+				merged.Files[name] = f
+			}
+		} else {
+			merged.Files[name] = f
+		}
+	}
+
+	// Recompute distribution from merged files.
+	for _, f := range merged.Files {
+		merged.Distribution[f.UniqueEditorsCount]++
+	}
+
+	return merged
+}
+
+// windowTicks converts the WindowMonths to ticks based on tickSize.
+func (kd *KnowledgeDiffusionAnalysis) windowTicks() int {
+	if kd.tickSize <= 0 {
+		return 0
+	}
+	// Average month ≈ 30.44 days
+	monthDuration := time.Duration(float64(30.44*24) * float64(time.Hour))
+	windowDuration := time.Duration(kd.WindowMonths) * monthDuration
+
+	return int(windowDuration / kd.tickSize)
+}
+
 func (kd *KnowledgeDiffusionAnalysis) serializeText(result *KnowledgeDiffusionResult, writer io.Writer) {
 	fmt.Fprintln(writer, "  knowledge_diffusion:")
 	fmt.Fprintf(writer, "    window_months: %d\n", result.WindowMonths)
@@ -426,43 +463,6 @@ func (kd *KnowledgeDiffusionAnalysis) serializeBinary(result *KnowledgeDiffusion
 	_, err = writer.Write(serialized)
 
 	return err
-}
-
-// MergeResults combines two KnowledgeDiffusionResult-s together.
-func (kd *KnowledgeDiffusionAnalysis) MergeResults(
-	r1, r2 any, c1, c2 *core.CommonAnalysisResult,
-) any {
-	kdr1 := r1.(KnowledgeDiffusionResult)
-	kdr2 := r2.(KnowledgeDiffusionResult)
-
-	merged := KnowledgeDiffusionResult{
-		Files:              make(map[string]*KnowledgeDiffusionFileResult),
-		Distribution:       make(map[int]int),
-		WindowMonths:       kdr1.WindowMonths,
-		reversedPeopleDict: kdr1.reversedPeopleDict,
-		tickSize:           kdr1.tickSize,
-	}
-
-	// Merge files: union of authors per file.
-	maps.Copy(merged.Files, kdr1.Files)
-
-	for name, f := range kdr2.Files {
-		if existing, ok := merged.Files[name]; ok {
-			// Merge author sets: keep the one with more editors.
-			if f.UniqueEditorsCount > existing.UniqueEditorsCount {
-				merged.Files[name] = f
-			}
-		} else {
-			merged.Files[name] = f
-		}
-	}
-
-	// Recompute distribution from merged files.
-	for _, f := range merged.Files {
-		merged.Distribution[f.UniqueEditorsCount]++
-	}
-
-	return merged
 }
 
 // recordEdit records that an author edited a file at the given tick.

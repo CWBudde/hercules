@@ -194,6 +194,42 @@ func (tdb *TyposDatasetBuilder) Consume(deps map[string]any) (map[string]any, er
 	return nil, nil
 }
 
+// Finalize returns the result of the analysis. Further Consume() calls are not expected.
+func (tdb *TyposDatasetBuilder) Finalize() any {
+	// deduplicate
+	typos := make([]Typo, 0, len(tdb.typos))
+	pairs := map[string]bool{}
+
+	for _, t := range tdb.typos {
+		id := t.Wrong + "|" + t.Correct
+		if _, exists := pairs[id]; !exists {
+			pairs[id] = true
+
+			typos = append(typos, t)
+		}
+	}
+
+	return TyposResult{Typos: typos}
+}
+
+// Fork clones this pipeline item.
+func (tdb *TyposDatasetBuilder) Fork(n int) []core.PipelineItem {
+	return core.ForkSamePipelineItem(tdb, n)
+}
+
+// Serialize converts the analysis result as returned by Finalize() to text or bytes.
+// The text format is YAML and the bytes format is Protocol Buffers.
+func (tdb *TyposDatasetBuilder) Serialize(result any, binary bool, writer io.Writer) error {
+	commitsResult := result.(TyposResult)
+	if binary {
+		return tdb.serializeBinary(&commitsResult, writer)
+	}
+
+	tdb.serializeText(&commitsResult, writer)
+
+	return nil
+}
+
 func (tdb *TyposDatasetBuilder) typosFromChange(
 	commit plumbing.Hash,
 	change *object.Change,
@@ -293,42 +329,6 @@ func (tdb *TyposDatasetBuilder) identifiersForTypo(
 	}
 
 	return collectIdentifiersByLine(nodes, focused), nil
-}
-
-// Finalize returns the result of the analysis. Further Consume() calls are not expected.
-func (tdb *TyposDatasetBuilder) Finalize() any {
-	// deduplicate
-	typos := make([]Typo, 0, len(tdb.typos))
-	pairs := map[string]bool{}
-
-	for _, t := range tdb.typos {
-		id := t.Wrong + "|" + t.Correct
-		if _, exists := pairs[id]; !exists {
-			pairs[id] = true
-
-			typos = append(typos, t)
-		}
-	}
-
-	return TyposResult{Typos: typos}
-}
-
-// Fork clones this pipeline item.
-func (tdb *TyposDatasetBuilder) Fork(n int) []core.PipelineItem {
-	return core.ForkSamePipelineItem(tdb, n)
-}
-
-// Serialize converts the analysis result as returned by Finalize() to text or bytes.
-// The text format is YAML and the bytes format is Protocol Buffers.
-func (tdb *TyposDatasetBuilder) Serialize(result any, binary bool, writer io.Writer) error {
-	commitsResult := result.(TyposResult)
-	if binary {
-		return tdb.serializeBinary(&commitsResult, writer)
-	}
-
-	tdb.serializeText(&commitsResult, writer)
-
-	return nil
 }
 
 func (tdb *TyposDatasetBuilder) serializeText(result *TyposResult, writer io.Writer) {

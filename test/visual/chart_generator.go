@@ -91,55 +91,6 @@ func (cg *ChartGenerator) GenerateChart(t *testing.T, mode, inputFile string) (s
 	return outputPath, nil
 }
 
-// generateBurndownProject creates a project burndown chart.
-func (cg *ChartGenerator) generateBurndownProject(reader readers.Reader, outputPath string, relative bool) error {
-	// Set viper config for relative mode
-	viper.Set("relative", relative)
-	viper.Set("resample", "year") // Default resampling for consistency
-
-	// Call the actual burndown project generation using Python-compatible version
-	return modes.GenerateBurndownProjectPython(reader, outputPath, relative, "year")
-}
-
-// generateBurndownFile creates file-level burndown charts.
-func (cg *ChartGenerator) generateBurndownFile(reader readers.Reader, outputPath string) error {
-	// Use Python-compatible file burndown generation
-	viper.Set("relative", false) // Default to absolute
-	viper.Set("resample", "year")
-
-	return modes.GenerateBurndownFilePython(reader, outputPath, false, "year")
-}
-
-// generateBurndownPerson creates person-level burndown charts.
-func (cg *ChartGenerator) generateBurndownPerson(reader readers.Reader, outputPath string) error {
-	// Use regular burndown person function with nil time parameters for defaults
-	return modes.BurndownPerson(reader, outputPath, false, nil, nil, "year")
-}
-
-// generateOwnership creates code ownership visualization.
-func (cg *ChartGenerator) generateOwnership(reader readers.Reader, outputPath string) error {
-	// Call the ownership mode
-	return modes.OwnershipBurndown(reader, outputPath)
-}
-
-// generateDevs creates developer statistics visualization.
-func (cg *ChartGenerator) generateDevs(reader readers.Reader, outputPath string) error {
-	// Call the devs mode with default max people (20)
-	return modes.Devs(reader, outputPath, 20)
-}
-
-// generateCouplesPeople creates people coupling visualization.
-func (cg *ChartGenerator) generateCouplesPeople(reader readers.Reader, outputPath string) error {
-	// Call the couples-people mode
-	return modes.CouplesPeople(reader, outputPath)
-}
-
-// generateCouplesFiles creates file coupling visualization.
-func (cg *ChartGenerator) generateCouplesFiles(reader readers.Reader, outputPath string) error {
-	// Call the couples-files mode
-	return modes.CouplesFiles(reader, outputPath)
-}
-
 // GenerateReferenceSet creates a complete set of reference images for golden file testing.
 func (cg *ChartGenerator) GenerateReferenceSet(t *testing.T, inputFile string) map[string]string {
 	t.Helper()
@@ -221,4 +172,53 @@ func (cg *ChartGenerator) ValidateChartStructure(t *testing.T, chartPath string)
 		width, height, len(histogram), whitePixels*100)
 
 	return nil
+}
+
+// generateBurndownProject creates a project burndown chart.
+func (cg *ChartGenerator) generateBurndownProject(reader readers.Reader, outputPath string, relative bool) error {
+	// Set viper config for relative mode
+	viper.Set("relative", relative)
+	viper.Set("resample", "year") // Default resampling for consistency
+
+	// Call the actual burndown project generation using Python-compatible version
+	return modes.GenerateBurndownProjectPython(reader, outputPath, relative, "year")
+}
+
+// generateBurndownFile creates file-level burndown charts.
+func (cg *ChartGenerator) generateBurndownFile(reader readers.Reader, outputPath string) error {
+	// Use Python-compatible file burndown generation
+	viper.Set("relative", false) // Default to absolute
+	viper.Set("resample", "year")
+
+	return modes.GenerateBurndownFilePython(reader, outputPath, false, "year")
+}
+
+// generateBurndownPerson creates person-level burndown charts.
+func (cg *ChartGenerator) generateBurndownPerson(reader readers.Reader, outputPath string) error {
+	// Use regular burndown person function with nil time parameters for defaults
+	return modes.BurndownPerson(reader, outputPath, false, nil, nil, "year")
+}
+
+// generateOwnership creates code ownership visualization.
+func (cg *ChartGenerator) generateOwnership(reader readers.Reader, outputPath string) error {
+	// Call the ownership mode
+	return modes.OwnershipBurndown(reader, outputPath)
+}
+
+// generateDevs creates developer statistics visualization.
+func (cg *ChartGenerator) generateDevs(reader readers.Reader, outputPath string) error {
+	// Call the devs mode with default max people (20)
+	return modes.Devs(reader, outputPath, 20)
+}
+
+// generateCouplesPeople creates people coupling visualization.
+func (cg *ChartGenerator) generateCouplesPeople(reader readers.Reader, outputPath string) error {
+	// Call the couples-people mode
+	return modes.CouplesPeople(reader, outputPath)
+}
+
+// generateCouplesFiles creates file coupling visualization.
+func (cg *ChartGenerator) generateCouplesFiles(reader readers.Reader, outputPath string) error {
+	// Call the couples-files mode
+	return modes.CouplesFiles(reader, outputPath)
 }

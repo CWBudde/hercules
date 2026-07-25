@@ -277,6 +277,187 @@ func (hra *HotspotRiskAnalysis) Consume(deps map[string]any) (map[string]any, er
 	return nil, nil
 }
 
+// Finalize returns the result of the analysis.
+func (hra *HotspotRiskAnalysis) Finalize() any {
+	if hra.lastCommit == nil {
+		return HotspotRiskResult{Files: []FileRisk{}, WindowDays: hra.WindowDays}
+	}
+
+	windowTicks := 0
+	if hra.tickSize > 0 {
+		windowTicks = (hra.WindowDays * 24 * 3600) / int(hra.tickSize)
+	}
+
+	startTick := max(hra.currentTick-windowTicks, 0)
+
+	tree, err := hra.lastCommit.Tree()
+	if err != nil {
+		hra.l.Errorf("Failed to get tree: %v", err)
+		return HotspotRiskResult{Files: []FileRisk{}, WindowDays: hra.WindowDays}
+	}
+
+	var risks []FileRisk
+
+	err = tree.Files().ForEach(func(file *object.File) error {
+		if risk, ok := hra.fileRisk(file, startTick); ok {
+			risks = append(risks, risk)
+		}
+
+		return nil
+	})
+	if err != nil {
+		hra.l.Errorf("Failed to iterate files: %v", err)
+	}
+
+	hra.normalizeAndScore(risks)
+	sortFileRisks(risks)
+
+	if len(risks) > hra.TopN {
+		risks = risks[:hra.TopN]
+	}
+
+	return HotspotRiskResult{
+		Files:      risks,
+		WindowDays: hra.WindowDays,
+	}
+}
+
+func sortFileRisks(risks []FileRisk) {
+	sort.Slice(risks, func(i, j int) bool {
+		if risks[i].RiskScore == risks[j].RiskScore {
+			return risks[i].Path < risks[j].Path
+		}
+
+		return risks[i].RiskScore > risks[j].RiskScore
+	})
+}
+
+// calculateGini computes the Gini coefficient for line ownership distribution
+// Returns value in [0,1] where 0 = perfectly equal, 1 = one person owns everything.
+func calculateGini(authorLines map[int]int) float64 {
+	if len(authorLines) == 0 {
+		return 0
+	}
+
+	if len(authorLines) == 1 {
+		return 1.0 // Single owner = maximum concentration
+	}
+
+	// Get line counts, filtering out negative values (deleted lines)
+	var values []int
+	totalLines := 0
+
+	for _, lines := range authorLines {
+		if lines > 0 {
+			values = append(values, lines)
+			totalLines += lines
+		}
+	}
+
+	if len(values) == 0 || totalLines == 0 {
+		return 0
+	}
+
+	if len(values) == 1 {
+		return 1.0
+	}
+
+	// Sort values
+	sort.Ints(values)
+
+	// Calculate Gini coefficient using formula:
+	// G = (2 * sum(i * values[i])) / (n * sum(values)) - (n + 1) / n
+	n := len(values)
+
+	var weightedSum int64
+	for i, val := range values {
+		weightedSum += int64(i+1) * int64(val)
+	}
+
+	gini := (2.0*float64(weightedSum))/(float64(n)*float64(totalLines)) - float64(n+1)/float64(n)
+
+	// Clamp to [0, 1] to handle numerical issues
+	if gini < 0 {
+		gini = 0
+	}
+
+	if gini > 1 {
+		gini = 1
+	}
+
+	return gini
+}
+
+// Fork clones this pipeline item.
+func (hra *HotspotRiskAnalysis) Fork(n int) []core.PipelineItem {
+	return core.ForkSamePipelineItem(hra, n)
+}
+
+// Serialize converts the analysis result to text or bytes.
+func (hra *HotspotRiskAnalysis) Serialize(result any, binary bool, writer io.Writer) error {
+	riskResult := result.(HotspotRiskResult)
+	if binary {
+		return hra.serializeBinary(&riskResult, writer)
+	}
+
+	hra.serializeText(&riskResult, writer)
+
+	return nil
+}
+
+// Deserialize converts protobuf bytes to HotspotRiskResult.
+func (hra *HotspotRiskAnalysis) Deserialize(pbmessage []byte) (any, error) {
+	message := pb.HotspotRiskResults{}
+
+	err := proto.Unmarshal(pbmessage, &message)
+	if err != nil {
+		return nil, err
+	}
+
+	result := HotspotRiskResult{
+		WindowDays: int(message.GetWindowDays()),
+		Files:      make([]FileRisk, len(message.GetFiles())),
+	}
+
+	for i, file := range message.GetFiles() {
+		result.Files[i] = FileRisk{
+			Path:                file.GetPath(),
+			RiskScore:           file.GetRiskScore(),
+			Size:                int(file.GetSize_()),
+			Churn:               int(file.GetChurn()),
+			CouplingDegree:      int(file.GetCouplingDegree()),
+			OwnershipGini:       file.GetOwnershipGini(),
+			SizeNormalized:      file.GetSizeNormalized(),
+			ChurnNormalized:     file.GetChurnNormalized(),
+			CouplingNormalized:  file.GetCouplingNormalized(),
+			OwnershipNormalized: file.GetOwnershipNormalized(),
+		}
+	}
+
+	return result, nil
+}
+
+// MergeResults combines two HotspotRisk results (not really meaningful, but required by interface).
+func (hra *HotspotRiskAnalysis) MergeResults(r1, r2 any, c1, c2 *core.CommonAnalysisResult) any {
+	// Merging hotspot risk across repositories doesn't make semantic sense,
+	// but we implement it by concatenating and re-sorting
+	cr1 := r1.(HotspotRiskResult)
+	cr2 := r2.(HotspotRiskResult)
+
+	allFiles := append([]FileRisk(nil), cr1.Files...)
+	allFiles = append(allFiles, cr2.Files...)
+	sortFileRisks(allFiles)
+
+	if len(allFiles) > hra.TopN {
+		allFiles = allFiles[:hra.TopN]
+	}
+
+	return HotspotRiskResult{
+		Files:      allFiles,
+		WindowDays: cr1.WindowDays,
+	}
+}
+
 func (hra *HotspotRiskAnalysis) updateFileRisk(
 	change *object.Change,
 	lineStats map[object.ChangeEntry]items.LineStats,
@@ -339,51 +520,6 @@ func (hra *HotspotRiskAnalysis) updateFileCoupling(changedFiles []string) {
 				}
 			}
 		}
-	}
-}
-
-// Finalize returns the result of the analysis.
-func (hra *HotspotRiskAnalysis) Finalize() any {
-	if hra.lastCommit == nil {
-		return HotspotRiskResult{Files: []FileRisk{}, WindowDays: hra.WindowDays}
-	}
-
-	windowTicks := 0
-	if hra.tickSize > 0 {
-		windowTicks = (hra.WindowDays * 24 * 3600) / int(hra.tickSize)
-	}
-
-	startTick := max(hra.currentTick-windowTicks, 0)
-
-	tree, err := hra.lastCommit.Tree()
-	if err != nil {
-		hra.l.Errorf("Failed to get tree: %v", err)
-		return HotspotRiskResult{Files: []FileRisk{}, WindowDays: hra.WindowDays}
-	}
-
-	var risks []FileRisk
-
-	err = tree.Files().ForEach(func(file *object.File) error {
-		if risk, ok := hra.fileRisk(file, startTick); ok {
-			risks = append(risks, risk)
-		}
-
-		return nil
-	})
-	if err != nil {
-		hra.l.Errorf("Failed to iterate files: %v", err)
-	}
-
-	hra.normalizeAndScore(risks)
-	sortFileRisks(risks)
-
-	if len(risks) > hra.TopN {
-		risks = risks[:hra.TopN]
-	}
-
-	return HotspotRiskResult{
-		Files:      risks,
-		WindowDays: hra.WindowDays,
 	}
 }
 
@@ -487,89 +623,6 @@ func (hra *HotspotRiskAnalysis) normalizeAndScore(risks []FileRisk) {
 	}
 }
 
-func sortFileRisks(risks []FileRisk) {
-	sort.Slice(risks, func(i, j int) bool {
-		if risks[i].RiskScore == risks[j].RiskScore {
-			return risks[i].Path < risks[j].Path
-		}
-
-		return risks[i].RiskScore > risks[j].RiskScore
-	})
-}
-
-// calculateGini computes the Gini coefficient for line ownership distribution
-// Returns value in [0,1] where 0 = perfectly equal, 1 = one person owns everything.
-func calculateGini(authorLines map[int]int) float64 {
-	if len(authorLines) == 0 {
-		return 0
-	}
-
-	if len(authorLines) == 1 {
-		return 1.0 // Single owner = maximum concentration
-	}
-
-	// Get line counts, filtering out negative values (deleted lines)
-	var values []int
-	totalLines := 0
-
-	for _, lines := range authorLines {
-		if lines > 0 {
-			values = append(values, lines)
-			totalLines += lines
-		}
-	}
-
-	if len(values) == 0 || totalLines == 0 {
-		return 0
-	}
-
-	if len(values) == 1 {
-		return 1.0
-	}
-
-	// Sort values
-	sort.Ints(values)
-
-	// Calculate Gini coefficient using formula:
-	// G = (2 * sum(i * values[i])) / (n * sum(values)) - (n + 1) / n
-	n := len(values)
-
-	var weightedSum int64
-	for i, val := range values {
-		weightedSum += int64(i+1) * int64(val)
-	}
-
-	gini := (2.0*float64(weightedSum))/(float64(n)*float64(totalLines)) - float64(n+1)/float64(n)
-
-	// Clamp to [0, 1] to handle numerical issues
-	if gini < 0 {
-		gini = 0
-	}
-
-	if gini > 1 {
-		gini = 1
-	}
-
-	return gini
-}
-
-// Fork clones this pipeline item.
-func (hra *HotspotRiskAnalysis) Fork(n int) []core.PipelineItem {
-	return core.ForkSamePipelineItem(hra, n)
-}
-
-// Serialize converts the analysis result to text or bytes.
-func (hra *HotspotRiskAnalysis) Serialize(result any, binary bool, writer io.Writer) error {
-	riskResult := result.(HotspotRiskResult)
-	if binary {
-		return hra.serializeBinary(&riskResult, writer)
-	}
-
-	hra.serializeText(&riskResult, writer)
-
-	return nil
-}
-
 func (hra *HotspotRiskAnalysis) serializeText(result *HotspotRiskResult, writer io.Writer) {
 	fmt.Fprintln(writer, "  window_days:", result.WindowDays)
 	fmt.Fprintln(writer, "  files:")
@@ -618,59 +671,6 @@ func (hra *HotspotRiskAnalysis) serializeBinary(result *HotspotRiskResult, write
 	_, err = writer.Write(serialized)
 
 	return err
-}
-
-// Deserialize converts protobuf bytes to HotspotRiskResult.
-func (hra *HotspotRiskAnalysis) Deserialize(pbmessage []byte) (any, error) {
-	message := pb.HotspotRiskResults{}
-
-	err := proto.Unmarshal(pbmessage, &message)
-	if err != nil {
-		return nil, err
-	}
-
-	result := HotspotRiskResult{
-		WindowDays: int(message.GetWindowDays()),
-		Files:      make([]FileRisk, len(message.GetFiles())),
-	}
-
-	for i, file := range message.GetFiles() {
-		result.Files[i] = FileRisk{
-			Path:                file.GetPath(),
-			RiskScore:           file.GetRiskScore(),
-			Size:                int(file.GetSize_()),
-			Churn:               int(file.GetChurn()),
-			CouplingDegree:      int(file.GetCouplingDegree()),
-			OwnershipGini:       file.GetOwnershipGini(),
-			SizeNormalized:      file.GetSizeNormalized(),
-			ChurnNormalized:     file.GetChurnNormalized(),
-			CouplingNormalized:  file.GetCouplingNormalized(),
-			OwnershipNormalized: file.GetOwnershipNormalized(),
-		}
-	}
-
-	return result, nil
-}
-
-// MergeResults combines two HotspotRisk results (not really meaningful, but required by interface).
-func (hra *HotspotRiskAnalysis) MergeResults(r1, r2 any, c1, c2 *core.CommonAnalysisResult) any {
-	// Merging hotspot risk across repositories doesn't make semantic sense,
-	// but we implement it by concatenating and re-sorting
-	cr1 := r1.(HotspotRiskResult)
-	cr2 := r2.(HotspotRiskResult)
-
-	allFiles := append([]FileRisk(nil), cr1.Files...)
-	allFiles = append(allFiles, cr2.Files...)
-	sortFileRisks(allFiles)
-
-	if len(allFiles) > hra.TopN {
-		allFiles = allFiles[:hra.TopN]
-	}
-
-	return HotspotRiskResult{
-		Files:      allFiles,
-		WindowDays: cr1.WindowDays,
-	}
 }
 
 func init() {

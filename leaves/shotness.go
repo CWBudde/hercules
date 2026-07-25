@@ -159,6 +159,95 @@ func (shotness *ShotnessAnalysis) Consume(deps map[string]any) (map[string]any, 
 	return nil, nil
 }
 
+func genLine2Node(nodes map[string]ast_items.Node, linesNum int) [][]ast_items.Node {
+	if linesNum <= 0 {
+		return nil
+	}
+
+	res := make([][]ast_items.Node, linesNum)
+
+	for _, node := range nodes {
+		startLine := node.StartLine
+		endLine := node.EndLine
+
+		if startLine < 1 {
+			startLine = 1
+		}
+
+		if endLine < startLine {
+			endLine = startLine
+		}
+
+		if startLine > linesNum {
+			continue
+		}
+
+		if endLine > linesNum {
+			endLine = linesNum
+		}
+
+		for l := startLine; l <= endLine; l++ {
+			res[l-1] = append(res[l-1], node)
+		}
+	}
+
+	return res
+}
+
+// Fork clones this PipelineItem.
+func (shotness *ShotnessAnalysis) Fork(n int) []core.PipelineItem {
+	return core.ForkSamePipelineItem(shotness, n)
+}
+
+// Finalize returns the result of the analysis. Further Consume() calls are not expected.
+func (shotness *ShotnessAnalysis) Finalize() any {
+	result := ShotnessResult{
+		Nodes:    make([]NodeSummary, len(shotness.nodes)),
+		Counters: make([]map[int]int, len(shotness.nodes)),
+	}
+	keys := make([]string, len(shotness.nodes))
+
+	i := 0
+	for key := range shotness.nodes {
+		keys[i] = key
+		i++
+	}
+
+	sort.Strings(keys)
+
+	reverseKeys := map[string]int{}
+	for i, key := range keys {
+		reverseKeys[key] = i
+	}
+
+	for i, key := range keys {
+		node := shotness.nodes[key]
+		result.Nodes[i] = node.Summary
+		counter := map[int]int{}
+		result.Counters[i] = counter
+
+		counter[i] = node.Count
+		for ck, val := range node.Couples {
+			counter[reverseKeys[ck]] = val
+		}
+	}
+
+	return result
+}
+
+// Serialize converts the analysis result as returned by Finalize() to text or bytes.
+// The text format is YAML and the bytes format is Protocol Buffers.
+func (shotness *ShotnessAnalysis) Serialize(result any, binary bool, writer io.Writer) error {
+	shotnessResult := result.(ShotnessResult)
+	if binary {
+		return shotness.serializeBinary(&shotnessResult, writer)
+	}
+
+	shotness.serializeText(&shotnessResult, writer)
+
+	return nil
+}
+
 func (shotness *ShotnessAnalysis) recordNode(
 	allNodes map[string]bool, name string, node ast_items.Node, fileName string,
 ) {
@@ -348,41 +437,6 @@ func (shotness *ShotnessAnalysis) recordNodesOnLines(
 	}
 }
 
-func genLine2Node(nodes map[string]ast_items.Node, linesNum int) [][]ast_items.Node {
-	if linesNum <= 0 {
-		return nil
-	}
-
-	res := make([][]ast_items.Node, linesNum)
-
-	for _, node := range nodes {
-		startLine := node.StartLine
-		endLine := node.EndLine
-
-		if startLine < 1 {
-			startLine = 1
-		}
-
-		if endLine < startLine {
-			endLine = startLine
-		}
-
-		if startLine > linesNum {
-			continue
-		}
-
-		if endLine > linesNum {
-			endLine = linesNum
-		}
-
-		for l := startLine; l <= endLine; l++ {
-			res[l-1] = append(res[l-1], node)
-		}
-	}
-
-	return res
-}
-
 func (shotness *ShotnessAnalysis) extractNodes(
 	path string,
 	cache map[plumbing.Hash]*items.CachedBlob,
@@ -404,60 +458,6 @@ func (shotness *ShotnessAnalysis) extractNodes(
 	}
 
 	return res, nil
-}
-
-// Fork clones this PipelineItem.
-func (shotness *ShotnessAnalysis) Fork(n int) []core.PipelineItem {
-	return core.ForkSamePipelineItem(shotness, n)
-}
-
-// Finalize returns the result of the analysis. Further Consume() calls are not expected.
-func (shotness *ShotnessAnalysis) Finalize() any {
-	result := ShotnessResult{
-		Nodes:    make([]NodeSummary, len(shotness.nodes)),
-		Counters: make([]map[int]int, len(shotness.nodes)),
-	}
-	keys := make([]string, len(shotness.nodes))
-
-	i := 0
-	for key := range shotness.nodes {
-		keys[i] = key
-		i++
-	}
-
-	sort.Strings(keys)
-
-	reverseKeys := map[string]int{}
-	for i, key := range keys {
-		reverseKeys[key] = i
-	}
-
-	for i, key := range keys {
-		node := shotness.nodes[key]
-		result.Nodes[i] = node.Summary
-		counter := map[int]int{}
-		result.Counters[i] = counter
-
-		counter[i] = node.Count
-		for ck, val := range node.Couples {
-			counter[reverseKeys[ck]] = val
-		}
-	}
-
-	return result
-}
-
-// Serialize converts the analysis result as returned by Finalize() to text or bytes.
-// The text format is YAML and the bytes format is Protocol Buffers.
-func (shotness *ShotnessAnalysis) Serialize(result any, binary bool, writer io.Writer) error {
-	shotnessResult := result.(ShotnessResult)
-	if binary {
-		return shotness.serializeBinary(&shotnessResult, writer)
-	}
-
-	shotness.serializeText(&shotnessResult, writer)
-
-	return nil
 }
 
 func (shotness *ShotnessAnalysis) serializeText(result *ShotnessResult, writer io.Writer) {

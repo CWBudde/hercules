@@ -497,84 +497,6 @@ func (analyser *LegacyBurndownAnalysis) Finalize() any {
 	}
 }
 
-func (analyser *LegacyBurndownAnalysis) finalizeFiles(
-	lastTick int,
-) (map[string]DenseHistory, map[string]map[int]int) {
-	histories := map[string]DenseHistory{}
-	ownerships := map[string]map[int]int{}
-
-	for key, history := range analyser.fileHistories {
-		if len(history) == 0 {
-			continue
-		}
-
-		histories[key], _ = analyser.groupSparseHistory(history, lastTick)
-		file := analyser.files[key]
-		previousLine := 0
-		previousAuthor := core.AuthorMissing
-		ownership := map[int]int{}
-		ownerships[key] = ownership
-
-		file.ForEach(func(line, value int) {
-			length := line - previousLine
-			if length > 0 {
-				ownership[previousAuthor] += length
-			}
-
-			previousLine = line
-
-			previousAuthor, _ = analyser.unpackPersonWithTick(value)
-			if previousAuthor == core.AuthorMissing {
-				previousAuthor = -1
-			}
-		})
-	}
-
-	return histories, ownerships
-}
-
-func (analyser *LegacyBurndownAnalysis) finalizePeopleHistories(
-	global DenseHistory, lastTick int,
-) []DenseHistory {
-	histories := make([]DenseHistory, analyser.PeopleNumber)
-	for i := range histories {
-		history := analyser.peopleHistories[i]
-		if len(history) > 0 {
-			histories[i], _ = analyser.groupSparseHistory(history, lastTick)
-		} else {
-			histories[i] = make(DenseHistory, len(global))
-			for j, row := range global {
-				histories[i][j] = make([]int64, len(row))
-			}
-		}
-	}
-
-	return histories
-}
-
-func (analyser *LegacyBurndownAnalysis) finalizePeopleMatrix() DenseHistory {
-	if len(analyser.matrix) == 0 {
-		return nil
-	}
-
-	matrix := make(DenseHistory, analyser.PeopleNumber)
-	for i := range matrix {
-		matrix[i] = make([]int64, analyser.PeopleNumber+2)
-		for key, value := range analyser.matrix[i] {
-			switch key {
-			case core.AuthorMissing:
-				key = -1
-			case authorSelf:
-				key = -2
-			}
-
-			matrix[i][key+2] = value
-		}
-	}
-
-	return matrix
-}
-
 // Serialize converts the analysis result as returned by Finalize() to text or bytes.
 // The text format is YAML and the bytes format is Protocol Buffers.
 func (analyser *LegacyBurndownAnalysis) Serialize(result any, binary bool, writer io.Writer) error {
@@ -659,6 +581,84 @@ func (analyser *LegacyBurndownAnalysis) MergeResults(
 	r1, r2 any, c1, c2 *core.CommonAnalysisResult,
 ) any {
 	return (&BurndownAnalysis{}).MergeResults(r1, r2, c1, c2)
+}
+
+func (analyser *LegacyBurndownAnalysis) finalizeFiles(
+	lastTick int,
+) (map[string]DenseHistory, map[string]map[int]int) {
+	histories := map[string]DenseHistory{}
+	ownerships := map[string]map[int]int{}
+
+	for key, history := range analyser.fileHistories {
+		if len(history) == 0 {
+			continue
+		}
+
+		histories[key], _ = analyser.groupSparseHistory(history, lastTick)
+		file := analyser.files[key]
+		previousLine := 0
+		previousAuthor := core.AuthorMissing
+		ownership := map[int]int{}
+		ownerships[key] = ownership
+
+		file.ForEach(func(line, value int) {
+			length := line - previousLine
+			if length > 0 {
+				ownership[previousAuthor] += length
+			}
+
+			previousLine = line
+
+			previousAuthor, _ = analyser.unpackPersonWithTick(value)
+			if previousAuthor == core.AuthorMissing {
+				previousAuthor = -1
+			}
+		})
+	}
+
+	return histories, ownerships
+}
+
+func (analyser *LegacyBurndownAnalysis) finalizePeopleHistories(
+	global DenseHistory, lastTick int,
+) []DenseHistory {
+	histories := make([]DenseHistory, analyser.PeopleNumber)
+	for i := range histories {
+		history := analyser.peopleHistories[i]
+		if len(history) > 0 {
+			histories[i], _ = analyser.groupSparseHistory(history, lastTick)
+		} else {
+			histories[i] = make(DenseHistory, len(global))
+			for j, row := range global {
+				histories[i][j] = make([]int64, len(row))
+			}
+		}
+	}
+
+	return histories
+}
+
+func (analyser *LegacyBurndownAnalysis) finalizePeopleMatrix() DenseHistory {
+	if len(analyser.matrix) == 0 {
+		return nil
+	}
+
+	matrix := make(DenseHistory, analyser.PeopleNumber)
+	for i := range matrix {
+		matrix[i] = make([]int64, analyser.PeopleNumber+2)
+		for key, value := range analyser.matrix[i] {
+			switch key {
+			case core.AuthorMissing:
+				key = -1
+			case authorSelf:
+				key = -2
+			}
+
+			matrix[i][key+2] = value
+		}
+	}
+
+	return matrix
 }
 
 func roundTime(t time.Time, d time.Duration, dir bool) int {

@@ -182,6 +182,42 @@ func (ipd *ImportsPerDeveloper) Serialize(result any, binary bool, writer io.Wri
 	return nil
 }
 
+// Deserialize converts the specified protobuf bytes to ImportsPerDeveloperResult.
+func (ipd *ImportsPerDeveloper) Deserialize(pbmessage []byte) (any, error) {
+	msg := pb.ImportsPerDeveloperResults{}
+
+	err := proto.Unmarshal(pbmessage, &msg)
+	if err != nil {
+		return nil, err
+	}
+
+	r := ImportsPerDeveloperResult{
+		Imports:            ImportsMap{},
+		reversedPeopleDict: msg.GetAuthorIndex(),
+		tickSize:           time.Duration(msg.GetTickSize()),
+	}
+	for devi, dev := range msg.GetImports() {
+		rdev := map[string]map[string]map[int]int64{}
+		r.Imports[devi] = rdev
+
+		for lang, names := range dev.GetLanguages() {
+			rlang := map[string]map[int]int64{}
+			rdev[lang] = rlang
+
+			for name, ticks := range names.GetTicks() {
+				rticks := map[int]int64{}
+
+				rlang[name] = rticks
+				for tick, val := range ticks.GetCounts() {
+					rticks[int(tick)] = val
+				}
+			}
+		}
+	}
+
+	return r, nil
+}
+
 func (ipd *ImportsPerDeveloper) serializeText(result *ImportsPerDeveloperResult, writer io.Writer) {
 	devs := make([]int, 0, len(result.Imports))
 	for dev := range result.Imports {
@@ -251,42 +287,6 @@ func (ipd *ImportsPerDeveloper) serializeBinary(result *ImportsPerDeveloperResul
 	_, err = writer.Write(serialized)
 
 	return err
-}
-
-// Deserialize converts the specified protobuf bytes to ImportsPerDeveloperResult.
-func (ipd *ImportsPerDeveloper) Deserialize(pbmessage []byte) (any, error) {
-	msg := pb.ImportsPerDeveloperResults{}
-
-	err := proto.Unmarshal(pbmessage, &msg)
-	if err != nil {
-		return nil, err
-	}
-
-	r := ImportsPerDeveloperResult{
-		Imports:            ImportsMap{},
-		reversedPeopleDict: msg.GetAuthorIndex(),
-		tickSize:           time.Duration(msg.GetTickSize()),
-	}
-	for devi, dev := range msg.GetImports() {
-		rdev := map[string]map[string]map[int]int64{}
-		r.Imports[devi] = rdev
-
-		for lang, names := range dev.GetLanguages() {
-			rlang := map[string]map[int]int64{}
-			rdev[lang] = rlang
-
-			for name, ticks := range names.GetTicks() {
-				rticks := map[int]int64{}
-
-				rlang[name] = rticks
-				for tick, val := range ticks.GetCounts() {
-					rticks[int(tick)] = val
-				}
-			}
-		}
-	}
-
-	return r, nil
 }
 
 func init() {

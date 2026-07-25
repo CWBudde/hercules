@@ -433,9 +433,9 @@ func addCommitEdges(
 
 		for _, child := range children {
 			if direction {
-				graph.AddEdge(child.Hash.String(), key.String())
+				_, _ = graph.AddEdge(child.Hash.String(), key.String())
 			} else {
-				graph.AddEdge(key.String(), child.Hash.String())
+				_, _ = graph.AddEdge(key.String(), child.Hash.String())
 			}
 		}
 	}

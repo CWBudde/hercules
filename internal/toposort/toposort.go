@@ -2,6 +2,7 @@ package toposort
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -14,9 +15,13 @@ type Graph struct {
 	// Outgoing connections for every node.
 	outputs map[string]map[string]struct{}
 	// How many parents each node has.
-	inputs    map[string]int
-	sortIndex map[string]int
+	inputs        map[string]int
+	sortIndex     map[string]int
+	nextSortIndex int
 }
+
+// ErrNodeNotFound indicates that an edge endpoint is absent from the graph.
+var ErrNodeNotFound = errors.New("toposort: node not found")
 
 // NewGraph initializes a new Graph.
 func NewGraph() *Graph {
@@ -48,6 +53,10 @@ func (v indexedStringSorter) Less(leftIndex, rightIndex int) bool {
 	idx1, ok1 := v.index[v.values[rightIndex]]
 	switch {
 	case ok0 && ok1:
+		if idx0 == idx1 {
+			return v.values[leftIndex] < v.values[rightIndex]
+		}
+
 		return idx0 < idx1
 	case !ok0 && !ok1:
 		return v.values[leftIndex] < v.values[rightIndex]
@@ -78,7 +87,8 @@ func (g *Graph) AddNode(name string) bool {
 
 	g.inputs[name] = 0
 	if g.sortIndex != nil {
-		g.sortIndex[name] = len(g.sortIndex)
+		g.sortIndex[name] = g.nextSortIndex
+		g.nextSortIndex++
 	}
 
 	return true
@@ -96,17 +106,26 @@ func (g *Graph) AddNodes(names ...string) bool {
 }
 
 // AddEdge inserts the link from "from" node to "to" node.
-func (g *Graph) AddEdge(source, destination string) int {
+// It returns the destination's input count. Adding an existing edge is a no-op.
+func (g *Graph) AddEdge(source, destination string) (int, error) {
 	edges, ok := g.outputs[source]
 	if !ok {
-		return 0
+		return 0, fmt.Errorf("%w: source %q", ErrNodeNotFound, source)
+	}
+
+	if _, ok := g.outputs[destination]; !ok {
+		return 0, fmt.Errorf("%w: destination %q", ErrNodeNotFound, destination)
+	}
+
+	if _, exists := edges[destination]; exists {
+		return g.inputs[destination], nil
 	}
 
 	edges[destination] = struct{}{}
 	inputCount := g.inputs[destination] + 1
 	g.inputs[destination] = inputCount
 
-	return inputCount
+	return inputCount, nil
 }
 
 func (g *Graph) InputCount(name string) (int, bool) {
@@ -115,16 +134,25 @@ func (g *Graph) InputCount(name string) (int, bool) {
 }
 
 // RemoveEdge deletes the link from "from" node to "to" node.
-// Call ReindexNode(from) after you finish modifying the edges.
-func (g *Graph) RemoveEdge(source, destination string) bool {
-	if _, ok := g.outputs[source]; !ok {
-		return false
+// Removing an edge which is already absent is a no-op.
+func (g *Graph) RemoveEdge(source, destination string) (bool, error) {
+	edges, ok := g.outputs[source]
+	if !ok {
+		return false, fmt.Errorf("%w: source %q", ErrNodeNotFound, source)
 	}
 
-	delete(g.outputs[source], destination)
+	if _, ok := g.outputs[destination]; !ok {
+		return false, fmt.Errorf("%w: destination %q", ErrNodeNotFound, destination)
+	}
+
+	if _, exists := edges[destination]; !exists {
+		return false, nil
+	}
+
+	delete(edges, destination)
 	g.inputs[destination]--
 
-	return true
+	return true, nil
 }
 
 // Toposort sorts the nodes in the graph in topological order.
@@ -174,7 +202,9 @@ func (g *Graph) Toposort() ([]string, bool) {
 }
 
 type NodePosition struct {
+	// Level is the shortest number of outgoing edges from any graph root.
 	Level int
+	// Index is the deterministic BFS discovery order.
 	Index int
 }
 
@@ -193,7 +223,14 @@ func (v nodePosSorter) Len() int {
 }
 
 func (v nodePosSorter) Less(i, j int) bool {
-	return v.positions[v.nodes[i]].Index < v.positions[v.nodes[j]].Index
+	left, right := v.nodes[i], v.nodes[j]
+	leftIndex, rightIndex := v.positions[left].Index, v.positions[right].Index
+
+	if leftIndex == rightIndex {
+		return left < right
+	}
+
+	return leftIndex < rightIndex
 }
 
 func (v nodePosSorter) Swap(i, j int) {
@@ -204,13 +241,12 @@ func SortByNodeIndex(nodes []string, positions map[string]NodePosition) {
 	sort.Sort(nodePosSorter{nodes: nodes, positions: positions})
 }
 
-// BreadthSort sorts the nodes in the graph in BFS order. Does NOT consider node ordering.
+// BreadthSort returns positions for nodes reachable from a root in deterministic BFS order.
+// Roots and each node's children follow the graph's ordering policy. Nodes are marked when
+// enqueued, so Level is always the shortest distance from any root.
 func (g *Graph) BreadthSort() map[string]NodePosition {
-	// TODO improve sorting to consider node ordering
 	queue := make([]string, 0, len(g.outputs))
-
 	result := map[string]NodePosition{}
-	levels := map[string]int{}
 
 	for node := range g.outputs {
 		if g.inputs[node] == 0 {
@@ -218,22 +254,28 @@ func (g *Graph) BreadthSort() map[string]NodePosition {
 		}
 	}
 
+	g.Sort(queue)
+
+	for index, node := range queue {
+		result[node] = NodePosition{Level: 0, Index: index}
+	}
+
 	for len(queue) > 0 {
 		node := queue[0]
 		queue = queue[1:]
+		level := result[node].Level + 1
 
-		if _, exists := result[node]; !exists {
-			level := levels[node]
-			result[node] = NodePosition{
+		children := g.FindChildren(node)
+		for _, child := range children {
+			if _, enqueued := result[child]; enqueued {
+				continue
+			}
+
+			result[child] = NodePosition{
 				Level: level,
 				Index: len(result),
 			}
-			level++
-
-			for child := range g.outputs[node] {
-				queue = append(queue, child)
-				levels[child] = level
-			}
+			queue = append(queue, child)
 		}
 	}
 
@@ -252,7 +294,7 @@ func (g *Graph) FindCycle(seed string) []string {
 
 		if shouldVisitCycleEdge(currentEdge, visited) {
 			visited[currentEdge.node] = currentEdge.parent
-			for child := range g.outputs[currentEdge.node] {
+			for _, child := range g.FindChildren(currentEdge.node) {
 				queue = append(queue, cycleEdge{child, currentEdge.node})
 			}
 		}
@@ -379,6 +421,7 @@ func (g *Graph) DebugDump() string {
 	for _, key := range keys {
 		fmt.Fprintf(&buffer, "%s %d = ", key, g.inputs[key])
 		outs := vals[key]
+		g.Sort(outs)
 		buffer.WriteString(strings.Join(outs, " ") + "\n")
 	}
 

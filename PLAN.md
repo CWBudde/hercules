@@ -255,28 +255,23 @@ Priority: P1
 
 ### CORE-01: Define deterministic graph semantics
 
-Affected code:
+Status: implementation completed 2026-07-25; full baseline gate remains open
 
-- `internal/toposort/toposort.go`
-- `internal/toposort/toposort_test.go`
-- `internal/core/pipeline.go`
+`BreadthSort.Level` is now the shortest root distance and `Index` is deterministic ordered-BFS
+discovery. Roots, children, cycles, debug output, and pipeline ambiguity resolution follow the
+graph ordering policy; nodes are marked when enqueued. Edge mutations validate both endpoints,
+deduplicate count changes, and propagate planner errors, while insertion ordering remains stable
+after removals.
 
-Work:
-
-- Decide and document whether `BreadthSort.Level` means shortest distance, longest dependency
-  depth, or another pipeline-specific rank.
-- Sort roots and outgoing neighbors with the graph ordering policy.
-- Mark nodes when enqueued so a later parent cannot overwrite their level accidentally.
-- Make `AddEdge` and `RemoveEdge` update counts only when the edge set changes.
-- Require both endpoints to exist or return an explicit error.
-- Test final pipeline plans, not only intermediate graph positions.
-- Remove the duplicate ordering TODO at the `Pipeline.resolveAmbiguous` call site once the graph
-  contract is implemented.
+Randomized graph construction and pipeline item insertion produce identical final plans across
+100 runs. The exact combined gate remains blocked by pre-existing `internal/core` failures in
+merge tracking and pipeline result/configuration tests; the same count-one failures were
+reproduced from an untouched `HEAD` worktree.
 
 Acceptance criteria:
 
 - [ ] `go test -count=100 ./internal/toposort ./internal/core` passes;
-- [ ] randomized insertion and map order produce byte-identical plans.
+- [x] randomized insertion and map order produce byte-identical plans.
 
 ### CORE-02: Replace lossy identity joining
 

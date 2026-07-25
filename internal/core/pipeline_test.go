@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -1266,6 +1268,70 @@ func TestPipelineResolveCircularDependency(t *testing.T) {
 	err := pipeline.Initialize(map[string]any{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "topological sort")
+}
+
+type planTestItem struct {
+	PipelineItem
+
+	name     string
+	provides []string
+	requires []string
+}
+
+func (item *planTestItem) Name() string       { return item.name }
+func (item *planTestItem) Provides() []string { return item.provides }
+func (item *planTestItem) Requires() []string { return item.requires }
+
+func TestPipelineResolveDeterministicAcrossItemInsertionOrder(t *testing.T) {
+	const sharedKey = "shared"
+
+	specs := []planTestItem{
+		{name: "SourceA", provides: []string{"source-a"}},
+		{name: "SourceB", provides: []string{"source-b"}},
+		{name: "TransformA", requires: []string{"source-a"}, provides: []string{sharedKey}},
+		{name: "TransformB", requires: []string{"source-b"}, provides: []string{sharedKey}},
+		{name: "Sink", requires: []string{sharedKey}, provides: []string{"result"}},
+	}
+
+	var expectedPlan string
+	for iteration := range 100 {
+		//nolint:gosec // A reproducible pseudorandom permutation is intentional in this test.
+		random := rand.New(rand.NewSource(int64(iteration)))
+		shuffled := append([]planTestItem(nil), specs...)
+		random.Shuffle(len(shuffled), func(i, j int) {
+			shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
+		})
+
+		pipeline := NewPipeline(test.FixtureRepository())
+		for index := range shuffled {
+			pipeline.AddItem(&shuffled[index])
+		}
+
+		err := pipeline.resolve("", func(items []PipelineItem) PipelineItem {
+			return items[0]
+		})
+		require.NoError(t, err)
+
+		names := make([]string, len(pipeline.items))
+		for index, item := range pipeline.items {
+			names[index] = item.Name()
+		}
+		plan := strings.Join(names, "\n")
+		if iteration == 0 {
+			expectedPlan = plan
+			continue
+		}
+		assert.Equal(t, expectedPlan, plan)
+	}
+
+	expected := strings.Join([]string{
+		"SourceA",
+		"SourceB",
+		"TransformA",
+		"TransformB",
+		"Sink",
+	}, "\n")
+	assert.Equal(t, expected, expectedPlan)
 }
 
 func TestGetSensibleRemoteNoRemote(t *testing.T) {

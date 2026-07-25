@@ -1,10 +1,12 @@
 package toposort
 
 import (
+	"math/rand"
 	"sort"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func index(s []string, v string) int {
@@ -21,6 +23,12 @@ type Edge struct {
 	To   string
 }
 
+func addEdge(tb testing.TB, graph *Graph, source, destination string) {
+	tb.Helper()
+	_, err := graph.AddEdge(source, destination)
+	require.NoError(tb, err)
+}
+
 func TestToposortDuplicatedNode(t *testing.T) {
 	graph := NewGraph()
 	graph.AddNode("a")
@@ -31,9 +39,53 @@ func TestToposortDuplicatedNode(t *testing.T) {
 
 func TestToposortRemoveNotExistEdge(t *testing.T) {
 	graph := NewGraph()
-	if graph.RemoveEdge("a", "b") {
-		t.Error("not raising not exist edge error")
-	}
+	graph.AddNodes("a", "b")
+
+	removed, err := graph.RemoveEdge("a", "b")
+	require.NoError(t, err)
+	assert.False(t, removed)
+}
+
+func TestToposortEdgesRequireExistingEndpoints(t *testing.T) {
+	graph := NewGraph()
+	graph.AddNodes("a", "b")
+
+	_, err := graph.AddEdge("missing", "b")
+	require.ErrorIs(t, err, ErrNodeNotFound)
+	_, err = graph.AddEdge("a", "missing")
+	require.ErrorIs(t, err, ErrNodeNotFound)
+	_, err = graph.RemoveEdge("missing", "b")
+	require.ErrorIs(t, err, ErrNodeNotFound)
+	_, err = graph.RemoveEdge("a", "missing")
+	require.ErrorIs(t, err, ErrNodeNotFound)
+}
+
+func TestToposortDuplicateEdgeUpdatesInputCountOnce(t *testing.T) {
+	graph := NewGraph()
+	graph.AddNodes("a", "b")
+
+	count, err := graph.AddEdge("a", "b")
+	require.NoError(t, err)
+	assert.Equal(t, 1, count)
+	count, err = graph.AddEdge("a", "b")
+	require.NoError(t, err)
+	assert.Equal(t, 1, count)
+	assertInputCount(t, graph, "b", 1)
+
+	removed, err := graph.RemoveEdge("a", "b")
+	require.NoError(t, err)
+	assert.True(t, removed)
+	removed, err = graph.RemoveEdge("a", "b")
+	require.NoError(t, err)
+	assert.False(t, removed)
+	assertInputCount(t, graph, "b", 0)
+}
+
+func assertInputCount(tb testing.TB, graph *Graph, node string, expected int) {
+	tb.Helper()
+	count, exists := graph.InputCount(node)
+	require.True(tb, exists)
+	assert.Equal(tb, expected, count)
 }
 
 func TestToposortWikipedia(t *testing.T) {
@@ -57,7 +109,7 @@ func TestToposortWikipedia(t *testing.T) {
 	}
 
 	for _, e := range edges {
-		graph.AddEdge(e.From, e.To)
+		addEdge(t, graph, e.From, e.To)
 	}
 
 	result, ok := graph.Toposort()
@@ -76,9 +128,9 @@ func TestToposortCycle(t *testing.T) {
 	graph := NewGraph()
 	graph.AddNodes("1", "2", "3")
 
-	graph.AddEdge("1", "2")
-	graph.AddEdge("2", "3")
-	graph.AddEdge("3", "1")
+	addEdge(t, graph, "1", "2")
+	addEdge(t, graph, "2", "3")
+	addEdge(t, graph, "3", "1")
 
 	_, ok := graph.Toposort()
 	if ok {
@@ -90,32 +142,104 @@ func TestToposortBreadthSort(t *testing.T) {
 	graph := NewGraph()
 	graph.AddNodes("0", "1", "2", "3", "4")
 
-	graph.AddEdge("0", "1")
-	graph.AddEdge("1", "2")
-	graph.AddEdge("2", "3")
-	graph.AddEdge("1", "3")
-	graph.AddEdge("3", "4")
-	graph.AddEdge("4", "1")
+	addEdge(t, graph, "0", "1")
+	addEdge(t, graph, "1", "2")
+	addEdge(t, graph, "2", "3")
+	addEdge(t, graph, "1", "3")
+	addEdge(t, graph, "3", "4")
+	addEdge(t, graph, "4", "1")
 	order := graph.BreadthSort()
 	expected := map[string]NodePosition{
 		"0": {0, 0},
 		"1": {1, 1},
 		"2": {2, 2},
-		"3": {3, 3},
-		"4": {4, 4},
+		"3": {2, 3},
+		"4": {3, 4},
 	}
 	assert.Equal(t, expected, order)
+}
+
+func TestToposortBreadthSortUsesGraphOrder(t *testing.T) {
+	graph := NewGraphWithInsertionOrder()
+	graph.AddNodes("root-b", "child-b", "root-a", "child-a")
+	addEdge(t, graph, "root-b", "child-a")
+	addEdge(t, graph, "root-b", "child-b")
+
+	assert.Equal(t, map[string]NodePosition{
+		"root-b":  {Level: 0, Index: 0},
+		"root-a":  {Level: 0, Index: 1},
+		"child-b": {Level: 1, Index: 2},
+		"child-a": {Level: 1, Index: 3},
+	}, graph.BreadthSort())
+}
+
+func TestToposortInsertionOrderSurvivesNodeRemoval(t *testing.T) {
+	graph := NewGraphWithInsertionOrder()
+	graph.AddNodes("a", "b", "c")
+	require.True(t, graph.RemoveNode("b"))
+	require.True(t, graph.AddNode("aa"))
+
+	nodes := []string{"aa", "c", "a"}
+	graph.Sort(nodes)
+	assert.Equal(t, []string{"a", "c", "aa"}, nodes)
+}
+
+func TestToposortDeterministicAcrossInsertionOrder(t *testing.T) {
+	nodes := []string{"a", "b", "c", "d", "e", "f", "g"}
+	edges := []Edge{
+		{"a", "c"},
+		{"a", "d"},
+		{"b", "c"},
+		{"b", "e"},
+		{"c", "f"},
+		{"d", "f"},
+		{"e", "g"},
+	}
+
+	var expectedPlan []string
+	var expectedBreadth map[string]NodePosition
+	var expectedSerialization string
+	for iteration := range 100 {
+		//nolint:gosec // A reproducible pseudorandom permutation is intentional in this test.
+		random := rand.New(rand.NewSource(int64(iteration)))
+		shuffledNodes := append([]string(nil), nodes...)
+		shuffledEdges := append([]Edge(nil), edges...)
+		random.Shuffle(len(shuffledNodes), func(i, j int) {
+			shuffledNodes[i], shuffledNodes[j] = shuffledNodes[j], shuffledNodes[i]
+		})
+		random.Shuffle(len(shuffledEdges), func(i, j int) {
+			shuffledEdges[i], shuffledEdges[j] = shuffledEdges[j], shuffledEdges[i]
+		})
+
+		graph := NewGraph()
+		require.True(t, graph.AddNodes(shuffledNodes...))
+		for _, edge := range shuffledEdges {
+			addEdge(t, graph, edge.From, edge.To)
+		}
+
+		plan, ok := graph.Toposort()
+		require.True(t, ok)
+		if iteration == 0 {
+			expectedPlan = plan
+			expectedBreadth = graph.BreadthSort()
+			expectedSerialization = graph.Serialize(plan)
+			continue
+		}
+		assert.Equal(t, expectedPlan, plan)
+		assert.Equal(t, expectedBreadth, graph.BreadthSort())
+		assert.Equal(t, expectedSerialization, graph.Serialize(plan))
+	}
 }
 
 func TestToposortFindCycle(t *testing.T) {
 	graph := NewGraph()
 	graph.AddNodes("1", "2", "3", "4", "5")
 
-	graph.AddEdge("1", "2")
-	graph.AddEdge("2", "3")
-	graph.AddEdge("2", "4")
-	graph.AddEdge("3", "1")
-	graph.AddEdge("5", "1")
+	addEdge(t, graph, "1", "2")
+	addEdge(t, graph, "2", "3")
+	addEdge(t, graph, "2", "4")
+	addEdge(t, graph, "3", "1")
+	addEdge(t, graph, "5", "1")
 
 	cycle := graph.FindCycle("2")
 	expected := [...]string{"2", "3", "1"}
@@ -128,11 +252,11 @@ func TestToposortFindParents(t *testing.T) {
 	graph := NewGraph()
 	graph.AddNodes("1", "2", "3", "4", "5")
 
-	graph.AddEdge("1", "2")
-	graph.AddEdge("2", "3")
-	graph.AddEdge("2", "4")
-	graph.AddEdge("3", "1")
-	graph.AddEdge("5", "1")
+	addEdge(t, graph, "1", "2")
+	addEdge(t, graph, "2", "3")
+	addEdge(t, graph, "2", "4")
+	addEdge(t, graph, "3", "1")
+	addEdge(t, graph, "5", "1")
 
 	parents := graph.FindParents("2")
 	expected := [...]string{"1"}
@@ -155,11 +279,11 @@ func TestToposortFindChildren(t *testing.T) {
 	graph := NewGraph()
 	graph.AddNodes("1", "2", "3", "4", "5")
 
-	graph.AddEdge("1", "2")
-	graph.AddEdge("2", "3")
-	graph.AddEdge("2", "4")
-	graph.AddEdge("3", "1")
-	graph.AddEdge("5", "1")
+	addEdge(t, graph, "1", "2")
+	addEdge(t, graph, "2", "3")
+	addEdge(t, graph, "2", "4")
+	addEdge(t, graph, "3", "1")
+	addEdge(t, graph, "5", "1")
 
 	children := graph.FindChildren("1")
 	sort.Strings(children)
@@ -186,11 +310,11 @@ func TestToposortSerialize(t *testing.T) {
 	graph := NewGraph()
 	graph.AddNodes("1", "2", "3", "4", "5")
 
-	graph.AddEdge("1", "2")
-	graph.AddEdge("2", "3")
-	graph.AddEdge("2", "4")
-	graph.AddEdge("3", "1")
-	graph.AddEdge("5", "1")
+	addEdge(t, graph, "1", "2")
+	addEdge(t, graph, "2", "3")
+	addEdge(t, graph, "2", "4")
+	addEdge(t, graph, "3", "1")
+	addEdge(t, graph, "5", "1")
 
 	order := [...]string{"5", "4", "3", "2", "1"}
 	gv := graph.Serialize(order[:])

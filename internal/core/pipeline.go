@@ -50,7 +50,10 @@ const (
 
 const configurationStringType = "string"
 
-var errNegativeHibernationDistance = errors.New("--hibernation-distance cannot be negative")
+var (
+	errGraphEdgeNotFound           = errors.New("toposort: edge not found")
+	errNegativeHibernationDistance = errors.New("--hibernation-distance cannot be negative")
+)
 
 // String() returns an empty string for the boolean type, "int" for integers and "string" for
 // strings. It is used in the command line interface to show the argument's type.
@@ -565,69 +568,6 @@ func (items sortablePipelineItems) Swap(i, j int) {
 	items[i], items[j] = items[j], items[i]
 }
 
-func wireAmbiguousInputs(
-	key string, inputs []string, graph *toposort.Graph,
-) map[string]string {
-	replacements := map[string]string{}
-
-	nextCycleNode := key
-	for reverseIndex, input := range slices.Backward(inputs) {
-		graph.AddEdge(input, key)
-		cycle := graph.FindCycle(input)
-		nextNode := input
-
-		switch {
-		case len(cycle) == 0:
-			if reverseIndex != 0 {
-				continue
-			}
-
-			nextNode = key
-		case len(cycle) == 1 || cycle[1] != key:
-			panic("unexpected")
-		default:
-			if len(cycle) > 2 {
-				nextNode = cycle[2]
-			}
-
-			graph.RemoveEdge(key, nextNode)
-		}
-
-		if nextCycleNode != key {
-			graph.RemoveEdge(input, key)
-			graph.AddEdge(input, nextCycleNode)
-			replacements[nextCycleNode] = input
-		}
-
-		nextCycleNode = nextNode
-	}
-
-	return replacements
-}
-
-func repairAmbiguousChildren(
-	key string, replacements map[string]string, graph *toposort.Graph,
-) {
-	for _, child := range graph.FindChildren(key) {
-		cycle := graph.FindCycle(child)
-		if len(cycle) == 0 {
-			continue
-		}
-
-		if len(cycle) < 3 || cycle[len(cycle)-1] != key {
-			panic("unexpected")
-		}
-
-		replacement := replacements[cycle[len(cycle)-2]]
-		if replacement == "" {
-			panic("unexpected")
-		}
-
-		graph.RemoveEdge(key, child)
-		graph.AddEdge(replacement, child)
-	}
-}
-
 // Initialize prepares the pipeline for the execution (Run()). This function
 // resolves the execution DAG, Configure()-s and Initialize()-s the items in it in the
 // topological dependency order. `facts` are passed inside Configure(). They are mutable.
@@ -819,7 +759,11 @@ func (pipeline *Pipeline) itemFeaturesEnabled(item PipelineItem) bool {
 
 func (pipeline *Pipeline) resolve(dumpPath string, priorityFn DependencyPriorityFunc) error {
 	sort.Sort(sortablePipelineItems(pipeline.items))
-	graph, name2item, dataKeys := pipeline.dependencyGraph()
+
+	graph, name2item, dataKeys, err := pipeline.dependencyGraph()
+	if err != nil {
+		return err
+	}
 
 	ambiguousDataKeys, err := pipeline.validateDependencies(graph, dataKeys)
 	if err != nil {
@@ -827,7 +771,10 @@ func (pipeline *Pipeline) resolve(dumpPath string, priorityFn DependencyPriority
 	}
 
 	if len(ambiguousDataKeys) > 0 {
-		pipeline.resolveAmbiguous(ambiguousDataKeys, graph, name2item, priorityFn)
+		err = pipeline.resolveAmbiguous(ambiguousDataKeys, graph, name2item, priorityFn)
+		if err != nil {
+			return err
+		}
 	}
 
 	pipelinePlan, ok := graph.Toposort()
@@ -853,7 +800,7 @@ func (pipeline *Pipeline) resolve(dumpPath string, priorityFn DependencyPriority
 }
 
 func (pipeline *Pipeline) dependencyGraph() (
-	*toposort.Graph, map[string]PipelineItem, map[string]struct{},
+	*toposort.Graph, map[string]PipelineItem, map[string]struct{}, error,
 ) {
 	graph := toposort.NewGraphWithInsertionOrder()
 	items := make(map[string]PipelineItem, len(pipeline.items))
@@ -870,18 +817,26 @@ func (pipeline *Pipeline) dependencyGraph() (
 			dataKey := "[" + key + "]"
 			dataKeys[dataKey] = struct{}{}
 			graph.AddNode(dataKey)
-			graph.AddEdge(dataKey, name)
+
+			err := addGraphEdge(graph, dataKey, name)
+			if err != nil {
+				return nil, nil, nil, err
+			}
 		}
 
 		for _, key := range item.Provides() {
 			dataKey := "[" + key + "]"
 			dataKeys[dataKey] = struct{}{}
 			graph.AddNode(dataKey)
-			graph.AddEdge(name, dataKey)
+
+			err := addGraphEdge(graph, name, dataKey)
+			if err != nil {
+				return nil, nil, nil, err
+			}
 		}
 	}
 
-	return graph, items, dataKeys
+	return graph, items, dataKeys, nil
 }
 
 func (pipeline *Pipeline) validateDependencies(
@@ -928,13 +883,18 @@ func (pipeline *Pipeline) dumpDependencyGraph(
 // break cycles - unwinds sequential processing of same facts.
 func (pipeline *Pipeline) resolveAmbiguous(ambiguousDataKeys []string,
 	graph *toposort.Graph, name2item map[string]PipelineItem, priorityFn DependencyPriorityFunc,
-) {
+) error {
 	graph.Sort(ambiguousDataKeys)
-	bfsIndex := graph.BreadthSort() // TODO improve sorting to consider node ordering
+	bfsIndex := graph.BreadthSort()
 
 	for _, key := range ambiguousDataKeys {
-		pipeline.resolveAmbiguousKey(key, graph, name2item, priorityFn, bfsIndex)
+		err := pipeline.resolveAmbiguousKey(key, graph, name2item, priorityFn, bfsIndex)
+		if err != nil {
+			return err
+		}
 	}
+
+	return nil
 }
 
 func (pipeline *Pipeline) resolveAmbiguousKey(
@@ -943,21 +903,28 @@ func (pipeline *Pipeline) resolveAmbiguousKey(
 	name2item map[string]PipelineItem,
 	priorityFn DependencyPriorityFunc,
 	bfsIndex map[string]toposort.NodePosition,
-) {
+) error {
 	inputs := graph.FindParents(key)
 	toposort.SortByNodeIndex(inputs, bfsIndex)
 
 	inputs = pipeline.removeEquivalentInputs(inputs, graph, name2item, priorityFn, bfsIndex)
 	if len(inputs) < 2 {
-		return
+		return nil
 	}
 
 	for _, input := range inputs {
-		graph.RemoveEdge(input, key)
+		err := removeGraphEdge(graph, input, key)
+		if err != nil {
+			return err
+		}
 	}
 
-	replacements := wireAmbiguousInputs(key, inputs, graph)
-	repairAmbiguousChildren(key, replacements, graph)
+	replacements, err := wireAmbiguousInputs(key, inputs, graph)
+	if err != nil {
+		return err
+	}
+
+	return repairAmbiguousChildren(key, replacements, graph)
 }
 
 func (pipeline *Pipeline) removeEquivalentInputs(

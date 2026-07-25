@@ -164,23 +164,23 @@ func (detector *StoryDetector) Configure(facts map[string]any) error {
 	return nil
 }
 
-func splitMergeDict(dict map[plumbing.Hash]string) (hashDict map[plumbing.Hash]int, names []string) {
+func splitMergeDict(dict map[plumbing.Hash]string) (map[plumbing.Hash]int, []string) {
 	uniqueNames := map[string]int{}
 
-	hashDict = make(map[plumbing.Hash]int, len(dict))
-	for k, v := range dict {
-		id, ok := uniqueNames[v]
+	hashDict := make(map[plumbing.Hash]int, len(dict))
+	for hash, name := range dict {
+		id, ok := uniqueNames[name]
 		if !ok {
 			id = len(uniqueNames)
-			uniqueNames[v] = id
+			uniqueNames[name] = id
 		}
 
-		hashDict[k] = id
+		hashDict[hash] = id
 	}
 
-	names = make([]string, len(uniqueNames))
-	for k, v := range uniqueNames {
-		names[v] = k
+	names := make([]string, len(uniqueNames))
+	for name, id := range uniqueNames {
+		names[id] = name
 	}
 
 	return hashDict, names
@@ -263,10 +263,10 @@ func (detector *StoryDetector) LoadMergeDict(path string) error {
 		textLine := scanner.Text()
 		values := strings.Split(textLine, "|")
 		id := len(reverseDict)
-		i := 0
+		valueIndex := 0
 
-		for ; i < len(values); i++ {
-			value := values[i]
+		for ; valueIndex < len(values); valueIndex++ {
+			value := values[valueIndex]
 			var key plumbing.Hash
 
 			n, err := hex.Decode(key[:], []byte(value))
@@ -275,7 +275,7 @@ func (detector *StoryDetector) LoadMergeDict(path string) error {
 			}
 
 			if err != nil {
-				if i == len(values)-1 {
+				if valueIndex == len(values)-1 {
 					break
 				}
 
@@ -290,10 +290,10 @@ func (detector *StoryDetector) LoadMergeDict(path string) error {
 		}
 
 		var name string
-		if i == len(values) {
+		if valueIndex == len(values) {
 			name = fmt.Sprintf("Merge #%d", id)
 		} else {
-			name = values[i]
+			name = values[valueIndex]
 		}
 
 		reverseDict = append(reverseDict, name)

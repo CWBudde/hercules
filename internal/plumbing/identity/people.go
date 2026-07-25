@@ -616,7 +616,9 @@ func (detector *PeopleDetector) matchFuzzySignature(
 	}, true
 }
 
-func mergeDecisionForReason(id int, name, email, reason, to string, confidence float64) *IdentityMergeDecision {
+func mergeDecisionForReason(id int, name, email, reason, destination string,
+	confidence float64,
+) *IdentityMergeDecision {
 	if reason != "co-authored-by" {
 		return nil
 	}
@@ -624,7 +626,7 @@ func mergeDecisionForReason(id int, name, email, reason, to string, confidence f
 	return &IdentityMergeDecision{
 		Identity:   id,
 		From:       peopleDictLine([]string{name}, []string{email}),
-		To:         to,
+		To:         destination,
 		Reason:     reason,
 		Confidence: confidence,
 	}
@@ -715,29 +717,41 @@ func parseCoAuthors(message string) []object.Signature {
 	return signatures
 }
 
-func lastCommitMailmapContents(commits []*object.Commit) (contents string, ok bool) {
-	if len(commits) == 0 {
-		return "", false
-	}
+func lastCommitMailmapContents(commits []*object.Commit) (string, bool) {
+	result := struct {
+		contents string
+		found    bool
+	}{}
 
-	defer func() {
-		if recover() != nil {
-			contents = ""
-			ok = false
+	func() {
+		defer func() {
+			if recover() != nil {
+				result = struct {
+					contents string
+					found    bool
+				}{}
+			}
+		}()
+
+		if len(commits) == 0 {
+			return
 		}
+
+		mailmapFile, err := commits[len(commits)-1].File(".mailmap")
+		if err != nil {
+			return
+		}
+
+		contents, err := mailmapFile.Contents()
+		if err != nil {
+			return
+		}
+
+		result.contents = contents
+		result.found = true
 	}()
 
-	mailmapFile, err := commits[len(commits)-1].File(".mailmap")
-	if err != nil {
-		return "", false
-	}
-
-	contents, err = mailmapFile.Contents()
-	if err != nil {
-		return "", false
-	}
-
-	return contents, true
+	return result.contents, result.found
 }
 
 func peopleDictLine(names, emails []string) string {
@@ -783,23 +797,23 @@ func emailDomain(email string) string {
 	return parts[1]
 }
 
-func jaroWinkler(a, b string) float64 {
-	a = normalizeForSimilarity(a)
+func jaroWinkler(first, second string) float64 {
+	first = normalizeForSimilarity(first)
 
-	b = normalizeForSimilarity(b)
-	if a == b {
+	second = normalizeForSimilarity(second)
+	if first == second {
 		return 1
 	}
 
-	if a == "" || b == "" {
+	if first == "" || second == "" {
 		return 0
 	}
 
-	jaro := jaroSimilarity(a, b)
+	jaro := jaroSimilarity(first, second)
 	prefix := 0
 
-	maxPrefix := minInt(4, minInt(len(a), len(b)))
-	for prefix < maxPrefix && a[prefix] == b[prefix] {
+	maxPrefix := minInt(4, minInt(len(first), len(second)))
+	for prefix < maxPrefix && first[prefix] == second[prefix] {
 		prefix++
 	}
 
@@ -807,38 +821,38 @@ func jaroWinkler(a, b string) float64 {
 }
 
 func normalizeForSimilarity(value string) string {
-	var b strings.Builder
+	var builder strings.Builder
 
-	for _, r := range value {
-		if unicode.IsLetter(r) || unicode.IsNumber(r) {
-			b.WriteRune(unicode.ToLower(r))
+	for _, runeValue := range value {
+		if unicode.IsLetter(runeValue) || unicode.IsNumber(runeValue) {
+			builder.WriteRune(unicode.ToLower(runeValue))
 		}
 	}
 
-	return b.String()
+	return builder.String()
 }
 
-func jaroSimilarity(a, b string) float64 {
-	if len(a) > len(b) {
-		a, b = b, a
+func jaroSimilarity(first, second string) float64 {
+	if len(first) > len(second) {
+		first, second = second, first
 	}
 
-	matchDistance := maxInt(len(b)/2-1, 0)
-	aMatches := make([]bool, len(a))
-	bMatches := make([]bool, len(b))
+	matchDistance := maxInt(len(second)/2-1, 0)
+	firstMatches := make([]bool, len(first))
+	secondMatches := make([]bool, len(second))
 	matches := 0
 
-	for i := range a {
-		start := maxInt(i-matchDistance, 0)
+	for firstIndex := range first {
+		start := maxInt(firstIndex-matchDistance, 0)
 
-		end := minInt(i+matchDistance+1, len(b))
-		for j := start; j < end; j++ {
-			if bMatches[j] || a[i] != b[j] {
+		end := minInt(firstIndex+matchDistance+1, len(second))
+		for secondIndex := start; secondIndex < end; secondIndex++ {
+			if secondMatches[secondIndex] || first[firstIndex] != second[secondIndex] {
 				continue
 			}
 
-			aMatches[i] = true
-			bMatches[j] = true
+			firstMatches[firstIndex] = true
+			secondMatches[secondIndex] = true
 			matches++
 
 			break
@@ -850,27 +864,28 @@ func jaroSimilarity(a, b string) float64 {
 	}
 
 	transpositions := 0
-	k := 0
+	secondIndex := 0
 
-	for i := range a {
-		if !aMatches[i] {
+	for firstIndex := range first {
+		if !firstMatches[firstIndex] {
 			continue
 		}
 
-		for !bMatches[k] {
-			k++
+		for !secondMatches[secondIndex] {
+			secondIndex++
 		}
 
-		if a[i] != b[k] {
+		if first[firstIndex] != second[secondIndex] {
 			transpositions++
 		}
 
-		k++
+		secondIndex++
 	}
 
-	m := float64(matches)
+	matchRatio := float64(matches)
 
-	return (m/float64(len(a)) + m/float64(len(b)) + (m-float64(transpositions)/2)/m) / 3
+	return (matchRatio/float64(len(first)) + matchRatio/float64(len(second)) +
+		(matchRatio-float64(transpositions)/2)/matchRatio) / 3
 }
 
 func minInt(a, b int) int {
@@ -998,27 +1013,27 @@ func (detector *PeopleDetector) identityAuditIdentities(names, emails map[int][]
 func sortIdentityAuditDecisions(mergeDecisions []IdentityMergeDecision,
 	ambiguous []IdentityMergeSuggestion,
 ) {
-	sort.Slice(mergeDecisions, func(i, j int) bool {
-		if mergeDecisions[i].Identity != mergeDecisions[j].Identity {
-			return mergeDecisions[i].Identity < mergeDecisions[j].Identity
+	sort.Slice(mergeDecisions, func(leftIndex, rightIndex int) bool {
+		if mergeDecisions[leftIndex].Identity != mergeDecisions[rightIndex].Identity {
+			return mergeDecisions[leftIndex].Identity < mergeDecisions[rightIndex].Identity
 		}
 
-		if mergeDecisions[i].Reason != mergeDecisions[j].Reason {
-			return mergeDecisions[i].Reason < mergeDecisions[j].Reason
+		if mergeDecisions[leftIndex].Reason != mergeDecisions[rightIndex].Reason {
+			return mergeDecisions[leftIndex].Reason < mergeDecisions[rightIndex].Reason
 		}
 
-		return mergeDecisions[i].From < mergeDecisions[j].From
+		return mergeDecisions[leftIndex].From < mergeDecisions[rightIndex].From
 	})
-	sort.Slice(ambiguous, func(i, j int) bool {
-		if ambiguous[i].Confidence != ambiguous[j].Confidence {
-			return ambiguous[i].Confidence > ambiguous[j].Confidence
+	sort.Slice(ambiguous, func(leftIndex, rightIndex int) bool {
+		if ambiguous[leftIndex].Confidence != ambiguous[rightIndex].Confidence {
+			return ambiguous[leftIndex].Confidence > ambiguous[rightIndex].Confidence
 		}
 
-		if ambiguous[i].Left != ambiguous[j].Left {
-			return ambiguous[i].Left < ambiguous[j].Left
+		if ambiguous[leftIndex].Left != ambiguous[rightIndex].Left {
+			return ambiguous[leftIndex].Left < ambiguous[rightIndex].Left
 		}
 
-		return ambiguous[i].Right < ambiguous[j].Right
+		return ambiguous[leftIndex].Right < ambiguous[rightIndex].Right
 	})
 }
 

@@ -14,13 +14,19 @@ var (
 	errInvalidReservedRange     = errors.New("invalid reserved range")
 )
 
+const (
+	fieldTypeMap    = "map"
+	fieldTypeString = "string"
+)
+
 var (
 	messageRe = regexp.MustCompile(`^message\s+([A-Za-z_][A-Za-z0-9_]*)\s*\{\s*$`)
 	fieldRe   = regexp.MustCompile(
 		`^(?:(repeated)\s+)?([A-Za-z_][A-Za-z0-9_\.]*)\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([0-9]+)\s*;`,
 	)
 	mapRe = regexp.MustCompile(
-		`^map<\s*([A-Za-z_][A-Za-z0-9_\.]*)\s*,\s*([A-Za-z_][A-Za-z0-9_\.]*)\s*>\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([0-9]+)\s*;`,
+		`^map<\s*([A-Za-z_][A-Za-z0-9_\.]*)\s*,\s*` +
+			`([A-Za-z_][A-Za-z0-9_\.]*)\s*>\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([0-9]+)\s*;`,
 	)
 	reservedRe      = regexp.MustCompile(`^reserved\s+(.+?)\s*;`)
 	reservedRangeRe = regexp.MustCompile(`^([0-9]+)(?:\s+to\s+([0-9]+))?$`)
@@ -82,7 +88,7 @@ func parseProtoLine(snapshot *Snapshot, current *Message, line string) (*Message
 		}
 
 		current.Fields = append(current.Fields, Field{
-			Number: number, Name: matches[3], Type: "map", Key: matches[1], Value: matches[2],
+			Number: number, Name: matches[3], Type: fieldTypeMap, Key: matches[1], Value: matches[2],
 		})
 
 		return current, nil
@@ -139,24 +145,24 @@ func parseReserved(message *Message, spec string) error {
 			return fmt.Errorf("%w %q in message %s", errUnsupportedReservedEntry, part, message.Name)
 		}
 
-		lo, err := strconv.Atoi(matches[1])
+		rangeStart, err := strconv.Atoi(matches[1])
 		if err != nil {
 			return fmt.Errorf("parse reserved range start %q: %w", matches[1], err)
 		}
 
-		hi := lo
+		rangeEnd := rangeStart
 		if matches[2] != "" {
-			hi, err = strconv.Atoi(matches[2])
+			rangeEnd, err = strconv.Atoi(matches[2])
 			if err != nil {
 				return fmt.Errorf("parse reserved range end %q: %w", matches[2], err)
 			}
 		}
 
-		if hi < lo {
+		if rangeEnd < rangeStart {
 			return fmt.Errorf("%w %q in message %s", errInvalidReservedRange, part, message.Name)
 		}
 
-		for n := lo; n <= hi; n++ {
+		for n := rangeStart; n <= rangeEnd; n++ {
 			message.ReservedNumbers = append(message.ReservedNumbers, n)
 		}
 	}

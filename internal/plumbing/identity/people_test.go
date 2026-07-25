@@ -19,6 +19,8 @@ import (
 	"github.com/cwbudde/hercules/internal/test"
 )
 
+const vadimMarkovtsev = "Vadim Markovtsev"
+
 func fixturePeopleDetector() *PeopleDetector {
 	peopleDict := map[string]int{}
 	peopleDict["vadim@sourced.tech"] = 0
@@ -187,7 +189,7 @@ func TestPeopleDetectorLoadPeopleDict(t *testing.T) {
 
 	assert.Len(t, id.ReversedPeopleDict, 4)
 	assert.Equal(t, "Linus Torvalds", id.ReversedPeopleDict[0])
-	assert.Equal(t, "Vadim Markovtsev", id.ReversedPeopleDict[1])
+	assert.Equal(t, vadimMarkovtsev, id.ReversedPeopleDict[1])
 	assert.Equal(t, "Máximo Cuadros", id.ReversedPeopleDict[2])
 	assert.Equal(t, "Duplicate", id.ReversedPeopleDict[3])
 
@@ -220,7 +222,7 @@ func TestPeopleDetectorGeneratePeopleDict(t *testing.T) {
 	}
 	{
 		i := 0
-		for ; commits[i].Author.Name != "Vadim Markovtsev"; i++ {
+		for ; commits[i].Author.Name != vadimMarkovtsev; i++ {
 		}
 		if i > 0 {
 			commits[0], commits[i] = commits[i], commits[0]
@@ -476,11 +478,11 @@ func getFakeCommitWithFile(name, contents string) *object.Commit {
 	c := object.Commit{
 		Hash: plumbing.NewHash("ffffffffffffffffffffffffffffffffffffffff"),
 		Author: object.Signature{
-			Name:  "Vadim Markovtsev",
+			Name:  vadimMarkovtsev,
 			Email: "vadim@sourced.tech",
 		},
 		Committer: object.Signature{
-			Name:  "Vadim Markovtsev",
+			Name:  vadimMarkovtsev,
 			Email: "vadim@sourced.tech",
 		},
 		Message:  "Virtual file " + name,

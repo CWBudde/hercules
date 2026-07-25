@@ -14,6 +14,14 @@ import (
 	"github.com/cwbudde/hercules/internal/test"
 )
 
+const (
+	storyA = "Story A"
+	storyB = "Story B"
+	story0 = "Story 0"
+	storyX = "Story X"
+	storyY = "Story Y"
+)
+
 func fixtureStoryDetector() *StoryDetector {
 	sd := &StoryDetector{
 		MergeHashDict: make(map[plumbing.Hash]int),
@@ -48,9 +56,9 @@ func TestStoryDetectorConfigureWithMergeDict(t *testing.T) {
 
 	// Test with explicit merge dict
 	mergeDict := map[plumbing.Hash]string{
-		plumbing.NewHash("1111111111111111111111111111111111111111"): "Story A",
-		plumbing.NewHash("2222222222222222222222222222222222222222"): "Story B",
-		plumbing.NewHash("3333333333333333333333333333333333333333"): "Story A", // Same name
+		plumbing.NewHash("1111111111111111111111111111111111111111"): storyA,
+		plumbing.NewHash("2222222222222222222222222222222222222222"): storyB,
+		plumbing.NewHash("3333333333333333333333333333333333333333"): storyA, // Same name
 	}
 
 	facts := map[string]any{
@@ -161,7 +169,7 @@ func TestStoryDetectorInitialize(t *testing.T) {
 func TestStoryDetectorConsume(t *testing.T) {
 	sd := &StoryDetector{
 		MergeHashDict:   make(map[plumbing.Hash]int),
-		MergeNames:      []string{"Story 0"},
+		MergeNames:      []string{story0},
 		mergeNameCount:  1,
 		expandMergeDict: false,
 		l:               core.NewLogger(),
@@ -254,7 +262,7 @@ func TestStoryDetectorConsumeExpandDict(t *testing.T) {
 func TestStoryDetectorConsumeExceedLimit(t *testing.T) {
 	sd := &StoryDetector{
 		MergeHashDict:   make(map[plumbing.Hash]int),
-		MergeNames:      []string{"Story 0", "Story 1"},
+		MergeNames:      []string{story0, "Story 1"},
 		mergeNameCount:  2,
 		expandMergeDict: true,
 		l:               core.NewLogger(),
@@ -282,7 +290,7 @@ func TestStoryDetectorConsumeExceedLimit(t *testing.T) {
 func TestStoryDetectorConsumeUnknownHashNoExpand(t *testing.T) {
 	sd := &StoryDetector{
 		MergeHashDict:   make(map[plumbing.Hash]int),
-		MergeNames:      []string{"Story 0"},
+		MergeNames:      []string{story0},
 		mergeNameCount:  1,
 		expandMergeDict: false,
 		l:               core.NewLogger(),
@@ -501,7 +509,7 @@ func TestStoryResolverPrivateNameOf(t *testing.T) {
 
 func TestStoryResolverForEachIdentity(t *testing.T) {
 	sd := &StoryDetector{
-		MergeNames: []string{"Story A", "Story B", "Story C"},
+		MergeNames: []string{storyA, storyB, "Story C"},
 	}
 
 	resolver := storyResolver{identities: sd}
@@ -515,7 +523,7 @@ func TestStoryResolverForEachIdentity(t *testing.T) {
 	})
 
 	assert.True(t, result)
-	assert.Equal(t, []string{"Story A", "Story B", "Story C"}, collected)
+	assert.Equal(t, []string{storyA, storyB, "Story C"}, collected)
 	assert.Equal(t, []core.AuthorId{0, 1, 2}, ids)
 
 	// Nil case
@@ -530,17 +538,17 @@ func TestStoryResolverForEachIdentity(t *testing.T) {
 
 func TestStoryResolverCopyNames(t *testing.T) {
 	sd := &StoryDetector{
-		MergeNames: []string{"Story X", "Story Y"},
+		MergeNames: []string{storyX, storyY},
 	}
 
 	resolver := storyResolver{identities: sd}
 
 	copied := resolver.CopyNames(false)
-	assert.Equal(t, []string{"Story X", "Story Y"}, copied)
+	assert.Equal(t, []string{storyX, storyY}, copied)
 
 	// Verify it's a copy (modification doesn't affect original)
 	copied[0] = "Modified"
-	assert.Equal(t, "Story X", sd.MergeNames[0])
+	assert.Equal(t, storyX, sd.MergeNames[0])
 
 	// Nil case
 	nilResolver := storyResolver{identities: nil}
@@ -548,7 +556,7 @@ func TestStoryResolverCopyNames(t *testing.T) {
 
 	// Test with true parameter (should still ignore it)
 	copied2 := resolver.CopyNames(true)
-	assert.Equal(t, []string{"Story X", "Story Y"}, copied2)
+	assert.Equal(t, []string{storyX, storyY}, copied2)
 }
 
 func TestSplitMergeDict(t *testing.T) {

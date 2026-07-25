@@ -177,23 +177,23 @@ func (devs *DevsAnalysis) Consume(deps map[string]any) (map[string]any, error) {
 		devs.ticks[tick] = devstick
 	}
 
-	dd, exists := devstick[author]
+	developerTick, exists := devstick[author]
 	if !exists {
-		dd = &DevTick{Languages: map[string]items.LineStats{}}
-		devstick[author] = dd
+		developerTick = &DevTick{Languages: map[string]items.LineStats{}}
+		devstick[author] = developerTick
 	}
 
-	dd.Commits++
+	developerTick.Commits++
 	langs := deps[items.DependencyLanguages].(map[plumbing.Hash]string)
 
 	lineStats := deps[items.DependencyLineStats].(map[object.ChangeEntry]items.LineStats)
 	for changeEntry, stats := range lineStats {
-		dd.Added += stats.Added
-		dd.Removed += stats.Removed
-		dd.Changed += stats.Changed
+		developerTick.Added += stats.Added
+		developerTick.Removed += stats.Removed
+		developerTick.Changed += stats.Changed
 		lang := langs[changeEntry.TreeEntry.Hash]
-		langStats := dd.Languages[lang]
-		dd.Languages[lang] = items.LineStats{
+		langStats := developerTick.Languages[lang]
+		developerTick.Languages[lang] = items.LineStats{
 			Added:   langStats.Added + stats.Added,
 			Removed: langStats.Removed + stats.Removed,
 			Changed: langStats.Changed + stats.Changed,
@@ -281,25 +281,27 @@ func (devs *DevsAnalysis) Deserialize(pbmessage []byte) (any, error) {
 }
 
 // MergeResults combines two DevsAnalysis-es together.
-func (devs *DevsAnalysis) MergeResults(r1, r2 any, c1, c2 *core.CommonAnalysisResult) any {
-	cr1 := r1.(DevsResult)
+func (devs *DevsAnalysis) MergeResults(result1, result2 any,
+	commonResult1, commonResult2 *core.CommonAnalysisResult,
+) any {
+	cr1 := result1.(DevsResult)
 
-	cr2 := r2.(DevsResult)
+	cr2 := result2.(DevsResult)
 	if cr1.tickSize != cr2.tickSize {
 		return fmt.Errorf("mismatching tick sizes (r1: %d, r2: %d) received",
 			cr1.tickSize, cr2.tickSize)
 	}
 
-	t01 := items.FloorTime(c1.BeginTimeAsTime(), cr1.tickSize)
-	t02 := items.FloorTime(c2.BeginTimeAsTime(), cr2.tickSize)
+	firstStart := items.FloorTime(commonResult1.BeginTimeAsTime(), cr1.tickSize)
+	secondStart := items.FloorTime(commonResult2.BeginTimeAsTime(), cr2.tickSize)
 
-	t0 := t01
-	if t02.Before(t0) {
-		t0 = t02
+	startTime := firstStart
+	if secondStart.Before(startTime) {
+		startTime = secondStart
 	}
 
-	offset1 := int(t01.Sub(t0) / cr1.tickSize)
-	offset2 := int(t02.Sub(t0) / cr2.tickSize)
+	offset1 := int(firstStart.Sub(startTime) / cr1.tickSize)
+	offset2 := int(secondStart.Sub(startTime) / cr2.tickSize)
 
 	merged := DevsResult{tickSize: cr1.tickSize}
 	var mergedIndex map[string]join.JoinedIndex
@@ -394,13 +396,13 @@ func (devs *DevsAnalysis) serializeText(result *DevsResult, writer io.Writer) {
 			}
 			var langs []string
 
-			for lang, ls := range stats.Languages {
+			for lang, languageStats := range stats.Languages {
 				if lang == "" {
 					lang = "none"
 				}
 
 				langs = append(langs,
-					fmt.Sprintf("%s: [%d, %d, %d]", lang, ls.Added, ls.Removed, ls.Changed))
+					fmt.Sprintf("%s: [%d, %d, %d]", lang, languageStats.Added, languageStats.Removed, languageStats.Changed))
 			}
 
 			sort.Strings(langs)
@@ -426,9 +428,9 @@ func (devs *DevsAnalysis) serializeBinary(result *DevsResult, writer io.Writer) 
 
 	message.Ticks = map[int32]*pb.TickDevs{}
 	for tick, devs := range result.Ticks {
-		dd := &pb.TickDevs{}
-		message.Ticks[int32(tick)] = dd
-		dd.Devs = map[int32]*pb.DevTick{}
+		tickDevs := &pb.TickDevs{}
+		message.Ticks[int32(tick)] = tickDevs
+		tickDevs.Devs = map[int32]*pb.DevTick{}
 
 		for dev, stats := range devs {
 			if dev == core.AuthorMissing {
@@ -437,7 +439,7 @@ func (devs *DevsAnalysis) serializeBinary(result *DevsResult, writer io.Writer) 
 
 			languages := map[string]*pb.LineStats{}
 
-			dd.Devs[int32(dev)] = &pb.DevTick{
+			tickDevs.Devs[int32(dev)] = &pb.DevTick{
 				Commits: int32(stats.Commits),
 				Stats: &pb.LineStats{
 					Added:   int32(stats.Added),

@@ -11,7 +11,7 @@ import (
 // matching convention, that is, developers are identified by email
 // and by name independently.
 func ParseMailmap(contents string) map[string]object.Signature {
-	mm := map[string]object.Signature{}
+	signatures := map[string]object.Signature{}
 
 	lines := strings.SplitSeq(contents, "\n")
 	for line := range lines {
@@ -49,13 +49,13 @@ func ParseMailmap(contents string) map[string]object.Signature {
 
 		toName := line
 		if fromEmail != "" {
-			mm[fromEmail] = object.Signature{Name: toName, Email: toEmail}
+			signatures[fromEmail] = object.Signature{Name: toName, Email: toEmail}
 		}
 
 		if fromName != "" {
-			mm[fromName] = object.Signature{Name: toName, Email: toEmail}
+			signatures[fromName] = object.Signature{Name: toName, Email: toEmail}
 		}
 	}
 
-	return mm
+	return signatures
 }

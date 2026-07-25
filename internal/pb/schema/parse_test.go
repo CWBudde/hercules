@@ -31,7 +31,7 @@ message BurndownSparseMatrix {
 		{
 			Name: "BurndownSparseMatrix",
 			Fields: []Field{
-				{Number: 1, Name: "name", Type: "string"},
+				{Number: 1, Name: "name", Type: fieldTypeString},
 				{Number: 4, Name: "rows", Type: "BurndownSparseMatrixRow", Label: "repeated"},
 			},
 		},
@@ -39,8 +39,8 @@ message BurndownSparseMatrix {
 			Name: "Metadata",
 			Fields: []Field{
 				{Number: 1, Name: "version", Type: "int32"},
-				{Number: 2, Name: "hash", Type: "string"},
-				{Number: 8, Name: "run_time_per_item", Type: "map", Key: "string", Value: "double"},
+				{Number: 2, Name: "hash", Type: fieldTypeString},
+				{Number: 8, Name: "run_time_per_item", Type: fieldTypeMap, Key: fieldTypeString, Value: "double"},
 			},
 		},
 	}}

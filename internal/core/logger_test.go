@@ -61,6 +61,6 @@ func TestLogger(t *testing.T) {
 	assert.Contains(t, eBuf.String(), "-")
 	assert.Contains(t, eBuf.String(), "internal/core.TestLogger")
 	assert.Contains(t, eBuf.String(), "internal/core/logger_test.go:59")
-	println(eBuf.String())
+	t.Log(eBuf.String())
 	eBuf.Reset()
 }

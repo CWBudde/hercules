@@ -68,6 +68,8 @@ var defaultBlacklistedPrefixes = []string{
 	"Gopkg.lock",
 }
 
+var errCommitDoesNotContinue = errors.New("commit does not continue from previous commit")
+
 // Name of this PipelineItem. Uniquely identifies the type, used for mapping keys, etc.
 func (treediff *TreeDiff) Name() string {
 	return "TreeDiff"
@@ -186,7 +188,12 @@ func (treediff *TreeDiff) Initialize(repository *git.Repository) error {
 func (treediff *TreeDiff) Consume(deps map[string]any) (map[string]any, error) {
 	commit := deps[core.DependencyCommit].(*object.Commit)
 	if !commitContinuesFrom(commit, treediff.previousCommit) {
-		err := fmt.Errorf("%s > %s", treediff.previousCommit.String(), commit.Hash.String())
+		err := fmt.Errorf(
+			"%w: %s > %s",
+			errCommitDoesNotContinue,
+			treediff.previousCommit.String(),
+			commit.Hash.String(),
+		)
 		treediff.l.Critical(err)
 
 		return nil, err
@@ -194,7 +201,7 @@ func (treediff *TreeDiff) Consume(deps map[string]any) (map[string]any, error) {
 
 	tree, err := commit.Tree()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("load tree for commit %s: %w", commit.Hash, err)
 	}
 
 	var diffs object.Changes
@@ -236,7 +243,7 @@ func (treediff *TreeDiff) initialTreeChanges(tree *object.Tree) (object.Changes,
 		}
 
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("iterate files in initial tree %s: %w", tree.Hash, err)
 		}
 
 		pass, err := treediff.checkLanguage(file.Name, file.Hash)
@@ -309,19 +316,20 @@ func (treediff *TreeDiff) checkLanguage(name string, blobHash plumbing.Hash) (bo
 
 	blob, err := treediff.repository.BlobObject(blobHash)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("load blob %s to detect language of %q: %w", blobHash, name, err)
 	}
 
 	reader, err := blob.Reader()
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("open blob %s to detect language of %q: %w", blobHash, name, err)
 	}
+	defer reader.Close()
 
 	buffer := make([]byte, 1024)
 
 	n, err := reader.Read(buffer)
 	if err != nil && (blob.Size != 0 || !errors.Is(err, io.EOF)) {
-		return false, err
+		return false, fmt.Errorf("read blob %s to detect language of %q: %w", blobHash, name, err)
 	}
 
 	if n < len(buffer) {

@@ -217,7 +217,7 @@ func TestCountLines(t *testing.T) {
 	assert.NoError(t, err)
 	cb = &items.CachedBlob{Blob: *blob}
 	err = cb.Cache()
-	assert.Equal(t, "dummy failure", err.Error())
+	assert.ErrorContains(t, err, "dummy failure")
 	// test_data/blob
 	blob, err = test.Repository.BlobObject(
 		plumbing.NewHash("c86626638e0bc8cf47ca49bb1525b40e9737ee64"),

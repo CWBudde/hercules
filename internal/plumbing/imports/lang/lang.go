@@ -8,6 +8,7 @@
 package lang
 
 import (
+	"fmt"
 	"sort"
 
 	"github.com/src-d/enry/v2"
@@ -67,7 +68,7 @@ func Extract(path string, content []byte) (*File, error) {
 
 	list, err := l.Imports(content)
 	if err != nil {
-		return f, err
+		return f, fmt.Errorf("extract %s imports from %q: %w", langName, path, err)
 	}
 
 	sort.Strings(list)

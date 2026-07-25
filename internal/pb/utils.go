@@ -11,100 +11,100 @@ func ToBurndownSparseMatrix(matrix [][]int64, name string) *BurndownSparseMatrix
 		panic("matrix may not be nil or empty")
 	}
 
-	r := BurndownSparseMatrix{
+	result := BurndownSparseMatrix{
 		Name:            name,
 		NumberOfRows:    int32(len(matrix)),
 		NumberOfColumns: int32(len(matrix[len(matrix)-1])),
 		Rows:            make([]*BurndownSparseMatrixRow, len(matrix)),
 	}
-	for i, status := range matrix {
+	for rowIndex, status := range matrix {
 		nnz := make([]uint32, 0, len(status))
 		changed := false
 
-		for j := range status {
-			v := max(status[len(status)-1-j], 0)
+		for columnOffset := range status {
+			value := max(status[len(status)-1-columnOffset], 0)
 
 			if !changed {
-				changed = v != 0
+				changed = value != 0
 			}
 
 			if changed {
-				nnz = append(nnz, uint32(v))
+				nnz = append(nnz, uint32(value))
 			}
 		}
 
-		r.Rows[i] = &BurndownSparseMatrixRow{
+		result.Rows[rowIndex] = &BurndownSparseMatrixRow{
 			Columns: make([]uint32, len(nnz)),
 		}
-		for j := range nnz {
-			r.Rows[i].Columns[j] = nnz[len(nnz)-1-j]
+		for columnIndex := range nnz {
+			result.Rows[rowIndex].Columns[columnIndex] = nnz[len(nnz)-1-columnIndex]
 		}
 	}
 
-	return &r
+	return &result
 }
 
 // DenseToCompressedSparseRowMatrix takes an integer matrix and converts it to a Protobuf CSR.
 // CSR format: https://en.wikipedia.org/wiki/Sparse_matrix#Compressed_sparse_row_.28CSR.2C_CRS_or_Yale_format.29
 func DenseToCompressedSparseRowMatrix(matrix [][]int64) *CompressedSparseRowMatrix {
-	r := CompressedSparseRowMatrix{
+	result := CompressedSparseRowMatrix{
 		NumberOfRows:    int32(len(matrix)),
 		NumberOfColumns: int32(len(matrix[0])),
 		Data:            make([]int64, 0),
 		Indices:         make([]int32, 0),
 		Indptr:          make([]int64, 1),
 	}
-	r.Indptr[0] = 0
+	result.Indptr[0] = 0
 
 	for _, row := range matrix {
 		nnz := 0
 
 		for x, col := range row {
 			if col != 0 {
-				r.Data = append(r.Data, col)
-				r.Indices = append(r.Indices, int32(x))
+				result.Data = append(result.Data, col)
+				result.Indices = append(result.Indices, int32(x))
 				nnz++
 			}
 		}
 
-		r.Indptr = append(r.Indptr, r.GetIndptr()[len(r.GetIndptr())-1]+int64(nnz))
+		result.Indptr = append(result.Indptr, result.GetIndptr()[len(result.GetIndptr())-1]+int64(nnz))
 	}
 
-	return &r
+	return &result
 }
 
 // MapToCompressedSparseRowMatrix takes an integer matrix and converts it to a Protobuf CSR.
 // In contrast to DenseToCompressedSparseRowMatrix, a matrix here is already in DOK format.
 // CSR format: https://en.wikipedia.org/wiki/Sparse_matrix#Compressed_sparse_row_.28CSR.2C_CRS_or_Yale_format.29
 func MapToCompressedSparseRowMatrix(matrix []map[int]int64) *CompressedSparseRowMatrix {
-	r := CompressedSparseRowMatrix{
+	result := CompressedSparseRowMatrix{
 		NumberOfRows:    int32(len(matrix)),
 		NumberOfColumns: int32(len(matrix)),
 		Data:            make([]int64, 0),
 		Indices:         make([]int32, 0),
 		Indptr:          make([]int64, 1),
 	}
-	r.Indptr[0] = 0
+	result.Indptr[0] = 0
 
 	for _, row := range matrix {
 		order := make([]int, len(row))
 
-		i := 0
+		columnIndex := 0
 		for col := range row {
-			order[i] = col
-			i++
+			order[columnIndex] = col
+			columnIndex++
 		}
 
 		sort.Ints(order)
 
 		for _, col := range order {
 			val := row[col]
-			r.Data = append(r.Data, val)
-			r.Indices = append(r.Indices, int32(col))
+			result.Data = append(result.Data, val)
+			result.Indices = append(result.Indices, int32(col))
 		}
 
-		r.Indptr = append(r.Indptr, r.GetIndptr()[len(r.GetIndptr())-1]+int64(len(row)))
+		result.Indptr = append(result.Indptr, result.GetIndptr()[len(result.GetIndptr())-1]+int64(len(row)))
 	}
 
-	return &r
+	return &result
 }

@@ -9,6 +9,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/cwbudde/hercules/internal/test"
 )
@@ -67,7 +68,7 @@ func (item *testForkPipelineItem) Fork(n int) []PipelineItem {
 
 func TestForkCopyPipelineItem(t *testing.T) {
 	origin := &testForkPipelineItem{}
-	origin.Initialize(nil)
+	require.NoError(t, origin.Initialize(nil))
 	origin.Mutable[2] = true
 	origin.Immutable = "before"
 	clone := origin.Fork(1)[0].(*testForkPipelineItem)
@@ -233,7 +234,7 @@ func TestForkSamePipelineItem(t *testing.T) {
 
 func TestForkCopyPipelineItemMultiple(t *testing.T) {
 	origin := &testForkPipelineItem{}
-	origin.Initialize(nil)
+	require.NoError(t, origin.Initialize(nil))
 	origin.Immutable = "original"
 	clones := ForkCopyPipelineItem(origin, 3)
 	assert.Len(t, clones, 3)
@@ -485,7 +486,8 @@ func TestMergeDagSequences(t *testing.T) {
 
 		// a-b can be merged, c and d are separate
 		// But b has 2 children so a-b can't be merged.
-		// Actually: a has 1 child (b), b has 1 parent (a) and 2 children -> walk up from b: parent a has 1 child (b), so head=a. Walk down from a: a->b (1 child), b has 2 children -> stop. Seq=[a,b]. Then c and d are separate.
+		// Walking up from b yields a; walking down yields [a, b].
+		// c and d remain separate because b has two children.
 		assert.Len(t, mergedDag, 3) // [a,b], c, d
 		// The merged sequence starting at a should contain [a, b]
 		if seq, ok := mergedSeq[a.Hash]; ok {
@@ -517,9 +519,9 @@ func TestBindOrderNodes(t *testing.T) {
 
 func TestCloneItems(t *testing.T) {
 	item1 := &testPipelineItem{}
-	item1.Initialize(nil)
+	require.NoError(t, item1.Initialize(nil))
 	item2 := &testPipelineItem{}
-	item2.Initialize(nil)
+	require.NoError(t, item2.Initialize(nil))
 
 	origin := []PipelineItem{item1, item2}
 	clones := cloneItems(origin, 3)
@@ -534,14 +536,14 @@ func TestCloneItems(t *testing.T) {
 
 func TestMergeItems(t *testing.T) {
 	item1 := &testPipelineItem{}
-	item1.Initialize(nil)
+	require.NoError(t, item1.Initialize(nil))
 	item2 := &testPipelineItem{}
-	item2.Initialize(nil)
+	require.NoError(t, item2.Initialize(nil))
 
 	item3 := &testPipelineItem{}
-	item3.Initialize(nil)
+	require.NoError(t, item3.Initialize(nil))
 	item4 := &testPipelineItem{}
-	item4.Initialize(nil)
+	require.NoError(t, item4.Initialize(nil))
 
 	branches := [][]PipelineItem{
 		{item1, item2},

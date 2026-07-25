@@ -2,6 +2,7 @@ package plumbing
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -11,7 +12,6 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/utils/merkletrie"
-	"github.com/pkg/errors"
 
 	"github.com/cwbudde/hercules/internal"
 	"github.com/cwbudde/hercules/internal/core"
@@ -19,6 +19,8 @@ import (
 
 // ErrBinary is raised in CachedBlob.CountLines() if the file is binary.
 var ErrBinary = errors.New("binary")
+
+var errIncompleteBlobRead = errors.New("incomplete blob read")
 
 // CachedBlob allows to explicitly cache the binary data associated with the Blob object.
 type CachedBlob struct {
@@ -37,7 +39,7 @@ func (b *CachedBlob) Reader() (io.ReadCloser, error) {
 func (b *CachedBlob) Cache() error {
 	reader, err := b.Blob.Reader()
 	if err != nil {
-		return err
+		return fmt.Errorf("open blob %s for caching: %w", b.Hash.String(), err)
 	}
 	defer reader.Close()
 
@@ -46,12 +48,12 @@ func (b *CachedBlob) Cache() error {
 
 	size, err := buf.ReadFrom(reader)
 	if err != nil {
-		return err
+		return fmt.Errorf("read blob %s into cache: %w", b.Hash.String(), err)
 	}
 
 	if size != b.Size {
-		return fmt.Errorf("incomplete read of %s: %d while the declared size is %d",
-			b.Hash.String(), size, b.Size)
+		return fmt.Errorf("%w for %s: got %d bytes, expected %d",
+			errIncompleteBlobRead, b.Hash.String(), size, b.Size)
 	}
 
 	b.Data = buf.Bytes()
@@ -189,7 +191,11 @@ func (blobCache *BlobCache) Consume(deps map[string]any) (map[string]any, error)
 		action, err := change.Action()
 		if err != nil {
 			blobCache.l.Errorf("no action in %s\n", change.To.TreeEntry.Hash)
-			return nil, err
+
+			return nil, fmt.Errorf(
+				"determine action for tree change %q -> %q: %w",
+				change.From.Name, change.To.Name, err,
+			)
 		}
 
 		switch action {
@@ -256,18 +262,22 @@ func (blobCache *BlobCache) cacheFrom(
 	cache[entry.TreeEntry.Hash] = &CachedBlob{}
 
 	blob, err := blobCache.getBlob(&entry, commit.File)
-	if err != nil && dummyWhenMissing && err.Error() == plumbing.ErrObjectNotFound.Error() {
+	if err != nil && dummyWhenMissing && errors.Is(err, plumbing.ErrObjectNotFound) {
 		blob, err = internal.CreateDummyBlob(entry.TreeEntry.Hash)
 		if err == nil {
 			cache[entry.TreeEntry.Hash] = &CachedBlob{Blob: *blob}
 		}
 
-		return err
+		if err != nil {
+			return fmt.Errorf("create placeholder for missing blob %s: %w", entry.TreeEntry.Hash, err)
+		}
+
+		return nil
 	}
 
 	if err != nil {
 		blobCache.l.Errorf("file from %s %s: %v\n", entry.Name, entry.TreeEntry.Hash, err)
-		return err
+		return fmt.Errorf("load previous blob %q (%s): %w", entry.Name, entry.TreeEntry.Hash, err)
 	}
 
 	cached := &CachedBlob{Blob: *blob}
@@ -311,42 +321,64 @@ func (blobCache *BlobCache) getBlob(entry *object.ChangeEntry, fileGetter FileGe
 ) {
 	blob, err := blobCache.repository.BlobObject(entry.TreeEntry.Hash)
 	if err != nil {
-		if err.Error() != plumbing.ErrObjectNotFound.Error() {
+		if !errors.Is(err, plumbing.ErrObjectNotFound) {
 			blobCache.l.Errorf("getBlob(%s)\n", entry.TreeEntry.Hash.String())
-			return nil, err
+			return nil, fmt.Errorf("load blob %s: %w", entry.TreeEntry.Hash, err)
 		}
 
 		if entry.TreeEntry.Mode != 0o160000 {
 			// this is not a submodule
-			return nil, err
+			return nil, fmt.Errorf("load blob %s: %w", entry.TreeEntry.Hash, err)
 		} else if !blobCache.FailOnMissingSubmodules {
-			return internal.CreateDummyBlob(entry.TreeEntry.Hash)
+			dummy, dummyErr := internal.CreateDummyBlob(entry.TreeEntry.Hash)
+			if dummyErr != nil {
+				return nil, fmt.Errorf("create placeholder blob %s: %w", entry.TreeEntry.Hash, dummyErr)
+			}
+
+			return dummy, nil
 		}
 
 		file, errModules := fileGetter(".gitmodules")
 		if errModules != nil {
-			return nil, errModules
+			return nil, fmt.Errorf(
+				"load .gitmodules while resolving submodule %q: %w",
+				entry.Name,
+				errModules,
+			)
 		}
 
 		contents, errModules := file.Contents()
 		if errModules != nil {
-			return nil, errModules
+			return nil, fmt.Errorf(
+				"read .gitmodules while resolving submodule %q: %w",
+				entry.Name,
+				errModules,
+			)
 		}
 
 		modules := config.NewModules()
 
 		errModules = modules.Unmarshal([]byte(contents))
 		if errModules != nil {
-			return nil, errModules
+			return nil, fmt.Errorf(
+				"parse .gitmodules while resolving submodule %q: %w",
+				entry.Name,
+				errModules,
+			)
 		}
 
 		_, exists := modules.Submodules[entry.Name]
 		if exists {
 			// we found that this is a submodule
-			return internal.CreateDummyBlob(entry.TreeEntry.Hash)
+			dummy, dummyErr := internal.CreateDummyBlob(entry.TreeEntry.Hash)
+			if dummyErr != nil {
+				return nil, fmt.Errorf("create placeholder blob %s: %w", entry.TreeEntry.Hash, dummyErr)
+			}
+
+			return dummy, nil
 		}
 
-		return nil, err
+		return nil, fmt.Errorf("submodule %q is not registered in .gitmodules: %w", entry.Name, err)
 	}
 
 	return blob, nil

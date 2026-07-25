@@ -2,6 +2,7 @@ package linehistory
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"regexp"
@@ -40,6 +41,8 @@ type commitInfo struct {
 	Author  core.AuthorId
 	Changes []core.LineHistoryChange
 }
+
+var errUnexpectedLineHistoryFieldCount = errors.New("unexpected number of fields in line history change")
 
 func (v fileInfo) ForEach(func(line, value int)) {
 	panic("not implemented")
@@ -260,7 +263,7 @@ func (analyser *LineHistoryLoader) Merge([]core.PipelineItem) {
 func (analyser *LineHistoryLoader) loadChangesFrom(name string) error {
 	input, err := os.Open(name)
 	if err != nil {
-		return err
+		return fmt.Errorf("open line history file %q: %w", name, err)
 	}
 	defer func() { _ = input.Close() }()
 
@@ -281,7 +284,7 @@ func (analyser *LineHistoryLoader) loadChangesFromYaml(decoder *yaml.Decoder) er
 
 	err := decoder.Decode(&values)
 	if err != nil {
-		return err
+		return fmt.Errorf("decode line history YAML: %w", err)
 	}
 
 	analyser.authors = values.LineDumper.Authors
@@ -325,7 +328,7 @@ func parseLineHistoryChange(line string) (core.LineHistoryChange, error) {
 	chunks := regexSplitBySpace.Split(line, -1)
 	if len(chunks) != 6 {
 		return core.LineHistoryChange{}, fmt.Errorf(
-			"unexpected number of fields '%d' from: %s", len(chunks), line,
+			"%w: got %d from %q", errUnexpectedLineHistoryFieldCount, len(chunks), line,
 		)
 	}
 
@@ -333,7 +336,9 @@ func parseLineHistoryChange(line string) (core.LineHistoryChange, error) {
 	for i, raw := range chunks {
 		value, err := strconv.Atoi(raw)
 		if err != nil {
-			return core.LineHistoryChange{}, fmt.Errorf("unable to parse '%s' from: %s", raw, line)
+			return core.LineHistoryChange{}, fmt.Errorf(
+				"unable to parse %q from %q: %w", raw, line, err,
+			)
 		}
 
 		values[i] = value

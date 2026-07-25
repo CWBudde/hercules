@@ -265,7 +265,7 @@ func TestRegistryFeatures(t *testing.T) {
 	}
 	reg.AddFlags(testCmd.Flags())
 	args := [...]string{"--feature", "other", "--feature", "power"}
-	testCmd.ParseFlags(args[:])
+	require.NoError(t, testCmd.ParseFlags(args[:]))
 	pipeline := NewPipeline(test.FixtureRepository())
 	val, _ := pipeline.GetFeature("power")
 	assert.False(t, val)
@@ -352,7 +352,7 @@ func TestRegistryPathMasquerade(t *testing.T) {
 	flag := fs.Lookup("test")
 	PathifyFlagValue(flag)
 	assert.Equal(t, "string", flag.Value.Type())
-	assert.NoError(t, flag.Value.Set("xxx"))
+	require.NoError(t, flag.Value.Set("xxx"))
 	assert.Equal(t, "xxx", flag.Value.String())
 	EnablePathFlagTypeMasquerade()
 	assert.Equal(t, "path", flag.Value.Type())

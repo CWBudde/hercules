@@ -37,6 +37,15 @@ type testPipelineItem struct {
 	Logger           Logger
 }
 
+var (
+	errTestConfigure         = errors.New("test1")
+	errTestInitialize        = errors.New("test2")
+	errTestConsume           = errors.New("error")
+	errTestHibernate         = errors.New("error")
+	errTestBoot              = errors.New("error")
+	errTestConfigureUpstream = errors.New("upstream config error")
+)
+
 func (item *testPipelineItem) Name() string {
 	return "Test"
 }
@@ -51,7 +60,7 @@ func (item *testPipelineItem) Requires() []string {
 
 func (item *testPipelineItem) Configure(facts map[string]any) error {
 	if item.ConfigureRaises {
-		return errors.New("test1")
+		return errTestConfigure
 	}
 	if l, ok := facts[ConfigLogger].(Logger); ok {
 		item.Logger = l
@@ -95,14 +104,14 @@ func (item *testPipelineItem) Initialize(repository *git.Repository) error {
 	item.Merged = new(bool)
 	item.MergeState = new(int)
 	if item.InitializeRaises {
-		return errors.New("test2")
+		return errTestInitialize
 	}
 	return nil
 }
 
 func (item *testPipelineItem) Consume(deps map[string]any) (map[string]any, error) {
 	if item.TestError {
-		return nil, errors.New("error")
+		return nil, errTestConsume
 	}
 	if item.ConsumePanics {
 		panic("!")
@@ -229,7 +238,7 @@ func (item *dependingTestPipelineItem) Merge(branches []PipelineItem) {
 func (item *dependingTestPipelineItem) Hibernate() error {
 	item.Hibernated = true
 	if item.RaiseHibernateError {
-		return errors.New("error")
+		return errTestHibernate
 	}
 	return nil
 }
@@ -237,7 +246,7 @@ func (item *dependingTestPipelineItem) Hibernate() error {
 func (item *dependingTestPipelineItem) Boot() error {
 	item.Booted = true
 	if item.RaiseBootError {
-		return errors.New("error")
+		return errTestBoot
 	}
 	return nil
 }
@@ -257,10 +266,10 @@ func TestPipelineFeatures(t *testing.T) {
 	assert.True(t, val)
 	_, exists := pipeline.GetFeature("!")
 	assert.False(t, exists)
-	Registry.featureFlags.Set("777")
 	defer func() {
 		Registry.featureFlags = arrayFeatureFlags{Flags: []string{}, Choices: map[string]bool{}}
 	}()
+	require.Error(t, Registry.featureFlags.Set("777"))
 	pipeline.SetFeaturesFromFlags()
 	_, exists = pipeline.GetFeature("777")
 	assert.False(t, exists)
@@ -277,18 +286,23 @@ func TestPipelineErrors(t *testing.T) {
 	pipeline.AddItem(item)
 	item.ConfigureRaises = true
 	err := pipeline.Initialize(map[string]any{})
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Contains(t, err.Error(), "configure")
 	assert.Contains(t, err.Error(), "test1")
 	item.ConfigureRaises = false
 	item.InitializeRaises = true
 	err = pipeline.Initialize(map[string]any{})
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Contains(t, err.Error(), "initialize")
 	assert.Contains(t, err.Error(), "test2")
 	item.InitializeRaises = false
 	item.InitializePanics = true
-	assert.Panics(t, func() { pipeline.Initialize(map[string]any{}) })
+	assert.Panics(t, func() {
+		err := pipeline.Initialize(map[string]any{})
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
 }
 
 func TestPipelineInitialize(t *testing.T) {
@@ -356,7 +370,7 @@ func TestPipelineRunBranches(t *testing.T) {
 	pipeline := NewPipeline(test.FixtureRepository())
 	item := &testPipelineItem{}
 	pipeline.AddItem(item)
-	pipeline.Initialize(map[string]any{})
+	require.NoError(t, pipeline.Initialize(map[string]any{}))
 	assert.True(t, item.Initialized)
 	hashes := []string{
 		"6db8065cdb9bb0758f36a7e75fc72ab95f9e8145",
@@ -374,7 +388,7 @@ func TestPipelineRunBranches(t *testing.T) {
 		}
 	}
 	result, err := pipeline.Run(commits)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.True(t, item.Forked)
 	assert.True(t, *item.Merged)
 	assert.Len(t, result, 2)
@@ -409,7 +423,7 @@ func TestPipelineOnProgress(t *testing.T) {
 		"af9ddc0db70f09f3f27b4b98e415592a7485171c",
 	))
 	result, err := pipeline.Run(commits)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Len(t, result, 1)
 	assert.Equal(t, 4, progressOk)
 }
@@ -417,7 +431,7 @@ func TestPipelineOnProgress(t *testing.T) {
 func TestPipelineCommitsFull(t *testing.T) {
 	pipeline := NewPipeline(test.FixtureRepository())
 	commits, err := pipeline.Commits(false)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.GreaterOrEqual(t, len(commits), 100)
 	hashMap := map[plumbing.Hash]bool{}
 	for _, c := range commits {
@@ -435,7 +449,7 @@ func TestPipelineCommitsFull(t *testing.T) {
 func TestPipelineCommitsFirstParent(t *testing.T) {
 	pipeline := NewPipeline(test.FixtureRepository())
 	commits, err := pipeline.Commits(true)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.GreaterOrEqual(t, len(commits), 100)
 	hashMap := map[plumbing.Hash]bool{}
 	for _, c := range commits {
@@ -453,7 +467,7 @@ func TestPipelineCommitsFirstParent(t *testing.T) {
 func TestPipelineHeadCommit(t *testing.T) {
 	pipeline := NewPipeline(test.FixtureRepository())
 	commits, err := pipeline.HeadCommit()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Len(t, commits, 1)
 	assert.NotEmpty(t, commits[0].ParentHashes)
 	head, _ := test.FixtureRepository().Head()
@@ -462,12 +476,13 @@ func TestPipelineHeadCommit(t *testing.T) {
 
 func TestLoadCommitsFromFile(t *testing.T) {
 	tmp, err := os.CreateTemp(t.TempDir(), "hercules-test-")
-	assert.NoError(t, err)
-	tmp.WriteString("cce947b98a050c6d356bc6ba95030254914027b1\n6db8065cdb9bb0758f36a7e75fc72ab95f9e8145")
+	require.NoError(t, err)
+	_, err = tmp.WriteString("cce947b98a050c6d356bc6ba95030254914027b1\n6db8065cdb9bb0758f36a7e75fc72ab95f9e8145")
+	require.NoError(t, err)
 	tmp.Close()
 	defer os.Remove(tmp.Name())
 	commits, err := LoadCommitsFromFile(tmp.Name(), test.FixtureRepository())
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Len(t, commits, 2)
 	assert.Equal(t, commits[0].Hash, plumbing.NewHash(
 		"cce947b98a050c6d356bc6ba95030254914027b1",
@@ -477,23 +492,25 @@ func TestLoadCommitsFromFile(t *testing.T) {
 	))
 	commits, err = LoadCommitsFromFile("/WAT?xxx!", test.FixtureRepository())
 	assert.Nil(t, commits)
-	assert.Error(t, err)
+	require.Error(t, err)
 	tmp, err = os.CreateTemp(t.TempDir(), "hercules-test-")
-	assert.NoError(t, err)
-	tmp.WriteString("WAT")
+	require.NoError(t, err)
+	_, err = tmp.WriteString("WAT")
+	require.NoError(t, err)
 	tmp.Close()
 	defer os.Remove(tmp.Name())
 	commits, err = LoadCommitsFromFile(tmp.Name(), test.FixtureRepository())
 	assert.Nil(t, commits)
-	assert.Error(t, err)
+	require.Error(t, err)
 	tmp, err = os.CreateTemp(t.TempDir(), "hercules-test-")
-	assert.NoError(t, err)
-	tmp.WriteString("ffffffffffffffffffffffffffffffffffffffff")
+	require.NoError(t, err)
+	_, err = tmp.WriteString("ffffffffffffffffffffffffffffffffffffffff")
+	require.NoError(t, err)
 	tmp.Close()
 	defer os.Remove(tmp.Name())
 	commits, err = LoadCommitsFromFile(tmp.Name(), test.FixtureRepository())
 	assert.Nil(t, commits)
-	assert.Error(t, err)
+	require.Error(t, err)
 }
 
 func TestPipelineDeps(t *testing.T) {
@@ -503,13 +520,13 @@ func TestPipelineDeps(t *testing.T) {
 	pipeline.AddItem(item1)
 	pipeline.AddItem(item2)
 	assert.Equal(t, 2, pipeline.Len())
-	pipeline.Initialize(map[string]any{})
+	require.NoError(t, pipeline.Initialize(map[string]any{}))
 	commits := make([]*object.Commit, 1)
 	commits[0], _ = test.FixtureRepository().CommitObject(plumbing.NewHash(
 		"af9ddc0db70f09f3f27b4b98e415592a7485171c",
 	))
 	result, err := pipeline.Run(commits)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.True(t, result[item1].(bool))
 	assert.Equal(t, result[item2], item2)
 	item1.TestNilConsumeReturn = true
@@ -529,7 +546,7 @@ func TestPipelineError(t *testing.T) {
 	item := &testPipelineItem{}
 	item.TestError = true
 	pipeline.AddItem(item)
-	assert.NoError(t, pipeline.Initialize(map[string]any{}))
+	require.NoError(t, pipeline.Initialize(map[string]any{}))
 	commits := make([]*object.Commit, 1)
 	commits[0], _ = test.FixtureRepository().CommitObject(plumbing.NewHash(
 		"af9ddc0db70f09f3f27b4b98e415592a7485171c",
@@ -545,10 +562,10 @@ func TestPipelineDryRun(t *testing.T) {
 	item.TestError = true
 	pipeline.AddItem(item)
 	pipeline.DryRun = true
-	pipeline.Initialize(map[string]any{})
+	require.NoError(t, pipeline.Initialize(map[string]any{}))
 	assert.True(t, pipeline.DryRun)
 	pipeline.DryRun = false
-	pipeline.Initialize(map[string]any{ConfigPipelineDryRun: true})
+	require.NoError(t, pipeline.Initialize(map[string]any{ConfigPipelineDryRun: true}))
 	assert.True(t, pipeline.DryRun)
 	commits := make([]*object.Commit, 1)
 	commits[0], _ = test.FixtureRepository().CommitObject(plumbing.NewHash(
@@ -565,7 +582,7 @@ func TestPipelineDryRunFalse(t *testing.T) {
 	pipeline := NewPipeline(test.FixtureRepository())
 	item := &testPipelineItem{}
 	pipeline.AddItem(item)
-	pipeline.Initialize(map[string]any{ConfigPipelineDryRun: false})
+	require.NoError(t, pipeline.Initialize(map[string]any{ConfigPipelineDryRun: false}))
 	commits := make([]*object.Commit, 1)
 	commits[0], _ = test.FixtureRepository().CommitObject(plumbing.NewHash(
 		"af9ddc0db70f09f3f27b4b98e415592a7485171c",
@@ -575,7 +592,7 @@ func TestPipelineDryRunFalse(t *testing.T) {
 	assert.Len(t, result, 2)
 	assert.Contains(t, result, nil)
 	assert.Contains(t, result, item)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.True(t, item.DepsConsumed)
 	assert.True(t, item.CommitMatches)
 	assert.True(t, item.IndexMatches)
@@ -590,10 +607,10 @@ func TestPipelineDumpPlanConfigure(t *testing.T) {
 	pipeline.AddItem(item)
 	pipeline.DumpPlan = true
 	pipeline.DryRun = true
-	pipeline.Initialize(map[string]any{})
+	require.NoError(t, pipeline.Initialize(map[string]any{}))
 	assert.True(t, pipeline.DumpPlan)
 	pipeline.DumpPlan = false
-	pipeline.Initialize(map[string]any{ConfigPipelineDumpPlan: true})
+	require.NoError(t, pipeline.Initialize(map[string]any{ConfigPipelineDumpPlan: true}))
 	assert.True(t, pipeline.DumpPlan)
 	stream := &bytes.Buffer{}
 	backupPlanPrintFunc := planPrintFunc
@@ -611,7 +628,7 @@ func TestPipelineDumpPlanConfigure(t *testing.T) {
 	assert.NotNil(t, result)
 	assert.Len(t, result, 1)
 	assert.Contains(t, result, nil)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, `E [1]
 C 1 af9ddc0db70f09f3f27b4b98e415592a7485171c
 `, stream.String())
@@ -714,7 +731,7 @@ func TestPrepareRunPlanSmall(t *testing.T) {
 	defer cit.Close()
 	var commits []*object.Commit
 	timeCutoff := time.Date(2016, 12, 15, 0, 0, 0, 0, time.FixedZone("CET", 7200))
-	cit.ForEach(func(commit *object.Commit) error {
+	require.NoError(t, cit.ForEach(func(commit *object.Commit) error {
 		reliableTime := time.Date(commit.Author.When.Year(), commit.Author.When.Month(),
 			commit.Author.When.Day(), commit.Author.When.Hour(), commit.Author.When.Minute(),
 			commit.Author.When.Second(), 0, time.FixedZone("CET", 7200))
@@ -722,7 +739,7 @@ func TestPrepareRunPlanSmall(t *testing.T) {
 			commits = append(commits, commit)
 		}
 		return nil
-	})
+	}))
 	plan, _ := prepareRunPlan(commits, 0, false)
 	/*for _, p := range plan {
 		if p.Commit != nil {
@@ -755,7 +772,7 @@ func TestMergeDag(t *testing.T) {
 	defer cit.Close()
 	var commits []*object.Commit
 	timeCutoff := time.Date(2017, 8, 12, 0, 0, 0, 0, time.FixedZone("CET", 7200))
-	cit.ForEach(func(commit *object.Commit) error {
+	require.NoError(t, cit.ForEach(func(commit *object.Commit) error {
 		reliableTime := time.Date(commit.Author.When.Year(), commit.Author.When.Month(),
 			commit.Author.When.Day(), commit.Author.When.Hour(), commit.Author.When.Minute(),
 			commit.Author.When.Second(), 0, time.FixedZone("CET", 7200))
@@ -763,7 +780,7 @@ func TestMergeDag(t *testing.T) {
 			commits = append(commits, commit)
 		}
 		return nil
-	})
+	}))
 	hashes, dag := buildDag(commits)
 	leaveRootComponent(hashes, dag)
 	mergedDag, _ := mergeDag(hashes, dag)
@@ -843,7 +860,7 @@ func TestPrepareRunPlanBig(t *testing.T) {
 			timeCutoff := time.Date(
 				testCase[0], time.Month(testCase[1]), testCase[2], 0, 0, 0, 0, time.FixedZone("CET", 7200),
 			)
-			cit.ForEach(func(commit *object.Commit) error {
+			require.NoError(t, cit.ForEach(func(commit *object.Commit) error {
 				reliableTime := time.Date(commit.Author.When.Year(), commit.Author.When.Month(),
 					commit.Author.When.Day(), commit.Author.When.Hour(), commit.Author.When.Minute(),
 					commit.Author.When.Second(), 0, time.FixedZone("CET", 7200))
@@ -851,7 +868,7 @@ func TestPrepareRunPlanBig(t *testing.T) {
 					commits = append(commits, commit)
 				}
 				return nil
-			})
+			}))
 			plan, _ := prepareRunPlan(commits, 0, false)
 			/*for _, p := range plan {
 				if p.Commit != nil {
@@ -916,7 +933,7 @@ func TestPipelineRunHibernation(t *testing.T) {
 	pipeline.AddItem(&testPipelineItem{})
 	item := &dependingTestPipelineItem{}
 	pipeline.AddItem(item)
-	pipeline.Initialize(map[string]any{})
+	require.NoError(t, pipeline.Initialize(map[string]any{}))
 	hashes := []string{
 		"0183e08978007c746468fca9f68e6e2fbf32100c",
 		"b467a682f680a4dcfd74869480a52f8be3a4fdf0",
@@ -935,14 +952,15 @@ func TestPipelineRunHibernation(t *testing.T) {
 	}
 	pipeline.PrintActions = true
 	_, err := pipeline.Run(commits)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.True(t, item.Hibernated)
 	assert.True(t, item.Booted)
 	item.RaiseHibernateError = true
 	_, err = pipeline.Run(commits)
-	assert.Error(t, err)
+	require.Error(t, err)
 	item.RaiseHibernateError = false
-	pipeline.Run(commits)
+	_, err = pipeline.Run(commits)
+	require.NoError(t, err)
 	item.RaiseBootError = true
 	_, err = pipeline.Run(commits)
 	assert.Error(t, err)
@@ -961,7 +979,7 @@ func (item *configUpstreamFailItem) Requires() []string                         
 func (item *configUpstreamFailItem) ListConfigurationOptions() []ConfigurationOption { return nil }
 func (item *configUpstreamFailItem) Configure(facts map[string]any) error            { return nil }
 func (item *configUpstreamFailItem) ConfigureUpstream(facts map[string]any) error {
-	return errors.New("upstream config error")
+	return errTestConfigureUpstream
 }
 func (item *configUpstreamFailItem) Initialize(repository *git.Repository) error { return nil }
 func (item *configUpstreamFailItem) Consume(deps map[string]any) (map[string]any, error) {
@@ -1042,11 +1060,11 @@ func TestPipelineDeployItemOnceNew(t *testing.T) {
 func TestPipelineRunPreparedPlanNil(t *testing.T) {
 	pipeline := NewPipeline(test.FixtureRepository())
 	pipeline.AddItem(&testPipelineItem{})
-	pipeline.Initialize(map[string]any{})
+	require.NoError(t, pipeline.Initialize(map[string]any{}))
 
 	result, err := pipeline.RunPreparedPlan()
 	assert.Nil(t, result)
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not prepared")
 }
 
@@ -1066,7 +1084,7 @@ func TestPipelineRunPreparedPlanValid(t *testing.T) {
 	require.NoError(t, err)
 
 	result, err := pipeline.RunPreparedPlan()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.NotNil(t, result)
 	assert.Len(t, result, 2)
 
@@ -1082,7 +1100,7 @@ func TestPipelineNegativeHibernationDistance(t *testing.T) {
 	err := pipeline.Initialize(map[string]any{
 		ConfigPipelineHibernationDistance: -1,
 	})
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Contains(t, err.Error(), "hibernation-distance")
 }
 
@@ -1092,16 +1110,16 @@ func TestPipelineHibernationDistanceFromFact(t *testing.T) {
 	err := pipeline.Initialize(map[string]any{
 		ConfigPipelineHibernationDistance: 5,
 	})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, 5, pipeline.HibernationDistance)
 }
 
 func TestPipelinePrintActionsFromFact(t *testing.T) {
 	pipeline := NewPipeline(test.FixtureRepository())
 	pipeline.AddItem(&testPipelineItem{})
-	pipeline.Initialize(map[string]any{
+	require.NoError(t, pipeline.Initialize(map[string]any{
 		ConfigPipelinePrintActions: true,
-	})
+	}))
 	assert.True(t, pipeline.PrintActions)
 }
 
@@ -1110,7 +1128,7 @@ func TestPipelineUnsatisfiedDependency(t *testing.T) {
 	item := &dependingTestPipelineItem{} // requires "test" but nothing provides it
 	pipeline.AddItem(item)
 	err := pipeline.Initialize(map[string]any{})
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unsatisfied")
 }
 
@@ -1126,10 +1144,10 @@ func TestPipelineDAGDumpToFile(t *testing.T) {
 	err = pipeline.Initialize(map[string]any{
 		ConfigPipelineDAGPath: tmpFile.Name(),
 	})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	content, err := os.ReadFile(tmpFile.Name())
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.NotEmpty(t, content)
 }
 
@@ -1141,7 +1159,7 @@ func TestPipelineDAGDumpToStderr(t *testing.T) {
 	r, w, _ := os.Pipe()
 	os.Stderr = w
 
-	err := pipeline.Initialize(map[string]any{
+	initErr := pipeline.Initialize(map[string]any{
 		ConfigPipelineDAGPath: "-",
 	})
 
@@ -1149,10 +1167,11 @@ func TestPipelineDAGDumpToStderr(t *testing.T) {
 	os.Stderr = oldStderr
 
 	var buf bytes.Buffer
-	io.Copy(&buf, r)
+	_, copyErr := io.Copy(&buf, r)
+	require.NoError(t, copyErr)
 	r.Close()
 
-	require.NoError(t, err)
+	require.NoError(t, initErr)
 	assert.NotEmpty(t, buf.String())
 }
 
@@ -1160,7 +1179,7 @@ func TestPipelineConfigureUpstreamError(t *testing.T) {
 	pipeline := NewPipeline(test.FixtureRepository())
 	pipeline.AddItem(&configUpstreamFailItem{})
 	err := pipeline.Initialize(map[string]any{})
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Contains(t, err.Error(), "configure upstream")
 }
 
@@ -1169,7 +1188,7 @@ func TestPipelineInitializeMergeTracksNotAllowed(t *testing.T) {
 	pipeline.SetFeature(FeatureMergeTracks)
 	pipeline.AddItem(&testPipelineItem{})
 	err := pipeline.Initialize(map[string]any{})
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Contains(t, err.Error(), "merge tracks")
 }
 
@@ -1190,7 +1209,7 @@ func TestPipelineInitializeDryRunSkipsConfigure(t *testing.T) {
 	err := pipeline.Initialize(map[string]any{
 		ConfigPipelineDryRun: true,
 	})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.True(t, pipeline.DryRun)
 }
 
@@ -1246,7 +1265,7 @@ func TestPipelineInitializeWithCommitsFact(t *testing.T) {
 	err := pipeline.Initialize(map[string]any{
 		ConfigPipelineCommits: commits,
 	})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.True(t, item.Initialized)
 }
 
@@ -1265,9 +1284,9 @@ func TestPipelineInitializeExtMergeTracksWithPreparePlan(t *testing.T) {
 	err := pipeline.InitializeExt(map[string]any{
 		ConfigPipelineCommits: commits,
 	}, func(items []PipelineItem) PipelineItem { return items[0] }, true)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	result, err := pipeline.RunPreparedPlan()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.NotNil(t, result)
 }

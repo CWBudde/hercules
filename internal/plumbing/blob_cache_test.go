@@ -300,8 +300,7 @@ func TestBlobCacheGetBlob(t *testing.T) {
 	}
 	blob, err := cache.getBlob(&entry, getter)
 	assert.Nil(t, blob)
-	assert.Error(t, err)
-	assert.Equal(t, err.Error(), plumbing.ErrObjectNotFound.Error())
+	require.ErrorIs(t, err, plumbing.ErrObjectNotFound)
 	getter = func(path string) (*object.File, error) {
 		assert.Equal(t, ".gitmodules", path)
 		commit, _ := test.Repository.CommitObject(plumbing.NewHash(
@@ -311,8 +310,7 @@ func TestBlobCacheGetBlob(t *testing.T) {
 	}
 	blob, err = cache.getBlob(&entry, getter)
 	assert.Nil(t, blob)
-	assert.Error(t, err)
-	assert.Equal(t, err.Error(), plumbing.ErrObjectNotFound.Error())
+	require.ErrorIs(t, err, plumbing.ErrObjectNotFound)
 }
 
 func TestBlobCacheDeleteInvalidBlob(t *testing.T) {
@@ -427,8 +425,7 @@ func TestBlobCacheGetBlobGitModulesErrors(t *testing.T) {
 	}
 	blob, err := cache.getBlob(&entry, getter)
 	assert.Nil(t, blob)
-	assert.Error(t, err)
-	assert.Equal(t, err.Error(), plumbing.ErrInvalidType.Error())
+	require.ErrorIs(t, err, plumbing.ErrInvalidType)
 	getter = func(path string) (*object.File, error) {
 		blob, _ := internal.CreateDummyBlob(
 			plumbing.NewHash("ffffffffffffffffffffffffffffffffffffffff"), true,
@@ -437,8 +434,8 @@ func TestBlobCacheGetBlobGitModulesErrors(t *testing.T) {
 	}
 	blob, err = cache.getBlob(&entry, getter)
 	assert.Nil(t, blob)
-	assert.Error(t, err)
-	assert.Equal(t, "dummy failure", err.Error())
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "dummy failure")
 	getter = func(path string) (*object.File, error) {
 		blob, _ := test.Repository.BlobObject(plumbing.NewHash(
 			"4434197c2b0509d990f09d53a3cabb910bfd34b7",

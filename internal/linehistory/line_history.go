@@ -83,6 +83,17 @@ type counterHolder struct {
 	atomicCounter atomic.Int32
 }
 
+var (
+	errFileAlreadyExists               = errors.New("file already exists")
+	errPreviousVersionBecameBinary     = errors.New("previous version unexpectedly became binary")
+	errSourceIntegrityCheckFailed      = errors.New("source line history integrity check failed")
+	errDestinationIntegrityCheckFailed = errors.New("destination line history integrity check failed")
+	errDiffInsertAfterInsert           = errors.New("DiffInsert may not appear after DiffInsert")
+	errDiffDeleteAfterPending          = errors.New("DiffDelete may not appear after DiffInsert/DiffDelete")
+	errUnsupportedDiffOperation        = errors.New("diff operation is not supported")
+	errRenamedFileNotFound             = errors.New("file to rename does not exist")
+)
+
 func (p *counterHolder) next() FileId {
 	return FileId(p.atomicCounter.Add(1))
 }
@@ -475,7 +486,7 @@ func (analyser *LineHistoryAnalyser) Hibernate() error {
 	if analyser.HibernationToDisk {
 		file, err := os.CreateTemp(analyser.HibernationDirectory, "*-hercules.bin")
 		if err != nil {
-			return err
+			return fmt.Errorf("create line history hibernation file: %w", err)
 		}
 
 		analyser.hibernatedFileName = file.Name()
@@ -483,13 +494,15 @@ func (analyser *LineHistoryAnalyser) Hibernate() error {
 		err = file.Close()
 		if err != nil {
 			analyser.hibernatedFileName = ""
-			return err
+			return fmt.Errorf("close line history hibernation file %q: %w", file.Name(), err)
 		}
 
 		err = analyser.fileAllocator.Serialize(analyser.hibernatedFileName)
 		if err != nil {
+			hibernatedFileName := analyser.hibernatedFileName
 			analyser.hibernatedFileName = ""
-			return err
+
+			return fmt.Errorf("serialize line history allocator to %q: %w", hibernatedFileName, err)
 		}
 	}
 
@@ -501,12 +514,12 @@ func (analyser *LineHistoryAnalyser) Boot() error {
 	if analyser.hibernatedFileName != "" {
 		err := analyser.fileAllocator.Deserialize(analyser.hibernatedFileName)
 		if err != nil {
-			return err
+			return fmt.Errorf("deserialize line history allocator from %q: %w", analyser.hibernatedFileName, err)
 		}
 
 		err = os.Remove(analyser.hibernatedFileName)
 		if err != nil {
-			return err
+			return fmt.Errorf("remove line history hibernation file %q: %w", analyser.hibernatedFileName, err)
 		}
 
 		analyser.hibernatedFileName = ""
@@ -618,14 +631,17 @@ func (analyser *LineHistoryAnalyser) handleInsertion(
 	analyser.forgetFileName(name)
 
 	lines, err := blob.CountLines()
-	if err != nil {
-		// binary
+	if errors.Is(err, items.ErrBinary) {
 		return nil
+	}
+
+	if err != nil {
+		return fmt.Errorf("count lines in inserted file %q: %w", name, err)
 	}
 
 	file := analyser.files[name]
 	if file != nil {
-		return fmt.Errorf("file %s already exists", name)
+		return fmt.Errorf("%w: %s", errFileAlreadyExists, name)
 	}
 
 	hash := blob.Hash
@@ -649,8 +665,12 @@ func (analyser *LineHistoryAnalyser) handleDeletion(
 	blob := cache[change.From.TreeEntry.Hash]
 
 	lines, err := blob.CountLines()
+	if exists && errors.Is(err, items.ErrBinary) {
+		return fmt.Errorf("%w: %s", errPreviousVersionBecameBinary, name)
+	}
+
 	if exists && err != nil {
-		return fmt.Errorf("previous version of %s unexpectedly became binary", name)
+		return fmt.Errorf("count lines in deleted file %q: %w", name, err)
 	}
 
 	if !exists {
@@ -690,18 +710,31 @@ func (analyser *LineHistoryAnalyser) handleModification(
 	blobFrom := cache[change.From.TreeEntry.Hash]
 	_, errFrom := blobFrom.CountLines()
 	blobTo := cache[change.To.TreeEntry.Hash]
-
 	_, errTo := blobTo.CountLines()
-	if !errors.Is(errFrom, errTo) {
-		if errFrom != nil {
-			// the file is no longer binary
+
+	fromBinary := errors.Is(errFrom, items.ErrBinary)
+	toBinary := errors.Is(errTo, items.ErrBinary)
+
+	if errFrom != nil && !fromBinary {
+		return fmt.Errorf("count lines in previous version of %q: %w", change.From.Name, errFrom)
+	}
+
+	if errTo != nil && !toBinary {
+		return fmt.Errorf("count lines in new version of %q: %w", change.To.Name, errTo)
+	}
+
+	if fromBinary != toBinary {
+		if fromBinary {
+			// The file is no longer binary.
 			return analyser.handleInsertion(change, author, cache)
 		}
-		// the file became binary
+
+		// The file became binary.
 		// TODO this is wrong
 		return analyser.handleDeletion(change, author, cache)
-	} else if errFrom != nil {
-		// what are we doing here?!
+	}
+
+	if fromBinary {
 		return nil
 	}
 
@@ -709,8 +742,8 @@ func (analyser *LineHistoryAnalyser) handleModification(
 	if file.Len() != thisDiffs.OldLinesOfCode {
 		analyser.l.Infof("====TREE====\n%s", file.Dump())
 
-		return fmt.Errorf("%s: internal integrity error src %d != %d %s -> %s",
-			change.To.Name, thisDiffs.OldLinesOfCode, file.Len(),
+		return fmt.Errorf("%w for %s: %d != %d %s -> %s",
+			errSourceIntegrityCheckFailed, change.To.Name, thisDiffs.OldLinesOfCode, file.Len(),
 			change.From.TreeEntry.Hash.String(), change.To.TreeEntry.Hash.String())
 	}
 
@@ -725,8 +758,8 @@ func (analyser *LineHistoryAnalyser) handleModification(
 	state.flush()
 
 	if file.Len() != thisDiffs.NewLinesOfCode {
-		return fmt.Errorf("%s: internal integrity error dst %d != %d %s -> %s",
-			change.To.Name, thisDiffs.NewLinesOfCode, file.Len(),
+		return fmt.Errorf("%w for %s: %d != %d %s -> %s",
+			errDestinationIntegrityCheckFailed, change.To.Name, thisDiffs.NewLinesOfCode, file.Len(),
 			change.From.TreeEntry.Hash.String(), change.To.TreeEntry.Hash.String())
 	}
 
@@ -761,7 +794,7 @@ func (state *lineHistoryDiffState) process(edit diffmatchpatch.Diff) error {
 
 		if state.pending.Type == diffmatchpatch.DiffInsert {
 			state.debugError(length, dumpBefore)
-			return errors.New("DiffInsert may not appear after DiffInsert")
+			return errDiffInsertAfterInsert
 		}
 
 		state.file.Update(
@@ -778,13 +811,13 @@ func (state *lineHistoryDiffState) process(edit diffmatchpatch.Diff) error {
 	case diffmatchpatch.DiffDelete:
 		if state.pending.Text != "" {
 			state.debugError(length, dumpBefore)
-			return errors.New("DiffDelete may not appear after DiffInsert/DiffDelete")
+			return errDiffDeleteAfterPending
 		}
 
 		state.pending = edit
 	default:
 		state.debugError(length, dumpBefore)
-		return fmt.Errorf("diff operation is not supported: %d", edit.Type)
+		return fmt.Errorf("%w: %d", errUnsupportedDiffOperation, edit.Type)
 	}
 
 	return nil
@@ -835,7 +868,7 @@ func (analyser *LineHistoryAnalyser) handleRename(from, to string) error {
 
 	file, exists := analyser.files[from]
 	if !exists {
-		return fmt.Errorf("file %s > %s does not exist (files)", from, to)
+		return fmt.Errorf("%w: %s > %s", errRenamedFileNotFound, from, to)
 	}
 
 	delete(analyser.files, from)

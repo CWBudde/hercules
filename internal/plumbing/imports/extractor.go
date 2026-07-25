@@ -1,6 +1,7 @@
 package imports
 
 import (
+	"fmt"
 	"runtime"
 	"sync"
 
@@ -144,6 +145,11 @@ func (ex *Extractor) Consume(deps map[string]any) (map[string]any, error) {
 	wg := sync.WaitGroup{}
 	wg.Add(ex.Goroutines)
 
+	finishJobs := func() {
+		close(jobs)
+		wg.Wait()
+	}
+
 	for range ex.Goroutines {
 		go func() {
 			for change := range jobs {
@@ -174,7 +180,14 @@ func (ex *Extractor) Consume(deps map[string]any) (map[string]any, error) {
 	for _, change := range changes {
 		action, err := change.Action()
 		if err != nil {
-			return nil, err
+			finishJobs()
+
+			return nil, fmt.Errorf(
+				"determine action for import change %q -> %q: %w",
+				change.From.Name,
+				change.To.Name,
+				err,
+			)
 		}
 
 		switch action {
@@ -185,8 +198,7 @@ func (ex *Extractor) Consume(deps map[string]any) (map[string]any, error) {
 		}
 	}
 
-	close(jobs)
-	wg.Wait()
+	finishJobs()
 
 	return map[string]any{DependencyImports: result}, nil
 }

@@ -42,15 +42,15 @@ func (v indexedStringSorter) Len() int {
 	return len(v.values)
 }
 
-func (v indexedStringSorter) Less(i, j int) bool {
-	idx0, ok0 := v.index[v.values[i]]
+func (v indexedStringSorter) Less(leftIndex, rightIndex int) bool {
+	idx0, ok0 := v.index[v.values[leftIndex]]
 
-	idx1, ok1 := v.index[v.values[j]]
+	idx1, ok1 := v.index[v.values[rightIndex]]
 	switch {
 	case ok0 && ok1:
 		return idx0 < idx1
 	case !ok0 && !ok1:
-		return v.values[i] < v.values[j]
+		return v.values[leftIndex] < v.values[rightIndex]
 	default:
 		return ok0
 	}
@@ -96,17 +96,17 @@ func (g *Graph) AddNodes(names ...string) bool {
 }
 
 // AddEdge inserts the link from "from" node to "to" node.
-func (g *Graph) AddEdge(from, to string) int {
-	m, ok := g.outputs[from]
+func (g *Graph) AddEdge(source, destination string) int {
+	edges, ok := g.outputs[source]
 	if !ok {
 		return 0
 	}
 
-	m[to] = struct{}{}
-	ni := g.inputs[to] + 1
-	g.inputs[to] = ni
+	edges[destination] = struct{}{}
+	inputCount := g.inputs[destination] + 1
+	g.inputs[destination] = inputCount
 
-	return ni
+	return inputCount
 }
 
 func (g *Graph) InputCount(name string) (int, bool) {
@@ -116,13 +116,13 @@ func (g *Graph) InputCount(name string) (int, bool) {
 
 // RemoveEdge deletes the link from "from" node to "to" node.
 // Call ReindexNode(from) after you finish modifying the edges.
-func (g *Graph) RemoveEdge(from, to string) bool {
-	if _, ok := g.outputs[from]; !ok {
+func (g *Graph) RemoveEdge(source, destination string) bool {
+	if _, ok := g.outputs[source]; !ok {
 		return false
 	}
 
-	delete(g.outputs[from], to)
-	g.inputs[to]--
+	delete(g.outputs[source], destination)
+	g.inputs[destination]--
 
 	return true
 }
@@ -133,38 +133,38 @@ func (g *Graph) Toposort() ([]string, bool) {
 	queue := make([]string, 0, len(g.outputs))
 	counters := make(map[string]int, len(g.inputs))
 
-	for n := range g.outputs {
-		if g.inputs[n] == 0 {
-			queue = append(queue, n)
+	for node := range g.outputs {
+		if g.inputs[node] == 0 {
+			queue = append(queue, node)
 		}
 	}
 
 	g.Sort(queue)
 
 	for len(queue) > 0 {
-		n := queue[0]
+		node := queue[0]
 		queue = queue[1:]
 
-		result = append(result, n)
+		result = append(result, node)
 
 		queueLen := len(queue)
 
-		for k := range g.outputs[n] {
-			switch c, ok := counters[k]; {
+		for child := range g.outputs[node] {
+			switch count, ok := counters[child]; {
 			case !ok:
-				c = g.inputs[k]
-				if c == 1 {
+				count = g.inputs[child]
+				if count == 1 {
 					break
 				}
 
 				fallthrough
-			case c != 1:
-				counters[k] = c - 1
+			case count != 1:
+				counters[child] = count - 1
 				continue
 			}
 
-			counters[k] = 0
-			queue = append(queue, k)
+			counters[child] = 0
+			queue = append(queue, child)
 		}
 
 		g.Sort(queue[queueLen:])
@@ -202,20 +202,20 @@ func SortByNodeIndex(nodes []string, positions map[string]NodePosition) {
 // BreadthSort sorts the nodes in the graph in BFS order. Does NOT consider node ordering.
 func (g *Graph) BreadthSort() map[string]NodePosition {
 	// TODO improve sorting to consider node ordering
-	S := make([]string, 0, len(g.outputs))
+	queue := make([]string, 0, len(g.outputs))
 
 	result := map[string]NodePosition{}
 	levels := map[string]int{}
 
-	for n := range g.outputs {
-		if g.inputs[n] == 0 {
-			S = append(S, n)
+	for node := range g.outputs {
+		if g.inputs[node] == 0 {
+			queue = append(queue, node)
 		}
 	}
 
-	for len(S) > 0 {
-		node := S[0]
-		S = S[1:]
+	for len(queue) > 0 {
+		node := queue[0]
+		queue = queue[1:]
 
 		if _, exists := result[node]; !exists {
 			level := levels[node]
@@ -226,7 +226,7 @@ func (g *Graph) BreadthSort() map[string]NodePosition {
 			level++
 
 			for child := range g.outputs[node] {
-				S = append(S, child)
+				queue = append(queue, child)
 				levels[child] = level
 			}
 		}
@@ -241,25 +241,25 @@ func (g *Graph) FindCycle(seed string) []string {
 		node   string
 		parent string
 	}
-	S := make([]edge, 0, len(g.outputs))
-	S = append(S, edge{seed, ""})
+	queue := make([]edge, 0, len(g.outputs))
+	queue = append(queue, edge{seed, ""})
 	visited := map[string]string{}
 
-	for len(S) > 0 {
-		e := S[0]
-		S = S[1:]
+	for len(queue) > 0 {
+		currentEdge := queue[0]
+		queue = queue[1:]
 
-		if parent, exists := visited[e.node]; !exists || parent == "" {
-			visited[e.node] = e.parent
-			for child := range g.outputs[e.node] {
-				S = append(S, edge{child, e.node})
+		if parent, exists := visited[currentEdge.node]; !exists || parent == "" {
+			visited[currentEdge.node] = currentEdge.parent
+			for child := range g.outputs[currentEdge.node] {
+				queue = append(queue, edge{child, currentEdge.node})
 			}
 		}
 
-		if e.node == seed && e.parent != "" {
+		if currentEdge.node == seed && currentEdge.parent != "" {
 			var result []string
 
-			node := e.parent
+			node := currentEdge.parent
 			for node != seed {
 				result = append(result, node)
 				node = visited[node]
@@ -279,27 +279,30 @@ func (g *Graph) FindCycle(seed string) []string {
 }
 
 // FindParents returns the other ends of incoming edges.
-func (g *Graph) FindParents(to string) (result []string) {
+func (g *Graph) FindParents(destination string) []string {
+	parents := []string{}
+
 	for node, children := range g.outputs {
-		if _, exists := children[to]; exists {
-			result = append(result, node)
+		if _, exists := children[destination]; exists {
+			parents = append(parents, node)
 		}
 	}
 
-	g.Sort(result)
+	g.Sort(parents)
 
-	return result
+	return parents
 }
 
 // FindChildren returns the other ends of outgoing edges.
-func (g *Graph) FindChildren(from string) (result []string) {
-	for child := range g.outputs[from] {
-		result = append(result, child)
+func (g *Graph) FindChildren(source string) []string {
+	children := make([]string, 0, len(g.outputs[source]))
+	for child := range g.outputs[source] {
+		children = append(children, child)
 	}
 
-	g.Sort(result)
+	g.Sort(children)
 
-	return result
+	return children
 }
 
 // Serialize outputs the graph in Graphviz format.
@@ -339,16 +342,16 @@ func (g *Graph) Serialize(sorted []string) string {
 
 // DebugDump converts the graph to a string. As the name suggests, useful for debugging.
 func (g *Graph) DebugDump() string {
-	S := make([]string, 0, len(g.outputs))
-	for n := range g.outputs {
-		if g.inputs[n] == 0 {
-			S = append(S, n)
+	roots := make([]string, 0, len(g.outputs))
+	for node := range g.outputs {
+		if g.inputs[node] == 0 {
+			roots = append(roots, node)
 		}
 	}
 
-	g.Sort(S)
+	g.Sort(roots)
 	var buffer bytes.Buffer
-	buffer.WriteString(strings.Join(S, " ") + "\n")
+	buffer.WriteString(strings.Join(roots, " ") + "\n")
 
 	keys := make([]string, 0, len(g.outputs))
 	vals := map[string][]string{}

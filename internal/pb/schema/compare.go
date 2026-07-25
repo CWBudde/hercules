@@ -195,7 +195,7 @@ func Evaluate(old, updated Snapshot, changelogUpdated bool) Result {
 }
 
 func fieldType(field Field) string {
-	if field.Type == "map" {
+	if field.Type == fieldTypeMap {
 		return fmt.Sprintf("map<%s, %s>", field.Key, field.Value)
 	}
 

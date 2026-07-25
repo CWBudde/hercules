@@ -342,12 +342,14 @@ func (rp *RefactoringProxy) serializeBinary(result *RefactoringProxyResult, writ
 		if err != nil {
 			return err
 		}
+
 		totalChanges, err := intToProtoInt32(
 			result.TotalChanges[tickIndex], "refactoring-proxy total changes",
 		)
 		if err != nil {
 			return err
 		}
+
 		message.Ticks[tickIndex] = tick
 		message.RenameRatios[tickIndex] = float32(result.RenameRatios[tickIndex])
 		message.TotalChanges[tickIndex] = totalChanges

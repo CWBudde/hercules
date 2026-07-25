@@ -18,6 +18,8 @@ import (
 	"github.com/cwbudde/hercules/internal/core"
 )
 
+var errInvalidPeopleCommitDependency = errors.New("invalid people commit dependency")
+
 // PeopleDetector determines the author of a commit. Same person can commit under different
 // signatures, and we apply some heuristics to merge those together.
 // It is a PipelineItem.
@@ -390,7 +392,11 @@ func (detector *PeopleDetector) Initialize(*git.Repository) error {
 // This function returns the mapping with analysis results. The keys must be the same as
 // in Provides(). If there was an error, nil is returned.
 func (detector *PeopleDetector) Consume(deps map[string]any) (map[string]any, error) {
-	commit := deps[core.DependencyCommit].(*object.Commit)
+	commit, ok := deps[core.DependencyCommit].(*object.Commit)
+	if !ok {
+		return nil, errInvalidPeopleCommitDependency
+	}
+
 	var authorID int
 	var exists bool
 

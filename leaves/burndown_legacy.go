@@ -362,9 +362,9 @@ func (analyser *LegacyBurndownAnalysis) Consume(deps map[string]any) (map[string
 // Fork clones this item. Everything is copied by reference except the files
 // which are copied by value.
 
-func (analyser *LegacyBurndownAnalysis) Fork(n int) []core.PipelineItem {
-	result := make([]core.PipelineItem, n)
-	for i := range result {
+func (analyser *LegacyBurndownAnalysis) Fork(cloneCount int) []core.PipelineItem {
+	result := make([]core.PipelineItem, cloneCount)
+	for cloneIndex := range result {
 		clone := *analyser
 		clone.files = map[string]*linehistory.File{}
 
@@ -373,7 +373,7 @@ func (analyser *LegacyBurndownAnalysis) Fork(n int) []core.PipelineItem {
 			clone.files[key] = file.CloneShallow(clone.fileAllocator)
 		}
 
-		result[i] = &clone
+		result[cloneIndex] = &clone
 	}
 
 	return result
@@ -778,6 +778,7 @@ func (analyser *LegacyBurndownAnalysis) serializeBinary(result *BurndownResult, 
 	if err != nil {
 		return err
 	}
+
 	sampling, err := intToProtoInt32(result.sampling, "legacy burndown sampling")
 	if err != nil {
 		return err

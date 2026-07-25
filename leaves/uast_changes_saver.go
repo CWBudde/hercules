@@ -251,6 +251,7 @@ func textChangeBlobs(
 	cache map[plumbing.Hash]*items.CachedBlob,
 ) (*items.CachedBlob, *items.CachedBlob, bool, error) {
 	fromBlob := cache[change.From.TreeEntry.Hash]
+
 	toBlob := cache[change.To.TreeEntry.Hash]
 	if fromBlob == nil || toBlob == nil {
 		return nil, nil, false, nil

@@ -644,6 +644,7 @@ func (hra *HotspotRiskAnalysis) serializeBinary(result *HotspotRiskResult, write
 	if err != nil {
 		return err
 	}
+
 	message := pb.HotspotRiskResults{
 		WindowDays: windowDays,
 		Files:      make([]*pb.FileRisk, len(result.Files)),
@@ -654,14 +655,17 @@ func (hra *HotspotRiskAnalysis) serializeBinary(result *HotspotRiskResult, write
 		if err != nil {
 			return err
 		}
+
 		churn, err := intToProtoInt32(file.Churn, "hotspot-risk file churn")
 		if err != nil {
 			return err
 		}
+
 		couplingDegree, err := intToProtoInt32(file.CouplingDegree, "hotspot-risk coupling degree")
 		if err != nil {
 			return err
 		}
+
 		message.Files[fileIndex] = &pb.FileRisk{
 			Path:                file.Path,
 			RiskScore:           file.RiskScore,

@@ -28,6 +28,7 @@ var (
 	errInvalidBlobCacheDependency   = errors.New("invalid blob cache dependency")
 	errInvalidFileDiffDependency    = errors.New("invalid file diff dependency")
 	errInvalidTreeChangesDependency = errors.New("invalid tree changes dependency")
+	errInvalidTyposResult           = errors.New("invalid typos result")
 	errTypoLineRange                = errors.New("typo line exceeds the protobuf int32 range")
 )
 
@@ -248,7 +249,11 @@ func (tdb *TyposDatasetBuilder) Fork(n int) []core.PipelineItem {
 // Serialize converts the analysis result as returned by Finalize() to text or bytes.
 // The text format is YAML and the bytes format is Protocol Buffers.
 func (tdb *TyposDatasetBuilder) Serialize(result any, binary bool, writer io.Writer) error {
-	commitsResult := result.(TyposResult)
+	commitsResult, ok := result.(TyposResult)
+	if !ok {
+		return errInvalidTyposResult
+	}
+
 	if binary {
 		return tdb.serializeBinary(&commitsResult, writer)
 	}

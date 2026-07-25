@@ -279,10 +279,12 @@ func (history *FileHistoryAnalysis) serializeBinary(result *FileHistoryResult, w
 			if err != nil {
 				return err
 			}
+
 			stats, err := devLineStatsToProto(val.Added, val.Changed, val.Removed)
 			if err != nil {
 				return err
 			}
+
 			fileHistory.ChangesByDeveloper[developerID] = stats
 		}
 

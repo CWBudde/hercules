@@ -478,6 +478,7 @@ func onboardingAuthorsToProto(
 		if err != nil {
 			return nil, err
 		}
+
 		pbAuthor := &pb.AuthorOnboardingData{
 			FirstCommitTick: firstCommitTick,
 			JoinCohort:      author.JoinCohort,
@@ -488,10 +489,12 @@ func onboardingAuthorsToProto(
 			if err != nil {
 				return nil, err
 			}
+
 			pbSnapshot, err := onboardingSnapshotToProto(snap)
 			if err != nil {
 				return nil, err
 			}
+
 			pbAuthor.Snapshots[pbDays] = pbSnapshot
 		}
 
@@ -503,6 +506,7 @@ func onboardingAuthorsToProto(
 		if authorID == core.AuthorMissing {
 			pbAuthorID = -1
 		}
+
 		result[pbAuthorID] = pbAuthor
 	}
 
@@ -521,6 +525,7 @@ func onboardingSnapshotToProto(snapshot *OnboardingSnapshot) (*pb.OnboardingSnap
 		if err != nil {
 			return nil, err
 		}
+
 		converted[i] = pbValue
 	}
 
@@ -538,6 +543,7 @@ func onboardingCohortsToProto(cohorts map[string]*CohortStats) (map[string]*pb.C
 		if err != nil {
 			return nil, err
 		}
+
 		pbCohort := &pb.CohortStats{
 			Cohort:           cohort.Cohort,
 			AuthorCount:      authorCount,
@@ -548,10 +554,12 @@ func onboardingCohortsToProto(cohorts map[string]*CohortStats) (map[string]*pb.C
 			if err != nil {
 				return nil, err
 			}
+
 			pbSnapshot, err := onboardingAverageToProto(snap)
 			if err != nil {
 				return nil, err
 			}
+
 			pbCohort.AverageSnapshots[pbDays] = pbSnapshot
 		}
 
@@ -749,6 +757,7 @@ func (oa *OnboardingAnalysis) serializeBinary(result *OnboardingResult, writer i
 	if err != nil {
 		return err
 	}
+
 	message := pb.OnboardingResults{
 		DevIndex:            result.reversedPeopleDict,
 		TickSize:            int64(result.tickSize),
@@ -761,6 +770,7 @@ func (oa *OnboardingAnalysis) serializeBinary(result *OnboardingResult, writer i
 		if err != nil {
 			return err
 		}
+
 		message.WindowDays[i] = pbDays
 	}
 
@@ -768,6 +778,7 @@ func (oa *OnboardingAnalysis) serializeBinary(result *OnboardingResult, writer i
 	if err != nil {
 		return err
 	}
+
 	message.Cohorts, err = onboardingCohortsToProto(result.Cohorts)
 	if err != nil {
 		return err

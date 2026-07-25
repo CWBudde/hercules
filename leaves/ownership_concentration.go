@@ -356,6 +356,7 @@ func (oc *OwnershipConcentrationAnalysis) serializeBinary(
 		if err != nil {
 			return err
 		}
+
 		message.Snapshots[tickID] = pbSnapshot
 	}
 

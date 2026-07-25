@@ -213,11 +213,11 @@ func calculateSSIM(img1, img2 image.Image) float64 {
 	// Calculate variances and covariance
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			c1 := color.GrayModel.Convert(img1.At(x, y)).(color.Gray)
-			c2 := color.GrayModel.Convert(img2.At(x, y)).(color.Gray)
+			firstColor := grayColor(img1.At(x, y))
+			secondColor := grayColor(img2.At(x, y))
 
-			val1 := float64(c1.Y)
-			val2 := float64(c2.Y)
+			val1 := float64(firstColor.Y)
+			val2 := float64(secondColor.Y)
 
 			diffX := val1 - meanX
 			diffY := val2 - meanY

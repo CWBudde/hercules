@@ -204,14 +204,17 @@ func (ca *CommitsAnalysis) serializeBinary(result *CommitsResult, writer io.Writ
 			if err != nil {
 				return err
 			}
+
 			changed, err := intToProtoInt32(file.Changed, "commit changed-line count")
 			if err != nil {
 				return err
 			}
+
 			removed, err := intToProtoInt32(file.Removed, "commit removed-line count")
 			if err != nil {
 				return err
 			}
+
 			files[fileIndex] = &pb.CommitFile{
 				Name:     file.Name,
 				Language: file.Language,
@@ -227,6 +230,7 @@ func (ca *CommitsAnalysis) serializeBinary(result *CommitsResult, writer io.Writ
 		if err != nil {
 			return err
 		}
+
 		message.Commits[commitIndex] = &pb.Commit{
 			Hash:         commit.Hash,
 			WhenUnixTime: commit.When,

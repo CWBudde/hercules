@@ -440,6 +440,7 @@ func (devs *DevsAnalysis) serializeBinary(result *DevsResult, writer io.Writer) 
 		if err != nil {
 			return err
 		}
+
 		tickDevs := &pb.TickDevs{}
 		message.Ticks[tickID] = tickDevs
 		tickDevs.Devs = map[int32]*pb.DevTick{}
@@ -453,14 +454,17 @@ func (devs *DevsAnalysis) serializeBinary(result *DevsResult, writer io.Writer) 
 			if err != nil {
 				return err
 			}
+
 			commits, err := intToProtoInt32(stats.Commits, "developer commit count")
 			if err != nil {
 				return err
 			}
+
 			lineStats, err := devLineStatsToProto(stats.Added, stats.Changed, stats.Removed)
 			if err != nil {
 				return err
 			}
+
 			languages := map[string]*pb.LineStats{}
 
 			tickDevs.Devs[developerID] = &pb.DevTick{
@@ -473,6 +477,7 @@ func (devs *DevsAnalysis) serializeBinary(result *DevsResult, writer io.Writer) 
 				if err != nil {
 					return err
 				}
+
 				languages[lang] = languageStats
 			}
 		}
@@ -496,10 +501,12 @@ func devLineStatsToProto(added, changed, removed int) (*pb.LineStats, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	pbChanged, err := intToProtoInt32(changed, "developer changed-line count")
 	if err != nil {
 		return nil, err
 	}
+
 	pbRemoved, err := intToProtoInt32(removed, "developer removed-line count")
 	if err != nil {
 		return nil, err

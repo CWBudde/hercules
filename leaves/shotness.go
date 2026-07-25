@@ -216,19 +216,19 @@ func (shotness *ShotnessAnalysis) Finalize() any {
 	sort.Strings(keys)
 
 	reverseKeys := map[string]int{}
-	for i, key := range keys {
-		reverseKeys[key] = i
+	for keyIndex, key := range keys {
+		reverseKeys[key] = keyIndex
 	}
 
-	for i, key := range keys {
+	for keyIndex, key := range keys {
 		node := shotness.nodes[key]
-		result.Nodes[i] = node.Summary
+		result.Nodes[keyIndex] = node.Summary
 		counter := map[int]int{}
-		result.Counters[i] = counter
+		result.Counters[keyIndex] = counter
 
-		counter[i] = node.Count
-		for ck, val := range node.Couples {
-			counter[reverseKeys[ck]] = val
+		counter[keyIndex] = node.Count
+		for coupledKey, value := range node.Couples {
+			counter[reverseKeys[coupledKey]] = value
 		}
 	}
 
@@ -506,10 +506,12 @@ func (shotness *ShotnessAnalysis) serializeBinary(result *ShotnessResult, writer
 			if err != nil {
 				return err
 			}
+
 			counterValue, err := intToProtoInt32(val, "shotness counter value")
 			if err != nil {
 				return err
 			}
+
 			record.Counters[counterID] = counterValue
 		}
 

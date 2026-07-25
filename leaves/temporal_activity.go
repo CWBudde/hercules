@@ -368,14 +368,17 @@ func temporalActivityToProto(activity *DeveloperTemporalActivity) (*pb.Developer
 	if err != nil {
 		return nil, err
 	}
+
 	hours, err := temporalDimensionToProto(activity.Hours)
 	if err != nil {
 		return nil, err
 	}
+
 	months, err := temporalDimensionToProto(activity.Months)
 	if err != nil {
 		return nil, err
 	}
+
 	weeks, err := temporalDimensionToProto(activity.Weeks)
 	if err != nil {
 		return nil, err
@@ -396,6 +399,7 @@ func temporalDimensionToProto(dimension TemporalDimension) (*pb.TemporalDimensio
 		if err != nil {
 			return nil, err
 		}
+
 		result.Commits[i] = pbCount
 	}
 
@@ -404,6 +408,7 @@ func temporalDimensionToProto(dimension TemporalDimension) (*pb.TemporalDimensio
 		if err != nil {
 			return nil, err
 		}
+
 		result.Lines[i] = pbCount
 	}
 
@@ -426,30 +431,37 @@ func temporalTicksToProto(
 			if developer == core.AuthorMissing {
 				developerID = -1
 			}
+
 			commits, err := intToProtoInt32(activity.Commits, "temporal tick commit count")
 			if err != nil {
 				return nil, err
 			}
+
 			lines, err := intToProtoInt32(activity.Lines, "temporal tick line count")
 			if err != nil {
 				return nil, err
 			}
+
 			weekday, err := intToProtoInt32(activity.Weekday, "temporal weekday")
 			if err != nil {
 				return nil, err
 			}
+
 			hour, err := intToProtoInt32(activity.Hour, "temporal hour")
 			if err != nil {
 				return nil, err
 			}
+
 			month, err := intToProtoInt32(activity.Month, "temporal month")
 			if err != nil {
 				return nil, err
 			}
+
 			week, err := intToProtoInt32(activity.Week, "temporal ISO week")
 			if err != nil {
 				return nil, err
 			}
+
 			pbDevelopers.Devs[developerID] = &pb.TemporalActivityTick{
 				Commits: commits, Lines: lines,
 				Weekday: weekday, Hour: hour, Month: month, Week: week,
@@ -460,6 +472,7 @@ func temporalTicksToProto(
 		if err != nil {
 			return nil, err
 		}
+
 		result[tickID] = pbDevelopers
 	}
 
@@ -555,10 +568,12 @@ func (ta *TemporalActivityAnalysis) serializeBinary(result *TemporalActivityResu
 		if dev == core.AuthorMissing {
 			developerID = -1
 		}
+
 		pbActivity, err := temporalActivityToProto(activity)
 		if err != nil {
 			return err
 		}
+
 		message.Activities[developerID] = pbActivity
 	}
 
@@ -568,6 +583,7 @@ func (ta *TemporalActivityAnalysis) serializeBinary(result *TemporalActivityResu
 	if err != nil {
 		return err
 	}
+
 	message.TickSize = int64(result.tickSize)
 
 	serialized, err := proto.Marshal(&message)

@@ -279,6 +279,7 @@ func (ipd *ImportsPerDeveloper) serializeBinary(result *ImportsPerDeveloperResul
 					if err != nil {
 						return err
 					}
+
 					counts[tickID] = val
 				}
 			}

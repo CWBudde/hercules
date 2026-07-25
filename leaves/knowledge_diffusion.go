@@ -430,6 +430,7 @@ func (kd *KnowledgeDiffusionAnalysis) serializeBinary(result *KnowledgeDiffusion
 	if err != nil {
 		return err
 	}
+
 	message := pb.KnowledgeDiffusionResults{
 		DevIndex:     result.reversedPeopleDict,
 		TickSize:     int64(result.tickSize),
@@ -442,10 +443,12 @@ func (kd *KnowledgeDiffusionAnalysis) serializeBinary(result *KnowledgeDiffusion
 		if err != nil {
 			return err
 		}
+
 		recentEditors, err := intToProtoInt32(fileData.RecentEditorsCount, "knowledge-diffusion recent editors")
 		if err != nil {
 			return err
 		}
+
 		pbFile := &pb.KnowledgeDiffusionFileData{
 			UniqueEditorsCount:    uniqueEditors,
 			RecentEditorsCount:    recentEditors,
@@ -457,10 +460,12 @@ func (kd *KnowledgeDiffusionAnalysis) serializeBinary(result *KnowledgeDiffusion
 			if err != nil {
 				return err
 			}
+
 			editorCount, err := intToProtoInt32(count, "knowledge-diffusion editor count")
 			if err != nil {
 				return err
 			}
+
 			pbFile.UniqueEditorsOverTime[tickID] = editorCount
 		}
 
@@ -469,6 +474,7 @@ func (kd *KnowledgeDiffusionAnalysis) serializeBinary(result *KnowledgeDiffusion
 			if err != nil {
 				return err
 			}
+
 			pbFile.Authors[i] = authorID
 		}
 
@@ -481,10 +487,12 @@ func (kd *KnowledgeDiffusionAnalysis) serializeBinary(result *KnowledgeDiffusion
 		if err != nil {
 			return err
 		}
+
 		pbFileCount, err := intToProtoInt32(fileCount, "knowledge-diffusion distribution file count")
 		if err != nil {
 			return err
 		}
+
 		message.Distribution[pbEditorCount] = pbFileCount
 	}
 

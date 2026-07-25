@@ -355,14 +355,14 @@ func (couples *CouplesAnalysis) MergeResults(r1, r2 any, c1, c2 *core.CommonAnal
 	files, merged.Files = join.LiteralIdentities(cr1.Files, cr2.Files)
 
 	merged.FilesLines = make([]int, len(merged.Files))
-	for i, name := range merged.Files {
-		idxs := files[name]
-		if idxs.First >= 0 {
-			merged.FilesLines[i] += cr1.FilesLines[idxs.First]
+	for fileIndex, name := range merged.Files {
+		indexes := files[name]
+		if indexes.First >= 0 {
+			merged.FilesLines[fileIndex] += cr1.FilesLines[indexes.First]
 		}
 
-		if idxs.Second >= 0 {
-			merged.FilesLines[i] += cr2.FilesLines[idxs.Second]
+		if indexes.Second >= 0 {
+			merged.FilesLines[fileIndex] += cr2.FilesLines[indexes.Second]
 		}
 	}
 
@@ -429,21 +429,21 @@ func (couples *CouplesAnalysis) peopleCouplingMatrices(
 	peopleMatrix := make([]map[int]int64, couples.PeopleNumber+1)
 	peopleFiles := make([][]int, couples.PeopleNumber+1)
 
-	for i := range peopleMatrix {
-		peopleMatrix[i] = map[int]int64{}
-		for file, commits := range people[i] {
-			if fi, exists := filesIndex[file]; exists {
-				peopleFiles[i] = append(peopleFiles[i], fi)
+	for personIndex := range peopleMatrix {
+		peopleMatrix[personIndex] = map[int]int64{}
+		for file, commits := range people[personIndex] {
+			if fileIndex, exists := filesIndex[file]; exists {
+				peopleFiles[personIndex] = append(peopleFiles[personIndex], fileIndex)
 			}
 
-			for j, otherFiles := range people {
+			for otherPersonIndex, otherFiles := range people {
 				if delta := min(otherFiles[file], commits); delta > 0 {
-					peopleMatrix[i][j] += int64(delta)
+					peopleMatrix[personIndex][otherPersonIndex] += int64(delta)
 				}
 			}
 		}
 
-		sort.Ints(peopleFiles[i])
+		sort.Ints(peopleFiles[personIndex])
 	}
 
 	return peopleMatrix, peopleFiles
@@ -632,6 +632,7 @@ func (couples *CouplesAnalysis) serializeBinary(result *CouplesResult, writer io
 			if err != nil {
 				return err
 			}
+
 			int32Files[i] = fileID
 		}
 
@@ -646,6 +647,7 @@ func (couples *CouplesAnalysis) serializeBinary(result *CouplesResult, writer io
 		if err != nil {
 			return err
 		}
+
 		message.FilesLines[i] = lineCount
 	}
 

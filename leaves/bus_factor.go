@@ -487,6 +487,7 @@ func (bf *BusFactorAnalysis) serializeBinary(result *BusFactorResult, writer io.
 		if err != nil {
 			return err
 		}
+
 		pbSnapshot := &pb.BusFactorTickSnapshot{
 			BusFactor:   busFactor,
 			TotalLines:  snapshot.TotalLines,
@@ -505,6 +506,7 @@ func (bf *BusFactorAnalysis) serializeBinary(result *BusFactorResult, writer io.
 		if err != nil {
 			return err
 		}
+
 		message.Snapshots[tickID] = pbSnapshot
 	}
 
@@ -514,6 +516,7 @@ func (bf *BusFactorAnalysis) serializeBinary(result *BusFactorResult, writer io.
 		if err != nil {
 			return err
 		}
+
 		message.SubsystemBusFactor[dir] = pbFactor
 	}
 

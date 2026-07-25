@@ -233,6 +233,7 @@ func (analyser *CodeChurnAnalysis) Consume(deps map[string]any) (map[string]any,
 		if change.IsDelete() {
 			continue
 		}
+
 		lineDelta, err := intToProtoInt32(change.Delta, "code churn line delta")
 		if err != nil {
 			return nil, err
@@ -560,10 +561,12 @@ func (analyser *CodeChurnAnalysis) serializeBinary(result *CodeChurnResult, writ
 	if err != nil {
 		return err
 	}
+
 	sampling, err := intToProtoInt32(result.sampling, "code churn sampling")
 	if err != nil {
 		return err
 	}
+
 	message := pb.CodeChurnAnalysisResults{
 		Granularity: granularity,
 		Sampling:    sampling,
@@ -585,6 +588,7 @@ func (analyser *CodeChurnAnalysis) serializeBinary(result *CodeChurnResult, writ
 			if err != nil {
 				return err
 			}
+
 			pbAuthor.Files = append(pbAuthor.Files, &pb.CodeChurnFileStat{
 				File:          fileName,
 				InsertedLines: stats.InsertedLines,
@@ -712,6 +716,7 @@ func serializeDeleteHistory(history map[int]sparseHistory) ([]*pb.CodeChurnDelet
 			if err != nil {
 				return nil, err
 			}
+
 			pbCurrentTick, err := intToProtoInt32(currentTick, "code churn delete-history current tick")
 			if err != nil {
 				return nil, err
@@ -734,6 +739,7 @@ func serializeDeleteHistory(history map[int]sparseHistory) ([]*pb.CodeChurnDelet
 				if err != nil {
 					return nil, err
 				}
+
 				pbEntry.Entries = append(pbEntry.Entries, &pb.CodeChurnSparseHistoryEntry{
 					PreviousTick: pbPreviousTick,
 					Delta:        entry.deltas[previousTick],

@@ -14,6 +14,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/storer"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/cwbudde/hercules/internal/core"
 	"github.com/cwbudde/hercules/internal/test"
@@ -139,14 +140,18 @@ func TestPeopleDetectorConsume(t *testing.T) {
 	deps[core.DependencyCommit] = commit
 	res, err := fixturePeopleDetector().Consume(deps)
 	assert.NoError(t, err)
-	assert.Equal(t, 0, res[DependencyAuthor].(int))
+	authorID, ok := res[DependencyAuthor].(int)
+	require.True(t, ok)
+	assert.Equal(t, 0, authorID)
 	commit, _ = test.Repository.CommitObject(plumbing.NewHash(
 		"8a03b5620b1caa72ec9cb847ea88332621e2950a",
 	))
 	deps[core.DependencyCommit] = commit
 	res, err = fixturePeopleDetector().Consume(deps)
 	assert.NoError(t, err)
-	assert.Equal(t, core.AuthorMissing, res[DependencyAuthor].(int))
+	authorID, ok = res[DependencyAuthor].(int)
+	require.True(t, ok)
+	assert.Equal(t, core.AuthorMissing, authorID)
 }
 
 func TestPeopleDetectorConsumeExact(t *testing.T) {

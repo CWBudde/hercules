@@ -303,6 +303,8 @@ Acceptance criteria:
 
 ### METRIC-02: Correct Onboarding time and window semantics
 
+Status: completed 2026-07-25
+
 Affected code:
 
 - `leaves/onboarding.go`
@@ -327,8 +329,8 @@ Tests:
 
 Acceptance criteria:
 
-- [ ] cohort keys match actual commit months;
-- [ ] window snapshots never include activity after their documented boundary.
+- [x] cohort keys match actual commit months;
+- [x] window snapshots never include activity after their documented boundary.
 
 ### METRIC-03: Correct Bus Factor and Ownership Concentration snapshots
 

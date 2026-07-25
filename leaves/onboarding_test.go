@@ -19,8 +19,20 @@ import (
 
 // makeTestDeps creates test dependencies for Consume.
 func makeTestDeps(author, tick int, files map[string]int) map[string]any {
+	timestamp := time.Date(2025, time.January, 1, 0, 0, 0, 0, time.UTC).
+		Add(time.Duration(tick) * 24 * time.Hour)
+
+	return makeTestDepsAt(author, tick, timestamp, files)
+}
+
+func makeTestDepsAt(
+	author, tick int, timestamp time.Time, files map[string]int,
+) map[string]any {
 	deps := map[string]any{
-		core.DependencyCommit:       &object.Commit{},
+		core.DependencyCommit: &object.Commit{
+			Author:    object.Signature{When: timestamp},
+			Committer: object.Signature{When: timestamp},
+		},
 		identity.DependencyAuthor:   author,
 		items.DependencyTick:        tick,
 		items.DependencyTreeChanges: object.Changes{},
@@ -52,6 +64,82 @@ func makeTestDeps(author, tick int, files map[string]int) map[string]any {
 	deps[items.DependencyLineStats] = lineStats
 
 	return deps
+}
+
+func TestOnboardingAnalysis_ActualTimestampsAndDurationWindows(t *testing.T) {
+	oa := &OnboardingAnalysis{
+		WindowDays:          []int{1, 7},
+		MeaningfulThreshold: 10,
+		tickSize:            72 * time.Hour,
+	}
+	require.NoError(t, oa.Initialize(test.Repository))
+
+	aliceZone := time.FixedZone("America/New_York", -5*60*60)
+	aliceJoined := time.Date(2025, time.January, 31, 23, 30, 0, 0, aliceZone)
+	for _, activity := range []struct {
+		tick int
+		when time.Time
+		file string
+	}{
+		{tick: 0, when: aliceJoined, file: "alice-first.go"},
+		{tick: 0, when: aliceJoined.Add(24 * time.Hour), file: "alice-boundary.go"},
+		{tick: 0, when: aliceJoined.Add(24*time.Hour + time.Minute), file: "alice-after.go"},
+	} {
+		_, err := oa.Consume(makeTestDepsAt(
+			0, activity.tick, activity.when, map[string]int{activity.file: 20},
+		))
+		require.NoError(t, err)
+	}
+
+	bobZone := time.FixedZone("Europe/Athens", 2*60*60)
+	bobJoined := time.Date(2025, time.March, 1, 0, 30, 0, 0, bobZone)
+	_, err := oa.Consume(makeTestDepsAt(
+		1, 10, bobJoined, map[string]int{"bob-first.go": 20},
+	))
+	require.NoError(t, err)
+	_, err = oa.Consume(makeTestDepsAt(
+		1, 12, bobJoined.Add(8*24*time.Hour), map[string]int{"bob-later.go": 20},
+	))
+	require.NoError(t, err)
+
+	result := oa.Finalize().(OnboardingResult)
+
+	assert.Equal(t, "2025-01", result.Authors[0].JoinCohort)
+	assert.Equal(t, "2025-03", result.Authors[1].JoinCohort)
+	require.Contains(t, result.Cohorts, "2025-01")
+	require.Contains(t, result.Cohorts, "2025-03")
+	assert.Equal(t, 2, result.Authors[0].Snapshots[1].TotalCommits,
+		"the exact boundary is inclusive, even when all commits share one multi-day tick")
+	assert.Equal(t, 1, result.Authors[1].Snapshots[7].TotalCommits,
+		"a snapshot with no later commit in its window must not select a future commit")
+}
+
+func TestOnboardingAnalysis_SubdayNonDivisorTickDoesNotTruncateWindow(t *testing.T) {
+	oa := &OnboardingAnalysis{
+		WindowDays:          []int{7},
+		MeaningfulThreshold: 10,
+		tickSize:            10 * time.Hour,
+	}
+	require.NoError(t, oa.Initialize(test.Repository))
+
+	joined := time.Date(2025, time.April, 1, 8, 0, 0, 0, time.UTC)
+	for _, activity := range []struct {
+		tick int
+		when time.Time
+		file string
+	}{
+		{tick: 0, when: joined, file: "first.go"},
+		{tick: 16, when: joined.Add(7*24*time.Hour - time.Minute), file: "inside.go"},
+		{tick: 16, when: joined.Add(7*24*time.Hour + time.Minute), file: "outside.go"},
+	} {
+		_, err := oa.Consume(makeTestDepsAt(
+			0, activity.tick, activity.when, map[string]int{activity.file: 20},
+		))
+		require.NoError(t, err)
+	}
+
+	result := oa.Finalize().(OnboardingResult)
+	assert.Equal(t, 2, result.Authors[0].Snapshots[7].TotalCommits)
 }
 
 func TestOnboardingAnalysis_BasicTracking(t *testing.T) {
@@ -351,15 +439,21 @@ func TestOnboardingAnalysis_Configuration(t *testing.T) {
 }
 
 func TestOnboardingAnalysis_Configuration_Invalid(t *testing.T) {
-	oa := &OnboardingAnalysis{}
-
-	facts := map[string]any{
-		ConfigOnboardingWindows: "7,invalid,30",
+	tests := []map[string]any{
+		{ConfigOnboardingWindows: "7,invalid,30"},
+		{ConfigOnboardingWindows: "0,7"},
+		{ConfigOnboardingWindows: "-1,7"},
+		{items.FactTickSize: time.Duration(0)},
+		{items.FactTickSize: -time.Hour},
+	}
+	for _, facts := range tests {
+		oa := &OnboardingAnalysis{}
+		require.Error(t, oa.Configure(facts))
 	}
 
-	err := oa.Configure(facts)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid window days")
+	oa := &OnboardingAnalysis{WindowDays: []int{7}}
+	require.Error(t, oa.Initialize(test.Repository),
+		"initialization without a configured positive tick size must fail")
 }
 
 func TestOnboardingAnalysis_Serialization(t *testing.T) {
@@ -395,6 +489,8 @@ func TestOnboardingAnalysis_Serialization(t *testing.T) {
 		assert.Contains(t, yamlOutput, "meaningful_threshold:")
 		assert.Contains(t, yamlOutput, "authors:")
 		assert.Contains(t, yamlOutput, "cohorts:")
+		assert.Contains(t, yamlOutput, "join_cohort: \"2025-01\"")
+		assert.Contains(t, yamlOutput, "\"2025-01\":")
 		assert.Contains(t, yamlOutput, "people:")
 	})
 

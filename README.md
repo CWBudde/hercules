@@ -630,7 +630,9 @@ hercules --onboarding [--onboarding-windows=7,30,90] [--onboarding-meaningful-th
 
 The onboarding analysis tracks how quickly new contributors ramp up after their first commit.
 It groups authors by monthly join cohort and measures commits, files, and changed lines at
-configurable day windows.
+configurable day windows. Cohorts use the local calendar month encoded in each author's first
+commit timestamp. Windows are exact elapsed 24-hour periods from that timestamp, include commits
+on the boundary, and never include a later commit merely because it shares a tick.
 
 An `onboarding` render mode is not yet implemented in the Go renderer, so consume the
 YAML/protobuf output directly. The retired Python renderer produced two visualizations

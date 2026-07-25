@@ -477,6 +477,15 @@ YAML fields:
 
 PB: `OnboardingResults`
 
+`join_cohort` is the calendar month (`YYYY-MM`) of the author's earliest
+analysed commit, using that commit's author timestamp and UTC offset. A snapshot
+for `N` days contains only commits whose author timestamp is at or before
+`first_commit_timestamp + N * 24h`; the boundary is inclusive. If there is no
+later commit inside the window, the snapshot contains the first commit rather
+than selecting the next commit after the boundary. Tick size is retained as
+output metadata but does not round or widen onboarding windows, including when
+a tick is longer than the requested window.
+
 Example:
 
 ```yaml

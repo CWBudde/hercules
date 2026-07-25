@@ -16,6 +16,15 @@ Each entry should include:
 
 ## Unreleased
 
+- YAML and PB: corrected `Onboarding` cohort and snapshot semantics without
+  changing fields or wire types. Join cohorts now use each author's actual
+  earliest author timestamp and offset. Day windows use exact 24-hour durations
+  and include only commits at or before the inclusive boundary; they never
+  select later activity, even when ticks are coarse or do not divide a day.
+  Compatibility: semantic breaking change (existing consumers will parse the
+  output unchanged, but corrected cohort keys and snapshot values can differ).
+  User action: recompute stored Onboarding results before comparing cohorts or
+  snapshots across this release boundary.
 - YAML and PB: corrected the `HotspotRisk` metric semantics without changing
   its fields or wire types. Churn now counts real text-line edits from the
   producer's full change-entry keys and uses duration-based tick windows;

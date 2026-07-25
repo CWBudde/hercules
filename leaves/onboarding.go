@@ -1,9 +1,9 @@
 package leaves
 
 import (
+	"errors"
 	"fmt"
 	"io"
-	"maps"
 	"sort"
 	"strconv"
 	"strings"
@@ -20,8 +20,11 @@ import (
 	"github.com/cwbudde/hercules/internal/yaml"
 )
 
-// onboardingTickMetrics tracks activity for one author at one tick.
-type onboardingTickMetrics struct {
+// onboardingActivity tracks one commit in an author's timeline.
+type onboardingActivity struct {
+	Tick      int
+	Timestamp time.Time
+
 	Commits      int
 	Files        map[string]bool // set of unique files
 	LinesAdded   int
@@ -89,8 +92,8 @@ type OnboardingAnalysis struct {
 	// MeaningfulThreshold is minimum lines for "meaningful" commit
 	MeaningfulThreshold int
 
-	// author -> tick -> metrics
-	authorTimeline     map[int]map[int]*onboardingTickMetrics
+	// author -> commits
+	authorTimeline     map[int][]*onboardingActivity
 	reversedPeopleDict []string
 	tickSize           time.Duration
 
@@ -102,6 +105,12 @@ const (
 	ConfigOnboardingWindows = "Onboarding.Windows"
 	// ConfigOnboardingMeaningfulThreshold is the name of the option to set OnboardingAnalysis.MeaningfulThreshold.
 	ConfigOnboardingMeaningfulThreshold = "Onboarding.MeaningfulThreshold"
+)
+
+var (
+	errOnboardingTickSize       = errors.New("onboarding tick size must be positive")
+	errOnboardingWindow         = errors.New("onboarding window must be positive")
+	errOnboardingWindowTooLarge = errors.New("onboarding window is too large")
 )
 
 // Name of this PipelineItem. Uniquely identifies the type, used for mapping keys, etc.
@@ -168,6 +177,11 @@ func (oa *OnboardingAnalysis) Configure(facts map[string]any) error {
 				return fmt.Errorf("invalid window days value '%s': %w", part, err)
 			}
 
+			_, err = onboardingWindowDuration(days)
+			if err != nil {
+				return err
+			}
+
 			oa.WindowDays = append(oa.WindowDays, days)
 		}
 
@@ -183,6 +197,13 @@ func (oa *OnboardingAnalysis) Configure(facts map[string]any) error {
 	}
 
 	if val, exists := facts[items.FactTickSize].(time.Duration); exists {
+		if val <= 0 {
+			return fmt.Errorf(
+				"%w: %s got %s", errOnboardingTickSize,
+				items.FactTickSize, val,
+			)
+		}
+
 		oa.tickSize = val
 	}
 
@@ -208,12 +229,26 @@ func (oa *OnboardingAnalysis) Description() string {
 // Initialize resets the temporary caches and prepares this PipelineItem for a series of Consume() calls.
 func (oa *OnboardingAnalysis) Initialize(repository *git.Repository) error {
 	oa.l = core.NewLogger()
-	oa.authorTimeline = map[int]map[int]*onboardingTickMetrics{}
+	oa.authorTimeline = map[int][]*onboardingActivity{}
 	oa.OneShotMergeProcessor.Initialize()
+
+	if oa.tickSize <= 0 {
+		return fmt.Errorf(
+			"%w: %s got %s", errOnboardingTickSize,
+			items.FactTickSize, oa.tickSize,
+		)
+	}
 
 	// Set defaults if not configured
 	if len(oa.WindowDays) == 0 {
 		oa.WindowDays = []int{7, 30, 90}
+	}
+
+	for _, days := range oa.WindowDays {
+		_, err := onboardingWindowDuration(days)
+		if err != nil {
+			return err
+		}
 	}
 
 	if oa.MeaningfulThreshold == 0 {
@@ -230,20 +265,17 @@ func (oa *OnboardingAnalysis) Consume(deps map[string]any) (map[string]any, erro
 	}
 
 	reader := factReader{facts: deps}
+	commit := readFact[*object.Commit](&reader, core.DependencyCommit)
 	author := readFact[int](&reader, identity.DependencyAuthor)
 	tick := readFact[int](&reader, items.DependencyTick)
-	treeChanges := readFact[object.Changes](&reader, items.DependencyTreeChanges)
+	_ = readFact[object.Changes](&reader, items.DependencyTreeChanges)
 	lineStats := readFact[map[object.ChangeEntry]items.LineStats](&reader, items.DependencyLineStats)
 
 	if reader.err != nil {
 		return nil, reader.err
 	}
 
-	if len(treeChanges) == 0 {
-		return noDependencies(), nil
-	}
-
-	metrics := oa.getOrCreateTickMetrics(author, tick)
+	metrics := oa.newActivity(author, tick, commit.Author.When)
 
 	// Track files and accumulate line stats
 	commitTotalLines := 0
@@ -296,48 +328,21 @@ func newCumulativeMetrics() *cumulativeMetrics {
 }
 
 // accumulate adds tick metrics to cumulative totals.
-func (cm *cumulativeMetrics) accumulate(tickMetrics *onboardingTickMetrics) {
-	cm.commits += tickMetrics.Commits
-	for file := range tickMetrics.Files {
+func (cm *cumulativeMetrics) accumulate(activity *onboardingActivity) {
+	cm.commits += activity.Commits
+	for file := range activity.Files {
 		cm.files[file] = true
 	}
 
-	cm.lines += tickMetrics.LinesAdded + tickMetrics.LinesRemoved + tickMetrics.LinesChanged
+	cm.lines += activity.LinesAdded + activity.LinesRemoved + activity.LinesChanged
 
-	cm.meaningfulCommits += tickMetrics.MeaningfulCommits
-	for file := range tickMetrics.MeaningfulFiles {
+	cm.meaningfulCommits += activity.MeaningfulCommits
+	for file := range activity.MeaningfulFiles {
 		cm.meaningfulFiles[file] = true
 	}
 
-	cm.meaningfulLines += tickMetrics.MeaningfulLinesAdded +
-		tickMetrics.MeaningfulLinesRemoved + tickMetrics.MeaningfulLinesChanged
-}
-
-// findClosestTick finds the tick <= targetTick in sorted ticks array.
-func findClosestTick(sortedTicks []int, targetTick int) int {
-	if len(sortedTicks) == 0 {
-		return -1
-	}
-
-	// Binary search for closest tick <= target
-	idx := sort.Search(len(sortedTicks), func(i int) bool {
-		return sortedTicks[i] > targetTick
-	})
-
-	if idx == 0 {
-		// All ticks are > target, no valid tick
-		return -1
-	}
-
-	return sortedTicks[idx-1]
-}
-
-// copyFileSet creates a copy of a file set.
-func copyFileSet(src map[string]bool) map[string]bool {
-	dst := make(map[string]bool, len(src))
-	maps.Copy(dst, src)
-
-	return dst
+	cm.meaningfulLines += activity.MeaningfulLinesAdded +
+		activity.MeaningfulLinesRemoved + activity.MeaningfulLinesChanged
 }
 
 // Finalize returns the result of the analysis.
@@ -345,8 +350,8 @@ func (oa *OnboardingAnalysis) Finalize() any {
 	authors := make(map[int]*AuthorOnboardingData, len(oa.authorTimeline))
 	cohortGroups := map[string][]int{} // cohort -> author IDs
 
-	for authorID, timeline := range oa.authorTimeline {
-		author := oa.finalizeAuthor(timeline)
+	for authorID, activities := range oa.authorTimeline {
+		author := oa.finalizeAuthor(activities)
 		if author == nil {
 			continue
 		}
@@ -633,77 +638,84 @@ func (oa *OnboardingAnalysis) Deserialize(pbmessage []byte) (any, error) {
 	return result, nil
 }
 
-// getOrCreateTickMetrics retrieves or creates tick metrics for an author.
-func (oa *OnboardingAnalysis) getOrCreateTickMetrics(author, tick int) *onboardingTickMetrics {
-	timeline, exists := oa.authorTimeline[author]
-	if !exists {
-		timeline = map[int]*onboardingTickMetrics{}
-		oa.authorTimeline[author] = timeline
+// newActivity appends one commit to an author's timestamped activity timeline.
+func (oa *OnboardingAnalysis) newActivity(author, tick int, timestamp time.Time) *onboardingActivity {
+	activity := &onboardingActivity{
+		Tick:            tick,
+		Timestamp:       timestamp,
+		Files:           map[string]bool{},
+		MeaningfulFiles: map[string]bool{},
 	}
+	oa.authorTimeline[author] = append(oa.authorTimeline[author], activity)
 
-	metrics, exists := timeline[tick]
-	if !exists {
-		metrics = &onboardingTickMetrics{
-			Files:           map[string]bool{},
-			MeaningfulFiles: map[string]bool{},
-		}
-		timeline[tick] = metrics
-	}
-
-	return metrics
+	return activity
 }
 
 func (oa *OnboardingAnalysis) finalizeAuthor(
-	timeline map[int]*onboardingTickMetrics,
+	activities []*onboardingActivity,
 ) *AuthorOnboardingData {
-	sortedTicks := make([]int, 0, len(timeline))
-	for tick := range timeline {
-		sortedTicks = append(sortedTicks, tick)
-	}
-
-	sort.Ints(sortedTicks)
-
-	if len(sortedTicks) == 0 {
+	if len(activities) == 0 {
 		return nil
 	}
 
-	firstTick := sortedTicks[0]
-	firstTimestamp := items.FloorTime(
-		time.Unix(0, 0).Add(time.Duration(firstTick)*oa.tickSize), oa.tickSize,
-	)
+	sort.SliceStable(activities, func(i, j int) bool {
+		return activities[i].Timestamp.Before(activities[j].Timestamp)
+	})
+	firstActivity := activities[0]
 
 	return &AuthorOnboardingData{
-		FirstCommitTick: firstTick,
-		JoinCohort:      firstTimestamp.Format("2006-01"),
-		Snapshots:       oa.buildOnboardingSnapshots(timeline, sortedTicks),
+		FirstCommitTick: firstActivity.Tick,
+		JoinCohort:      firstActivity.Timestamp.Format("2006-01"),
+		Snapshots:       oa.buildOnboardingSnapshots(activities),
 	}
 }
 
 func (oa *OnboardingAnalysis) buildOnboardingSnapshots(
-	timeline map[int]*onboardingTickMetrics, sortedTicks []int,
+	activities []*onboardingActivity,
 ) map[int]*OnboardingSnapshot {
-	cumulative := newCumulativeMetrics()
-
-	tickToMetrics := make(map[int]*cumulativeMetrics, len(sortedTicks))
-	for _, tick := range sortedTicks {
-		cumulative.accumulate(timeline[tick])
-		metricsCopy := *cumulative
-		metricsCopy.files = copyFileSet(cumulative.files)
-		metricsCopy.meaningfulFiles = copyFileSet(cumulative.meaningfulFiles)
-		tickToMetrics[tick] = &metricsCopy
-	}
-
 	snapshots := map[int]*OnboardingSnapshot{}
+	firstTimestamp := activities[0].Timestamp
 
-	ticksPerDay := int(24 * time.Hour / oa.tickSize)
 	for _, windowDays := range oa.WindowDays {
-		closestTick := findClosestTick(sortedTicks, sortedTicks[0]+windowDays*ticksPerDay)
-		if closestTick >= 0 {
-			snapshots[windowDays] = onboardingSnapshot(windowDays, tickToMetrics[closestTick])
+		windowDuration, err := onboardingWindowDuration(windowDays)
+		if err != nil {
+			continue
 		}
+
+		boundary := firstTimestamp.Add(windowDuration)
+		cumulative := newCumulativeMetrics()
+
+		for _, activity := range activities {
+			if activity.Timestamp.After(boundary) {
+				break
+			}
+
+			cumulative.accumulate(activity)
+		}
+
+		snapshots[windowDays] = onboardingSnapshot(windowDays, cumulative)
 	}
 
 	return snapshots
+}
+
+func onboardingWindowDuration(days int) (time.Duration, error) {
+	if days <= 0 {
+		return 0, fmt.Errorf(
+			"%w: %s got %d", errOnboardingWindow,
+			ConfigOnboardingWindows, days,
+		)
+	}
+
+	const day = 24 * time.Hour
+	if int64(days) > int64(time.Duration(1<<63-1)/day) {
+		return 0, fmt.Errorf(
+			"%w: %s got %d", errOnboardingWindowTooLarge,
+			ConfigOnboardingWindows, days,
+		)
+	}
+
+	return time.Duration(days) * day, nil
 }
 
 // finalizeCohorts computes cohort aggregates and returns final result.

@@ -294,6 +294,7 @@ func (diff *FileDiff) Consume(deps map[string]any) (map[string]any, error) {
 			if errors.Is(err, ErrBinary) {
 				continue
 			}
+
 			if err != nil {
 				return nil, err
 			}
@@ -302,6 +303,7 @@ func (diff *FileDiff) Consume(deps map[string]any) (map[string]any, error) {
 			if errors.Is(err, ErrBinary) {
 				continue
 			}
+
 			if err != nil {
 				return nil, err
 			}

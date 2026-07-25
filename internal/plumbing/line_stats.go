@@ -153,6 +153,7 @@ func modificationIsBinary(
 		if errors.Is(err, ErrBinary) {
 			return true, nil
 		}
+
 		if err != nil {
 			return false, err
 		}

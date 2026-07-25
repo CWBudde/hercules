@@ -43,6 +43,8 @@ func TestProtobufSchemaSnapshot(t *testing.T) {
 			actual.Version, expected.Version)
 	}
 	if !reflect.DeepEqual(actual, expected) {
-		t.Fatalf("protobuf schema differs from pb.schema.json; review compatibility (docs/SCHEMAS.md), update docs/SCHEMA_CHANGELOG.md, then refresh with UPDATE_PB_SCHEMA_SNAPSHOT=1 go test ./internal/pb -run TestProtobufSchemaSnapshot -count=1")
+		t.Fatalf(
+			"protobuf schema differs from pb.schema.json; review compatibility (docs/SCHEMAS.md), update docs/SCHEMA_CHANGELOG.md, then refresh with UPDATE_PB_SCHEMA_SNAPSHOT=1 go test ./internal/pb -run TestProtobufSchemaSnapshot -count=1",
+		)
 	}
 }

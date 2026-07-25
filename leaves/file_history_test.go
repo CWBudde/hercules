@@ -125,8 +125,16 @@ func TestFileHistorySerializeBinary(t *testing.T) {
 	assert.Len(t, msg.GetFiles()["cmd/hercules/main.go"].GetCommits(), 2)
 	assert.Equal(t, "0000000000000000000000000000000000000000", msg.GetFiles()["cmd/hercules/main.go"].GetCommits()[0])
 	assert.Equal(t, "2b1ed978194a94edeabbca6de7ff3b5771d4d665", msg.GetFiles()["cmd/hercules/main.go"].GetCommits()[1])
-	assert.Equal(t, map[int32]*pb.LineStats{1: {Added: 12, Removed: 0, Changed: 0}}, msg.GetFiles()[".travis.yml"].GetChangesByDeveloper())
-	assert.Equal(t, map[int32]*pb.LineStats{1: {Added: 0, Removed: 207, Changed: 0}}, msg.GetFiles()["cmd/hercules/main.go"].GetChangesByDeveloper())
+	assert.Equal(
+		t,
+		map[int32]*pb.LineStats{1: {Added: 12, Removed: 0, Changed: 0}},
+		msg.GetFiles()[".travis.yml"].GetChangesByDeveloper(),
+	)
+	assert.Equal(
+		t,
+		map[int32]*pb.LineStats{1: {Added: 0, Removed: 207, Changed: 0}},
+		msg.GetFiles()["cmd/hercules/main.go"].GetChangesByDeveloper(),
+	)
 }
 
 func bakeFileHistoryForSerialization(t *testing.T) (*FileHistoryAnalysis, map[string]any) {

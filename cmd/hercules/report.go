@@ -368,7 +368,10 @@ func selectReportAnalysisFlags(
 	for _, flag := range source {
 		if !reportAnalysisSupported(flag) {
 			if strictSelection {
-				return nil, fmt.Errorf("analysis flag %q is unavailable in this build; rebuild with -tags tensorflow", flag)
+				return nil, fmt.Errorf(
+					"analysis flag %q is unavailable in this build; rebuild with -tags tensorflow",
+					flag,
+				)
 			}
 			continue
 		}
@@ -443,7 +446,9 @@ func selectReportModes(requested []string, includeAll bool) ([]string, error) {
 // for the external labours subprocess path.
 func validateReportLaboursFlags(laboursCmdOverride string, laboursExtra []string) error {
 	if laboursCmdOverride == "" && len(laboursExtra) > 0 {
-		return errors.New("--labours-arg requires --labours-cmd: the built-in renderer does not accept extra labours arguments")
+		return errors.New(
+			"--labours-arg requires --labours-cmd: the built-in renderer does not accept extra labours arguments",
+		)
 	}
 	return nil
 }

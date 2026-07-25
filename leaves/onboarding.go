@@ -577,9 +577,18 @@ func writeOnboardingSnapshots(writer io.Writer, snapshots map[int]*OnboardingSna
 
 	for _, days := range windowDays {
 		snapshot := snapshots[days]
-		fmt.Fprintf(writer, "          %d: {days: %d, commits: %d, files: %d, lines: %d, meaningful_commits: %d, meaningful_files: %d, meaningful_lines: %d}\n",
-			days, snapshot.DaysSinceJoin, snapshot.TotalCommits, snapshot.TotalFiles, snapshot.TotalLines,
-			snapshot.MeaningfulCommits, snapshot.MeaningfulFiles, snapshot.MeaningfulLines)
+		fmt.Fprintf(
+			writer,
+			"          %d: {days: %d, commits: %d, files: %d, lines: %d, meaningful_commits: %d, meaningful_files: %d, meaningful_lines: %d}\n",
+			days,
+			snapshot.DaysSinceJoin,
+			snapshot.TotalCommits,
+			snapshot.TotalFiles,
+			snapshot.TotalLines,
+			snapshot.MeaningfulCommits,
+			snapshot.MeaningfulFiles,
+			snapshot.MeaningfulLines,
+		)
 	}
 }
 

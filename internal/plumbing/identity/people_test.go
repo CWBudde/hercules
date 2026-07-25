@@ -248,7 +248,11 @@ func TestPeopleDetectorGeneratePeopleDict(t *testing.T) {
 	assert.Equal(t, 1, id.PeopleDict["bzz@apache.org"])
 	assert.Equal(t, 2, id.PeopleDict["máximo cuadros"])
 	assert.Equal(t, 2, id.PeopleDict["mcuadros@gmail.com"])
-	assert.Equal(t, "vadim markovtsev|gmarkhor@gmail.com|vadim@athenian.co|vadim@sourced.tech", id.ReversedPeopleDict[0])
+	assert.Equal(
+		t,
+		"vadim markovtsev|gmarkhor@gmail.com|vadim@athenian.co|vadim@sourced.tech",
+		id.ReversedPeopleDict[0],
+	)
 	assert.Equal(t, "alexander bezzubov|bzz@apache.org", id.ReversedPeopleDict[1])
 	assert.Equal(t, "máximo cuadros|mcuadros@gmail.com", id.ReversedPeopleDict[2])
 	assert.NotEqual(t, core.AuthorMissingName, id.ReversedPeopleDict[len(id.ReversedPeopleDict)-1])
@@ -287,7 +291,11 @@ func TestPeopleDetectorCoAuthorTrailers(t *testing.T) {
 
 	audit := id.IdentityAudit()
 	assert.Len(t, audit.Identities, 1)
-	assert.Equal(t, "alice example|alice@example.com|alice@users.noreply.github.com", audit.Identities[0].PeopleDictLine)
+	assert.Equal(
+		t,
+		"alice example|alice@example.com|alice@users.noreply.github.com",
+		audit.Identities[0].PeopleDictLine,
+	)
 	assert.Len(t, audit.MergeDecisions, 1)
 	assert.Equal(t, "co-authored-by", audit.MergeDecisions[0].Reason)
 	assert.InDelta(t, 1.0, audit.MergeDecisions[0].Confidence, 0.00001)
@@ -303,7 +311,11 @@ func TestPeopleDetectorFuzzyIdentityMerges(t *testing.T) {
 
 	audit := id.IdentityAudit()
 	assert.Len(t, audit.Identities, 1)
-	assert.Equal(t, "katherine johnson|kathryn johnson|kat@example.com|kathryn@example.com", audit.Identities[0].PeopleDictLine)
+	assert.Equal(
+		t,
+		"katherine johnson|kathryn johnson|kat@example.com|kathryn@example.com",
+		audit.Identities[0].PeopleDictLine,
+	)
 	assert.Len(t, audit.MergeDecisions, 1)
 	assert.Equal(t, "fuzzy-name", audit.MergeDecisions[0].Reason)
 	assert.GreaterOrEqual(t, audit.MergeDecisions[0].Confidence, id.MergeThreshold)
@@ -439,7 +451,10 @@ func (strr fakeEncodedObjectStorer) SetEncodedObject(plumbing.EncodedObject) (pl
 	return plumbing.NewHash("0000000000000000000000000000000000000000"), nil
 }
 
-func (strr fakeEncodedObjectStorer) EncodedObject(objType plumbing.ObjectType, _ plumbing.Hash) (plumbing.EncodedObject, error) {
+func (strr fakeEncodedObjectStorer) EncodedObject(
+	objType plumbing.ObjectType,
+	_ plumbing.Hash,
+) (plumbing.EncodedObject, error) {
 	switch objType {
 	case plumbing.TreeObject:
 		return fakeTreeEncodedObject{Name: strr.Name}, nil

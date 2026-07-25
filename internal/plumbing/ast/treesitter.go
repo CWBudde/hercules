@@ -314,7 +314,14 @@ func collectNamedNodes(root *sitter.Node, lang *sitter.Language) []Node {
 			endLine := max(int(node.EndPoint().Row)+1, startLine)
 
 			nodes = append(nodes, Node{
-				ID:        fmt.Sprintf("%d:%d:%s:%d:%d", startLine, endLine, node.Type(lang), node.StartPoint().Column, node.EndPoint().Column),
+				ID: fmt.Sprintf(
+					"%d:%d:%s:%d:%d",
+					startLine,
+					endLine,
+					node.Type(lang),
+					node.StartPoint().Column,
+					node.EndPoint().Column,
+				),
 				Type:      "ast:" + node.Type(lang),
 				Name:      "",
 				Text:      "",

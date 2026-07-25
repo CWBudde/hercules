@@ -307,7 +307,10 @@ func (diff *FileDiff) Consume(deps map[string]any) (map[string]any, error) {
 			strFrom, strTo := string(blobFrom.Data), string(blobTo.Data)
 			dmp := diffmatchpatch.New()
 			dmp.DiffTimeout = diff.Timeout
-			src, dst, _ := dmp.DiffLinesToRunes(stripWhitespace(strFrom, diff.WhitespaceIgnore), stripWhitespace(strTo, diff.WhitespaceIgnore))
+			src, dst, _ := dmp.DiffLinesToRunes(
+				stripWhitespace(strFrom, diff.WhitespaceIgnore),
+				stripWhitespace(strTo, diff.WhitespaceIgnore),
+			)
 
 			diffs := dmp.DiffMainRunes(src, dst, false)
 			if !diff.CleanupDisabled {
@@ -377,7 +380,13 @@ func (diff *FileDiff) refineWithTreeSitter(path string, source []byte, original 
 // Padding (refineRangePadding) gives tree-sitter enough surrounding tokens to
 // resolve grammar-context-sensitive constructs the same way it would in a
 // full-file parse, eliminating the rare single-line drift observed without it.
-func extractNodesForRefinement(path string, source []byte, ranges []ast_items.LineRange, newLOC int, mode string) ([]ast_items.Node, error) {
+func extractNodesForRefinement(
+	path string,
+	source []byte,
+	ranges []ast_items.LineRange,
+	newLOC int,
+	mode string,
+) ([]ast_items.Node, error) {
 	switch mode {
 	case RefineModeFull:
 		return ast_items.ExtractNamedNodes(path, source)
@@ -586,7 +595,11 @@ func refineDiffByNodeDensity(original FileDiffData, line2node [][]ast_items.Node
 	return refineDiffByNodeDensityWithBoundaries(original, line2node, collectSuspiciousBoundaries(original.Diffs))
 }
 
-func refineDiffByNodeDensityWithBoundaries(original FileDiffData, line2node [][]ast_items.Node, boundaries []suspiciousBoundary) FileDiffData {
+func refineDiffByNodeDensityWithBoundaries(
+	original FileDiffData,
+	line2node [][]ast_items.Node,
+	boundaries []suspiciousBoundary,
+) FileDiffData {
 	if len(boundaries) == 0 {
 		return original
 	}

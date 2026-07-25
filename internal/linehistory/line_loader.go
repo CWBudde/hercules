@@ -83,7 +83,10 @@ func (v loadedFileIdResolver) ForEachFile(callback func(id FileId, name string))
 	return true
 }
 
-func (v loadedFileIdResolver) ScanFile(id FileId, callback func(line int, tick core.TickNumber, author core.AuthorId)) bool {
+func (v loadedFileIdResolver) ScanFile(
+	id FileId,
+	callback func(line int, tick core.TickNumber, author core.AuthorId),
+) bool {
 	if v.analyser == nil {
 		return false
 	}

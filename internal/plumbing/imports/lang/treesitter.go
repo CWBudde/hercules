@@ -22,7 +22,13 @@ func parseFull(lang *sitter.Language, content []byte) *sitter.Node {
 // runQuery executes a precompiled query against root and yields each match's
 // captures via the visit callback. Errors during cursor iteration are
 // suppressed; a malformed query is a programmer error caught at init time.
-func runQuery(q *sitter.Query, root *sitter.Node, lang *sitter.Language, content []byte, visit func(captures []sitter.QueryCapture)) {
+func runQuery(
+	q *sitter.Query,
+	root *sitter.Node,
+	lang *sitter.Language,
+	content []byte,
+	visit func(captures []sitter.QueryCapture),
+) {
 	if q == nil || root == nil {
 		return
 	}

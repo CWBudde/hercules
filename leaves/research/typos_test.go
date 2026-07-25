@@ -82,7 +82,17 @@ func TestTyposTreeSitterConsume(t *testing.T) {
 
 func TestTyposTreeSitterSerialize(t *testing.T) {
 	tdb := &TyposDatasetBuilder{}
-	result := TyposResult{Typos: []Typo{{Wrong: "cnt", Correct: "count", Commit: plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"), File: "demo.go", Line: 3}}}
+	result := TyposResult{
+		Typos: []Typo{
+			{
+				Wrong:   "cnt",
+				Correct: "count",
+				Commit:  plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+				File:    "demo.go",
+				Line:    3,
+			},
+		},
+	}
 	text := &bytes.Buffer{}
 	err := tdb.Serialize(result, false, text)
 	if err != nil {

@@ -9,9 +9,13 @@ import (
 )
 
 var (
-	messageRe       = regexp.MustCompile(`^message\s+([A-Za-z_][A-Za-z0-9_]*)\s*\{\s*$`)
-	fieldRe         = regexp.MustCompile(`^(?:(repeated)\s+)?([A-Za-z_][A-Za-z0-9_\.]*)\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([0-9]+)\s*;`)
-	mapRe           = regexp.MustCompile(`^map<\s*([A-Za-z_][A-Za-z0-9_\.]*)\s*,\s*([A-Za-z_][A-Za-z0-9_\.]*)\s*>\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([0-9]+)\s*;`)
+	messageRe = regexp.MustCompile(`^message\s+([A-Za-z_][A-Za-z0-9_]*)\s*\{\s*$`)
+	fieldRe   = regexp.MustCompile(
+		`^(?:(repeated)\s+)?([A-Za-z_][A-Za-z0-9_\.]*)\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([0-9]+)\s*;`,
+	)
+	mapRe = regexp.MustCompile(
+		`^map<\s*([A-Za-z_][A-Za-z0-9_\.]*)\s*,\s*([A-Za-z_][A-Za-z0-9_\.]*)\s*>\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([0-9]+)\s*;`,
+	)
 	reservedRe      = regexp.MustCompile(`^reserved\s+(.+?)\s*;`)
 	reservedRangeRe = regexp.MustCompile(`^([0-9]+)(?:\s+to\s+([0-9]+))?$`)
 	reservedNameRe  = regexp.MustCompile(`^"([A-Za-z_][A-Za-z0-9_]*)"$`)

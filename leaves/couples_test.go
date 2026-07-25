@@ -103,7 +103,12 @@ func TestCouplesConsumeFinalize(t *testing.T) {
 	))
 	deps[plumbing.DependencyTreeChanges] = generateChanges("+LICENSE2", "+file2.go", "+rbtree2.go")
 	c.Consume(deps)
-	deps[plumbing.DependencyTreeChanges] = generateChanges("+README.md", "-LICENSE2", "=analyser.go", ">file2.go>file_test.go")
+	deps[plumbing.DependencyTreeChanges] = generateChanges(
+		"+README.md",
+		"-LICENSE2",
+		"=analyser.go",
+		">file2.go>file_test.go",
+	)
 	c.Consume(deps)
 	deps[identity.DependencyAuthor] = 1
 	deps[plumbing.DependencyTreeChanges] = generateChanges("=README.md", "=analyser.go", "-rbtree2.go")
@@ -210,7 +215,12 @@ func TestCouplesConsumeFinalizeAuthorMissing(t *testing.T) {
 	))
 	deps[plumbing.DependencyTreeChanges] = generateChanges("+LICENSE2", "+file2.go", "+rbtree2.go")
 	c.Consume(deps)
-	deps[plumbing.DependencyTreeChanges] = generateChanges("+README.md", "-LICENSE2", "=analyser.go", ">file2.go>file_test.go")
+	deps[plumbing.DependencyTreeChanges] = generateChanges(
+		"+README.md",
+		"-LICENSE2",
+		"=analyser.go",
+		">file2.go>file_test.go",
+	)
 	c.Consume(deps)
 	deps[identity.DependencyAuthor] = 1
 	deps[plumbing.DependencyTreeChanges] = generateChanges("=README.md", "=analyser.go", "-rbtree2.go")

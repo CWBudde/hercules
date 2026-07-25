@@ -91,7 +91,11 @@ func TestPythonCompatibility(t *testing.T) {
 // TestChartStructuralValidation performs functional validation of chart components.
 func TestChartStructuralValidation(t *testing.T) {
 	// Generate a test chart
-	outputPath := generateTestChart(t, "burndown-project", "../../internal/render/testdata/example_data/hercules_burndown.yaml")
+	outputPath := generateTestChart(
+		t,
+		"burndown-project",
+		"../../internal/render/testdata/example_data/hercules_burndown.yaml",
+	)
 
 	// Validate chart structure and components
 	t.Run("ChartFileGeneration", func(t *testing.T) {

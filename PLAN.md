@@ -949,6 +949,32 @@ Acceptance criteria:
 - automated help/README examples execute successfully in CI;
 - each default analysis links to a precise metric definition.
 
+### DOC-02: Make the burndown y-axis magnitude self-contained
+
+Burndown charts label the y-axis with bare numbers (`2`, `4`, `6`, `8`) and put the magnitude in a
+separate matplotlib-style offset text, `1e4`, in the top-left corner above the axes box. A reader
+who misses that corner reads the chart as single-digit line counts instead of tens of thousands.
+
+The offset text is also physically detached from the axis it belongs to, so it is trivially lost.
+`just burndown-chart` used to crop the top 40 px to drop the chart title, and that same band
+carries the `1e4`; the chart published on pcjv.de showed 2/4/6/8 with no magnitude anywhere until
+2026-07-25. The recipe now blanks out only the title's x-range (`rectangle 300,0 1350,35`, clear of
+the axes frame at y=38) and keeps the offset text, so the immediate symptom is gone — but the
+underlying fragility is the offset notation itself, and the next consumer will hit it again.
+
+- Render the magnitude where it cannot be separated from the data: either format the ticks in full
+  (`20000`, `40000`) or fold the unit into the axis label (`Lines of code (x10^4)`), rather than
+  relying on detached offset text.
+- Apply the same treatment to every mode that stacks line counts, not just `burndown-project`.
+- Consider a flag to suppress the chart title, so downstream users stop cropping the figure by
+  hand to remove it and taking the offset text with it.
+
+Acceptance criteria:
+
+- a rendered burndown chart states its magnitude within the axes box, verifiable by cropping the
+  figure to the plot area alone;
+- a visual test covers a data set large enough to trigger offset notation.
+
 ## Recommended pull request sequence
 
 The phases above describe dependencies; the following PR slices keep review scope manageable:

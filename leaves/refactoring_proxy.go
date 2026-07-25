@@ -232,7 +232,7 @@ func (rp *RefactoringProxy) Deserialize(pbmessage []byte) (any, error) {
 
 	err := proto.Unmarshal(pbmessage, &message)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("unmarshal refactoring proxy result: %w", err)
 	}
 
 	result := RefactoringProxyResult{
@@ -342,12 +342,15 @@ func (rp *RefactoringProxy) serializeBinary(result *RefactoringProxyResult, writ
 
 	serialized, err := proto.Marshal(&message)
 	if err != nil {
-		return err
+		return fmt.Errorf("marshal refactoring proxy result: %w", err)
 	}
 
 	_, err = writer.Write(serialized)
+	if err != nil {
+		return fmt.Errorf("write refactoring proxy result: %w", err)
+	}
 
-	return err
+	return nil
 }
 
 var _ = core.RegisterPipelineItem(&RefactoringProxy{})

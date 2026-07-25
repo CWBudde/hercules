@@ -255,7 +255,7 @@ func (bf *BusFactorAnalysis) Deserialize(pbmessage []byte) (any, error) {
 
 	err := proto.Unmarshal(pbmessage, &message)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("unmarshal bus factor result: %w", err)
 	}
 
 	snapshots := make(map[int]*BusFactorSnapshot, len(message.GetSnapshots()))
@@ -507,12 +507,15 @@ func (bf *BusFactorAnalysis) serializeBinary(result *BusFactorResult, writer io.
 
 	serialized, err := proto.Marshal(&message)
 	if err != nil {
-		return err
+		return fmt.Errorf("marshal bus factor result: %w", err)
 	}
 
 	_, err = writer.Write(serialized)
+	if err != nil {
+		return fmt.Errorf("write bus factor result: %w", err)
+	}
 
-	return err
+	return nil
 }
 
 var _ = core.RegisterPipelineItem(&BusFactorAnalysis{})

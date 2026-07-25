@@ -189,7 +189,7 @@ func (ipd *ImportsPerDeveloper) Deserialize(pbmessage []byte) (any, error) {
 
 	err := proto.Unmarshal(pbmessage, &msg)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("unmarshal imports result: %w", err)
 	}
 
 	r := ImportsPerDeveloperResult{
@@ -282,12 +282,15 @@ func (ipd *ImportsPerDeveloper) serializeBinary(result *ImportsPerDeveloperResul
 
 	serialized, err := proto.Marshal(&message)
 	if err != nil {
-		return err
+		return fmt.Errorf("marshal imports result: %w", err)
 	}
 
 	_, err = writer.Write(serialized)
+	if err != nil {
+		return fmt.Errorf("write imports result: %w", err)
+	}
 
-	return err
+	return nil
 }
 
 var _ = core.RegisterPipelineItem(&ImportsPerDeveloper{})

@@ -226,7 +226,7 @@ func (detector *StoryDetector) Fork(n int) []core.PipelineItem {
 func (detector *StoryDetector) LoadMergeDict(path string) error {
 	file, err := os.Open(path)
 	if err != nil {
-		return err
+		return fmt.Errorf("open merge dictionary: %w", err)
 	}
 	defer func() { _ = file.Close() }()
 

@@ -442,7 +442,7 @@ func (analyser *LegacyBurndownAnalysis) Hibernate() error {
 	if analyser.HibernationToDisk {
 		file, err := os.CreateTemp(analyser.HibernationDirectory, "*-hercules.bin")
 		if err != nil {
-			return err
+			return fmt.Errorf("create hibernation file: %w", err)
 		}
 
 		analyser.hibernatedFileName = file.Name()
@@ -450,13 +450,13 @@ func (analyser *LegacyBurndownAnalysis) Hibernate() error {
 		err = file.Close()
 		if err != nil {
 			analyser.hibernatedFileName = ""
-			return err
+			return fmt.Errorf("close hibernation file: %w", err)
 		}
 
 		err = analyser.fileAllocator.Serialize(analyser.hibernatedFileName)
 		if err != nil {
 			analyser.hibernatedFileName = ""
-			return err
+			return fmt.Errorf("serialize hibernation state: %w", err)
 		}
 	}
 
@@ -468,12 +468,12 @@ func (analyser *LegacyBurndownAnalysis) Boot() error {
 	if analyser.hibernatedFileName != "" {
 		err := analyser.fileAllocator.Deserialize(analyser.hibernatedFileName)
 		if err != nil {
-			return err
+			return fmt.Errorf("deserialize hibernation state: %w", err)
 		}
 
 		err = os.Remove(analyser.hibernatedFileName)
 		if err != nil {
-			return err
+			return fmt.Errorf("remove hibernation file: %w", err)
 		}
 
 		analyser.hibernatedFileName = ""
@@ -521,7 +521,7 @@ func (analyser *LegacyBurndownAnalysis) Deserialize(pbmessage []byte) (any, erro
 
 	err := proto.Unmarshal(pbmessage, &msg)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("unmarshal burndown result: %w", err)
 	}
 
 	convertCSR := func(mat *pb.BurndownSparseMatrix) DenseHistory {
@@ -807,12 +807,15 @@ func (analyser *LegacyBurndownAnalysis) serializeBinary(result *BurndownResult, 
 
 	serialized, err := proto.Marshal(&message)
 	if err != nil {
-		return err
+		return fmt.Errorf("marshal burndown result: %w", err)
 	}
 
 	_, err = writer.Write(serialized)
+	if err != nil {
+		return fmt.Errorf("write burndown result: %w", err)
+	}
 
-	return err
+	return nil
 }
 
 // We do a hack and store the tick in the first 14 bits and the author index in the last 18.

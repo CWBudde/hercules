@@ -286,12 +286,15 @@ func (history *FileHistoryAnalysis) serializeBinary(result *FileHistoryResult, w
 
 	serialized, err := proto.Marshal(&message)
 	if err != nil {
-		return err
+		return fmt.Errorf("marshal file history result: %w", err)
 	}
 
 	_, err = writer.Write(serialized)
+	if err != nil {
+		return fmt.Errorf("write file history result: %w", err)
+	}
 
-	return err
+	return nil
 }
 
 var _ = core.RegisterPipelineItem(&FileHistoryAnalysis{})

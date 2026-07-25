@@ -69,7 +69,7 @@ report REPO OUTPUT="./report": hercules
 # currently have no effect anyway, because BurndownAnalysis.Initialize() forces
 # both back to the default of 30 — which is what this chart wants, so the recipe
 # is reproducible as it stands. The giant docs/linux.svg example is excluded
-# because it dwarfs the real history. The chart title is cropped off when
+# because it dwarfs the real history. The chart title is blanked out when
 # ImageMagick is available, since the page embedding it carries its own caption.
 #
 # Regenerate the self-analysis burndown chart (hercules replaying its own history)
@@ -83,7 +83,10 @@ burndown-chart RESAMPLE="3M" GRANULARITY="30" SAMPLING="30" OUTPUT="self-analysi
     ./labours{{exe}} -i "$dir/burndown.pb" -m burndown-project \
         --resample "{{RESAMPLE}}" -q -o "{{OUTPUT}}"
     if command -v convert >/dev/null 2>&1; then
-        convert "{{OUTPUT}}" -crop 1600x1160+0+40 +repage "{{OUTPUT}}"
+        # Blank out the centred chart title only. Do NOT crop the top band away:
+        # it also carries the y-axis magnitude ("1e4"), whose loss made the
+        # published chart read as single-digit line counts. See PLAN.md DOC-02.
+        convert "{{OUTPUT}}" -fill white -draw "rectangle 300,0 1350,35" "{{OUTPUT}}"
     else
         echo "note: ImageMagick 'convert' not found, chart title left in place"
     fi

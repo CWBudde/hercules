@@ -1,6 +1,8 @@
 package hercules
 
 import (
+	"fmt"
+
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/spf13/pflag"
@@ -93,7 +95,12 @@ func NewPipeline(repository *git.Repository) *Pipeline {
 // LoadCommitsFromFile reads the file by the specified FS path and generates the sequence of commits
 // by interpreting each line as a Git commit hash.
 func LoadCommitsFromFile(path string, repository *git.Repository) ([]*object.Commit, error) {
-	return core.LoadCommitsFromFile(path, repository)
+	commits, err := core.LoadCommitsFromFile(path, repository)
+	if err != nil {
+		return nil, fmt.Errorf("load commits from file: %w", err)
+	}
+
+	return commits, nil
 }
 
 // ForkSamePipelineItem clones items by referencing the same origin.

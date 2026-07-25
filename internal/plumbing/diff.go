@@ -2,6 +2,7 @@ package plumbing
 
 import (
 	"errors"
+	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -281,7 +282,7 @@ func (diff *FileDiff) Consume(deps map[string]any) (map[string]any, error) {
 	for _, change := range treeDiff {
 		action, err := change.Action()
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("determine change action: %w", err)
 		}
 
 		switch action {
@@ -366,24 +367,54 @@ func extractNodesForRefinement(
 ) ([]ast_items.Node, error) {
 	switch mode {
 	case RefineModeFull:
-		return ast_items.ExtractNamedNodes(path, source)
-	case RefineModeRange:
-		if len(ranges) == 0 {
-			return ast_items.ExtractNamedNodes(path, source)
+		nodes, err := ast_items.ExtractNamedNodes(path, source)
+		if err != nil {
+			return nil, fmt.Errorf("extract named nodes: %w", err)
 		}
 
-		return ast_items.ExtractNamedNodesInRanges(path, source, padRanges(ranges, newLOC, refineRangePadding))
+		return nodes, nil
+	case RefineModeRange:
+		if len(ranges) == 0 {
+			nodes, err := ast_items.ExtractNamedNodes(path, source)
+			if err != nil {
+				return nil, fmt.Errorf("extract named nodes: %w", err)
+			}
+
+			return nodes, nil
+		}
+
+		nodes, err := ast_items.ExtractNamedNodesInRanges(path, source, padRanges(ranges, newLOC, refineRangePadding))
+		if err != nil {
+			return nil, fmt.Errorf("extract named nodes in ranges: %w", err)
+		}
+
+		return nodes, nil
 	default: // RefineModeAuto and anything unrecognized
 		if len(ranges) == 0 || newLOC < refineRangeMinLines {
-			return ast_items.ExtractNamedNodes(path, source)
+			nodes, err := ast_items.ExtractNamedNodes(path, source)
+			if err != nil {
+				return nil, fmt.Errorf("extract named nodes: %w", err)
+			}
+
+			return nodes, nil
 		}
 
 		padded := padRanges(ranges, newLOC, refineRangePadding)
 		if coverageRatio(padded, newLOC) >= refineCoverageThreshold {
-			return ast_items.ExtractNamedNodes(path, source)
+			nodes, err := ast_items.ExtractNamedNodes(path, source)
+			if err != nil {
+				return nil, fmt.Errorf("extract named nodes: %w", err)
+			}
+
+			return nodes, nil
 		}
 
-		return ast_items.ExtractNamedNodesInRanges(path, source, padded)
+		nodes, err := ast_items.ExtractNamedNodesInRanges(path, source, padded)
+		if err != nil {
+			return nil, fmt.Errorf("extract named nodes in ranges: %w", err)
+		}
+
+		return nodes, nil
 	}
 }
 

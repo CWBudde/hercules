@@ -112,7 +112,7 @@ Assessment: %s
 func loadImage(path string) (image.Image, error) {
 	file, err := os.Open(path) // #nosec G304 - visual test path is provided by test setup.
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("open image: %w", err)
 	}
 	defer func() { _ = file.Close() }()
 

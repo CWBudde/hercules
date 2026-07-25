@@ -2,6 +2,7 @@ package plumbing
 
 import (
 	"errors"
+	"fmt"
 	"unicode/utf8"
 
 	"github.com/go-git/go-git/v5"
@@ -94,7 +95,7 @@ func (lsc *LinesStatsCalculator) Consume(deps map[string]any) (map[string]any, e
 	for _, change := range treeDiff {
 		action, err := change.Action()
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("determine change action: %w", err)
 		}
 		// Skip binary files completely; they do not contribute line counts.
 		if action == merkletrie.Modify {

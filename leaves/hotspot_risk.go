@@ -412,7 +412,7 @@ func (hra *HotspotRiskAnalysis) Deserialize(pbmessage []byte) (any, error) {
 
 	err := proto.Unmarshal(pbmessage, &message)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("unmarshal hotspot risk result: %w", err)
 	}
 
 	result := HotspotRiskResult{
@@ -466,7 +466,7 @@ func (hra *HotspotRiskAnalysis) updateFileRisk(
 ) (string, error) {
 	action, err := change.Action()
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("determine change action: %w", err)
 	}
 
 	var fileName string
@@ -666,12 +666,15 @@ func (hra *HotspotRiskAnalysis) serializeBinary(result *HotspotRiskResult, write
 
 	serialized, err := proto.Marshal(&message)
 	if err != nil {
-		return err
+		return fmt.Errorf("marshal hotspot risk result: %w", err)
 	}
 
 	_, err = writer.Write(serialized)
+	if err != nil {
+		return fmt.Errorf("write hotspot risk result: %w", err)
+	}
 
-	return err
+	return nil
 }
 
 var _ = core.RegisterPipelineItem(&HotspotRiskAnalysis{})

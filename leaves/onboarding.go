@@ -541,7 +541,7 @@ func (oa *OnboardingAnalysis) Deserialize(pbmessage []byte) (any, error) {
 
 	err := proto.Unmarshal(pbmessage, &message)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("unmarshal onboarding result: %w", err)
 	}
 
 	result := OnboardingResult{
@@ -708,12 +708,15 @@ func (oa *OnboardingAnalysis) serializeBinary(result *OnboardingResult, writer i
 
 	serialized, err := proto.Marshal(&message)
 	if err != nil {
-		return err
+		return fmt.Errorf("marshal onboarding result: %w", err)
 	}
 
 	_, err = writer.Write(serialized)
+	if err != nil {
+		return fmt.Errorf("write onboarding result: %w", err)
+	}
 
-	return err
+	return nil
 }
 
 func onboardingAuthorsFromProto(

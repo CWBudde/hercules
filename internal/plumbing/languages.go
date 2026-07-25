@@ -2,6 +2,7 @@ package plumbing
 
 import (
 	"errors"
+	"fmt"
 	"path"
 	"strings"
 
@@ -83,7 +84,7 @@ func (langs *LanguagesDetection) Consume(deps map[string]any) (map[string]any, e
 	for _, change := range changes {
 		action, err := change.Action()
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("determine change action: %w", err)
 		}
 
 		switch action {

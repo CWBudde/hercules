@@ -249,7 +249,7 @@ func (oc *OwnershipConcentrationAnalysis) Deserialize(pbmessage []byte) (any, er
 
 	err := proto.Unmarshal(pbmessage, &message)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("unmarshal ownership concentration result: %w", err)
 	}
 
 	snapshots := make(map[int]*OwnershipConcentrationSnapshot, len(message.GetSnapshots()))
@@ -361,12 +361,15 @@ func (oc *OwnershipConcentrationAnalysis) serializeBinary(result *OwnershipConce
 
 	serialized, err := proto.Marshal(&message)
 	if err != nil {
-		return err
+		return fmt.Errorf("marshal ownership concentration result: %w", err)
 	}
 
 	_, err = writer.Write(serialized)
+	if err != nil {
+		return fmt.Errorf("write ownership concentration result: %w", err)
+	}
 
-	return err
+	return nil
 }
 
 // takeSnapshot scans all files and computes concentration metrics for the given tick.

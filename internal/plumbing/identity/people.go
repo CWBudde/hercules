@@ -322,7 +322,7 @@ func (detector *PeopleDetector) LoadPeopleDict(path string) error {
 
 	file, err := os.Open(path)
 	if err != nil {
-		return err
+		return fmt.Errorf("open people dictionary: %w", err)
 	}
 
 	defer func() { _ = file.Close() }()

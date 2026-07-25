@@ -181,7 +181,11 @@ func (cg *ChartGenerator) generateBurndownProject(reader readers.Reader, outputP
 	viper.Set("resample", "year") // Default resampling for consistency
 
 	// Call the actual burndown project generation using Python-compatible version
-	return modes.GenerateBurndownProjectPython(reader, outputPath, relative, "year")
+	if err := modes.GenerateBurndownProjectPython(reader, outputPath, relative, "year"); err != nil {
+		return fmt.Errorf("generate project burndown chart: %w", err)
+	}
+
+	return nil
 }
 
 // generateBurndownFile creates file-level burndown charts.
@@ -190,35 +194,59 @@ func (cg *ChartGenerator) generateBurndownFile(reader readers.Reader, outputPath
 	viper.Set("relative", false) // Default to absolute
 	viper.Set("resample", "year")
 
-	return modes.GenerateBurndownFilePython(reader, outputPath, false, "year")
+	if err := modes.GenerateBurndownFilePython(reader, outputPath, false, "year"); err != nil {
+		return fmt.Errorf("generate file burndown chart: %w", err)
+	}
+
+	return nil
 }
 
 // generateBurndownPerson creates person-level burndown charts.
 func (cg *ChartGenerator) generateBurndownPerson(reader readers.Reader, outputPath string) error {
 	// Use regular burndown person function with nil time parameters for defaults
-	return modes.BurndownPerson(reader, outputPath, false, nil, nil, "year")
+	if err := modes.BurndownPerson(reader, outputPath, false, nil, nil, "year"); err != nil {
+		return fmt.Errorf("generate person burndown chart: %w", err)
+	}
+
+	return nil
 }
 
 // generateOwnership creates code ownership visualization.
 func (cg *ChartGenerator) generateOwnership(reader readers.Reader, outputPath string) error {
 	// Call the ownership mode
-	return modes.OwnershipBurndown(reader, outputPath)
+	if err := modes.OwnershipBurndown(reader, outputPath); err != nil {
+		return fmt.Errorf("generate ownership chart: %w", err)
+	}
+
+	return nil
 }
 
 // generateDevs creates developer statistics visualization.
 func (cg *ChartGenerator) generateDevs(reader readers.Reader, outputPath string) error {
 	// Call the devs mode with default max people (20)
-	return modes.Devs(reader, outputPath, 20)
+	if err := modes.Devs(reader, outputPath, 20); err != nil {
+		return fmt.Errorf("generate developers chart: %w", err)
+	}
+
+	return nil
 }
 
 // generateCouplesPeople creates people coupling visualization.
 func (cg *ChartGenerator) generateCouplesPeople(reader readers.Reader, outputPath string) error {
 	// Call the couples-people mode
-	return modes.CouplesPeople(reader, outputPath)
+	if err := modes.CouplesPeople(reader, outputPath); err != nil {
+		return fmt.Errorf("generate people coupling chart: %w", err)
+	}
+
+	return nil
 }
 
 // generateCouplesFiles creates file coupling visualization.
 func (cg *ChartGenerator) generateCouplesFiles(reader readers.Reader, outputPath string) error {
 	// Call the couples-files mode
-	return modes.CouplesFiles(reader, outputPath)
+	if err := modes.CouplesFiles(reader, outputPath); err != nil {
+		return fmt.Errorf("generate file coupling chart: %w", err)
+	}
+
+	return nil
 }

@@ -221,12 +221,15 @@ func (ca *CommitsAnalysis) serializeBinary(result *CommitsResult, writer io.Writ
 
 	serialized, err := proto.Marshal(&message)
 	if err != nil {
-		return err
+		return fmt.Errorf("marshal commits result: %w", err)
 	}
 
 	_, err = writer.Write(serialized)
+	if err != nil {
+		return fmt.Errorf("write commits result: %w", err)
+	}
 
-	return err
+	return nil
 }
 
 var _ = core.RegisterPipelineItem(&CommitsAnalysis{})

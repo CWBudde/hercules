@@ -346,7 +346,7 @@ func (analyser *CodeChurnAnalysis) Deserialize(message []byte) (any, error) {
 
 	err := proto.Unmarshal(message, &payload)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("unmarshal code churn result: %w", err)
 	}
 
 	result := CodeChurnResult{
@@ -582,12 +582,15 @@ func (analyser *CodeChurnAnalysis) serializeBinary(result *CodeChurnResult, writ
 
 	serialized, err := proto.Marshal(&message)
 	if err != nil {
-		return err
+		return fmt.Errorf("marshal code churn result: %w", err)
 	}
 
 	_, err = writer.Write(serialized)
+	if err != nil {
+		return fmt.Errorf("write code churn result: %w", err)
+	}
 
-	return err
+	return nil
 }
 
 func convertDeleteHistory(history map[core.AuthorId]sparseHistory) map[int]sparseHistory {

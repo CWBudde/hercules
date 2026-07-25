@@ -257,7 +257,7 @@ func (ta *TemporalActivityAnalysis) Deserialize(pbmessage []byte) (any, error) {
 
 	err := proto.Unmarshal(pbmessage, &message)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("unmarshal temporal activity result: %w", err)
 	}
 
 	activities := map[int]*DeveloperTemporalActivity{}
@@ -492,12 +492,15 @@ func (ta *TemporalActivityAnalysis) serializeBinary(result *TemporalActivityResu
 
 	serialized, err := proto.Marshal(&message)
 	if err != nil {
-		return err
+		return fmt.Errorf("marshal temporal activity result: %w", err)
 	}
 
 	_, err = writer.Write(serialized)
+	if err != nil {
+		return fmt.Errorf("write temporal activity result: %w", err)
+	}
 
-	return err
+	return nil
 }
 
 func mergeTemporalActivities(

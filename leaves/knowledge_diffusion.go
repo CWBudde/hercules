@@ -273,7 +273,7 @@ func (kd *KnowledgeDiffusionAnalysis) Deserialize(pbmessage []byte) (any, error)
 
 	err := proto.Unmarshal(pbmessage, &message)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("unmarshal knowledge diffusion result: %w", err)
 	}
 
 	files := make(map[string]*KnowledgeDiffusionFileResult, len(message.GetFiles()))
@@ -458,12 +458,15 @@ func (kd *KnowledgeDiffusionAnalysis) serializeBinary(result *KnowledgeDiffusion
 
 	serialized, err := proto.Marshal(&message)
 	if err != nil {
-		return err
+		return fmt.Errorf("marshal knowledge diffusion result: %w", err)
 	}
 
 	_, err = writer.Write(serialized)
+	if err != nil {
+		return fmt.Errorf("write knowledge diffusion result: %w", err)
+	}
 
-	return err
+	return nil
 }
 
 // recordEdit records that an author edited a file at the given tick.

@@ -280,7 +280,7 @@ func (shotness *ShotnessAnalysis) consumeChange(
 ) error {
 	action, err := change.Action()
 	if err != nil {
-		return err
+		return fmt.Errorf("determine change action: %w", err)
 	}
 
 	switch action {
@@ -449,7 +449,7 @@ func (shotness *ShotnessAnalysis) extractNodes(
 
 	nodes, err := shotness.extractor.Extract(path, blob.Data)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("extract nodes: %w", err)
 	}
 
 	res := map[string]ast_items.Node{}
@@ -510,12 +510,15 @@ func (shotness *ShotnessAnalysis) serializeBinary(result *ShotnessResult, writer
 
 	serialized, err := proto.Marshal(&message)
 	if err != nil {
-		return err
+		return fmt.Errorf("marshal shotness result: %w", err)
 	}
 
 	_, err = writer.Write(serialized)
+	if err != nil {
+		return fmt.Errorf("write shotness result: %w", err)
+	}
 
-	return err
+	return nil
 }
 
 var _ = core.RegisterPipelineItem(&ShotnessAnalysis{})

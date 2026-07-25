@@ -238,8 +238,12 @@ func (tdb *TyposDatasetBuilder) typosFromChange(
 	diffs map[string]items.FileDiffData,
 ) ([]Typo, error) {
 	action, err := change.Action()
-	if err != nil || action != merkletrie.Modify {
-		return nil, err
+	if err != nil {
+		return nil, fmt.Errorf("determine change action: %w", err)
+	}
+
+	if action != merkletrie.Modify {
+		return nil, nil
 	}
 
 	before := cache[change.From.TreeEntry.Hash]
@@ -326,7 +330,7 @@ func (tdb *TyposDatasetBuilder) identifiersForTypo(
 			tdb.remote, commit.String(), file, phase, err,
 		)
 
-		return nil, err
+		return nil, fmt.Errorf("extract identifiers: %w", err)
 	}
 
 	return collectIdentifiersByLine(nodes, focused), nil
@@ -358,12 +362,15 @@ func (tdb *TyposDatasetBuilder) serializeBinary(result *TyposResult, writer io.W
 
 	serialized, err := proto.Marshal(&message)
 	if err != nil {
-		return err
+		return fmt.Errorf("marshal typos result: %w", err)
 	}
 
 	_, err = writer.Write(serialized)
+	if err != nil {
+		return fmt.Errorf("write typos result: %w", err)
+	}
 
-	return err
+	return nil
 }
 
 var _ = core.RegisterPipelineItem(&TyposDatasetBuilder{})

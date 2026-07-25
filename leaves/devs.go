@@ -239,7 +239,7 @@ func (devs *DevsAnalysis) Deserialize(pbmessage []byte) (any, error) {
 
 	err := proto.Unmarshal(pbmessage, &message)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("unmarshal developers result: %w", err)
 	}
 
 	ticks := map[int]map[int]*DevTick{}
@@ -463,12 +463,15 @@ func (devs *DevsAnalysis) serializeBinary(result *DevsResult, writer io.Writer) 
 
 	serialized, err := proto.Marshal(&message)
 	if err != nil {
-		return err
+		return fmt.Errorf("marshal developers result: %w", err)
 	}
 
 	_, err = writer.Write(serialized)
+	if err != nil {
+		return fmt.Errorf("write developers result: %w", err)
+	}
 
-	return err
+	return nil
 }
 
 // GetTickSize returns the tick size used to generate this devs analysis result.

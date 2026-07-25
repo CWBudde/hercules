@@ -336,22 +336,37 @@ func walkCommitComponent(
 		visited[head] = true
 
 		component = append(component, head)
-		for _, child := range dag[head] {
-			if !visited[child.Hash] {
-				queue = append(queue, child.Hash)
-			}
-		}
-
-		if commit := hashes[head.String()]; commit != nil {
-			for _, parent := range getCommitParents(commit) {
-				if !visited[parent] && hashes[parent.String()] != nil {
-					queue = append(queue, parent)
-				}
-			}
-		}
+		queue = appendCommitNeighbors(queue, head, hashes, dag, visited)
 	}
 
 	return component
+}
+
+func appendCommitNeighbors(
+	queue []plumbing.Hash,
+	head plumbing.Hash,
+	hashes map[string]*object.Commit,
+	dag map[plumbing.Hash][]*object.Commit,
+	visited map[plumbing.Hash]bool,
+) []plumbing.Hash {
+	for _, child := range dag[head] {
+		if !visited[child.Hash] {
+			queue = append(queue, child.Hash)
+		}
+	}
+
+	commit := hashes[head.String()]
+	if commit == nil {
+		return queue
+	}
+
+	for _, parent := range getCommitParents(commit) {
+		if !visited[parent] && hashes[parent.String()] != nil {
+			queue = append(queue, parent)
+		}
+	}
+
+	return queue
 }
 
 func largestCommitComponent(components [][]plumbing.Hash) int {
@@ -368,48 +383,67 @@ func largestCommitComponent(components [][]plumbing.Hash) int {
 // bindOrderNodes returns curried "orderNodes" function.
 func bindOrderNodes(mergedDag map[plumbing.Hash][]*object.Commit) orderer {
 	return func(reverse, direction bool) []string {
-		graph := toposort.NewGraph()
+		return orderCommitNodes(mergedDag, reverse, direction)
+	}
+}
 
-		keys := make([]plumbing.Hash, 0, len(mergedDag))
-		for key := range mergedDag {
-			keys = append(keys, key)
-		}
+func orderCommitNodes(
+	mergedDag map[plumbing.Hash][]*object.Commit,
+	reverse bool,
+	direction bool,
+) []string {
+	graph := toposort.NewGraph()
+	keys := sortedCommitHashes(mergedDag)
 
-		sort.Slice(keys, func(i, j int) bool { return keys[i].String() < keys[j].String() })
+	for _, key := range keys {
+		graph.AddNode(key.String())
+	}
 
-		for _, key := range keys {
-			graph.AddNode(key.String())
-		}
+	addCommitEdges(graph, keys, mergedDag, direction)
 
-		for _, key := range keys {
-			children := mergedDag[key]
-			sort.Slice(children, func(i, j int) bool {
-				return children[i].Hash.String() < children[j].Hash.String()
-			})
+	order, ok := graph.Toposort()
+	if !ok {
+		// should never happen
+		panic("Could not topologically sort the DAG of commits")
+	}
 
-			for _, c := range children {
-				if !direction {
-					graph.AddEdge(key.String(), c.Hash.String())
-				} else {
-					graph.AddEdge(c.Hash.String(), key.String())
-				}
+	if reverse != direction {
+		slices.Reverse(order)
+	}
+
+	return order
+}
+
+func sortedCommitHashes(mergedDag map[plumbing.Hash][]*object.Commit) []plumbing.Hash {
+	keys := make([]plumbing.Hash, 0, len(mergedDag))
+	for key := range mergedDag {
+		keys = append(keys, key)
+	}
+
+	sort.Slice(keys, func(i, j int) bool { return keys[i].String() < keys[j].String() })
+
+	return keys
+}
+
+func addCommitEdges(
+	graph *toposort.Graph,
+	keys []plumbing.Hash,
+	mergedDag map[plumbing.Hash][]*object.Commit,
+	direction bool,
+) {
+	for _, key := range keys {
+		children := mergedDag[key]
+		sort.Slice(children, func(i, j int) bool {
+			return children[i].Hash.String() < children[j].Hash.String()
+		})
+
+		for _, child := range children {
+			if direction {
+				graph.AddEdge(child.Hash.String(), key.String())
+			} else {
+				graph.AddEdge(key.String(), child.Hash.String())
 			}
 		}
-
-		order, ok := graph.Toposort()
-		if !ok {
-			// should never happen
-			panic("Could not topologically sort the DAG of commits")
-		}
-
-		if reverse != direction {
-			// one day this must appear in the standard library...
-			for i, j := 0, len(order)-1; i < j; i, j = i+1, j-1 {
-				order[i], order[j] = order[j], order[i]
-			}
-		}
-
-		return order
 	}
 }
 
@@ -447,45 +481,63 @@ func mergeDag(
 			continue
 		}
 
-		current := head
-		for {
-			nextParents := parents[current]
-
-			var next plumbing.Hash
-			for p := range nextParents {
-				next = p
-				break
-			}
-
-			if len(nextParents) != 1 || len(dag[next]) != 1 {
-				break
-			}
-
-			current = next
-		}
-
-		head = current
-		var seq []*object.Commit
-
-		for {
-			visited[current] = true
-
-			seq = append(seq, hashes[current.String()])
-			if len(dag[current]) != 1 {
-				break
-			}
-
-			current = dag[current][0].Hash
-			if len(parents[current]) != 1 {
-				break
-			}
-		}
+		head = mergedSequenceHead(head, parents, dag)
+		seq := collectMergedSequence(head, hashes, parents, dag, visited)
 
 		mergedSeq[head] = seq
 		mergedDag[head] = dag[seq[len(seq)-1].Hash]
 	}
 
 	return mergedDag, mergedSeq
+}
+
+func mergedSequenceHead(
+	head plumbing.Hash,
+	parents map[plumbing.Hash]map[plumbing.Hash]bool,
+	dag map[plumbing.Hash][]*object.Commit,
+) plumbing.Hash {
+	for {
+		nextParents := parents[head]
+		next := firstCommitHash(nextParents)
+
+		if len(nextParents) != 1 || len(dag[next]) != 1 {
+			return head
+		}
+
+		head = next
+	}
+}
+
+func firstCommitHash(hashes map[plumbing.Hash]bool) plumbing.Hash {
+	for hash := range hashes {
+		return hash
+	}
+
+	return plumbing.ZeroHash
+}
+
+func collectMergedSequence(
+	head plumbing.Hash,
+	hashes map[string]*object.Commit,
+	parents map[plumbing.Hash]map[plumbing.Hash]bool,
+	dag map[plumbing.Hash][]*object.Commit,
+	visited map[plumbing.Hash]bool,
+) []*object.Commit {
+	var sequence []*object.Commit
+
+	for {
+		visited[head] = true
+		sequence = append(sequence, hashes[head.String()])
+
+		if len(dag[head]) != 1 {
+			return sequence
+		}
+
+		head = dag[head][0].Hash
+		if len(parents[head]) != 1 {
+			return sequence
+		}
+	}
 }
 
 // collapseFastForwards removes the fast forward merges.
@@ -832,36 +884,8 @@ func (builder *planBuilder) appendFork(commit *object.Commit, head plumbing.Hash
 
 // collectGarbage inserts `runActionDelete` disposal steps.
 func collectGarbage(plan []runAction) []runAction {
-	// lastMentioned maps branch index to the index inside `plan` when that branch was last used
-	lastMentioned := map[int]int{}
-
-	for actionIndex, action := range plan {
-		firstItem := action.Items[0]
-		switch action.Action {
-		case runActionCommit:
-			lastMentioned[firstItem] = actionIndex
-			if firstItem < rootBranchIndex {
-				log.Panicf("commit %s does not have an assigned branch",
-					action.Commit.Hash.String())
-			}
-		case runActionFork:
-			lastMentioned[firstItem] = actionIndex
-		case runActionMerge:
-			for _, item := range action.Items {
-				lastMentioned[item] = actionIndex
-			}
-		case runActionEmerge:
-			lastMentioned[firstItem] = actionIndex
-		}
-	}
-	var garbageCollectedPlan []runAction
-
-	lastMentionedArr := make([][2]int, 0, len(lastMentioned)+1)
-	for key, val := range lastMentioned {
-		if val != len(plan)-1 {
-			lastMentionedArr = append(lastMentionedArr, [2]int{val, key})
-		}
-	}
+	lastMentioned := lastBranchMentions(plan)
+	lastMentionedArr := collectibleBranches(lastMentioned, len(plan))
 
 	if len(lastMentionedArr) == 0 {
 		// early return - we have nothing to collect
@@ -873,8 +897,52 @@ func collectGarbage(plan []runAction) []runAction {
 	})
 	lastMentionedArr = append(lastMentionedArr, [2]int{len(plan) - 1, -1})
 
+	return appendGarbageCollectionActions(plan, lastMentionedArr)
+}
+
+func lastBranchMentions(plan []runAction) map[int]int {
+	// lastMentioned maps branch index to the index inside `plan` when that branch was last used.
+	lastMentioned := map[int]int{}
+
+	for actionIndex, action := range plan {
+		firstItem := action.Items[0]
+
+		switch action.Action {
+		case runActionCommit:
+			lastMentioned[firstItem] = actionIndex
+			if firstItem < rootBranchIndex {
+				log.Panicf("commit %s does not have an assigned branch",
+					action.Commit.Hash.String())
+			}
+		case runActionFork, runActionEmerge:
+			lastMentioned[firstItem] = actionIndex
+		case runActionMerge:
+			for _, item := range action.Items {
+				lastMentioned[item] = actionIndex
+			}
+		}
+	}
+
+	return lastMentioned
+}
+
+func collectibleBranches(lastMentioned map[int]int, planLength int) [][2]int {
+	branches := make([][2]int, 0, len(lastMentioned)+1)
+
+	for branch, actionIndex := range lastMentioned {
+		if actionIndex != planLength-1 {
+			branches = append(branches, [2]int{actionIndex, branch})
+		}
+	}
+
+	return branches
+}
+
+func appendGarbageCollectionActions(plan []runAction, branches [][2]int) []runAction {
+	var garbageCollectedPlan []runAction
+
 	prevpi := -1
-	for _, pair := range lastMentionedArr {
+	for _, pair := range branches {
 		for pi := prevpi + 1; pi <= pair[0]; pi++ {
 			garbageCollectedPlan = append(garbageCollectedPlan, plan[pi])
 		}
@@ -963,35 +1031,47 @@ func tracebackMerges(plan []runAction) int {
 
 	for _, v := range slices.Backward(plan) {
 		step := &v
-		switch step.Action {
-		case runActionMerge:
-			if step.Commit == nil {
-				break
-			}
-
+		if tracebackMergeStep(step, lastMerges) {
 			uniqueMerges++
-
-			for _, n := range step.Items {
-				if lastMerges[n] != nil && step.Items[0] > n {
-					continue
-				}
-
-				lastMerges[n] = step.Commit
-			}
-		case runActionEmerge:
-			for _, n := range step.Items {
-				delete(lastMerges, n)
-			}
-		case runActionFork:
-			for _, n := range step.Items[1:] {
-				delete(lastMerges, n)
-			}
-		case runActionCommit:
-			step.NextMerge = lastMerges[step.Items[0]]
-		default:
-			continue
 		}
 	}
 
 	return uniqueMerges
+}
+
+func tracebackMergeStep(step *runAction, lastMerges map[int]*object.Commit) bool {
+	switch step.Action {
+	case runActionMerge:
+		if step.Commit == nil {
+			return false
+		}
+
+		updateLastMerges(step, lastMerges)
+
+		return true
+	case runActionEmerge:
+		deleteLastMerges(step.Items, lastMerges)
+	case runActionFork:
+		deleteLastMerges(step.Items[1:], lastMerges)
+	case runActionCommit:
+		step.NextMerge = lastMerges[step.Items[0]]
+	}
+
+	return false
+}
+
+func updateLastMerges(step *runAction, lastMerges map[int]*object.Commit) {
+	for _, branch := range step.Items {
+		if lastMerges[branch] != nil && step.Items[0] > branch {
+			continue
+		}
+
+		lastMerges[branch] = step.Commit
+	}
+}
+
+func deleteLastMerges(branches []int, lastMerges map[int]*object.Commit) {
+	for _, branch := range branches {
+		delete(lastMerges, branch)
+	}
 }

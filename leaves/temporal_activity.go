@@ -394,22 +394,22 @@ func temporalDimensionToProto(dimension TemporalDimension) (*pb.TemporalDimensio
 		Commits: make([]int32, len(dimension.Commits)),
 		Lines:   make([]int32, len(dimension.Lines)),
 	}
-	for i, count := range dimension.Commits {
+	for index, count := range dimension.Commits {
 		pbCount, err := intToProtoInt32(count, "temporal commit count")
 		if err != nil {
 			return nil, err
 		}
 
-		result.Commits[i] = pbCount
+		result.Commits[index] = pbCount
 	}
 
-	for i, count := range dimension.Lines {
+	for index, count := range dimension.Lines {
 		pbCount, err := intToProtoInt32(count, "temporal line count")
 		if err != nil {
 			return nil, err
 		}
 
-		result.Lines[i] = pbCount
+		result.Lines[index] = pbCount
 	}
 
 	return result, nil

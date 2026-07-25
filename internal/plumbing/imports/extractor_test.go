@@ -50,9 +50,9 @@ func TestExtractorMetadata(t *testing.T) {
 	opts := ex.ListConfigurationOptions()
 	assert.Len(t, opts, 2)
 	assert.Equal(t, ConfigImportsGoroutines, opts[0].Name)
-	assert.Equal(t, opts[0].Default.(int), runtime.NumCPU())
+	assert.Equal(t, runtime.NumCPU(), opts[0].Default)
 	assert.Equal(t, ConfigMaxFileSize, opts[1].Name)
-	assert.Equal(t, DefaultMaxFileSize, opts[1].Default.(int))
+	assert.Equal(t, DefaultMaxFileSize, opts[1].Default)
 }
 
 func TestExtractorRegistration(t *testing.T) {

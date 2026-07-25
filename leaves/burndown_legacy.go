@@ -380,70 +380,109 @@ func (analyser *LegacyBurndownAnalysis) Fork(cloneCount int) []core.PipelineItem
 
 // Merge combines several items together. We apply the special file merging logic here.
 func (analyser *LegacyBurndownAnalysis) Merge(branches []core.PipelineItem) {
-	all := make([]*LegacyBurndownAnalysis, len(branches)+1)
-
-	all[0] = analyser
-	for i, branch := range branches {
-		all[i+1] = branch.(*LegacyBurndownAnalysis)
-	}
-
-	keys := map[string]bool{}
-
-	for _, burn := range all {
-		for key, val := range burn.mergedFiles {
-			// (*)
-			// there can be contradicting flags,
-			// e.g. item was renamed and a new item written on its place
-			// this may be not exactly accurate
-			keys[key] = keys[key] || val
-		}
-	}
-
-	for key, val := range keys {
-		if !val {
-			for _, burn := range all {
-				if f, exists := burn.files[key]; exists {
-					f.Delete()
-				}
-
-				delete(burn.files, key)
-			}
-
-			continue
-		}
-
-		files := make([]*linehistory.File, 0, len(all))
-		for _, burn := range all {
-			file := burn.files[key]
-			if file != nil {
-				// file can be nil if it is considered binary in this branch
-				files = append(files, file)
-			}
-		}
-
-		if len(files) == 0 {
-			// so we could be wrong in (*) and there is no such file eventually
-			// it could be also removed in the merge commit itself
-			continue
-		}
-
-		files[0].Merge(
-			analyser.packPersonWithTick(analyser.mergedAuthor, analyser.tick),
-			files[1:]...,
-		)
-
-		for _, burn := range all {
-			if burn.files[key] != files[0] {
-				if burn.files[key] != nil {
-					burn.files[key].Delete()
-				}
-
-				burn.files[key] = files[0].CloneDeep(burn.fileAllocator)
-			}
-		}
+	all := legacyBurndownBranches(analyser, branches)
+	for fileName, retained := range mergedLegacyFiles(all) {
+		mergeLegacyBranchFile(analyser, all, fileName, retained)
 	}
 
 	analyser.onNewTick()
+}
+
+func legacyBurndownBranches(
+	analyser *LegacyBurndownAnalysis,
+	branches []core.PipelineItem,
+) []*LegacyBurndownAnalysis {
+	all := make([]*LegacyBurndownAnalysis, len(branches)+1)
+	all[0] = analyser
+
+	for index, branch := range branches {
+		all[index+1] = branch.(*LegacyBurndownAnalysis)
+	}
+
+	return all
+}
+
+func mergedLegacyFiles(branches []*LegacyBurndownAnalysis) map[string]bool {
+	files := map[string]bool{}
+
+	for _, branch := range branches {
+		for fileName, retained := range branch.mergedFiles {
+			// There can be contradicting flags, for example when an item was
+			// renamed and a new item was written in its place.
+			files[fileName] = files[fileName] || retained
+		}
+	}
+
+	return files
+}
+
+func mergeLegacyBranchFile(
+	analyser *LegacyBurndownAnalysis,
+	branches []*LegacyBurndownAnalysis,
+	fileName string,
+	retained bool,
+) {
+	if !retained {
+		deleteLegacyBranchFile(branches, fileName)
+		return
+	}
+
+	files := existingLegacyBranchFiles(branches, fileName)
+	if len(files) == 0 {
+		// Contradicting merge flags can leave no file, as can a removal in the
+		// merge commit itself.
+		return
+	}
+
+	merged := files[0]
+	merged.Merge(
+		analyser.packPersonWithTick(analyser.mergedAuthor, analyser.tick),
+		files[1:]...,
+	)
+	synchronizeLegacyBranchFile(branches, fileName, merged)
+}
+
+func deleteLegacyBranchFile(branches []*LegacyBurndownAnalysis, fileName string) {
+	for _, branch := range branches {
+		if file, exists := branch.files[fileName]; exists {
+			file.Delete()
+		}
+
+		delete(branch.files, fileName)
+	}
+}
+
+func existingLegacyBranchFiles(
+	branches []*LegacyBurndownAnalysis,
+	fileName string,
+) []*linehistory.File {
+	files := make([]*linehistory.File, 0, len(branches))
+	for _, branch := range branches {
+		if file := branch.files[fileName]; file != nil {
+			// A file can be nil if it is considered binary in this branch.
+			files = append(files, file)
+		}
+	}
+
+	return files
+}
+
+func synchronizeLegacyBranchFile(
+	branches []*LegacyBurndownAnalysis,
+	fileName string,
+	merged *linehistory.File,
+) {
+	for _, branch := range branches {
+		if branch.files[fileName] == merged {
+			continue
+		}
+
+		if branch.files[fileName] != nil {
+			branch.files[fileName].Delete()
+		}
+
+		branch.files[fileName] = merged.CloneDeep(branch.fileAllocator)
+	}
 }
 
 // Hibernate compresses the bound RBTree memory with the files.
@@ -793,41 +832,14 @@ func (analyser *LegacyBurndownAnalysis) serializeBinary(result *BurndownResult, 
 	}
 
 	if len(result.FileHistories) > 0 {
-		message.Files = make([]*pb.BurndownSparseMatrix, len(result.FileHistories))
-		message.FilesOwnership = make([]*pb.FilesOwnership, len(result.FileHistories))
-		keys := sortedKeys(result.FileHistories)
-
-		for fileIndex, key := range keys {
-			message.Files[fileIndex] = pb.ToBurndownSparseMatrix(result.FileHistories[key], key)
-			ownership := map[int32]int32{}
-
-			message.FilesOwnership[fileIndex] = &pb.FilesOwnership{Value: ownership}
-
-			for key, val := range result.FileOwnership[key] {
-				developerID, err := intToProtoInt32(key, "legacy burndown file owner")
-				if err != nil {
-					return err
-				}
-
-				lineCount, err := intToProtoInt32(val, "legacy burndown file ownership line count")
-				if err != nil {
-					return err
-				}
-
-				ownership[developerID] = lineCount
-			}
+		message.Files, message.FilesOwnership, err = legacyFilesToProto(result)
+		if err != nil {
+			return err
 		}
 	}
 
 	if len(result.PeopleHistories) > 0 {
-		message.People = make(
-			[]*pb.BurndownSparseMatrix, len(result.PeopleHistories),
-		)
-		for key, val := range result.PeopleHistories {
-			if len(val) > 0 {
-				message.People[key] = pb.ToBurndownSparseMatrix(val, result.reversedPeopleDict[key])
-			}
-		}
+		message.People = legacyPeopleToProto(result)
 	}
 
 	if result.PeopleMatrix != nil {
@@ -845,6 +857,60 @@ func (analyser *LegacyBurndownAnalysis) serializeBinary(result *BurndownResult, 
 	}
 
 	return nil
+}
+
+func legacyFilesToProto(
+	result *BurndownResult,
+) ([]*pb.BurndownSparseMatrix, []*pb.FilesOwnership, error) {
+	files := make([]*pb.BurndownSparseMatrix, len(result.FileHistories))
+	filesOwnership := make([]*pb.FilesOwnership, len(result.FileHistories))
+
+	for fileIndex, fileName := range sortedKeys(result.FileHistories) {
+		files[fileIndex] = pb.ToBurndownSparseMatrix(result.FileHistories[fileName], fileName)
+
+		ownership, err := legacyOwnershipToProto(result.FileOwnership[fileName])
+		if err != nil {
+			return nil, nil, err
+		}
+
+		filesOwnership[fileIndex] = &pb.FilesOwnership{Value: ownership}
+	}
+
+	return files, filesOwnership, nil
+}
+
+func legacyOwnershipToProto(ownership map[int]int) (map[int32]int32, error) {
+	converted := make(map[int32]int32, len(ownership))
+
+	for developer, lines := range ownership {
+		developerID, err := intToProtoInt32(developer, "legacy burndown file owner")
+		if err != nil {
+			return nil, err
+		}
+
+		lineCount, err := intToProtoInt32(lines, "legacy burndown file ownership line count")
+		if err != nil {
+			return nil, err
+		}
+
+		converted[developerID] = lineCount
+	}
+
+	return converted, nil
+}
+
+func legacyPeopleToProto(result *BurndownResult) []*pb.BurndownSparseMatrix {
+	people := make([]*pb.BurndownSparseMatrix, len(result.PeopleHistories))
+
+	for developer, history := range result.PeopleHistories {
+		if len(history) > 0 {
+			people[developer] = pb.ToBurndownSparseMatrix(
+				history, result.reversedPeopleDict[developer],
+			)
+		}
+	}
+
+	return people
 }
 
 // We do a hack and store the tick in the first 14 bits and the author index in the last 18.

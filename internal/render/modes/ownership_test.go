@@ -468,12 +468,23 @@ func TestPlotOwnershipBurndownKeepsTickLabelsInsideCanvas(t *testing.T) {
 
 	width, height := bounds.Dx(), bounds.Dy()
 	// The left 5% and bottom 6% sit outside the axes, so any dark pixel there is
-	// a tick label rather than plotted data.
-	if got := inked(0, 0, width*5/100, height); got == 0 {
-		t.Error("no ink in the left margin: y tick labels are clipped off-canvas")
+	// a tick label rather than plotted data. Absence means the labels were laid
+	// out beyond the canvas and never drawn.
+	if inked(0, 0, width*5/100, height) == 0 {
+		t.Error("no ink in the left margin: y tick labels were not drawn")
 	}
-	if got := inked(0, height*94/100, width, height); got == 0 {
-		t.Error("no ink in the bottom margin: x tick labels are clipped off-canvas")
+	if inked(0, height*94/100, width, height) == 0 {
+		t.Error("no ink in the bottom margin: x tick labels were not drawn")
+	}
+	// Presence alone is not enough: too little padding still draws the labels,
+	// just with their leading characters sliced off at the canvas edge ("80000"
+	// became "0000"). A label that fits ends before the edge, so the outermost
+	// pixels must be clear.
+	if got := inked(0, 0, 2, height); got != 0 {
+		t.Errorf("%d dark pixels touch the left canvas edge: y tick labels are cut off", got)
+	}
+	if got := inked(0, height-2, width, height); got != 0 {
+		t.Errorf("%d dark pixels touch the bottom canvas edge: x tick labels are cut off", got)
 	}
 }
 

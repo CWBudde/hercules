@@ -1,6 +1,7 @@
 package imports
 
 import (
+	"errors"
 	"fmt"
 	"runtime"
 	"sync"
@@ -14,6 +15,8 @@ import (
 	"github.com/cwbudde/hercules/internal/plumbing"
 	"github.com/cwbudde/hercules/internal/plumbing/imports/lang"
 )
+
+var errInvalidExtractorDependency = errors.New("invalid extractor dependency")
 
 // Extractor reports the imports in the changed files.
 type Extractor struct {
@@ -137,8 +140,16 @@ func (ex *Extractor) Initialize(repository *git.Repository) error {
 // This function returns the mapping with analysis results. The keys must be the same as
 // in Provides(). If there was an error, nil is returned.
 func (ex *Extractor) Consume(deps map[string]any) (map[string]any, error) {
-	changes := deps[plumbing.DependencyTreeChanges].(object.Changes)
-	cache := deps[plumbing.DependencyBlobCache].(map[gitplumbing.Hash]*plumbing.CachedBlob)
+	changes, ok := deps[plumbing.DependencyTreeChanges].(object.Changes)
+	if !ok {
+		return nil, fmt.Errorf("%w: %s", errInvalidExtractorDependency, plumbing.DependencyTreeChanges)
+	}
+
+	cache, ok := deps[plumbing.DependencyBlobCache].(map[gitplumbing.Hash]*plumbing.CachedBlob)
+	if !ok {
+		return nil, fmt.Errorf("%w: %s", errInvalidExtractorDependency, plumbing.DependencyBlobCache)
+	}
+
 	result := map[gitplumbing.Hash]lang.File{}
 	jobs := make(chan *object.Change, ex.Goroutines)
 	resultSync := sync.Mutex{}
@@ -146,12 +157,13 @@ func (ex *Extractor) Consume(deps map[string]any) (map[string]any, error) {
 	waitGroup.Add(ex.Goroutines)
 
 	for range ex.Goroutines {
-		go ex.extractImports(jobs, cache, result, &resultSync, &waitGroup)
+		go extractImports(ex, jobs, cache, result, &resultSync, &waitGroup)
 	}
 
 	err := enqueueImportChanges(changes, jobs)
 	close(jobs)
 	waitGroup.Wait()
+
 	if err != nil {
 		return nil, err
 	}
@@ -159,7 +171,8 @@ func (ex *Extractor) Consume(deps map[string]any) (map[string]any, error) {
 	return map[string]any{DependencyImports: result}, nil
 }
 
-func (ex *Extractor) extractImports(
+func extractImports(
+	extractor *Extractor,
 	jobs <-chan *object.Change,
 	cache map[gitplumbing.Hash]*plumbing.CachedBlob,
 	result map[gitplumbing.Hash]lang.File,
@@ -170,17 +183,17 @@ func (ex *Extractor) extractImports(
 
 	for change := range jobs {
 		blob := cache[change.To.TreeEntry.Hash]
-		if blob.Size > int64(ex.MaxFileSize) {
-			ex.l.Warnf("skipped %s %s: size is too big: %d > %d",
+		if blob.Size > int64(extractor.MaxFileSize) {
+			extractor.l.Warnf("skipped %s %s: size is too big: %d > %d",
 				change.To.TreeEntry.Name, change.To.TreeEntry.Hash.String(),
-				blob.Size, ex.MaxFileSize)
+				blob.Size, extractor.MaxFileSize)
 
 			continue
 		}
 
 		file, err := lang.Extract(change.To.TreeEntry.Name, blob.Data)
 		if err != nil {
-			ex.l.Errorf("failed to extract imports from %s %s: %v",
+			extractor.l.Errorf("failed to extract imports from %s %s: %v",
 				change.To.TreeEntry.Name, change.To.TreeEntry.Hash.String(), err)
 
 			continue

@@ -540,58 +540,75 @@ func (tree *RBTree) storage() []node {
 
 func (tree *RBTree) rebalanceAfterInsert(nodeIndex uint32, alloc []node) {
 	for {
-		if alloc[nodeIndex].parent == 0 {
+		parent := alloc[nodeIndex].parent
+		if parent == 0 {
 			alloc[nodeIndex].color = black
-			break
+
+			return
 		}
 
-		if alloc[alloc[nodeIndex].parent].color == black {
-			break
+		if alloc[parent].color == black {
+			return
 		}
 
-		grandparent := alloc[alloc[nodeIndex].parent].parent
-
-		var uncle uint32
-		if isLeftChild(alloc[nodeIndex].parent, alloc) {
-			uncle = alloc[grandparent].right
-		} else {
-			uncle = alloc[grandparent].left
-		}
+		grandparent := alloc[parent].parent
+		uncle := insertUncle(parent, grandparent, alloc)
 
 		if uncle != 0 && alloc[uncle].color == red {
-			alloc[alloc[nodeIndex].parent].color = black
-			alloc[uncle].color = black
-			alloc[grandparent].color = red
-			nodeIndex = grandparent
+			nodeIndex = recolorInsertFamily(parent, uncle, grandparent, alloc)
 
 			continue
 		}
 
-		if isRightChild(nodeIndex, alloc) && isLeftChild(alloc[nodeIndex].parent, alloc) {
-			tree.rotateLeft(alloc[nodeIndex].parent)
-			nodeIndex = alloc[nodeIndex].left
-
+		rotatedNode, rotated := tree.rotateInsertTriangle(nodeIndex, parent, alloc)
+		if rotated {
+			nodeIndex = rotatedNode
 			continue
 		}
 
-		if isLeftChild(nodeIndex, alloc) && isRightChild(alloc[nodeIndex].parent, alloc) {
-			tree.rotateRight(alloc[nodeIndex].parent)
-			nodeIndex = alloc[nodeIndex].right
-
-			continue
-		}
-
-		alloc[alloc[nodeIndex].parent].color = black
-
+		alloc[parent].color = black
 		alloc[grandparent].color = red
+
 		if isLeftChild(nodeIndex, alloc) {
 			tree.rotateRight(grandparent)
 		} else {
 			tree.rotateLeft(grandparent)
 		}
 
-		break
+		return
 	}
+}
+
+func insertUncle(parent, grandparent uint32, alloc []node) uint32 {
+	if isLeftChild(parent, alloc) {
+		return alloc[grandparent].right
+	}
+
+	return alloc[grandparent].left
+}
+
+func recolorInsertFamily(parent, uncle, grandparent uint32, alloc []node) uint32 {
+	alloc[parent].color = black
+	alloc[uncle].color = black
+	alloc[grandparent].color = red
+
+	return grandparent
+}
+
+func (tree *RBTree) rotateInsertTriangle(nodeIndex, parent uint32, alloc []node) (uint32, bool) {
+	if isRightChild(nodeIndex, alloc) && isLeftChild(parent, alloc) {
+		tree.rotateLeft(parent)
+
+		return alloc[nodeIndex].left, true
+	}
+
+	if isLeftChild(nodeIndex, alloc) && isRightChild(parent, alloc) {
+		tree.rotateRight(parent)
+
+		return alloc[nodeIndex].right, true
+	}
+
+	return nodeIndex, false
 }
 
 // Iterator allows scanning tree elements in sort order.
@@ -1025,43 +1042,53 @@ func setParent(child, parent uint32, alloc []node) {
 
 func (tree *RBTree) deleteCase1(nodeIndex uint32) {
 	alloc := tree.storage()
-	for {
-		if alloc[nodeIndex].parent != 0 {
-			if getColor(sibling(nodeIndex, alloc), alloc) == red {
-				alloc[alloc[nodeIndex].parent].color = red
+	for alloc[nodeIndex].parent != 0 {
+		tree.rotateRedSibling(nodeIndex, alloc)
 
-				alloc[sibling(nodeIndex, alloc)].color = black
-				if nodeIndex == alloc[alloc[nodeIndex].parent].left {
-					tree.rotateLeft(alloc[nodeIndex].parent)
-				} else {
-					tree.rotateRight(alloc[nodeIndex].parent)
-				}
-			}
+		parent := alloc[nodeIndex].parent
+		siblingIndex := sibling(nodeIndex, alloc)
 
-			if getColor(alloc[nodeIndex].parent, alloc) == black &&
-				getColor(sibling(nodeIndex, alloc), alloc) == black &&
-				getColor(alloc[sibling(nodeIndex, alloc)].left, alloc) == black &&
-				getColor(alloc[sibling(nodeIndex, alloc)].right, alloc) == black {
-				alloc[sibling(nodeIndex, alloc)].color = red
-				nodeIndex = alloc[nodeIndex].parent
+		if getColor(parent, alloc) == black && siblingHasBlackFamily(siblingIndex, alloc) {
+			alloc[siblingIndex].color = red
+			nodeIndex = parent
 
-				continue
-			} else {
-				// case 4
-				if getColor(alloc[nodeIndex].parent, alloc) == red &&
-					getColor(sibling(nodeIndex, alloc), alloc) == black &&
-					getColor(alloc[sibling(nodeIndex, alloc)].left, alloc) == black &&
-					getColor(alloc[sibling(nodeIndex, alloc)].right, alloc) == black {
-					alloc[sibling(nodeIndex, alloc)].color = red
-					alloc[alloc[nodeIndex].parent].color = black
-				} else {
-					tree.deleteCase5(nodeIndex)
-				}
-			}
+			continue
 		}
 
-		break
+		if getColor(parent, alloc) == red && siblingHasBlackFamily(siblingIndex, alloc) {
+			alloc[siblingIndex].color = red
+			alloc[parent].color = black
+
+			return
+		}
+
+		tree.deleteCase5(nodeIndex)
+
+		return
 	}
+}
+
+func (tree *RBTree) rotateRedSibling(nodeIndex uint32, alloc []node) {
+	siblingIndex := sibling(nodeIndex, alloc)
+	if getColor(siblingIndex, alloc) != red {
+		return
+	}
+
+	parent := alloc[nodeIndex].parent
+	alloc[parent].color = red
+	alloc[siblingIndex].color = black
+
+	if nodeIndex == alloc[parent].left {
+		tree.rotateLeft(parent)
+	} else {
+		tree.rotateRight(parent)
+	}
+}
+
+func siblingHasBlackFamily(siblingIndex uint32, alloc []node) bool {
+	return getColor(siblingIndex, alloc) == black &&
+		getColor(alloc[siblingIndex].left, alloc) == black &&
+		getColor(alloc[siblingIndex].right, alloc) == black
 }
 
 func (tree *RBTree) deleteCase5(nodeIndex uint32) {

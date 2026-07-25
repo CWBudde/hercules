@@ -477,6 +477,7 @@ func (oc *OwnershipConcentrationAnalysis) accumulateSubsystemOwnership(
 		}
 
 		previousLine = line
+
 		if author >= core.AuthorMissing {
 			previousAuthor = int(core.AuthorMissing)
 		} else {

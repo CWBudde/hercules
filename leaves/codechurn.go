@@ -694,6 +694,7 @@ func serializeDeleteHistory(history map[int]sparseHistory) ([]*pb.CodeChurnDelet
 	}
 
 	authors := sortedCodeChurnIntKeys(history)
+
 	result := make([]*pb.CodeChurnDeleteHistory, 0, len(authors))
 	for _, author := range authors {
 		for _, currentTick := range sortedCodeChurnIntKeys(history[author]) {

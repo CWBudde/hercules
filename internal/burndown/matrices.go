@@ -20,188 +20,22 @@ type DenseHistory [][]int64
 // Rows: *at least* len(matrix) * sampling + offset
 // Columns: *at least* len(matrix[...]) * granularity + offset
 // `matrix` can be sparse, so that the last columns which are equal to 0 are truncated.
-//
-//nolint:funlen // The interpolation cases share loop coordinates and boundary invariants.
 func AddBurndownMatrix(matrix DenseHistory, granularity, sampling int, accPerTick [][]float32, offset int) {
 	//	defer print("AddBurndownMatrix exit\n")
 	//	print("AddBurndownMatrix enter\n")
 
 	// Determine the maximum number of bands; the actual one may be larger but we do not care
-	maxCols := 0
-	for _, row := range matrix {
-		if maxCols < len(row) {
-			maxCols = len(row)
-		}
-	}
-
-	neededRows := len(matrix)*sampling + offset
-	if len(accPerTick) < neededRows {
-		log.Panicf("merge bug: too few per-tick rows: required %d, have %d",
-			neededRows, len(accPerTick))
-	}
-
-	if len(accPerTick[0]) < maxCols {
-		log.Panicf("merge bug: too few per-tick cols: required %d, have %d",
-			maxCols, len(accPerTick[0]))
-	}
+	maxCols := maximumMatrixColumns(matrix)
+	validatePerTickDimensions(matrix, sampling, accPerTick, offset, maxCols)
 
 	var memoryStats runtime.MemStats
 	runtime.ReadMemStats(&memoryStats)
 
-	perTick := make([][]float32, len(accPerTick))
-	for i, row := range accPerTick {
-		perTick[i] = make([]float32, len(row))
+	perTick := makePerTickAccumulator(accPerTick)
+	interpolator := burndownInterpolator{
+		matrix: matrix, granularity: granularity, sampling: sampling, perTick: perTick, offset: offset,
 	}
-
-	for columnIndex := range maxCols {
-		for rowIndex := range matrix {
-			if columnIndex*granularity > (rowIndex+1)*sampling {
-				// the future is zeros
-				continue
-			}
-
-			decay := func(startIndex int, startVal float32) {
-				if startVal == 0 {
-					return
-				}
-
-				decayRatio := float32(matrix[rowIndex][columnIndex]) / startVal // <= 1
-
-				scale := float32((rowIndex+1)*sampling - startIndex)
-				for i := columnIndex * granularity; i < (columnIndex+1)*granularity; i++ {
-					initial := perTick[startIndex-1+offset][i+offset]
-					for j := startIndex; j < (rowIndex+1)*sampling; j++ {
-						perTick[j+offset][i+offset] = initial *
-							(1 + (decayRatio-1)*float32(j-startIndex+1)/scale)
-					}
-				}
-			}
-			raise := func(finishIndex int, finishVal float32) {
-				var initial float32
-				if rowIndex > 0 {
-					initial = float32(matrix[rowIndex-1][columnIndex])
-				}
-
-				startIndex := max(rowIndex*sampling, columnIndex*granularity)
-
-				if startIndex == finishIndex {
-					return
-				}
-
-				avg := (finishVal - initial) / float32(finishIndex-startIndex)
-				for j := rowIndex * sampling; j < finishIndex; j++ {
-					for i := startIndex; i <= j; i++ {
-						perTick[j+offset][i+offset] = avg
-					}
-				}
-				// copy [x*g..y*s)
-				for j := rowIndex * sampling; j < finishIndex; j++ {
-					for i := columnIndex * granularity; i < rowIndex*sampling; i++ {
-						perTick[j+offset][i+offset] = perTick[j-1+offset][i+offset]
-					}
-				}
-			}
-
-			switch {
-			case (columnIndex+1)*granularity >= (rowIndex+1)*sampling:
-				// x*granularity <= (y+1)*sampling
-				// 1. x*granularity <= y*sampling
-				//    y*sampling..(y+1)sampling
-				//
-				//       x+1
-				//        /
-				//       /
-				//      / y+1  -|
-				//     /        |
-				//    / y      -|
-				//   /
-				//  / x
-				//
-				// 2. x*granularity > y*sampling
-				//    x*granularity..(y+1)sampling
-				//
-				//       x+1
-				//        /
-				//       /
-				//      / y+1  -|
-				//     /        |
-				//    / x      -|
-				//   /
-				//  / y
-				if columnIndex*granularity <= rowIndex*sampling {
-					raise((rowIndex+1)*sampling, float32(matrix[rowIndex][columnIndex]))
-				} else if (rowIndex+1)*sampling > columnIndex*granularity {
-					raise((rowIndex+1)*sampling, float32(matrix[rowIndex][columnIndex]))
-
-					avg := float32(matrix[rowIndex][columnIndex]) /
-						float32((rowIndex+1)*sampling-columnIndex*granularity)
-					for j := columnIndex * granularity; j < (rowIndex+1)*sampling; j++ {
-						for i := columnIndex * granularity; i <= j; i++ {
-							perTick[j+offset][i+offset] = avg
-						}
-					}
-				}
-			case (columnIndex+1)*granularity >= rowIndex*sampling:
-				// y*sampling <= (x+1)*granularity < (y+1)sampling
-				// y*sampling..(x+1)*granularity
-				// (x+1)*granularity..(y+1)sampling
-				//        x+1
-				//         /\
-				//        /  \
-				//       /    \
-				//      /    y+1
-				//     /
-				//    y
-				previousValue := float32(matrix[rowIndex-1][columnIndex])
-				currentValue := float32(matrix[rowIndex][columnIndex])
-				var peak float32
-				delta := float32((columnIndex+1)*granularity - rowIndex*sampling)
-				var scale float32
-				var previous float32
-
-				if rowIndex > 0 && (rowIndex-1)*sampling >= columnIndex*granularity {
-					// x*g <= (y-1)*s <= y*s <= (x+1)*g <= (y+1)*s
-					//           |________|.......^
-					if rowIndex > 1 {
-						previous = float32(matrix[rowIndex-2][columnIndex])
-					}
-
-					scale = float32(sampling)
-				} else {
-					// (y-1)*s < x*g <= y*s <= (x+1)*g <= (y+1)*s
-					//            |______|.......^
-					if rowIndex == 0 {
-						scale = float32(sampling)
-					} else {
-						scale = float32(rowIndex*sampling - columnIndex*granularity)
-					}
-				}
-
-				peak = previousValue + (previousValue-previous)/scale*delta
-				if currentValue > peak {
-					// we need to adjust the peak, it may not be less than the decayed value
-					if rowIndex < len(matrix)-1 {
-						// y*s <= (x+1)*g <= (y+1)*s < (y+2)*s
-						//           ^.........|_________|
-						k := (currentValue - float32(matrix[rowIndex+1][columnIndex])) / float32(sampling) // > 0
-						peak = float32(matrix[rowIndex][columnIndex]) +
-							k*float32((rowIndex+1)*sampling-(columnIndex+1)*granularity)
-						// peak > v2 > v1
-					} else {
-						peak = currentValue
-						// not enough data to interpolate; this is at least not restricted
-					}
-				}
-
-				raise((columnIndex+1)*granularity, peak)
-				decay((columnIndex+1)*granularity, peak)
-			default:
-				// (x+1)*granularity < y*sampling
-				// y*sampling..(y+1)sampling
-				decay(rowIndex*sampling, float32(matrix[rowIndex-1][columnIndex]))
-			}
-		}
-	}
+	interpolator.interpolate(maxCols)
 
 	for y := len(matrix) * sampling; y+offset < len(perTick); y++ {
 		copy(perTick[y+offset], perTick[len(matrix)*sampling-1+offset])
@@ -225,6 +59,219 @@ func AddBurndownMatrix(matrix DenseHistory, granularity, sampling int, accPerTic
 	runtime.ReadMemStats(&a)
 
 	//	print("AddBurndownMatrix Deallocated: ", (m.Alloc-a.Alloc)/1024/1024, "\n")
+}
+
+type burndownInterpolator struct {
+	matrix      DenseHistory
+	granularity int
+	sampling    int
+	perTick     [][]float32
+	offset      int
+}
+
+func maximumMatrixColumns(matrix DenseHistory) int {
+	maximum := 0
+	for _, row := range matrix {
+		maximum = max(maximum, len(row))
+	}
+
+	return maximum
+}
+
+func validatePerTickDimensions(
+	matrix DenseHistory,
+	sampling int,
+	accPerTick [][]float32,
+	offset, maximumColumns int,
+) {
+	neededRows := len(matrix)*sampling + offset
+	if len(accPerTick) < neededRows {
+		log.Panicf("merge bug: too few per-tick rows: required %d, have %d",
+			neededRows, len(accPerTick))
+	}
+
+	if len(accPerTick[0]) < maximumColumns {
+		log.Panicf("merge bug: too few per-tick cols: required %d, have %d",
+			maximumColumns, len(accPerTick[0]))
+	}
+}
+
+func makePerTickAccumulator(accPerTick [][]float32) [][]float32 {
+	perTick := make([][]float32, len(accPerTick))
+	for rowIndex, row := range accPerTick {
+		perTick[rowIndex] = make([]float32, len(row))
+	}
+
+	return perTick
+}
+
+func (interpolator *burndownInterpolator) interpolate(maximumColumns int) {
+	for columnIndex := range maximumColumns {
+		for rowIndex := range interpolator.matrix {
+			if columnIndex >= len(interpolator.matrix[rowIndex]) {
+				// Sparse rows omit trailing zero-valued bands.
+				continue
+			}
+
+			if columnIndex*interpolator.granularity > (rowIndex+1)*interpolator.sampling {
+				// The future is zeros.
+				continue
+			}
+
+			interpolator.interpolateCell(rowIndex, columnIndex)
+		}
+	}
+}
+
+func (interpolator *burndownInterpolator) interpolateCell(rowIndex, columnIndex int) {
+	switch {
+	case (columnIndex+1)*interpolator.granularity >= (rowIndex+1)*interpolator.sampling:
+		interpolator.interpolateRisingCell(rowIndex, columnIndex)
+	case (columnIndex+1)*interpolator.granularity >= rowIndex*interpolator.sampling:
+		peak := interpolator.interpolationPeak(rowIndex, columnIndex)
+		finishIndex := (columnIndex + 1) * interpolator.granularity
+		interpolator.raise(rowIndex, columnIndex, finishIndex, peak)
+		interpolator.decay(rowIndex, columnIndex, finishIndex, peak)
+	default:
+		startValue := interpolator.value(rowIndex-1, columnIndex)
+		interpolator.decay(rowIndex, columnIndex, rowIndex*interpolator.sampling, startValue)
+	}
+}
+
+func (interpolator *burndownInterpolator) interpolateRisingCell(rowIndex, columnIndex int) {
+	finishIndex := (rowIndex + 1) * interpolator.sampling
+	finishValue := interpolator.value(rowIndex, columnIndex)
+
+	columnStart := columnIndex * interpolator.granularity
+	if columnStart <= rowIndex*interpolator.sampling {
+		interpolator.raise(rowIndex, columnIndex, finishIndex, finishValue)
+
+		return
+	}
+
+	if finishIndex <= columnStart {
+		return
+	}
+
+	interpolator.raise(rowIndex, columnIndex, finishIndex, finishValue)
+
+	average := finishValue / float32(finishIndex-columnStart)
+	for tickIndex := columnStart; tickIndex < finishIndex; tickIndex++ {
+		for bandIndex := columnStart; bandIndex <= tickIndex; bandIndex++ {
+			interpolator.perTick[tickIndex+interpolator.offset][bandIndex+interpolator.offset] = average
+		}
+	}
+}
+
+func (interpolator *burndownInterpolator) decay(
+	rowIndex, columnIndex, startIndex int,
+	startValue float32,
+) {
+	if startValue == 0 {
+		return
+	}
+
+	decayRatio := interpolator.value(rowIndex, columnIndex) / startValue
+	scale := float32((rowIndex+1)*interpolator.sampling - startIndex)
+
+	columnStart := columnIndex * interpolator.granularity
+
+	columnEnd := (columnIndex + 1) * interpolator.granularity
+	for bandIndex := columnStart; bandIndex < columnEnd; bandIndex++ {
+		initial := interpolator.perTick[startIndex-1+interpolator.offset][bandIndex+interpolator.offset]
+		for tickIndex := startIndex; tickIndex < (rowIndex+1)*interpolator.sampling; tickIndex++ {
+			interpolator.perTick[tickIndex+interpolator.offset][bandIndex+interpolator.offset] = initial *
+				(1 + (decayRatio-1)*float32(tickIndex-startIndex+1)/scale)
+		}
+	}
+}
+
+func (interpolator *burndownInterpolator) raise(
+	rowIndex, columnIndex, finishIndex int,
+	finishValue float32,
+) {
+	var initial float32
+	if rowIndex > 0 {
+		initial = interpolator.value(rowIndex-1, columnIndex)
+	}
+
+	startIndex := max(rowIndex*interpolator.sampling, columnIndex*interpolator.granularity)
+	if startIndex == finishIndex {
+		return
+	}
+
+	average := (finishValue - initial) / float32(finishIndex-startIndex)
+	for tickIndex := rowIndex * interpolator.sampling; tickIndex < finishIndex; tickIndex++ {
+		for bandIndex := startIndex; bandIndex <= tickIndex; bandIndex++ {
+			interpolator.perTick[tickIndex+interpolator.offset][bandIndex+interpolator.offset] = average
+		}
+	}
+
+	// Copy [columnIndex*granularity..rowIndex*sampling).
+	for tickIndex := rowIndex * interpolator.sampling; tickIndex < finishIndex; tickIndex++ {
+		bandStart := columnIndex * interpolator.granularity
+		bandEnd := rowIndex * interpolator.sampling
+
+		if bandStart >= bandEnd {
+			continue
+		}
+
+		targetRow := interpolator.perTick[tickIndex+interpolator.offset]
+		sourceRow := interpolator.perTick[tickIndex-1+interpolator.offset]
+
+		for bandIndex := bandStart; bandIndex < bandEnd; bandIndex++ {
+			targetRow[bandIndex+interpolator.offset] = sourceRow[bandIndex+interpolator.offset]
+		}
+	}
+}
+
+func (interpolator *burndownInterpolator) interpolationPeak(rowIndex, columnIndex int) float32 {
+	previousValue := interpolator.value(rowIndex-1, columnIndex)
+	currentValue := interpolator.value(rowIndex, columnIndex)
+	delta := float32((columnIndex+1)*interpolator.granularity - rowIndex*interpolator.sampling)
+	previous, scale := interpolator.previousPeakValueAndScale(rowIndex, columnIndex)
+
+	peak := previousValue + (previousValue-previous)/scale*delta
+	if currentValue <= peak {
+		return peak
+	}
+
+	if rowIndex == len(interpolator.matrix)-1 {
+		// Not enough data to interpolate; this is at least not restricted.
+		return currentValue
+	}
+
+	nextValue := interpolator.value(rowIndex+1, columnIndex)
+	decayPerTick := (currentValue - nextValue) / float32(interpolator.sampling)
+
+	return currentValue +
+		decayPerTick*float32((rowIndex+1)*interpolator.sampling-(columnIndex+1)*interpolator.granularity)
+}
+
+func (interpolator *burndownInterpolator) previousPeakValueAndScale(rowIndex, columnIndex int) (float32, float32) {
+	if rowIndex > 0 && (rowIndex-1)*interpolator.sampling >= columnIndex*interpolator.granularity {
+		var previous float32
+		if rowIndex > 1 {
+			previous = interpolator.value(rowIndex-2, columnIndex)
+		}
+
+		return previous, float32(interpolator.sampling)
+	}
+
+	if rowIndex == 0 {
+		return 0, float32(interpolator.sampling)
+	}
+
+	return 0, float32(rowIndex*interpolator.sampling - columnIndex*interpolator.granularity)
+}
+
+func (interpolator *burndownInterpolator) value(rowIndex, columnIndex int) float32 {
+	if rowIndex < 0 || rowIndex >= len(interpolator.matrix) ||
+		columnIndex < 0 || columnIndex >= len(interpolator.matrix[rowIndex]) {
+		return 0
+	}
+
+	return float32(interpolator.matrix[rowIndex][columnIndex])
 }
 
 func roundTime(t time.Time, d time.Duration, dir bool) int {

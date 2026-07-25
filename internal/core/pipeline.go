@@ -730,9 +730,6 @@ func (pipeline *Pipeline) RunPreparedPlan() (map[LeafPipelineItem]any, error) {
 }
 
 func (pipeline *Pipeline) deployItem(item PipelineItem, once bool) PipelineItem {
-	var queue []PipelineItem
-	queue = append(queue, item)
-
 	added := map[string]PipelineItem{}
 	for _, existingItem := range pipeline.items {
 		added[existingItem.Name()] = existingItem
@@ -744,47 +741,64 @@ func (pipeline *Pipeline) deployItem(item PipelineItem, once bool) PipelineItem 
 
 	added[item.Name()] = item
 
+	pipeline.enableItemFeatures(item)
+	pipeline.AddItem(item)
+	pipeline.deployRequiredItems([]PipelineItem{item}, added)
+
+	return item
+}
+
+func (pipeline *Pipeline) enableItemFeatures(item PipelineItem) {
 	fpi, ok := item.(FeaturedPipelineItem)
-	if ok {
-		for _, f := range fpi.Features() {
-			pipeline.SetFeature(f)
-		}
+	if !ok {
+		return
 	}
 
-	pipeline.AddItem(item)
+	for _, feature := range fpi.Features() {
+		pipeline.SetFeature(feature)
+	}
+}
 
-	for len(queue) > 0 {
+func (pipeline *Pipeline) deployRequiredItems(
+	queue []PipelineItem,
+	added map[string]PipelineItem,
+) {
+	for len(queue) != 0 {
 		head := queue[0]
 		queue = queue[1:]
 
 		for _, dep := range head.Requires() {
-			summons := Registry.Summon(dep)
-			for _, sibling := range summons {
-				if _, exists := added[sibling.Name()]; !exists {
-					disabled := false
-					// If this item supports features, check them against the activated in pipeline.features
-					if fpi, matches := sibling.(FeaturedPipelineItem); matches {
-						for _, feature := range fpi.Features() {
-							if !pipeline.features[feature] {
-								disabled = true
-								break
-							}
-						}
-					}
-
-					if disabled {
-						continue
-					}
-
-					added[sibling.Name()] = sibling
-					queue = append(queue, sibling)
-					pipeline.AddItem(sibling)
+			for _, sibling := range Registry.Summon(dep) {
+				if _, exists := added[sibling.Name()]; exists {
+					continue
 				}
+
+				if !pipeline.itemFeaturesEnabled(sibling) {
+					continue
+				}
+
+				added[sibling.Name()] = sibling
+				queue = append(queue, sibling)
+				pipeline.AddItem(sibling)
 			}
 		}
 	}
+}
 
-	return item
+func (pipeline *Pipeline) itemFeaturesEnabled(item PipelineItem) bool {
+	fpi, matches := item.(FeaturedPipelineItem)
+	if !matches {
+		return true
+	}
+
+	// If this item supports features, check them against the activated features.
+	for _, feature := range fpi.Features() {
+		if !pipeline.features[feature] {
+			return false
+		}
+	}
+
+	return true
 }
 
 func (pipeline *Pipeline) resolve(dumpPath string, priorityFn DependencyPriorityFunc) error {
@@ -1327,57 +1341,85 @@ func (state *pipelineRunState) changeHibernation(items []int, boot bool) error {
 func (pipeline *Pipeline) resolveAlternatives(graph *toposort.Graph, nodes []string, itemMap map[string]PipelineItem,
 	priorityFn DependencyPriorityFunc, excludes map[string]struct{},
 ) {
+	dataKeys := groupAlternativeNodes(graph, nodes, itemMap)
+	for _, altNodes := range dataKeys {
+		if len(altNodes) >= 2 {
+			resolveAlternativeGroup(altNodes, itemMap, priorityFn, excludes)
+		}
+	}
+}
+
+func groupAlternativeNodes(
+	graph *toposort.Graph,
+	nodes []string,
+	itemMap map[string]PipelineItem,
+) map[string][]string {
 	dataKeys := make(map[string][]string, len(nodes))
 	for _, node := range nodes {
-		childList := strings.Builder{}
-
-		for _, child := range graph.FindChildren(node) {
-			if graph.HasChildren(child) {
-				if childList.Len() != 0 {
-					childList.WriteString(",")
-				}
-
-				childList.WriteString(child)
-			}
-		}
-
 		item := itemMap[node]
-		key := strings.Join(item.Requires(), ",") + " => " + childList.String()
+		key := strings.Join(item.Requires(), ",") + " => " + alternativeChildren(graph, node)
 		dataKeys[key] = append(dataKeys[key], node)
 	}
 
-	items := make([]PipelineItem, 0, len(nodes))
-	for _, altNodes := range dataKeys {
-		if len(altNodes) < 2 {
+	return dataKeys
+}
+
+func alternativeChildren(graph *toposort.Graph, node string) string {
+	childList := strings.Builder{}
+
+	for _, child := range graph.FindChildren(node) {
+		if !graph.HasChildren(child) {
 			continue
 		}
 
-		items = items[:0]
-		for _, node := range altNodes {
-			items = append(items, itemMap[node])
+		if childList.Len() != 0 {
+			childList.WriteString(",")
 		}
 
-		pItem := priorityFn(items)
-		pNode := ""
+		childList.WriteString(child)
+	}
 
-		if pItem != nil {
-			for _, node := range altNodes {
-				if pItem == itemMap[node] {
-					if pNode != "" {
-						panic("unexpected")
-					}
+	return childList.String()
+}
 
-					pNode = node
-				} else {
-					excludes[node] = struct{}{}
-				}
-			}
-		}
+func resolveAlternativeGroup(
+	nodes []string,
+	itemMap map[string]PipelineItem,
+	priorityFn DependencyPriorityFunc,
+	excludes map[string]struct{},
+) {
+	items := make([]PipelineItem, 0, len(nodes))
 
-		if pNode == "" {
-			panic("unexpected")
+	for _, node := range nodes {
+		items = append(items, itemMap[node])
+	}
+
+	priorityItem := priorityFn(items)
+	if priorityItem == nil {
+		panic("unexpected")
+	}
+
+	priorityNode := ""
+
+	for _, node := range nodes {
+		if priorityItem == itemMap[node] {
+			priorityNode = setPriorityNode(priorityNode, node)
+		} else {
+			excludes[node] = struct{}{}
 		}
 	}
+
+	if priorityNode == "" {
+		panic("unexpected")
+	}
+}
+
+func setPriorityNode(current, selected string) string {
+	if current != "" {
+		panic("unexpected")
+	}
+
+	return selected
 }
 
 // LoadCommitsFromFile reads the file by the specified FS path and generates the sequence of commits

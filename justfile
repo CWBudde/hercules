@@ -92,23 +92,23 @@ burndown-chart RESAMPLE="3M" GRANULARITY="30" SAMPLING="30" OUTPUT="self-analysi
     fi
     echo "chart written to {{OUTPUT}}"
 
-# The joyplot of per-developer activity over time: one ridge per contributor,
-# ordered by commit count, with a cmts/delta/changed summary column. MAX_PEOPLE
-# trims the ridge count; the renderer clips the bottom row's ridge against the x
-# axis, so pick a value whose last row is someone with a near-invisible ridge (12
-# lands on a 3-commit contributor). The people-dict is not optional: without it
-# labours labels each ridge with the raw `name|email|email` identity string, which
+# The per-developer counterpart to burndown-chart: the same surviving lines of
+# code, but banded by who owns them rather than by when they were written, so a
+# band shrinking means that person's code is being rewritten. Note this is the
+# `ownership` mode, not `burndown-person` — the latter writes one figure per
+# contributor rather than one stacked chart (see PLAN.md DOC-05).
+#
+# MAX_PEOPLE folds everyone past the cut into an "others" band; past ~20 the
+# legend covers the plot and the colour palette wraps, so the top band and
+# "others" come out the same colour. The people-dict is not optional: without it
+# labours labels each band with the raw `name|email|email` identity string, which
 # publishes every contributor's address and splits Christian across four
 # identities. scripts/self-analysis-people.txt merges them and gives display-only
-# names. Unlike burndown-chart there is no title to blank out.
+# names. SIZE/FONT_SIZE keep the chart legible once a page scales it into an ~800px
+# content column, and match burndown-chart's scale.
 #
-# SIZE/FONT_SIZE matter for anything embedded in a page: the mode defaults to
-# 32x16 inches, and a 3200px-wide figure scaled into an ~800px content column
-# renders its developer names about 4px tall. 16x10 matches the burndown chart's
-# scale and stays legible.
-#
-# Regenerate the self-analysis developer-activity chart (who committed when)
-devs-chart MAX_PEOPLE="12" SIZE="16,10" FONT_SIZE="15" OUTPUT="self-analysis/hercules-devs.png": hercules labours
+# Regenerate the self-analysis ownership chart (whose code survives, over time)
+ownership-chart MAX_PEOPLE="8" SIZE="16,10" FONT_SIZE="15" OUTPUT="self-analysis/hercules-ownership.png": hercules labours
     #!/usr/bin/env sh
     set -eu
     dir=$(dirname "{{OUTPUT}}")
@@ -116,7 +116,7 @@ devs-chart MAX_PEOPLE="12" SIZE="16,10" FONT_SIZE="15" OUTPUT="self-analysis/her
     ./hercules{{exe}} --burndown --burndown-people --devs --granularity 30 --sampling 30 \
         --people-dict scripts/self-analysis-people.txt \
         --skip-blacklist --blacklisted-prefixes docs/linux.svg --pb . > "$dir/people-devs.pb"
-    ./labours{{exe}} -i "$dir/people-devs.pb" -m devs \
+    ./labours{{exe}} -i "$dir/people-devs.pb" -m ownership \
         --max-people {{MAX_PEOPLE}} --size "{{SIZE}}" --font-size {{FONT_SIZE}} \
         -q -o "{{OUTPUT}}"
     echo "chart written to {{OUTPUT}}"

@@ -392,40 +392,46 @@ func (file *File) Merge(day int, others ...*File) {
 	myself := file.flatten()
 
 	for _, other := range others {
-		if other == nil {
-			log.Panic("merging with a nil file")
-		}
-
-		lines := other.flatten()
-		if len(myself) != len(lines) {
-			log.Panicf("file corruption, lines number mismatch during merge %d != %d",
-				len(myself), len(lines))
-		}
-
-		for lineIndex, ownLine := range myself {
-			otherLine := lines[lineIndex]
-			if otherLine&TreeMergeMark == TreeMergeMark {
-				continue
-			}
-
-			if ownLine&TreeMergeMark == TreeMergeMark || ownLine&TreeMergeMark > otherLine&TreeMergeMark {
-				// the line is merged in myself and exists in other
-				// OR the same line introduced in different branches
-				// consider the oldest version as the ground truth in that case
-				myself[lineIndex] = otherLine
-				continue
-			}
-		}
+		mergeLineValues(myself, other)
 	}
 
-	for lineIndex, mergedCount := 0, 0; lineIndex >= 0; lineIndex++ {
-		switch {
-		case lineIndex == len(myself):
-			lineIndex = -2
-		case myself[lineIndex]&TreeMergeMark == TreeMergeMark:
-			myself[lineIndex] = day
-			mergedCount++
+	resolveMergeMarks(file, myself, day)
+	rebuildFromLines(file, myself)
+}
 
+func mergeLineValues(destination []int, other *File) {
+	if other == nil {
+		log.Panic("merging with a nil file")
+	}
+
+	source := other.flatten()
+	if len(destination) != len(source) {
+		log.Panicf("file corruption, lines number mismatch during merge %d != %d",
+			len(destination), len(source))
+	}
+
+	for lineIndex, destinationLine := range destination {
+		sourceLine := source[lineIndex]
+		if sourceLine&TreeMergeMark == TreeMergeMark {
+			continue
+		}
+
+		if destinationLine&TreeMergeMark == TreeMergeMark ||
+			destinationLine&TreeMergeMark > sourceLine&TreeMergeMark {
+			// The line is merged in the destination and exists in the source,
+			// or the same line was introduced in different branches. Consider
+			// the oldest version as the ground truth in that case.
+			destination[lineIndex] = sourceLine
+		}
+	}
+}
+
+func resolveMergeMarks(file *File, lines []int, day int) {
+	mergedCount := 0
+
+	for _, line := range lines {
+		if line&TreeMergeMark == TreeMergeMark {
+			mergedCount++
 			continue
 		}
 
@@ -435,17 +441,29 @@ func (file *File) Merge(day int, others ...*File) {
 		}
 	}
 
-	// now we need to reconstruct the tree from the discrete values
+	if mergedCount > 0 {
+		file.updateTime(day, day, mergedCount)
+	}
+
+	for lineIndex, line := range lines {
+		if line&TreeMergeMark == TreeMergeMark {
+			lines[lineIndex] = day
+		}
+	}
+}
+
+func rebuildFromLines(file *File, lines []int) {
+	// Reconstruct the tree from the discrete values.
 	file.tree.Erase()
 	tree := rbtree.NewRBTree(file.tree.Allocator())
 
-	for i, v := range myself {
-		if i == 0 || v != myself[i-1] {
+	for i, v := range lines {
+		if i == 0 || v != lines[i-1] {
 			tree.Insert(rbtree.Item{Key: checkedUint32(i), Value: checkedUint32(v)})
 		}
 	}
 
-	tree.Insert(rbtree.Item{Key: checkedUint32(len(myself)), Value: TreeEnd})
+	tree.Insert(rbtree.Item{Key: checkedUint32(len(lines)), Value: TreeEnd})
 	file.tree = tree
 }
 

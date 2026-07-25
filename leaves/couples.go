@@ -174,7 +174,7 @@ func (couples *CouplesAnalysis) Consume(deps map[string]any) (map[string]any, er
 
 	context := make([]string, 0, len(treeDiff))
 	for _, change := range treeDiff {
-		contextFile, includeInContext, err := couples.consumeFileChange(change, author)
+		contextFile, includeInContext, err := consumeCouplesFileChange(couples, change, author)
 		if err != nil {
 			return nil, err
 		}
@@ -185,13 +185,14 @@ func (couples *CouplesAnalysis) Consume(deps map[string]any) (map[string]any, er
 	}
 
 	if len(context) <= CouplesMaximumMeaningfulContextSize {
-		couples.updateFileCouplings(context)
+		updateFileCouplings(couples, context)
 	}
 
 	return noDependencies(), nil
 }
 
-func (couples *CouplesAnalysis) consumeFileChange(
+func consumeCouplesFileChange(
+	couples *CouplesAnalysis,
 	change *object.Change,
 	author int,
 ) (string, bool, error) {
@@ -227,7 +228,7 @@ func (couples *CouplesAnalysis) consumeFileChange(
 	}
 }
 
-func (couples *CouplesAnalysis) updateFileCouplings(context []string) {
+func updateFileCouplings(couples *CouplesAnalysis, context []string) {
 	for _, file := range context {
 		lane := couples.files[file]
 		if lane == nil {
@@ -650,13 +651,13 @@ func (couples *CouplesAnalysis) serializeBinary(result *CouplesResult, writer io
 		files := result.PeopleFiles[key]
 
 		int32Files := make([]int32, len(files))
-		for i, f := range files {
-			fileID, err := intToProtoInt32(f, "couples touched-file index")
+		for fileIndex, file := range files {
+			fileID, err := intToProtoInt32(file, "couples touched-file index")
 			if err != nil {
 				return err
 			}
 
-			int32Files[i] = fileID
+			int32Files[fileIndex] = fileID
 		}
 
 		message.PeopleFiles[key] = &pb.TouchedFiles{
@@ -665,13 +666,13 @@ func (couples *CouplesAnalysis) serializeBinary(result *CouplesResult, writer io
 	}
 
 	message.FilesLines = make([]int32, len(result.FilesLines))
-	for i, l := range result.FilesLines {
-		lineCount, err := intToProtoInt32(l, "couples file line count")
+	for fileIndex, lines := range result.FilesLines {
+		lineCount, err := intToProtoInt32(lines, "couples file line count")
 		if err != nil {
 			return err
 		}
 
-		message.FilesLines[i] = lineCount
+		message.FilesLines[fileIndex] = lineCount
 	}
 
 	serialized, err := proto.Marshal(&message)
@@ -857,6 +858,7 @@ func reducePersonFileCounts(
 	pointers map[string]string,
 ) map[string]int {
 	reducedCounts := map[string]int{}
+
 	for file := range files {
 		count := counts[file]
 		for alias := range aliases[file] {
@@ -870,6 +872,7 @@ func reducePersonFileCounts(
 
 	for file, count := range counts {
 		_, isFile := files[file]
+
 		_, isPointer := pointers[file]
 		if !isFile && !isPointer {
 			reducedCounts[file] = count

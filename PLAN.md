@@ -962,6 +962,12 @@ carries the `1e4`; the chart published on pcjv.de showed 2/4/6/8 with no magnitu
 the axes frame at y=38) and keeps the offset text, so the immediate symptom is gone — but the
 underlying fragility is the offset notation itself, and the next consumer will hit it again.
 
+The switch into offset notation is also sensitive to a rounding-level change in the data, which makes
+it unpredictable for anyone embedding a chart. `-m ownership` on this repository renders full `80000`
+tick labels when the stack peaks at ~92k, and flips to `1e5` with `0.0`-`1.0` labels when it peaks at
+~96k, because `maxOwnershipStackY(...)*1.05` crosses 1e5 and the formatter changes mode. Two
+regenerations of the same chart weeks apart can therefore disagree about how the y-axis is labelled.
+
 - Render the magnitude where it cannot be separated from the data: either format the ticks in full
   (`20000`, `40000`) or fold the unit into the axis label (`Lines of code (x10^4)`), rather than
   relying on detached offset text.

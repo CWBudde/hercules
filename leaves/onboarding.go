@@ -520,13 +520,13 @@ func onboardingSnapshotToProto(snapshot *OnboardingSnapshot) (*pb.OnboardingSnap
 	}
 
 	converted := make([]int32, len(values))
-	for i, value := range values {
+	for index, value := range values {
 		pbValue, err := intToProtoInt32(value, "onboarding snapshot value")
 		if err != nil {
 			return nil, err
 		}
 
-		converted[i] = pbValue
+		converted[index] = pbValue
 	}
 
 	return &pb.OnboardingSnapshot{
@@ -765,13 +765,13 @@ func (oa *OnboardingAnalysis) serializeBinary(result *OnboardingResult, writer i
 		MeaningfulThreshold: meaningfulThreshold,
 	}
 
-	for i, days := range result.WindowDays {
+	for index, days := range result.WindowDays {
 		pbDays, err := intToProtoInt32(days, "onboarding window days")
 		if err != nil {
 			return err
 		}
 
-		message.WindowDays[i] = pbDays
+		message.WindowDays[index] = pbDays
 	}
 
 	message.Authors, err = onboardingAuthorsToProto(result.Authors)

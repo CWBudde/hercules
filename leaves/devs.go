@@ -381,6 +381,7 @@ func (devs *DevsAnalysis) serializeText(result *DevsResult, writer io.Writer) {
 			if developer == core.AuthorMissing {
 				developer = -1
 			}
+
 			fmt.Fprintf(writer, "      %d: [%d, %d, %d, %d, {%s}]\n",
 				developer, stats.Commits, stats.Added, stats.Removed, stats.Changed,
 				strings.Join(formatLanguageStats(stats.Languages), ", "))

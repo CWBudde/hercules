@@ -432,6 +432,7 @@ func (bf *BusFactorAnalysis) accumulateSubsystemOwnership(
 		}
 
 		previousLine = line
+
 		if author >= core.AuthorMissing {
 			previousAuthor = int(core.AuthorMissing)
 		} else {

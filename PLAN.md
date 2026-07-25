@@ -115,71 +115,19 @@ Priority: P0
 Status: completed 2026-07-25
 Verification: [`docs/audits/2026-07-25-safe-01.md`](docs/audits/2026-07-25-safe-01.md)
 
-Affected code:
-
-- `cmd/hercules/root.go`
-- `cmd/hercules/root_test.go`
-- `README.md`
-- `.github/workflows/test-crosscompile.yaml`
-
-Work:
-
-- Replace unconditional `os.RemoveAll(cachePath)` with a managed-cache policy.
-- Refuse an existing non-empty destination unless the user explicitly supplies
-  `--force-cache-replace`.
-- Store a Hercules-owned marker in created cache directories and require that marker before
-  replacement.
-- Reject filesystem roots, the current working directory, and home directories as replacement
-  targets even with the force flag.
-- Treat `os.Stat` errors other than `os.ErrNotExist` as hard errors.
-- Clone into a temporary sibling and atomically rename it into place after a successful clone.
-- If atomic replacement is unavailable on the target platform, leave the original path untouched
-  and report the failure.
-
-Tests:
-
-- existing empty target;
-- existing Hercules-managed cache;
-- existing unrelated directory with sentinel contents;
-- filesystem root and current working directory;
-- failed clone leaves the previous cache intact;
-- replacement failure is surfaced.
-
-Acceptance criteria:
-
-- [x] no path is recursively removed without explicit intent and a verified Hercules marker;
-- [x] all safety tests run on Linux, macOS, and Windows-compatible path logic.
+Implemented marker-verified managed caches, explicit forced replacement, protected-path rejection,
+and temporary-sibling cloning with atomic installation. Cross-platform tests cover managed,
+unrelated, protected, failed-clone, and failed-replacement targets; unrelated data is never
+recursively removed.
 
 ### SEC-01: Remove shell injection from the composite GitHub Action
 
 Status: completed 2026-07-24
 
-Affected code:
-
-- `action.yml`
-- new Action test workflow or shell test fixture
-
-Work:
-
-- Move GitHub expressions into step environment variables.
-- Quote scalar values such as output paths and modes.
-- Replace the free-form shell `args` contract with an argv-safe representation. Prefer a JSON
-  string array parsed into a Bash array; retain a deprecated compatibility input only if it can be
-  parsed without `eval`.
-- Write `$GITHUB_OUTPUT` and `$GITHUB_STEP_SUMMARY` using quoted environment values.
-- Make chart-generation failure fail the step unless an explicit best-effort input is set.
-
-Tests:
-
-- spaces and Unicode in output paths;
-- semicolons, command substitutions, redirects, newlines, and quotes in every input;
-- empty argument arrays;
-- multiple analysis flags.
-
-Acceptance criteria:
-
-- [x] caller inputs are data, never executable shell source;
-- [x] hostile input tests prove that no sentinel command is executed.
+Moved Action inputs through quoted environment values and argv-safe JSON array parsing, without
+`eval`; chart failures now fail the step unless best-effort behavior is explicitly requested.
+Hostile-input fixtures cover shell metacharacters, substitutions, redirects, newlines, Unicode,
+empty arrays, and multiple flags without executing caller-controlled syntax.
 
 ### SEC-02: Upgrade and continuously audit dependencies
 
@@ -187,28 +135,10 @@ Status: completed 2026-07-25
 
 Verification report: [`docs/audits/2026-07-25-sec-02.md`](docs/audits/2026-07-25-sec-02.md)
 
-Affected code:
-
-- `go.mod`
-- `go.sum`
-- `.github/workflows/`
-
-Work:
-
-- Upgrade `github.com/go-git/go-git/v5` from `v5.5.2` to a version containing all currently
-  published fixes, at minimum `v5.16.5`.
-- Upgrade `go-billy` and related transport dependencies together where required.
-- Run the full repository, remote-clone, Siva, submodule, authentication, and plugin tests after
-  the upgrade.
-- Add `govulncheck ./...` to CI for the default feature set.
-- Add Dependabot or Renovate with grouped Go dependency updates.
-- Document the supported dependency-update policy.
-
-Acceptance criteria:
-
-- [x] no reachable known vulnerability is reported for the default build;
-- [x] remote HTTPS, SSH, and local/file transport behavior is covered;
-- [x] future vulnerable direct dependencies fail CI.
+Upgraded `go-git`, `go-billy`, and related transport dependencies to patched versions; added
+default-build `govulncheck` CI, grouped dependency updates, and a documented update policy.
+Transport, remote-clone, Siva, submodule, authentication, and plugin coverage passes, with no
+reachable known vulnerability in the supported default build.
 
 ### REL-01: Make hard CLI failures return nonzero
 
@@ -216,44 +146,11 @@ Status: completed 2026-07-25
 
 Verification report: [`docs/audits/2026-07-25-rel-01.md`](docs/audits/2026-07-25-rel-01.md)
 
-Affected code:
-
-- `internal/render/render.go`
-- `internal/render/dispatch.go`
-- `cmd/labours/root.go`
-- `cmd/labours/helpers.go`
-- `cmd/hercules/combine.go`
-- `cmd/hercules/report.go`
-
-Work:
-
-- Make render execution return an aggregate result containing per-mode warnings and hard errors,
-  plus a top-level output-write error.
-- Replace broad message matching in `isMissingAnalysisError` with
-  `errors.Is(err, readers.ErrAnalysisMissing)`.
-- Send diagnostics to stderr.
-- Continue independent modes after a failure, then return nonzero if any hard error occurred.
-- Convert `combine` to `RunE`.
-- Always validate a single combine input rather than byte-copying it.
-- Fail when no valid input was merged, when `--only` cannot be honored, or when output cannot be
-  written.
-- Merge metadata only after the corresponding analysis result succeeds.
-- Preserve warnings as warnings only for explicitly typed missing optional data.
-
-Tests:
-
-- unwritable JSON and image outputs;
-- malformed and mixed-validity combine inputs;
-- a real missing-analysis warning;
-- an unrelated error containing `no`, `not found`, or `missing`;
-- partial multi-mode rendering;
-- broken stdout pipe/write.
-
-Acceptance criteria:
-
-- [x] hard failures never exit zero;
-- [x] optional missing analysis remains a warning;
-- [x] automation can distinguish success, warning-only success, and failure without parsing text.
+Render/report/combine paths now aggregate typed warnings and hard errors, write diagnostics to
+stderr, validate every input, preserve only explicitly optional missing analyses as warnings, and
+return nonzero for hard or output failures. Tests cover partial multi-mode rendering, malformed
+and mixed inputs, unwritable outputs, and broken pipes so automation can distinguish success,
+warning-only success, and failure.
 
 ## Phase 2 — Restore metric correctness
 
@@ -265,274 +162,92 @@ it experimental in help and documentation.
 
 Status: completed 2026-07-25
 
-Affected code:
-
-- `leaves/hotspot_risk.go`
-- `leaves/hotspot_risk_test.go`
-- `internal/plumbing/ticks.go`
-- `internal/plumbing/line_stats.go`
-- renderer/report fixtures containing hotspot output
-
-Work:
-
-- Change `tickSize` to `time.Duration` and validate it is positive.
-- Calculate the window with duration arithmetic, including sub-day and multi-day tick sizes.
-- Stop constructing name-only `object.ChangeEntry` lookup keys. Use the actual old/new entry or
-  publish an explicit path-keyed statistic.
-- Replace net-change ownership approximation with current ownership from line history. Removed
-  lines must be attributed to their previous owners, not the deleting author.
-- Make zero weights remain zero so `0.0` truly disables a factor.
-- Replace the all-or-nothing multiplicative score with a documented weighted normalized score, or
-  explicitly handle absent/zero factors so one zero does not collapse every result.
-- Define rename behavior for churn, coupling, and ownership histories.
-- Version or document the metric-semantic change.
-
-Tests:
-
-- actual `TicksSinceStart`, `LinesStatsCalculator`, identity, and line-history dependencies;
-- two authors, multiple ticks, a rename, a deletion, and a binary file;
-- disabled factors;
-- files with no coupling;
-- hand-calculated expected scores and ranking.
-
-Acceptance criteria:
-
-- [x] a real pipeline fixture produces nonzero, explainable, hand-verifiable scores;
-- [x] changing `WindowDays` changes the included churn exactly as documented;
-- [x] no test fabricates a dependency type or key shape that differs from its producer.
+Hotspot Risk now uses validated duration windows, real path-keyed upstream statistics, current
+line-history ownership, explicit rename behavior, and a documented weighted normalized score in
+which zero weights disable factors. Production-shaped fixtures verify hand-calculated rankings
+across multiple authors/ticks, renames, deletions, binary files, absent coupling, and disabled
+factors.
 
 ### METRIC-02: Correct Onboarding time and window semantics
 
 Status: completed 2026-07-25
 
-Affected code:
-
-- `leaves/onboarding.go`
-- `leaves/onboarding_test.go`
-- PB/YAML fixtures and renderer expectations
-
-Work:
-
-- Record the actual first commit timestamp for each author.
-- Derive `JoinCohort` from that timestamp, not `Unix(0)+tick*tickSize`.
-- Calculate windows using durations rather than truncated integer ticks-per-day.
-- Validate positive tick size and define behavior for tick sizes longer than a window.
-- Decide whether the closest snapshot must be at or before the requested window; encode that rule
-  directly.
-
-Tests:
-
-- authors joining in different calendar months and time zones;
-- sub-day, non-divisor, and multi-day tick sizes;
-- no commit inside a requested window;
-- exact boundary commits.
-
-Acceptance criteria:
-
-- [x] cohort keys match actual commit months;
-- [x] window snapshots never include activity after their documented boundary.
+Onboarding now derives cohorts from each author's actual first commit timestamp and selects
+duration-based snapshots only at or before the documented window boundary. Tests cover calendar
+months, time zones, sub-day/non-divisor/multi-day ticks, missing in-window commits, exact
+boundaries, and PB/YAML rendering parity.
 
 ### METRIC-03: Correct Bus Factor and Ownership Concentration snapshots
 
 Status: completed 2026-07-25
 
-Affected code:
-
-- `leaves/bus_factor.go`
-- `leaves/ownership_concentration.go`
-- their tests and renderer fixtures
-
-Work:
-
-- Stop labeling post-next-tick state as the previous tick.
-- Maintain incremental ownership totals from line-history changes, or preserve an immutable
-  previous-tick state before consuming the next tick.
-- Share one tested ownership snapshot component between both analyses to prevent drift.
-- Use `math.Ceil` or exact integer comparison for the bus-factor threshold.
-- Preserve final-tick and empty-repository semantics explicitly.
-
-Tests:
-
-- second tick transfers ownership and changes file size;
-- small totals such as 2, 3, and 7 lines at 0.8 threshold;
-- multiple commits in one tick;
-- empty and single-author repositories;
-- subsystem metrics match global ownership accounting.
-
-Acceptance criteria:
-
-- [x] each snapshot contains only commits from its labeled tick or earlier;
-- [x] bus factor is the smallest author count whose exact share meets the threshold.
+Bus Factor and Ownership Concentration now share immutable tick-aligned ownership snapshots and
+use exact threshold comparisons; final-tick and empty-repository behavior is explicit. Fixtures
+cover ownership transfers, file-size changes, small totals, same-tick commits, empty/single-author
+repositories, and subsystem/global accounting.
 
 ### METRIC-04: Preserve File History across renames
 
 Status: completed 2026-07-25
 
-Affected code:
-
-- `leaves/file_history.go`
-- `leaves/file_history_test.go`
-
-Work:
-
-- Move or merge the complete `FileHistory` state on rename, including hashes and per-author
-  statistics.
-- Define collision behavior when a destination path already has historical state.
-- Cover rename chains and rename-plus-edit commits.
-
-Acceptance criteria:
-
-- [x] totals before and after a rename are conserved;
-- [x] serialization and merged results preserve the same history.
+Renames now move complete file history—deduplicated destination-first hashes and per-author line
+statistics—with deterministic collision merging. Rename chains, rename-plus-edit, collisions,
+fork/merge, empty state, and YAML/PB round trips conserve the same history.
 
 ### METRIC-05: Fix Couples merging
 
 Status: completed 2026-07-25
 
-Affected code:
-
-- `leaves/couples.go`
-- `leaves/couples_test.go`
-- `internal/join/`
-
-Work:
-
-- Map file matrix rows through the file identity map, never the people map.
-- Ensure all source and destination indices are validated before access.
-- Use unrelated person and filename values in tests.
-- Add merge associativity checks for three result sets.
-
-Acceptance criteria:
-
-- [x] merged file/people matrices match a hand-computed fixture;
-- [x] merging order does not change the result.
+Couples merging now maps file rows through file identities, validates every matrix/index shape with
+typed integrity errors, and preserves empty/deserialized merge identity. Hand-computed unrelated
+people/file fixtures and three-way associativity tests prove deterministic file and people
+matrices.
 
 ### METRIC-06: Define and implement real `couples-shotness`
 
 Status: completed 2026-07-25
 
-Affected code:
-
-- `internal/render/readers/yaml_reader.go`
-- `internal/render/readers/pb_reader.go`
-- `internal/render/modes/couplesShotness.go`
-- mode lists and parity documentation
-
-Work:
-
-- Remove the current tick-index-as-entity-index calculation.
-- Define coupling as a documented operation over aligned entity time series, such as co-activity,
-  dot product, or normalized correlation.
-- Compute a symmetric entity-by-entity matrix with a meaningful diagonal policy.
-- Remove the mode from `all` until the replacement passes a hand-calculated fixture.
-
-Acceptance criteria:
-
-- [x] every displayed row and column represents the labeled entity;
-- [x] top pairs and heatmap cells agree with the same source matrix;
-- [x] PB and YAML readers produce identical matrices.
+`couples-shotness` now computes a symmetric entity matrix as the dot product of aligned
+entity-indexed co-occurrence profiles, with squared profile norms on the diagonal and positive
+distinct pairs in rankings. Heatmaps and top pairs share one validated matrix; hand-calculated,
+empty, single-entity, malformed, overflow, ambiguous-label, and YAML/PB parity fixtures pass.
 
 ### METRIC-07: Preserve distinct structural entities in Shotness
 
 Status: completed 2026-07-25
 
-Affected code:
-
-- `leaves/shotness.go`
-- tree-sitter node model and shotness tests
-
-Work:
-
-- Key nodes by stable identity: qualified name/receiver, kind, and source identity rather than bare
-  name.
-- Define behavior for moved and renamed structural entities.
-- Add fixtures with same-named methods on different receivers and nested scopes.
-
-Acceptance criteria:
-
-- [x] distinct same-named entities never overwrite one another;
-- [x] counters and coupling remain stable across serialization round trips.
+Shotness identities now combine normalized source path, AST kind, and qualified lexical name
+(including receiver/enclosing scope), excluding coordinates. Line moves and whole-file renames
+preserve identity, while structural renames and individual cross-file moves start new identities;
+same-named/nested entities and YAML/PB round trips retain distinct counters and coupling.
 
 ### METRIC-08: Correct filter-boundary transitions
 
 Status: completed 2026-07-25
 
-Affected code:
-
-- `internal/plumbing/tree_diff.go`
-- `internal/plumbing/tree_diff_test.go`
-
-Work:
-
-- Evaluate old-path and new-path inclusion separately.
-- Translate included→excluded transitions to deletion.
-- Translate excluded→included transitions to insertion.
-- Preserve modify only when both sides remain in scope.
-- Return language-detection errors rather than dropping them.
-
-Acceptance criteria:
-
-- [x] stateful analyses exactly match the filtered repository view after cross-boundary renames;
-- [x] vendor, blacklist, and language filters share the same transition rules.
+TreeDiff now filters old and new paths independently: included→excluded becomes deletion,
+excluded→included insertion, included→included modification, and excluded→excluded omission.
+Blacklist, vendor, regex, and language filters share the rule; language errors are returned
+without advancing state, and initial-tree/retry behavior is covered.
 
 ### METRIC-09: Finish and validate Code Churn semantics
 
 Status: completed 2026-07-25
 
-Affected code:
-
-- `leaves/codechurn.go`
-- `leaves/codechurn_test.go`
-- `docs/SCHEMAS.md`
-
-Work:
-
-- Replace the copied line-burndown description with an accurate description of Code Churn,
-  awareness, memorability, and delete-history output.
-- Specify the awareness and memorability equations, their units, bounds, decay interval, and
-  intended treatment of self-deletions versus deletions by other authors.
-- Either define and implement the currently constant reinforcement factor or remove it and the
-  speculative formula comments. Do not leave a tunable-looking constant whose value is always
-  `1.0`.
-- Add hand-calculated, multi-tick fixtures for reinforcement, decay, insertions, self-deletions,
-  other-author deletions, and a serialization round trip.
-- Keep the analysis explicitly experimental until those fixtures establish stable semantics.
-
-Acceptance criteria:
-
-- [x] `--help` and schema documentation describe the metric actually emitted;
-- [x] every factor in the awareness/memorability calculation has a documented meaning and a test;
-- [x] the implementation contains no placeholder formula or unexplained neutral factor.
+Code Churn now has an explicit experimental contract for bounded awareness/memorability,
+30/180-tick decay, reinforcement, self/other deletion effects, same-tick ordering, and deletion
+horizon behavior in help and `docs/SCHEMAS.md`. Hand-calculated multi-tick fixtures, deterministic
+delete history, overflow validation, and YAML/PB round trips replace the placeholder semantics.
 
 ### METRIC-10: Find and eliminate negative burndown balances
 
 Status: completed 2026-07-25
 
-Affected code:
-
-- `internal/yaml/utils.go`
-- `internal/burndown/`
-- `leaves/burndown.go`
-- `leaves/burndown_legacy.go`
-- burndown merge, rename, deletion, and serialization tests
-
-Work:
-
-- Instrument the matrix update and merge paths so the first transition that creates a negative
-  balance reports the file, tick, age band, and operation.
-- Reproduce the issue with focused fixtures covering merges, rename chains, deletions, filter
-  boundaries, and text/binary transitions.
-- Fix the producing state transition rather than treating the YAML serializer's `fixNegative`
-  clamp as the correction.
-- Retain the clamp only as an explicitly documented compatibility safeguard, or replace it with a
-  typed serialization error after proving normal histories cannot reach it.
-- Assert non-negative global, file, person, and repository matrices before serialization.
-
-Acceptance criteria:
-
-- [x] valid histories never depend on output-time clamping;
-- [x] a regression fixture demonstrates the original negative balance and the corrected transition;
-- [x] invalid internal histories fail with a useful diagnostic instead of silently changing data.
+Burndown interpolation now proportionally lowers existing cohorts when an aggregate decreases
+inside a forming age band, eliminating the source of negative balances. Global/file/person/
+repository matrices are validated with typed contextual errors at finalization, merge, and
+serialization; lifecycle fixtures cover branch merges, rename chains, deletions, filter
+boundaries, and text/binary transitions without relying on YAML clamping.
 
 ## Phase 3 — Make the core deterministic and lifecycle-safe
 

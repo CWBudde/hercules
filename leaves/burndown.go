@@ -429,12 +429,14 @@ func compressBurndownState(state burndownState) ([]byte, error) {
 		return nil, err
 	}
 
-	if err := gob.NewEncoder(fw).Encode(state); err != nil {
+	err = gob.NewEncoder(fw).Encode(state)
+	if err != nil {
 		fw.Close()
 		return nil, err
 	}
 
-	if err := fw.Close(); err != nil {
+	err = fw.Close()
+	if err != nil {
 		return nil, err
 	}
 
@@ -451,12 +453,14 @@ func (analyser *BurndownAnalysis) persistHibernation(data []byte) error {
 		_ = file.Close()
 		_ = os.Remove(file.Name())
 	}
-	if _, err := file.Write(data); err != nil {
+	_, err = file.Write(data)
+	if err != nil {
 		cleanup()
 		return err
 	}
 
-	if err := file.Close(); err != nil {
+	err = file.Close()
+	if err != nil {
 		_ = os.Remove(file.Name())
 		return err
 	}

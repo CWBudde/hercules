@@ -43,7 +43,8 @@ func TestTyposTreeSitterMeta(t *testing.T) {
 
 func TestTyposTreeSitterConsume(t *testing.T) {
 	tdb := &TyposDatasetBuilder{}
-	if err := tdb.Initialize(test.Repository); err != nil {
+	err := tdb.Initialize(test.Repository)
+	if err != nil {
 		t.Fatalf("initialize failed: %v", err)
 	}
 	before := "package demo\n\nfunc main() {\n\tvar cnt = 1\n\t_ = cnt\n}\n"
@@ -67,7 +68,7 @@ func TestTyposTreeSitterConsume(t *testing.T) {
 			"demo.go": diff,
 		},
 	}
-	_, err := tdb.Consume(deps)
+	_, err = tdb.Consume(deps)
 	if err != nil {
 		t.Fatalf("consume failed: %v", err)
 	}

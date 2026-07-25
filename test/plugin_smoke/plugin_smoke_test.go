@@ -32,7 +32,8 @@ func repoRoot(t *testing.T) string {
 	dir, err := os.Getwd()
 	require.NoError(t, err)
 	for {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+		_, err = os.Stat(filepath.Join(dir, "go.mod"))
+		if err == nil {
 			return dir
 		}
 		parent := filepath.Dir(dir)
@@ -98,7 +99,8 @@ func TestPluginCompatibilitySmoke(t *testing.T) {
 	if goEnv(t, "CGO_ENABLED") != "1" {
 		t.Skip("Go plugins require cgo (CGO_ENABLED=1); run `just test-plugin`")
 	}
-	if _, err := exec.LookPath(goEnv(t, "CC")); err != nil {
+	_, err := exec.LookPath(goEnv(t, "CC"))
+	if err != nil {
 		t.Skipf("no C compiler available: %v", err)
 	}
 

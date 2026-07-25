@@ -16,6 +16,54 @@ Each entry should include:
 
 ## Unreleased
 
+- YAML and PB: defined and corrected the experimental `CodeChurn` semantics
+  without changing wire fields or types. Awareness and memorability are bounded
+  scores with documented 30-tick and 180-tick half-lives, affected-line
+  reinforcement, and other-author disruption. YAML now emits the existing
+  deletion-history data, matching PB, and counter overflow returns an error
+  instead of wrapping. Compatibility: semantic breaking change (existing
+  consumers parse the output unchanged, but scores and YAML content can
+  differ). User action: recompute Code Churn output before comparing scores
+  across this release boundary.
+- YAML and PB: corrected Burndown resampling when a still-forming age band
+  decreases, without changing wire fields or types. Existing cohorts now decay
+  proportionally instead of being represented as negative new cohorts.
+  Project, file, person, and repository matrices are validated before merge or
+  serialization, and invalid state returns a typed diagnostic instead of being
+  clamped in YAML. Compatibility: semantic breaking change (existing consumers
+  parse valid output unchanged, but corrected histories can differ and invalid
+  histories now fail). User action: recompute stored Burndown results; callers
+  that supplied negative matrices must handle the returned error.
+- YAML and PB: corrected `FileHistoryAnalysis` rename handling without changing
+  wire fields or types. Renames now conserve the source file's complete commit
+  and per-author line-statistics history; destination collisions merge both
+  histories instead of dropping one side. Compatibility: semantic breaking
+  change (existing consumers parse the output unchanged, but corrected history
+  values can differ). User action: recompute results containing file renames,
+  especially renames onto a path with existing history.
+- YAML and PB: corrected `Couples` partial-result identity mapping without
+  changing wire fields or types. File and developer indices are now translated
+  through their respective dictionaries, and valid merges are associative.
+  Compatibility: semantic breaking change (existing consumers parse the output
+  unchanged, but combined matrix values can differ). User action: recompute
+  results assembled across pipeline branches.
+- YAML and PB: corrected `Shotness` stable identities and `couples-shotness`
+  matrix construction without changing wire fields or types. Entities retain
+  identity across coordinate moves and explicit file renames by path, kind, and
+  qualified name. Coupling charts use entity-profile dot products; diagonals
+  are squared norms and are excluded from distinct-pair rankings. YAML and PB
+  readers share this construction. Compatibility: semantic breaking change
+  (existing consumers parse the data unchanged, but names, counters, matrix
+  values, and rankings can differ). User action: recompute Shotness data and
+  rerender Shotness coupling charts.
+- YAML and PB: corrected the repository-filtered tree view used by analyses
+  without changing any analysis wire fields or types. Old and new tree sides
+  are filtered independently, so included-to-excluded transitions become
+  deletions and excluded-to-included transitions become insertions. Filter
+  errors no longer advance the diff baseline. Compatibility: semantic breaking
+  change (existing consumers parse the output unchanged, but downstream values
+  can differ). User action: recompute analyses using vendor, blacklist,
+  whitelist, or language filters.
 - YAML and PB: corrected `BusFactor` and `OwnershipConcentration` snapshot
   semantics without changing fields or wire types. Occupied ticks now contain
   only ownership state from commits at or before the labeled tick, including

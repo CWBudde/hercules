@@ -196,6 +196,14 @@ func (interpolator *burndownInterpolator) raise(
 	}
 
 	startIndex := max(rowIndex*interpolator.sampling, columnIndex*interpolator.granularity)
+	if finishValue < initial {
+		interpolator.lowerExistingBand(
+			columnIndex, startIndex, finishIndex, initial, finishValue,
+		)
+
+		return
+	}
+
 	if startIndex == finishIndex {
 		return
 	}
@@ -221,6 +229,41 @@ func (interpolator *burndownInterpolator) raise(
 
 		for bandIndex := bandStart; bandIndex < bandEnd; bandIndex++ {
 			targetRow[bandIndex+interpolator.offset] = sourceRow[bandIndex+interpolator.offset]
+		}
+	}
+}
+
+func (interpolator *burndownInterpolator) lowerExistingBand(
+	columnIndex, startIndex, finishIndex int,
+	initial, finish float32,
+) {
+	steps := finishIndex - startIndex
+	if steps <= 0 {
+		return
+	}
+
+	bandStart := columnIndex * interpolator.granularity
+	bandEnd := (columnIndex + 1) * interpolator.granularity
+
+	for tickIndex := startIndex; tickIndex < finishIndex; tickIndex++ {
+		source := interpolator.perTick[tickIndex-1+interpolator.offset]
+		target := interpolator.perTick[tickIndex+interpolator.offset]
+
+		sourceTotal := float32(0)
+		for bandIndex := bandStart; bandIndex < bandEnd; bandIndex++ {
+			sourceTotal += source[bandIndex+interpolator.offset]
+		}
+
+		progress := float32(tickIndex-startIndex+1) / float32(steps)
+		targetTotal := initial + (finish-initial)*progress
+
+		if sourceTotal <= 0 {
+			continue
+		}
+
+		scale := targetTotal / sourceTotal
+		for bandIndex := bandStart; bandIndex < bandEnd; bandIndex++ {
+			target[bandIndex+interpolator.offset] = source[bandIndex+interpolator.offset] * scale
 		}
 	}
 }

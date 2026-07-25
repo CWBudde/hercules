@@ -229,8 +229,7 @@ func (r *ProtobufReader) GetShotnessCooccurrence() ([]string, [][]int, error) {
 		return nil, nil, err
 	}
 
-	index, matrix := shotnessCounterMatrix(shotnessRecords)
-	return index, matrix, nil
+	return shotnessCouplingMatrix(shotnessRecords)
 }
 
 // GetShotnessRecords retrieves shotness records
@@ -239,10 +238,6 @@ func (r *ProtobufReader) GetShotnessRecords() ([]ShotnessRecord, error) {
 	if err != nil {
 		return nil, err
 	}
-	if len(shotnessData.Records) == 0 {
-		return []ShotnessRecord{}, fmt.Errorf("%w: shotness", ErrAnalysisMissing)
-	}
-
 	pbRecords := shotnessData.Records
 	records := make([]ShotnessRecord, len(pbRecords))
 	for i, pbRecord := range pbRecords {

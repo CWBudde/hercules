@@ -21,7 +21,10 @@ import (
 	"github.com/cwbudde/hercules/internal/yaml"
 )
 
-var errUnexpectedCodeChurnResult = errors.New("result is not a CodeChurnResult")
+var (
+	errCodeChurnCounterOverflow  = errors.New("code churn counter overflow")
+	errUnexpectedCodeChurnResult = errors.New("result is not a CodeChurnResult")
+)
 
 // CodeChurnAnalysis allows to gather the code churn statistics for a Git repository.
 // It is a LeafPipelineItem.
@@ -47,8 +50,9 @@ type CodeChurnAnalysis struct {
 	tickSize time.Duration
 
 	// code churns indexed by people
-	codeChurns  []personChurnStats
-	churnDeltas map[churnDeltaKey]churnDelta
+	codeChurns []personChurnStats
+	lastTick   core.TickNumber
+	hasTick    bool
 
 	peopleResolver core.IdentityResolver
 	fileResolver   core.FileIdResolver
@@ -174,9 +178,8 @@ func (analyser *CodeChurnAnalysis) Flag() string {
 
 // Description returns the text which explains what the analysis is doing.
 func (analyser *CodeChurnAnalysis) Description() string {
-	// TODO description
-	return "Line burndown stats indicate the numbers of lines which were last edited within " +
-		"specific time intervals through time. Search for \"git-of-theseus\" in the internet."
+	return "Experimental per-author, per-file code churn: lifetime inserted and currently owned " +
+		"line counts, bounded awareness and memorability estimates, and deletion history."
 }
 
 // Initialize resets the temporary caches and prepares this PipelineItem for a series of Consume()
@@ -210,7 +213,8 @@ func (analyser *CodeChurnAnalysis) Initialize(repository *git.Repository) error 
 	peopleCount := analyser.peopleResolver.MaxCount()
 
 	analyser.codeChurns = make([]personChurnStats, peopleCount)
-	analyser.churnDeltas = map[churnDeltaKey]churnDelta{}
+	analyser.lastTick = 0
+	analyser.hasTick = false
 
 	return nil
 }
@@ -234,6 +238,10 @@ func (analyser *CodeChurnAnalysis) Consume(deps map[string]any) (map[string]any,
 	peopleCount := analyser.peopleResolver.MaxCount()
 
 	for _, change := range changes.Changes {
+		// File-deletion sentinels do not affect ownership, but their tick still
+		// advances the repository-wide decay horizon used by Finalize.
+		analyser.observeTick(change.CurrTick)
+
 		if change.IsDelete() {
 			continue
 		}
@@ -241,6 +249,13 @@ func (analyser *CodeChurnAnalysis) Consume(deps map[string]any) (map[string]any,
 		lineDelta, err := intToProtoInt32(change.Delta, "code churn line delta")
 		if err != nil {
 			return nil, err
+		}
+
+		if lineDelta == math.MinInt32 {
+			return nil, fmt.Errorf(
+				"%w: deletion magnitude %d cannot be represented",
+				errCodeChurnCounterOverflow, change.Delta,
+			)
 		}
 
 		if int(change.PrevAuthor) >= peopleCount && change.PrevAuthor != core.AuthorMissing {
@@ -251,21 +266,13 @@ func (analyser *CodeChurnAnalysis) Consume(deps map[string]any) (map[string]any,
 			change.CurrAuthor = core.AuthorMissing
 		}
 
-		analyser.updateAuthor(change, lineDelta)
+		err = analyser.updateAuthor(change, lineDelta)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return noDependencies(), nil
-}
-
-type churnDeltaKey struct {
-	core.AuthorId
-	core.FileId
-}
-
-type churnDelta struct {
-	churnLines
-
-	lastTouch core.TickNumber
 }
 
 type churnLines struct {
@@ -280,12 +287,16 @@ type churnFileEntry struct {
 	ownedLines    int32
 	memorability  float32
 	awareness     float32
+	lastScoreTick core.TickNumber
+	hasScore      bool
 
 	deleteHistory map[core.AuthorId]sparseHistory
 }
 
 // Finalize returns the result of the analysis. Further calls to Consume() are not expected.
 func (analyser *CodeChurnAnalysis) Finalize() any {
+	analyser.decayAllKnowledgeToLastTick()
+
 	result := CodeChurnResult{
 		Authors:     make([]CodeChurnAuthorResult, len(analyser.codeChurns)),
 		people:      analyser.peopleResolver.CopyNames(false),
@@ -417,51 +428,29 @@ func (analyser *CodeChurnAnalysis) MergeResults(
 		merged.Authors[i].Files = map[string]CodeChurnFileResult{}
 	}
 
-	mergeCodeChurnAuthors(&merged, cr1, peopleIndex)
-	mergeCodeChurnAuthors(&merged, cr2, peopleIndex)
+	err = mergeCodeChurnAuthors(&merged, cr1, peopleIndex)
+	if err != nil {
+		return fmt.Errorf("merge code churn first authors: %w", err)
+	}
+
+	err = mergeCodeChurnAuthors(&merged, cr2, peopleIndex)
+	if err != nil {
+		return fmt.Errorf("merge code churn second authors: %w", err)
+	}
 
 	return merged
 }
 
-func (analyser *CodeChurnAnalysis) updateAwareness(
-	change core.LineHistoryChange, fileEntry *churnFileEntry, lineDelta int32,
-) {
-	deltaKey := churnDeltaKey{change.PrevAuthor, change.FileId}
-	delta, hasDelta := analyser.churnDeltas[deltaKey]
-
-	if delta.lastTouch != change.CurrTick {
-		delta, lineDelta = analyser.advanceChurnDelta(change, fileEntry, delta, lineDelta, hasDelta)
-		if lineDelta == 0 {
-			delete(analyser.churnDeltas, deltaKey)
-			return
-		}
+func (analyser *CodeChurnAnalysis) observeTick(tick core.TickNumber) {
+	if !analyser.hasTick || tick > analyser.lastTick {
+		analyser.lastTick = tick
+		analyser.hasTick = true
 	}
-
-	updateChurnDelta(&delta, change, lineDelta)
-
-	analyser.churnDeltas[deltaKey] = delta
 }
 
-func (analyser *CodeChurnAnalysis) advanceChurnDelta(
-	change core.LineHistoryChange, fileEntry *churnFileEntry, delta churnDelta,
-	lineDelta int32, hasDelta bool,
-) (churnDelta, int32) {
-	if !hasDelta {
-		return churnDelta{lastTouch: change.CurrTick}, lineDelta
-	}
+func churnLinesForChange(change core.LineHistoryChange, lineDelta int32) churnLines {
+	var delta churnLines
 
-	if change.PrevAuthor != change.CurrAuthor {
-		delta.deletedByOthers -= lineDelta
-		lineDelta = 0
-	}
-
-	awareness, memorability := analyser.calculateAwareness(*fileEntry, change, delta.lastTouch, delta.churnLines)
-	fileEntry.awareness, fileEntry.memorability = float32(awareness), float32(memorability)
-
-	return churnDelta{lastTouch: change.CurrTick}, lineDelta
-}
-
-func updateChurnDelta(delta *churnDelta, change core.LineHistoryChange, lineDelta int32) {
 	switch {
 	case change.PrevAuthor != change.CurrAuthor && lineDelta < 0:
 		delta.deletedByOthers -= lineDelta
@@ -470,22 +459,38 @@ func updateChurnDelta(delta *churnDelta, change core.LineHistoryChange, lineDelt
 	case change.PrevAuthor == change.CurrAuthor:
 		delta.deletedBySelf -= lineDelta
 	}
+
+	return delta
 }
 
-func (analyser *CodeChurnAnalysis) updateAuthor(change core.LineHistoryChange, lineDelta int32) {
+func (analyser *CodeChurnAnalysis) updateAuthor(
+	change core.LineHistoryChange, lineDelta int32,
+) error {
 	if change.PrevAuthor == core.AuthorMissing || change.Delta == 0 {
-		return
+		return nil
 	}
 
 	fileEntry := analyser.codeChurns[change.PrevAuthor].getFileEntry(change.FileId)
 
-	analyser.updateAwareness(change, &fileEntry, lineDelta)
+	ownedLines, err := addCodeChurnInt32(fileEntry.ownedLines, lineDelta)
+	if err != nil {
+		return fmt.Errorf("update owned lines: %w", err)
+	}
 
-	fileEntry.ownedLines += lineDelta
 	if change.Delta > 0 {
 		// PrevAuthor == CurrAuthor
-		fileEntry.insertedLines += lineDelta
-	} else {
+		insertedLines, err := addCodeChurnInt32(fileEntry.insertedLines, lineDelta)
+		if err != nil {
+			return fmt.Errorf("update inserted lines: %w", err)
+		}
+
+		fileEntry.insertedLines = insertedLines
+	}
+
+	analyser.updateKnowledge(&fileEntry, change.CurrTick, churnLinesForChange(change, lineDelta))
+	fileEntry.ownedLines = ownedLines
+
+	if change.Delta < 0 {
 		history := fileEntry.deleteHistory[change.CurrAuthor]
 		if history == nil {
 			history = sparseHistory{}
@@ -496,6 +501,20 @@ func (analyser *CodeChurnAnalysis) updateAuthor(change core.LineHistoryChange, l
 	}
 
 	analyser.codeChurns[change.PrevAuthor].files[change.FileId] = fileEntry
+
+	return nil
+}
+
+func addCodeChurnInt32(left, right int32) (int32, error) {
+	sum := int64(left) + int64(right)
+	if sum < math.MinInt32 || sum > math.MaxInt32 {
+		return 0, fmt.Errorf(
+			"%w: %d + %d is outside int32 bounds",
+			errCodeChurnCounterOverflow, left, right,
+		)
+	}
+
+	return int32(sum), nil
 }
 
 func mergeCodeChurnPeople(first, second []string) ([]string, map[string]int) {
@@ -518,7 +537,7 @@ func mergeCodeChurnPeople(first, second []string) ([]string, map[string]int) {
 
 func mergeCodeChurnAuthors(
 	target *CodeChurnResult, source CodeChurnResult, peopleIndex map[string]int,
-) {
+) error {
 	for authorID, author := range source.Authors {
 		if authorID >= len(source.people) {
 			continue
@@ -532,14 +551,32 @@ func mergeCodeChurnAuthors(
 				continue
 			}
 
-			current.InsertedLines += stats.InsertedLines
-			current.OwnedLines += stats.OwnedLines
+			insertedLines, err := addCodeChurnInt32(current.InsertedLines, stats.InsertedLines)
+			if err != nil {
+				return fmt.Errorf(
+					"merge author %q file %q inserted lines: %w",
+					source.people[authorID], fileName, err,
+				)
+			}
+
+			ownedLines, err := addCodeChurnInt32(current.OwnedLines, stats.OwnedLines)
+			if err != nil {
+				return fmt.Errorf(
+					"merge author %q file %q owned lines: %w",
+					source.people[authorID], fileName, err,
+				)
+			}
+
+			current.InsertedLines = insertedLines
+			current.OwnedLines = ownedLines
 			current.Memorability = maxFloat32(current.Memorability, stats.Memorability)
 			current.Awareness = maxFloat32(current.Awareness, stats.Awareness)
 			current.DeleteHistory = mergeDeleteHistory(current.DeleteHistory, stats.DeleteHistory)
 			targetFiles[fileName] = current
 		}
 	}
+
+	return nil
 }
 
 func (analyser *CodeChurnAnalysis) serializeText(result *CodeChurnResult, writer io.Writer) {
@@ -572,6 +609,34 @@ func (analyser *CodeChurnAnalysis) serializeText(result *CodeChurnResult, writer
 			fmt.Fprintf(writer, "          owned_lines: %d\n", stats.OwnedLines)
 			fmt.Fprintf(writer, "          memorability: %.6f\n", stats.Memorability)
 			fmt.Fprintf(writer, "          awareness: %.6f\n", stats.Awareness)
+			serializeCodeChurnDeleteHistoryText(stats.DeleteHistory, writer)
+		}
+	}
+}
+
+func serializeCodeChurnDeleteHistoryText(history map[int]sparseHistory, writer io.Writer) {
+	if len(history) == 0 {
+		fmt.Fprintln(writer, "          delete_history: {}")
+
+		return
+	}
+
+	fmt.Fprintln(writer, "          delete_history:")
+
+	for _, author := range sortedCodeChurnIntKeys(history) {
+		fmt.Fprintf(writer, "            %d:\n", author)
+
+		for _, currentTick := range sortedCodeChurnIntKeys(history[author]) {
+			fmt.Fprintf(writer, "              %d:\n", currentTick)
+
+			for _, previousTick := range sortedCodeChurnIntKeys(history[author][currentTick].deltas) {
+				fmt.Fprintf(
+					writer,
+					"                %d: %d\n",
+					previousTick,
+					history[author][currentTick].deltas[previousTick],
+				)
+			}
 		}
 	}
 }
@@ -832,69 +897,88 @@ func maxFloat32(left, right float32) float32 {
 	return right
 }
 
-func (analyser *CodeChurnAnalysis) memoryLoss(x float64) float64 {
-	const halfLossPeriod = 30
-	return 1.0 / (1.0 + math.Exp(x-halfLossPeriod))
+const (
+	// codeChurnAwarenessHalfLifeTicks controls short-term familiarity decay.
+	codeChurnAwarenessHalfLifeTicks = 30.0
+	// codeChurnMemorabilityHalfLifeTicks controls long-term familiarity decay.
+	codeChurnMemorabilityHalfLifeTicks = 180.0
+)
+
+func decayCodeChurnScore(score float64, elapsed core.TickNumber, halfLife float64) float64 {
+	if elapsed <= 0 {
+		return clampCodeChurnScore(score)
+	}
+
+	return clampCodeChurnScore(score * math.Exp2(-float64(elapsed)/halfLife))
 }
 
-func (analyser *CodeChurnAnalysis) calculateAwareness(entry churnFileEntry, change core.LineHistoryChange,
-	lastTouch core.TickNumber, delta churnLines,
-) (float64, float64) {
-	const awarenessLowCut = 0.5
-	const memorabilityMin = 0.5
+func clampCodeChurnScore(score float64) float64 {
+	return math.Max(0, math.Min(1, score))
+}
 
-	if entry.insertedLines == 0 {
-		// initial
-		return 0, memorabilityMin
+func codeChurnLineShare(lines int32, population float64) float64 {
+	if lines <= 0 {
+		return 0
 	}
 
-	awareness, memorability := float64(entry.awareness), float64(entry.memorability)
-	if lastTouch >= change.CurrTick {
-		return awareness, memorability
+	return math.Min(1, float64(lines)/math.Max(1, population))
+}
+
+func decayFileKnowledge(entry *churnFileEntry, tick core.TickNumber) {
+	if !entry.hasScore || tick <= entry.lastScoreTick {
+		return
 	}
 
-	ownedLines := 0.0
-	if entry.ownedLines > 0 {
-		ownedLines = float64(entry.ownedLines)
-		awareness = math.Max(0, awareness*
-			float64(entry.ownedLines-delta.deletedByOthers-delta.deletedBySelf)/ownedLines)
+	elapsed := tick - entry.lastScoreTick
+	entry.awareness = float32(decayCodeChurnScore(
+		float64(entry.awareness), elapsed, codeChurnAwarenessHalfLifeTicks,
+	))
+	entry.memorability = float32(decayCodeChurnScore(
+		float64(entry.memorability), elapsed, codeChurnMemorabilityHalfLifeTicks,
+	))
+	entry.lastScoreTick = tick
+}
+
+// updateKnowledge applies the experimental Code Churn equations. Scores first decay to tick.
+// Insertions and self-deletions reinforce familiarity by their share of the author's line
+// population; deletions by another author then reduce both scores by the removed ownership share.
+func (analyser *CodeChurnAnalysis) updateKnowledge(
+	entry *churnFileEntry, tick core.TickNumber, delta churnLines,
+) {
+	decayFileKnowledge(entry, tick)
+
+	ownedBefore := math.Max(0, float64(entry.ownedLines))
+	reinforcedLines := delta.inserted + delta.deletedBySelf
+	reinforcement := codeChurnLineShare(reinforcedLines, ownedBefore+float64(delta.inserted))
+	disruption := codeChurnLineShare(delta.deletedByOthers, ownedBefore)
+
+	awareness := float64(entry.awareness)
+	memorability := float64(entry.memorability)
+	awareness = (awareness + (1-awareness)*reinforcement) * (1 - disruption)
+	memorability = (memorability + (1-memorability)*reinforcement) * (1 - disruption)
+
+	entry.awareness = float32(clampCodeChurnScore(awareness))
+
+	entry.memorability = float32(clampCodeChurnScore(memorability))
+
+	if !entry.hasScore || tick > entry.lastScoreTick {
+		entry.lastScoreTick = tick
 	}
 
-	awareness += float64(delta.inserted)
+	entry.hasScore = true
+}
 
-	timeDelta := float64(int(change.CurrTick - lastTouch))
-	reinforcementFactor := 1.0 // TODO reinforcementFactor
+func (analyser *CodeChurnAnalysis) decayAllKnowledgeToLastTick() {
+	if !analyser.hasTick {
+		return
+	}
 
-	memorability = math.Min(1, memorability*reinforcementFactor*(ownedLines+float64(delta.inserted))/
-		(ownedLines+float64(delta.deletedByOthers)))
-	// memorability is increased by delta.inserted + delta.deletedByOthers
-	// memorability is reduced by delta.deletedByOthers
-
-	if awareness > awarenessLowCut {
-		memorability = math.Min(memorability, memorabilityMin)
-
-		awareness *= analyser.memoryLoss(timeDelta * (1 + memorabilityMin - memorability))
-		if awareness >= awarenessLowCut {
-			return awareness, memorability
+	for authorID := range analyser.codeChurns {
+		for fileID, entry := range analyser.codeChurns[authorID].files {
+			decayFileKnowledge(&entry, analyser.lastTick)
+			analyser.codeChurns[authorID].files[fileID] = entry
 		}
 	}
-
-	return 0, 0
-
-	// memory halflife = min 30d max 180d
-	// reinforcement period = memorability * 3 months
-
-	// memory loss = 0.5 ^ (period / (reinforcement_period * memorability))
-	// memory gain
-
-	// negative Delta is better for memorability
-	// frequent access - better
-	// more owned lines - better
-	// more deleted lines of others - better
-	// more deleted lines of own - keepup
-	// larger file - less awareness
-
-	//	awareness = entry.awareness + float32(entry.ownedLines
 }
 
 var _ = core.RegisterPipelineItem(&CodeChurnAnalysis{})

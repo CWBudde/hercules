@@ -2,6 +2,7 @@ package leaves
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"os"
 	"path"
@@ -12,6 +13,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/gogo/protobuf/proto"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/cwbudde/hercules/internal/burndown"
 	"github.com/cwbudde/hercules/internal/core"
@@ -702,6 +704,71 @@ func TestBurndownSerialize(t *testing.T) {
 	assert.Equal(t, msg.GetPeopleInteraction().GetIndptr(), indptr[:])
 }
 
+func TestBurndownSerializeRejectsNegativeBalances(t *testing.T) {
+	tests := map[string]struct {
+		result BurndownResult
+		scope  string
+		name   string
+	}{
+		"global": {
+			result: BurndownResult{GlobalHistory: burndown.DenseHistory{{0}, {0, 0, -3}}},
+			scope:  "project",
+			name:   "project",
+		},
+		"file": {
+			result: BurndownResult{
+				GlobalHistory: burndown.DenseHistory{{0}},
+				FileHistories: map[string]burndown.DenseHistory{
+					"src/renamed.go": {{0}, {0, 0, -3}},
+				},
+			},
+			scope: "file",
+			name:  "src/renamed.go",
+		},
+		"person": {
+			result: BurndownResult{
+				GlobalHistory:      burndown.DenseHistory{{0}},
+				PeopleHistories:    []burndown.DenseHistory{{{0}, {0, 0, -3}}},
+				reversedPeopleDict: []string{"alice"},
+			},
+			scope: "person",
+			name:  "alice",
+		},
+		"repository": {
+			result: BurndownResult{
+				GlobalHistory:          burndown.DenseHistory{{0}},
+				RepositoryHistories:    []burndown.DenseHistory{{{0}, {0, 0, -3}}},
+				ReversedRepositoryDict: []string{"example/repository"},
+			},
+			scope: "repository",
+			name:  "example/repository",
+		},
+	}
+
+	for name, testCase := range tests {
+		for _, binary := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/binary=%t", name, binary), func(t *testing.T) {
+				testCase.result.sampling = 5
+				testCase.result.granularity = 7
+				buffer := &bytes.Buffer{}
+
+				err := (&BurndownAnalysis{}).Serialize(testCase.result, binary, buffer)
+				assert.ErrorIs(t, err, errNegativeBurndownBalance)
+				assert.Empty(t, buffer.Bytes())
+
+				var balanceError *negativeBurndownBalanceError
+				require.ErrorAs(t, err, &balanceError)
+				assert.Equal(t, testCase.scope, balanceError.Scope)
+				assert.Equal(t, testCase.name, balanceError.Name)
+				assert.Equal(t, 5, balanceError.Tick)
+				assert.Equal(t, 14, balanceError.AgeBand)
+				assert.Equal(t, "serialization", balanceError.Operation)
+				assert.Equal(t, int64(-3), balanceError.Value)
+			})
+		}
+	}
+}
+
 func TestBurndownSerializeAuthorMissing(t *testing.T) {
 	out := prepareBDForSerialization(t, 0, core.AuthorMissing)
 	bd := &BurndownAnalysis{}
@@ -954,6 +1021,217 @@ func TestBurndownMergeGlobalHistory_withDifferentTickSizes(t *testing.T) {
 	assert.True(t, ok)
 	assert.ErrorIs(t, mergedErr, errBurndownMismatchingTickSizes)
 	assert.Contains(t, mergedErr.Error(), "mismatching tick sizes")
+}
+
+func TestBurndownLifecycleTransitionsRemainNonNegative(t *testing.T) {
+	treeFrom, err := test.Repository.TreeObject(plumbing.NewHash(
+		"a1eb2ea76eb7f9bfbde9b243861474421000eb96",
+	))
+	require.NoError(t, err)
+	treeTo, err := test.Repository.TreeObject(plumbing.NewHash(
+		"994eac1cd07235bb9815e547a75c84265dea00f5",
+	))
+	require.NoError(t, err)
+
+	entry := func(name, hash string, tree *object.Tree) object.ChangeEntry {
+		return object.ChangeEntry{
+			Name: name,
+			Tree: tree,
+			TreeEntry: object.TreeEntry{
+				Name: name,
+				Mode: 0o100644,
+				Hash: plumbing.NewHash(hash),
+			},
+		}
+	}
+	insert := func(name, hash string) *object.Change {
+		return &object.Change{To: entry(name, hash, treeTo)}
+	}
+	remove := func(name, hash string) *object.Change {
+		return &object.Change{From: entry(name, hash, treeFrom)}
+	}
+	modify := func(fromName, fromHash, toName, toHash string) *object.Change {
+		return &object.Change{
+			From: entry(fromName, fromHash, treeFrom),
+			To:   entry(toName, toHash, treeTo),
+		}
+	}
+
+	type lifecycleStep struct {
+		tick    int
+		author  int
+		changes object.Changes
+	}
+	tests := []struct {
+		name              string
+		steps             []lifecycleStep
+		survivingPath     string
+		expectedFinalSize int64
+	}{
+		{
+			name: "rename chain ending in deletion",
+			steps: []lifecycleStep{
+				{tick: 0, author: 0, changes: object.Changes{
+					insert(lifecycleBaselinePath, lifecycleBaselineHash),
+					insert("original.txt", lifecycleTextHash),
+				}},
+				{tick: 30, author: 1, changes: object.Changes{
+					modify("original.txt", lifecycleTextHash, "middle.txt", lifecycleTextHash),
+				}},
+				{tick: 60, author: 1, changes: object.Changes{
+					modify("middle.txt", lifecycleTextHash, "final.txt", lifecycleTextHash),
+				}},
+				{tick: 90, author: 1, changes: object.Changes{
+					remove("final.txt", lifecycleTextHash),
+				}},
+			},
+			expectedFinalSize: 12,
+		},
+		{
+			name: "filter boundary delete and reinsert",
+			steps: []lifecycleStep{
+				{tick: 0, author: 0, changes: object.Changes{
+					insert(lifecycleBaselinePath, lifecycleBaselineHash),
+					insert("boundary.txt", lifecycleTextHash),
+				}},
+				// TreeDiff represents included -> excluded as a deletion and
+				// excluded -> included as an insertion. The TreeDiff transition
+				// table tests filters; downstream they share this lifecycle invariant.
+				{tick: 30, author: 1, changes: object.Changes{
+					remove("boundary.txt", lifecycleTextHash),
+				}},
+				{tick: 60, author: 1, changes: object.Changes{
+					insert("boundary.txt", lifecycleTextHash),
+				}},
+			},
+			survivingPath:     "boundary.txt",
+			expectedFinalSize: 219,
+		},
+		{
+			name: "text to binary and back to text",
+			steps: []lifecycleStep{
+				{tick: 0, author: 0, changes: object.Changes{
+					insert(lifecycleBaselinePath, lifecycleBaselineHash),
+					insert("format.txt", lifecycleTextHash),
+				}},
+				{tick: 30, author: 1, changes: object.Changes{
+					modify("format.txt", lifecycleTextHash, "format.txt", lifecycleBinaryHash),
+				}},
+				{tick: 60, author: 1, changes: object.Changes{
+					modify("format.txt", lifecycleBinaryHash, "format.txt", lifecycleTextHash2),
+				}},
+			},
+			survivingPath:     "format.txt",
+			expectedFinalSize: 302,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			fd := fixtures.FileDiff()
+			lh := LineHistoryAnalyser()
+			bd := BurndownAnalysis{
+				TrackFiles:     true,
+				peopleResolver: core.NewIdentityResolver([]string{"P1", "P2"}, nil),
+				repositoryName: tc.name,
+			}
+			require.NoError(t, bd.Initialize(test.Repository))
+
+			for _, step := range tc.steps {
+				cache := map[plumbing.Hash]*items.CachedBlob{}
+				for _, change := range step.changes {
+					for _, hash := range []plumbing.Hash{
+						change.From.TreeEntry.Hash,
+						change.To.TreeEntry.Hash,
+					} {
+						if hash != plumbing.ZeroHash {
+							AddHash(t, cache, hash.String())
+						}
+					}
+				}
+
+				deps := map[string]any{
+					identity.DependencyAuthor:   step.author,
+					items.DependencyTick:        step.tick,
+					items.DependencyBlobCache:   cache,
+					items.DependencyTreeChanges: step.changes,
+				}
+				diffResult, err := fd.Consume(deps)
+				require.NoError(t, err)
+				deps[items.DependencyFileDiff] = diffResult[items.DependencyFileDiff]
+
+				lineResult, err := lh.Consume(deps)
+				require.NoError(t, err)
+				deps[linehistory.DependencyLineHistory] = lineResult[linehistory.DependencyLineHistory]
+
+				_, err = bd.Consume(deps)
+				require.NoError(t, err)
+			}
+
+			finalized := bd.Finalize()
+			result, ok := finalized.(BurndownResult)
+			require.Truef(t, ok, "finalization returned %T: %v", finalized, finalized)
+			require.NoError(t, validateBurndownResultBalances(
+				&result, "lifecycle transition test",
+			))
+
+			require.NotEmpty(t, result.GlobalHistory)
+			require.Contains(t, result.FileHistories, lifecycleBaselinePath)
+			require.Len(t, result.PeopleHistories, 2)
+			require.Len(t, result.RepositoryHistories, 1)
+
+			assertBurndownHistoryNonNegative(t, "global history", result.GlobalHistory)
+			for name, history := range result.FileHistories {
+				assertBurndownHistoryNonNegative(t, "file history "+name, history)
+			}
+			for index, history := range result.PeopleHistories {
+				assertBurndownHistoryNonNegative(
+					t, fmt.Sprintf("person history %d", index), history,
+				)
+			}
+			for index, history := range result.RepositoryHistories {
+				assertBurndownHistoryNonNegative(
+					t, fmt.Sprintf("repository history %d", index), history,
+				)
+			}
+
+			lastRow := result.GlobalHistory[len(result.GlobalHistory)-1]
+			var finalSize int64
+			for _, value := range lastRow {
+				finalSize += value
+			}
+			assert.Equal(t, tc.expectedFinalSize, finalSize)
+			if tc.survivingPath == "" {
+				assert.NotContains(t, result.FileHistories, "final.txt")
+			} else {
+				assert.Contains(t, result.FileHistories, tc.survivingPath)
+			}
+		})
+	}
+}
+
+func TestBurndownMergeRejectsNegativeInput(t *testing.T) {
+	first := BurndownResult{
+		GlobalHistory: burndown.DenseHistory{{1}, {-2}},
+		tickSize:      24 * time.Hour,
+		sampling:      2,
+		granularity:   3,
+	}
+	second := BurndownResult{
+		GlobalHistory: burndown.DenseHistory{{1}},
+		tickSize:      24 * time.Hour,
+		sampling:      2,
+		granularity:   3,
+	}
+	common := &core.CommonAnalysisResult{BeginTime: 0, EndTime: 2 * 86400}
+
+	merged := (&BurndownAnalysis{}).MergeResults(first, second, common, common)
+	err, ok := merged.(error)
+	require.True(t, ok)
+	assert.ErrorIs(t, err, errNegativeBurndownBalance)
+	assert.ErrorContains(t, err, "tick 2")
+	assert.ErrorContains(t, err, "age band 0")
+	assert.ErrorContains(t, err, "merge input 1")
 }
 
 func TestBurndownMergeNils(t *testing.T) {

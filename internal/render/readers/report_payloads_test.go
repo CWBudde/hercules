@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"os"
+	"strconv"
 	"testing"
 
 	"github.com/gogo/protobuf/proto"
@@ -384,10 +385,10 @@ func TestProtobufReader_CurrentHerculesShotnessFixture(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, index, len(records))
 	require.Len(t, cooccurrence, len(records))
-	requireShotnessCooccurrenceMatchesPythonCounterMatrix(t, records, cooccurrence)
+	requireShotnessCooccurrenceMatchesAlignedProfileDotProducts(t, records, cooccurrence)
 }
 
-func TestProtobufReader_ShotnessCooccurrenceUsesPythonCounterMatrix(t *testing.T) {
+func TestShotnessCooccurrenceUsesAlignedEntityProfilesWithFormatParity(t *testing.T) {
 	payload := &pb.AnalysisResults{
 		Contents: map[string][]byte{
 			"Shotness": marshalProto(t, &pb.ShotnessAnalysisResults{
@@ -419,14 +420,137 @@ func TestProtobufReader_ShotnessCooccurrenceUsesPythonCounterMatrix(t *testing.T
 	reader := &ProtobufReader{}
 	require.NoError(t, reader.Read(bytes.NewReader(data)))
 
-	index, cooccurrence, err := reader.GetShotnessCooccurrence()
+	pbIndex, pbCooccurrence, err := reader.GetShotnessCooccurrence()
 	require.NoError(t, err)
-	require.Equal(t, []string{"a.go:alpha", "b.go:beta", "c.go:gamma"}, index)
-	require.Equal(t, [][]int{
-		{3, 0, 1},
-		{2, 5, 0},
-		{0, 4, 1},
-	}, cooccurrence)
+	require.Equal(t, []string{"a.go:alpha", "b.go:beta", "c.go:gamma"}, pbIndex)
+
+	// Hand calculation over aligned entity dimensions:
+	// alpha=(3,0,1), beta=(2,5,0), gamma=(0,4,1).
+	// Each cell is the corresponding dot product. The diagonal therefore
+	// records squared self-activity: 10, 29, and 17.
+	want := [][]int{
+		{10, 6, 1},
+		{6, 29, 20},
+		{1, 20, 17},
+	}
+	require.Equal(t, want, pbCooccurrence)
+
+	yamlReader := &YamlReader{}
+	require.NoError(t, yamlReader.Read(bytes.NewBufferString(`
+Shotness:
+  - type: function
+    name: alpha
+    file: a.go
+    counters: {0: 3, 2: 1}
+  - type: function
+    name: beta
+    file: b.go
+    counters: {0: 2, 1: 5}
+  - type: function
+    name: gamma
+    file: c.go
+    counters: {1: 4, 2: 1}
+`)))
+	yamlIndex, yamlCooccurrence, err := yamlReader.GetShotnessCooccurrence()
+	require.NoError(t, err)
+	require.Equal(t, pbIndex, yamlIndex)
+	require.Equal(t, pbCooccurrence, yamlCooccurrence)
+}
+
+func TestShotnessCouplingMatrixValidatesEntityDimensionsAndIdentity(t *testing.T) {
+	t.Run("kind disambiguates otherwise equal labels", func(t *testing.T) {
+		index, matrix, err := shotnessCouplingMatrix([]ShotnessRecord{
+			{
+				Type: "function", Name: "run", File: "demo.go",
+				Counters: map[int32]int32{0: 1},
+			},
+			{
+				Type: "method", Name: "run", File: "demo.go",
+				Counters: map[int32]int32{1: 1},
+			},
+		})
+		require.NoError(t, err)
+		require.Equal(t, []string{"demo.go:run [function]", "demo.go:run [method]"}, index)
+		require.Equal(t, [][]int{{1, 0}, {0, 1}}, matrix)
+	})
+
+	t.Run("duplicate stable identity", func(t *testing.T) {
+		_, _, err := shotnessCouplingMatrix([]ShotnessRecord{
+			{Type: "function", Name: "run", File: "demo.go"},
+			{Type: "function", Name: "run", File: "demo.go"},
+		})
+		require.ErrorContains(t, err, "duplicate shotness entity identity")
+	})
+
+	for _, dimension := range []int32{-1, 2} {
+		t.Run("out-of-range counter dimension", func(t *testing.T) {
+			_, _, err := shotnessCouplingMatrix([]ShotnessRecord{
+				{
+					Type: "function", Name: "alpha", File: "a.go",
+					Counters: map[int32]int32{dimension: 1},
+				},
+				{Type: "function", Name: "beta", File: "b.go"},
+			})
+			require.ErrorContains(t, err, "out-of-range counter dimension")
+		})
+	}
+
+	t.Run("negative counter", func(t *testing.T) {
+		_, _, err := shotnessCouplingMatrix([]ShotnessRecord{
+			{
+				Type: "function", Name: "alpha", File: "a.go",
+				Counters: map[int32]int32{0: -1},
+			},
+		})
+		require.ErrorContains(t, err, "negative co-occurrence")
+	})
+
+	t.Run("dot product overflow", func(t *testing.T) {
+		const maxInt32 = int32(1<<31 - 1)
+		profile := map[int32]int32{0: maxInt32, 1: maxInt32, 2: maxInt32}
+		_, _, err := shotnessCouplingMatrix([]ShotnessRecord{
+			{Type: "function", Name: "alpha", File: "a.go", Counters: profile},
+			{Type: "function", Name: "beta", File: "b.go", Counters: profile},
+			{Type: "function", Name: "gamma", File: "c.go"},
+		})
+		require.ErrorContains(t, err, "overflows int")
+	})
+
+	t.Run("pair total overflow", func(t *testing.T) {
+		if strconv.IntSize < 64 {
+			t.Skip("individual dot products overflow int before their total on 32-bit systems")
+		}
+
+		const maxInt32 = int32(1<<31 - 1)
+		profile := map[int32]int32{0: maxInt32}
+		_, _, err := shotnessCouplingMatrix([]ShotnessRecord{
+			{Type: "function", Name: "alpha", File: "a.go", Counters: profile},
+			{Type: "function", Name: "beta", File: "b.go", Counters: profile},
+			{Type: "function", Name: "gamma", File: "c.go", Counters: profile},
+		})
+		require.ErrorContains(t, err, "total shotness coupling score overflows int")
+	})
+}
+
+func TestShotnessReadersAgreeOnPresentEmptyPayload(t *testing.T) {
+	pbReader := &ProtobufReader{}
+	require.NoError(t, pbReader.Read(bytes.NewReader(marshalProto(t, &pb.AnalysisResults{
+		Contents: map[string][]byte{
+			"Shotness": marshalProto(t, &pb.ShotnessAnalysisResults{}),
+		},
+	}))))
+	pbIndex, pbMatrix, err := pbReader.GetShotnessCooccurrence()
+	require.NoError(t, err)
+
+	yamlReader := &YamlReader{}
+	require.NoError(t, yamlReader.Read(bytes.NewBufferString("Shotness: []\n")))
+	yamlIndex, yamlMatrix, err := yamlReader.GetShotnessCooccurrence()
+	require.NoError(t, err)
+
+	require.Equal(t, pbIndex, yamlIndex)
+	require.Equal(t, pbMatrix, yamlMatrix)
+	require.Empty(t, pbIndex)
+	require.Empty(t, pbMatrix)
 }
 
 func marshalProto(t *testing.T, message proto.Message) []byte {
@@ -436,18 +560,18 @@ func marshalProto(t *testing.T, message proto.Message) []byte {
 	return data
 }
 
-func requireShotnessCooccurrenceMatchesPythonCounterMatrix(t *testing.T, records []ShotnessRecord, matrix [][]int) {
+func requireShotnessCooccurrenceMatchesAlignedProfileDotProducts(
+	t *testing.T, records []ShotnessRecord, matrix [][]int,
+) {
 	t.Helper()
 	for i, record := range records {
 		require.Len(t, matrix[i], len(records))
-		for j := range records {
-			expected := int32(0)
-			j32, ok := checkedInt32(int64(j))
-			require.True(t, ok, "record index %d overflows int32", j)
-			if count, ok := record.Counters[j32]; ok {
-				expected = count
+		for j, other := range records {
+			expected := 0
+			for tick, count := range record.Counters {
+				expected += int(count) * int(other.Counters[tick])
 			}
-			require.Equalf(t, int(expected), matrix[i][j], "cooccurrence[%d][%d]", i, j)
+			require.Equalf(t, expected, matrix[i][j], "cooccurrence[%d][%d]", i, j)
 		}
 	}
 }

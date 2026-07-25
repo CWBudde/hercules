@@ -366,6 +366,8 @@ Acceptance criteria:
 
 ### METRIC-04: Preserve File History across renames
 
+Status: completed 2026-07-25
+
 Affected code:
 
 - `leaves/file_history.go`
@@ -380,10 +382,12 @@ Work:
 
 Acceptance criteria:
 
-- [ ] totals before and after a rename are conserved;
-- [ ] serialization and merged results preserve the same history.
+- [x] totals before and after a rename are conserved;
+- [x] serialization and merged results preserve the same history.
 
 ### METRIC-05: Fix Couples merging
+
+Status: completed 2026-07-25
 
 Affected code:
 
@@ -400,10 +404,12 @@ Work:
 
 Acceptance criteria:
 
-- [ ] merged file/people matrices match a hand-computed fixture;
-- [ ] merging order does not change the result.
+- [x] merged file/people matrices match a hand-computed fixture;
+- [x] merging order does not change the result.
 
 ### METRIC-06: Define and implement real `couples-shotness`
+
+Status: completed 2026-07-25
 
 Affected code:
 
@@ -422,11 +428,13 @@ Work:
 
 Acceptance criteria:
 
-- [ ] every displayed row and column represents the labeled entity;
-- [ ] top pairs and heatmap cells agree with the same source matrix;
-- [ ] PB and YAML readers produce identical matrices.
+- [x] every displayed row and column represents the labeled entity;
+- [x] top pairs and heatmap cells agree with the same source matrix;
+- [x] PB and YAML readers produce identical matrices.
 
 ### METRIC-07: Preserve distinct structural entities in Shotness
+
+Status: completed 2026-07-25
 
 Affected code:
 
@@ -442,10 +450,12 @@ Work:
 
 Acceptance criteria:
 
-- [ ] distinct same-named entities never overwrite one another;
-- [ ] counters and coupling remain stable across serialization round trips.
+- [x] distinct same-named entities never overwrite one another;
+- [x] counters and coupling remain stable across serialization round trips.
 
 ### METRIC-08: Correct filter-boundary transitions
+
+Status: completed 2026-07-25
 
 Affected code:
 
@@ -462,10 +472,12 @@ Work:
 
 Acceptance criteria:
 
-- [ ] stateful analyses exactly match the filtered repository view after cross-boundary renames;
-- [ ] vendor, blacklist, and language filters share the same transition rules.
+- [x] stateful analyses exactly match the filtered repository view after cross-boundary renames;
+- [x] vendor, blacklist, and language filters share the same transition rules.
 
 ### METRIC-09: Finish and validate Code Churn semantics
+
+Status: completed 2026-07-25
 
 Affected code:
 
@@ -488,11 +500,13 @@ Work:
 
 Acceptance criteria:
 
-- [ ] `--help` and schema documentation describe the metric actually emitted;
-- [ ] every factor in the awareness/memorability calculation has a documented meaning and a test;
-- [ ] the implementation contains no placeholder formula or unexplained neutral factor.
+- [x] `--help` and schema documentation describe the metric actually emitted;
+- [x] every factor in the awareness/memorability calculation has a documented meaning and a test;
+- [x] the implementation contains no placeholder formula or unexplained neutral factor.
 
 ### METRIC-10: Find and eliminate negative burndown balances
+
+Status: completed 2026-07-25
 
 Affected code:
 
@@ -516,9 +530,9 @@ Work:
 
 Acceptance criteria:
 
-- [ ] valid histories never depend on output-time clamping;
-- [ ] a regression fixture demonstrates the original negative balance and the corrected transition;
-- [ ] invalid internal histories fail with a useful diagnostic instead of silently changing data.
+- [x] valid histories never depend on output-time clamping;
+- [x] a regression fixture demonstrates the original negative balance and the corrected transition;
+- [x] invalid internal histories fail with a useful diagnostic instead of silently changing data.
 
 ## Phase 3 — Make the core deterministic and lifecycle-safe
 
@@ -1202,9 +1216,9 @@ sources were classified separately.
 | Marker or related unfinished behavior                                             | Disposition                                                                                                                            |
 | --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | Graph ordering in `internal/toposort/toposort.go` and `internal/core/pipeline.go` | One issue; covered by `CORE-01`.                                                                                                       |
-| Negative-value clamping in `internal/yaml/utils.go`                               | The clamp hides the symptom; root-cause work is `METRIC-10`.                                                                           |
+| Negative-value clamping in `internal/yaml/utils.go`                               | Resolved by `METRIC-10`; valid burndown histories are checked before serialization and no longer request clamping.                     |
 | Text/binary conversion in `internal/linehistory/line_history.go`                  | Correct transition semantics and downstream invariants are covered by `CORE-07` and `METRIC-10`.                                       |
-| Code Churn description and constant reinforcement factor in `leaves/codechurn.go` | Both are parts of the unfinished metric contract in `METRIC-09`.                                                                       |
+| Code Churn description and constant reinforcement factor in `leaves/codechurn.go` | Resolved by `METRIC-09`; the experimental equations and output contract are documented and hand-tested.                                |
 | Empty-string rename tombstones in `leaves/burndown_legacy.go`                     | Covered by `CORE-07`; test rename chains and cycles before changing the map behavior.                                                  |
 | Ignored survival flag and placeholder Kaplan–Meier output in the renderer         | One parity gap; covered by `DATA-07`.                                                                                                  |
 | RB-tree “delay creating” comment in `internal/rbtree/rbtree.go`                   | Behavior is already implemented by `doInsert`; remove the stale marker and prove duplicate inserts do not allocate under `CORE-06`.    |

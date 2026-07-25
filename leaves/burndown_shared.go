@@ -1,6 +1,8 @@
 package leaves
 
 import (
+	"errors"
+	"fmt"
 	"io"
 	"sort"
 	"time"
@@ -29,6 +31,109 @@ const (
 	// ConfigBurndownHibernationDir is the temp directory for hibernated burndown data.
 	ConfigBurndownHibernationDir = "Burndown.HibernationDir"
 )
+
+var errNegativeBurndownBalance = errors.New("negative burndown balance")
+
+type negativeBurndownBalanceError struct {
+	Operation string
+	Scope     string
+	Name      string
+	Tick      int
+	AgeBand   int
+	Row       int
+	Column    int
+	Value     int64
+}
+
+func (err *negativeBurndownBalanceError) Error() string {
+	return fmt.Sprintf(
+		"%s: %s %q became %d at tick %d (row %d), age band %d (column %d) during %s",
+		errNegativeBurndownBalance,
+		err.Scope,
+		err.Name,
+		err.Value,
+		err.Tick,
+		err.Row,
+		err.AgeBand,
+		err.Column,
+		err.Operation,
+	)
+}
+
+func (err *negativeBurndownBalanceError) Unwrap() error {
+	return errNegativeBurndownBalance
+}
+
+func validateBurndownResultBalances(result *BurndownResult, operation string) error {
+	err := validateBurndownHistory(
+		result.GlobalHistory, result, operation, "project", "project",
+	)
+	if err != nil {
+		return err
+	}
+
+	for _, name := range sortedKeys(result.FileHistories) {
+		err = validateBurndownHistory(
+			result.FileHistories[name], result, operation, "file", name,
+		)
+		if err != nil {
+			return err
+		}
+	}
+
+	for index, history := range result.PeopleHistories {
+		name := indexedBurndownName(result.reversedPeopleDict, index)
+
+		err = validateBurndownHistory(history, result, operation, "person", name)
+		if err != nil {
+			return err
+		}
+	}
+
+	for index, history := range result.RepositoryHistories {
+		name := indexedBurndownName(result.ReversedRepositoryDict, index)
+
+		err = validateBurndownHistory(history, result, operation, "repository", name)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func validateBurndownHistory(
+	history burndown.DenseHistory,
+	result *BurndownResult,
+	operation, scope, name string,
+) error {
+	for row, values := range history {
+		for column, value := range values {
+			if value < 0 {
+				return &negativeBurndownBalanceError{
+					Operation: operation,
+					Scope:     scope,
+					Name:      name,
+					Tick:      row * result.sampling,
+					AgeBand:   column * result.granularity,
+					Row:       row,
+					Column:    column,
+					Value:     value,
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+func indexedBurndownName(names []string, index int) string {
+	if index < len(names) {
+		return names[index]
+	}
+
+	return fmt.Sprintf("#%d", index)
+}
 
 func burndownSharedOptions() []core.ConfigurationOption {
 	return []core.ConfigurationOption{{

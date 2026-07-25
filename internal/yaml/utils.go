@@ -19,7 +19,9 @@ func SafeString(str string) string {
 //
 // `indent` is the current YAML indentation level - the number of spaces.
 // `name` is the name of the corresponding YAML block. If empty, no separate block is created.
-// `fixNegative` changes all negative values to 0.
+// `fixNegative` changes all negative values to 0. It is retained only as a compatibility
+// safeguard for legacy callers; analyses should validate their matrices and report invalid
+// internal state instead of relying on output-time correction.
 func PrintMatrix(writer io.Writer, matrix [][]int64, indent int, name string, fixNegative bool) {
 	width := matrixColumnWidth(matrix, fixNegative)
 	last := len(matrix[len(matrix)-1])
@@ -93,8 +95,6 @@ func printableMatrixValue(status []int64, index int, fixNegative bool) int64 {
 	}
 
 	val := status[index]
-	// not sure why this sometimes happens...
-	// TODO(vmarkovtsev): find the root cause of tiny negative balances
 	if fixNegative && val < 0 {
 		return 0
 	}

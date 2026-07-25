@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/cwbudde/hercules/internal/core"
+	"github.com/cwbudde/hercules/internal/join"
 	"github.com/cwbudde/hercules/internal/pb"
 	"github.com/cwbudde/hercules/internal/plumbing"
 	"github.com/cwbudde/hercules/internal/plumbing/identity"
@@ -453,75 +454,224 @@ func TestCouplesDeserialize(t *testing.T) {
 		assert.Positive(t, v)
 	}
 	assert.Len(t, result.FilesMatrix, 74)
+
+	merged, ok := couples.MergeResults(result, CouplesResult{}, nil, nil).(CouplesResult)
+	assert.True(t, ok)
+	assert.Equal(t, result, merged)
 }
 
-func TestCouplesMerge(t *testing.T) {
-	r1, r2 := CouplesResult{}, CouplesResult{}
-	people1 := [...]string{testPersonOne, testPersonTwo}
-	people2 := [...]string{testPersonTwo, testPersonThree}
-	r1.reversedPeopleDict = people1[:]
-	r2.reversedPeopleDict = people2[:]
-	r1.Files = people1[:]
-	r2.Files = people2[:]
-	r1.FilesLines = []int{1, 2}
-	r2.FilesLines = []int{2, 3}
-	r1.PeopleFiles = make([][]int, 2)
-	r1.PeopleFiles[0] = make([]int, 2)
-	r1.PeopleFiles[0][0] = 0
-	r1.PeopleFiles[0][1] = 1
-	r1.PeopleFiles[1] = make([]int, 1)
-	r1.PeopleFiles[1][0] = 0
-	r2.PeopleFiles = make([][]int, 2)
-	r2.PeopleFiles[0] = make([]int, 1)
-	r2.PeopleFiles[0][0] = 1
-	r2.PeopleFiles[1] = make([]int, 2)
-	r2.PeopleFiles[1][0] = 0
-	r2.PeopleFiles[1][1] = 1
-	r1.FilesMatrix = make([]map[int]int64, 2)
-	r1.FilesMatrix[0] = map[int]int64{}
-	r1.FilesMatrix[1] = map[int]int64{}
-	r1.FilesMatrix[0][1] = 100
-	r1.FilesMatrix[1][0] = 100
-	r2.FilesMatrix = make([]map[int]int64, 2)
-	r2.FilesMatrix[0] = map[int]int64{}
-	r2.FilesMatrix[1] = map[int]int64{}
-	r2.FilesMatrix[0][1] = 200
-	r2.FilesMatrix[1][0] = 200
-	r1.PeopleMatrix = make([]map[int]int64, 3)
-	r1.PeopleMatrix[0] = map[int]int64{}
-	r1.PeopleMatrix[1] = map[int]int64{}
-	r1.PeopleMatrix[2] = map[int]int64{}
-	r1.PeopleMatrix[0][1] = 100
-	r1.PeopleMatrix[1][0] = 100
-	r1.PeopleMatrix[2][0] = 300
-	r1.PeopleMatrix[2][1] = 400
-	r2.PeopleMatrix = make([]map[int]int64, 3)
-	r2.PeopleMatrix[0] = map[int]int64{}
-	r2.PeopleMatrix[1] = map[int]int64{}
-	r2.PeopleMatrix[2] = map[int]int64{}
-	r2.PeopleMatrix[0][1] = 10
-	r2.PeopleMatrix[1][0] = 10
-	r2.PeopleMatrix[2][0] = 30
-	r2.PeopleMatrix[2][1] = 40
-	couples := CouplesAnalysis{}
-	merged := couples.MergeResults(r1, r2, nil, nil).(CouplesResult)
-	mergedPeople := [...]string{testPersonOne, testPersonTwo, testPersonThree}
-	assert.Equal(t, merged.reversedPeopleDict, mergedPeople[:])
-	assert.Equal(t, merged.Files, mergedPeople[:])
-	assert.Equal(t, []int{1, 4, 3}, merged.FilesLines)
-	assert.Len(t, merged.PeopleFiles, 3)
-	assert.Equal(t, merged.PeopleFiles[0], getSlice(0, 1))
-	assert.Equal(t, merged.PeopleFiles[1], getSlice(0, 2))
-	assert.Equal(t, merged.PeopleFiles[2], getSlice(1, 2))
-	assert.Len(t, merged.PeopleMatrix, 4)
-	assert.Equal(t, merged.PeopleMatrix[0], getCouplesMap(1, 100))
-	assert.Equal(t, merged.PeopleMatrix[1], getCouplesMap(0, 100, 2, 10))
-	assert.Equal(t, merged.PeopleMatrix[2], getCouplesMap(1, 10))
-	assert.Equal(t, merged.PeopleMatrix[3], getCouplesMap(0, 300, 1, 430, 2, 40))
-	assert.Len(t, merged.FilesMatrix, 3)
-	assert.Equal(t, merged.FilesMatrix[0], getCouplesMap(1, 100))
-	assert.Equal(t, merged.FilesMatrix[1], getCouplesMap(0, 100, 2, 200))
-	assert.Equal(t, merged.FilesMatrix[2], getCouplesMap(1, 200))
+func TestCouplesMergeAcceptsEmptyAndDeserializedEmptyResults(t *testing.T) {
+	couples := &CouplesAnalysis{}
+	decoded, err := couples.Deserialize(nil)
+	assert.NoError(t, err)
+	decodedResult, ok := decoded.(CouplesResult)
+	assert.True(t, ok)
+	assert.True(t, isEmptyCouplesResult(decodedResult))
+
+	r1, _, _ := couplesMergeFixtures()
+	for name, empty := range map[string]any{
+		"zero value":         CouplesResult{},
+		"deserialized empty": decoded,
+	} {
+		t.Run(name, func(t *testing.T) {
+			merged, ok := couples.MergeResults(empty, r1, nil, nil).(CouplesResult)
+			assert.True(t, ok)
+			assert.Equal(t, r1, merged)
+
+			merged, ok = couples.MergeResults(r1, empty, nil, nil).(CouplesResult)
+			assert.True(t, ok)
+			assert.Equal(t, r1, merged)
+		})
+	}
+}
+
+func TestCouplesInitializeResetsLastCommit(t *testing.T) {
+	couples := fixtureCouples(t)
+	couples.lastCommit = &object.Commit{}
+
+	assert.NoError(t, couples.Initialize(test.Repository))
+	assert.Nil(t, couples.lastCommit)
+
+	result, ok := couples.Finalize().(CouplesResult)
+	assert.True(t, ok)
+	assert.Empty(t, result.Files)
+	assert.Len(t, result.PeopleMatrix, couples.PeopleNumber+1)
+}
+
+const (
+	couplesAliceIdentity = "alice|alice@example.com"
+	couplesBobIdentity   = "bob|bob@example.com"
+	couplesCarolIdentity = "carol|carol@example.com"
+	couplesDaveIdentity  = "dave|dave@example.com"
+	couplesSharedPath    = "shared.go"
+	couplesOmegaPath     = "omega.go"
+	couplesZetaPath      = "zeta.go"
+)
+
+func TestCouplesMergeHandComputed(t *testing.T) {
+	r1, r2, _ := couplesMergeFixtures()
+
+	merged, ok := (&CouplesAnalysis{}).MergeResults(r1, r2, nil, nil).(CouplesResult)
+	assert.True(t, ok)
+	assert.Equal(t, CouplesResult{
+		reversedPeopleDict: []string{
+			couplesAliceIdentity,
+			couplesBobIdentity,
+			couplesCarolIdentity,
+		},
+		Files:      []string{testAlphaPath, couplesSharedPath, couplesOmegaPath},
+		FilesLines: []int{10, 25, 30},
+		PeopleFiles: [][]int{
+			{0, 1},
+			{1, 2},
+			{2},
+		},
+		PeopleMatrix: []map[int]int64{
+			{0: 10, 1: 2, 3: 1},
+			{0: 2, 1: 25, 2: 6, 3: 10},
+			{1: 6, 2: 8, 3: 9},
+			{0: 1, 1: 10, 2: 9, 3: 14},
+		},
+		FilesMatrix: []map[int]int64{
+			{0: 2, 1: 3},
+			{0: 3, 1: 9, 2: 6},
+			{1: 6, 2: 7},
+		},
+	}, merged)
+}
+
+func TestCouplesMergeAssociative(t *testing.T) {
+	r1, r2, r3 := couplesMergeFixtures()
+	couples := &CouplesAnalysis{}
+
+	r1r2, ok := couples.MergeResults(r1, r2, nil, nil).(CouplesResult)
+	assert.True(t, ok)
+	left, ok := couples.MergeResults(r1r2, r3, nil, nil).(CouplesResult)
+	assert.True(t, ok)
+
+	r2r3, ok := couples.MergeResults(r2, r3, nil, nil).(CouplesResult)
+	assert.True(t, ok)
+	right, ok := couples.MergeResults(r1, r2r3, nil, nil).(CouplesResult)
+	assert.True(t, ok)
+
+	assert.Equal(t, left, right)
+}
+
+func TestCouplesMergeRejectsInvalidSourceIndices(t *testing.T) {
+	tests := map[string]func(*CouplesResult){
+		"file lines row": func(result *CouplesResult) {
+			result.FilesLines = result.FilesLines[:1]
+		},
+		"file matrix row": func(result *CouplesResult) {
+			result.FilesMatrix = result.FilesMatrix[:1]
+		},
+		"file matrix column": func(result *CouplesResult) {
+			result.FilesMatrix[0][len(result.Files)] = 1
+		},
+		"people files row": func(result *CouplesResult) {
+			result.PeopleFiles = result.PeopleFiles[:1]
+		},
+		"people files file": func(result *CouplesResult) {
+			result.PeopleFiles[0] = []int{len(result.Files)}
+		},
+		"people matrix row": func(result *CouplesResult) {
+			result.PeopleMatrix = result.PeopleMatrix[:1]
+		},
+		"people matrix column": func(result *CouplesResult) {
+			result.PeopleMatrix[0][-1] = 1
+		},
+	}
+
+	for name, corrupt := range tests {
+		t.Run(name, func(t *testing.T) {
+			r1, r2, _ := couplesMergeFixtures()
+			corrupt(&r1)
+
+			merged := (&CouplesAnalysis{}).MergeResults(r1, r2, nil, nil)
+			err, ok := merged.(error)
+			assert.True(t, ok)
+			assert.ErrorIs(t, err, errCouplesMergeIntegrity)
+		})
+	}
+}
+
+func TestAddMergedFilesMatrixRejectsInvalidDestination(t *testing.T) {
+	r1, _, _ := couplesMergeFixtures()
+	files := map[string]join.JoinedIndex{
+		testAlphaPath:     {Final: 0},
+		couplesSharedPath: {Final: 2},
+	}
+
+	err := addMergedFilesMatrix(make([]map[int]int64, 2), r1, files)
+	assert.ErrorIs(t, err, errCouplesMergeIntegrity)
+}
+
+func couplesMergeFixtures() (CouplesResult, CouplesResult, CouplesResult) {
+	r1 := CouplesResult{
+		reversedPeopleDict: []string{
+			couplesAliceIdentity,
+			couplesBobIdentity,
+		},
+		Files:      []string{testAlphaPath, couplesSharedPath},
+		FilesLines: []int{10, 20},
+		PeopleFiles: [][]int{
+			{0, 1},
+			{1},
+		},
+		PeopleMatrix: []map[int]int64{
+			{0: 10, 1: 2, 2: 1},
+			{0: 2, 1: 20, 2: 3},
+			{0: 1, 1: 3, 2: 4},
+		},
+		FilesMatrix: []map[int]int64{
+			{0: 2, 1: 3},
+			{0: 3, 1: 4},
+		},
+	}
+	r2 := CouplesResult{
+		reversedPeopleDict: []string{
+			couplesBobIdentity,
+			couplesCarolIdentity,
+		},
+		Files:      []string{couplesSharedPath, couplesOmegaPath},
+		FilesLines: []int{5, 30},
+		PeopleFiles: [][]int{
+			{0, 1},
+			{1},
+		},
+		PeopleMatrix: []map[int]int64{
+			{0: 5, 1: 6, 2: 7},
+			{0: 6, 1: 8, 2: 9},
+			{0: 7, 1: 9, 2: 10},
+		},
+		FilesMatrix: []map[int]int64{
+			{0: 5, 1: 6},
+			{0: 6, 1: 7},
+		},
+	}
+	r3 := CouplesResult{
+		reversedPeopleDict: []string{
+			couplesCarolIdentity,
+			couplesDaveIdentity,
+		},
+		Files:      []string{couplesOmegaPath, couplesZetaPath},
+		FilesLines: []int{11, 40},
+		PeopleFiles: [][]int{
+			{0, 1},
+			{1},
+		},
+		PeopleMatrix: []map[int]int64{
+			{0: 11, 1: 12, 2: 13},
+			{0: 12, 1: 14, 2: 15},
+			{0: 13, 1: 15, 2: 16},
+		},
+		FilesMatrix: []map[int]int64{
+			{0: 8, 1: 9},
+			{0: 9, 1: 10},
+		},
+	}
+
+	return r1, r2, r3
 }
 
 func TestCouplesCurrentFiles(t *testing.T) {
@@ -572,20 +722,4 @@ func TestCouplesPropagateRenames(t *testing.T) {
 	assert.Equal(t, map[string]int{testPersonTwo: 1, testPersonThree: 3, testPersonFour: 6}, files[testPersonThree])
 	assert.Equal(t, map[string]int{testPersonTwo: 9, testPersonThree: 6, testPersonFour: 2}, files[testPersonFour])
 	assert.Equal(t, map[string]int{testPersonTwo: 2, testPersonThree: 3, testPersonFour: 5}, people[0])
-}
-
-func getSlice(vals ...int) []int {
-	return vals
-}
-
-func getCouplesMap(vals ...int) map[int]int64 {
-	if len(vals)%2 != 0 {
-		panic("getCouplesMap requires key/value pairs")
-	}
-
-	res := map[int]int64{}
-	for i := 0; i+1 < len(vals); i += 2 {
-		res[vals[i]] = int64(vals[i+1])
-	}
-	return res
 }

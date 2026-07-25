@@ -53,7 +53,7 @@ type ShotnessResult struct {
 }
 
 func (node NodeSummary) String() string {
-	return node.Type + "_" + node.Name + "_" + node.File
+	return node.Type + "\x00" + node.Name + "\x00" + node.File
 }
 
 // Name of this PipelineItem. Uniquely identifies the type, used for mapping keys, etc.
@@ -259,8 +259,12 @@ func (shotness *ShotnessAnalysis) Serialize(result any, binary bool, writer io.W
 }
 
 func (shotness *ShotnessAnalysis) recordNode(
-	allNodes map[string]bool, name string, node ast_items.Node, fileName string,
+	allNodes map[string]bool, node ast_items.Node, fileName string,
 ) {
+	name := node.QualifiedName
+	if name == "" {
+		name = node.Name
+	}
 	summary := NodeSummary{Type: node.Type, Name: name, File: fileName}
 	key := summary.String()
 	seen := allNodes[key]
@@ -331,8 +335,8 @@ func (shotness *ShotnessAnalysis) insertFile(
 		return
 	}
 
-	for nodeName, node := range nodes {
-		shotness.recordNode(allNodes, nodeName, node, name)
+	for _, node := range nodes {
+		shotness.recordNode(allNodes, node, name)
 	}
 }
 
@@ -360,12 +364,12 @@ func (shotness *ShotnessAnalysis) modifyFile(
 
 	diff, exists := diffs[toName]
 	if !exists {
-		for name, node := range before {
-			shotness.recordNode(allNodes, name, node, toName)
+		for _, node := range before {
+			shotness.recordNode(allNodes, node, toName)
 		}
 
-		for name, node := range after {
-			shotness.recordNode(allNodes, name, node, toName)
+		for _, node := range after {
+			shotness.recordNode(allNodes, node, toName)
 		}
 
 		return
@@ -442,7 +446,7 @@ func (shotness *ShotnessAnalysis) recordNodesOnLines(
 ) {
 	for line := start; line < start+count && line < len(lines); line++ {
 		for _, node := range lines[line] {
-			shotness.recordNode(allNodes, node.Name, node, fileName)
+			shotness.recordNode(allNodes, node, fileName)
 		}
 	}
 }
@@ -464,7 +468,7 @@ func (shotness *ShotnessAnalysis) extractNodes(
 
 	res := map[string]ast_items.Node{}
 	for _, node := range nodes {
-		res[node.Name] = node
+		res[node.StableIdentity()] = node
 	}
 
 	return res, nil
@@ -484,6 +488,12 @@ func (shotness *ShotnessAnalysis) serializeText(result *ShotnessResult, writer i
 		}
 
 		sort.Ints(keys)
+
+		if len(keys) == 0 {
+			fmt.Fprintln(writer, "}")
+
+			continue
+		}
 
 		counterIndex = 0
 

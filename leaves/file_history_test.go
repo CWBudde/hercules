@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/utils/merkletrie"
 	"github.com/gogo/protobuf/proto"
 	"github.com/stretchr/testify/assert"
 
@@ -58,6 +59,19 @@ func TestFileHistoryRegistration(t *testing.T) {
 	assert.True(t, matched)
 }
 
+func TestFileHistoryEmptyAndReinitializedLifecycle(t *testing.T) {
+	fh := fixtureFileHistory()
+	fh.lastCommit = &object.Commit{}
+	fh.files["stale.go"] = &FileHistory{
+		Hashes: []plumbing.Hash{plumbing.NewHash("1111111111111111111111111111111111111111")},
+	}
+
+	assert.NoError(t, fh.Initialize(test.Repository))
+	assert.Nil(t, fh.lastCommit)
+	assert.Empty(t, fh.files)
+	assert.Equal(t, FileHistoryResult{Files: map[string]FileHistory{}}, fh.Finalize())
+}
+
 func TestFileHistoryConsume(t *testing.T) {
 	fh := bakeFileHistoryForSerialization(t)
 	validate := func() {
@@ -90,6 +104,173 @@ func TestFileHistoryConsume(t *testing.T) {
 	for key, val := range res.Files {
 		assert.Equal(t, val, *fh.files[key])
 	}
+}
+
+func TestFileHistoryRenameChainPreservesCompleteHistory(t *testing.T) {
+	fh := fixtureFileHistory()
+	firstHash := plumbing.NewHash("1111111111111111111111111111111111111111")
+	secondHash := plumbing.NewHash("2222222222222222222222222222222222222222")
+	thirdHash := plumbing.NewHash("3333333333333333333333333333333333333333")
+	original := &FileHistory{
+		Hashes: []plumbing.Hash{firstHash},
+		People: map[int]items.LineStats{
+			1: ls(10, 3, 2),
+			2: ls(4, 1, 1),
+		},
+	}
+	fh.files["old.go"] = original
+
+	consumeFileHistoryRename(t, fh, "old.go", "middle.go", secondHash, 1, ls(5, 2, 3))
+
+	assert.NotContains(t, fh.files, "old.go")
+	assert.Same(t, original, fh.files["middle.go"])
+	assert.Equal(t, []plumbing.Hash{firstHash, secondHash}, fh.files["middle.go"].Hashes)
+	assert.Equal(t, map[int]items.LineStats{
+		1: ls(15, 5, 5),
+		2: ls(4, 1, 1),
+	}, fh.files["middle.go"].People)
+
+	consumeFileHistoryRename(t, fh, "middle.go", "new.go", thirdHash, 2, ls(6, 4, 2))
+
+	assert.NotContains(t, fh.files, "middle.go")
+	assert.Same(t, original, fh.files["new.go"])
+	assert.Equal(t, []plumbing.Hash{firstHash, secondHash, thirdHash}, fh.files["new.go"].Hashes)
+	assert.Equal(t, map[int]items.LineStats{
+		1: ls(15, 5, 5),
+		2: ls(10, 5, 3),
+	}, fh.files["new.go"].People)
+}
+
+func TestFileHistoryRenameCollisionSurvivesMergeAndSerialization(t *testing.T) {
+	fh := fixtureFileHistory()
+	destinationHash := plumbing.NewHash("1111111111111111111111111111111111111111")
+	sourceHash := plumbing.NewHash("2222222222222222222222222222222222222222")
+	renameHash := plumbing.NewHash("3333333333333333333333333333333333333333")
+	destination := &FileHistory{
+		Hashes: []plumbing.Hash{destinationHash},
+		People: map[int]items.LineStats{
+			1: ls(1, 2, 3),
+		},
+	}
+	fh.files["source.go"] = &FileHistory{
+		Hashes: []plumbing.Hash{sourceHash},
+		People: map[int]items.LineStats{
+			1: ls(4, 5, 6),
+			2: ls(7, 8, 9),
+		},
+	}
+	fh.files["destination.go"] = destination
+
+	forks := fh.Fork(1)
+	fork := forks[0].(*FileHistoryAnalysis)
+	consumeFileHistoryRename(t, fork, "source.go", "destination.go", renameHash, 2, ls(10, 11, 12))
+	fh.Merge(forks)
+
+	assert.NotContains(t, fh.files, "source.go")
+	assert.Same(t, destination, fh.files["destination.go"])
+	assert.Equal(
+		t,
+		[]plumbing.Hash{destinationHash, sourceHash, renameHash},
+		fh.files["destination.go"].Hashes,
+	)
+	assert.Equal(t, map[int]items.LineStats{
+		1: ls(5, 7, 9),
+		2: ls(17, 19, 21),
+	}, fh.files["destination.go"].People)
+
+	result := FileHistoryResult{Files: map[string]FileHistory{
+		"destination.go": *fh.files["destination.go"],
+	}}
+	text := &bytes.Buffer{}
+	assert.NoError(t, fh.Serialize(result, false, text))
+	assert.Equal(
+		t,
+		"  - destination.go:\n"+
+			"    commits: [\""+destinationHash.String()+"\",\""+sourceHash.String()+"\",\""+
+			renameHash.String()+"\"]\n"+
+			"    people: {1:[5,7,9],2:[17,19,21]}\n",
+		text.String(),
+	)
+
+	binary := &bytes.Buffer{}
+	assert.NoError(t, fh.Serialize(result, true, binary))
+	message := pb.FileHistoryResultMessage{}
+	assert.NoError(t, proto.Unmarshal(binary.Bytes(), &message))
+	assert.Equal(
+		t,
+		[]string{
+			destinationHash.String(),
+			sourceHash.String(),
+			renameHash.String(),
+		},
+		message.GetFiles()["destination.go"].GetCommits(),
+	)
+	assert.Equal(
+		t,
+		map[int32]*pb.LineStats{
+			1: {Added: 5, Removed: 7, Changed: 9},
+			2: {Added: 17, Removed: 19, Changed: 21},
+		},
+		message.GetFiles()["destination.go"].GetChangesByDeveloper(),
+	)
+}
+
+func TestFileHistoryRenameCollisionUnionsOverlappingCommitsInStableOrder(t *testing.T) {
+	fh := fixtureFileHistory()
+	sharedHash := plumbing.NewHash("1111111111111111111111111111111111111111")
+	destinationHash := plumbing.NewHash("2222222222222222222222222222222222222222")
+	sourceHash := plumbing.NewHash("3333333333333333333333333333333333333333")
+	renameHash := plumbing.NewHash("4444444444444444444444444444444444444444")
+	fh.files["destination.go"] = &FileHistory{
+		Hashes: []plumbing.Hash{sharedHash, destinationHash},
+	}
+	fh.files["source.go"] = &FileHistory{
+		Hashes: []plumbing.Hash{sharedHash, sourceHash},
+	}
+
+	consumeFileHistoryRename(
+		t, fh, "source.go", "destination.go", renameHash, 1, items.LineStats{},
+	)
+	// Replaying another tree-change entry for the same commit must not add the
+	// commit twice after the two path histories have collided.
+	fh.recordFileCommit(
+		&object.Change{From: object.ChangeEntry{Name: "destination.go"}},
+		merkletrie.Delete,
+		renameHash,
+	)
+
+	assert.Equal(t, []plumbing.Hash{
+		sharedHash,
+		destinationHash,
+		sourceHash,
+		renameHash,
+	}, fh.files["destination.go"].Hashes)
+}
+
+func consumeFileHistoryRename(
+	t *testing.T,
+	fh *FileHistoryAnalysis,
+	source string,
+	destination string,
+	commit plumbing.Hash,
+	author int,
+	stats items.LineStats,
+) {
+	t.Helper()
+	change := &object.Change{
+		From: object.ChangeEntry{Name: source},
+		To:   object.ChangeEntry{Name: destination},
+	}
+	result, err := fh.Consume(map[string]any{
+		core.DependencyCommit:       &object.Commit{Hash: commit},
+		items.DependencyTreeChanges: object.Changes{change},
+		items.DependencyLineStats: map[object.ChangeEntry]items.LineStats{
+			change.To: stats,
+		},
+		identity.DependencyAuthor: author,
+	})
+	assert.Nil(t, result)
+	assert.NoError(t, err)
 }
 
 func TestFileHistoryFork(t *testing.T) {

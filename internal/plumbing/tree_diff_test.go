@@ -1,10 +1,14 @@
 package plumbing
 
 import (
+	"regexp"
 	"testing"
 
+	"github.com/go-git/go-billy/v5/memfs"
+	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/go-git/go-git/v5/utils/merkletrie"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -268,6 +272,163 @@ func TestTreeDiffConsumeLanguageFilter(t *testing.T) {
 	assert.Equal(t, testLaboursPath, changes[0].To.Name)
 }
 
+func TestTreeDiffCrossBoundaryRenames(t *testing.T) {
+	goHash := plumbing.NewHash("975f35a1412b8ae79b5ba2558f71f41e707fd5a9")
+	pythonHash := plumbing.NewHash("e69de29bb2d1d6434b8b29ae775ad8c2e48c5391")
+	filters := []struct {
+		name      string
+		configure func(*TreeDiff)
+		inside1   object.ChangeEntry
+		inside2   object.ChangeEntry
+		outside   object.ChangeEntry
+	}{
+		{
+			name: "blacklisted prefix",
+			configure: func(td *TreeDiff) {
+				td.SkipFiles = []string{"ignored/"}
+			},
+			inside1: treeDiffEntry("src/alpha.go", goHash),
+			inside2: treeDiffEntry("src/beta.go", goHash),
+			outside: treeDiffEntry("ignored/alpha.go", goHash),
+		},
+		{
+			name: "vendored path",
+			configure: func(td *TreeDiff) {
+				td.SkipFiles = []string{"unrelated/"}
+			},
+			inside1: treeDiffEntry("src/alpha.go", goHash),
+			inside2: treeDiffEntry("src/beta.go", goHash),
+			outside: treeDiffEntry("vendor/example/alpha.go", goHash),
+		},
+		{
+			name: "regexp whitelist",
+			configure: func(td *TreeDiff) {
+				td.NameFilter = regexp.MustCompile(`^src/`)
+			},
+			inside1: treeDiffEntry("src/alpha.go", goHash),
+			inside2: treeDiffEntry("src/beta.go", goHash),
+			outside: treeDiffEntry("test/alpha.go", goHash),
+		},
+		{
+			name: "language",
+			configure: func(td *TreeDiff) {
+				td.Languages = map[string]bool{"go": true}
+			},
+			inside1: treeDiffEntry("alpha.go", goHash),
+			inside2: treeDiffEntry("beta.go", goHash),
+			outside: treeDiffEntry("alpha.py", pythonHash),
+		},
+	}
+
+	for _, filter := range filters {
+		t.Run(filter.name, func(t *testing.T) {
+			td := fixtureTreeDiff()
+			filter.configure(td)
+
+			assertTreeDiffTransition(
+				t, td, filter.inside1, filter.outside, true, false, merkletrie.Delete,
+			)
+			assertTreeDiffTransition(
+				t, td, filter.outside, filter.inside1, false, true, merkletrie.Insert,
+			)
+			assertTreeDiffTransition(
+				t, td, filter.inside1, filter.inside2, true, true, merkletrie.Modify,
+			)
+			assertTreeDiffTransition(
+				t, td, filter.outside, filter.outside, false, false, merkletrie.Action(0),
+			)
+		})
+	}
+}
+
+func TestTreeDiffReturnsLanguageDetectionErrors(t *testing.T) {
+	td := fixtureTreeDiff()
+	td.Languages = map[string]bool{"go": true}
+	valid := treeDiffEntry(
+		"valid.go",
+		plumbing.NewHash("975f35a1412b8ae79b5ba2558f71f41e707fd5a9"),
+	)
+	missing := treeDiffEntry(
+		"missing.go",
+		plumbing.NewHash("ffffffffffffffffffffffffffffffffffffffff"),
+	)
+
+	tests := map[string]*object.Change{
+		"old entry": {From: missing, To: valid},
+		"new entry": {From: valid, To: missing},
+	}
+	for name, change := range tests {
+		t.Run(name, func(t *testing.T) {
+			filtered, err := td.filterDiffs(object.Changes{change})
+			assert.Nil(t, filtered)
+			assert.ErrorContains(t, err, "detect language")
+			assert.ErrorContains(t, err, "missing.go")
+		})
+	}
+}
+
+func TestTreeDiffFilterErrorDoesNotAdvanceCommitState(t *testing.T) {
+	td := fixtureTreeDiff()
+	td.Languages = map[string]bool{"go": true}
+
+	emptyRepository, err := git.Init(memory.NewStorage(), memfs.New())
+	require.NoError(t, err)
+	td.repository = emptyRepository
+
+	commit, err := test.Repository.CommitObject(plumbing.NewHash(
+		"fbe766ffdc3f87f6affddc051c6f8b419beea6a2",
+	))
+	require.NoError(t, err)
+	result, err := td.Consume(map[string]any{core.DependencyCommit: commit})
+	assert.Nil(t, result)
+	assert.ErrorContains(t, err, "detect language")
+	assert.Nil(t, td.previousTree)
+	assert.Equal(t, plumbing.ZeroHash, td.previousCommit)
+
+	td.repository = test.Repository
+	result, err = td.Consume(map[string]any{core.DependencyCommit: commit})
+	require.NoError(t, err)
+	assert.NotNil(t, result)
+	assert.NotNil(t, td.previousTree)
+	assert.Equal(t, commit.Hash, td.previousCommit)
+}
+
+func TestTreeDiffInitialTreeUsesPathAndNameFilters(t *testing.T) {
+	td := fixtureTreeDiff()
+	require.NoError(t, td.Configure(map[string]any{
+		ConfigTreeDiffEnableBlacklist:     true,
+		ConfigTreeDiffBlacklistedPrefixes: []string{"vendor/"},
+		ConfigTreeDiffFilterRegexp:        `^doc\.go$`,
+		ConfigTreeDiffLanguages:           []string{"go"},
+	}))
+	commit, err := test.Repository.CommitObject(plumbing.NewHash(
+		"fbe766ffdc3f87f6affddc051c6f8b419beea6a2",
+	))
+	require.NoError(t, err)
+
+	result, err := td.Consume(map[string]any{core.DependencyCommit: commit})
+	require.NoError(t, err)
+	changes := result[DependencyTreeChanges].(object.Changes)
+	require.Len(t, changes, 1)
+	assert.Equal(t, "doc.go", changes[0].To.Name)
+}
+
+func TestTreeDiffVendorFilterWithEmptyPrefixList(t *testing.T) {
+	td := fixtureTreeDiff()
+	require.NoError(t, td.Configure(map[string]any{
+		ConfigTreeDiffEnableBlacklist:     true,
+		ConfigTreeDiffBlacklistedPrefixes: []string{},
+	}))
+
+	vendorEntry := treeDiffEntry(
+		"vendor/example/alpha.go",
+		plumbing.NewHash("975f35a1412b8ae79b5ba2558f71f41e707fd5a9"),
+	)
+	filtered, err := td.filterDiffs(object.Changes{{To: vendorEntry}})
+	require.NoError(t, err)
+	assert.Empty(t, filtered)
+}
+
 func TestTreeDiffFork(t *testing.T) {
 	td1 := fixtureTreeDiff()
 	td1.SkipFiles = append(td1.SkipFiles, "skip")
@@ -306,13 +467,15 @@ func TestTreeDiffConsumeEnryFilter(t *testing.T) {
 	}}
 	td := fixtureTreeDiff()
 
-	newDiffs := td.filterDiffs(diffs)
+	newDiffs, err := td.filterDiffs(diffs)
+	require.NoError(t, err)
 	assert.Len(t, newDiffs, 2)
 	assert.NoError(t, td.Configure(map[string]any{
 		ConfigTreeDiffEnableBlacklist:     true,
 		ConfigTreeDiffBlacklistedPrefixes: []string{"whatever"},
 	}))
-	newDiffs = td.filterDiffs(diffs)
+	newDiffs, err = td.filterDiffs(diffs)
+	require.NoError(t, err)
 	assert.Empty(t, newDiffs)
 }
 
@@ -325,4 +488,60 @@ func TestTreeDiffCheckLanguageEmpty(t *testing.T) {
 	)
 	assert.NoError(t, err)
 	assert.True(t, lang)
+}
+
+func treeDiffEntry(name string, hash plumbing.Hash) object.ChangeEntry {
+	return object.ChangeEntry{
+		Name: name,
+		TreeEntry: object.TreeEntry{
+			Name: name,
+			Hash: hash,
+		},
+	}
+}
+
+func assertTreeDiffTransition(
+	t *testing.T,
+	td *TreeDiff,
+	from, to object.ChangeEntry,
+	fromIncluded, toIncluded bool,
+	expectedAction merkletrie.Action,
+) {
+	t.Helper()
+
+	state := map[string]bool{}
+	if fromIncluded {
+		state[from.Name] = true
+	}
+
+	filtered, err := td.filterDiffs(object.Changes{{From: from, To: to}})
+	require.NoError(t, err)
+	if !fromIncluded && !toIncluded {
+		assert.Empty(t, filtered)
+		assert.Empty(t, state)
+
+		return
+	}
+
+	require.Len(t, filtered, 1)
+	action, err := filtered[0].Action()
+	require.NoError(t, err)
+	assert.Equal(t, expectedAction, action)
+
+	switch action {
+	case merkletrie.Delete:
+		delete(state, filtered[0].From.Name)
+	case merkletrie.Insert:
+		state[filtered[0].To.Name] = true
+	case merkletrie.Modify:
+		delete(state, filtered[0].From.Name)
+		state[filtered[0].To.Name] = true
+	}
+
+	expectedState := map[string]bool{}
+	if toIncluded {
+		expectedState[to.Name] = true
+	}
+
+	assert.Equal(t, expectedState, state)
 }

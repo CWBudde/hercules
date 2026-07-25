@@ -26,14 +26,28 @@ type LineRange struct {
 
 // Node is the minimal structural unit needed by Shotness.
 type Node struct {
-	ID        string
-	Type      string
-	Name      string
-	Text      string
-	StartLine int
-	StartCol  int
-	EndLine   int
-	EndCol    int
+	ID             string
+	Type           string
+	Name           string
+	QualifiedName  string
+	SourceIdentity string
+	Text           string
+	StartLine      int
+	StartCol       int
+	EndLine        int
+	EndCol         int
+}
+
+// StableIdentity identifies a structural entity independently of its source
+// coordinates. Moving an entity within the same source preserves identity;
+// changing its qualified name, kind, or source produces a distinct identity.
+func (node Node) StableIdentity() string {
+	name := node.QualifiedName
+	if name == "" {
+		name = node.Name
+	}
+
+	return node.SourceIdentity + "\x00" + node.Type + "\x00" + name
 }
 
 // Extractor describes the parser backend needed by Shotness.
@@ -54,6 +68,7 @@ const (
 	nodeTypeTypeIdentifier               = "type_identifier"
 	nodeTypeComment                      = "comment"
 	nodeTypeGeneratorFunctionDeclaration = "generator_function_declaration"
+	nodeTypeMethodDeclaration            = "method_declaration"
 	nodeTypeMethodDefinition             = "method_definition"
 	nodeTypePropertyIdentifier           = "property_identifier"
 	nodeTypePrivatePropertyIdentifier    = "private_property_identifier"
@@ -81,7 +96,7 @@ func goLanguageSpec() languageSpec {
 		language: grammars.GoLanguage(),
 		functionNodeTypes: map[string]struct{}{
 			nodeTypeFunctionDeclaration: {},
-			"method_declaration":        {},
+			nodeTypeMethodDeclaration:   {},
 		},
 		identifierNodeTypes: map[string]struct{}{
 			nodeTypeIdentifier:     {},
@@ -143,7 +158,7 @@ func javaLanguageSpec() languageSpec {
 	return languageSpec{
 		language: grammars.JavaLanguage(),
 		functionNodeTypes: map[string]struct{}{
-			"method_declaration":      {},
+			nodeTypeMethodDeclaration: {},
 			"constructor_declaration": {},
 		},
 		identifierNodeTypes: map[string]struct{}{nodeTypeIdentifier: {}},
@@ -458,6 +473,11 @@ func extractByTypes(
 		root, source, spec.language, nodeTypes, requireName, namedOnlyWalk, &nodes,
 	)
 
+	sourceIdentity := filepath.Clean(path)
+	for i := range nodes {
+		nodes[i].SourceIdentity = sourceIdentity
+	}
+
 	return nodes, nil
 }
 
@@ -546,9 +566,88 @@ func extractedNode(
 	nodeType := node.Type(language)
 
 	return Node{
-		ID:   fmt.Sprintf("%d:%d:%s:%s", startLine, endLine, nodeType, name),
-		Type: "ast:" + nodeType, Name: name, Text: strings.TrimSpace(node.Text(source)),
-		StartLine: startLine, StartCol: int(node.StartPoint().Column),
-		EndLine: endLine, EndCol: int(node.EndPoint().Column),
+		ID:            fmt.Sprintf("%d:%d:%s:%s", startLine, endLine, nodeType, name),
+		Type:          "ast:" + nodeType,
+		Name:          name,
+		QualifiedName: qualifiedNodeName(node, name, source, language),
+		Text:          strings.TrimSpace(node.Text(source)),
+		StartLine:     startLine,
+		StartCol:      int(node.StartPoint().Column),
+		EndLine:       endLine,
+		EndCol:        int(node.EndPoint().Column),
 	}
+}
+
+func isStructuralScopeType(nodeType string) bool {
+	switch nodeType {
+	case "class",
+		"class_declaration",
+		"class_definition",
+		"constructor_declaration",
+		nodeTypeFunctionDeclaration,
+		nodeTypeGeneratorFunctionDeclaration,
+		"function_definition",
+		nodeTypeMethodDefinition,
+		nodeTypeMethodDeclaration,
+		"interface_declaration",
+		"record_declaration":
+		return true
+	default:
+		return false
+	}
+}
+
+func qualifiedNodeName(
+	node *sitter.Node, name string, source []byte, language *sitter.Language,
+) string {
+	parts := []string{name}
+
+	if node.Type(language) == nodeTypeMethodDeclaration {
+		if receiver := goReceiverType(node, source, language); receiver != "" {
+			parts = append([]string{receiver}, parts...)
+		}
+	}
+
+	for parent := node.Parent(); parent != nil; parent = parent.Parent() {
+		if !isStructuralScopeType(parent.Type(language)) {
+			continue
+		}
+
+		scope := extractedNodeName(parent, source, language)
+		if scope != "" {
+			parts = append([]string{scope}, parts...)
+		}
+	}
+
+	return strings.Join(parts, ".")
+}
+
+func goReceiverType(
+	node *sitter.Node, source []byte, language *sitter.Language,
+) string {
+	receiver := node.ChildByFieldName("receiver", language)
+	if receiver == nil {
+		return ""
+	}
+
+	var receiverType string
+	var walk func(*sitter.Node)
+	walk = func(current *sitter.Node) {
+		if current == nil || receiverType != "" {
+			return
+		}
+
+		if current.Type(language) == nodeTypeTypeIdentifier {
+			receiverType = strings.TrimSpace(current.Text(source))
+
+			return
+		}
+
+		for i := range current.NamedChildCount() {
+			walk(current.NamedChild(i))
+		}
+	}
+	walk(receiver)
+
+	return receiverType
 }

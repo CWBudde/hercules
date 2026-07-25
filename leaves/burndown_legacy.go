@@ -553,12 +553,19 @@ func (analyser *LegacyBurndownAnalysis) Finalize() any {
 	fileHistories, fileOwnership := analyser.finalizeFiles(lastTick)
 	peopleHistories := analyser.finalizePeopleHistories(globalHistory, lastTick)
 
-	return BurndownResult{
+	result := BurndownResult{
 		GlobalHistory: globalHistory, FileHistories: fileHistories, FileOwnership: fileOwnership,
 		PeopleHistories: peopleHistories, PeopleMatrix: analyser.finalizePeopleMatrix(),
 		tickSize: analyser.tickSize, reversedPeopleDict: analyser.reversedPeopleDict,
 		sampling: analyser.Sampling, granularity: analyser.Granularity,
 	}
+
+	err := validateBurndownResultBalances(&result, "legacy finalization")
+	if err != nil {
+		return err
+	}
+
+	return result
 }
 
 // Serialize converts the analysis result as returned by Finalize() to text or bytes.
@@ -567,6 +574,11 @@ func (analyser *LegacyBurndownAnalysis) Serialize(result any, binary bool, write
 	burndownResult, ok := result.(BurndownResult)
 	if !ok {
 		return fmt.Errorf("%w: '%v'", errUnexpectedBurndownResult, result)
+	}
+
+	err := validateBurndownResultBalances(&burndownResult, "legacy serialization")
+	if err != nil {
+		return err
 	}
 
 	if binary {

@@ -12,6 +12,7 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/utils/merkletrie"
 	"github.com/src-d/enry/v2"
 
 	"github.com/cwbudde/hercules/internal/core"
@@ -33,6 +34,7 @@ type TreeDiff struct {
 	previousTree   *object.Tree
 	previousCommit plumbing.Hash
 	repository     *git.Repository
+	skipVendored   bool
 
 	l core.Logger
 }
@@ -152,6 +154,7 @@ func (treediff *TreeDiff) Configure(facts map[string]any) error {
 		}
 
 		treediff.SkipFiles = prefixes
+		treediff.skipVendored = true
 	}
 
 	if val, exists := facts[ConfigTreeDiffLanguages].([]string); exists {
@@ -229,9 +232,13 @@ func (treediff *TreeDiff) Consume(deps map[string]any) (map[string]any, error) {
 		return nil, err
 	}
 
+	diffs, err = treediff.filterDiffs(diffs)
+	if err != nil {
+		return nil, err
+	}
+
 	treediff.previousTree = tree
 	treediff.previousCommit = commit.Hash
-	diffs = treediff.filterDiffs(diffs)
 
 	return map[string]any{DependencyTreeChanges: diffs}, nil
 }
@@ -265,61 +272,108 @@ func (treediff *TreeDiff) initialTreeChanges(tree *object.Tree) (object.Changes,
 			return nil, fmt.Errorf("iterate files in initial tree %s: %w", tree.Hash, err)
 		}
 
-		pass, err := treediff.checkLanguage(file.Name, file.Hash)
+		entry := object.ChangeEntry{Name: file.Name, Tree: tree, TreeEntry: object.TreeEntry{
+			Name: file.Name, Mode: file.Mode, Hash: file.Hash,
+		}}
+		changes = append(changes, &object.Change{To: entry})
+	}
+}
+
+func (treediff *TreeDiff) filterDiffs(diffs object.Changes) (object.Changes, error) {
+	filteredDiffs := make(object.Changes, 0, len(diffs))
+
+	for _, change := range diffs {
+		filtered, include, err := treediff.filterDiff(change)
 		if err != nil {
 			return nil, err
 		}
 
-		if pass {
-			changes = append(changes, &object.Change{
-				To: object.ChangeEntry{Name: file.Name, Tree: tree, TreeEntry: object.TreeEntry{
-					Name: file.Name, Mode: file.Mode, Hash: file.Hash,
-				}},
-			})
-		}
-	}
-}
-
-func (treediff *TreeDiff) filterDiffs(diffs object.Changes) object.Changes {
-	// filter without allocation
-	filteredDiffs := make(object.Changes, 0, len(diffs))
-
-	for _, change := range diffs {
-		if treediff.diffPassesFilters(change) {
-			filteredDiffs = append(filteredDiffs, change)
+		if include {
+			filteredDiffs = append(filteredDiffs, &filtered)
 		}
 	}
 
-	return filteredDiffs
+	return filteredDiffs, nil
 }
 
-func (treediff *TreeDiff) diffPassesFilters(change *object.Change) bool {
-	if treediff.isSkippedPath(change) || !treediff.matchesNameFilter(change) {
+func (treediff *TreeDiff) filterDiff(change *object.Change) (object.Change, bool, error) {
+	action, err := change.Action()
+	if err != nil {
+		return object.Change{}, false, fmt.Errorf("classify tree change before filtering: %w", err)
+	}
+
+	fromPasses, toPasses, err := treediff.changeEntriesPassFilters(change, action)
+	if err != nil {
+		return object.Change{}, false, err
+	}
+
+	filtered, include := filteredChangeTransition(change, fromPasses, toPasses)
+
+	return filtered, include, nil
+}
+
+func (treediff *TreeDiff) changeEntriesPassFilters(
+	change *object.Change, action merkletrie.Action,
+) (bool, bool, error) {
+	fromPasses := false
+
+	if action != merkletrie.Insert {
+		pass, err := treediff.entryPassesFilters(change.From)
+		if err != nil {
+			return false, false, fmt.Errorf("filter old path %q: %w", change.From.Name, err)
+		}
+
+		fromPasses = pass
+	}
+
+	toPasses := false
+
+	if action != merkletrie.Delete {
+		pass, err := treediff.entryPassesFilters(change.To)
+		if err != nil {
+			return false, false, fmt.Errorf("filter new path %q: %w", change.To.Name, err)
+		}
+
+		toPasses = pass
+	}
+
+	return fromPasses, toPasses, nil
+}
+
+func filteredChangeTransition(
+	change *object.Change, fromPasses, toPasses bool,
+) (object.Change, bool) {
+	switch {
+	case fromPasses && toPasses:
+		return *change, true
+	case fromPasses:
+		return object.Change{From: change.From}, true
+	case toPasses:
+		return object.Change{To: change.To}, true
+	default:
+		return object.Change{}, false
+	}
+}
+
+func (treediff *TreeDiff) entryPassesFilters(entry object.ChangeEntry) (bool, error) {
+	if treediff.isSkippedPath(entry.Name) || !treediff.matchesNameFilter(entry.Name) {
+		return false, nil
+	}
+
+	return treediff.checkLanguage(entry.Name, entry.TreeEntry.Hash)
+}
+
+func (treediff *TreeDiff) isSkippedPath(name string) bool {
+	if !treediff.skipVendored && len(treediff.SkipFiles) == 0 {
 		return false
 	}
 
-	changeEntry := change.To
-	if changeEntry.Tree == nil {
-		changeEntry = change.From
-	}
-
-	pass, _ := treediff.checkLanguage(changeEntry.Name, changeEntry.TreeEntry.Hash)
-
-	return pass
-}
-
-func (treediff *TreeDiff) isSkippedPath(change *object.Change) bool {
-	if len(treediff.SkipFiles) == 0 {
-		return false
-	}
-
-	if enry.IsVendor(change.To.Name) || enry.IsVendor(change.From.Name) {
+	if enry.IsVendor(name) {
 		return true
 	}
 
 	for _, skippedPath := range treediff.SkipFiles {
-		if strings.HasPrefix(change.To.Name, skippedPath) ||
-			strings.HasPrefix(change.From.Name, skippedPath) {
+		if strings.HasPrefix(name, skippedPath) {
 			return true
 		}
 	}
@@ -327,13 +381,12 @@ func (treediff *TreeDiff) isSkippedPath(change *object.Change) bool {
 	return false
 }
 
-func (treediff *TreeDiff) matchesNameFilter(change *object.Change) bool {
+func (treediff *TreeDiff) matchesNameFilter(name string) bool {
 	if treediff.NameFilter == nil {
 		return true
 	}
 
-	return treediff.NameFilter.MatchString(change.To.Name) ||
-		treediff.NameFilter.MatchString(change.From.Name)
+	return treediff.NameFilter.MatchString(name)
 }
 
 // checkLanguage returns whether the blob corresponds to the list of required languages.

@@ -210,23 +210,88 @@ func (r *YamlReader) GetShotnessCooccurrence() ([]string, [][]int, error) {
 		return nil, nil, err
 	}
 
-	index, matrix := shotnessCounterMatrix(shotnessRecords)
-	return index, matrix, nil
+	return shotnessCouplingMatrix(shotnessRecords)
 }
 
-func shotnessCounterMatrix(records []ShotnessRecord) ([]string, [][]int) {
+// shotnessCouplingMatrix computes a weighted similarity matrix over Shotness's
+// entity-indexed co-occurrence profiles. Cell (i, j) is the dot product
+//
+//	sum_k counters_i[k] * counters_j[k]
+//
+// over aligned entity dimensions, so the matrix is symmetric. A diagonal cell
+// is the entity's squared profile magnitude (sum_k counters_i[k]^2); it is
+// useful as a self-similarity baseline, but is excluded from ranked pairs.
+func shotnessCouplingMatrix(records []ShotnessRecord) ([]string, [][]int, error) {
 	index := make([]string, len(records))
 	matrix := make([][]int, len(records))
+	baseLabelCounts := make(map[string]int, len(records))
+	for _, record := range records {
+		baseLabelCounts[fmt.Sprintf("%s:%s", record.File, record.Name)]++
+	}
+
+	stableLabels := make(map[string]struct{}, len(records))
 	for i, record := range records {
-		index[i] = fmt.Sprintf("%s:%s", record.File, record.Name)
+		baseLabel := fmt.Sprintf("%s:%s", record.File, record.Name)
+		index[i] = baseLabel
+		if baseLabelCounts[baseLabel] > 1 {
+			index[i] = fmt.Sprintf("%s [%s]", baseLabel, record.Type)
+		}
+		if _, exists := stableLabels[index[i]]; exists {
+			return nil, nil, fmt.Errorf("duplicate shotness entity identity %q", index[i])
+		}
+		stableLabels[index[i]] = struct{}{}
+
 		matrix[i] = make([]int, len(records))
-		for tick, count := range record.Counters {
-			if tick >= 0 && int(tick) < len(records) {
-				matrix[i][int(tick)] = int(count)
+		for dimension, count := range record.Counters {
+			if dimension < 0 || int64(dimension) >= int64(len(records)) {
+				return nil, nil, fmt.Errorf(
+					"shotness entity %q has out-of-range counter dimension %d for %d entities",
+					index[i], dimension, len(records),
+				)
+			}
+			if count < 0 {
+				return nil, nil, fmt.Errorf(
+					"shotness entity %q has negative co-occurrence %d at dimension %d",
+					index[i], count, dimension,
+				)
 			}
 		}
 	}
-	return index, matrix
+
+	maxInt := int64(^uint(0) >> 1)
+	var pairTotal int64
+	for i := range records {
+		for j := i; j < len(records); j++ {
+			var score int64
+			left, right := records[i].Counters, records[j].Counters
+			if len(left) > len(right) {
+				left, right = right, left
+			}
+			for dimension, leftCount := range left {
+				rightCount := right[dimension]
+				product := int64(leftCount) * int64(rightCount)
+				if product > maxInt-score {
+					return nil, nil, fmt.Errorf(
+						"shotness coupling score overflows int for %q and %q",
+						index[i], index[j],
+					)
+				}
+				score += product
+			}
+			if i != j {
+				if score > maxInt-pairTotal {
+					return nil, nil, fmt.Errorf(
+						"total shotness coupling score overflows int while adding %q and %q",
+						index[i], index[j],
+					)
+				}
+				pairTotal += score
+			}
+			matrix[i][j] = int(score)
+			matrix[j][i] = int(score)
+		}
+	}
+	return index, matrix, nil
 }
 
 func (r *YamlReader) GetShotnessRecords() ([]ShotnessRecord, error) {
@@ -242,58 +307,13 @@ func (r *YamlReader) GetShotnessRecords() ([]ShotnessRecord, error) {
 			continue // Skip invalid records
 		}
 
-		counters := make(map[int32]int32)
-		if countData, ok := record["counters"].(map[interface{}]interface{}); ok {
-			for timeKey, count := range countData {
-				// Convert time key and count to int32
-				var timeInt int32
-				var countInt int32
-
-				switch t := timeKey.(type) {
-				case int:
-					converted, ok := checkedInt32(int64(t))
-					if !ok {
-						continue
-					}
-					timeInt = converted
-				case int32:
-					timeInt = t
-				case int64:
-					converted, ok := checkedInt32(t)
-					if !ok {
-						continue
-					}
-					timeInt = converted
-				default:
-					continue // Skip invalid time keys
-				}
-
-				switch c := count.(type) {
-				case int:
-					converted, ok := checkedInt32(int64(c))
-					if !ok {
-						continue
-					}
-					countInt = converted
-				case int32:
-					countInt = c
-				case int64:
-					converted, ok := checkedInt32(c)
-					if !ok {
-						continue
-					}
-					countInt = converted
-				default:
-					continue // Skip invalid counts
-				}
-
-				counters[timeInt] = countInt
-			}
-		}
+		counters := parseShotnessCounters(record["counters"])
 
 		// Safely extract string values
 		var recordType, recordName, recordFile string
 		if t, ok := record["type"].(string); ok {
+			recordType = t
+		} else if t, ok := record["internal_role"].(string); ok {
 			recordType = t
 		}
 		if n, ok := record["name"].(string); ok {
@@ -311,6 +331,48 @@ func (r *YamlReader) GetShotnessRecords() ([]ShotnessRecord, error) {
 		})
 	}
 	return records, nil
+}
+
+func parseShotnessCounters(raw any) map[int32]int32 {
+	counters := make(map[int32]int32)
+	add := func(rawKey, rawValue any) {
+		key, keyOK := shotnessCounterInt32(rawKey)
+		value, valueOK := shotnessCounterInt32(rawValue)
+		if keyOK && valueOK {
+			counters[key] = value
+		}
+	}
+
+	switch data := raw.(type) {
+	case map[interface{}]interface{}:
+		for key, value := range data {
+			add(key, value)
+		}
+	case map[string]interface{}:
+		for key, value := range data {
+			add(key, value)
+		}
+	}
+	return counters
+}
+
+func shotnessCounterInt32(value any) (int32, bool) {
+	switch typed := value.(type) {
+	case int:
+		return checkedInt32(int64(typed))
+	case int32:
+		return typed, true
+	case int64:
+		return checkedInt32(typed)
+	case string:
+		parsed, err := strconv.ParseInt(typed, 10, 32)
+		if err != nil {
+			return 0, false
+		}
+		return int32(parsed), true
+	default:
+		return 0, false
+	}
 }
 
 func checkedInt32(value int64) (int32, bool) {

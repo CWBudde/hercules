@@ -523,6 +523,11 @@ func (analyser *BurndownAnalysis) Finalize() any {
 		result.RepositoryHistories = []burndown.DenseHistory{globalHistory}
 	}
 
+	err := validateBurndownResultBalances(&result, "finalization")
+	if err != nil {
+		return err
+	}
+
 	return result
 }
 
@@ -532,6 +537,11 @@ func (analyser *BurndownAnalysis) Serialize(result any, binary bool, writer io.W
 	burndownResult, ok := result.(BurndownResult)
 	if !ok {
 		return fmt.Errorf("%w: '%v'", errUnexpectedBurndownResult, result)
+	}
+
+	err := validateBurndownResultBalances(&burndownResult, "serialization")
+	if err != nil {
+		return err
 	}
 
 	if binary {
@@ -643,6 +653,16 @@ func (analyser *BurndownAnalysis) MergeResults(
 			errBurndownMismatchingTickSizes, bar1.tickSize, bar2.tickSize)
 	}
 
+	err := validateBurndownResultBalances(&bar1, "merge input 1")
+	if err != nil {
+		return err
+	}
+
+	err = validateBurndownResultBalances(&bar2, "merge input 2")
+	if err != nil {
+		return err
+	}
+
 	merged := BurndownResult{
 		tickSize: bar1.tickSize,
 	}
@@ -672,6 +692,11 @@ func (analyser *BurndownAnalysis) MergeResults(
 	coordinator.mergeRepositories(&merged, repositories)
 
 	coordinator.wg.Wait()
+
+	err = validateBurndownResultBalances(&merged, "merge")
+	if err != nil {
+		return err
+	}
 
 	return merged
 }
@@ -1004,7 +1029,7 @@ func (analyser *BurndownAnalysis) serializeText(result *BurndownResult, writer i
 	_, _ = fmt.Fprintln(writer, "  granularity:", result.granularity)
 	_, _ = fmt.Fprintln(writer, "  sampling:", result.sampling)
 	_, _ = fmt.Fprintln(writer, "  tick_size:", int(result.tickSize.Seconds()))
-	yaml.PrintMatrix(writer, result.GlobalHistory, 2, "project", true)
+	yaml.PrintMatrix(writer, result.GlobalHistory, 2, "project", false)
 
 	if len(result.FileHistories) > 0 {
 		writeBurndownFiles(writer, result)
@@ -1022,7 +1047,7 @@ func (analyser *BurndownAnalysis) serializeText(result *BurndownResult, writer i
 func writeBurndownFiles(writer io.Writer, result *BurndownResult) {
 	_, _ = fmt.Fprintln(writer, "  files:")
 	for _, key := range sortedKeys(result.FileHistories) {
-		yaml.PrintMatrix(writer, result.FileHistories[key], 4, key, true)
+		yaml.PrintMatrix(writer, result.FileHistories[key], 4, key, false)
 	}
 
 	_, _ = fmt.Fprintln(writer, "  files_ownership:")
@@ -1058,7 +1083,7 @@ func writeBurndownPeople(writer io.Writer, result *BurndownResult) {
 
 	_, _ = fmt.Fprintln(writer, "  people:")
 	for i, history := range result.PeopleHistories {
-		yaml.PrintMatrix(writer, history, 4, result.reversedPeopleDict[i], true)
+		yaml.PrintMatrix(writer, history, 4, result.reversedPeopleDict[i], false)
 	}
 
 	_, _ = fmt.Fprintln(writer, "  people_interaction: |-")
@@ -1073,7 +1098,7 @@ func writeBurndownRepositories(writer io.Writer, result *BurndownResult) {
 
 	_, _ = fmt.Fprintln(writer, "  repositories:")
 	for i, history := range result.RepositoryHistories {
-		yaml.PrintMatrix(writer, history, 4, result.ReversedRepositoryDict[i], true)
+		yaml.PrintMatrix(writer, history, 4, result.ReversedRepositoryDict[i], false)
 	}
 }
 

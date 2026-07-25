@@ -81,7 +81,7 @@ See `internal/pb/pb.proto` for envelope/messages.
 | `--burndown`                | `Burndown`               | `BurndownAnalysisResults`                    |
 | `--legacy-burndown`         | `LegacyBurndown`         | `BurndownAnalysisResults`                    |
 | `--bus-factor`              | `BusFactor`              | `BusFactorAnalysisResults`                   |
-| `--codechurn`               | `CodeChurn`              | none (currently not serialized)              |
+| `--codechurn`               | `CodeChurn`              | `CodeChurnAnalysisResults`                   |
 | `--commits-stat`            | `CommitsStat`            | `CommitsAnalysisResults`                     |
 | `--couples`                 | `Couples`                | `CouplesAnalysisResults`                     |
 | `--devs`                    | `Devs`                   | `DevsAnalysisResults`                        |
@@ -99,6 +99,20 @@ See `internal/pb/pb.proto` for envelope/messages.
 | `--temporal-activity`       | `TemporalActivity`       | `TemporalActivityResults`                    |
 | `--typos-dataset`           | `TyposDataset`           | `TyposDataset`                               |
 
+### Filtered repository view semantics
+
+Repository filters are applied independently to the old and new side of every
+tree change. This includes vendor detection, blacklist and whitelist path
+filters, and language detection. A path that changes from included to excluded
+is presented to analyses as a deletion (`From` only); excluded to included is
+an insertion (`To` only); included on both sides remains a modification; and a
+change excluded on both sides is omitted.
+
+Language-detection failures are returned as errors. The tree-diff stage advances
+its previous-tree and commit state only after filtering succeeds, so a failed
+commit cannot become the baseline for a later diff. The same filters apply to
+the initial tree.
+
 ## Schema Details + Examples
 
 ### Burndown (`--burndown`)
@@ -112,6 +126,11 @@ YAML fields:
 - optional: `files`, `files_ownership`, `people_sequence`, `people`, `people_interaction`, `repository_sequence`, `repositories`
 
 PB: `BurndownAnalysisResults`
+
+All project, file, person, and repository balances must be non-negative.
+Hercules validates them at finalization, merge, and serialization boundaries.
+Invalid internal state returns a diagnostic containing the scope, tick, age
+band, value, and operation; YAML serialization does not clamp it to zero.
 
 Example:
 
@@ -175,6 +194,39 @@ BusFactor:
 
 ### Code Churn (`--codechurn`)
 
+Code Churn is experimental. It reports lifetime and current ownership counts together with two
+bounded familiarity estimates for every author/file pair:
+
+- `inserted_lines` is the lifetime number of lines inserted by the author.
+- `owned_lines` is the number of the author's lines still present at the end of the analysis.
+- `awareness` is a short-term familiarity score in `[0, 1]`.
+- `memorability` is a longer-term familiarity score in `[0, 1]`.
+
+Both scores use ticks as their time unit. If `dt` ticks elapsed, a score `x` first decays as
+`x_decay = x * 2^(-dt / H)`, where `H = 30` ticks for awareness and `H = 180` ticks for
+memorability. Thus their half-life durations are respectively `30 * tick_size` and
+`180 * tick_size`.
+
+For each line-history change, let `L` be the author's owned lines before the change, `I` inserted
+lines, `S` self-deleted lines, and `O` lines deleted by another author. The reinforcement and
+disruption shares are:
+
+```text
+r = min(1, (I + S) / max(1, L + I))
+d = min(1, O / max(1, L))
+score_next = clamp((x_decay + (1 - x_decay) * r) * (1 - d), 0, 1)
+```
+
+Insertions and self-deletions are intentional direct interactions with the author's own code, so
+they reinforce both scores. A deletion by another author does not reinforce familiarity; it
+reduces both scores by the fraction of owned lines removed. Scores are finally decayed to the
+latest line-history tick observed anywhere in the repository, including file-deletion events.
+Changes sharing a tick are applied in emitted line-history order, without decay between them; they
+are not batch-aggregated. `inserted_lines` and `owned_lines` are signed 32-bit PB counters, and the
+analysis returns an error instead of wrapping if an individual or cumulative update exceeds those
+bounds. `granularity` and `sampling` are retained as compatibility metadata and do not change these
+equations.
+
 YAML fields:
 
 - `people` list of developer identities
@@ -183,6 +235,8 @@ YAML fields:
   - `name`
   - `files` map keyed by file path
     - `inserted_lines`, `owned_lines`, `memorability`, `awareness`
+    - `delete_history`, keyed by deleting author, then deletion tick, then original line tick; the
+      leaf values are negative deleted-line deltas
 
 PB: `CodeChurnAnalysisResults`
 
@@ -204,6 +258,10 @@ CodeChurn:
           owned_lines: 7
           memorability: 0.75
           awareness: 0.80
+          delete_history:
+            1:
+              30:
+                10: -3
 ```
 
 ### Commits Stat (`--commits-stat`)
@@ -245,6 +303,12 @@ YAML fields:
 - `people_coocc.author_files` list of `author -> [files]`
 
 PB: `CouplesAnalysisResults`
+
+When partial results are merged, file and developer identities are translated
+through their respective dictionaries before matrix cells and line totals are
+added. Valid file and developer indices are checked independently. This makes
+the identity mapping associative: changing how valid partial results are
+grouped does not change the merged result.
 
 Example:
 
@@ -328,6 +392,12 @@ YAML fields:
   - `people` map-like string: `dev:[added,removed,changed]`
 
 PB: `FileHistoryResultMessage`
+
+Renaming a file transfers its complete history to the new path: commit hashes
+and every developer's line statistics are conserved. If the destination path
+already has history, both histories are retained, matching developer statistics
+are added, and the rename commit is recorded. Hashes remain in deterministic
+destination-first order and duplicates are removed.
 
 Example:
 
@@ -615,6 +685,28 @@ YAML fields:
   - `name`, `file`, `internal_role`, `counters` map (`node_index -> score`)
 
 PB: `ShotnessAnalysisResults`
+
+An entity's stable identity is its source path, node kind (`internal_role`), and
+qualified name. Qualified names include receiver or enclosing-scope context
+where the language exposes it. Moving an entity within the same file preserves
+its identity; changing its qualified name or kind creates a new identity.
+Explicit whole-file renames migrate the stored identities and counters to the
+new path, while moving an individual entity between files is treated as a new
+identity.
+
+Each `counters` key is another entity's stable index, not a time tick. The
+`couples-shotness` renderer treats every entity as a co-occurrence profile
+`v_i` and computes:
+
+```text
+C[i,j] = sum_k(v_i[k] * v_j[k])
+```
+
+The matrix is symmetric and its diagonal is each profile's squared norm.
+Pair rankings exclude the diagonal and include only positive, distinct pairs.
+YAML and Protocol Buffer inputs use this same matrix construction. Display
+labels use `file:name` and add the node kind when that pair would otherwise be
+ambiguous.
 
 Example:
 

@@ -180,6 +180,40 @@ func TestBurndownAddMatrixCrazy(t *testing.T) {
 	}
 }
 
+func TestBurndownAddMatrixDoesNotCreateNegativeCohortsWhileBandIsForming(t *testing.T) {
+	// This is a hand-computed, production-shaped history for two-tick age bands:
+	// tick 0 inserts 31 lines; tick 1 retains them and inserts 31 more; tick 2 deletes
+	// 50 old lines and inserts 18; tick 3 retains one old line and deletes the 18.
+	// The old interpolation represented the last deletion as a -18-line new cohort.
+	history := DenseHistory{
+		{31, 0},
+		{62, 0},
+		{12, 18},
+		{1, 0},
+	}
+	perTick := make([][]float32, 6)
+	for tick := range perTick {
+		perTick[tick] = make([]float32, 6)
+	}
+
+	AddBurndownMatrix(history, 2, 1, perTick, 0)
+
+	for tick, row := range perTick {
+		for age, value := range row {
+			assert.GreaterOrEqual(t, value, float32(0), "tick=%d age=%d", tick, age)
+		}
+	}
+	for tick, expected := range history {
+		for band, value := range expected {
+			offset := band * 2
+			assert.InDelta(
+				t, value, perTick[tick][offset]+perTick[tick][offset+1], 0.00001,
+				"tick=%d band=%d", tick, band,
+			)
+		}
+	}
+}
+
 func TestBurndownAddMatrixNaNs(t *testing.T) {
 	size := 4 * 4
 	daily := make([][]float32, size)

@@ -11,7 +11,9 @@ import (
 	"github.com/cwbudde/hercules/internal/render/readers"
 )
 
-// CouplesShotness generates shotness-based coupling analysis and visualization
+// CouplesShotness visualizes dot-product similarity between aligned Shotness
+// entity co-occurrence profiles. The heatmap diagonal is each entity's squared
+// profile magnitude; ranked pairs contain only distinct entities.
 func CouplesShotness(reader readers.Reader, output string) error {
 	return runCouplingMode(
 		"Shotness Coupling Analysis",
@@ -49,9 +51,14 @@ type ShotnessCouplingStatistics struct {
 	MinCoupling     int
 }
 
-// analyzeShotnessCoupling performs analysis on shotness coupling data
+// analyzeShotnessCoupling derives ranked pairs and summary statistics directly
+// from the same symmetric entity matrix that is rendered as the heatmap.
 func analyzeShotnessCoupling(entityNames []string, couplingMatrix [][]int) ShotnessCouplingAnalysis {
 	pairs, stats := analyzeCouplingPairs(entityNames, couplingMatrix, 25)
+	if len(pairs) == 0 {
+		stats.Min = 0
+	}
+
 	shotnessPairs := make([]ShotnessCouplingPair, len(pairs))
 	for i, pair := range pairs {
 		shotnessPairs[i] = ShotnessCouplingPair{
@@ -83,6 +90,10 @@ func plotShotnessCoupling(analysis ShotnessCouplingAnalysis, output string) erro
 	// Create heatmap for shotness entities
 	if err := plotShotnessCouplingHeatmap(analysis, output); err != nil {
 		return err
+	}
+
+	if len(analysis.TopCoupling) == 0 {
+		return nil
 	}
 
 	// Create bar chart of top coupling pairs

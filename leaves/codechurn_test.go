@@ -2,11 +2,13 @@ package leaves
 
 import (
 	"bytes"
+	"math"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	yamlv2 "gopkg.in/yaml.v2"
 
 	"github.com/cwbudde/hercules/internal/core"
 	"github.com/cwbudde/hercules/internal/linehistory"
@@ -22,7 +24,10 @@ func TestCodeChurnMeta(t *testing.T) {
 	assert.Contains(t, cc.Requires(), linehistory.DependencyLineHistory)
 	assert.Contains(t, cc.Requires(), identity.DependencyAuthor)
 	assert.Equal(t, "codechurn", cc.Flag())
-	assert.NotEmpty(t, cc.Description())
+	assert.Contains(t, cc.Description(), "Experimental")
+	assert.Contains(t, cc.Description(), "awareness")
+	assert.Contains(t, cc.Description(), "deletion history")
+	assert.NotContains(t, cc.Description(), "burndown")
 }
 
 func TestCodeChurnRegistration(t *testing.T) {
@@ -84,7 +89,7 @@ func TestCodeChurnInitialize(t *testing.T) {
 	cc := CodeChurnAnalysis{}
 	assert.NoError(t, cc.Initialize(test.Repository))
 	assert.NotNil(t, cc.codeChurns)
-	assert.NotNil(t, cc.churnDeltas)
+	assert.False(t, cc.hasTick)
 	assert.Equal(t, DefaultBurndownGranularity, cc.Granularity)
 	assert.Equal(t, DefaultBurndownGranularity, cc.Sampling)
 }
@@ -540,6 +545,26 @@ func TestCodeChurnMergeResults(t *testing.T) {
 	assert.Equal(t, 40, result.granularity)
 }
 
+func TestCodeChurnMergeRejectsCounterOverflow(t *testing.T) {
+	cc := CodeChurnAnalysis{}
+	result := func(lines int32) CodeChurnResult {
+		return CodeChurnResult{
+			Authors: []CodeChurnAuthorResult{{
+				Files: map[string]CodeChurnFileResult{
+					testMainPath: {InsertedLines: lines, OwnedLines: lines},
+				},
+			}},
+			people:   []string{testPersonAlice},
+			tickSize: 24 * time.Hour,
+		}
+	}
+
+	merged := cc.MergeResults(result(math.MaxInt32), result(1), nil, nil)
+	err, ok := merged.(error)
+	require.True(t, ok)
+	assert.ErrorIs(t, err, errCodeChurnCounterOverflow)
+}
+
 func TestPersonChurnStatsGetFileEntry(t *testing.T) {
 	t.Run("nil files map", func(t *testing.T) {
 		p := personChurnStats{}
@@ -583,154 +608,265 @@ func TestPersonChurnStatsGetFileEntry(t *testing.T) {
 	})
 }
 
-func TestCodeChurnMemoryLoss(t *testing.T) {
-	cc := CodeChurnAnalysis{}
-
-	tests := []struct {
-		name string
-		x    float64
-	}{
-		{"zero", 0.0},
-		{"at half life", 30.0},
-		{"large value", 100.0},
-		{"small value", 5.0},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := cc.memoryLoss(tt.x)
-			assert.True(t, result >= 0.0 && result <= 1.0,
-				"memoryLoss(%f) = %f, should be in [0, 1]", tt.x, result)
-		})
-	}
-
-	// memoryLoss is a sigmoid, should be monotonically decreasing
-	assert.Greater(t, cc.memoryLoss(0), cc.memoryLoss(30))
-	assert.Greater(t, cc.memoryLoss(30), cc.memoryLoss(100))
-
-	// At x=0, sigmoid is 1/(1+exp(-30)) ≈ 1.0
-	assert.InDelta(t, 1.0, cc.memoryLoss(0), 0.001)
-	// At x=30 (halfLossPeriod), sigmoid is 1/(1+exp(0)) = 0.5
-	assert.InDelta(t, 0.5, cc.memoryLoss(30), 0.001)
+func TestCodeChurnScoreDecay(t *testing.T) {
+	assert.InDelta(t, 1.0, decayCodeChurnScore(1, 0, 30), 0.000001)
+	assert.InDelta(t, 0.5, decayCodeChurnScore(1, 30, 30), 0.000001)
+	assert.InDelta(t, 0.25, decayCodeChurnScore(1, 60, 30), 0.000001)
+	assert.InDelta(t, 1.0, decayCodeChurnScore(2, 0, 30), 0)
+	assert.InDelta(t, 0.0, decayCodeChurnScore(-1, 0, 30), 0)
 }
 
-func TestCodeChurnCalculateAwareness(t *testing.T) {
+func TestCodeChurnUpdateKnowledge(t *testing.T) {
 	cc := CodeChurnAnalysis{}
 
-	t.Run("zero insertedLines returns initial values", func(t *testing.T) {
-		entry := churnFileEntry{insertedLines: 0}
-		change := core.LineHistoryChange{CurrTick: 5}
-		awareness, memorability := cc.calculateAwareness(entry, change, 0, churnLines{})
-		assert.InDelta(t, 0.0, awareness, 0.00001)
-		assert.InDelta(t, 0.5, memorability, 0.00001)
+	t.Run("initial insertion establishes full scores", func(t *testing.T) {
+		entry := churnFileEntry{}
+		cc.updateKnowledge(&entry, 0, churnLines{inserted: 10})
+		assert.InDelta(t, 1, entry.awareness, 0)
+		assert.InDelta(t, 1, entry.memorability, 0)
 	})
 
-	t.Run("lastTouch >= CurrTick returns current values", func(t *testing.T) {
+	t.Run("self deletion reinforces after decay", func(t *testing.T) {
 		entry := churnFileEntry{
-			insertedLines: 10,
-			awareness:     0.8,
-			memorability:  0.7,
+			ownedLines:    10,
+			awareness:     1,
+			memorability:  1,
+			lastScoreTick: 0,
+			hasScore:      true,
 		}
-		change := core.LineHistoryChange{CurrTick: 5}
-		awareness, memorability := cc.calculateAwareness(entry, change, 5, churnLines{})
-		assert.InDelta(t, 0.8, awareness, 0.001)
-		assert.InDelta(t, 0.7, memorability, 0.001)
+		cc.updateKnowledge(&entry, 30, churnLines{deletedBySelf: 2})
+		assert.InDelta(t, 0.6, entry.awareness, 0.000001)
+		assert.InDelta(t, 0.9127189745, entry.memorability, 0.000001)
 	})
 
-	t.Run("lastTouch >= CurrTick also for future", func(t *testing.T) {
+	t.Run("other deletion disrupts without reinforcement", func(t *testing.T) {
 		entry := churnFileEntry{
-			insertedLines: 10,
-			awareness:     0.8,
-			memorability:  0.7,
+			ownedLines:    8,
+			awareness:     0.6,
+			memorability:  0.9127189745,
+			lastScoreTick: 30,
+			hasScore:      true,
 		}
-		change := core.LineHistoryChange{CurrTick: 5}
-		awareness, memorability := cc.calculateAwareness(entry, change, 10, churnLines{})
-		assert.InDelta(t, 0.8, awareness, 0.001)
-		assert.InDelta(t, 0.7, memorability, 0.001)
+		cc.updateKnowledge(&entry, 60, churnLines{deletedByOthers: 4})
+		assert.InDelta(t, 0.15, entry.awareness, 0.000001)
+		assert.InDelta(t, 0.4065700822, entry.memorability, 0.000001)
 	})
 }
 
-func TestCodeChurnUpdateAwareness(t *testing.T) {
+func TestCodeChurnClassifiesKnowledgeEvents(t *testing.T) {
+	assert.Equal(
+		t,
+		churnLines{inserted: 5},
+		churnLinesForChange(core.LineHistoryChange{PrevAuthor: 0, CurrAuthor: 0}, 5),
+	)
+	assert.Equal(
+		t,
+		churnLines{deletedBySelf: 4},
+		churnLinesForChange(core.LineHistoryChange{PrevAuthor: 0, CurrAuthor: 0}, -4),
+	)
+	assert.Equal(
+		t,
+		churnLines{deletedByOthers: 3},
+		churnLinesForChange(core.LineHistoryChange{PrevAuthor: 0, CurrAuthor: 1}, -3),
+	)
+}
+
+func TestCodeChurnSameTickChangesUseEmittedOrder(t *testing.T) {
 	cc := CodeChurnAnalysis{}
 	cc.peopleResolver = core.NewIdentityResolver([]string{testPersonAlice, testPersonBob}, nil)
-	assert.NoError(t, cc.Initialize(test.Repository))
+	require.NoError(t, cc.Initialize(test.Repository))
 
-	t.Run("new delta key is created", func(t *testing.T) {
-		entry := churnFileEntry{
-			deleteHistory: map[core.AuthorId]sparseHistory{},
-		}
-		change := core.LineHistoryChange{
-			FileId:     0,
-			CurrTick:   1,
-			PrevTick:   0,
-			CurrAuthor: 0,
-			PrevAuthor: 0,
-			Delta:      10,
-		}
-		cc.updateAwareness(change, &entry, 10)
-		key := churnDeltaKey{0, 0}
-		delta, exists := cc.churnDeltas[key]
-		assert.True(t, exists)
-		assert.Equal(t, core.TickNumber(1), delta.lastTouch)
-		assert.Equal(t, int32(10), delta.inserted)
+	consumeCodeChurnChange(
+		t, &cc,
+		core.LineHistoryChange{
+			FileId: 0, CurrTick: 0, PrevTick: 0,
+			CurrAuthor: 0, PrevAuthor: 0, Delta: 10,
+		},
+	)
+
+	_, err := cc.Consume(map[string]any{
+		linehistory.DependencyLineHistory: core.LineHistoryChanges{
+			Changes: []core.LineHistoryChange{
+				{
+					FileId: 0, CurrTick: 30, PrevTick: 0,
+					CurrAuthor: 0, PrevAuthor: 0, Delta: 2,
+				},
+				{
+					FileId: 0, CurrTick: 30, PrevTick: 0,
+					CurrAuthor: 1, PrevAuthor: 0, Delta: -3,
+				},
+			},
+		},
 	})
+	require.NoError(t, err)
 
-	t.Run("delete by others tracks deletedByOthers", func(t *testing.T) {
-		cc2 := CodeChurnAnalysis{}
-		cc2.peopleResolver = core.NewIdentityResolver([]string{testPersonAlice, testPersonBob}, nil)
-		assert.NoError(t, cc2.Initialize(test.Repository))
-
-		entry := churnFileEntry{
-			deleteHistory: map[core.AuthorId]sparseHistory{},
-		}
-		change := core.LineHistoryChange{
-			FileId:     0,
-			CurrTick:   1,
-			PrevTick:   0,
-			CurrAuthor: 1, // Bob
-			PrevAuthor: 0, // Alice's lines
-			Delta:      -5,
-		}
-		cc2.updateAwareness(change, &entry, -5)
-		key := churnDeltaKey{0, 0}
-		delta, exists := cc2.churnDeltas[key]
-		assert.True(t, exists)
-		assert.Equal(t, int32(5), delta.deletedByOthers)
-	})
+	// At tick 30 awareness first decays to .5. Inserting 2/12 reinforces it to
+	// 7/12, then deleting 3/12 of the now-owned lines reduces it to 7/16.
+	result := cc.Finalize().(CodeChurnResult)
+	alice := result.Authors[0].Files["#0"]
+	assert.Equal(t, int32(12), alice.InsertedLines)
+	assert.Equal(t, int32(9), alice.OwnedLines)
+	assert.InDelta(t, 0.4375, alice.Awareness, 0.000001)
+	assert.InDelta(t, 0.6818116988, alice.Memorability, 0.000001)
 }
 
-func TestCodeChurnConsumeIntegration(t *testing.T) {
+func TestCodeChurnConsumeRejectsCounterOverflow(t *testing.T) {
+	cc := CodeChurnAnalysis{}
+	cc.peopleResolver = core.NewIdentityResolver([]string{testPersonAlice}, nil)
+	require.NoError(t, cc.Initialize(test.Repository))
+
+	consumeCodeChurnChange(
+		t, &cc,
+		core.LineHistoryChange{
+			FileId: 0, CurrTick: 0, PrevTick: 0,
+			CurrAuthor: 0, PrevAuthor: 0, Delta: math.MaxInt32,
+		},
+	)
+
+	_, err := cc.Consume(map[string]any{
+		linehistory.DependencyLineHistory: core.LineHistoryChanges{
+			Changes: []core.LineHistoryChange{{
+				FileId: 0, CurrTick: 1, PrevTick: 0,
+				CurrAuthor: 0, PrevAuthor: 0, Delta: 1,
+			}},
+		},
+	})
+	require.ErrorIs(t, err, errCodeChurnCounterOverflow)
+
+	entry := cc.codeChurns[0].files[0]
+	assert.Equal(t, int32(math.MaxInt32), entry.insertedLines)
+	assert.Equal(t, int32(math.MaxInt32), entry.ownedLines)
+}
+
+func TestCodeChurnConsumeRejectsUnrepresentableDeletionMagnitude(t *testing.T) {
+	cc := CodeChurnAnalysis{}
+	cc.peopleResolver = core.NewIdentityResolver([]string{testPersonAlice}, nil)
+	require.NoError(t, cc.Initialize(test.Repository))
+
+	_, err := cc.Consume(map[string]any{
+		linehistory.DependencyLineHistory: core.LineHistoryChanges{
+			Changes: []core.LineHistoryChange{{
+				FileId: 0, CurrTick: 1, PrevTick: 0,
+				CurrAuthor: 0, PrevAuthor: 0, Delta: math.MinInt32,
+			}},
+		},
+	})
+	require.ErrorIs(t, err, errCodeChurnCounterOverflow)
+	assert.Empty(t, cc.codeChurns[0].files)
+}
+
+func TestCodeChurnFinalizeDecaysInactiveFilesToLastTick(t *testing.T) {
 	cc := CodeChurnAnalysis{}
 	cc.peopleResolver = core.NewIdentityResolver([]string{testPersonAlice, testPersonBob}, nil)
-	assert.NoError(t, cc.Initialize(test.Repository))
+	require.NoError(t, cc.Initialize(test.Repository))
 
-	// Simulate a series of changes across ticks
-	// Tick 1: Alice inserts 20 lines in file 0
-	changes1 := core.LineHistoryChanges{
-		Changes: []core.LineHistoryChange{
-			{FileId: 0, CurrTick: 1, PrevTick: 0, CurrAuthor: 0, PrevAuthor: 0, Delta: 20},
+	consumeCodeChurnChange(
+		t, &cc,
+		core.LineHistoryChange{FileId: 0, CurrTick: 0, PrevTick: 0, CurrAuthor: 0, PrevAuthor: 0, Delta: 10},
+	)
+	consumeCodeChurnChange(
+		t, &cc,
+		core.LineHistoryChange{FileId: 1, CurrTick: 30, PrevTick: 0, CurrAuthor: 1, PrevAuthor: 1, Delta: 5},
+	)
+
+	result := cc.Finalize().(CodeChurnResult)
+	alice := result.Authors[0].Files["#0"]
+	assert.InDelta(t, 0.5, alice.Awareness, 0.000001)
+	assert.InDelta(t, 0.8908987181, alice.Memorability, 0.000001)
+}
+
+func TestCodeChurnFileDeletionAdvancesFinalDecayTick(t *testing.T) {
+	cc := CodeChurnAnalysis{}
+	cc.peopleResolver = core.NewIdentityResolver([]string{testPersonAlice}, nil)
+	require.NoError(t, cc.Initialize(test.Repository))
+
+	consumeCodeChurnChange(
+		t, &cc,
+		core.LineHistoryChange{
+			FileId: 0, CurrTick: 0, PrevTick: 0,
+			CurrAuthor: 0, PrevAuthor: 0, Delta: 10,
 		},
-	}
-	_, err := cc.Consume(map[string]any{linehistory.DependencyLineHistory: changes1})
-	assert.NoError(t, err)
+	)
+	consumeCodeChurnChange(t, &cc, core.NewLineHistoryDeletion(1, 0, 30))
 
-	// Tick 2: Bob inserts 15 lines in file 0 and deletes 5 of Alice's lines
-	changes2 := core.LineHistoryChanges{
-		Changes: []core.LineHistoryChange{
-			{FileId: 0, CurrTick: 2, PrevTick: 1, CurrAuthor: 1, PrevAuthor: 1, Delta: 15},
-			{FileId: 0, CurrTick: 2, PrevTick: 1, CurrAuthor: 1, PrevAuthor: 0, Delta: -5},
+	result := cc.Finalize().(CodeChurnResult)
+	alice := result.Authors[0].Files["#0"]
+	assert.InDelta(t, 0.5, alice.Awareness, 0.000001)
+	assert.InDelta(t, 0.8908987181, alice.Memorability, 0.000001)
+}
+
+func TestCodeChurnHandCalculatedMultiTickAndSerialization(t *testing.T) {
+	cc := CodeChurnAnalysis{}
+	cc.peopleResolver = core.NewIdentityResolver([]string{testPersonAlice, testPersonBob}, nil)
+	require.NoError(t, cc.Initialize(test.Repository))
+	cc.tickSize = 24 * time.Hour
+
+	consumeCodeChurnChange(
+		t, &cc,
+		core.LineHistoryChange{FileId: 0, CurrTick: 0, PrevTick: 0, CurrAuthor: 0, PrevAuthor: 0, Delta: 10},
+	)
+	// Tick 30: A=1*2^-1=.5, M=1*2^(-30/180)=.8908987181.
+	// Self-deleting 2/10 lines reinforces both: score'=score+(1-score)*.2.
+	consumeCodeChurnChange(
+		t, &cc,
+		core.LineHistoryChange{FileId: 0, CurrTick: 30, PrevTick: 0, CurrAuthor: 0, PrevAuthor: 0, Delta: -2},
+	)
+	// Tick 60: decay another 30 ticks, then Bob deletes 4/8 owned lines, so both scores halve.
+	consumeCodeChurnChange(
+		t, &cc,
+		core.LineHistoryChange{FileId: 0, CurrTick: 60, PrevTick: 30, CurrAuthor: 1, PrevAuthor: 0, Delta: -4},
+	)
+	// Tick 90: decay another 30 ticks; inserting 4 into an 8-line post-insert population
+	// reinforces both scores by r=4/(4+4)=.5.
+	consumeCodeChurnChange(
+		t, &cc,
+		core.LineHistoryChange{FileId: 0, CurrTick: 90, PrevTick: 60, CurrAuthor: 0, PrevAuthor: 0, Delta: 4},
+	)
+
+	result := cc.Finalize().(CodeChurnResult)
+	alice := result.Authors[0].Files["#0"]
+	assert.Equal(t, int32(14), alice.InsertedLines)
+	assert.Equal(t, int32(8), alice.OwnedLines)
+	assert.InDelta(t, 0.5375, alice.Awareness, 0.000001)
+	assert.InDelta(t, 0.6811063825, alice.Memorability, 0.000001)
+	assert.Equal(t, int64(-2), alice.DeleteHistory[0][30].deltas[0])
+	assert.Equal(t, int64(-4), alice.DeleteHistory[1][60].deltas[30])
+
+	var text bytes.Buffer
+	require.NoError(t, cc.Serialize(result, false, &text))
+	assert.Contains(t, text.String(), "          awareness: 0.537500\n")
+	assert.Contains(t, text.String(), "          memorability: 0.681106\n")
+	assert.Contains(t, text.String(), "          delete_history:\n")
+	assert.Contains(t, text.String(), "            0:\n              30:\n                0: -2\n")
+	assert.Contains(t, text.String(), "            1:\n              60:\n                30: -4\n")
+	var yamlDocument map[any]any
+	require.NoError(t, yamlv2.Unmarshal([]byte("CodeChurn:\n"+text.String()), &yamlDocument))
+	yamlRoundTrip, err := yamlv2.Marshal(yamlDocument)
+	require.NoError(t, err)
+	var decodedYAML map[any]any
+	require.NoError(t, yamlv2.Unmarshal(yamlRoundTrip, &decodedYAML))
+	assert.Equal(t, yamlDocument, decodedYAML)
+
+	var binary bytes.Buffer
+	require.NoError(t, cc.Serialize(result, true, &binary))
+	decodedResult, err := cc.Deserialize(binary.Bytes())
+	require.NoError(t, err)
+	decoded := decodedResult.(CodeChurnResult)
+	assert.Equal(t, result.people, decoded.people)
+	assert.Equal(t, result.tickSize, decoded.tickSize)
+	assert.Equal(t, result.sampling, decoded.sampling)
+	assert.Equal(t, result.granularity, decoded.granularity)
+	assert.Equal(t, alice, decoded.Authors[0].Files["#0"])
+}
+
+func consumeCodeChurnChange(t *testing.T, cc *CodeChurnAnalysis, change core.LineHistoryChange) {
+	t.Helper()
+
+	result, err := cc.Consume(map[string]any{
+		linehistory.DependencyLineHistory: core.LineHistoryChanges{
+			Changes: []core.LineHistoryChange{change},
 		},
-	}
-	_, err = cc.Consume(map[string]any{linehistory.DependencyLineHistory: changes2})
-	assert.NoError(t, err)
-
-	// Check Alice's stats
-	aliceEntry := cc.codeChurns[0].files[core.FileId(0)]
-	assert.Equal(t, int32(20), aliceEntry.insertedLines)
-	assert.Equal(t, int32(15), aliceEntry.ownedLines) // 20 - 5
-
-	// Check Bob's stats
-	bobEntry := cc.codeChurns[1].files[core.FileId(0)]
-	assert.Equal(t, int32(15), bobEntry.insertedLines)
-	assert.Equal(t, int32(15), bobEntry.ownedLines)
+	})
+	require.NoError(t, err)
+	assert.Nil(t, result)
 }

@@ -765,6 +765,24 @@ func TestLegacyBurndownSerialize(t *testing.T) {
 	assert.Equal(t, msg.GetPeopleInteraction().GetIndptr(), indptr[:])
 }
 
+func TestLegacyBurndownSerializeRejectsNegativeBalances(t *testing.T) {
+	result := BurndownResult{
+		GlobalHistory: burndown.DenseHistory{{1}, {-1}},
+		sampling:      3,
+		granularity:   4,
+	}
+
+	for _, binary := range []bool{false, true} {
+		buffer := &bytes.Buffer{}
+		err := (&LegacyBurndownAnalysis{}).Serialize(result, binary, buffer)
+		assert.ErrorIs(t, err, errNegativeBurndownBalance)
+		assert.ErrorContains(t, err, "tick 3")
+		assert.ErrorContains(t, err, "age band 0")
+		assert.ErrorContains(t, err, "legacy serialization")
+		assert.Empty(t, buffer.Bytes())
+	}
+}
+
 func TestLegacyBurndownSerializeAuthorMissing(t *testing.T) {
 	out, _ := bakeBurndownForSerialization(t, core.AuthorMissing)
 	bd := &LegacyBurndownAnalysis{}

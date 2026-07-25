@@ -456,6 +456,10 @@ The files are coupled if they are changed in the same commit. The developers are
 change the same file. `hercules` records the number of couples throughout the whole commit history
 and outputs the two corresponding co-occurrence matrices. `labours -m couples` renders the
 file-coupling, people-coupling and (when collected) shotness-coupling charts from those matrices.
+The shotness chart compares entity co-occurrence profiles: cell `(i, j)` is the dot product of
+the counters for entities `i` and `j`. Its diagonal is each profile's squared norm; ranked pairs
+exclude the diagonal and include only positive, distinct pairs. YAML and Protocol Buffer inputs
+use the same matrix construction.
 The TensorFlow-based [Swivel embedding](https://github.com/src-d/tensorflow-swivel) training and
 [Tensorflow Projector](http://projector.tensorflow.org/) TSV export were features of the retired
 Python `labours` package and are not part of the Go renderer.
@@ -476,6 +480,10 @@ Python `labours` package and are not part of the Go renderer.
 ```
 
 By default, `--shotness` is powered by tree-sitter and tracks function-level units for Go, Python, JavaScript and TypeScript.
+Structural identities combine source path, node kind, and qualified name (including receiver or
+enclosing scope when available). Coordinate-only moves within a file preserve an entity; qualified
+renames and individual cross-file moves create a new identity. An explicit whole-file rename
+migrates the existing identities and their counters to the new path.
 
 ```
 hercules --shotness

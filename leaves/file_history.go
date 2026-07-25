@@ -97,6 +97,7 @@ func (*FileHistoryAnalysis) ConfigureUpstream(facts map[string]any) error {
 func (history *FileHistoryAnalysis) Initialize(repository *git.Repository) error {
 	history.l = core.NewLogger()
 	history.files = map[string]*FileHistory{}
+	history.lastCommit = nil
 	history.OneShotMergeProcessor.Initialize()
 
 	return nil
@@ -151,6 +152,9 @@ func getFileHistoryDependencies(deps map[string]any) (fileHistoryDependencies, e
 
 func (history *FileHistoryAnalysis) Finalize() any {
 	files := map[string]FileHistory{}
+	if history.lastCommit == nil {
+		return FileHistoryResult{Files: files}
+	}
 
 	fileIter, err := history.lastCommit.Files()
 	if err != nil {
@@ -200,46 +204,87 @@ func (history *FileHistoryAnalysis) Serialize(result any, binary bool, writer io
 func (history *FileHistoryAnalysis) recordFileCommit(
 	change *object.Change, action merkletrie.Action, commit plumbing.Hash,
 ) {
-	name := change.To.Name
-	if action == merkletrie.Delete {
-		name = change.From.Name
-	}
-
-	file := history.files[name]
-	if file == nil {
-		file = &FileHistory{}
-		history.files[change.To.Name] = file
-	}
-
 	switch action {
 	case merkletrie.Insert:
+		file := history.fileHistory(change.To.Name)
 		file.Hashes = []plumbing.Hash{commit}
 	case merkletrie.Delete:
-		file.Hashes = append(file.Hashes, commit)
+		file := history.fileHistory(change.From.Name)
+		file.Hashes = appendUniqueFileHistoryHashes(file.Hashes, commit)
 	case merkletrie.Modify:
-		var hashes []plumbing.Hash
-		if previous := history.files[change.From.Name]; previous != nil {
-			hashes = previous.Hashes
-		}
-
+		var file *FileHistory
 		if change.From.Name != change.To.Name {
-			delete(history.files, change.From.Name)
+			file = history.renameFileHistory(change.From.Name, change.To.Name)
+		} else {
+			file = history.fileHistory(change.To.Name)
 		}
 
-		hashes = append(hashes, commit)
-		file.Hashes = hashes
+		file.Hashes = appendUniqueFileHistoryHashes(file.Hashes, commit)
 	}
 }
 
-func (history *FileHistoryAnalysis) recordAuthorStats(
-	name string, author int, stats items.LineStats,
-) {
+func (history *FileHistoryAnalysis) fileHistory(name string) *FileHistory {
 	file := history.files[name]
 	if file == nil {
 		file = &FileHistory{}
 		history.files[name] = file
 	}
 
+	return file
+}
+
+// renameFileHistory moves all history from source to destination. If destination already has
+// history, its hashes stay first, the source hashes are appended, and per-author statistics are
+// added together. This makes path collisions lossless and deterministic.
+func (history *FileHistoryAnalysis) renameFileHistory(source, destination string) *FileHistory {
+	sourceHistory := history.files[source]
+	destinationHistory := history.files[destination]
+
+	switch {
+	case sourceHistory == nil && destinationHistory == nil:
+		destinationHistory = &FileHistory{}
+	case destinationHistory == nil:
+		destinationHistory = sourceHistory
+	case sourceHistory != nil && sourceHistory != destinationHistory:
+		destinationHistory.Hashes = appendUniqueFileHistoryHashes(
+			destinationHistory.Hashes, sourceHistory.Hashes...,
+		)
+		for author, stats := range sourceHistory.People {
+			addAuthorStats(destinationHistory, author, stats)
+		}
+	}
+
+	delete(history.files, source)
+	history.files[destination] = destinationHistory
+
+	return destinationHistory
+}
+
+func appendUniqueFileHistoryHashes(
+	destination []plumbing.Hash, hashes ...plumbing.Hash,
+) []plumbing.Hash {
+	seen := make(map[plumbing.Hash]bool, len(destination)+len(hashes))
+	for _, hash := range destination {
+		seen[hash] = true
+	}
+
+	for _, hash := range hashes {
+		if !seen[hash] {
+			destination = append(destination, hash)
+			seen[hash] = true
+		}
+	}
+
+	return destination
+}
+
+func (history *FileHistoryAnalysis) recordAuthorStats(
+	name string, author int, stats items.LineStats,
+) {
+	addAuthorStats(history.fileHistory(name), author, stats)
+}
+
+func addAuthorStats(file *FileHistory, author int, stats items.LineStats) {
 	if file.People == nil {
 		file.People = map[int]items.LineStats{}
 	}

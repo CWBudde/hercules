@@ -44,6 +44,38 @@ func (t T) Beta() int {
 	if nodes[1].Name != "Beta" || nodes[1].StartLine != 9 || nodes[1].EndLine != 11 {
 		t.Fatalf("unexpected second node: %+v", nodes[1])
 	}
+	if nodes[0].QualifiedName != "Alpha" || nodes[1].QualifiedName != "T.Beta" {
+		t.Fatalf("unexpected qualified Go names: %+v", nodes)
+	}
+	if nodes[0].SourceIdentity != "demo.go" || nodes[1].SourceIdentity != "demo.go" {
+		t.Fatalf("unexpected Go source identities: %+v", nodes)
+	}
+}
+
+func TestTreeSitterExtractorDistinguishesSameNamedGoMethodsByReceiver(t *testing.T) {
+	extractor := NewTreeSitterExtractor()
+	source := []byte(`package demo
+
+type Alpha struct{}
+type Beta struct{}
+
+func (a Alpha) Run() {}
+func (b *Beta) Run() {}
+`)
+
+	nodes, err := extractor.Extract("receivers.go", source)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(nodes) != 2 {
+		t.Fatalf("expected 2 nodes, got %+v", nodes)
+	}
+	if nodes[0].QualifiedName != "Alpha.Run" || nodes[1].QualifiedName != "Beta.Run" {
+		t.Fatalf("same-named methods were not receiver-qualified: %+v", nodes)
+	}
+	if nodes[0].StableIdentity() == nodes[1].StableIdentity() {
+		t.Fatalf("same-named receiver methods share identity: %+v", nodes)
+	}
 }
 
 func TestTreeSitterExtractorPython(t *testing.T) {
@@ -67,6 +99,40 @@ class T:
 	}
 	if nodes[1].Name != "beta" || nodes[1].StartLine != 5 || nodes[1].EndLine != 6 {
 		t.Fatalf("unexpected second node: %+v", nodes[1])
+	}
+	if nodes[0].QualifiedName != "alpha" || nodes[1].QualifiedName != "T.beta" {
+		t.Fatalf("unexpected qualified Python names: %+v", nodes)
+	}
+}
+
+func TestTreeSitterExtractorDistinguishesSameNamedNestedFunctions(t *testing.T) {
+	extractor := NewTreeSitterExtractor()
+	source := []byte(`def left():
+    def run():
+        return 1
+    return run()
+
+def right():
+    def run():
+        return 2
+    return run()
+`)
+
+	nodes, err := extractor.Extract("nested.py", source)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	got := make(map[string]bool, len(nodes))
+	for _, node := range nodes {
+		got[node.QualifiedName] = true
+	}
+	for _, want := range []string{"left", "left.run", "right", "right.run"} {
+		if !got[want] {
+			t.Fatalf("missing qualified nested function %q in %+v", want, nodes)
+		}
+	}
+	if len(got) != 4 {
+		t.Fatalf("nested functions collapsed: %+v", nodes)
 	}
 }
 

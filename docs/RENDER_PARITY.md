@@ -71,6 +71,15 @@ Port fidelity: on identical fixtures the integrated renderer is **byte-identical
 Artifact-only modes with no Python pair (RMSE n/a): `devs-parallel`, `hotspot-risk`,
 `run-times`.
 
+### Shotness coupling semantic parity
+
+`couples-shotness` is validated as a data-level contract rather than against
+the retired Python renderer's historical pixels. Both YAML and Protocol Buffer
+readers construct the same entity-profile dot-product matrix. Its diagonal is
+the profile squared norm, while ranked pairs contain only positive, distinct
+off-diagonal entries. Hand-authored fixtures cover the matrix and ranking
+policy.
+
 ## How to re-run
 
 In this repository:

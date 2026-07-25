@@ -452,21 +452,7 @@ func (analyser *CodeChurnAnalysis) MergeResults(
 		panic("cannot merge CodeChurn results with different tick sizes")
 	}
 
-	mergedPeople := append([]string(nil), cr1.people...)
-
-	peopleIndex := make(map[string]int, len(mergedPeople))
-	for i, name := range mergedPeople {
-		peopleIndex[name] = i
-	}
-
-	for _, name := range cr2.people {
-		if _, exists := peopleIndex[name]; exists {
-			continue
-		}
-
-		peopleIndex[name] = len(mergedPeople)
-		mergedPeople = append(mergedPeople, name)
-	}
+	mergedPeople, peopleIndex := mergeCodeChurnPeople(cr1.people, cr2.people)
 
 	merged := CodeChurnResult{
 		Authors:     make([]CodeChurnAuthorResult, len(mergedPeople)),
@@ -479,36 +465,54 @@ func (analyser *CodeChurnAnalysis) MergeResults(
 		merged.Authors[i].Files = map[string]CodeChurnFileResult{}
 	}
 
-	mergeAuthor := func(result CodeChurnResult) {
-		for authorID, author := range result.Authors {
-			if authorID >= len(result.people) {
-				continue
-			}
+	mergeCodeChurnAuthors(&merged, cr1, peopleIndex)
+	mergeCodeChurnAuthors(&merged, cr2, peopleIndex)
 
-			targetID := peopleIndex[result.people[authorID]]
+	return merged
+}
 
-			targetFiles := merged.Authors[targetID].Files
-			for fileName, stats := range author.Files {
-				current, exists := targetFiles[fileName]
-				if !exists {
-					targetFiles[fileName] = cloneCodeChurnFileResult(stats)
-					continue
-				}
+func mergeCodeChurnPeople(first, second []string) ([]string, map[string]int) {
+	people := append([]string(nil), first...)
 
-				current.InsertedLines += stats.InsertedLines
-				current.OwnedLines += stats.OwnedLines
-				current.Memorability = maxFloat32(current.Memorability, stats.Memorability)
-				current.Awareness = maxFloat32(current.Awareness, stats.Awareness)
-				current.DeleteHistory = mergeDeleteHistory(current.DeleteHistory, stats.DeleteHistory)
-				targetFiles[fileName] = current
-			}
+	index := make(map[string]int, len(people))
+	for i, name := range people {
+		index[name] = i
+	}
+
+	for _, name := range second {
+		if _, exists := index[name]; !exists {
+			index[name] = len(people)
+			people = append(people, name)
 		}
 	}
 
-	mergeAuthor(cr1)
-	mergeAuthor(cr2)
+	return people, index
+}
 
-	return merged
+func mergeCodeChurnAuthors(
+	target *CodeChurnResult, source CodeChurnResult, peopleIndex map[string]int,
+) {
+	for authorID, author := range source.Authors {
+		if authorID >= len(source.people) {
+			continue
+		}
+
+		targetFiles := target.Authors[peopleIndex[source.people[authorID]]].Files
+		for fileName, stats := range author.Files {
+			current, exists := targetFiles[fileName]
+			if !exists {
+				targetFiles[fileName] = cloneCodeChurnFileResult(stats)
+				continue
+			}
+
+			current.InsertedLines += stats.InsertedLines
+			current.OwnedLines += stats.OwnedLines
+			current.Memorability = maxFloat32(current.Memorability, stats.Memorability)
+			current.Awareness = maxFloat32(current.Awareness, stats.Awareness)
+			current.DeleteHistory = mergeDeleteHistory(current.DeleteHistory, stats.DeleteHistory)
+			targetFiles[fileName] = current
+		}
+	}
 }
 
 func (analyser *CodeChurnAnalysis) serializeText(result *CodeChurnResult, writer io.Writer) {

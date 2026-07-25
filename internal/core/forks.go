@@ -292,62 +292,70 @@ func leaveRootComponent(
 		if visited[key] {
 			continue
 		}
-		var set []plumbing.Hash
 
-		for queue := []plumbing.Hash{key}; len(queue) > 0; {
-			head := queue[len(queue)-1]
-			queue = queue[:len(queue)-1]
-
-			if visited[head] {
-				continue
-			}
-
-			set = append(set, head)
-
-			visited[head] = true
-			for _, c := range dag[head] {
-				if !visited[c.Hash] {
-					queue = append(queue, c.Hash)
-				}
-			}
-
-			if commit, exists := hashes[head.String()]; exists {
-				for _, p := range getCommitParents(commit) {
-					if !visited[p] {
-						if _, exists := hashes[p.String()]; exists {
-							queue = append(queue, p)
-						}
-					}
-				}
-			}
-		}
-
-		sets = append(sets, set)
+		sets = append(sets, walkCommitComponent(key, hashes, dag, visited))
 	}
 
-	if len(sets) > 1 {
-		maxlen := 0
-		maxind := -1
+	largest := largestCommitComponent(sets)
+	for i, set := range sets {
+		if i == largest {
+			continue
+		}
 
-		for i, set := range sets {
-			if len(set) > maxlen {
-				maxlen = len(set)
-				maxind = i
+		for _, hash := range set {
+			log.Printf("warning: dropped %s from the analysis - disjoint", hash.String())
+			delete(dag, hash)
+			delete(hashes, hash.String())
+		}
+	}
+}
+
+func walkCommitComponent(
+	root plumbing.Hash,
+	hashes map[string]*object.Commit,
+	dag map[plumbing.Hash][]*object.Commit,
+	visited map[plumbing.Hash]bool,
+) []plumbing.Hash {
+	var component []plumbing.Hash
+
+	for queue := []plumbing.Hash{root}; len(queue) > 0; {
+		head := queue[len(queue)-1]
+		queue = queue[:len(queue)-1]
+
+		if visited[head] {
+			continue
+		}
+
+		visited[head] = true
+
+		component = append(component, head)
+		for _, child := range dag[head] {
+			if !visited[child.Hash] {
+				queue = append(queue, child.Hash)
 			}
 		}
 
-		for i, set := range sets {
-			if i == maxind {
-				continue
-			}
-
-			for _, h := range set {
-				log.Printf("warning: dropped %s from the analysis - disjoint", h.String())
-				delete(dag, h)
-				delete(hashes, h.String())
+		if commit := hashes[head.String()]; commit != nil {
+			for _, parent := range getCommitParents(commit) {
+				if !visited[parent] && hashes[parent.String()] != nil {
+					queue = append(queue, parent)
+				}
 			}
 		}
 	}
+
+	return component
+}
+
+func largestCommitComponent(components [][]plumbing.Hash) int {
+	largest, largestSize := -1, 0
+	for index, component := range components {
+		if len(component) > largestSize {
+			largest, largestSize = index, len(component)
+		}
+	}
+
+	return largest
 }
 
 // bindOrderNodes returns curried "orderNodes" function.
@@ -486,144 +494,175 @@ func collapseFastForwards(
 		key := hashes[strkey].Hash
 		processed[key] = true
 
-	repeat:
-		vals, exists := mergedDag[key]
+		for {
+			vals, exists := mergedDag[key]
+			if !exists || len(vals) < 2 {
+				break
+			}
 
-		if !exists {
+			toRemove := findFastForwardChildren(
+				key, vals, processed, parents, mergedDag, mergedSeq,
+			)
+			if len(toRemove) == 0 {
+				break
+			}
+
+			node := mergedSeq[key][len(mergedSeq[key])-1].Hash
+			dag[node] = childrenWithout(dag[node], toRemove)
+			newVals := childrenWithout(vals, toRemove)
+			merged := mergeOnlyChild(key, newVals, parents, mergedDag, mergedSeq)
+			removeParentEdges(key, toRemove, parents)
+
+			if !merged {
+				mergedDag[key] = newVals
+				break
+			}
+		}
+	}
+}
+
+func findFastForwardChildren(
+	key plumbing.Hash,
+	children []*object.Commit,
+	processed map[plumbing.Hash]bool,
+	parents map[plumbing.Hash]map[plumbing.Hash]bool,
+	mergedDag, mergedSeq map[plumbing.Hash][]*object.Commit,
+) map[plumbing.Hash]bool {
+	sort.Slice(children, func(i, j int) bool {
+		return children[i].Hash.String() < children[j].Hash.String()
+	})
+
+	toRemove := map[plumbing.Hash]bool{}
+
+	for _, child := range children {
+		otherParents := parentHashesExcept(parents[child.Hash], key)
+
+		var immediateParent plumbing.Hash
+		if len(otherParents) == 1 {
+			immediateParent = otherParents[0]
+		}
+
+		if !ancestorPathReaches(key, child.Hash, otherParents, processed, parents) {
 			continue
 		}
 
-		if len(vals) < 2 {
+		toRemove[child.Hash] = true
+		if len(otherParents) == 1 && len(mergedDag[immediateParent]) == 1 {
+			mergeCommitSequence(immediateParent, child.Hash, parents, mergedDag, mergedSeq)
+		}
+	}
+
+	return toRemove
+}
+
+func parentHashesExcept(
+	parentSet map[plumbing.Hash]bool, excluded plumbing.Hash,
+) []plumbing.Hash {
+	result := make([]plumbing.Hash, 0, len(parentSet))
+	for parent := range parentSet {
+		if parent != excluded {
+			result = append(result, parent)
+		}
+	}
+
+	return result
+}
+
+func ancestorPathReaches(
+	target, child plumbing.Hash,
+	queue []plumbing.Hash,
+	processed map[plumbing.Hash]bool,
+	parents map[plumbing.Hash]map[plumbing.Hash]bool,
+) bool {
+	visited := map[plumbing.Hash]bool{child: true}
+	for _, parent := range queue {
+		visited[parent] = true
+	}
+
+	for len(queue) > 0 {
+		head := queue[len(queue)-1]
+		queue = queue[:len(queue)-1]
+
+		if processed[head] {
+			if head == target {
+				return true
+			}
+
 			continue
 		}
 
-		toRemove := map[plumbing.Hash]bool{}
+		for parent := range parents[head] {
+			if !visited[parent] {
+				visited[head] = true
 
-		sort.Slice(vals, func(i, j int) bool { return vals[i].Hash.String() < vals[j].Hash.String() })
-
-		for _, child := range vals {
-			var queue []plumbing.Hash
-			visited := map[plumbing.Hash]bool{child.Hash: true}
-			childParents := parents[child.Hash]
-			childNumOtherParents := 0
-
-			for parent := range childParents {
-				if parent != key {
-					visited[parent] = true
-					childNumOtherParents++
-
-					queue = append(queue, parent)
-				}
-			}
-
-			var immediateParent plumbing.Hash
-			if childNumOtherParents == 1 {
-				immediateParent = queue[0]
-			}
-
-			for len(queue) > 0 {
-				head := queue[len(queue)-1]
-				queue = queue[:len(queue)-1]
-
-				if processed[head] {
-					if head == key {
-						toRemove[child.Hash] = true
-						if childNumOtherParents == 1 && len(mergedDag[immediateParent]) == 1 {
-							mergedSeq[immediateParent] = append(
-								mergedSeq[immediateParent], mergedSeq[child.Hash]...,
-							)
-							delete(mergedSeq, child.Hash)
-							mergedDag[immediateParent] = mergedDag[child.Hash]
-							delete(mergedDag, child.Hash)
-
-							parents[child.Hash] = parents[immediateParent]
-							for _, vals := range parents {
-								for v := range vals {
-									if v == child.Hash {
-										delete(vals, v)
-										vals[immediateParent] = true
-
-										break
-									}
-								}
-							}
-						}
-
-						break
-					}
-				} else {
-					for parent := range parents[head] {
-						if !visited[parent] {
-							visited[head] = true
-
-							queue = append(queue, parent)
-						}
-					}
-				}
+				queue = append(queue, parent)
 			}
 		}
+	}
 
-		if len(toRemove) == 0 {
-			continue
+	return false
+}
+
+func mergeCommitSequence(
+	parent, child plumbing.Hash,
+	parents map[plumbing.Hash]map[plumbing.Hash]bool,
+	mergedDag, mergedSeq map[plumbing.Hash][]*object.Commit,
+) {
+	mergedSeq[parent] = append(mergedSeq[parent], mergedSeq[child]...)
+	delete(mergedSeq, child)
+	mergedDag[parent] = mergedDag[child]
+	delete(mergedDag, child)
+	parents[child] = parents[parent]
+	replaceParent(child, parent, parents)
+}
+
+func childrenWithout(
+	children []*object.Commit, removed map[plumbing.Hash]bool,
+) []*object.Commit {
+	result := make([]*object.Commit, 0, len(children))
+	for _, child := range children {
+		if !removed[child.Hash] {
+			result = append(result, child)
 		}
+	}
 
-		// update dag
-		var newVals []*object.Commit
+	return result
+}
 
-		node := mergedSeq[key][len(mergedSeq[key])-1].Hash
-		for _, child := range dag[node] {
-			if !toRemove[child.Hash] {
-				newVals = append(newVals, child)
-			}
+func mergeOnlyChild(
+	key plumbing.Hash,
+	children []*object.Commit,
+	parents map[plumbing.Hash]map[plumbing.Hash]bool,
+	mergedDag, mergedSeq map[plumbing.Hash][]*object.Commit,
+) bool {
+	if len(children) != 1 || len(parents[children[0].Hash]) != 1 {
+		return false
+	}
+
+	mergeCommitSequence(key, children[0].Hash, parents, mergedDag, mergedSeq)
+
+	return true
+}
+
+func replaceParent(
+	oldParent, newParent plumbing.Hash,
+	parents map[plumbing.Hash]map[plumbing.Hash]bool,
+) {
+	for _, parentSet := range parents {
+		if parentSet[oldParent] {
+			delete(parentSet, oldParent)
+			parentSet[newParent] = true
 		}
+	}
+}
 
-		dag[node] = newVals
-
-		// update mergedDag
-		newVals = []*object.Commit{}
-
-		for _, child := range vals {
-			if !toRemove[child.Hash] {
-				newVals = append(newVals, child)
-			}
-		}
-
-		merged := false
-
-		if len(newVals) == 1 {
-			onlyChild := newVals[0].Hash
-			if len(parents[onlyChild]) == 1 {
-				merged = true
-
-				mergedSeq[key] = append(mergedSeq[key], mergedSeq[onlyChild]...)
-				delete(mergedSeq, onlyChild)
-				mergedDag[key] = mergedDag[onlyChild]
-				delete(mergedDag, onlyChild)
-
-				parents[onlyChild] = parents[key]
-				for _, vals := range parents {
-					for v := range vals {
-						if v == onlyChild {
-							delete(vals, v)
-							vals[key] = true
-
-							break
-						}
-					}
-				}
-			}
-		}
-
-		// update parents
-		for rm := range toRemove {
-			delete(parents[rm], key)
-		}
-
-		if !merged {
-			mergedDag[key] = newVals
-		} else {
-			goto repeat
-		}
+func removeParentEdges(
+	parent plumbing.Hash,
+	children map[plumbing.Hash]bool,
+	parents map[plumbing.Hash]map[plumbing.Hash]bool,
+) {
+	for child := range children {
+		delete(parents[child], parent)
 	}
 }
 
@@ -632,146 +671,157 @@ func generatePlan(
 	orderNodes orderer, hashes map[string]*object.Commit,
 	mergedDag, dag, mergedSeq map[plumbing.Hash][]*object.Commit,
 ) []runAction {
-	parents := buildParents(dag)
-	var plan []runAction
-	branches := map[plumbing.Hash]int{}
-	branchers := map[plumbing.Hash]map[plumbing.Hash]int{}
-	counter := rootBranchIndex
-
+	builder := planBuilder{
+		hashes: hashes, mergedDag: mergedDag, dag: dag, mergedSeq: mergedSeq,
+		parents: buildParents(dag), branches: map[plumbing.Hash]int{},
+		branchers: map[plumbing.Hash]map[plumbing.Hash]int{}, counter: rootBranchIndex,
+	}
 	for _, name := range orderNodes(false, true) {
-		commit := hashes[name]
-		if len(parents[commit.Hash]) == 0 {
-			branches[commit.Hash] = counter
-			plan = append(plan, runAction{
-				Action: runActionEmerge,
-				Commit: commit,
-				Items:  []int{counter},
-			})
-			counter++
-		}
+		builder.process(hashes[name])
+	}
 
-		branchExists := func(branch int) bool { return branch >= rootBranchIndex }
-		appendCommit := func(c *object.Commit, branch int) {
-			if branch == 0 {
-				log.Panicf("setting a zero branch for %s", c.Hash.String())
+	return builder.plan
+}
+
+type planBuilder struct {
+	hashes                    map[string]*object.Commit
+	mergedDag, dag, mergedSeq map[plumbing.Hash][]*object.Commit
+	parents                   map[plumbing.Hash]map[plumbing.Hash]bool
+	branches                  map[plumbing.Hash]int
+	branchers                 map[plumbing.Hash]map[plumbing.Hash]int
+	counter                   int
+	plan                      []runAction
+}
+
+func (builder *planBuilder) process(commit *object.Commit) {
+	if len(builder.parents[commit.Hash]) == 0 {
+		builder.branches[commit.Hash] = builder.counter
+		builder.plan = append(builder.plan, runAction{
+			Action: runActionEmerge, Commit: commit, Items: []int{builder.counter},
+		})
+		builder.counter++
+	}
+
+	branch := builder.branches[commit.Hash]
+	if _, exists := builder.branches[commit.Hash]; !exists {
+		branch = -1
+	}
+
+	head, branch := builder.appendCommitSequence(commit, branch)
+	builder.appendFork(commit, head, branch)
+}
+
+func (builder *planBuilder) appendCommitSequence(
+	commit *object.Commit, branch int,
+) (plumbing.Hash, int) {
+	sequence, exists := builder.mergedSeq[commit.Hash]
+	if !exists {
+		return commit.Hash, branch
+	}
+
+	for index, offspring := range sequence {
+		if index == 0 {
+			mergeBranch, items := builder.mergeBranches(commit, branch)
+			if mergeBranch != branch {
+				builder.branches[commit.Hash], branch = mergeBranch, mergeBranch
+			} else if !branchExists(branch) {
+				log.Panicf("head of the sequence does not have an assigned branch: %s", commit.Hash.String())
 			}
 
-			plan = append(plan, runAction{
-				Action: runActionCommit,
-				Commit: c,
-				Items:  []int{branch},
-			})
-		}
-		buildMergeList := func(branch int) (int, []int) {
-			commitParents := parents[commit.Hash]
-			if len(commitParents) < 2 {
-				return branch, nil
+			builder.appendCommit(offspring, mergeBranch)
+
+			if len(items) > 0 {
+				builder.plan = append(builder.plan, runAction{
+					Action: runActionMerge, Commit: commit, Items: items,
+				})
 			}
-			// merge after the merge commit (the first in the sequence)
-			items := make([]int, 0, len(commitParents))
-			minBranch := math.MaxInt
-			minBranchIndex := 0
-
-			for parent := range commitParents {
-				parentBranch := branchers[commit.Hash][parent]
-				if !branchExists(parentBranch) {
-					if parentBranch = branches[parent]; !branchExists(parentBranch) {
-						log.Panicf("parent %s => %s does not have a branch assigned",
-							parent.String(), commit.Hash.String())
-					}
-				}
-
-				if minBranch > parentBranch && len(dag[parent]) == 1 {
-					minBranch = parentBranch
-					minBranchIndex = len(items)
-				}
-
-				items = append(items, parentBranch)
-			}
-			// there should be no duplicates in items
-			if minBranch < math.MaxInt {
-				branch = minBranch
-
-				if minBranchIndex != 0 {
-					items[minBranchIndex], items[0] = items[0], items[minBranchIndex]
-				}
-			}
-
-			return branch, items
-		}
-
-		branch := -1
-		if branch2, ok := branches[commit.Hash]; ok {
-			branch = branch2
-		}
-
-		var head plumbing.Hash
-
-		if subseq, exists := mergedSeq[commit.Hash]; exists {
-			for subseqIndex, offspring := range subseq {
-				if subseqIndex == 0 {
-					minBranch, items := buildMergeList(branch)
-					if minBranch != branch {
-						branches[commit.Hash] = minBranch
-						branch = minBranch
-					} else if !branchExists(branch) {
-						log.Panicf("head of the sequence does not have an assigned branch: %s",
-							commit.Hash.String())
-					}
-
-					appendCommit(offspring, minBranch)
-
-					if len(items) > 0 {
-						plan = append(plan, runAction{
-							Action: runActionMerge,
-							Commit: commit,
-							Items:  items,
-						})
-					}
-				} else if branchExists(branch) {
-					appendCommit(offspring, branch)
-				}
-			}
-
-			head = subseq[len(subseq)-1].Hash
-			branches[head] = branch
-		} else {
-			head = commit.Hash
-		}
-
-		if len(mergedDag[commit.Hash]) > 1 {
-			children := []int{branch}
-
-			for i, child := range mergedDag[commit.Hash] {
-				if i == 0 {
-					branches[child.Hash] = branch
-					continue
-				}
-
-				if _, exists := branches[child.Hash]; !exists {
-					branches[child.Hash] = counter
-				}
-
-				childParents := branchers[child.Hash]
-				if childParents == nil {
-					childParents = map[plumbing.Hash]int{}
-					branchers[child.Hash] = childParents
-				}
-
-				childParents[head] = counter
-				children = append(children, counter)
-				counter++
-			}
-
-			plan = append(plan, runAction{
-				Action: runActionFork,
-				Commit: hashes[head.String()],
-				Items:  children,
-			})
+		} else if branchExists(branch) {
+			builder.appendCommit(offspring, branch)
 		}
 	}
 
-	return plan
+	head := sequence[len(sequence)-1].Hash
+	builder.branches[head] = branch
+
+	return head, branch
+}
+
+func (builder *planBuilder) mergeBranches(commit *object.Commit, branch int) (int, []int) {
+	parents := builder.parents[commit.Hash]
+	if len(parents) < 2 {
+		return branch, nil
+	}
+
+	items := make([]int, 0, len(parents))
+	minBranch, minIndex := math.MaxInt, 0
+
+	for parent := range parents {
+		parentBranch := builder.branchers[commit.Hash][parent]
+		if !branchExists(parentBranch) {
+			parentBranch = builder.branches[parent]
+			if !branchExists(parentBranch) {
+				log.Panicf("parent %s => %s does not have a branch assigned", parent, commit.Hash)
+			}
+		}
+
+		if minBranch > parentBranch && len(builder.dag[parent]) == 1 {
+			minBranch, minIndex = parentBranch, len(items)
+		}
+
+		items = append(items, parentBranch)
+	}
+
+	if minBranch < math.MaxInt {
+		branch = minBranch
+		items[minIndex], items[0] = items[0], items[minIndex]
+	}
+
+	return branch, items
+}
+
+func branchExists(branch int) bool {
+	return branch >= rootBranchIndex
+}
+
+func (builder *planBuilder) appendCommit(commit *object.Commit, branch int) {
+	if branch == 0 {
+		log.Panicf("setting a zero branch for %s", commit.Hash)
+	}
+
+	builder.plan = append(builder.plan, runAction{
+		Action: runActionCommit, Commit: commit, Items: []int{branch},
+	})
+}
+
+func (builder *planBuilder) appendFork(commit *object.Commit, head plumbing.Hash, branch int) {
+	if len(builder.mergedDag[commit.Hash]) <= 1 {
+		return
+	}
+
+	children := []int{branch}
+
+	for index, child := range builder.mergedDag[commit.Hash] {
+		if index == 0 {
+			builder.branches[child.Hash] = branch
+			continue
+		}
+
+		if _, exists := builder.branches[child.Hash]; !exists {
+			builder.branches[child.Hash] = builder.counter
+		}
+
+		if builder.branchers[child.Hash] == nil {
+			builder.branchers[child.Hash] = map[plumbing.Hash]int{}
+		}
+
+		builder.branchers[child.Hash][head] = builder.counter
+		children = append(children, builder.counter)
+		builder.counter++
+	}
+
+	builder.plan = append(builder.plan, runAction{
+		Action: runActionFork, Commit: builder.hashes[head.String()], Items: children,
+	})
 }
 
 // collectGarbage inserts `runActionDelete` disposal steps.
@@ -842,72 +892,63 @@ type hbAction struct {
 }
 
 func insertHibernateBoot(plan []runAction, hibernationDistance int) []runAction {
-	addons := map[int][]hbAction{}
-	lastUsed := map[int]int{}
-	addonsCount := 0
-
-	for x, action := range plan {
-		if action.Action == runActionDelete {
-			continue
-		}
-
-		for _, item := range action.Items {
-			if i, exists := lastUsed[item]; exists && (x-i-1) > hibernationDistance {
-				if addons[x] == nil {
-					addons[x] = make([]hbAction, 0, 1)
-				}
-
-				addons[x] = append(addons[x], hbAction{item, false})
-				if addons[i] == nil {
-					addons[i] = make([]hbAction, 0, 1)
-				}
-
-				addons[i] = append(addons[i], hbAction{item, true})
-				addonsCount += 2
-			}
-
-			lastUsed[item] = x
-		}
-	}
+	addons, addonsCount := hibernationAddons(plan, hibernationDistance)
 
 	newPlan := make([]runAction, 0, len(plan)+addonsCount)
 	for x, action := range plan {
-		xaddons := addons[x]
-		var boots []int
-		var hibernates []int
-
-		if len(xaddons) > 0 {
-			boots = make([]int, 0, len(xaddons))
-
-			hibernates = make([]int, 0, len(xaddons))
-			for _, addon := range xaddons {
-				if !addon.Hibernate {
-					boots = append(boots, addon.Branch)
-				} else {
-					hibernates = append(hibernates, addon.Branch)
-				}
-			}
-		}
-
+		boots, hibernates := splitHibernateAddons(addons[x])
 		if len(boots) > 0 {
 			newPlan = append(newPlan, runAction{
-				Action: runActionBoot,
-				Commit: action.Commit,
-				Items:  boots,
+				Action: runActionBoot, Commit: action.Commit, Items: boots,
 			})
 		}
 
 		newPlan = append(newPlan, action)
 		if len(hibernates) > 0 {
 			newPlan = append(newPlan, runAction{
-				Action: runActionHibernate,
-				Commit: action.Commit,
-				Items:  hibernates,
+				Action: runActionHibernate, Commit: action.Commit, Items: hibernates,
 			})
 		}
 	}
 
 	return newPlan
+}
+
+func hibernationAddons(plan []runAction, distance int) (map[int][]hbAction, int) {
+	addons := map[int][]hbAction{}
+	lastUsed, count := map[int]int{}, 0
+
+	for index, action := range plan {
+		if action.Action == runActionDelete {
+			continue
+		}
+
+		for _, branch := range action.Items {
+			if previous, exists := lastUsed[branch]; exists && index-previous-1 > distance {
+				addons[index] = append(addons[index], hbAction{branch, false})
+				addons[previous] = append(addons[previous], hbAction{branch, true})
+				count += 2
+			}
+
+			lastUsed[branch] = index
+		}
+	}
+
+	return addons, count
+}
+
+func splitHibernateAddons(addons []hbAction) ([]int, []int) {
+	var boots, hibernates []int
+
+	for _, addon := range addons {
+		if addon.Hibernate {
+			hibernates = append(hibernates, addon.Branch)
+		} else {
+			boots = append(boots, addon.Branch)
+		}
+	}
+
+	return boots, hibernates
 }
 
 func tracebackMerges(plan []runAction) int {

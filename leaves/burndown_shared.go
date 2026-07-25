@@ -141,7 +141,7 @@ func (p sparseHistory) updateDelta(prevTick, curTick, delta int) {
 	currentHistory.deltas[prevTick] += int64(delta)
 }
 
-func sortedKeys(m map[string]burndown.DenseHistory) []string {
+func sortedKeys[V any](m map[string]V) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)

@@ -357,83 +357,78 @@ func (oa *OnboardingAnalysis) Finalize() any {
 	authors := make(map[int]*AuthorOnboardingData, len(oa.authorTimeline))
 	cohortGroups := map[string][]int{} // cohort -> author IDs
 
-	// Process each author
 	for authorID, timeline := range oa.authorTimeline {
-		// Find first commit tick
-		firstTick := -1
-
-		sortedTicks := make([]int, 0, len(timeline))
-		for tick := range timeline {
-			sortedTicks = append(sortedTicks, tick)
-			if firstTick == -1 || tick < firstTick {
-				firstTick = tick
-			}
+		author := oa.finalizeAuthor(timeline)
+		if author == nil {
+			continue
 		}
 
-		sort.Ints(sortedTicks)
-
-		if firstTick == -1 {
-			continue // No commits for this author
-		}
-
-		// Determine join cohort (YYYY-MM)
-		firstTimestamp := items.FloorTime(time.Unix(0, 0).Add(time.Duration(firstTick)*oa.tickSize), oa.tickSize)
-		joinCohort := firstTimestamp.Format("2006-01")
-
-		// Build cumulative timeline
-		cumulative := newCumulativeMetrics()
-		tickToMetrics := map[int]*cumulativeMetrics{}
-
-		for _, tick := range sortedTicks {
-			tickMetrics := timeline[tick]
-			cumulative.accumulate(tickMetrics)
-
-			// Store snapshot of cumulative state at this tick
-			tickToMetrics[tick] = &cumulativeMetrics{
-				commits:           cumulative.commits,
-				files:             copyFileSet(cumulative.files),
-				lines:             cumulative.lines,
-				meaningfulCommits: cumulative.meaningfulCommits,
-				meaningfulFiles:   copyFileSet(cumulative.meaningfulFiles),
-				meaningfulLines:   cumulative.meaningfulLines,
-			}
-		}
-
-		// Compute window snapshots
-		snapshots := map[int]*OnboardingSnapshot{}
-		ticksPerDay := int(24 * time.Hour / oa.tickSize)
-
-		for _, windowDays := range oa.WindowDays {
-			targetTick := firstTick + (windowDays * ticksPerDay)
-			closestTick := findClosestTick(sortedTicks, targetTick)
-
-			if closestTick == -1 {
-				continue // No data within this window
-			}
-
-			cm := tickToMetrics[closestTick]
-			snapshots[windowDays] = &OnboardingSnapshot{
-				DaysSinceJoin:     windowDays,
-				TotalCommits:      cm.commits,
-				TotalFiles:        len(cm.files),
-				TotalLines:        cm.lines,
-				MeaningfulCommits: cm.meaningfulCommits,
-				MeaningfulFiles:   len(cm.meaningfulFiles),
-				MeaningfulLines:   cm.meaningfulLines,
-			}
-		}
-
-		authors[authorID] = &AuthorOnboardingData{
-			FirstCommitTick: firstTick,
-			JoinCohort:      joinCohort,
-			Snapshots:       snapshots,
-		}
-
-		cohortGroups[joinCohort] = append(cohortGroups[joinCohort], authorID)
+		authors[authorID] = author
+		cohortGroups[author.JoinCohort] = append(cohortGroups[author.JoinCohort], authorID)
 	}
 
-	// Continue to cohort aggregation
 	return oa.finalizeCohorts(authors, cohortGroups)
+}
+
+func (oa *OnboardingAnalysis) finalizeAuthor(
+	timeline map[int]*onboardingTickMetrics,
+) *AuthorOnboardingData {
+	sortedTicks := make([]int, 0, len(timeline))
+	for tick := range timeline {
+		sortedTicks = append(sortedTicks, tick)
+	}
+
+	sort.Ints(sortedTicks)
+
+	if len(sortedTicks) == 0 {
+		return nil
+	}
+
+	firstTick := sortedTicks[0]
+	firstTimestamp := items.FloorTime(
+		time.Unix(0, 0).Add(time.Duration(firstTick)*oa.tickSize), oa.tickSize,
+	)
+
+	return &AuthorOnboardingData{
+		FirstCommitTick: firstTick,
+		JoinCohort:      firstTimestamp.Format("2006-01"),
+		Snapshots:       oa.buildOnboardingSnapshots(timeline, sortedTicks),
+	}
+}
+
+func (oa *OnboardingAnalysis) buildOnboardingSnapshots(
+	timeline map[int]*onboardingTickMetrics, sortedTicks []int,
+) map[int]*OnboardingSnapshot {
+	cumulative := newCumulativeMetrics()
+
+	tickToMetrics := make(map[int]*cumulativeMetrics, len(sortedTicks))
+	for _, tick := range sortedTicks {
+		cumulative.accumulate(timeline[tick])
+		copy := *cumulative
+		copy.files = copyFileSet(cumulative.files)
+		copy.meaningfulFiles = copyFileSet(cumulative.meaningfulFiles)
+		tickToMetrics[tick] = &copy
+	}
+
+	snapshots := map[int]*OnboardingSnapshot{}
+
+	ticksPerDay := int(24 * time.Hour / oa.tickSize)
+	for _, windowDays := range oa.WindowDays {
+		closestTick := findClosestTick(sortedTicks, sortedTicks[0]+windowDays*ticksPerDay)
+		if closestTick >= 0 {
+			snapshots[windowDays] = onboardingSnapshot(windowDays, tickToMetrics[closestTick])
+		}
+	}
+
+	return snapshots
+}
+
+func onboardingSnapshot(days int, metrics *cumulativeMetrics) *OnboardingSnapshot {
+	return &OnboardingSnapshot{
+		DaysSinceJoin: days, TotalCommits: metrics.commits, TotalFiles: len(metrics.files),
+		TotalLines: metrics.lines, MeaningfulCommits: metrics.meaningfulCommits,
+		MeaningfulFiles: len(metrics.meaningfulFiles), MeaningfulLines: metrics.meaningfulLines,
+	}
 }
 
 // finalizeCohorts computes cohort aggregates and returns final result.
@@ -448,49 +443,11 @@ func (oa *OnboardingAnalysis) finalizeCohorts(
 			continue
 		}
 
-		// Aggregate snapshots across all authors in cohort
-		windowSums := map[int]*OnboardingSnapshot{}
-
-		for _, authorID := range authorIDs {
-			authorData := authors[authorID]
-			for windowDays, snapshot := range authorData.Snapshots {
-				sum, exists := windowSums[windowDays]
-				if !exists {
-					sum = &OnboardingSnapshot{
-						DaysSinceJoin: windowDays,
-					}
-					windowSums[windowDays] = sum
-				}
-
-				sum.TotalCommits += snapshot.TotalCommits
-				sum.TotalFiles += snapshot.TotalFiles
-				sum.TotalLines += snapshot.TotalLines
-				sum.MeaningfulCommits += snapshot.MeaningfulCommits
-				sum.MeaningfulFiles += snapshot.MeaningfulFiles
-				sum.MeaningfulLines += snapshot.MeaningfulLines
-			}
-		}
-
-		// Compute averages
 		authorCount := len(authorIDs)
-		averageSnapshots := make(map[int]*OnboardingSnapshot, len(windowSums))
-
-		for windowDays, sum := range windowSums {
-			averageSnapshots[windowDays] = &OnboardingSnapshot{
-				DaysSinceJoin:     windowDays,
-				TotalCommits:      sum.TotalCommits / authorCount,
-				TotalFiles:        sum.TotalFiles / authorCount,
-				TotalLines:        sum.TotalLines / authorCount,
-				MeaningfulCommits: sum.MeaningfulCommits / authorCount,
-				MeaningfulFiles:   sum.MeaningfulFiles / authorCount,
-				MeaningfulLines:   sum.MeaningfulLines / authorCount,
-			}
-		}
-
 		cohorts[cohort] = &CohortStats{
 			Cohort:           cohort,
 			AuthorCount:      authorCount,
-			AverageSnapshots: averageSnapshots,
+			AverageSnapshots: averageOnboardingSnapshots(authors, authorIDs),
 		}
 	}
 
@@ -502,6 +459,46 @@ func (oa *OnboardingAnalysis) finalizeCohorts(
 		reversedPeopleDict:  oa.reversedPeopleDict,
 		tickSize:            oa.tickSize,
 	}
+}
+
+func averageOnboardingSnapshots(
+	authors map[int]*AuthorOnboardingData, authorIDs []int,
+) map[int]*OnboardingSnapshot {
+	sums := map[int]*OnboardingSnapshot{}
+
+	for _, authorID := range authorIDs {
+		for days, snapshot := range authors[authorID].Snapshots {
+			if sums[days] == nil {
+				sums[days] = &OnboardingSnapshot{DaysSinceJoin: days}
+			}
+
+			addOnboardingSnapshot(sums[days], snapshot)
+		}
+	}
+
+	for _, snapshot := range sums {
+		divideOnboardingSnapshot(snapshot, len(authorIDs))
+	}
+
+	return sums
+}
+
+func addOnboardingSnapshot(target, source *OnboardingSnapshot) {
+	target.TotalCommits += source.TotalCommits
+	target.TotalFiles += source.TotalFiles
+	target.TotalLines += source.TotalLines
+	target.MeaningfulCommits += source.MeaningfulCommits
+	target.MeaningfulFiles += source.MeaningfulFiles
+	target.MeaningfulLines += source.MeaningfulLines
+}
+
+func divideOnboardingSnapshot(snapshot *OnboardingSnapshot, count int) {
+	snapshot.TotalCommits /= count
+	snapshot.TotalFiles /= count
+	snapshot.TotalLines /= count
+	snapshot.MeaningfulCommits /= count
+	snapshot.MeaningfulFiles /= count
+	snapshot.MeaningfulLines /= count
 }
 
 // Fork clones this pipeline item.
@@ -521,79 +518,9 @@ func (oa *OnboardingAnalysis) serializeText(result *OnboardingResult, writer io.
 
 	fmt.Fprintf(writer, "    window_days: [%s]\n", strings.Join(windowStrs, ", "))
 	fmt.Fprintf(writer, "    meaningful_threshold: %d\n", result.MeaningfulThreshold)
+	writeOnboardingAuthors(writer, result.Authors)
+	writeOnboardingCohorts(writer, result.Cohorts)
 
-	// Authors (sorted by ID)
-	authorIDs := make([]int, 0, len(result.Authors))
-	for id := range result.Authors {
-		authorIDs = append(authorIDs, id)
-	}
-
-	sort.Ints(authorIDs)
-
-	fmt.Fprintln(writer, "    authors:")
-
-	for _, authorID := range authorIDs {
-		author := result.Authors[authorID]
-		if authorID == core.AuthorMissing {
-			authorID = -1
-		}
-
-		fmt.Fprintf(writer, "      %d:\n", authorID)
-		fmt.Fprintf(writer, "        first_commit_tick: %d\n", author.FirstCommitTick)
-		fmt.Fprintf(writer, "        join_cohort: %s\n", yaml.SafeString(author.JoinCohort))
-
-		// Snapshots (sorted by days)
-		windowDays := make([]int, 0, len(author.Snapshots))
-		for days := range author.Snapshots {
-			windowDays = append(windowDays, days)
-		}
-
-		sort.Ints(windowDays)
-
-		fmt.Fprintln(writer, "        snapshots:")
-
-		for _, days := range windowDays {
-			snap := author.Snapshots[days]
-			fmt.Fprintf(writer, "          %d: {days: %d, commits: %d, files: %d, lines: %d, meaningful_commits: %d, meaningful_files: %d, meaningful_lines: %d}\n",
-				days, snap.DaysSinceJoin, snap.TotalCommits, snap.TotalFiles, snap.TotalLines,
-				snap.MeaningfulCommits, snap.MeaningfulFiles, snap.MeaningfulLines)
-		}
-	}
-
-	// Cohorts (sorted alphabetically)
-	cohortNames := make([]string, 0, len(result.Cohorts))
-	for name := range result.Cohorts {
-		cohortNames = append(cohortNames, name)
-	}
-
-	sort.Strings(cohortNames)
-
-	fmt.Fprintln(writer, "    cohorts:")
-
-	for _, name := range cohortNames {
-		cohort := result.Cohorts[name]
-		fmt.Fprintf(writer, "      %s:\n", yaml.SafeString(name))
-		fmt.Fprintf(writer, "        author_count: %d\n", cohort.AuthorCount)
-
-		// Average snapshots (sorted by days)
-		windowDays := make([]int, 0, len(cohort.AverageSnapshots))
-		for days := range cohort.AverageSnapshots {
-			windowDays = append(windowDays, days)
-		}
-
-		sort.Ints(windowDays)
-
-		fmt.Fprintln(writer, "        average_snapshots:")
-
-		for _, days := range windowDays {
-			snap := cohort.AverageSnapshots[days]
-			fmt.Fprintf(writer, "          %d: {days: %d, commits: %d, files: %d, lines: %d, meaningful_commits: %d, meaningful_files: %d, meaningful_lines: %d}\n",
-				days, snap.DaysSinceJoin, snap.TotalCommits, snap.TotalFiles, snap.TotalLines,
-				snap.MeaningfulCommits, snap.MeaningfulFiles, snap.MeaningfulLines)
-		}
-	}
-
-	// People
 	fmt.Fprintln(writer, "    people:")
 
 	for _, person := range result.reversedPeopleDict {
@@ -601,6 +528,59 @@ func (oa *OnboardingAnalysis) serializeText(result *OnboardingResult, writer io.
 	}
 
 	fmt.Fprintln(writer, "    tick_size:", int(result.tickSize.Seconds()))
+}
+
+func writeOnboardingAuthors(writer io.Writer, authors map[int]*AuthorOnboardingData) {
+	authorIDs := make([]int, 0, len(authors))
+	for id := range authors {
+		authorIDs = append(authorIDs, id)
+	}
+
+	sort.Ints(authorIDs)
+	fmt.Fprintln(writer, "    authors:")
+
+	for _, authorID := range authorIDs {
+		author := authors[authorID]
+		fmt.Fprintf(writer, "      %d:\n", int(protobufAuthorID(authorID)))
+		fmt.Fprintf(writer, "        first_commit_tick: %d\n", author.FirstCommitTick)
+		fmt.Fprintf(writer, "        join_cohort: %s\n", yaml.SafeString(author.JoinCohort))
+		fmt.Fprintln(writer, "        snapshots:")
+		writeOnboardingSnapshots(writer, author.Snapshots)
+	}
+}
+
+func writeOnboardingCohorts(writer io.Writer, cohorts map[string]*CohortStats) {
+	cohortNames := make([]string, 0, len(cohorts))
+	for name := range cohorts {
+		cohortNames = append(cohortNames, name)
+	}
+
+	sort.Strings(cohortNames)
+	fmt.Fprintln(writer, "    cohorts:")
+
+	for _, name := range cohortNames {
+		cohort := cohorts[name]
+		fmt.Fprintf(writer, "      %s:\n", yaml.SafeString(name))
+		fmt.Fprintf(writer, "        author_count: %d\n", cohort.AuthorCount)
+		fmt.Fprintln(writer, "        average_snapshots:")
+		writeOnboardingSnapshots(writer, cohort.AverageSnapshots)
+	}
+}
+
+func writeOnboardingSnapshots(writer io.Writer, snapshots map[int]*OnboardingSnapshot) {
+	windowDays := make([]int, 0, len(snapshots))
+	for days := range snapshots {
+		windowDays = append(windowDays, days)
+	}
+
+	sort.Ints(windowDays)
+
+	for _, days := range windowDays {
+		snapshot := snapshots[days]
+		fmt.Fprintf(writer, "          %d: {days: %d, commits: %d, files: %d, lines: %d, meaningful_commits: %d, meaningful_files: %d, meaningful_lines: %d}\n",
+			days, snapshot.DaysSinceJoin, snapshot.TotalCommits, snapshot.TotalFiles, snapshot.TotalLines,
+			snapshot.MeaningfulCommits, snapshot.MeaningfulFiles, snapshot.MeaningfulLines)
+	}
 }
 
 // serializeBinary outputs Protocol Buffers format.
@@ -616,57 +596,8 @@ func (oa *OnboardingAnalysis) serializeBinary(result *OnboardingResult, writer i
 		message.WindowDays[i] = int32(days)
 	}
 
-	// Authors
-	message.Authors = make(map[int32]*pb.AuthorOnboardingData, len(result.Authors))
-	for authorID, author := range result.Authors {
-		if authorID == core.AuthorMissing {
-			authorID = -1
-		}
-
-		pbAuthor := &pb.AuthorOnboardingData{
-			FirstCommitTick: int32(author.FirstCommitTick),
-			JoinCohort:      author.JoinCohort,
-			Snapshots:       make(map[int32]*pb.OnboardingSnapshot, len(author.Snapshots)),
-		}
-
-		for days, snap := range author.Snapshots {
-			pbAuthor.Snapshots[int32(days)] = &pb.OnboardingSnapshot{
-				DaysSinceJoin:     int32(snap.DaysSinceJoin),
-				TotalCommits:      int32(snap.TotalCommits),
-				TotalFiles:        int32(snap.TotalFiles),
-				TotalLines:        int32(snap.TotalLines),
-				MeaningfulCommits: int32(snap.MeaningfulCommits),
-				MeaningfulFiles:   int32(snap.MeaningfulFiles),
-				MeaningfulLines:   int32(snap.MeaningfulLines),
-			}
-		}
-
-		message.Authors[int32(authorID)] = pbAuthor
-	}
-
-	// Cohorts
-	message.Cohorts = make(map[string]*pb.CohortStats, len(result.Cohorts))
-	for cohortName, cohort := range result.Cohorts {
-		pbCohort := &pb.CohortStats{
-			Cohort:           cohort.Cohort,
-			AuthorCount:      int32(cohort.AuthorCount),
-			AverageSnapshots: make(map[int32]*pb.OnboardingAverageSnapshot, len(cohort.AverageSnapshots)),
-		}
-
-		for days, snap := range cohort.AverageSnapshots {
-			pbCohort.AverageSnapshots[int32(days)] = &pb.OnboardingAverageSnapshot{
-				DaysSinceJoin:        int32(snap.DaysSinceJoin),
-				AvgTotalCommits:      float64(snap.TotalCommits),
-				AvgTotalFiles:        float64(snap.TotalFiles),
-				AvgTotalLines:        float64(snap.TotalLines),
-				AvgMeaningfulCommits: float64(snap.MeaningfulCommits),
-				AvgMeaningfulFiles:   float64(snap.MeaningfulFiles),
-				AvgMeaningfulLines:   float64(snap.MeaningfulLines),
-			}
-		}
-
-		message.Cohorts[cohortName] = pbCohort
-	}
+	message.Authors = onboardingAuthorsToProto(result.Authors)
+	message.Cohorts = onboardingCohortsToProto(result.Cohorts)
 
 	serialized, err := proto.Marshal(&message)
 	if err != nil {
@@ -676,6 +607,63 @@ func (oa *OnboardingAnalysis) serializeBinary(result *OnboardingResult, writer i
 	_, err = writer.Write(serialized)
 
 	return err
+}
+
+func onboardingAuthorsToProto(
+	authors map[int]*AuthorOnboardingData,
+) map[int32]*pb.AuthorOnboardingData {
+	result := make(map[int32]*pb.AuthorOnboardingData, len(authors))
+	for authorID, author := range authors {
+		pbAuthor := &pb.AuthorOnboardingData{
+			FirstCommitTick: int32(author.FirstCommitTick),
+			JoinCohort:      author.JoinCohort,
+			Snapshots:       make(map[int32]*pb.OnboardingSnapshot, len(author.Snapshots)),
+		}
+		for days, snap := range author.Snapshots {
+			pbAuthor.Snapshots[int32(days)] = onboardingSnapshotToProto(snap)
+		}
+
+		result[protobufAuthorID(authorID)] = pbAuthor
+	}
+
+	return result
+}
+
+func onboardingSnapshotToProto(snapshot *OnboardingSnapshot) *pb.OnboardingSnapshot {
+	return &pb.OnboardingSnapshot{
+		DaysSinceJoin: int32(snapshot.DaysSinceJoin), TotalCommits: int32(snapshot.TotalCommits),
+		TotalFiles: int32(snapshot.TotalFiles), TotalLines: int32(snapshot.TotalLines),
+		MeaningfulCommits: int32(snapshot.MeaningfulCommits),
+		MeaningfulFiles:   int32(snapshot.MeaningfulFiles), MeaningfulLines: int32(snapshot.MeaningfulLines),
+	}
+}
+
+func onboardingCohortsToProto(cohorts map[string]*CohortStats) map[string]*pb.CohortStats {
+	result := make(map[string]*pb.CohortStats, len(cohorts))
+	for cohortName, cohort := range cohorts {
+		pbCohort := &pb.CohortStats{
+			Cohort:           cohort.Cohort,
+			AuthorCount:      int32(cohort.AuthorCount),
+			AverageSnapshots: make(map[int32]*pb.OnboardingAverageSnapshot, len(cohort.AverageSnapshots)),
+		}
+		for days, snap := range cohort.AverageSnapshots {
+			pbCohort.AverageSnapshots[int32(days)] = onboardingAverageToProto(snap)
+		}
+
+		result[cohortName] = pbCohort
+	}
+
+	return result
+}
+
+func onboardingAverageToProto(snapshot *OnboardingSnapshot) *pb.OnboardingAverageSnapshot {
+	return &pb.OnboardingAverageSnapshot{
+		DaysSinceJoin: int32(snapshot.DaysSinceJoin), AvgTotalCommits: float64(snapshot.TotalCommits),
+		AvgTotalFiles: float64(snapshot.TotalFiles), AvgTotalLines: float64(snapshot.TotalLines),
+		AvgMeaningfulCommits: float64(snapshot.MeaningfulCommits),
+		AvgMeaningfulFiles:   float64(snapshot.MeaningfulFiles),
+		AvgMeaningfulLines:   float64(snapshot.MeaningfulLines),
+	}
 }
 
 // Serialize converts the analysis result as returned by Finalize() to text or bytes.
@@ -712,8 +700,17 @@ func (oa *OnboardingAnalysis) Deserialize(pbmessage []byte) (any, error) {
 		result.WindowDays[i] = int(days)
 	}
 
-	// Authors
-	for authorID, pbAuthor := range message.GetAuthors() {
+	result.Authors = onboardingAuthorsFromProto(message.GetAuthors())
+	result.Cohorts = onboardingCohortsFromProto(message.GetCohorts())
+
+	return result, nil
+}
+
+func onboardingAuthorsFromProto(
+	authors map[int32]*pb.AuthorOnboardingData,
+) map[int]*AuthorOnboardingData {
+	result := make(map[int]*AuthorOnboardingData, len(authors))
+	for authorID, pbAuthor := range authors {
 		if authorID == -1 {
 			authorID = int32(core.AuthorMissing)
 		}
@@ -736,11 +733,15 @@ func (oa *OnboardingAnalysis) Deserialize(pbmessage []byte) (any, error) {
 			}
 		}
 
-		result.Authors[int(authorID)] = author
+		result[int(authorID)] = author
 	}
 
-	// Cohorts
-	for cohortName, pbCohort := range message.GetCohorts() {
+	return result
+}
+
+func onboardingCohortsFromProto(cohorts map[string]*pb.CohortStats) map[string]*CohortStats {
+	result := make(map[string]*CohortStats, len(cohorts))
+	for cohortName, pbCohort := range cohorts {
 		cohort := &CohortStats{
 			Cohort:           pbCohort.GetCohort(),
 			AuthorCount:      int(pbCohort.GetAuthorCount()),
@@ -759,10 +760,10 @@ func (oa *OnboardingAnalysis) Deserialize(pbmessage []byte) (any, error) {
 			}
 		}
 
-		result.Cohorts[cohortName] = cohort
+		result[cohortName] = cohort
 	}
 
-	return result, nil
+	return result
 }
 
 func init() {

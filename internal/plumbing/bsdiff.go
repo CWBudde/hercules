@@ -32,6 +32,7 @@ import (
 
 func swap(a []int, i, j int) { a[i], a[j] = a[j], a[i] }
 
+//nolint:funlen // Keep the partition steps aligned with the upstream binarydist algorithm.
 func split(I, V []int, start, length, h int) {
 	var i, j, k, x, jj, kk int
 
@@ -123,6 +124,7 @@ func split(I, V []int, start, length, h int) {
 	}
 }
 
+//nolint:funlen // Keep suffix-array construction aligned with the upstream binarydist algorithm.
 func qsufsort(obuf []byte) []int {
 	var buckets [256]int
 	var i, h int
@@ -222,6 +224,7 @@ func search(index []int, obuf, nbuf []byte, st, en int) (pos, n int) {
 // DiffBytes calculates the approximated number of different bytes between two binary buffers.
 // We are not interested in the diff script itself. Instead, we track the sizes of `db` and `eb`
 // from the original implementation.
+//nolint:funlen // Forward/backward match accounting is one invariant-heavy binarydist scan.
 func DiffBytes(obuf, nbuf []byte) int {
 	if len(nbuf) < len(obuf) {
 		obuf, nbuf = nbuf, obuf

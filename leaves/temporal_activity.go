@@ -407,96 +407,11 @@ func (ta *TemporalActivityAnalysis) serializeBinary(result *TemporalActivityResu
 	message.Activities = make(map[int32]*pb.DeveloperTemporalActivity)
 
 	for dev, activity := range result.Activities {
-		devID := int32(dev)
-		if dev == core.AuthorMissing {
-			devID = -1
-		}
-
-		pbActivity := &pb.DeveloperTemporalActivity{
-			Weekdays: &pb.TemporalDimension{
-				Commits: make([]int32, len(activity.Weekdays.Commits)),
-				Lines:   make([]int32, len(activity.Weekdays.Lines)),
-			},
-			Hours: &pb.TemporalDimension{
-				Commits: make([]int32, len(activity.Hours.Commits)),
-				Lines:   make([]int32, len(activity.Hours.Lines)),
-			},
-			Months: &pb.TemporalDimension{
-				Commits: make([]int32, len(activity.Months.Commits)),
-				Lines:   make([]int32, len(activity.Months.Lines)),
-			},
-			Weeks: &pb.TemporalDimension{
-				Commits: make([]int32, len(activity.Weeks.Commits)),
-				Lines:   make([]int32, len(activity.Weeks.Lines)),
-			},
-		}
-
-		// Copy weekdays
-		for i, count := range activity.Weekdays.Commits {
-			pbActivity.Weekdays.Commits[i] = int32(count)
-		}
-
-		for i, count := range activity.Weekdays.Lines {
-			pbActivity.Weekdays.Lines[i] = int32(count)
-		}
-
-		// Copy hours
-		for i, count := range activity.Hours.Commits {
-			pbActivity.Hours.Commits[i] = int32(count)
-		}
-
-		for i, count := range activity.Hours.Lines {
-			pbActivity.Hours.Lines[i] = int32(count)
-		}
-
-		// Copy months
-		for i, count := range activity.Months.Commits {
-			pbActivity.Months.Commits[i] = int32(count)
-		}
-
-		for i, count := range activity.Months.Lines {
-			pbActivity.Months.Lines[i] = int32(count)
-		}
-
-		// Copy weeks
-		for i, count := range activity.Weeks.Commits {
-			pbActivity.Weeks.Commits[i] = int32(count)
-		}
-
-		for i, count := range activity.Weeks.Lines {
-			pbActivity.Weeks.Lines[i] = int32(count)
-		}
-
-		message.Activities[devID] = pbActivity
+		message.Activities[protobufAuthorID(dev)] = temporalActivityToProto(activity)
 	}
 
-	// Serialize ticks
-	message.Ticks = make(map[int32]*pb.TemporalActivityTickDevs)
-
+	message.Ticks = temporalTicksToProto(result.Ticks)
 	message.TickSize = int64(result.tickSize)
-	for tick, tickDevs := range result.Ticks {
-		pbTickDevs := &pb.TemporalActivityTickDevs{
-			Devs: make(map[int32]*pb.TemporalActivityTick),
-		}
-
-		for dev, tickActivity := range tickDevs {
-			devID := int32(dev)
-			if dev == core.AuthorMissing {
-				devID = -1
-			}
-
-			pbTickDevs.Devs[devID] = &pb.TemporalActivityTick{
-				Commits: int32(tickActivity.Commits),
-				Lines:   int32(tickActivity.Lines),
-				Weekday: int32(tickActivity.Weekday),
-				Hour:    int32(tickActivity.Hour),
-				Month:   int32(tickActivity.Month),
-				Week:    int32(tickActivity.Week),
-			}
-		}
-
-		message.Ticks[int32(tick)] = pbTickDevs
-	}
 
 	serialized, err := proto.Marshal(&message)
 	if err != nil {
@@ -506,6 +421,59 @@ func (ta *TemporalActivityAnalysis) serializeBinary(result *TemporalActivityResu
 	_, err = writer.Write(serialized)
 
 	return err
+}
+
+func protobufAuthorID(author int) int32 {
+	if author == core.AuthorMissing {
+		return -1
+	}
+
+	return int32(author)
+}
+
+func temporalActivityToProto(activity *DeveloperTemporalActivity) *pb.DeveloperTemporalActivity {
+	return &pb.DeveloperTemporalActivity{
+		Weekdays: temporalDimensionToProto(activity.Weekdays),
+		Hours:    temporalDimensionToProto(activity.Hours),
+		Months:   temporalDimensionToProto(activity.Months),
+		Weeks:    temporalDimensionToProto(activity.Weeks),
+	}
+}
+
+func temporalDimensionToProto(dimension TemporalDimension) *pb.TemporalDimension {
+	result := &pb.TemporalDimension{
+		Commits: make([]int32, len(dimension.Commits)),
+		Lines:   make([]int32, len(dimension.Lines)),
+	}
+	for i, count := range dimension.Commits {
+		result.Commits[i] = int32(count)
+	}
+
+	for i, count := range dimension.Lines {
+		result.Lines[i] = int32(count)
+	}
+
+	return result
+}
+
+func temporalTicksToProto(
+	ticks map[int]map[int]*TemporalActivityTick,
+) map[int32]*pb.TemporalActivityTickDevs {
+	result := make(map[int32]*pb.TemporalActivityTickDevs, len(ticks))
+	for tick, developers := range ticks {
+		pbDevelopers := &pb.TemporalActivityTickDevs{Devs: make(map[int32]*pb.TemporalActivityTick)}
+		for developer, activity := range developers {
+			pbDevelopers.Devs[protobufAuthorID(developer)] = &pb.TemporalActivityTick{
+				Commits: int32(activity.Commits), Lines: int32(activity.Lines),
+				Weekday: int32(activity.Weekday), Hour: int32(activity.Hour),
+				Month: int32(activity.Month), Week: int32(activity.Week),
+			}
+		}
+
+		result[int32(tick)] = pbDevelopers
+	}
+
+	return result
 }
 
 func init() {
@@ -526,109 +494,58 @@ func (ta *TemporalActivityAnalysis) MergeResults(
 		tickSize:           tar1.tickSize,
 	}
 
-	// Merge activities from both results
-	allDevs := make(map[int]bool)
-	for dev := range tar1.Activities {
-		allDevs[dev] = true
-	}
-
-	for dev := range tar2.Activities {
-		allDevs[dev] = true
-	}
-
-	for dev := range allDevs {
-		mergedActivity := &DeveloperTemporalActivity{
-			Weekdays: newTemporalDimension(7),
-			Hours:    newTemporalDimension(24),
-			Months:   newTemporalDimension(12),
-			Weeks:    newTemporalDimension(53),
-		}
-
-		// Add activities from r1
-		if activity1, exists := tar1.Activities[dev]; exists {
-			for i := range mergedActivity.Weekdays.Commits {
-				mergedActivity.Weekdays.Commits[i] += activity1.Weekdays.Commits[i]
-				mergedActivity.Weekdays.Lines[i] += activity1.Weekdays.Lines[i]
-			}
-
-			for i := range mergedActivity.Hours.Commits {
-				mergedActivity.Hours.Commits[i] += activity1.Hours.Commits[i]
-				mergedActivity.Hours.Lines[i] += activity1.Hours.Lines[i]
-			}
-
-			for i := range mergedActivity.Months.Commits {
-				mergedActivity.Months.Commits[i] += activity1.Months.Commits[i]
-				mergedActivity.Months.Lines[i] += activity1.Months.Lines[i]
-			}
-
-			for i := range mergedActivity.Weeks.Commits {
-				mergedActivity.Weeks.Commits[i] += activity1.Weeks.Commits[i]
-				mergedActivity.Weeks.Lines[i] += activity1.Weeks.Lines[i]
-			}
-		}
-
-		// Add activities from r2
-		if activity2, exists := tar2.Activities[dev]; exists {
-			for i := range mergedActivity.Weekdays.Commits {
-				mergedActivity.Weekdays.Commits[i] += activity2.Weekdays.Commits[i]
-				mergedActivity.Weekdays.Lines[i] += activity2.Weekdays.Lines[i]
-			}
-
-			for i := range mergedActivity.Hours.Commits {
-				mergedActivity.Hours.Commits[i] += activity2.Hours.Commits[i]
-				mergedActivity.Hours.Lines[i] += activity2.Hours.Lines[i]
-			}
-
-			for i := range mergedActivity.Months.Commits {
-				mergedActivity.Months.Commits[i] += activity2.Months.Commits[i]
-				mergedActivity.Months.Lines[i] += activity2.Months.Lines[i]
-			}
-
-			for i := range mergedActivity.Weeks.Commits {
-				mergedActivity.Weeks.Commits[i] += activity2.Weeks.Commits[i]
-				mergedActivity.Weeks.Lines[i] += activity2.Weeks.Lines[i]
-			}
-		}
-
-		merged.Activities[dev] = mergedActivity
-	}
-
-	// Merge ticks from both results
-	for tick, tickDevs := range tar1.Ticks {
-		merged.Ticks[tick] = make(map[int]*TemporalActivityTick)
-		for dev, tickActivity := range tickDevs {
-			merged.Ticks[tick][dev] = &TemporalActivityTick{
-				Commits: tickActivity.Commits,
-				Lines:   tickActivity.Lines,
-				Weekday: tickActivity.Weekday,
-				Hour:    tickActivity.Hour,
-				Month:   tickActivity.Month,
-				Week:    tickActivity.Week,
-			}
-		}
-	}
-
-	for tick, tickDevs := range tar2.Ticks {
-		if merged.Ticks[tick] == nil {
-			merged.Ticks[tick] = make(map[int]*TemporalActivityTick)
-		}
-
-		for dev, tickActivity := range tickDevs {
-			if existing, exists := merged.Ticks[tick][dev]; exists {
-				existing.Commits += tickActivity.Commits
-				existing.Lines += tickActivity.Lines
-			} else {
-				merged.Ticks[tick][dev] = &TemporalActivityTick{
-					Commits: tickActivity.Commits,
-					Lines:   tickActivity.Lines,
-					Weekday: tickActivity.Weekday,
-					Hour:    tickActivity.Hour,
-					Month:   tickActivity.Month,
-					Week:    tickActivity.Week,
-				}
-			}
-		}
-	}
+	mergeTemporalActivities(merged.Activities, tar1.Activities)
+	mergeTemporalActivities(merged.Activities, tar2.Activities)
+	mergeTemporalTicks(merged.Ticks, tar1.Ticks)
+	mergeTemporalTicks(merged.Ticks, tar2.Ticks)
 
 	return merged
+}
+
+func mergeTemporalActivities(
+	target, source map[int]*DeveloperTemporalActivity,
+) {
+	for developer, sourceActivity := range source {
+		activity := target[developer]
+		if activity == nil {
+			activity = &DeveloperTemporalActivity{
+				Weekdays: newTemporalDimension(7), Hours: newTemporalDimension(24),
+				Months: newTemporalDimension(12), Weeks: newTemporalDimension(53),
+			}
+			target[developer] = activity
+		}
+
+		addTemporalDimension(&activity.Weekdays, sourceActivity.Weekdays)
+		addTemporalDimension(&activity.Hours, sourceActivity.Hours)
+		addTemporalDimension(&activity.Months, sourceActivity.Months)
+		addTemporalDimension(&activity.Weeks, sourceActivity.Weeks)
+	}
+}
+
+func addTemporalDimension(target *TemporalDimension, source TemporalDimension) {
+	for i := range target.Commits {
+		target.Commits[i] += source.Commits[i]
+		target.Lines[i] += source.Lines[i]
+	}
+}
+
+func mergeTemporalTicks(
+	target, source map[int]map[int]*TemporalActivityTick,
+) {
+	for tick, developers := range source {
+		if target[tick] == nil {
+			target[tick] = make(map[int]*TemporalActivityTick)
+		}
+
+		for developer, activity := range developers {
+			existing := target[tick][developer]
+			if existing == nil {
+				copy := *activity
+				target[tick][developer] = &copy
+			} else {
+				existing.Commits += activity.Commits
+				existing.Lines += activity.Lines
+			}
+		}
+	}
 }

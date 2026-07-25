@@ -6,6 +6,7 @@ import (
 	"io"
 	"path"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/go-git/go-git/v5"
@@ -184,15 +185,7 @@ func (treediff *TreeDiff) Initialize(repository *git.Repository) error {
 // in Provides(). If there was an error, nil is returned.
 func (treediff *TreeDiff) Consume(deps map[string]any) (map[string]any, error) {
 	commit := deps[core.DependencyCommit].(*object.Commit)
-	pass := false
-
-	for _, hash := range commit.ParentHashes {
-		if hash == treediff.previousCommit {
-			pass = true
-		}
-	}
-
-	if !pass && treediff.previousCommit != plumbing.ZeroHash {
+	if !commitContinuesFrom(commit, treediff.previousCommit) {
 		err := fmt.Errorf("%s > %s", treediff.previousCommit.String(), commit.Hash.String())
 		treediff.l.Critical(err)
 
@@ -207,47 +200,12 @@ func (treediff *TreeDiff) Consume(deps map[string]any) (map[string]any, error) {
 	var diffs object.Changes
 	if treediff.previousTree != nil {
 		diffs, err = object.DiffTree(treediff.previousTree, tree)
-		if err != nil {
-			return nil, err
-		}
 	} else {
-		diffs = []*object.Change{}
+		diffs, err = treediff.initialTreeChanges(tree)
+	}
 
-		err = func() error {
-			fileIter := tree.Files()
-			defer fileIter.Close()
-
-			for {
-				file, err := fileIter.Next()
-				if err != nil {
-					if errors.Is(err, io.EOF) {
-						break
-					}
-
-					return err
-				}
-
-				pass, err := treediff.checkLanguage(file.Name, file.Hash)
-				if err != nil {
-					return err
-				}
-
-				if !pass {
-					continue
-				}
-
-				diffs = append(diffs, &object.Change{
-					To: object.ChangeEntry{Name: file.Name, Tree: tree, TreeEntry: object.TreeEntry{
-						Name: file.Name, Mode: file.Mode, Hash: file.Hash,
-					}},
-				})
-			}
-
-			return nil
-		}()
-		if err != nil {
-			return nil, err
-		}
+	if err != nil {
+		return nil, err
 	}
 
 	treediff.previousTree = tree
@@ -255,6 +213,45 @@ func (treediff *TreeDiff) Consume(deps map[string]any) (map[string]any, error) {
 	diffs = treediff.filterDiffs(diffs)
 
 	return map[string]any{DependencyTreeChanges: diffs}, nil
+}
+
+func commitContinuesFrom(commit *object.Commit, previous plumbing.Hash) bool {
+	if previous == plumbing.ZeroHash {
+		return true
+	}
+
+	return slices.Contains(commit.ParentHashes, previous)
+}
+
+func (treediff *TreeDiff) initialTreeChanges(tree *object.Tree) (object.Changes, error) {
+	var changes object.Changes
+
+	fileIter := tree.Files()
+	defer fileIter.Close()
+
+	for {
+		file, err := fileIter.Next()
+		if errors.Is(err, io.EOF) {
+			return changes, nil
+		}
+
+		if err != nil {
+			return nil, err
+		}
+
+		pass, err := treediff.checkLanguage(file.Name, file.Hash)
+		if err != nil {
+			return nil, err
+		}
+
+		if pass {
+			changes = append(changes, &object.Change{
+				To: object.ChangeEntry{Name: file.Name, Tree: tree, TreeEntry: object.TreeEntry{
+					Name: file.Name, Mode: file.Mode, Hash: file.Hash,
+				}},
+			})
+		}
+	}
 }
 
 func (treediff *TreeDiff) filterDiffs(diffs object.Changes) object.Changes {

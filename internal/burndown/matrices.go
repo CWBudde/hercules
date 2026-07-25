@@ -20,6 +20,7 @@ type DenseHistory [][]int64
 // Rows: *at least* len(matrix) * sampling + offset
 // Columns: *at least* len(matrix[...]) * granularity + offset
 // `matrix` can be sparse, so that the last columns which are equal to 0 are truncated.
+//nolint:funlen // The interpolation cases share loop coordinates and boundary invariants.
 func AddBurndownMatrix(matrix DenseHistory, granularity, sampling int, accPerTick [][]float32, offset int) {
 	//	defer print("AddBurndownMatrix exit\n")
 	//	print("AddBurndownMatrix enter\n")

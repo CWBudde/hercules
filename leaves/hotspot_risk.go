@@ -348,7 +348,6 @@ func (hra *HotspotRiskAnalysis) Finalize() any {
 		return HotspotRiskResult{Files: []FileRisk{}, WindowDays: hra.WindowDays}
 	}
 
-	// Calculate window in ticks
 	windowTicks := 0
 	if hra.tickSize > 0 {
 		windowTicks = (hra.WindowDays * 24 * 3600) / int(hra.tickSize)
@@ -356,59 +355,18 @@ func (hra *HotspotRiskAnalysis) Finalize() any {
 
 	startTick := max(hra.currentTick-windowTicks, 0)
 
-	// Get current file sizes and calculate metrics for existing files
-	var risks []FileRisk
-
 	tree, err := hra.lastCommit.Tree()
 	if err != nil {
 		hra.l.Errorf("Failed to get tree: %v", err)
 		return HotspotRiskResult{Files: []FileRisk{}, WindowDays: hra.WindowDays}
 	}
 
+	var risks []FileRisk
+
 	err = tree.Files().ForEach(func(file *object.File) error {
-		fileName := file.Name
-
-		metrics, exists := hra.fileMetrics[fileName]
-		if !exists {
-			// File exists but was never changed in our analysis - skip
-			return nil
+		if risk, ok := hra.fileRisk(file, startTick); ok {
+			risks = append(risks, risk)
 		}
-
-		// Get current file size
-		blob := items.CachedBlob{Blob: file.Blob}
-		if err := blob.Cache(); err != nil {
-			return nil // Skip binary/unreadable files
-		}
-
-		size, err := blob.CountLines()
-		if err != nil {
-			return nil // Skip binary files
-		}
-
-		metrics.CurrentSize = size
-
-		// Calculate churn within window
-		churnInWindow := 0
-
-		for tick, count := range metrics.ChurnByTick {
-			if tick >= startTick {
-				churnInWindow += count
-			}
-		}
-
-		// Calculate coupling degree
-		couplingDegree := len(metrics.CoupledFiles)
-
-		// Calculate ownership Gini coefficient
-		gini := calculateGini(metrics.AuthorLines)
-
-		risks = append(risks, FileRisk{
-			Path:           fileName,
-			Size:           size,
-			Churn:          churnInWindow,
-			CouplingDegree: couplingDegree,
-			OwnershipGini:  gini,
-		})
 
 		return nil
 	})
@@ -416,12 +374,9 @@ func (hra *HotspotRiskAnalysis) Finalize() any {
 		hra.l.Errorf("Failed to iterate files: %v", err)
 	}
 
-	// Normalize and calculate risk scores
 	hra.normalizeAndScore(risks)
-
 	sortFileRisks(risks)
 
-	// Take top N
 	if len(risks) > hra.TopN {
 		risks = risks[:hra.TopN]
 	}
@@ -430,6 +385,38 @@ func (hra *HotspotRiskAnalysis) Finalize() any {
 		Files:      risks,
 		WindowDays: hra.WindowDays,
 	}
+}
+
+func (hra *HotspotRiskAnalysis) fileRisk(file *object.File, startTick int) (FileRisk, bool) {
+	metrics, exists := hra.fileMetrics[file.Name]
+	if !exists {
+		return FileRisk{}, false
+	}
+
+	blob := items.CachedBlob{Blob: file.Blob}
+	if err := blob.Cache(); err != nil {
+		return FileRisk{}, false
+	}
+
+	size, err := blob.CountLines()
+	if err != nil {
+		return FileRisk{}, false
+	}
+
+	metrics.CurrentSize = size
+
+	churn := 0
+
+	for tick, count := range metrics.ChurnByTick {
+		if tick >= startTick {
+			churn += count
+		}
+	}
+
+	return FileRisk{
+		Path: file.Name, Size: size, Churn: churn, CouplingDegree: len(metrics.CoupledFiles),
+		OwnershipGini: calculateGini(metrics.AuthorLines),
+	}, true
 }
 
 // normalizeAndScore normalizes all factors to [0,1] and calculates risk scores.

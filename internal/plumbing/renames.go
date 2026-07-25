@@ -158,6 +158,92 @@ func (ra *RenameAnalysis) Initialize(repository *git.Repository) error {
 	return nil
 }
 
+func matchExactRenames(
+	changes object.Changes,
+) (object.Changes, object.Changes, object.Changes, error) {
+	reduced := make(object.Changes, 0, changes.Len())
+	var added, deleted sortableChanges
+
+	for _, change := range changes {
+		action, err := change.Action()
+		if err != nil {
+			return nil, nil, nil, err
+		}
+
+		switch action {
+		case merkletrie.Insert:
+			added = append(added, sortableChange{change, change.To.TreeEntry.Hash})
+		case merkletrie.Delete:
+			deleted = append(deleted, sortableChange{change, change.From.TreeEntry.Hash})
+		case merkletrie.Modify:
+			reduced = append(reduced, change)
+		}
+	}
+
+	sort.Sort(added)
+	sort.Sort(deleted)
+
+	var remainingAdded, remainingDeleted object.Changes
+
+	addedIndex, deletedIndex := 0, 0
+	for addedIndex < added.Len() && deletedIndex < deleted.Len() {
+		switch {
+		case added[addedIndex].hash == deleted[deletedIndex].hash:
+			reduced = append(reduced, &object.Change{
+				From: deleted[deletedIndex].change.From, To: added[addedIndex].change.To,
+			})
+			addedIndex++
+			deletedIndex++
+		case added[addedIndex].Less(&deleted[deletedIndex]):
+			remainingAdded = append(remainingAdded, added[addedIndex].change)
+			addedIndex++
+		default:
+			remainingDeleted = append(remainingDeleted, deleted[deletedIndex].change)
+			deletedIndex++
+		}
+	}
+
+	for ; addedIndex < added.Len(); addedIndex++ {
+		remainingAdded = append(remainingAdded, added[addedIndex].change)
+	}
+
+	for ; deletedIndex < deleted.Len(); deletedIndex++ {
+		remainingDeleted = append(remainingDeleted, deleted[deletedIndex].change)
+	}
+
+	return reduced, remainingAdded, remainingDeleted, nil
+}
+
+func classifyRenameBlobs(
+	added, deleted object.Changes, cache map[plumbing.Hash]*CachedBlob,
+) (sortableBlobs, sortableBlobs, object.Changes) {
+	var addedBlobs, deletedBlobs sortableBlobs
+	var small object.Changes
+
+	for _, change := range added {
+		blob := cache[change.To.TreeEntry.Hash]
+		if blob.Size < RenameAnalysisMinimumSize {
+			small = append(small, change)
+		} else {
+			addedBlobs = append(addedBlobs, sortableBlob{change: change, size: blob.Size})
+		}
+	}
+
+	for _, change := range deleted {
+		blob := cache[change.From.TreeEntry.Hash]
+		if blob.Size < RenameAnalysisMinimumSize {
+			small = append(small, change)
+		} else {
+			deletedBlobs = append(deletedBlobs, sortableBlob{change: change, size: blob.Size})
+		}
+	}
+
+	sort.Sort(addedBlobs)
+	sort.Sort(deletedBlobs)
+
+	return addedBlobs, deletedBlobs, small
+}
+
 // Consume runs this PipelineItem on the next commit data.
 // `deps` contain all the results from upstream PipelineItem-s as requested by Requires().
 // Additionally, DependencyCommit is always present there and represents the analysed *object.Commit.
@@ -168,64 +254,9 @@ func (ra *RenameAnalysis) Consume(deps map[string]any) (map[string]any, error) {
 	changes := deps[DependencyTreeChanges].(object.Changes)
 	cache := deps[DependencyBlobCache].(map[plumbing.Hash]*CachedBlob)
 
-	reducedChanges := make(object.Changes, 0, changes.Len())
-
-	// Stage 1 - find renames by matching the hashes
-	// n log(n)
-	// We sort additions and deletions by hash and then do the single scan along
-	// both slices.
-	deleted := make(sortableChanges, 0, changes.Len())
-
-	added := make(sortableChanges, 0, changes.Len())
-	for _, change := range changes {
-		action, err := change.Action()
-		if err != nil {
-			return nil, err
-		}
-
-		switch action {
-		case merkletrie.Insert:
-			added = append(added, sortableChange{change, change.To.TreeEntry.Hash})
-		case merkletrie.Delete:
-			deleted = append(deleted, sortableChange{change, change.From.TreeEntry.Hash})
-		case merkletrie.Modify:
-			reducedChanges = append(reducedChanges, change)
-		}
-	}
-
-	sort.Sort(deleted)
-	sort.Sort(added)
-
-	stillDeleted := make(object.Changes, 0, deleted.Len())
-	stillAdded := make(object.Changes, 0, added.Len())
-	{
-		a := 0
-
-		d := 0
-		for a < added.Len() && d < deleted.Len() {
-			if added[a].hash == deleted[d].hash {
-				reducedChanges = append(
-					reducedChanges,
-					&object.Change{From: deleted[d].change.From, To: added[a].change.To},
-				)
-				a++
-				d++
-			} else if added[a].Less(&deleted[d]) {
-				stillAdded = append(stillAdded, added[a].change)
-				a++
-			} else {
-				stillDeleted = append(stillDeleted, deleted[d].change)
-				d++
-			}
-		}
-
-		for ; a < added.Len(); a++ {
-			stillAdded = append(stillAdded, added[a].change)
-		}
-
-		for ; d < deleted.Len(); d++ {
-			stillDeleted = append(stillDeleted, deleted[d].change)
-		}
+	reducedChanges, stillAdded, stillDeleted, err := matchExactRenames(changes)
+	if err != nil {
+		return nil, err
 	}
 
 	// Stage 2 - apply the similarity threshold
@@ -236,41 +267,32 @@ func (ra *RenameAnalysis) Consume(deps map[string]any) (map[string]any, error) {
 		maxCandidates = 1
 	}
 
-	addedBlobs := make(sortableBlobs, 0, stillAdded.Len())
-	deletedBlobs := make(sortableBlobs, 0, stillDeleted.Len())
-	var smallChanges []*object.Change
-
-	for _, change := range stillAdded {
-		blob := cache[change.To.TreeEntry.Hash]
-		if blob.Size < RenameAnalysisMinimumSize {
-			smallChanges = append(smallChanges, change)
-		} else {
-			addedBlobs = append(
-				addedBlobs, sortableBlob{change: change, size: blob.Size},
-			)
-		}
+	addedBlobs, deletedBlobs, smallChanges := classifyRenameBlobs(stillAdded, stillDeleted, cache)
+	matches, addedBlobs, deletedBlobs, err := ra.matchSimilarRenames(
+		beginTime, addedBlobs, deletedBlobs, cache, maxCandidates, changes.Len(),
+	)
+	if err != nil {
+		return nil, err
 	}
+	reducedChanges = appendRenameResults(
+		reducedChanges, matches, addedBlobs, deletedBlobs, smallChanges,
+	)
 
-	for _, change := range stillDeleted {
-		blob := cache[change.From.TreeEntry.Hash]
-		if blob.Size < RenameAnalysisMinimumSize {
-			smallChanges = append(smallChanges, change)
-		} else {
-			deletedBlobs = append(
-				deletedBlobs, sortableBlob{change: change, size: blob.Size},
-			)
-		}
-	}
+	return map[string]any{DependencyTreeChanges: reducedChanges}, nil
+}
 
-	sort.Sort(addedBlobs)
-	sort.Sort(deletedBlobs)
-
+func (ra *RenameAnalysis) matchSimilarRenames(
+	beginTime time.Time,
+	addedBlobs, deletedBlobs sortableBlobs,
+	cache map[plumbing.Hash]*CachedBlob,
+	maxCandidates, changeCount int,
+) (object.Changes, sortableBlobs, sortableBlobs, error) {
 	finished := make(chan bool, 2)
 	finishedA := make(chan bool, 1)
 	finishedB := make(chan bool, 1)
 	errs := make(chan error)
-	matchesA := make(object.Changes, 0, changes.Len())
-	matchesB := make(object.Changes, 0, changes.Len())
+	matchesA := make(object.Changes, 0, changeCount)
+	matchesB := make(object.Changes, 0, changeCount)
 	addedBlobsA := addedBlobs
 	addedBlobsB := make(sortableBlobs, len(addedBlobs))
 	copy(addedBlobsB, addedBlobs)
@@ -281,154 +303,20 @@ func (ra *RenameAnalysis) Consume(deps map[string]any) (map[string]any, error) {
 
 	wg := sync.WaitGroup{}
 	matchA := func() {
-		defer func() {
-			finished <- true
+		defer func() { finished <- true; wg.Done() }()
 
-			wg.Done()
-		}()
-
-		aStart := 0
-		// we will try to find a matching added blob for each deleted blob
-		for d := 0; d < deletedBlobsA.Len() && time.Since(beginTime) < ra.Timeout; d++ {
-			myBlob := cache[deletedBlobsA[d].change.From.TreeEntry.Hash]
-			mySize := deletedBlobsA[d].size
-			myName := filepath.Base(deletedBlobsA[d].change.From.Name)
-
-			var a int
-			for a = aStart; a < addedBlobsA.Len() && !ra.sizesAreClose(mySize, addedBlobsA[a].size); a++ {
-			}
-
-			aStart = a
-			foundMatch := false
-			// get the list of possible candidates and sort by file name similarity
-			var candidates []int
-			for a = aStart; a < addedBlobsA.Len() && ra.sizesAreClose(mySize, addedBlobsA[a].size); a++ {
-				candidates = append(candidates, a)
-			}
-
-			sortRenameCandidates(candidates, myName, func(a int) string {
-				return addedBlobsA[a].change.To.Name
-			})
-
-			var ci int
-			for ci, a = range candidates {
-				select {
-				case <-finished:
-					return
-				default:
-					break
-				}
-
-				if ci > maxCandidates {
-					break
-				}
-
-				blobsAreClose, err := ra.blobsAreClose(
-					myBlob, cache[addedBlobsA[a].change.To.TreeEntry.Hash],
-				)
-				if err != nil {
-					errs <- err
-					return
-				}
-
-				if blobsAreClose {
-					foundMatch = true
-
-					matchesA = append(
-						matchesA,
-						&object.Change{
-							From: deletedBlobsA[d].change.From,
-							To:   addedBlobsA[a].change.To,
-						},
-					)
-
-					break
-				}
-			}
-
-			if foundMatch {
-				deletedBlobsA = append(deletedBlobsA[:d], deletedBlobsA[d+1:]...)
-				d--
-
-				addedBlobsA = append(addedBlobsA[:a], addedBlobsA[a+1:]...)
-			}
-		}
+		matchesA, addedBlobsA, deletedBlobsA = ra.matchDeletedBlobs(
+			beginTime, addedBlobsA, deletedBlobsA, cache, maxCandidates, finished, errs,
+		)
 
 		finishedA <- true
 	}
 	matchB := func() {
-		defer func() {
-			finished <- true
+		defer func() { finished <- true; wg.Done() }()
 
-			wg.Done()
-		}()
-
-		dStart := 0
-
-		for a := 0; a < addedBlobsB.Len() && time.Since(beginTime) < ra.Timeout; a++ {
-			myBlob := cache[addedBlobsB[a].change.To.TreeEntry.Hash]
-			mySize := addedBlobsB[a].size
-			myName := filepath.Base(addedBlobsB[a].change.To.Name)
-
-			var d int
-			for d = dStart; d < deletedBlobsB.Len() && !ra.sizesAreClose(mySize, deletedBlobsB[d].size); d++ {
-			}
-
-			dStart = d
-			foundMatch := false
-			// get the list of possible candidates and sort by file name similarity
-			var candidates []int
-			for d = dStart; d < deletedBlobsB.Len() && ra.sizesAreClose(mySize, deletedBlobsB[d].size); d++ {
-				candidates = append(candidates, d)
-			}
-
-			sortRenameCandidates(candidates, myName, func(d int) string {
-				return deletedBlobsB[d].change.From.Name
-			})
-
-			var ci int
-			for ci, d = range candidates {
-				select {
-				case <-finished:
-					return
-				default:
-					break
-				}
-
-				if ci > maxCandidates {
-					break
-				}
-
-				blobsAreClose, err := ra.blobsAreClose(
-					myBlob, cache[deletedBlobsB[d].change.From.TreeEntry.Hash],
-				)
-				if err != nil {
-					errs <- err
-					return
-				}
-
-				if blobsAreClose {
-					foundMatch = true
-
-					matchesB = append(
-						matchesB,
-						&object.Change{
-							From: deletedBlobsB[d].change.From,
-							To:   addedBlobsB[a].change.To,
-						},
-					)
-
-					break
-				}
-			}
-
-			if foundMatch {
-				addedBlobsB = append(addedBlobsB[:a], addedBlobsB[a+1:]...)
-				a--
-
-				deletedBlobsB = append(deletedBlobsB[:d], deletedBlobsB[d+1:]...)
-			}
-		}
+		matchesB, addedBlobsB, deletedBlobsB = ra.matchAddedBlobs(
+			beginTime, addedBlobsB, deletedBlobsB, cache, maxCandidates, finished, errs,
+		)
 
 		finishedB <- true
 	}
@@ -443,7 +331,7 @@ func (ra *RenameAnalysis) Consume(deps map[string]any) (map[string]any, error) {
 
 	select {
 	case err := <-errs:
-		return nil, err
+		return nil, nil, nil, err
 	case <-finishedA:
 		addedBlobs = addedBlobsA
 		deletedBlobs = deletedBlobsA
@@ -457,22 +345,179 @@ func (ra *RenameAnalysis) Consume(deps map[string]any) (map[string]any, error) {
 			"but no results from both")
 	}
 
-	// Stage 3 - we give up, everything left are independent additions and deletions
-	reducedChanges = append(reducedChanges, matches...)
+	return matches, addedBlobs, deletedBlobs, nil
+}
 
+func appendRenameResults(
+	reduced, matches object.Changes,
+	addedBlobs, deletedBlobs sortableBlobs,
+	small object.Changes,
+) object.Changes {
+	reduced = append(reduced, matches...)
 	for _, blob := range addedBlobs {
-		reducedChanges = append(reducedChanges, blob.change)
+		reduced = append(reduced, blob.change)
 	}
-
 	for _, blob := range deletedBlobs {
-		reducedChanges = append(reducedChanges, blob.change)
+		reduced = append(reduced, blob.change)
+	}
+	return append(reduced, small...)
+}
+
+func (ra *RenameAnalysis) matchDeletedBlobs(
+	start time.Time, added, deleted sortableBlobs,
+	cache map[plumbing.Hash]*CachedBlob, maxCandidates int,
+	finished <-chan bool, errs chan<- error,
+) (object.Changes, sortableBlobs, sortableBlobs) {
+	var matches object.Changes
+	addedStart := 0
+
+	for deletedIndex := 0; deletedIndex < deleted.Len() && time.Since(start) < ra.Timeout; deletedIndex++ {
+		blob := cache[deleted[deletedIndex].change.From.TreeEntry.Hash]
+		size := deleted[deletedIndex].size
+		name := filepath.Base(deleted[deletedIndex].change.From.Name)
+
+		addedIndex := addedStart
+		for addedIndex < added.Len() && !ra.sizesAreClose(size, added[addedIndex].size) {
+			addedIndex++
+		}
+
+		addedStart = addedIndex
+		candidates := renameCandidates(addedIndex, added.Len(), func(index int) bool {
+			return ra.sizesAreClose(size, added[index].size)
+		})
+		sortRenameCandidates(candidates, name, func(index int) string {
+			return added[index].change.To.Name
+		})
+
+		match, err := ra.matchDeletedCandidate(blob, candidates, added, cache, maxCandidates, finished)
+		if err != nil {
+			errs <- err
+			return matches, added, deleted
+		}
+
+		if match >= 0 {
+			matches = append(matches, &object.Change{
+				From: deleted[deletedIndex].change.From, To: added[match].change.To,
+			})
+			deleted = append(deleted[:deletedIndex], deleted[deletedIndex+1:]...)
+			deletedIndex--
+
+			added = append(added[:match], added[match+1:]...)
+		}
 	}
 
-	for _, change := range smallChanges {
-		reducedChanges = append(reducedChanges, change)
+	return matches, added, deleted
+}
+
+func (ra *RenameAnalysis) matchAddedBlobs(
+	start time.Time, added, deleted sortableBlobs,
+	cache map[plumbing.Hash]*CachedBlob, maxCandidates int,
+	finished <-chan bool, errs chan<- error,
+) (object.Changes, sortableBlobs, sortableBlobs) {
+	var matches object.Changes
+	deletedStart := 0
+
+	for addedIndex := 0; addedIndex < added.Len() && time.Since(start) < ra.Timeout; addedIndex++ {
+		blob := cache[added[addedIndex].change.To.TreeEntry.Hash]
+		size := added[addedIndex].size
+		name := filepath.Base(added[addedIndex].change.To.Name)
+
+		deletedIndex := deletedStart
+		for deletedIndex < deleted.Len() && !ra.sizesAreClose(size, deleted[deletedIndex].size) {
+			deletedIndex++
+		}
+
+		deletedStart = deletedIndex
+		candidates := renameCandidates(deletedIndex, deleted.Len(), func(index int) bool {
+			return ra.sizesAreClose(size, deleted[index].size)
+		})
+		sortRenameCandidates(candidates, name, func(index int) string {
+			return deleted[index].change.From.Name
+		})
+
+		match, err := ra.matchAddedCandidate(blob, candidates, deleted, cache, maxCandidates, finished)
+		if err != nil {
+			errs <- err
+			return matches, added, deleted
+		}
+
+		if match >= 0 {
+			matches = append(matches, &object.Change{
+				From: deleted[match].change.From, To: added[addedIndex].change.To,
+			})
+			added = append(added[:addedIndex], added[addedIndex+1:]...)
+			addedIndex--
+
+			deleted = append(deleted[:match], deleted[match+1:]...)
+		}
 	}
 
-	return map[string]any{DependencyTreeChanges: reducedChanges}, nil
+	return matches, added, deleted
+}
+
+func renameCandidates(start, end int, closeEnough func(int) bool) []int {
+	var candidates []int
+	for index := start; index < end && closeEnough(index); index++ {
+		candidates = append(candidates, index)
+	}
+
+	return candidates
+}
+
+func (ra *RenameAnalysis) matchDeletedCandidate(
+	blob *CachedBlob, candidates []int, added sortableBlobs,
+	cache map[plumbing.Hash]*CachedBlob, limit int, finished <-chan bool,
+) (int, error) {
+	for candidateIndex, index := range candidates {
+		select {
+		case <-finished:
+			return -1, nil
+		default:
+		}
+
+		if candidateIndex > limit {
+			break
+		}
+
+		close, err := ra.blobsAreClose(blob, cache[added[index].change.To.TreeEntry.Hash])
+		if err != nil {
+			return -1, err
+		}
+
+		if close {
+			return index, nil
+		}
+	}
+
+	return -1, nil
+}
+
+func (ra *RenameAnalysis) matchAddedCandidate(
+	blob *CachedBlob, candidates []int, deleted sortableBlobs,
+	cache map[plumbing.Hash]*CachedBlob, limit int, finished <-chan bool,
+) (int, error) {
+	for candidateIndex, index := range candidates {
+		select {
+		case <-finished:
+			return -1, nil
+		default:
+		}
+
+		if candidateIndex > limit {
+			break
+		}
+
+		close, err := ra.blobsAreClose(blob, cache[deleted[index].change.From.TreeEntry.Hash])
+		if err != nil || close {
+			if close {
+				return index, err
+			}
+
+			return -1, err
+		}
+	}
+
+	return -1, nil
 }
 
 // Fork clones this PipelineItem.

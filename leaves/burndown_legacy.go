@@ -10,7 +10,6 @@ import (
 	"runtime"
 	"runtime/debug"
 	"sort"
-	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -23,13 +22,11 @@ import (
 
 	"github.com/cwbudde/hercules/internal/burndown"
 	"github.com/cwbudde/hercules/internal/core"
-	"github.com/cwbudde/hercules/internal/join"
 	"github.com/cwbudde/hercules/internal/linehistory"
 	"github.com/cwbudde/hercules/internal/pb"
 	items "github.com/cwbudde/hercules/internal/plumbing"
 	"github.com/cwbudde/hercules/internal/plumbing/identity"
 	"github.com/cwbudde/hercules/internal/rbtree"
-	"github.com/cwbudde/hercules/internal/yaml"
 )
 
 // LegacyBurndownAnalysis allows to gather the line burndown statistics for a Git repository.
@@ -489,20 +486,34 @@ func (analyser *LegacyBurndownAnalysis) Boot() error {
 // Finalize returns the result of the analysis. Further Consume() calls are not expected.
 func (analyser *LegacyBurndownAnalysis) Finalize() any {
 	globalHistory, lastTick := analyser.groupSparseHistory(analyser.globalHistory, -1)
-	fileHistories := map[string]DenseHistory{}
-	fileOwnership := map[string]map[int]int{}
+	fileHistories, fileOwnership := analyser.finalizeFiles(lastTick)
+	peopleHistories := analyser.finalizePeopleHistories(globalHistory, lastTick)
+
+	return BurndownResult{
+		GlobalHistory: globalHistory, FileHistories: fileHistories, FileOwnership: fileOwnership,
+		PeopleHistories: peopleHistories, PeopleMatrix: analyser.finalizePeopleMatrix(),
+		tickSize: analyser.tickSize, reversedPeopleDict: analyser.reversedPeopleDict,
+		sampling: analyser.Sampling, granularity: analyser.Granularity,
+	}
+}
+
+func (analyser *LegacyBurndownAnalysis) finalizeFiles(
+	lastTick int,
+) (map[string]DenseHistory, map[string]map[int]int) {
+	histories := map[string]DenseHistory{}
+	ownerships := map[string]map[int]int{}
 
 	for key, history := range analyser.fileHistories {
 		if len(history) == 0 {
 			continue
 		}
 
-		fileHistories[key], _ = analyser.groupSparseHistory(history, lastTick)
+		histories[key], _ = analyser.groupSparseHistory(history, lastTick)
 		file := analyser.files[key]
 		previousLine := 0
 		previousAuthor := core.AuthorMissing
 		ownership := map[int]int{}
-		fileOwnership[key] = ownership
+		ownerships[key] = ownership
 
 		file.ForEach(func(line, value int) {
 			length := line - previousLine
@@ -519,52 +530,49 @@ func (analyser *LegacyBurndownAnalysis) Finalize() any {
 		})
 	}
 
-	peopleHistories := make([]DenseHistory, analyser.PeopleNumber)
-	for i := range peopleHistories {
+	return histories, ownerships
+}
+
+func (analyser *LegacyBurndownAnalysis) finalizePeopleHistories(
+	global DenseHistory, lastTick int,
+) []DenseHistory {
+	histories := make([]DenseHistory, analyser.PeopleNumber)
+	for i := range histories {
 		history := analyser.peopleHistories[i]
 		if len(history) > 0 {
-			// there can be people with only trivial merge commits and without own lines
-			peopleHistories[i], _ = analyser.groupSparseHistory(history, lastTick)
+			histories[i], _ = analyser.groupSparseHistory(history, lastTick)
 		} else {
-			peopleHistories[i] = make(DenseHistory, len(globalHistory))
-			for j, gh := range globalHistory {
-				peopleHistories[i][j] = make([]int64, len(gh))
+			histories[i] = make(DenseHistory, len(global))
+			for j, row := range global {
+				histories[i][j] = make([]int64, len(row))
 			}
 		}
 	}
 
-	var peopleMatrix DenseHistory
-	if len(analyser.matrix) > 0 {
-		peopleMatrix = make(DenseHistory, analyser.PeopleNumber)
-		for i := range peopleMatrix {
-			row := analyser.matrix[i]
-			mrow := make([]int64, analyser.PeopleNumber+2)
-			peopleMatrix[i] = mrow
+	return histories
+}
 
-			for key, val := range row {
-				switch key {
-				case core.AuthorMissing:
-					key = -1
-				case authorSelf:
-					key = -2
-				}
+func (analyser *LegacyBurndownAnalysis) finalizePeopleMatrix() DenseHistory {
+	if len(analyser.matrix) == 0 {
+		return nil
+	}
 
-				mrow[key+2] = val
+	matrix := make(DenseHistory, analyser.PeopleNumber)
+	for i := range matrix {
+		matrix[i] = make([]int64, analyser.PeopleNumber+2)
+		for key, value := range analyser.matrix[i] {
+			switch key {
+			case core.AuthorMissing:
+				key = -1
+			case authorSelf:
+				key = -2
 			}
+
+			matrix[i][key+2] = value
 		}
 	}
 
-	return BurndownResult{
-		GlobalHistory:      globalHistory,
-		FileHistories:      fileHistories,
-		FileOwnership:      fileOwnership,
-		PeopleHistories:    peopleHistories,
-		PeopleMatrix:       peopleMatrix,
-		tickSize:           analyser.tickSize,
-		reversedPeopleDict: analyser.reversedPeopleDict,
-		sampling:           analyser.Sampling,
-		granularity:        analyser.Granularity,
-	}
+	return matrix
 }
 
 // Serialize converts the analysis result as returned by Finalize() to text or bytes.
@@ -650,135 +658,7 @@ func (analyser *LegacyBurndownAnalysis) Deserialize(pbmessage []byte) (any, erro
 func (analyser *LegacyBurndownAnalysis) MergeResults(
 	r1, r2 any, c1, c2 *core.CommonAnalysisResult,
 ) any {
-	bar1 := r1.(BurndownResult)
-
-	bar2 := r2.(BurndownResult)
-	if bar1.tickSize != bar2.tickSize {
-		return fmt.Errorf("mismatching tick sizes (r1: %d, r2: %d) received",
-			bar1.tickSize, bar2.tickSize)
-	}
-
-	merged := BurndownResult{
-		tickSize: bar1.tickSize,
-	}
-	merged.sampling = min(bar1.sampling, bar2.sampling)
-
-	merged.granularity = min(bar1.granularity, bar2.granularity)
-	var people map[string]join.JoinedIndex
-	people, merged.reversedPeopleDict = join.PeopleIdentities(
-		bar1.reversedPeopleDict, bar2.reversedPeopleDict,
-	)
-	var wg sync.WaitGroup
-	sem := make(chan int, 5) // with large files not limiting number of GoRoutines eats 200G of RAM on large merges
-
-	if len(bar1.GlobalHistory) > 0 || len(bar2.GlobalHistory) > 0 {
-		wg.Add(1)
-
-		sem <- 1
-
-		go func() {
-			defer wg.Done()
-			defer func() { <-sem }()
-
-			merged.GlobalHistory = analyser.mergeMatrices(
-				bar1.GlobalHistory, bar2.GlobalHistory,
-				bar1.granularity, bar1.sampling,
-				bar2.granularity, bar2.sampling,
-				bar1.tickSize,
-				c1, c2,
-			)
-		}()
-	}
-	// we don't merge files
-	if len(merged.reversedPeopleDict) > 0 {
-		if len(bar1.PeopleHistories) > 0 || len(bar2.PeopleHistories) > 0 {
-			merged.PeopleHistories = make([]DenseHistory, len(merged.reversedPeopleDict))
-			for i, key := range merged.reversedPeopleDict {
-				ptrs := people[key]
-
-				wg.Add(1)
-
-				sem <- 1
-
-				go func(i int) {
-					defer wg.Done()
-					defer func() { <-sem }()
-
-					var m1, m2 DenseHistory
-					if ptrs.First >= 0 {
-						m1 = bar1.PeopleHistories[ptrs.First]
-					}
-
-					if ptrs.Second >= 0 {
-						m2 = bar2.PeopleHistories[ptrs.Second]
-					}
-
-					merged.PeopleHistories[i] = analyser.mergeMatrices(
-						m1, m2,
-						bar1.granularity, bar1.sampling,
-						bar2.granularity, bar2.sampling,
-						bar1.tickSize,
-						c1, c2,
-					)
-				}(i)
-			}
-		}
-
-		wg.Add(1)
-
-		sem <- 1
-
-		go func() {
-			defer wg.Done()
-			defer func() { <-sem }()
-
-			if len(bar2.PeopleMatrix) == 0 {
-				merged.PeopleMatrix = bar1.PeopleMatrix
-				// extend the matrix in both directions
-				for i := 0; i < len(merged.PeopleMatrix); i++ {
-					for j := len(bar1.reversedPeopleDict); j < len(merged.reversedPeopleDict); j++ {
-						merged.PeopleMatrix[i] = append(merged.PeopleMatrix[i], 0)
-					}
-				}
-
-				if len(bar1.PeopleMatrix) > 0 {
-					for i := len(bar1.reversedPeopleDict); i < len(merged.reversedPeopleDict); i++ {
-						merged.PeopleMatrix = append(
-							merged.PeopleMatrix, make([]int64, len(merged.reversedPeopleDict)+2),
-						)
-					}
-				}
-			} else {
-				merged.PeopleMatrix = make(DenseHistory, len(merged.reversedPeopleDict))
-				for i := range merged.PeopleMatrix {
-					merged.PeopleMatrix[i] = make([]int64, len(merged.reversedPeopleDict)+2)
-				}
-
-				for i, key := range bar1.reversedPeopleDict {
-					mi := people[key].Final // index in merged.reversedPeopleDict
-					copy(merged.PeopleMatrix[mi][:2], bar1.PeopleMatrix[i][:2])
-
-					for j, val := range bar1.PeopleMatrix[i][2:] {
-						merged.PeopleMatrix[mi][2+people[bar1.reversedPeopleDict[j]].Final] = val
-					}
-				}
-
-				for i, key := range bar2.reversedPeopleDict {
-					mi := people[key].Final // index in merged.reversedPeopleDict
-					merged.PeopleMatrix[mi][0] += bar2.PeopleMatrix[i][0]
-
-					merged.PeopleMatrix[mi][1] += bar2.PeopleMatrix[i][1]
-					for j, val := range bar2.PeopleMatrix[i][2:] {
-						merged.PeopleMatrix[mi][2+people[bar2.reversedPeopleDict[j]].Final] += val
-					}
-				}
-			}
-		}()
-	}
-
-	wg.Wait()
-
-	return merged
+	return (&BurndownAnalysis{}).MergeResults(r1, r2, c1, c2)
 }
 
 func roundTime(t time.Time, d time.Duration, dir bool) int {
@@ -873,274 +753,11 @@ func (analyser *LegacyBurndownAnalysis) mergeMatrices(
 // Columns: *at least* len(matrix[...]) * granularity + offset
 // `matrix` can be sparse, so that the last columns which are equal to 0 are truncated.
 func addBurndownMatrix(matrix DenseHistory, granularity, sampling int, accPerTick [][]float32, offset int) {
-	//	defer print("addBurndownMatrix exit\n")
-	//	print("addBurndownMatrix enter\n")
-
-	// Determine the maximum number of bands; the actual one may be larger but we do not care
-	maxCols := 0
-	for _, row := range matrix {
-		if maxCols < len(row) {
-			maxCols = len(row)
-		}
-	}
-
-	neededRows := len(matrix)*sampling + offset
-	if len(accPerTick) < neededRows {
-		log.Panicf("merge bug: too few per-tick rows: required %d, have %d",
-			neededRows, len(accPerTick))
-	}
-
-	if len(accPerTick[0]) < maxCols {
-		log.Panicf("merge bug: too few per-tick cols: required %d, have %d",
-			maxCols, len(accPerTick[0]))
-	}
-
-	var m runtime.MemStats
-	runtime.ReadMemStats(&m)
-
-	perTick := make([][]float32, len(accPerTick))
-	for i, row := range accPerTick {
-		perTick[i] = make([]float32, len(row))
-	}
-
-	//	print("addBurndownMatrix Allocating: ", len(accPerTick), " x ", len(perTick[0]), " = ", len(accPerTick)*len(perTick[0])*4/1024/1024, ", total ", m.Alloc/1024/1024, "\n")
-
-	for x := range maxCols {
-		for y := range matrix {
-			if x*granularity > (y+1)*sampling {
-				// the future is zeros
-				continue
-			}
-
-			decay := func(startIndex int, startVal float32) {
-				if startVal == 0 {
-					return
-				}
-
-				k := float32(matrix[y][x]) / startVal // <= 1
-
-				scale := float32((y+1)*sampling - startIndex)
-				for i := x * granularity; i < (x+1)*granularity; i++ {
-					initial := perTick[startIndex-1+offset][i+offset]
-					for j := startIndex; j < (y+1)*sampling; j++ {
-						perTick[j+offset][i+offset] = initial * (1 + (k-1)*float32(j-startIndex+1)/scale)
-					}
-				}
-			}
-			raise := func(finishIndex int, finishVal float32) {
-				var initial float32
-				if y > 0 {
-					initial = float32(matrix[y-1][x])
-				}
-
-				startIndex := max(y*sampling, x*granularity)
-
-				if startIndex == finishIndex {
-					return
-				}
-
-				avg := (finishVal - initial) / float32(finishIndex-startIndex)
-				for j := y * sampling; j < finishIndex; j++ {
-					for i := startIndex; i <= j; i++ {
-						perTick[j+offset][i+offset] = avg
-					}
-				}
-				// copy [x*g..y*s)
-				for j := y * sampling; j < finishIndex; j++ {
-					for i := x * granularity; i < y*sampling; i++ {
-						perTick[j+offset][i+offset] = perTick[j-1+offset][i+offset]
-					}
-				}
-			}
-
-			if (x+1)*granularity >= (y+1)*sampling {
-				// x*granularity <= (y+1)*sampling
-				// 1. x*granularity <= y*sampling
-				//    y*sampling..(y+1)sampling
-				//
-				//       x+1
-				//        /
-				//       /
-				//      / y+1  -|
-				//     /        |
-				//    / y      -|
-				//   /
-				//  / x
-				//
-				// 2. x*granularity > y*sampling
-				//    x*granularity..(y+1)sampling
-				//
-				//       x+1
-				//        /
-				//       /
-				//      / y+1  -|
-				//     /        |
-				//    / x      -|
-				//   /
-				//  / y
-				if x*granularity <= y*sampling {
-					raise((y+1)*sampling, float32(matrix[y][x]))
-				} else if (y+1)*sampling > x*granularity {
-					raise((y+1)*sampling, float32(matrix[y][x]))
-
-					avg := float32(matrix[y][x]) / float32((y+1)*sampling-x*granularity)
-					for j := x * granularity; j < (y+1)*sampling; j++ {
-						for i := x * granularity; i <= j; i++ {
-							perTick[j+offset][i+offset] = avg
-						}
-					}
-				}
-			} else if (x+1)*granularity >= y*sampling {
-				// y*sampling <= (x+1)*granularity < (y+1)sampling
-				// y*sampling..(x+1)*granularity
-				// (x+1)*granularity..(y+1)sampling
-				//        x+1
-				//         /\
-				//        /  \
-				//       /    \
-				//      /    y+1
-				//     /
-				//    y
-				v1 := float32(matrix[y-1][x])
-				v2 := float32(matrix[y][x])
-				var peak float32
-				delta := float32((x+1)*granularity - y*sampling)
-				var scale float32
-				var previous float32
-
-				if y > 0 && (y-1)*sampling >= x*granularity {
-					// x*g <= (y-1)*s <= y*s <= (x+1)*g <= (y+1)*s
-					//           |________|.......^
-					if y > 1 {
-						previous = float32(matrix[y-2][x])
-					}
-
-					scale = float32(sampling)
-				} else {
-					// (y-1)*s < x*g <= y*s <= (x+1)*g <= (y+1)*s
-					//            |______|.......^
-					if y == 0 {
-						scale = float32(sampling)
-					} else {
-						scale = float32(y*sampling - x*granularity)
-					}
-				}
-
-				peak = v1 + (v1-previous)/scale*delta
-				if v2 > peak {
-					// we need to adjust the peak, it may not be less than the decayed value
-					if y < len(matrix)-1 {
-						// y*s <= (x+1)*g <= (y+1)*s < (y+2)*s
-						//           ^.........|_________|
-						k := (v2 - float32(matrix[y+1][x])) / float32(sampling) // > 0
-						peak = float32(matrix[y][x]) + k*float32((y+1)*sampling-(x+1)*granularity)
-						// peak > v2 > v1
-					} else {
-						peak = v2
-						// not enough data to interpolate; this is at least not restricted
-					}
-				}
-
-				raise((x+1)*granularity, peak)
-				decay((x+1)*granularity, peak)
-			} else {
-				// (x+1)*granularity < y*sampling
-				// y*sampling..(y+1)sampling
-				decay(y*sampling, float32(matrix[y-1][x]))
-			}
-		}
-	}
-
-	for y := len(matrix) * sampling; y+offset < len(perTick); y++ {
-		copy(perTick[y+offset], perTick[len(matrix)*sampling-1+offset])
-	}
-	// the original matrix has been resampled by tick
-	// add it to the accumulator
-	for y, row := range perTick {
-		for x, val := range row {
-			accPerTick[y][x] += val
-		}
-	}
-
-	runtime.ReadMemStats(&m)
-
-	for i := range perTick {
-		perTick[i] = nil
-	}
-
-	perTick = nil
-
-	runtime.GC()
-	var a runtime.MemStats
-	runtime.ReadMemStats(&a)
-
-	//	print("addBurndownMatrix Deallocated: ", (m.Alloc-a.Alloc)/1024/1024, "\n")
+	burndown.AddBurndownMatrix(matrix, granularity, sampling, accPerTick, offset)
 }
 
 func (analyser *LegacyBurndownAnalysis) serializeText(result *BurndownResult, writer io.Writer) {
-	fmt.Fprintln(writer, "  granularity:", result.granularity)
-	fmt.Fprintln(writer, "  sampling:", result.sampling)
-	fmt.Fprintln(writer, "  tick_size:", int(result.tickSize.Seconds()))
-	yaml.PrintMatrix(writer, result.GlobalHistory, 2, "project", true)
-
-	if len(result.FileHistories) > 0 {
-		fmt.Fprintln(writer, "  files:")
-
-		keys := sortedKeys(result.FileHistories)
-		for _, key := range keys {
-			yaml.PrintMatrix(writer, result.FileHistories[key], 4, key, true)
-		}
-
-		fmt.Fprintln(writer, "  files_ownership:")
-
-		okeys := make([]string, 0, len(result.FileOwnership))
-		for key := range result.FileOwnership {
-			okeys = append(okeys, key)
-		}
-
-		sort.Strings(okeys)
-
-		for _, key := range okeys {
-			owned := result.FileOwnership[key]
-
-			devs := make([]int, 0, len(owned))
-			for devi := range owned {
-				devs = append(devs, devi)
-			}
-
-			sort.Slice(devs, func(i, j int) bool {
-				return owned[devs[i]] > owned[devs[j]] // descending order
-			})
-
-			for x, devi := range devs {
-				var indent string
-				if x == 0 {
-					indent = "- "
-				} else {
-					indent = "  "
-				}
-
-				fmt.Fprintf(writer, "    %s%d: %d\n", indent, devi, owned[devi])
-			}
-		}
-	}
-
-	if len(result.PeopleHistories) > 0 {
-		fmt.Fprintln(writer, "  people_sequence:")
-
-		for key := range result.PeopleHistories {
-			fmt.Fprintln(writer, "    - "+yaml.SafeString(result.reversedPeopleDict[key]))
-		}
-
-		fmt.Fprintln(writer, "  people:")
-
-		for key, val := range result.PeopleHistories {
-			yaml.PrintMatrix(writer, val, 4, result.reversedPeopleDict[key], true)
-		}
-
-		fmt.Fprintln(writer, "  people_interaction: |-")
-		yaml.PrintMatrix(writer, result.PeopleMatrix, 4, "", false)
-	}
+	(&BurndownAnalysis{}).serializeText(result, writer)
 }
 
 func (analyser *LegacyBurndownAnalysis) serializeBinary(result *BurndownResult, writer io.Writer) error {
@@ -1481,87 +1098,9 @@ func (analyser *LegacyBurndownAnalysis) handleModification(
 			change.From.TreeEntry.Hash.String(), change.To.TreeEntry.Hash.String())
 	}
 
-	// we do not call RunesToDiffLines so the number of lines equals
-	// to the rune count
-	position := 0
-	pending := diffmatchpatch.Diff{Text: ""}
-
-	apply := func(edit diffmatchpatch.Diff) {
-		length := utf8.RuneCountInString(edit.Text)
-		if edit.Type == diffmatchpatch.DiffInsert {
-			file.Update(analyser.packPersonWithTick(author, analyser.tick), position, length, 0)
-			position += length
-		} else {
-			file.Update(analyser.packPersonWithTick(author, analyser.tick), position, 0, length)
-		}
-
-		if analyser.Debug {
-			file.Validate()
-		}
-	}
-
-	for _, edit := range thisDiffs.Diffs {
-		dumpBefore := ""
-		if analyser.Debug {
-			dumpBefore = file.Dump()
-		}
-
-		length := utf8.RuneCountInString(edit.Text)
-		debugError := func() {
-			analyser.l.Errorf("%s: internal diff error\n", change.To.Name)
-			analyser.l.Errorf("Update(%d, %d, %d (0), %d (0))\n", analyser.tick, position,
-				length, utf8.RuneCountInString(pending.Text))
-
-			if dumpBefore != "" {
-				analyser.l.Errorf("====TREE BEFORE====\n%s====END====\n", dumpBefore)
-			}
-
-			analyser.l.Errorf("====TREE AFTER====\n%s====END====\n", file.Dump())
-		}
-
-		switch edit.Type {
-		case diffmatchpatch.DiffEqual:
-			if pending.Text != "" {
-				apply(pending)
-				pending.Text = ""
-			}
-
-			position += length
-		case diffmatchpatch.DiffInsert:
-			if pending.Text != "" {
-				if pending.Type == diffmatchpatch.DiffInsert {
-					debugError()
-					return errors.New("DiffInsert may not appear after DiffInsert")
-				}
-
-				file.Update(analyser.packPersonWithTick(author, analyser.tick), position, length,
-					utf8.RuneCountInString(pending.Text))
-
-				if analyser.Debug {
-					file.Validate()
-				}
-
-				position += length
-				pending.Text = ""
-			} else {
-				pending = edit
-			}
-		case diffmatchpatch.DiffDelete:
-			if pending.Text != "" {
-				debugError()
-				return errors.New("DiffDelete may not appear after DiffInsert/DiffDelete")
-			}
-
-			pending = edit
-		default:
-			debugError()
-			return fmt.Errorf("diff operation is not supported: %d", edit.Type)
-		}
-	}
-
-	if pending.Text != "" {
-		apply(pending)
-		pending.Text = ""
+	err := analyser.applyModificationDiffs(file, change, author, thisDiffs.Diffs)
+	if err != nil {
+		return err
 	}
 
 	if file.Len() != thisDiffs.NewLinesOfCode {
@@ -1571,6 +1110,115 @@ func (analyser *LegacyBurndownAnalysis) handleModification(
 	}
 
 	return nil
+}
+
+func (analyser *LegacyBurndownAnalysis) applyModificationDiffs(
+	file *linehistory.File, change *object.Change, author int, diffs []diffmatchpatch.Diff,
+) error {
+	state := legacyDiffState{analyser: analyser, file: file, change: change, author: author}
+	for _, edit := range diffs {
+		err := state.process(edit)
+		if err != nil {
+			return err
+		}
+	}
+
+	state.flush()
+
+	return nil
+}
+
+type legacyDiffState struct {
+	analyser *LegacyBurndownAnalysis
+	file     *linehistory.File
+	change   *object.Change
+	author   int
+	position int
+	pending  diffmatchpatch.Diff
+}
+
+func (state *legacyDiffState) process(edit diffmatchpatch.Diff) error {
+	before := ""
+	if state.analyser.Debug {
+		before = state.file.Dump()
+	}
+
+	length := utf8.RuneCountInString(edit.Text)
+	switch edit.Type {
+	case diffmatchpatch.DiffEqual:
+		state.flush()
+		state.position += length
+	case diffmatchpatch.DiffInsert:
+		if state.pending.Text == "" {
+			state.pending = edit
+			return nil
+		}
+
+		if state.pending.Type == diffmatchpatch.DiffInsert {
+			state.debugError(length, before)
+			return errors.New("DiffInsert may not appear after DiffInsert")
+		}
+
+		state.file.Update(
+			state.analyser.packPersonWithTick(state.author, state.analyser.tick),
+			state.position, length, utf8.RuneCountInString(state.pending.Text),
+		)
+
+		if state.analyser.Debug {
+			state.file.Validate()
+		}
+
+		state.position += length
+		state.pending.Text = ""
+	case diffmatchpatch.DiffDelete:
+		if state.pending.Text != "" {
+			state.debugError(length, before)
+			return errors.New("DiffDelete may not appear after DiffInsert/DiffDelete")
+		}
+
+		state.pending = edit
+	default:
+		state.debugError(length, before)
+		return fmt.Errorf("diff operation is not supported: %d", edit.Type)
+	}
+
+	return nil
+}
+
+func (state *legacyDiffState) flush() {
+	if state.pending.Text == "" {
+		return
+	}
+
+	length := utf8.RuneCountInString(state.pending.Text)
+
+	packed := state.analyser.packPersonWithTick(state.author, state.analyser.tick)
+	if state.pending.Type == diffmatchpatch.DiffInsert {
+		state.file.Update(packed, state.position, length, 0)
+		state.position += length
+	} else {
+		state.file.Update(packed, state.position, 0, length)
+	}
+
+	if state.analyser.Debug {
+		state.file.Validate()
+	}
+
+	state.pending.Text = ""
+}
+
+func (state *legacyDiffState) debugError(length int, before string) {
+	state.analyser.l.Errorf("%s: internal diff error\n", state.change.To.Name)
+	state.analyser.l.Errorf(
+		"Update(%d, %d, %d (0), %d (0))\n", state.analyser.tick, state.position,
+		length, utf8.RuneCountInString(state.pending.Text),
+	)
+
+	if before != "" {
+		state.analyser.l.Errorf("====TREE BEFORE====\n%s====END====\n", before)
+	}
+
+	state.analyser.l.Errorf("====TREE AFTER====\n%s====END====\n", state.file.Dump())
 }
 
 func (analyser *LegacyBurndownAnalysis) handleRename(from, to string) error {
@@ -1592,49 +1240,9 @@ func (analyser *LegacyBurndownAnalysis) handleRename(from, to string) error {
 	}
 
 	if analyser.TrackFiles {
-		history := analyser.fileHistories[from]
-		if history == nil {
-			var futureRename string
-
-			if _, exists := analyser.renames[""]; exists {
-				panic("burndown renames tracking corruption")
-			}
-
-			known := map[string]bool{}
-			newRename, exists := analyser.renames[from]
-			known[from] = true
-
-			for exists {
-				futureRename = newRename
-
-				newRename, exists = analyser.renames[futureRename]
-				if known[newRename] {
-					// infinite cycle
-					futureRename = ""
-
-					for key := range known {
-						if analyser.fileHistories[key] != nil {
-							futureRename = key
-							break
-						}
-					}
-
-					break
-				}
-
-				known[futureRename] = true
-			}
-			// a future branch could have already renamed it and we are retarded
-			if futureRename == "" {
-				// the file will be deleted in the future, whatever
-				history = sparseHistory{}
-			} else {
-				history = analyser.fileHistories[futureRename]
-				if history == nil {
-					return fmt.Errorf("file %s > %s (%s) does not exist (histories)",
-						from, to, futureRename)
-				}
-			}
+		history, err := analyser.historyAfterRename(from, to)
+		if err != nil {
+			return err
 		}
 
 		delete(analyser.fileHistories, from)
@@ -1644,6 +1252,53 @@ func (analyser *LegacyBurndownAnalysis) handleRename(from, to string) error {
 	analyser.renames[from] = to
 
 	return nil
+}
+
+func (analyser *LegacyBurndownAnalysis) historyAfterRename(from, to string) (sparseHistory, error) {
+	if history := analyser.fileHistories[from]; history != nil {
+		return history, nil
+	}
+
+	if _, exists := analyser.renames[""]; exists {
+		panic("burndown renames tracking corruption")
+	}
+
+	known := map[string]bool{from: true}
+
+	future, exists := analyser.renames[from]
+	for exists {
+		next, nextExists := analyser.renames[future]
+		if !nextExists {
+			break
+		}
+
+		if known[next] {
+			future = ""
+
+			for name := range known {
+				if analyser.fileHistories[name] != nil {
+					future = name
+					break
+				}
+			}
+
+			break
+		}
+
+		known[future] = true
+		future, exists = next, true
+	}
+
+	if future == "" {
+		return sparseHistory{}, nil
+	}
+
+	history := analyser.fileHistories[future]
+	if history == nil {
+		return nil, fmt.Errorf("file %s > %s (%s) does not exist (histories)", from, to, future)
+	}
+
+	return history, nil
 }
 
 func (analyser *LegacyBurndownAnalysis) groupSparseHistory(

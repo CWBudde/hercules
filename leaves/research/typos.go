@@ -183,109 +183,116 @@ func (tdb *TyposDatasetBuilder) Consume(deps map[string]any) (map[string]any, er
 
 	changes := deps[items.DependencyTreeChanges].(object.Changes)
 	for _, change := range changes {
-		action, err := change.Action()
+		typos, err := tdb.typosFromChange(commit, change, cache, diffs)
 		if err != nil {
 			return nil, err
 		}
 
-		if action != merkletrie.Modify {
-			continue
-		}
-
-		before := cache[change.From.TreeEntry.Hash]
-
-		after := cache[change.To.TreeEntry.Hash]
-		if before == nil || after == nil {
-			continue
-		}
-
-		diff, exists := diffs[change.To.Name]
-		if !exists {
-			continue
-		}
-
-		linesBefore := bytes.Split(before.Data, []byte{'\n'})
-		linesAfter := bytes.Split(after.Data, []byte{'\n'})
-		var lineNumBefore, lineNumAfter int
-		var candidates []candidate
-		focusedLinesBefore := map[int]bool{}
-		focusedLinesAfter := map[int]bool{}
-		removedSize := 0
-
-		for _, edit := range diff.Diffs {
-			size := utf8.RuneCountInString(edit.Text)
-			switch edit.Type {
-			case diffmatchpatch.DiffDelete:
-				lineNumBefore += size
-				removedSize = size
-			case diffmatchpatch.DiffInsert:
-				if size == removedSize {
-					for i := range size {
-						lb := lineNumBefore - size + i
-
-						la := lineNumAfter + i
-						if lb < 0 || lb >= len(linesBefore) || la < 0 || la >= len(linesAfter) {
-							continue
-						}
-
-						dist := tdb.lcontext.Distance(string(linesBefore[lb]), string(linesAfter[la]))
-						if dist <= tdb.MaximumAllowedDistance {
-							candidates = append(candidates, candidate{lb, la})
-							focusedLinesBefore[lb] = true
-							focusedLinesAfter[la] = true
-						}
-					}
-				}
-
-				lineNumAfter += size
-				removedSize = 0
-			case diffmatchpatch.DiffEqual:
-				lineNumBefore += size
-				lineNumAfter += size
-				removedSize = 0
-			}
-		}
-
-		if len(candidates) == 0 {
-			continue
-		}
-
-		beforeIdentifiers, err := tdb.extractor.ExtractIdentifiers(change.From.Name, before.Data)
-		if err != nil {
-			tdb.l.Warnf("repo %s commit %s file %s failed to parse before AST: %v",
-				tdb.remote, commit.String(), change.From.Name, err)
-
-			continue
-		}
-
-		afterIdentifiers, err := tdb.extractor.ExtractIdentifiers(change.To.Name, after.Data)
-		if err != nil {
-			tdb.l.Warnf("repo %s commit %s file %s failed to parse after AST: %v",
-				tdb.remote, commit.String(), change.To.Name, err)
-
-			continue
-		}
-
-		removedIdentifiers := collectIdentifiersByLine(beforeIdentifiers, focusedLinesBefore)
-		addedIdentifiers := collectIdentifiersByLine(afterIdentifiers, focusedLinesAfter)
-
-		for _, c := range candidates {
-			idsBefore := removedIdentifiers[c.Before]
-
-			idsAfter := addedIdentifiers[c.After]
-			if len(idsBefore) == 1 && len(idsAfter) == 1 && idsBefore[0] != idsAfter[0] {
-				tdb.typos = append(tdb.typos, Typo{
-					Wrong:   idsBefore[0],
-					Correct: idsAfter[0],
-					Commit:  commit,
-					File:    change.To.Name,
-					Line:    c.After,
-				})
-			}
-		}
+		tdb.typos = append(tdb.typos, typos...)
 	}
 
 	return nil, nil
+}
+
+func (tdb *TyposDatasetBuilder) typosFromChange(
+	commit plumbing.Hash,
+	change *object.Change,
+	cache map[plumbing.Hash]*items.CachedBlob,
+	diffs map[string]items.FileDiffData,
+) ([]Typo, error) {
+	action, err := change.Action()
+	if err != nil || action != merkletrie.Modify {
+		return nil, err
+	}
+
+	before := cache[change.From.TreeEntry.Hash]
+	after := cache[change.To.TreeEntry.Hash]
+
+	diff, exists := diffs[change.To.Name]
+	if before == nil || after == nil || !exists {
+		return nil, nil
+	}
+
+	candidates, focusedBefore, focusedAfter := tdb.typoCandidates(before.Data, after.Data, diff)
+	if len(candidates) == 0 {
+		return nil, nil
+	}
+
+	beforeIDs, err := tdb.identifiersForTypo(commit, change.From.Name, "before", before.Data, focusedBefore)
+	if err != nil {
+		return nil, nil
+	}
+
+	afterIDs, err := tdb.identifiersForTypo(commit, change.To.Name, "after", after.Data, focusedAfter)
+	if err != nil {
+		return nil, nil
+	}
+	var typos []Typo
+
+	for _, candidate := range candidates {
+		removed, added := beforeIDs[candidate.Before], afterIDs[candidate.After]
+		if len(removed) == 1 && len(added) == 1 && removed[0] != added[0] {
+			typos = append(typos, Typo{
+				Wrong: removed[0], Correct: added[0], Commit: commit,
+				File: change.To.Name, Line: candidate.After,
+			})
+		}
+	}
+
+	return typos, nil
+}
+
+func (tdb *TyposDatasetBuilder) typoCandidates(
+	before, after []byte, diff items.FileDiffData,
+) ([]candidate, map[int]bool, map[int]bool) {
+	beforeLines, afterLines := bytes.Split(before, []byte{'\n'}), bytes.Split(after, []byte{'\n'})
+	var candidates []candidate
+	focusedBefore, focusedAfter := map[int]bool{}, map[int]bool{}
+	var beforeLine, afterLine, removedSize int
+
+	for _, edit := range diff.Diffs {
+		size := utf8.RuneCountInString(edit.Text)
+		switch edit.Type {
+		case diffmatchpatch.DiffDelete:
+			beforeLine += size
+			removedSize = size
+		case diffmatchpatch.DiffInsert:
+			if size == removedSize {
+				for i := range size {
+					left, right := beforeLine-size+i, afterLine+i
+					if left >= 0 && left < len(beforeLines) && right >= 0 && right < len(afterLines) &&
+						tdb.lcontext.Distance(string(beforeLines[left]), string(afterLines[right])) <=
+							tdb.MaximumAllowedDistance {
+						candidates = append(candidates, candidate{left, right})
+						focusedBefore[left], focusedAfter[right] = true, true
+					}
+				}
+			}
+
+			afterLine += size
+			removedSize = 0
+		case diffmatchpatch.DiffEqual:
+			beforeLine, afterLine, removedSize = beforeLine+size, afterLine+size, 0
+		}
+	}
+
+	return candidates, focusedBefore, focusedAfter
+}
+
+func (tdb *TyposDatasetBuilder) identifiersForTypo(
+	commit plumbing.Hash, file, phase string, data []byte, focused map[int]bool,
+) (map[int][]string, error) {
+	nodes, err := tdb.extractor.ExtractIdentifiers(file, data)
+	if err != nil {
+		tdb.l.Warnf(
+			"repo %s commit %s file %s failed to parse %s AST: %v",
+			tdb.remote, commit.String(), file, phase, err,
+		)
+
+		return nil, err
+	}
+
+	return collectIdentifiersByLine(nodes, focused), nil
 }
 
 // Finalize returns the result of the analysis. Further Consume() calls are not expected.

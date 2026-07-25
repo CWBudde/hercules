@@ -309,81 +309,54 @@ func (devs *DevsAnalysis) MergeResults(r1, r2 any, c1, c2 *core.CommonAnalysisRe
 	newticks := map[int]map[int]*DevTick{}
 
 	merged.Ticks = newticks
-	for tick, dd := range cr1.Ticks {
-		tick += offset1
-
-		newdd, exists := newticks[tick]
-		if !exists {
-			newdd = map[int]*DevTick{}
-			newticks[tick] = newdd
-		}
-
-		for dev, stats := range dd {
-			newdev := dev
-			if newdev != core.AuthorMissing {
-				newdev = mergedIndex[cr1.reversedPeopleDict[dev]].Final
-			}
-
-			newstats, exists := newdd[newdev]
-			if !exists {
-				newstats = &DevTick{Languages: map[string]items.LineStats{}}
-				newdd[newdev] = newstats
-			}
-
-			newstats.Commits += stats.Commits
-			newstats.Added += stats.Added
-			newstats.Removed += stats.Removed
-
-			newstats.Changed += stats.Changed
-			for lang, ls := range stats.Languages {
-				prev := newstats.Languages[lang]
-				newstats.Languages[lang] = items.LineStats{
-					Added:   prev.Added + ls.Added,
-					Removed: prev.Removed + ls.Removed,
-					Changed: prev.Changed + ls.Changed,
-				}
-			}
-		}
-	}
-
-	for tick, dd := range cr2.Ticks {
-		tick += offset2
-
-		newdd, exists := newticks[tick]
-		if !exists {
-			newdd = map[int]*DevTick{}
-			newticks[tick] = newdd
-		}
-
-		for dev, stats := range dd {
-			newdev := dev
-			if newdev != core.AuthorMissing {
-				newdev = mergedIndex[cr2.reversedPeopleDict[dev]].Final
-			}
-
-			newstats, exists := newdd[newdev]
-			if !exists {
-				newstats = &DevTick{Languages: map[string]items.LineStats{}}
-				newdd[newdev] = newstats
-			}
-
-			newstats.Commits += stats.Commits
-			newstats.Added += stats.Added
-			newstats.Removed += stats.Removed
-
-			newstats.Changed += stats.Changed
-			for lang, ls := range stats.Languages {
-				prev := newstats.Languages[lang]
-				newstats.Languages[lang] = items.LineStats{
-					Added:   prev.Added + ls.Added,
-					Removed: prev.Removed + ls.Removed,
-					Changed: prev.Changed + ls.Changed,
-				}
-			}
-		}
-	}
+	mergeDevTicks(newticks, cr1, offset1, mergedIndex)
+	mergeDevTicks(newticks, cr2, offset2, mergedIndex)
 
 	return merged
+}
+
+func mergeDevTicks(
+	target map[int]map[int]*DevTick,
+	source DevsResult,
+	offset int,
+	peopleIndex map[string]join.JoinedIndex,
+) {
+	for tick, developers := range source.Ticks {
+		targetTick := tick + offset
+		if target[targetTick] == nil {
+			target[targetTick] = map[int]*DevTick{}
+		}
+
+		for developer, stats := range developers {
+			targetDeveloper := developer
+			if developer != core.AuthorMissing {
+				targetDeveloper = peopleIndex[source.reversedPeopleDict[developer]].Final
+			}
+
+			mergeDevTick(target[targetTick], targetDeveloper, stats)
+		}
+	}
+}
+
+func mergeDevTick(target map[int]*DevTick, developer int, source *DevTick) {
+	stats := target[developer]
+	if stats == nil {
+		stats = &DevTick{Languages: map[string]items.LineStats{}}
+		target[developer] = stats
+	}
+
+	stats.Commits += source.Commits
+	stats.Added += source.Added
+	stats.Removed += source.Removed
+
+	stats.Changed += source.Changed
+	for language, lines := range source.Languages {
+		previous := stats.Languages[language]
+		stats.Languages[language] = items.LineStats{
+			Added: previous.Added + lines.Added, Removed: previous.Removed + lines.Removed,
+			Changed: previous.Changed + lines.Changed,
+		}
+	}
 }
 
 func (devs *DevsAnalysis) serializeText(result *DevsResult, writer io.Writer) {

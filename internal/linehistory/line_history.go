@@ -714,88 +714,15 @@ func (analyser *LineHistoryAnalyser) handleModification(
 			change.From.TreeEntry.Hash.String(), change.To.TreeEntry.Hash.String())
 	}
 
-	// we do not call RunesToDiffLines so the number of lines equals
-	// to the rune count
-	position := 0
-	pending := diffmatchpatch.Diff{Text: ""}
-
-	apply := func(edit diffmatchpatch.Diff) {
-		length := utf8.RuneCountInString(edit.Text)
-		if edit.Type == diffmatchpatch.DiffInsert {
-			file.Update(packPersonWithTick(author, analyser.tick), position, length, 0)
-			position += length
-		} else {
-			file.Update(packPersonWithTick(author, analyser.tick), position, 0, length)
-		}
-
-		if analyser.Debug {
-			file.Validate()
-		}
-	}
-
+	state := lineHistoryDiffState{analyser: analyser, file: file, change: change, author: author}
 	for _, edit := range thisDiffs.Diffs {
-		dumpBefore := ""
-		if analyser.Debug {
-			dumpBefore = file.Dump()
-		}
-
-		length := utf8.RuneCountInString(edit.Text)
-		debugError := func() {
-			analyser.l.Errorf("%s: internal diff error\n", change.To.Name)
-			analyser.l.Errorf("Update(%d, %d, %d (0), %d (0))\n", analyser.tick, position,
-				length, utf8.RuneCountInString(pending.Text))
-
-			if dumpBefore != "" {
-				analyser.l.Errorf("====TREE BEFORE====\n%s====END====\n", dumpBefore)
-			}
-
-			analyser.l.Errorf("====TREE AFTER====\n%s====END====\n", file.Dump())
-		}
-
-		switch edit.Type {
-		case diffmatchpatch.DiffEqual:
-			if pending.Text != "" {
-				apply(pending)
-				pending.Text = ""
-			}
-
-			position += length
-		case diffmatchpatch.DiffInsert:
-			if pending.Text != "" {
-				if pending.Type == diffmatchpatch.DiffInsert {
-					debugError()
-					return errors.New("DiffInsert may not appear after DiffInsert")
-				}
-
-				file.Update(packPersonWithTick(author, analyser.tick), position, length,
-					utf8.RuneCountInString(pending.Text))
-
-				if analyser.Debug {
-					file.Validate()
-				}
-
-				position += length
-				pending.Text = ""
-			} else {
-				pending = edit
-			}
-		case diffmatchpatch.DiffDelete:
-			if pending.Text != "" {
-				debugError()
-				return errors.New("DiffDelete may not appear after DiffInsert/DiffDelete")
-			}
-
-			pending = edit
-		default:
-			debugError()
-			return fmt.Errorf("diff operation is not supported: %d", edit.Type)
+		err := state.process(edit)
+		if err != nil {
+			return err
 		}
 	}
 
-	if pending.Text != "" {
-		apply(pending)
-		pending.Text = ""
-	}
+	state.flush()
 
 	if file.Len() != thisDiffs.NewLinesOfCode {
 		return fmt.Errorf("%s: internal integrity error dst %d != %d %s -> %s",
@@ -804,6 +731,101 @@ func (analyser *LineHistoryAnalyser) handleModification(
 	}
 
 	return nil
+}
+
+type lineHistoryDiffState struct {
+	analyser *LineHistoryAnalyser
+	file     *File
+	change   *object.Change
+	author   core.AuthorId
+	position int
+	pending  diffmatchpatch.Diff
+}
+
+func (state *lineHistoryDiffState) process(edit diffmatchpatch.Diff) error {
+	dumpBefore := ""
+	if state.analyser.Debug {
+		dumpBefore = state.file.Dump()
+	}
+
+	length := utf8.RuneCountInString(edit.Text)
+	switch edit.Type {
+	case diffmatchpatch.DiffEqual:
+		state.flush()
+		state.position += length
+	case diffmatchpatch.DiffInsert:
+		if state.pending.Text == "" {
+			state.pending = edit
+			return nil
+		}
+
+		if state.pending.Type == diffmatchpatch.DiffInsert {
+			state.debugError(length, dumpBefore)
+			return errors.New("DiffInsert may not appear after DiffInsert")
+		}
+
+		state.file.Update(
+			packPersonWithTick(state.author, state.analyser.tick), state.position,
+			length, utf8.RuneCountInString(state.pending.Text),
+		)
+
+		if state.analyser.Debug {
+			state.file.Validate()
+		}
+
+		state.position += length
+		state.pending.Text = ""
+	case diffmatchpatch.DiffDelete:
+		if state.pending.Text != "" {
+			state.debugError(length, dumpBefore)
+			return errors.New("DiffDelete may not appear after DiffInsert/DiffDelete")
+		}
+
+		state.pending = edit
+	default:
+		state.debugError(length, dumpBefore)
+		return fmt.Errorf("diff operation is not supported: %d", edit.Type)
+	}
+
+	return nil
+}
+
+func (state *lineHistoryDiffState) flush() {
+	if state.pending.Text == "" {
+		return
+	}
+
+	length := utf8.RuneCountInString(state.pending.Text)
+	if state.pending.Type == diffmatchpatch.DiffInsert {
+		state.file.Update(
+			packPersonWithTick(state.author, state.analyser.tick), state.position, length, 0,
+		)
+		state.position += length
+	} else {
+		state.file.Update(
+			packPersonWithTick(state.author, state.analyser.tick), state.position, 0, length,
+		)
+	}
+
+	if state.analyser.Debug {
+		state.file.Validate()
+	}
+
+	state.pending.Text = ""
+}
+
+func (state *lineHistoryDiffState) debugError(length int, dumpBefore string) {
+	state.analyser.l.Errorf("%s: internal diff error\n", state.change.To.Name)
+	state.analyser.l.Errorf(
+		"Update(%d, %d, %d (0), %d (0))\n", state.analyser.tick, state.position,
+		length, utf8.RuneCountInString(state.pending.Text),
+	)
+
+	if dumpBefore != "" {
+		state.analyser.l.Errorf("====TREE BEFORE====\n%s====END====\n", dumpBefore)
+	}
+
+	state.analyser.l.Errorf("====TREE AFTER====\n%s====END====\n", state.file.Dump())
 }
 
 func (analyser *LineHistoryAnalyser) handleRename(from, to string) error {

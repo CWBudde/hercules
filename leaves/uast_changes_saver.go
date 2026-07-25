@@ -124,67 +124,86 @@ func (saver *UASTChangesSaver) Consume(deps map[string]any) (map[string]any, err
 	cache := deps[items.DependencyBlobCache].(map[plumbing.Hash]*items.CachedBlob)
 
 	for i, change := range changes {
-		action, err := change.Action()
+		record, keep, err := saver.processChange(commit, i, change, cache)
 		if err != nil {
 			return nil, err
 		}
 
-		if action != merkletrie.Modify {
-			continue
+		if keep {
+			saver.result = append(saver.result, record)
 		}
-
-		fromBlob := cache[change.From.TreeEntry.Hash]
-
-		toBlob := cache[change.To.TreeEntry.Hash]
-		if fromBlob == nil || toBlob == nil {
-			continue
-		}
-
-		if _, err = fromBlob.CountLines(); errors.Is(err, items.ErrBinary) {
-			continue
-		} else if err != nil {
-			return nil, err
-		}
-
-		if _, err = toBlob.CountLines(); errors.Is(err, items.ErrBinary) {
-			continue
-		} else if err != nil {
-			return nil, err
-		}
-
-		beforeNodes, err := ast_items.ExtractNamedNodes(change.From.Name, fromBlob.Data)
-		if err != nil {
-			saver.l.Warnf("UASTChangesSaver: commit %s file %s before-parse failed: %v",
-				commit.Hash.String(), change.From.Name, err)
-
-			continue
-		}
-
-		afterNodes, err := ast_items.ExtractNamedNodes(change.To.Name, toBlob.Data)
-		if err != nil {
-			saver.l.Warnf("UASTChangesSaver: commit %s file %s after-parse failed: %v",
-				commit.Hash.String(), change.To.Name, err)
-
-			continue
-		}
-
-		if len(beforeNodes) == 0 && len(afterNodes) == 0 {
-			continue
-		}
-
-		record, err := saver.dumpChangeFiles(
-			commit.Hash, i, change.To.Name,
-			change.From.TreeEntry.Hash, fromBlob.Data, beforeNodes,
-			change.To.TreeEntry.Hash, toBlob.Data, afterNodes,
-		)
-		if err != nil {
-			return nil, err
-		}
-
-		saver.result = append(saver.result, record)
 	}
 
 	return nil, nil
+}
+
+func (saver *UASTChangesSaver) processChange(
+	commit *object.Commit,
+	index int,
+	change *object.Change,
+	cache map[plumbing.Hash]*items.CachedBlob,
+) (UASTChangeRecord, bool, error) {
+	action, err := change.Action()
+	if err != nil || action != merkletrie.Modify {
+		return UASTChangeRecord{}, false, err
+	}
+
+	fromBlob := cache[change.From.TreeEntry.Hash]
+
+	toBlob := cache[change.To.TreeEntry.Hash]
+	if fromBlob == nil || toBlob == nil {
+		return UASTChangeRecord{}, false, nil
+	}
+
+	if binary, err := eitherBlobIsBinary(fromBlob, toBlob); err != nil || binary {
+		return UASTChangeRecord{}, false, err
+	}
+
+	beforeNodes, ok := saver.extractChangeNodes(commit, change.From.Name, "before", fromBlob.Data)
+	if !ok {
+		return UASTChangeRecord{}, false, nil
+	}
+
+	afterNodes, ok := saver.extractChangeNodes(commit, change.To.Name, "after", toBlob.Data)
+	if !ok || len(beforeNodes) == 0 && len(afterNodes) == 0 {
+		return UASTChangeRecord{}, false, nil
+	}
+
+	record, err := saver.dumpChangeFiles(
+		commit.Hash, index, change.To.Name,
+		change.From.TreeEntry.Hash, fromBlob.Data, beforeNodes,
+		change.To.TreeEntry.Hash, toBlob.Data, afterNodes,
+	)
+
+	return record, err == nil, err
+}
+
+func eitherBlobIsBinary(blobs ...*items.CachedBlob) (bool, error) {
+	for _, blob := range blobs {
+		if _, err := blob.CountLines(); errors.Is(err, items.ErrBinary) {
+			return true, nil
+		} else if err != nil {
+			return false, err
+		}
+	}
+
+	return false, nil
+}
+
+func (saver *UASTChangesSaver) extractChangeNodes(
+	commit *object.Commit, name, phase string, data []byte,
+) ([]ast_items.Node, bool) {
+	nodes, err := ast_items.ExtractNamedNodes(name, data)
+	if err != nil {
+		saver.l.Warnf(
+			"UASTChangesSaver: commit %s file %s %s-parse failed: %v",
+			commit.Hash.String(), name, phase, err,
+		)
+
+		return nil, false
+	}
+
+	return nodes, true
 }
 
 func shortHash(hash plumbing.Hash) string {

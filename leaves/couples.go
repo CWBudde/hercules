@@ -233,31 +233,51 @@ func (couples *CouplesAnalysis) Finalize() any {
 		filesIndex[file] = i
 	}
 
-	filesLines := make([]int, len(filesSequence))
-	for i, name := range filesSequence {
+	filesLines, err := couples.fileLineCounts(filesSequence)
+	if err != nil {
+		return err
+	}
+
+	peopleMatrix, peopleFiles := couples.peopleCouplingMatrices(people, filesIndex)
+	filesMatrix := fileCouplingMatrix(files, filesSequence, filesIndex)
+
+	return CouplesResult{
+		PeopleMatrix: peopleMatrix, PeopleFiles: peopleFiles,
+		Files: filesSequence, FilesLines: filesLines, FilesMatrix: filesMatrix,
+		reversedPeopleDict: couples.reversedPeopleDict,
+	}
+}
+
+func (couples *CouplesAnalysis) fileLineCounts(files []string) ([]int, error) {
+	lines := make([]int, len(files))
+	for i, name := range files {
 		file, err := couples.lastCommit.File(name)
 		if err != nil {
 			err := fmt.Errorf("cannot find file %s in commit %s: %w",
 				name, couples.lastCommit.Hash.String(), err)
 			couples.l.Critical(err)
 
-			return err
+			return nil, err
 		}
 
 		blob := items.CachedBlob{Blob: file.Blob}
-
-		err = blob.Cache()
-		if err != nil {
+		if err := blob.Cache(); err != nil {
 			err := fmt.Errorf("cannot read blob %s of file %s: %w",
 				blob.Hash.String(), name, err)
 			couples.l.Critical(err)
 
-			return err
+			return nil, err
 		}
 
-		filesLines[i], _ = blob.CountLines()
+		lines[i], _ = blob.CountLines()
 	}
 
+	return lines, nil
+}
+
+func (couples *CouplesAnalysis) peopleCouplingMatrices(
+	people []map[string]int, filesIndex map[string]int,
+) ([]map[int]int64, [][]int) {
 	peopleMatrix := make([]map[int]int64, couples.PeopleNumber+1)
 	peopleFiles := make([][]int, couples.PeopleNumber+1)
 
@@ -269,11 +289,7 @@ func (couples *CouplesAnalysis) Finalize() any {
 			}
 
 			for j, otherFiles := range people {
-				otherCommits := otherFiles[file]
-
-				delta := min(otherCommits, commits)
-
-				if delta > 0 {
+				if delta := min(otherFiles[file], commits); delta > 0 {
 					peopleMatrix[i][j] += int64(delta)
 				}
 			}
@@ -282,22 +298,21 @@ func (couples *CouplesAnalysis) Finalize() any {
 		sort.Ints(peopleFiles[i])
 	}
 
-	filesMatrix := make([]map[int]int64, len(filesIndex))
-	for i := range filesMatrix {
-		filesMatrix[i] = map[int]int64{}
-		for otherFile, cooccs := range files[filesSequence[i]] {
-			filesMatrix[i][filesIndex[otherFile]] = int64(cooccs)
+	return peopleMatrix, peopleFiles
+}
+
+func fileCouplingMatrix(
+	files map[string]map[string]int, filesSequence []string, filesIndex map[string]int,
+) []map[int]int64 {
+	matrix := make([]map[int]int64, len(filesIndex))
+	for i := range matrix {
+		matrix[i] = map[int]int64{}
+		for otherFile, cooccurrences := range files[filesSequence[i]] {
+			matrix[i][filesIndex[otherFile]] = int64(cooccurrences)
 		}
 	}
 
-	return CouplesResult{
-		PeopleMatrix:       peopleMatrix,
-		PeopleFiles:        peopleFiles,
-		Files:              filesSequence,
-		FilesLines:         filesLines,
-		FilesMatrix:        filesMatrix,
-		reversedPeopleDict: couples.reversedPeopleDict,
-	}
+	return matrix
 }
 
 // Fork clones this pipeline item.
@@ -397,25 +412,8 @@ func (couples *CouplesAnalysis) MergeResults(r1, r2 any, c1, c2 *core.CommonAnal
 
 	merged.PeopleFiles = make([][]int, len(merged.reversedPeopleDict))
 	peopleFilesDicts := make([]map[int]bool, len(merged.reversedPeopleDict))
-	addPeopleFiles := func(peopleFiles [][]int, reversedPeopleDict []string,
-		reversedFilesDict []string,
-	) {
-		for pi, fs := range peopleFiles {
-			idx := people[reversedPeopleDict[pi]].Final
-
-			m := peopleFilesDicts[idx]
-			if m == nil {
-				m = map[int]bool{}
-				peopleFilesDicts[idx] = m
-			}
-
-			for _, f := range fs {
-				m[files[reversedFilesDict[f]].Final] = true
-			}
-		}
-	}
-	addPeopleFiles(cr1.PeopleFiles, cr1.reversedPeopleDict, cr1.Files)
-	addPeopleFiles(cr2.PeopleFiles, cr2.reversedPeopleDict, cr2.Files)
+	addMergedPeopleFiles(peopleFilesDicts, cr1, people, files)
+	addMergedPeopleFiles(peopleFilesDicts, cr2, people, files)
 
 	for i, m := range peopleFilesDicts {
 		merged.PeopleFiles[i] = make([]int, len(m))
@@ -430,56 +428,69 @@ func (couples *CouplesAnalysis) MergeResults(r1, r2 any, c1, c2 *core.CommonAnal
 	}
 
 	merged.PeopleMatrix = make([]map[int]int64, len(merged.reversedPeopleDict)+1)
-	addPeople := func(peopleMatrix []map[int]int64, reversedPeopleDict []string) {
-		for pi, pc := range peopleMatrix {
-			var idx int
-			if pi < len(reversedPeopleDict) {
-				idx = people[reversedPeopleDict[pi]].Final
-			} else {
-				idx = len(merged.reversedPeopleDict)
-			}
-
-			m := merged.PeopleMatrix[idx]
-			if m == nil {
-				m = map[int]int64{}
-				merged.PeopleMatrix[idx] = m
-			}
-
-			for otherDev, val := range pc {
-				var otherIdx int
-				if otherDev < len(reversedPeopleDict) {
-					otherIdx = people[reversedPeopleDict[otherDev]].Final
-				} else {
-					otherIdx = len(merged.reversedPeopleDict)
-				}
-
-				m[otherIdx] += val
-			}
-		}
-	}
-	addPeople(cr1.PeopleMatrix, cr1.reversedPeopleDict)
-	addPeople(cr2.PeopleMatrix, cr2.reversedPeopleDict)
+	addMergedPeopleMatrix(merged.PeopleMatrix, cr1, people)
+	addMergedPeopleMatrix(merged.PeopleMatrix, cr2, people)
 
 	merged.FilesMatrix = make([]map[int]int64, len(merged.Files))
-	addFiles := func(filesMatrix []map[int]int64, reversedFilesDict []string) {
-		for fi, fc := range filesMatrix {
-			idx := people[reversedFilesDict[fi]].Final
-
-			m := merged.FilesMatrix[idx]
-			if m == nil {
-				m = map[int]int64{}
-				merged.FilesMatrix[idx] = m
-			}
-
-			for file, val := range fc {
-				m[files[reversedFilesDict[file]].Final] += val
-			}
-		}
-	}
-	addFiles(cr1.FilesMatrix, cr1.Files)
-	addFiles(cr2.FilesMatrix, cr2.Files)
+	addMergedFilesMatrix(merged.FilesMatrix, cr1, files)
+	addMergedFilesMatrix(merged.FilesMatrix, cr2, files)
 
 	return merged
+}
+
+func addMergedPeopleFiles(
+	target []map[int]bool, source CouplesResult,
+	people, files map[string]join.JoinedIndex,
+) {
+	for person, sourceFiles := range source.PeopleFiles {
+		targetPerson := people[source.reversedPeopleDict[person]].Final
+		if target[targetPerson] == nil {
+			target[targetPerson] = map[int]bool{}
+		}
+
+		for _, file := range sourceFiles {
+			target[targetPerson][files[source.Files[file]].Final] = true
+		}
+	}
+}
+
+func addMergedPeopleMatrix(
+	target []map[int]int64, source CouplesResult, people map[string]join.JoinedIndex,
+) {
+	for person, couplings := range source.PeopleMatrix {
+		targetPerson := len(target) - 1
+		if person < len(source.reversedPeopleDict) {
+			targetPerson = people[source.reversedPeopleDict[person]].Final
+		}
+
+		if target[targetPerson] == nil {
+			target[targetPerson] = map[int]int64{}
+		}
+
+		for other, value := range couplings {
+			targetOther := len(target) - 1
+			if other < len(source.reversedPeopleDict) {
+				targetOther = people[source.reversedPeopleDict[other]].Final
+			}
+
+			target[targetPerson][targetOther] += value
+		}
+	}
+}
+
+func addMergedFilesMatrix(
+	target []map[int]int64, source CouplesResult, files map[string]join.JoinedIndex,
+) {
+	for file, couplings := range source.FilesMatrix {
+		targetFile := files[source.Files[file]].Final
+		if target[targetFile] == nil {
+			target[targetFile] = map[int]int64{}
+		}
+
+		for other, value := range couplings {
+			target[targetFile][files[source.Files[other]].Final] += value
+		}
+	}
 }
 
 func (couples *CouplesAnalysis) serializeText(result *CouplesResult, writer io.Writer) {
@@ -653,24 +664,40 @@ func (couples *CouplesAnalysis) propagateRenames(files map[string]bool) (
 	map[string]map[string]int, []map[string]int,
 ) {
 	renames := *couples.renames
-	reducedFiles := map[string]map[string]int{}
+	reducedFiles := couples.reduceFileCouplings(files)
+	aliases, pointers := renameAliases(renames, reducedFiles)
+	adjustments := couples.renameAdjustments(aliases)
+	applyRenameAdjustments(reducedFiles, aliases, adjustments)
+	people := couples.reducePeopleFiles(files, aliases, pointers)
+
+	return reducedFiles, people
+}
+
+func (couples *CouplesAnalysis) reduceFileCouplings(
+	files map[string]bool,
+) map[string]map[string]int {
+	reduced := map[string]map[string]int{}
 
 	for file := range files {
-		fmap := map[string]int{}
+		couplings := map[string]int{}
 
-		refmap := couples.files[file]
 		for other := range files {
-			refval := refmap[other]
-			if refval > 0 {
-				fmap[other] = refval
+			if count := couples.files[file][other]; count > 0 {
+				couplings[other] = count
 			}
 		}
 
-		if len(fmap) > 0 {
-			reducedFiles[file] = fmap
+		if len(couplings) > 0 {
+			reduced[file] = couplings
 		}
 	}
-	// propagate renames
+
+	return reduced
+}
+
+func renameAliases(
+	renames []rename, reducedFiles map[string]map[string]int,
+) (map[string]map[string]bool, map[string]string) {
 	aliases := map[string]map[string]bool{}
 	pointers := map[string]string{}
 
@@ -684,20 +711,22 @@ func (couples *CouplesAnalysis) propagateRenames(files map[string]bool) (
 
 		if _, exists := reducedFiles[toName]; exists {
 			if rename.FromName != toName {
-				var set map[string]bool
-				if set, exists = aliases[toName]; !exists {
-					set = map[string]bool{}
-					aliases[toName] = set
+				if aliases[toName] == nil {
+					aliases[toName] = map[string]bool{}
 				}
 
-				set[rename.FromName] = true
+				aliases[toName][rename.FromName] = true
 				pointers[rename.FromName] = toName
 			}
-
-			continue
 		}
 	}
 
+	return aliases, pointers
+}
+
+func (couples *CouplesAnalysis) renameAdjustments(
+	aliases map[string]map[string]bool,
+) map[string]map[string]int {
 	adjustments := map[string]map[string]int{}
 
 	for final, set := range aliases {
@@ -712,6 +741,14 @@ func (couples *CouplesAnalysis) propagateRenames(files map[string]bool) (
 		adjustments[final] = adjustment
 	}
 
+	return adjustments
+}
+
+func applyRenameAdjustments(
+	reducedFiles map[string]map[string]int,
+	aliases map[string]map[string]bool,
+	adjustments map[string]map[string]int,
+) {
 	for _, adjustment := range adjustments {
 		for final, set := range aliases {
 			for alias := range set {
@@ -729,7 +766,11 @@ func (couples *CouplesAnalysis) propagateRenames(files map[string]bool) (
 			}
 		}
 	}
+}
 
+func (couples *CouplesAnalysis) reducePeopleFiles(
+	files map[string]bool, aliases map[string]map[string]bool, pointers map[string]string,
+) []map[string]int {
 	people := make([]map[string]int, len(couples.people))
 	for i, counts := range couples.people {
 		reducedCounts := map[string]int{}
@@ -755,7 +796,7 @@ func (couples *CouplesAnalysis) propagateRenames(files map[string]bool) (
 		}
 	}
 
-	return reducedFiles, people
+	return people
 }
 
 func init() {

@@ -375,6 +375,31 @@ func mapToSparseHistory(m map[int]map[int]int64) sparseHistory {
 
 // Hibernate compresses the burndown analysis state to save memory.
 func (analyser *BurndownAnalysis) Hibernate() error {
+	state := analyser.hibernationState()
+
+	data, err := compressBurndownState(state)
+	if err != nil {
+		return err
+	}
+
+	if analyser.HibernationToDisk {
+		err := analyser.persistHibernation(data)
+		if err != nil {
+			return err
+		}
+	} else {
+		analyser.hibernatedData = data
+	}
+
+	analyser.globalHistory = nil
+	analyser.fileHistories = nil
+	analyser.peopleHistories = nil
+	analyser.matrix = nil
+
+	return nil
+}
+
+func (analyser *BurndownAnalysis) hibernationState() burndownState {
 	state := burndownState{
 		GlobalHistory: sparseHistoryToMap(analyser.globalHistory),
 		Matrix:        analyser.matrix,
@@ -393,50 +418,50 @@ func (analyser *BurndownAnalysis) Hibernate() error {
 		}
 	}
 
+	return state
+}
+
+func compressBurndownState(state burndownState) ([]byte, error) {
 	var buf bytes.Buffer
 
 	fw, err := flate.NewWriter(&buf, flate.DefaultCompression)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if err := gob.NewEncoder(fw).Encode(state); err != nil {
 		fw.Close()
-		return err
+		return nil, err
 	}
 
 	if err := fw.Close(); err != nil {
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
+}
+
+func (analyser *BurndownAnalysis) persistHibernation(data []byte) error {
+	file, err := os.CreateTemp(analyser.HibernationDirectory, "*-hercules-burndown.bin")
+	if err != nil {
 		return err
 	}
 
-	if analyser.HibernationToDisk {
-		file, err := os.CreateTemp(analyser.HibernationDirectory, "*-hercules-burndown.bin")
-		if err != nil {
-			return err
-		}
-
-		if _, err := file.Write(buf.Bytes()); err != nil {
-			file.Close()
-			os.Remove(file.Name())
-
-			return err
-		}
-
-		if err := file.Close(); err != nil {
-			os.Remove(file.Name())
-			return err
-		}
-
-		analyser.hibernatedFileName = file.Name()
-	} else {
-		analyser.hibernatedData = buf.Bytes()
+	cleanup := func() {
+		_ = file.Close()
+		_ = os.Remove(file.Name())
+	}
+	if _, err := file.Write(data); err != nil {
+		cleanup()
+		return err
 	}
 
-	// Clear state only after successful persistence.
-	analyser.globalHistory = nil
-	analyser.fileHistories = nil
-	analyser.peopleHistories = nil
-	analyser.matrix = nil
+	if err := file.Close(); err != nil {
+		_ = os.Remove(file.Name())
+		return err
+	}
+
+	analyser.hibernatedFileName = file.Name()
 
 	return nil
 }
@@ -500,59 +525,14 @@ func (analyser *BurndownAnalysis) Boot() error {
 // Finalize returns the result of the analysis. Further calls to Consume() are not expected.
 func (analyser *BurndownAnalysis) Finalize() any {
 	globalHistory, lastTick := analyser.groupSparseHistory(analyser.globalHistory, -1)
-
-	fileHistories := map[string]burndown.DenseHistory{}
+	fileHistories := analyser.finalizeFileHistories(lastTick)
 	fileOwnership := map[string]map[int]int{}
-
-	for fileId, history := range analyser.fileHistories {
-		if len(history) == 0 {
-			continue
-		}
-
-		if fileName := analyser.fileResolver.NameOf(fileId); fileName != "" {
-			fileHistories[fileName], _ = analyser.groupSparseHistory(history, lastTick)
-		}
-	}
-
 	peopleNumber := analyser.peopleResolver.Count()
-	peopleHistories := make([]burndown.DenseHistory, peopleNumber)
 
+	peopleHistories := make([]burndown.DenseHistory, peopleNumber)
 	if peopleNumber > 0 {
 		analyser.collectFileOwnership(fileOwnership)
-
-		for i := range peopleHistories {
-			history := analyser.peopleHistories[i]
-			if len(history) > 0 {
-				// there can be people with only trivial merge commits and without own lines
-				peopleHistories[i], _ = analyser.groupSparseHistory(history, lastTick)
-			} else {
-				peopleHistories[i] = make(burndown.DenseHistory, len(globalHistory))
-				for j, gh := range globalHistory {
-					peopleHistories[i][j] = make([]int64, len(gh))
-				}
-			}
-		}
-	}
-
-	var peopleMatrix burndown.DenseHistory
-	if len(analyser.matrix) > 0 {
-		peopleMatrix = make(burndown.DenseHistory, peopleNumber)
-		for i := range peopleMatrix {
-			row := analyser.matrix[i]
-			pRow := make([]int64, peopleNumber+2)
-			peopleMatrix[i] = pRow
-
-			for key, val := range row {
-				switch key {
-				case core.AuthorMissing:
-					key = -1
-				case authorSelf:
-					key = -2
-				}
-
-				pRow[key+2] = val
-			}
-		}
+		peopleHistories = analyser.finalizePeopleHistories(globalHistory, lastTick, peopleNumber)
 	}
 
 	result := BurndownResult{
@@ -560,18 +540,71 @@ func (analyser *BurndownAnalysis) Finalize() any {
 		FileHistories:      fileHistories,
 		FileOwnership:      fileOwnership,
 		PeopleHistories:    peopleHistories,
-		PeopleMatrix:       peopleMatrix,
+		PeopleMatrix:       analyser.finalizePeopleMatrix(peopleNumber),
 		tickSize:           analyser.tickSize,
 		reversedPeopleDict: analyser.peopleResolver.CopyNames(false),
 		sampling:           analyser.Sampling,
 		granularity:        analyser.Granularity,
 	}
 
-	// Initialize repository tracking for single-repo analysis
-	// The repository name will be set later during serialization or combine
 	if analyser.repositoryName != "" {
 		result.ReversedRepositoryDict = []string{analyser.repositoryName}
 		result.RepositoryHistories = []burndown.DenseHistory{globalHistory}
+	}
+
+	return result
+}
+
+func (analyser *BurndownAnalysis) finalizeFileHistories(lastTick int) map[string]burndown.DenseHistory {
+	result := map[string]burndown.DenseHistory{}
+
+	for fileID, history := range analyser.fileHistories {
+		if len(history) > 0 {
+			if name := analyser.fileResolver.NameOf(fileID); name != "" {
+				result[name], _ = analyser.groupSparseHistory(history, lastTick)
+			}
+		}
+	}
+
+	return result
+}
+
+func (analyser *BurndownAnalysis) finalizePeopleHistories(
+	global burndown.DenseHistory, lastTick, peopleNumber int,
+) []burndown.DenseHistory {
+	result := make([]burndown.DenseHistory, peopleNumber)
+	for i := range result {
+		if history := analyser.peopleHistories[i]; len(history) > 0 {
+			result[i], _ = analyser.groupSparseHistory(history, lastTick)
+		} else {
+			result[i] = make(burndown.DenseHistory, len(global))
+			for j, row := range global {
+				result[i][j] = make([]int64, len(row))
+			}
+		}
+	}
+
+	return result
+}
+
+func (analyser *BurndownAnalysis) finalizePeopleMatrix(peopleNumber int) burndown.DenseHistory {
+	if len(analyser.matrix) == 0 {
+		return nil
+	}
+
+	result := make(burndown.DenseHistory, peopleNumber)
+	for i := range result {
+		result[i] = make([]int64, peopleNumber+2)
+		for key, value := range analyser.matrix[i] {
+			switch key {
+			case core.AuthorMissing:
+				key = -1
+			case authorSelf:
+				key = -2
+			}
+
+			result[i][key+2] = value
+		}
 	}
 
 	return result
@@ -629,20 +662,8 @@ func (analyser *BurndownAnalysis) Deserialize(message []byte) (any, error) {
 		return nil, err
 	}
 
-	convertCSR := func(mat *pb.BurndownSparseMatrix) burndown.DenseHistory {
-		res := make(burndown.DenseHistory, mat.GetNumberOfRows())
-		for i := range mat.GetNumberOfRows() {
-			res[i] = make([]int64, mat.GetNumberOfColumns())
-			for j := range len(mat.GetRows()[i].GetColumns()) {
-				res[i][j] = int64(mat.GetRows()[i].GetColumns()[j])
-			}
-		}
-
-		return res
-	}
-
 	result := BurndownResult{
-		GlobalHistory: convertCSR(msg.GetProject()),
+		GlobalHistory: denseBurndownMatrix(msg.GetProject()),
 		FileHistories: map[string]burndown.DenseHistory{},
 		FileOwnership: map[string]map[int]int{},
 		tickSize:      time.Duration(msg.GetTickSize()),
@@ -651,44 +672,66 @@ func (analyser *BurndownAnalysis) Deserialize(message []byte) (any, error) {
 		sampling:    int(msg.GetSampling()),
 	}
 	for i, mat := range msg.GetFiles() {
-		result.FileHistories[mat.GetName()] = convertCSR(mat)
-		ownership := map[int]int{}
-
-		result.FileOwnership[mat.GetName()] = ownership
-		for key, val := range msg.GetFilesOwnership()[i].GetValue() {
-			ownership[int(key)] = int(val)
-		}
+		result.FileHistories[mat.GetName()] = denseBurndownMatrix(mat)
+		result.FileOwnership[mat.GetName()] = burndownOwnership(msg.GetFilesOwnership()[i])
 	}
 
 	result.reversedPeopleDict = make([]string, len(msg.GetPeople()))
 
 	result.PeopleHistories = make([]burndown.DenseHistory, len(msg.GetPeople()))
 	for i, mat := range msg.GetPeople() {
-		result.PeopleHistories[i] = convertCSR(mat)
+		result.PeopleHistories[i] = denseBurndownMatrix(mat)
 		result.reversedPeopleDict[i] = mat.GetName()
 	}
 
-	if msg.GetPeopleInteraction() != nil {
-		result.PeopleMatrix = make(burndown.DenseHistory, msg.GetPeopleInteraction().GetNumberOfRows())
-	}
+	result.PeopleMatrix = denseInteractionMatrix(msg.GetPeopleInteraction())
 
-	for i := 0; i < len(result.PeopleMatrix); i++ {
-		result.PeopleMatrix[i] = make([]int64, msg.GetPeopleInteraction().GetNumberOfColumns())
-		for j := int(msg.GetPeopleInteraction().GetIndptr()[i]); j < int(msg.GetPeopleInteraction().GetIndptr()[i+1]); j++ {
-			result.PeopleMatrix[i][msg.GetPeopleInteraction().GetIndices()[j]] = msg.GetPeopleInteraction().GetData()[j]
-		}
-	}
-
-	// Deserialize repository data
 	result.ReversedRepositoryDict = msg.GetRepositorySequence()
 	if len(msg.GetRepositories()) > 0 {
 		result.RepositoryHistories = make([]burndown.DenseHistory, len(msg.GetRepositories()))
 		for i, mat := range msg.GetRepositories() {
-			result.RepositoryHistories[i] = convertCSR(mat)
+			result.RepositoryHistories[i] = denseBurndownMatrix(mat)
 		}
 	}
 
 	return result, nil
+}
+
+func denseBurndownMatrix(matrix *pb.BurndownSparseMatrix) burndown.DenseHistory {
+	result := make(burndown.DenseHistory, matrix.GetNumberOfRows())
+	for i := range matrix.GetNumberOfRows() {
+		result[i] = make([]int64, matrix.GetNumberOfColumns())
+		for j, value := range matrix.GetRows()[i].GetColumns() {
+			result[i][j] = int64(value)
+		}
+	}
+
+	return result
+}
+
+func burndownOwnership(source *pb.FilesOwnership) map[int]int {
+	result := map[int]int{}
+	for author, lines := range source.GetValue() {
+		result[int(author)] = int(lines)
+	}
+
+	return result
+}
+
+func denseInteractionMatrix(matrix *pb.CompressedSparseRowMatrix) burndown.DenseHistory {
+	if matrix == nil {
+		return nil
+	}
+
+	result := make(burndown.DenseHistory, matrix.GetNumberOfRows())
+	for i := range result {
+		result[i] = make([]int64, matrix.GetNumberOfColumns())
+		for j := int(matrix.GetIndptr()[i]); j < int(matrix.GetIndptr()[i+1]); j++ {
+			result[i][matrix.GetIndices()[j]] = matrix.GetData()[j]
+		}
+	}
+
+	return result
 }
 
 // MergeResults combines two BurndownResult-s together.
@@ -713,115 +756,31 @@ func (analyser *BurndownAnalysis) MergeResults(
 	people, merged.reversedPeopleDict = join.PeopleIdentities(
 		bar1.reversedPeopleDict, bar2.reversedPeopleDict,
 	)
-	var wg sync.WaitGroup
-	sem := make(chan int, 5) // with large files not limiting number of GoRoutines eats 200G of RAM on large merges
+	coordinator := burndownMergeCoordinator{
+		first: bar1, second: bar2, commonFirst: c1, commonSecond: c2,
+		sem: make(chan int, 5),
+	}
 
 	if len(bar1.GlobalHistory) > 0 || len(bar2.GlobalHistory) > 0 {
-		wg.Add(1)
-
-		sem <- 1
-
-		go func() {
-			defer wg.Done()
-			defer func() { <-sem }()
-
-			merged.GlobalHistory = burndown.MergeBurndownMatrices(
-				bar1.GlobalHistory, bar2.GlobalHistory,
-				bar1.granularity, bar1.sampling,
-				bar2.granularity, bar2.sampling,
-				bar1.tickSize,
-				c1, c2,
-			)
-		}()
+		coordinator.merge(&merged.GlobalHistory, bar1.GlobalHistory, bar2.GlobalHistory)
 	}
-	// we don't merge files
+
 	if len(merged.reversedPeopleDict) > 0 {
 		if len(bar1.PeopleHistories) > 0 || len(bar2.PeopleHistories) > 0 {
 			merged.PeopleHistories = make([]burndown.DenseHistory, len(merged.reversedPeopleDict))
 			for i, key := range merged.reversedPeopleDict {
-				ptrs := people[key]
-
-				wg.Add(1)
-
-				sem <- 1
-
-				go func(i int) {
-					defer wg.Done()
-					defer func() { <-sem }()
-
-					var m1, m2 burndown.DenseHistory
-					if ptrs.First >= 0 {
-						m1 = bar1.PeopleHistories[ptrs.First]
-					}
-
-					if ptrs.Second >= 0 {
-						m2 = bar2.PeopleHistories[ptrs.Second]
-					}
-
-					merged.PeopleHistories[i] = burndown.MergeBurndownMatrices(
-						m1, m2,
-						bar1.granularity, bar1.sampling,
-						bar2.granularity, bar2.sampling,
-						bar1.tickSize,
-						c1, c2,
-					)
-				}(i)
+				first, second := joinedBurndownHistories(
+					people[key], bar1.PeopleHistories, bar2.PeopleHistories,
+				)
+				coordinator.merge(&merged.PeopleHistories[i], first, second)
 			}
 		}
 
-		wg.Add(1)
-
-		sem <- 1
-
-		go func() {
-			defer wg.Done()
-			defer func() { <-sem }()
-
-			if len(bar2.PeopleMatrix) == 0 {
-				merged.PeopleMatrix = bar1.PeopleMatrix
-				// extend the matrix in both directions
-				for i := 0; i < len(merged.PeopleMatrix); i++ {
-					for j := len(bar1.reversedPeopleDict); j < len(merged.reversedPeopleDict); j++ {
-						merged.PeopleMatrix[i] = append(merged.PeopleMatrix[i], 0)
-					}
-				}
-
-				if len(bar1.PeopleMatrix) > 0 {
-					for i := len(bar1.reversedPeopleDict); i < len(merged.reversedPeopleDict); i++ {
-						merged.PeopleMatrix = append(
-							merged.PeopleMatrix, make([]int64, len(merged.reversedPeopleDict)+2),
-						)
-					}
-				}
-			} else {
-				merged.PeopleMatrix = make(burndown.DenseHistory, len(merged.reversedPeopleDict))
-				for i := range merged.PeopleMatrix {
-					merged.PeopleMatrix[i] = make([]int64, len(merged.reversedPeopleDict)+2)
-				}
-
-				for i, key := range bar1.reversedPeopleDict {
-					mi := people[key].Final // index in merged.reversedPeopleDict
-					copy(merged.PeopleMatrix[mi][:2], bar1.PeopleMatrix[i][:2])
-
-					for j, val := range bar1.PeopleMatrix[i][2:] {
-						merged.PeopleMatrix[mi][2+people[bar1.reversedPeopleDict[j]].Final] = val
-					}
-				}
-
-				for i, key := range bar2.reversedPeopleDict {
-					mi := people[key].Final // index in merged.reversedPeopleDict
-					merged.PeopleMatrix[mi][0] += bar2.PeopleMatrix[i][0]
-
-					merged.PeopleMatrix[mi][1] += bar2.PeopleMatrix[i][1]
-					for j, val := range bar2.PeopleMatrix[i][2:] {
-						merged.PeopleMatrix[mi][2+people[bar2.reversedPeopleDict[j]].Final] += val
-					}
-				}
-			}
-		}()
+		coordinator.run(func() {
+			merged.PeopleMatrix = mergePeopleInteraction(bar1, bar2, merged.reversedPeopleDict, people)
+		})
 	}
 
-	// Merge repository histories
 	var repositories map[string]join.JoinedIndex
 
 	repositories, merged.ReversedRepositoryDict = join.RepositoryIdentities(
@@ -830,39 +789,112 @@ func (analyser *BurndownAnalysis) MergeResults(
 	if len(merged.ReversedRepositoryDict) > 0 {
 		merged.RepositoryHistories = make([]burndown.DenseHistory, len(merged.ReversedRepositoryDict))
 		for i, key := range merged.ReversedRepositoryDict {
-			ptrs := repositories[key]
-
-			wg.Add(1)
-
-			sem <- 1
-
-			go func(i int) {
-				defer wg.Done()
-				defer func() { <-sem }()
-
-				var m1, m2 burndown.DenseHistory
-				if ptrs.First >= 0 {
-					m1 = bar1.RepositoryHistories[ptrs.First]
-				}
-
-				if ptrs.Second >= 0 {
-					m2 = bar2.RepositoryHistories[ptrs.Second]
-				}
-
-				merged.RepositoryHistories[i] = burndown.MergeBurndownMatrices(
-					m1, m2,
-					bar1.granularity, bar1.sampling,
-					bar2.granularity, bar2.sampling,
-					bar1.tickSize,
-					c1, c2,
-				)
-			}(i)
+			first, second := joinedBurndownHistories(
+				repositories[key], bar1.RepositoryHistories, bar2.RepositoryHistories,
+			)
+			coordinator.merge(&merged.RepositoryHistories[i], first, second)
 		}
 	}
 
-	wg.Wait()
+	coordinator.wg.Wait()
 
 	return merged
+}
+
+type burndownMergeCoordinator struct {
+	first, second             BurndownResult
+	commonFirst, commonSecond *core.CommonAnalysisResult
+	wg                        sync.WaitGroup
+	sem                       chan int
+}
+
+func (coordinator *burndownMergeCoordinator) run(operation func()) {
+	coordinator.wg.Add(1)
+
+	coordinator.sem <- 1
+	go func() {
+		defer coordinator.wg.Done()
+		defer func() { <-coordinator.sem }()
+
+		operation()
+	}()
+}
+
+func (coordinator *burndownMergeCoordinator) merge(
+	target *burndown.DenseHistory, first, second burndown.DenseHistory,
+) {
+	coordinator.run(func() {
+		*target = burndown.MergeBurndownMatrices(
+			first, second,
+			coordinator.first.granularity, coordinator.first.sampling,
+			coordinator.second.granularity, coordinator.second.sampling,
+			coordinator.first.tickSize, coordinator.commonFirst, coordinator.commonSecond,
+		)
+	})
+}
+
+func joinedBurndownHistories(
+	index join.JoinedIndex, first, second []burndown.DenseHistory,
+) (burndown.DenseHistory, burndown.DenseHistory) {
+	var firstHistory, secondHistory burndown.DenseHistory
+	if index.First >= 0 {
+		firstHistory = first[index.First]
+	}
+
+	if index.Second >= 0 {
+		secondHistory = second[index.Second]
+	}
+
+	return firstHistory, secondHistory
+}
+
+func mergePeopleInteraction(
+	first, second BurndownResult, mergedPeople []string, people map[string]join.JoinedIndex,
+) burndown.DenseHistory {
+	if len(second.PeopleMatrix) == 0 {
+		matrix := first.PeopleMatrix
+		for i := range matrix {
+			matrix[i] = append(matrix[i], make([]int64, len(mergedPeople)-len(first.reversedPeopleDict))...)
+		}
+
+		for len(matrix) < len(mergedPeople) && len(first.PeopleMatrix) > 0 {
+			matrix = append(matrix, make([]int64, len(mergedPeople)+2))
+		}
+
+		return matrix
+	}
+
+	matrix := make(burndown.DenseHistory, len(mergedPeople))
+	for i := range matrix {
+		matrix[i] = make([]int64, len(mergedPeople)+2)
+	}
+
+	addPeopleInteraction(matrix, first, people, false)
+	addPeopleInteraction(matrix, second, people, true)
+
+	return matrix
+}
+
+func addPeopleInteraction(
+	target burndown.DenseHistory, source BurndownResult,
+	people map[string]join.JoinedIndex, add bool,
+) {
+	for i, name := range source.reversedPeopleDict {
+		mergedIndex := people[name].Final
+
+		for column, value := range source.PeopleMatrix[i] {
+			targetColumn := column
+			if column >= 2 {
+				targetColumn = 2 + people[source.reversedPeopleDict[column-2]].Final
+			}
+
+			if add {
+				target[mergedIndex][targetColumn] += value
+			} else {
+				target[mergedIndex][targetColumn] = value
+			}
+		}
+	}
 }
 
 func (analyser *BurndownAnalysis) serializeText(result *BurndownResult, writer io.Writer) {
@@ -872,72 +904,73 @@ func (analyser *BurndownAnalysis) serializeText(result *BurndownResult, writer i
 	yaml.PrintMatrix(writer, result.GlobalHistory, 2, "project", true)
 
 	if len(result.FileHistories) > 0 {
-		_, _ = fmt.Fprintln(writer, "  files:")
-
-		keys := sortedKeys(result.FileHistories)
-		for _, key := range keys {
-			yaml.PrintMatrix(writer, result.FileHistories[key], 4, key, true)
-		}
-
-		_, _ = fmt.Fprintln(writer, "  files_ownership:")
-
-		oKeys := make([]string, 0, len(result.FileOwnership))
-		for key := range result.FileOwnership {
-			oKeys = append(oKeys, key)
-		}
-
-		sort.Strings(oKeys)
-
-		for _, key := range oKeys {
-			owned := result.FileOwnership[key]
-
-			devs := make([]int, 0, len(owned))
-			for devi := range owned {
-				devs = append(devs, devi)
-			}
-
-			sort.Slice(devs, func(i, j int) bool {
-				return owned[devs[i]] > owned[devs[j]] // descending order
-			})
-
-			for x, devi := range devs {
-				var indent string
-				if x == 0 {
-					indent = "- "
-				} else {
-					indent = "  "
-				}
-
-				_, _ = fmt.Fprintf(writer, "    %s%d: %d\n", indent, devi, owned[devi])
-			}
-		}
+		writeBurndownFiles(writer, result)
 	}
 
 	if len(result.PeopleHistories) > 0 {
-		_, _ = fmt.Fprintln(writer, "  people_sequence:")
-		for key := range result.PeopleHistories {
-			_, _ = fmt.Fprintln(writer, "    - "+yaml.SafeString(result.reversedPeopleDict[key]))
-		}
-
-		_, _ = fmt.Fprintln(writer, "  people:")
-		for key, val := range result.PeopleHistories {
-			yaml.PrintMatrix(writer, val, 4, result.reversedPeopleDict[key], true)
-		}
-
-		_, _ = fmt.Fprintln(writer, "  people_interaction: |-")
-		yaml.PrintMatrix(writer, result.PeopleMatrix, 4, "", false)
+		writeBurndownPeople(writer, result)
 	}
 
 	if len(result.RepositoryHistories) > 0 {
-		_, _ = fmt.Fprintln(writer, "  repository_sequence:")
-		for key := range result.RepositoryHistories {
-			_, _ = fmt.Fprintln(writer, "    - "+yaml.SafeString(result.ReversedRepositoryDict[key]))
+		writeBurndownRepositories(writer, result)
+	}
+}
+
+func writeBurndownFiles(writer io.Writer, result *BurndownResult) {
+	_, _ = fmt.Fprintln(writer, "  files:")
+	for _, key := range sortedKeys(result.FileHistories) {
+		yaml.PrintMatrix(writer, result.FileHistories[key], 4, key, true)
+	}
+
+	_, _ = fmt.Fprintln(writer, "  files_ownership:")
+
+	for _, key := range sortedKeys(result.FileOwnership) {
+		owned := result.FileOwnership[key]
+
+		developers := make([]int, 0, len(owned))
+		for developer := range owned {
+			developers = append(developers, developer)
 		}
 
-		_, _ = fmt.Fprintln(writer, "  repositories:")
-		for key, val := range result.RepositoryHistories {
-			yaml.PrintMatrix(writer, val, 4, result.ReversedRepositoryDict[key], true)
+		sort.Slice(developers, func(i, j int) bool {
+			return owned[developers[i]] > owned[developers[j]]
+		})
+
+		for i, developer := range developers {
+			indent := "  "
+			if i == 0 {
+				indent = "- "
+			}
+
+			_, _ = fmt.Fprintf(writer, "    %s%d: %d\n", indent, developer, owned[developer])
 		}
+	}
+}
+
+func writeBurndownPeople(writer io.Writer, result *BurndownResult) {
+	_, _ = fmt.Fprintln(writer, "  people_sequence:")
+	for i := range result.PeopleHistories {
+		_, _ = fmt.Fprintln(writer, "    - "+yaml.SafeString(result.reversedPeopleDict[i]))
+	}
+
+	_, _ = fmt.Fprintln(writer, "  people:")
+	for i, history := range result.PeopleHistories {
+		yaml.PrintMatrix(writer, history, 4, result.reversedPeopleDict[i], true)
+	}
+
+	_, _ = fmt.Fprintln(writer, "  people_interaction: |-")
+	yaml.PrintMatrix(writer, result.PeopleMatrix, 4, "", false)
+}
+
+func writeBurndownRepositories(writer io.Writer, result *BurndownResult) {
+	_, _ = fmt.Fprintln(writer, "  repository_sequence:")
+	for i := range result.RepositoryHistories {
+		_, _ = fmt.Fprintln(writer, "    - "+yaml.SafeString(result.ReversedRepositoryDict[i]))
+	}
+
+	_, _ = fmt.Fprintln(writer, "  repositories:")
+	for i, history := range result.RepositoryHistories {
+		yaml.PrintMatrix(writer, history, 4, result.ReversedRepositoryDict[i], true)
 	}
 }
 
@@ -952,33 +985,11 @@ func (analyser *BurndownAnalysis) serializeBinary(result *BurndownResult, writer
 	}
 
 	if len(result.FileHistories) > 0 {
-		message.Files = make([]*pb.BurndownSparseMatrix, len(result.FileHistories))
-		message.FilesOwnership = make([]*pb.FilesOwnership, len(result.FileHistories))
-		keys := sortedKeys(result.FileHistories)
-
-		i := 0
-		for _, key := range keys {
-			message.Files[i] = pb.ToBurndownSparseMatrix(result.FileHistories[key], key)
-			ownership := map[int32]int32{}
-
-			message.FilesOwnership[i] = &pb.FilesOwnership{Value: ownership}
-			for key, val := range result.FileOwnership[key] {
-				ownership[int32(key)] = int32(val)
-			}
-
-			i++
-		}
+		message.Files, message.FilesOwnership = burndownFilesToProto(result)
 	}
 
 	if len(result.PeopleHistories) > 0 {
-		message.People = make(
-			[]*pb.BurndownSparseMatrix, len(result.PeopleHistories),
-		)
-		for key, val := range result.PeopleHistories {
-			if len(val) > 0 {
-				message.People[key] = pb.ToBurndownSparseMatrix(val, result.reversedPeopleDict[key])
-			}
-		}
+		message.People = namedBurndownMatrices(result.PeopleHistories, result.reversedPeopleDict)
 	}
 
 	if result.PeopleMatrix != nil {
@@ -987,15 +998,9 @@ func (analyser *BurndownAnalysis) serializeBinary(result *BurndownResult, writer
 
 	if len(result.RepositoryHistories) > 0 {
 		message.RepositorySequence = result.ReversedRepositoryDict
-
-		message.Repositories = make([]*pb.BurndownSparseMatrix, len(result.RepositoryHistories))
-		for i, history := range result.RepositoryHistories {
-			if len(history) > 0 {
-				message.Repositories[i] = pb.ToBurndownSparseMatrix(
-					history, result.ReversedRepositoryDict[i],
-				)
-			}
-		}
+		message.Repositories = namedBurndownMatrices(
+			result.RepositoryHistories, result.ReversedRepositoryDict,
+		)
 	}
 
 	serialized, err := proto.Marshal(&message)
@@ -1006,6 +1011,40 @@ func (analyser *BurndownAnalysis) serializeBinary(result *BurndownResult, writer
 	_, err = writer.Write(serialized)
 
 	return err
+}
+
+func burndownFilesToProto(
+	result *BurndownResult,
+) ([]*pb.BurndownSparseMatrix, []*pb.FilesOwnership) {
+	keys := sortedKeys(result.FileHistories)
+	files := make([]*pb.BurndownSparseMatrix, len(keys))
+
+	ownership := make([]*pb.FilesOwnership, len(keys))
+	for i, key := range keys {
+		files[i] = pb.ToBurndownSparseMatrix(result.FileHistories[key], key)
+
+		values := map[int32]int32{}
+		for developer, lines := range result.FileOwnership[key] {
+			values[int32(developer)] = int32(lines)
+		}
+
+		ownership[i] = &pb.FilesOwnership{Value: values}
+	}
+
+	return files, ownership
+}
+
+func namedBurndownMatrices(
+	histories []burndown.DenseHistory, names []string,
+) []*pb.BurndownSparseMatrix {
+	result := make([]*pb.BurndownSparseMatrix, len(histories))
+	for i, history := range histories {
+		if len(history) > 0 {
+			result[i] = pb.ToBurndownSparseMatrix(history, names[i])
+		}
+	}
+
+	return result
 }
 
 func (analyser *BurndownAnalysis) groupSparseHistory(

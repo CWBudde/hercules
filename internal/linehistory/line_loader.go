@@ -289,44 +289,57 @@ func (analyser *LineHistoryLoader) loadChangesFromYaml(decoder *yaml.Decoder) er
 
 	analyser.commits = make([]commitInfo, 0, len(values.LineDumper.Commits))
 	for _, yamlCommit := range values.LineDumper.Commits {
-		analyser.commits = append(analyser.commits, commitInfo{})
-		info := &analyser.commits[len(analyser.commits)-1]
-
-		for r := bufio.NewScanner(strings.NewReader(yamlCommit.Value.(string))); r.Scan(); {
-			line := r.Text()
-
-			chunks := regexSplitBySpace.Split(line, -1)
-			if len(chunks) != 6 {
-				return fmt.Errorf("unexpected number of fields '%d' from: %s", len(chunks), line)
-			}
-
-			vals := make([]int, len(chunks))
-			for i, s := range chunks {
-				v, err := strconv.Atoi(s)
-				if err != nil {
-					return fmt.Errorf("unable to parse '%s' from: %s", s, line)
-				}
-
-				vals[i] = v
-			}
-
-			change := core.LineHistoryChange{
-				FileId:     core.FileId(vals[0]),
-				PrevAuthor: core.AuthorId(vals[1]),
-				PrevTick:   core.TickNumber(vals[2]),
-				CurrAuthor: core.AuthorId(vals[3]),
-				CurrTick:   core.TickNumber(vals[4]),
-				Delta:      vals[5],
-			}
-			info.Changes = append(info.Changes, change)
+		info, err := parseLineHistoryCommit(yamlCommit)
+		if err != nil {
+			return err
 		}
 
-		info.Tick = info.Changes[0].CurrTick
-		info.Author = info.Changes[0].CurrAuthor
-		info.Hash = plumbing.NewHash(yamlCommit.Key.(string))
+		analyser.commits = append(analyser.commits, info)
 	}
 
 	return nil
+}
+
+func parseLineHistoryCommit(yamlCommit yaml.MapItem) (commitInfo, error) {
+	info := commitInfo{Hash: plumbing.NewHash(yamlCommit.Key.(string))}
+	for scanner := bufio.NewScanner(strings.NewReader(yamlCommit.Value.(string))); scanner.Scan(); {
+		change, err := parseLineHistoryChange(scanner.Text())
+		if err != nil {
+			return commitInfo{}, err
+		}
+
+		info.Changes = append(info.Changes, change)
+	}
+
+	info.Tick = info.Changes[0].CurrTick
+	info.Author = info.Changes[0].CurrAuthor
+
+	return info, nil
+}
+
+func parseLineHistoryChange(line string) (core.LineHistoryChange, error) {
+	chunks := regexSplitBySpace.Split(line, -1)
+	if len(chunks) != 6 {
+		return core.LineHistoryChange{}, fmt.Errorf(
+			"unexpected number of fields '%d' from: %s", len(chunks), line,
+		)
+	}
+
+	values := make([]int, len(chunks))
+	for i, raw := range chunks {
+		value, err := strconv.Atoi(raw)
+		if err != nil {
+			return core.LineHistoryChange{}, fmt.Errorf("unable to parse '%s' from: %s", raw, line)
+		}
+
+		values[i] = value
+	}
+
+	return core.LineHistoryChange{
+		FileId: core.FileId(values[0]), PrevAuthor: core.AuthorId(values[1]),
+		PrevTick: core.TickNumber(values[2]), CurrAuthor: core.AuthorId(values[3]),
+		CurrTick: core.TickNumber(values[4]), Delta: values[5],
+	}, nil
 }
 
 func (analyser *LineHistoryLoader) buildCommits() (result []*object.Commit) {

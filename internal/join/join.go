@@ -57,126 +57,132 @@ type identityPair struct {
 // 2. Corresponding index in the first array - `rd1`. -1 means that it does not exist.
 // 3. Corresponding index in the second array - `rd2`. -1 means that it does not exist.
 func PeopleIdentities(rd1, rd2 []string) (map[string]JoinedIndex, []string) {
+	vocabulary, vertices1, vertices2 := identityGraph(rd1, rd2)
+	walks := identityComponents(vocabulary, vertices1, vertices2)
+
+	return joinedPeopleIndex(rd1, rd2, vocabulary, walks)
+}
+
+func identityGraph(
+	first, second []string,
+) (map[string]identityPair, [][]string, [][]string) {
 	vocabulary := map[string]identityPair{}
+	firstVertices := identityVertices(first, func(index int, key string) {
+		vocabulary[key] = identityPair{index, -1}
+	})
+	secondVertices := identityVertices(second, func(index int, key string) {
+		pair, exists := vocabulary[key]
+		if !exists {
+			pair.Index1 = -1
+		}
 
-	vertices1 := make([][]string, len(rd1))
-	for i, s := range rd1 {
-		parts := strings.Split(s, "|")
+		pair.Index2 = index
+		vocabulary[key] = pair
+	})
 
-		vertices1[i] = parts
-		for _, p := range parts {
-			vocabulary[p] = identityPair{i, -1}
+	return vocabulary, firstVertices, secondVertices
+}
+
+func identityVertices(identities []string, add func(int, string)) [][]string {
+	vertices := make([][]string, len(identities))
+	for index, identity := range identities {
+		vertices[index] = strings.Split(identity, "|")
+		for _, key := range vertices[index] {
+			add(index, key)
 		}
 	}
 
-	vertices2 := make([][]string, len(rd2))
-	for i, s := range rd2 {
-		parts := strings.Split(s, "|")
+	return vertices
+}
 
-		vertices2[i] = parts
-		for _, p := range parts {
-			if ip, exists := vocabulary[p]; !exists {
-				vocabulary[p] = identityPair{-1, i}
-			} else {
-				ip.Index2 = i
-				vocabulary[p] = ip
-			}
-		}
-	}
-
-	// find the connected components by walking the graph
-	var walks []map[string]bool
+func identityComponents(
+	vocabulary map[string]identityPair, first, second [][]string,
+) []map[string]bool {
+	var components []map[string]bool
 	visited := map[string]bool{}
 
-	walkFromVertex := func(root []string) {
-		walk := map[string]bool{}
-
-		pending := map[string]bool{}
-		for _, p := range root {
-			pending[p] = true
-		}
-
-		for len(pending) > 0 {
-			var element string
-			for e := range pending {
-				element = e
-				delete(pending, e)
-
-				break
+	for _, vertices := range [][][]string{first, second} {
+		for _, vertex := range vertices {
+			if componentVisited(vertex, visited) {
+				continue
 			}
 
-			if !walk[element] {
-				walk[element] = true
-
-				ip := vocabulary[element]
-				if ip.Index1 >= 0 {
-					for _, p := range vertices1[ip.Index1] {
-						if !walk[p] {
-							pending[p] = true
-						}
-					}
-				}
-
-				if ip.Index2 >= 0 {
-					for _, p := range vertices2[ip.Index2] {
-						if !walk[p] {
-							pending[p] = true
-						}
-					}
-				}
+			component := walkIdentityComponent(vertex, vocabulary, first, second)
+			for key := range component {
+				visited[key] = true
 			}
-		}
 
-		for e := range walk {
-			visited[e] = true
+			components = append(components, component)
 		}
-
-		walks = append(walks, walk)
 	}
 
-	for i1 := range rd1 {
-		var skip bool
+	return components
+}
 
-		for _, p := range vertices1[i1] {
-			if visited[p] {
-				skip = true
-				break
-			}
+func componentVisited(vertex []string, visited map[string]bool) bool {
+	for _, key := range vertex {
+		if visited[key] {
+			return true
+		}
+	}
+
+	return false
+}
+
+func walkIdentityComponent(
+	root []string, vocabulary map[string]identityPair, first, second [][]string,
+) map[string]bool {
+	component, pending := map[string]bool{}, map[string]bool{}
+	for _, key := range root {
+		pending[key] = true
+	}
+
+	for len(pending) > 0 {
+		var element string
+		for element = range pending {
+			delete(pending, element)
+			break
 		}
 
-		if skip {
+		if component[element] {
 			continue
 		}
 
-		walkFromVertex(vertices1[i1])
-	}
+		component[element] = true
 
-	for i2 := range rd2 {
-		var skip bool
-
-		for _, p := range vertices2[i2] {
-			if visited[p] {
-				skip = true
-				break
-			}
+		pair := vocabulary[element]
+		if pair.Index1 >= 0 {
+			addPendingIdentities(pending, component, first[pair.Index1])
 		}
 
-		if skip {
-			continue
+		if pair.Index2 >= 0 {
+			addPendingIdentities(pending, component, second[pair.Index2])
 		}
-
-		walkFromVertex(vertices2[i2])
 	}
 
+	return component
+}
+
+func addPendingIdentities(pending, component map[string]bool, identities []string) {
+	for _, identity := range identities {
+		if !component[identity] {
+			pending[identity] = true
+		}
+	}
+}
+
+func joinedPeopleIndex(
+	rd1, rd2 []string, vocabulary map[string]identityPair, walks []map[string]bool,
+) (map[string]JoinedIndex, []string) {
 	mergedStrings := make([]string, 0, len(walks))
 	mergedIndex := map[string]JoinedIndex{}
-	// convert each walk from strings to indexes
+
 	for walkIndex, walk := range walks {
 		ids := make([]string, 0, len(walk))
 		for key := range walk {
 			ids = append(ids, key)
 		}
-		// place emails after names
+
 		sort.Slice(ids, func(i, j int) bool {
 			iid := ids[i]
 			jid := ids[j]
@@ -191,29 +197,44 @@ func PeopleIdentities(rd1, rd2 []string) (map[string]JoinedIndex, []string) {
 		})
 
 		mergedStrings = append(mergedStrings, strings.Join(ids, "|"))
-		for _, key := range ids {
-			ipair := vocabulary[key]
-			if ipair.Index1 >= 0 {
-				s1 := rd1[ipair.Index1]
-				if mi, exists := mergedIndex[s1]; !exists {
-					mergedIndex[s1] = JoinedIndex{walkIndex, ipair.Index1, -1}
-				} else {
-					mergedIndex[s1] = JoinedIndex{walkIndex, ipair.Index1, mi.Second}
-				}
-			}
-
-			if ipair.Index2 >= 0 {
-				s2 := rd2[ipair.Index2]
-				if mi, exists := mergedIndex[s2]; !exists {
-					mergedIndex[s2] = JoinedIndex{walkIndex, -1, ipair.Index2}
-				} else {
-					mergedIndex[s2] = JoinedIndex{walkIndex, mi.First, ipair.Index2}
-				}
-			}
-		}
+		indexIdentityComponent(mergedIndex, ids, walkIndex, rd1, rd2, vocabulary)
 	}
 
 	return mergedIndex, mergedStrings
+}
+
+func indexIdentityComponent(
+	merged map[string]JoinedIndex, identities []string, final int,
+	first, second []string, vocabulary map[string]identityPair,
+) {
+	for _, key := range identities {
+		pair := vocabulary[key]
+		if pair.Index1 >= 0 {
+			identity := first[pair.Index1]
+
+			current, exists := merged[identity]
+			if !exists {
+				current = JoinedIndex{Final: final, First: pair.Index1, Second: -1}
+			} else {
+				current.First = pair.Index1
+			}
+
+			merged[identity] = current
+		}
+
+		if pair.Index2 >= 0 {
+			identity := second[pair.Index2]
+
+			current, exists := merged[identity]
+			if !exists {
+				current = JoinedIndex{Final: final, First: -1, Second: pair.Index2}
+			} else {
+				current.Second = pair.Index2
+			}
+
+			merged[identity] = current
+		}
+	}
 }
 
 // RepositoryIdentities joins two repository name lists together, excluding duplicates.

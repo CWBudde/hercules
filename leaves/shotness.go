@@ -139,164 +139,10 @@ func (shotness *ShotnessAnalysis) Consume(deps map[string]any) (map[string]any, 
 	cache := deps[items.DependencyBlobCache].(map[plumbing.Hash]*items.CachedBlob)
 	allNodes := map[string]bool{}
 
-	addNode := func(name string, node ast_items.Node, fileName string) {
-		nodeSummary := NodeSummary{
-			Type: node.Type,
-			Name: name,
-			File: fileName,
-		}
-		key := nodeSummary.String()
-		exists := allNodes[key]
-		allNodes[key] = true
-
-		var count int
-		if ns := shotness.nodes[key]; ns != nil {
-			count = ns.Count
-		}
-
-		if count == 0 {
-			shotness.nodes[key] = &nodeShotness{
-				Summary: nodeSummary, Count: 1, Couples: map[string]int{},
-			}
-
-			fmap := shotness.files[nodeSummary.File]
-			if fmap == nil {
-				fmap = map[string]*nodeShotness{}
-			}
-
-			fmap[key] = shotness.nodes[key]
-			shotness.files[nodeSummary.File] = fmap
-		} else if !exists {
-			shotness.nodes[key].Count = count + 1
-		}
-	}
-
 	for _, change := range changes {
-		action, err := change.Action()
+		err := shotness.consumeChange(commit, change, diffs, cache, allNodes)
 		if err != nil {
 			return nil, err
-		}
-
-		switch action {
-		case merkletrie.Delete:
-			fromName := change.From.Name
-			for key, summary := range shotness.files[fromName] {
-				for subkey := range summary.Couples {
-					if shotness.nodes[subkey] != nil {
-						delete(shotness.nodes[subkey].Couples, key)
-					}
-				}
-			}
-
-			for key := range shotness.files[fromName] {
-				delete(shotness.nodes, key)
-			}
-
-			delete(shotness.files, fromName)
-		case merkletrie.Insert:
-			toName := change.To.Name
-
-			nodes, err := shotness.extractNodes(toName, cache, change.To.TreeEntry.Hash)
-			if err != nil {
-				shotness.l.Warnf("Shotness: commit %s file %s failed to parse AST: %s\n",
-					commit.Hash.String(), toName, err.Error())
-
-				continue
-			}
-
-			for name, node := range nodes {
-				addNode(name, node, toName)
-			}
-		case merkletrie.Modify:
-			fromName := change.From.Name
-
-			toName := change.To.Name
-			if fromName != toName {
-				oldFile := shotness.files[fromName]
-				newFile := map[string]*nodeShotness{}
-
-				shotness.files[toName] = newFile
-				for oldKey, ns := range oldFile {
-					ns.Summary.File = toName
-					newKey := ns.Summary.String()
-					newFile[newKey] = ns
-
-					shotness.nodes[newKey] = ns
-					for coupleKey, count := range ns.Couples {
-						if shotness.nodes[coupleKey] == nil {
-							continue
-						}
-
-						coupleCouples := shotness.nodes[coupleKey].Couples
-						delete(coupleCouples, oldKey)
-						coupleCouples[newKey] = count
-					}
-				}
-
-				for key := range oldFile {
-					delete(shotness.nodes, key)
-				}
-
-				delete(shotness.files, fromName)
-			}
-
-			nodesBefore, err := shotness.extractNodes(fromName, cache, change.From.TreeEntry.Hash)
-			if err != nil {
-				shotness.l.Warnf("Shotness: commit ^%s file %s failed to parse AST: %s\n",
-					commit.Hash.String(), fromName, err.Error())
-
-				continue
-			}
-
-			nodesAfter, err := shotness.extractNodes(toName, cache, change.To.TreeEntry.Hash)
-			if err != nil {
-				shotness.l.Warnf("Shotness: commit %s file %s failed to parse AST: %s\n",
-					commit.Hash.String(), toName, err.Error())
-
-				continue
-			}
-
-			diff, exists := diffs[toName]
-			if !exists {
-				for name, node := range nodesBefore {
-					addNode(name, node, toName)
-				}
-
-				for name, node := range nodesAfter {
-					addNode(name, node, toName)
-				}
-
-				continue
-			}
-
-			line2nodeBefore := genLine2Node(nodesBefore, diff.OldLinesOfCode)
-			line2nodeAfter := genLine2Node(nodesAfter, diff.NewLinesOfCode)
-			var lineNumBefore, lineNumAfter int
-
-			for _, edit := range diff.Diffs {
-				size := utf8.RuneCountInString(edit.Text)
-				switch edit.Type {
-				case diffmatchpatch.DiffDelete:
-					for l := lineNumBefore; l < lineNumBefore+size && l < len(line2nodeBefore); l++ {
-						for _, node := range line2nodeBefore[l] {
-							addNode(node.Name, node, toName)
-						}
-					}
-
-					lineNumBefore += size
-				case diffmatchpatch.DiffInsert:
-					for l := lineNumAfter; l < lineNumAfter+size && l < len(line2nodeAfter); l++ {
-						for _, node := range line2nodeAfter[l] {
-							addNode(node.Name, node, toName)
-						}
-					}
-
-					lineNumAfter += size
-				case diffmatchpatch.DiffEqual:
-					lineNumBefore += size
-					lineNumAfter += size
-				}
-			}
 		}
 	}
 
@@ -311,6 +157,195 @@ func (shotness *ShotnessAnalysis) Consume(deps map[string]any) (map[string]any, 
 	}
 
 	return nil, nil
+}
+
+func (shotness *ShotnessAnalysis) recordNode(
+	allNodes map[string]bool, name string, node ast_items.Node, fileName string,
+) {
+	summary := NodeSummary{Type: node.Type, Name: name, File: fileName}
+	key := summary.String()
+	seen := allNodes[key]
+	allNodes[key] = true
+
+	current := shotness.nodes[key]
+	if current == nil {
+		current = &nodeShotness{Summary: summary, Count: 1, Couples: map[string]int{}}
+
+		shotness.nodes[key] = current
+		if shotness.files[fileName] == nil {
+			shotness.files[fileName] = map[string]*nodeShotness{}
+		}
+
+		shotness.files[fileName][key] = current
+	} else if !seen {
+		current.Count++
+	}
+}
+
+func (shotness *ShotnessAnalysis) consumeChange(
+	commit *object.Commit,
+	change *object.Change,
+	diffs map[string]items.FileDiffData,
+	cache map[plumbing.Hash]*items.CachedBlob,
+	allNodes map[string]bool,
+) error {
+	action, err := change.Action()
+	if err != nil {
+		return err
+	}
+
+	switch action {
+	case merkletrie.Delete:
+		shotness.deleteFile(change.From.Name)
+	case merkletrie.Insert:
+		shotness.insertFile(commit, change.To.Name, change.To.TreeEntry.Hash, cache, allNodes)
+	case merkletrie.Modify:
+		shotness.modifyFile(commit, change, diffs, cache, allNodes)
+	}
+
+	return nil
+}
+
+func (shotness *ShotnessAnalysis) deleteFile(name string) {
+	for key, summary := range shotness.files[name] {
+		for coupled := range summary.Couples {
+			if shotness.nodes[coupled] != nil {
+				delete(shotness.nodes[coupled].Couples, key)
+			}
+		}
+	}
+
+	for key := range shotness.files[name] {
+		delete(shotness.nodes, key)
+	}
+
+	delete(shotness.files, name)
+}
+
+func (shotness *ShotnessAnalysis) insertFile(
+	commit *object.Commit, name string, hash plumbing.Hash,
+	cache map[plumbing.Hash]*items.CachedBlob, allNodes map[string]bool,
+) {
+	nodes, err := shotness.extractNodes(name, cache, hash)
+	if err != nil {
+		shotness.warnParse(commit, name, false, err)
+		return
+	}
+
+	for nodeName, node := range nodes {
+		shotness.recordNode(allNodes, nodeName, node, name)
+	}
+}
+
+func (shotness *ShotnessAnalysis) modifyFile(
+	commit *object.Commit, change *object.Change,
+	diffs map[string]items.FileDiffData, cache map[plumbing.Hash]*items.CachedBlob,
+	allNodes map[string]bool,
+) {
+	fromName, toName := change.From.Name, change.To.Name
+	if fromName != toName {
+		shotness.renameFile(fromName, toName)
+	}
+
+	before, err := shotness.extractNodes(fromName, cache, change.From.TreeEntry.Hash)
+	if err != nil {
+		shotness.warnParse(commit, fromName, true, err)
+		return
+	}
+
+	after, err := shotness.extractNodes(toName, cache, change.To.TreeEntry.Hash)
+	if err != nil {
+		shotness.warnParse(commit, toName, false, err)
+		return
+	}
+
+	diff, exists := diffs[toName]
+	if !exists {
+		for name, node := range before {
+			shotness.recordNode(allNodes, name, node, toName)
+		}
+
+		for name, node := range after {
+			shotness.recordNode(allNodes, name, node, toName)
+		}
+
+		return
+	}
+
+	shotness.recordChangedNodes(allNodes, toName, before, after, diff)
+}
+
+func (shotness *ShotnessAnalysis) renameFile(from, to string) {
+	oldFile := shotness.files[from]
+	newFile := map[string]*nodeShotness{}
+
+	shotness.files[to] = newFile
+	for oldKey, node := range oldFile {
+		node.Summary.File = to
+		newKey := node.Summary.String()
+
+		newFile[newKey], shotness.nodes[newKey] = node, node
+		for coupledKey, count := range node.Couples {
+			if shotness.nodes[coupledKey] != nil {
+				delete(shotness.nodes[coupledKey].Couples, oldKey)
+				shotness.nodes[coupledKey].Couples[newKey] = count
+			}
+		}
+	}
+
+	for key := range oldFile {
+		delete(shotness.nodes, key)
+	}
+
+	delete(shotness.files, from)
+}
+
+func (shotness *ShotnessAnalysis) warnParse(
+	commit *object.Commit, name string, before bool, err error,
+) {
+	prefix := ""
+	if before {
+		prefix = "^"
+	}
+
+	shotness.l.Warnf(
+		"Shotness: commit %s%s file %s failed to parse AST: %s\n",
+		prefix, commit.Hash.String(), name, err.Error(),
+	)
+}
+
+func (shotness *ShotnessAnalysis) recordChangedNodes(
+	allNodes map[string]bool, fileName string,
+	before, after map[string]ast_items.Node, diff items.FileDiffData,
+) {
+	beforeLines := genLine2Node(before, diff.OldLinesOfCode)
+	afterLines := genLine2Node(after, diff.NewLinesOfCode)
+	var beforeLine, afterLine int
+
+	for _, edit := range diff.Diffs {
+		size := utf8.RuneCountInString(edit.Text)
+		switch edit.Type {
+		case diffmatchpatch.DiffDelete:
+			shotness.recordNodesOnLines(allNodes, fileName, beforeLines, beforeLine, size)
+			beforeLine += size
+		case diffmatchpatch.DiffInsert:
+			shotness.recordNodesOnLines(allNodes, fileName, afterLines, afterLine, size)
+			afterLine += size
+		case diffmatchpatch.DiffEqual:
+			beforeLine += size
+			afterLine += size
+		}
+	}
+}
+
+func (shotness *ShotnessAnalysis) recordNodesOnLines(
+	allNodes map[string]bool, fileName string, lines [][]ast_items.Node, start, count int,
+) {
+	for line := start; line < start+count && line < len(lines); line++ {
+		for _, node := range lines[line] {
+			shotness.recordNode(allNodes, node.Name, node, fileName)
+		}
+	}
 }
 
 func genLine2Node(nodes map[string]ast_items.Node, linesNum int) [][]ast_items.Node {

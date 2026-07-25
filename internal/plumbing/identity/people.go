@@ -255,12 +255,10 @@ func (detector *PeopleDetector) Configure(facts map[string]any) error {
 	}
 
 	if val, exists := identityMergeThresholdFromFacts(facts); exists {
-		if val < 0 || val > 1 {
-			return errors.Errorf("%s must be between 0 and 1: %f", ConfigIdentityDetectorMergeThreshold, val)
+		err := detector.setMergeThreshold(val)
+		if err != nil {
+			return err
 		}
-
-		detector.MergeThreshold = val
-		detector.mergeThresholdConfigured = true
 	}
 
 	if peopleDictPath, ok := facts[ConfigIdentityDetectorPeopleDictPath].(string); ok && peopleDictPath != "" {
@@ -271,31 +269,51 @@ func (detector *PeopleDetector) Configure(facts map[string]any) error {
 	}
 
 	if detector.ReversedPeopleDict == nil {
-		if _, exists := facts[core.ConfigPipelineCommits]; !exists {
+		commits, exists := facts[core.ConfigPipelineCommits].([]*object.Commit)
+		if !exists {
 			panic("PeopleDetector needs a list of commits to initialize.")
 		}
 
-		detector.GeneratePeopleDict(facts[core.ConfigPipelineCommits].([]*object.Commit))
+		detector.GeneratePeopleDict(commits)
 	}
 
 	facts[FactIdentityDetectorReversedPeopleDict] = detector.ReversedPeopleDict
-
-	if detector.PeopleDict == nil {
-		detector.PeopleDict = make(map[string]int, len(detector.ReversedPeopleDict))
-		for k, v := range detector.ReversedPeopleDict {
-			detector.PeopleDict[v] = k
-		}
-	}
-
-	if len(detector.audit.Identities) == 0 && len(detector.ReversedPeopleDict) > 0 {
-		detector.ensureMergeThreshold()
-		detector.rebuildAuditFromState(nil, nil, nil)
-	}
+	detector.ensurePeopleDictionary()
+	detector.ensureIdentityAudit()
 
 	var resolver core.IdentityResolver = peopleResolver{detector}
 	facts[core.FactIdentityResolver] = resolver
 
 	return nil
+}
+
+func (detector *PeopleDetector) setMergeThreshold(value float64) error {
+	if value < 0 || value > 1 {
+		return errors.Errorf("%s must be between 0 and 1: %f", ConfigIdentityDetectorMergeThreshold, value)
+	}
+
+	detector.MergeThreshold = value
+	detector.mergeThresholdConfigured = true
+
+	return nil
+}
+
+func (detector *PeopleDetector) ensurePeopleDictionary() {
+	if detector.PeopleDict != nil {
+		return
+	}
+
+	detector.PeopleDict = make(map[string]int, len(detector.ReversedPeopleDict))
+	for index, identity := range detector.ReversedPeopleDict {
+		detector.PeopleDict[identity] = index
+	}
+}
+
+func (detector *PeopleDetector) ensureIdentityAudit() {
+	if len(detector.audit.Identities) == 0 && len(detector.ReversedPeopleDict) > 0 {
+		detector.ensureMergeThreshold()
+		detector.rebuildAuditFromState(nil, nil, nil)
+	}
 }
 
 func (*PeopleDetector) ConfigureUpstream(map[string]any) error {
@@ -395,54 +413,8 @@ func (detector *PeopleDetector) GeneratePeopleDict(commits []*object.Commit) {
 	var ambiguous []IdentityMergeSuggestion
 	size := 0
 
-	// TODO(vmarkovtsev): properly handle .mailmap if ExactSignatures
 	if !detector.ExactSignatures {
-		if mailMapContents, ok := lastCommitMailmapContents(commits); ok {
-			mailmap := ParseMailmap(mailMapContents)
-			for key, val := range mailmap {
-				key = strings.ToLower(key)
-				toEmail := strings.ToLower(val.Email)
-				toName := strings.ToLower(val.Name)
-
-				id, exists := dict[toEmail]
-				if !exists {
-					id, exists = dict[toName]
-				}
-
-				if exists {
-					dict[key] = id
-				} else {
-					id = size
-					size++
-
-					if toEmail != "" {
-						dict[toEmail] = id
-						emails[id] = append(emails[id], toEmail)
-					}
-
-					if toName != "" {
-						dict[toName] = id
-						names[id] = append(names[id], toName)
-					}
-
-					dict[key] = id
-				}
-
-				if strings.Contains(key, "@") {
-					exists := slices.Contains(emails[id], key)
-
-					if !exists {
-						emails[id] = append(emails[id], key)
-					}
-				} else {
-					exists := slices.Contains(names[id], key)
-
-					if !exists {
-						names[id] = append(names[id], key)
-					}
-				}
-			}
-		}
+		loadMailmapIdentities(commits, dict, names, emails, &size)
 	}
 
 	for _, commit := range commits {
@@ -474,23 +446,66 @@ func (detector *PeopleDetector) GeneratePeopleDict(commits []*object.Commit) {
 		}
 	}
 
-	reverseDict := make([]string, size)
+	detector.PeopleDict = dict
+	detector.ReversedPeopleDict = reversePeopleDictionary(dict, names, emails, size, detector.ExactSignatures)
+	detector.rebuildAuditFromState(names, emails, sourceCounts, decisions, ambiguous)
+}
 
-	if !detector.ExactSignatures {
-		for _, val := range dict {
-			sort.Strings(names[val])
-			sort.Strings(emails[val])
-			reverseDict[val] = strings.Join(names[val], "|") + "|" + strings.Join(emails[val], "|")
-		}
-	} else {
-		for key, val := range dict {
-			reverseDict[val] = key
-		}
+func loadMailmapIdentities(
+	commits []*object.Commit,
+	dict map[string]int,
+	names, emails map[int][]string,
+	size *int,
+) {
+	contents, ok := lastCommitMailmapContents(commits)
+	if !ok {
+		return
 	}
 
-	detector.PeopleDict = dict
-	detector.ReversedPeopleDict = reverseDict
-	detector.rebuildAuditFromState(names, emails, sourceCounts, decisions, ambiguous)
+	for key, value := range ParseMailmap(contents) {
+		key = strings.ToLower(key)
+		email := strings.ToLower(value.Email)
+		name := strings.ToLower(value.Name)
+
+		id, exists := dict[email]
+		if !exists {
+			id, exists = dict[name]
+		}
+
+		if !exists {
+			id = *size
+			*size++
+
+			addIdentityKey(id, email, true, dict, names, emails)
+			addIdentityKey(id, name, false, dict, names, emails)
+		}
+
+		dict[key] = id
+		if strings.Contains(key, "@") && !slices.Contains(emails[id], key) {
+			emails[id] = append(emails[id], key)
+		} else if !strings.Contains(key, "@") && !slices.Contains(names[id], key) {
+			names[id] = append(names[id], key)
+		}
+	}
+}
+
+func reversePeopleDictionary(
+	dict map[string]int, names, emails map[int][]string, size int, exact bool,
+) []string {
+	reversed := make([]string, size)
+
+	for key, id := range dict {
+		if exact {
+			reversed[id] = key
+			continue
+		}
+
+		sort.Strings(names[id])
+		sort.Strings(emails[id])
+		reversed[id] = strings.Join(names[id], "|") + "|" + strings.Join(emails[id], "|")
+	}
+
+	return reversed
 }
 
 func (detector *PeopleDetector) ensureMergeThreshold() {
@@ -521,49 +536,18 @@ func (detector *PeopleDetector) addSignature(name, email, reason string, size *i
 		return core.AuthorMissing, nil
 	}
 
-	if email != "" {
-		if id, exists := dict[email]; exists {
-			sourceCounts[id]++
-			to := peopleDictLine(names[id], emails[id])
-			addIdentityKey(id, name, false, dict, names, emails)
-
-			return id, mergeDecisionForReason(id, name, email, reason, to, 1)
-		}
-	}
-
-	if name != "" {
-		if id, exists := dict[name]; exists {
-			sourceCounts[id]++
-			to := peopleDictLine(names[id], emails[id])
-			addIdentityKey(id, email, true, dict, names, emails)
-
-			return id, mergeDecisionForReason(id, name, email, reason, to, 1)
-		}
+	if id, decision, found := matchExistingSignature(
+		name, email, reason, dict, names, emails, sourceCounts,
+	); found {
+		return id, decision
 	}
 
 	if reason == "commit" {
-		if candidate, confidence, tied := detector.bestFuzzyCandidate(name, email, names, emails); candidate != core.AuthorMissing {
-			suggestion := IdentityMergeSuggestion{
-				Left:       detector.identityLine(candidate, names, emails),
-				Right:      peopleDictLine([]string{name}, []string{email}),
-				Reason:     "fuzzy-name",
-				Confidence: confidence,
-			}
-			if !tied && confidence >= detector.MergeThreshold {
-				sourceCounts[candidate]++
-				addIdentityKey(candidate, name, false, dict, names, emails)
-				addIdentityKey(candidate, email, true, dict, names, emails)
-
-				return candidate, &IdentityMergeDecision{
-					Identity:   candidate,
-					From:       suggestion.Right,
-					To:         suggestion.Left,
-					Reason:     "fuzzy-name",
-					Confidence: confidence,
-				}
-			}
-
-			*ambiguous = append(*ambiguous, suggestion)
+		id, decision, found := detector.matchFuzzySignature(
+			name, email, dict, names, emails, sourceCounts, ambiguous,
+		)
+		if found {
+			return id, decision
 		}
 	}
 
@@ -574,6 +558,62 @@ func (detector *PeopleDetector) addSignature(name, email, reason string, size *i
 	addIdentityKey(id, email, true, dict, names, emails)
 
 	return id, nil
+}
+
+func matchExistingSignature(
+	name, email, reason string,
+	dict map[string]int,
+	names, emails map[int][]string,
+	sourceCounts map[int]int,
+) (int, *IdentityMergeDecision, bool) {
+	if id, exists := dict[email]; email != "" && exists {
+		sourceCounts[id]++
+		to := peopleDictLine(names[id], emails[id])
+		addIdentityKey(id, name, false, dict, names, emails)
+
+		return id, mergeDecisionForReason(id, name, email, reason, to, 1), true
+	}
+
+	if id, exists := dict[name]; name != "" && exists {
+		sourceCounts[id]++
+		to := peopleDictLine(names[id], emails[id])
+		addIdentityKey(id, email, true, dict, names, emails)
+
+		return id, mergeDecisionForReason(id, name, email, reason, to, 1), true
+	}
+
+	return 0, nil, false
+}
+
+func (detector *PeopleDetector) matchFuzzySignature(
+	name, email string,
+	dict map[string]int,
+	names, emails map[int][]string,
+	sourceCounts map[int]int,
+	ambiguous *[]IdentityMergeSuggestion,
+) (int, *IdentityMergeDecision, bool) {
+	candidate, confidence, tied := detector.bestFuzzyCandidate(name, email, names, emails)
+	if candidate == core.AuthorMissing {
+		return 0, nil, false
+	}
+
+	suggestion := IdentityMergeSuggestion{
+		Left:  detector.identityLine(candidate, names, emails),
+		Right: peopleDictLine([]string{name}, []string{email}), Reason: "fuzzy-name", Confidence: confidence,
+	}
+	if tied || confidence < detector.MergeThreshold {
+		*ambiguous = append(*ambiguous, suggestion)
+		return 0, nil, false
+	}
+
+	sourceCounts[candidate]++
+	addIdentityKey(candidate, name, false, dict, names, emails)
+	addIdentityKey(candidate, email, true, dict, names, emails)
+
+	return candidate, &IdentityMergeDecision{
+		Identity: candidate, From: suggestion.Right, To: suggestion.Left,
+		Reason: "fuzzy-name", Confidence: confidence,
+	}, true
 }
 
 func mergeDecisionForReason(id int, name, email, reason, to string, confidence float64) *IdentityMergeDecision {

@@ -599,62 +599,14 @@ func (items sortablePipelineItems) Swap(i, j int) {
 
 func (pipeline *Pipeline) resolve(dumpPath string, priorityFn DependencyPriorityFunc) error {
 	sort.Sort(sortablePipelineItems(pipeline.items))
+	graph, name2item, dataKeys := pipeline.dependencyGraph()
 
-	name2item := make(map[string]PipelineItem, len(pipeline.items))
-	name2data := make(map[string]struct{})
-
-	graph := toposort.NewGraphWithInsertionOrder()
-
-	{
-		itemUsages := make(map[string]int, len(pipeline.items))
-		for _, item := range pipeline.items {
-			name := item.Name()
-			index := itemUsages[name] + 1
-			itemUsages[name] = index
-			name = fmt.Sprintf("%s_%d", name, index)
-			name2item[name] = item
-
-			graph.AddNode(name)
-
-			for _, key := range item.Requires() {
-				key = "[" + key + "]"
-				name2data[key] = struct{}{}
-				graph.AddNode(key)
-				graph.AddEdge(key, name)
-			}
-
-			for _, key := range item.Provides() {
-				key = "[" + key + "]"
-				name2data[key] = struct{}{}
-				graph.AddNode(key)
-				graph.AddEdge(name, key)
-			}
-		}
+	ambiguousDataKeys, err := pipeline.validateDependencies(graph, dataKeys)
+	if err != nil {
+		return err
 	}
 
-	ambiguousInputs := map[string]struct{}{}
-
-	for name := range name2data {
-		nParents, _ := graph.InputCount(name)
-		if nParents == 0 {
-			children := graph.FindChildren(name)
-			sort.Strings(children)
-			pipeline.l.Criticalf("Unsatisfied dependency: %s -> %s", name, children)
-
-			return errors.New("unsatisfied dependency")
-		}
-
-		if nParents > 1 {
-			ambiguousInputs[name] = struct{}{}
-		}
-	}
-
-	if len(ambiguousInputs) > 0 {
-		ambiguousDataKeys := make([]string, 0, len(ambiguousInputs))
-		for key := range ambiguousInputs {
-			ambiguousDataKeys = append(ambiguousDataKeys, key)
-		}
-
+	if len(ambiguousDataKeys) > 0 {
 		pipeline.resolveAmbiguous(ambiguousDataKeys, graph, name2item, priorityFn)
 	}
 
@@ -675,20 +627,82 @@ func (pipeline *Pipeline) resolve(dumpPath string, priorityFn DependencyPriority
 		}
 	}
 
-	if dumpPath != "" {
-		// If there is a floating difference, uncomment this:
-		// fmt.Fprint(os.Stderr, graphCopy.DebugDump())
-		plan := graph.Serialize(pipelinePlan)
-		if dumpPath != "-" {
-			_ = os.WriteFile(dumpPath, []byte(plan), 0o600)
-			absPath, _ := filepath.Abs(dumpPath)
-			pipeline.l.Infof("Wrote the DAG to %s\n", absPath)
-		} else {
-			_, _ = fmt.Fprint(os.Stderr, plan)
+	pipeline.dumpDependencyGraph(graph, pipelinePlan, dumpPath)
+
+	return nil
+}
+
+func (pipeline *Pipeline) dependencyGraph() (
+	*toposort.Graph, map[string]PipelineItem, map[string]struct{},
+) {
+	graph := toposort.NewGraphWithInsertionOrder()
+	items := make(map[string]PipelineItem, len(pipeline.items))
+	dataKeys := make(map[string]struct{})
+
+	itemUsages := make(map[string]int, len(pipeline.items))
+	for _, item := range pipeline.items {
+		itemUsages[item.Name()]++
+		name := fmt.Sprintf("%s_%d", item.Name(), itemUsages[item.Name()])
+		items[name] = item
+		graph.AddNode(name)
+
+		for _, key := range item.Requires() {
+			dataKey := "[" + key + "]"
+			dataKeys[dataKey] = struct{}{}
+			graph.AddNode(dataKey)
+			graph.AddEdge(dataKey, name)
+		}
+
+		for _, key := range item.Provides() {
+			dataKey := "[" + key + "]"
+			dataKeys[dataKey] = struct{}{}
+			graph.AddNode(dataKey)
+			graph.AddEdge(name, dataKey)
 		}
 	}
 
-	return nil
+	return graph, items, dataKeys
+}
+
+func (pipeline *Pipeline) validateDependencies(
+	graph *toposort.Graph, dataKeys map[string]struct{},
+) ([]string, error) {
+	var ambiguous []string
+
+	for name := range dataKeys {
+		parentCount, _ := graph.InputCount(name)
+		if parentCount == 0 {
+			children := graph.FindChildren(name)
+			sort.Strings(children)
+			pipeline.l.Criticalf("Unsatisfied dependency: %s -> %s", name, children)
+
+			return nil, errors.New("unsatisfied dependency")
+		}
+
+		if parentCount > 1 {
+			ambiguous = append(ambiguous, name)
+		}
+	}
+
+	return ambiguous, nil
+}
+
+func (pipeline *Pipeline) dumpDependencyGraph(
+	graph *toposort.Graph, plan []string, dumpPath string,
+) {
+	if dumpPath == "" {
+		return
+	}
+
+	serialized := graph.Serialize(plan)
+	if dumpPath == "-" {
+		_, _ = fmt.Fprint(os.Stderr, serialized)
+		return
+	}
+
+	_ = os.WriteFile(dumpPath, []byte(serialized), 0o600)
+	absPath, _ := filepath.Abs(dumpPath)
+	pipeline.l.Infof("Wrote the DAG to %s\n", absPath)
 }
 
 // break cycles - unwinds sequential processing of same facts.
@@ -699,117 +713,130 @@ func (pipeline *Pipeline) resolveAmbiguous(ambiguousDataKeys []string,
 	bfsIndex := graph.BreadthSort() // TODO improve sorting to consider node ordering
 
 	for _, key := range ambiguousDataKeys {
-		ambInputs := graph.FindParents(key)
-		toposort.SortByNodeIndex(ambInputs, bfsIndex)
+		pipeline.resolveAmbiguousKey(key, graph, name2item, priorityFn, bfsIndex)
+	}
+}
 
-		excludes := map[string]struct{}{}
+func (pipeline *Pipeline) resolveAmbiguousKey(
+	key string,
+	graph *toposort.Graph,
+	name2item map[string]PipelineItem,
+	priorityFn DependencyPriorityFunc,
+	bfsIndex map[string]toposort.NodePosition,
+) {
+	inputs := graph.FindParents(key)
+	toposort.SortByNodeIndex(inputs, bfsIndex)
 
-		{
-			last := len(ambInputs)
-			lastLevel := 0
+	inputs = pipeline.removeEquivalentInputs(inputs, graph, name2item, priorityFn, bfsIndex)
+	if len(inputs) < 2 {
+		return
+	}
 
-			for i := last - 1; i >= -1; i-- {
-				level := -1
-				if i >= 0 {
-					level = bfsIndex[ambInputs[i]].Level
-				}
+	for _, input := range inputs {
+		graph.RemoveEdge(input, key)
+	}
 
-				if level != lastLevel {
-					if s := ambInputs[i+1 : last]; len(s) > 1 {
-						graph.Sort(s) // because BreadthSort doesn't do it properly
-						pipeline.resolveAlternatives(graph, s, name2item, priorityFn, excludes)
-					}
+	replacements := wireAmbiguousInputs(key, inputs, graph)
+	repairAmbiguousChildren(key, replacements, graph)
+}
 
-					lastLevel = level
-					last = i + 1
-				}
-			}
+func (pipeline *Pipeline) removeEquivalentInputs(
+	inputs []string,
+	graph *toposort.Graph,
+	name2item map[string]PipelineItem,
+	priorityFn DependencyPriorityFunc,
+	bfsIndex map[string]toposort.NodePosition,
+) []string {
+	excludes := map[string]struct{}{}
+
+	last, lastLevel := len(inputs), 0
+	for i := last - 1; i >= -1; i-- {
+		level := -1
+		if i >= 0 {
+			level = bfsIndex[inputs[i]].Level
 		}
 
-		if len(excludes) > 0 {
-			j := 0
-
-			for i := 0; i < len(ambInputs); i++ {
-				ambInput := ambInputs[i]
-				if _, ok := excludes[ambInput]; ok {
-					// resolveAlternatives will only exclude equivalent nodes, so there will be no change to DAG
-					graph.RemoveNode(ambInput)
-					continue
-				}
-
-				if i != j {
-					ambInputs[j] = ambInputs[i]
-				}
-
-				j++
+		if level != lastLevel {
+			if alternatives := inputs[i+1 : last]; len(alternatives) > 1 {
+				graph.Sort(alternatives)
+				pipeline.resolveAlternatives(graph, alternatives, name2item, priorityFn, excludes)
 			}
 
-			ambInputs = ambInputs[:j]
+			lastLevel, last = level, i+1
+		}
+	}
+
+	kept := inputs[:0]
+	for _, input := range inputs {
+		if _, excluded := excludes[input]; excluded {
+			graph.RemoveNode(input)
+		} else {
+			kept = append(kept, input)
+		}
+	}
+
+	return kept
+}
+
+func wireAmbiguousInputs(
+	key string, inputs []string, graph *toposort.Graph,
+) map[string]string {
+	replacements := map[string]string{}
+
+	nextCycleNode := key
+	for reverseIndex, input := range slices.Backward(inputs) {
+		graph.AddEdge(input, key)
+		cycle := graph.FindCycle(input)
+		nextNode := input
+
+		if len(cycle) == 0 {
+			if reverseIndex != 0 {
+				continue
+			}
+
+			nextNode = key
+		} else if len(cycle) == 1 || cycle[1] != key {
+			panic("unexpected")
+		} else {
+			if len(cycle) > 2 {
+				nextNode = cycle[2]
+			}
+
+			graph.RemoveEdge(key, nextNode)
 		}
 
-		if len(ambInputs) < 2 {
+		if nextCycleNode != key {
+			graph.RemoveEdge(input, key)
+			graph.AddEdge(input, nextCycleNode)
+			replacements[nextCycleNode] = input
+		}
+
+		nextCycleNode = nextNode
+	}
+
+	return replacements
+}
+
+func repairAmbiguousChildren(
+	key string, replacements map[string]string, graph *toposort.Graph,
+) {
+	for _, child := range graph.FindChildren(key) {
+		cycle := graph.FindCycle(child)
+		if len(cycle) == 0 {
 			continue
 		}
 
-		for _, ambInput := range ambInputs {
-			graph.RemoveEdge(ambInput, key)
+		if len(cycle) < 3 || cycle[len(cycle)-1] != key {
+			panic("unexpected")
 		}
 
-		replacingParents := map[string]string{}
-		nextCycleNode := key
-
-		for i, v := range slices.Backward(ambInputs) {
-			ambInput := v
-			graph.AddEdge(ambInput, key)
-			cycle := graph.FindCycle(ambInput)
-
-			nextNode := ambInput
-
-			if len(cycle) == 0 {
-				if i != 0 {
-					continue
-				}
-
-				nextNode = key
-			} else if len(cycle) == 1 || cycle[1] != key {
-				panic("unexpected")
-			} else {
-				if len(cycle) > 2 {
-					nextNode = cycle[2]
-				}
-
-				graph.RemoveEdge(key, nextNode)
-			}
-
-			if nextCycleNode != key {
-				graph.RemoveEdge(ambInput, key)
-				graph.AddEdge(ambInput, nextCycleNode)
-				replacingParents[nextCycleNode] = ambInput
-			}
-
-			nextCycleNode = nextNode
+		replacement := replacements[cycle[len(cycle)-2]]
+		if replacement == "" {
+			panic("unexpected")
 		}
 
-		children := graph.FindChildren(key)
-
-		for _, child := range children {
-			cycle := graph.FindCycle(child)
-			if len(cycle) == 0 {
-				continue
-			} else if len(cycle) < 3 || cycle[len(cycle)-1] != key {
-				panic("unexpected")
-			}
-
-			loopingParent := cycle[len(cycle)-2]
-
-			replacingParent := replacingParents[loopingParent]
-			if replacingParent == "" {
-				panic("unexpected")
-			}
-
-			graph.RemoveEdge(key, child)
-			graph.AddEdge(replacingParent, child)
-		}
+		graph.RemoveEdge(key, child)
+		graph.AddEdge(replacement, child)
 	}
 }
 
@@ -847,67 +874,24 @@ func (pipeline *Pipeline) InitializeExt(facts map[string]any,
 		}
 	}()
 
-	// set logger from facts, otherwise set the pipeline's logger as the logger
-	// to be used by all analysis tasks by setting the fact
-	if l, exists := facts[ConfigLogger].(Logger); exists {
-		pipeline.l = l
-	} else {
-		facts[ConfigLogger] = pipeline.l
-	}
-
-	pipeline.PrintActions, _ = facts[ConfigPipelinePrintActions].(bool)
-	if val, exists := facts[ConfigPipelineHibernationDistance].(int); exists {
-		if val < 0 {
-			err := fmt.Errorf("--hibernation-distance cannot be negative (got %d)", val)
-			pipeline.l.Error(err)
-
-			return err
-		}
-
-		pipeline.HibernationDistance = val
-	}
-
-	dumpPath, _ := facts[ConfigPipelineDAGPath].(string)
-
-	err := pipeline.resolve(dumpPath, priorityFn)
+	err := pipeline.applyConfigurationFacts(facts)
 	if err != nil {
 		return err
 	}
 
-	if dumpPlan, exists := facts[ConfigPipelineDumpPlan].(bool); exists {
-		pipeline.DumpPlan = dumpPlan
-	}
-
-	if dryRun, exists := facts[ConfigPipelineDryRun].(bool); exists {
-		pipeline.DryRun = dryRun
+	dumpPath, _ := facts[ConfigPipelineDAGPath].(string)
+	err = pipeline.resolve(dumpPath, priorityFn)
+	if err != nil {
+		return err
 	}
 
 	mergeTracks, _ := pipeline.GetFeature(FeatureMergeTracks)
-
 	if !preparePlan && mergeTracks {
 		return errors.New("merge tracks mode is not allowed")
 	}
 
-	planCooker := func() {
-		if commits, ok := facts[ConfigPipelineCommits].([]*object.Commit); ok {
-			var prepared preparedRun
-			prepared.commitCount = len(commits)
-
-			prepared.plan, prepared.mergeHashCount = prepareRunPlan(commits, pipeline.HibernationDistance, mergeTracks)
-			if mergeTracks {
-				facts[FactMergeHashCount] = prepared.mergeHashCount
-			}
-
-			pipeline.preparedRun = &prepared
-
-			return
-		}
-
-		pipeline.preparedRun = nil
-	}
-
 	if preparePlan {
-		planCooker()
+		pipeline.prepareRun(facts, mergeTracks)
 	}
 
 	if pipeline.DryRun {
@@ -915,28 +899,94 @@ func (pipeline *Pipeline) InitializeExt(facts map[string]any,
 		return nil
 	}
 
-	for _, item := range pipeline.items {
-		err := item.Configure(facts)
-		if err != nil {
-			cleanReturn = true
-			return errors.Wrapf(err, "%s failed to configure", item.Name())
-		}
+	err = pipeline.configureItems(facts)
+	if err != nil {
+		cleanReturn = true
+		return err
 	}
 
 	if pipeline.preparedRun == nil && preparePlan {
-		planCooker()
+		pipeline.prepareRun(facts, mergeTracks)
 
 		if pipeline.preparedRun == nil {
 			return errors.New("commits are not available")
 		}
 	}
 
-	for _, v := range slices.Backward(pipeline.items) {
-		item := v
+	err = pipeline.initializeItems(facts)
+	if err != nil {
+		cleanReturn = true
+		return err
+	}
 
+	if pipeline.HibernationDistance > 0 {
+		debug.SetGCPercent(20)
+	}
+
+	cleanReturn = true
+
+	return nil
+}
+
+func (pipeline *Pipeline) applyConfigurationFacts(facts map[string]any) error {
+	if logger, exists := facts[ConfigLogger].(Logger); exists {
+		pipeline.l = logger
+	} else {
+		facts[ConfigLogger] = pipeline.l
+	}
+
+	pipeline.PrintActions, _ = facts[ConfigPipelinePrintActions].(bool)
+	pipeline.DumpPlan, _ = facts[ConfigPipelineDumpPlan].(bool)
+
+	pipeline.DryRun, _ = facts[ConfigPipelineDryRun].(bool)
+	if distance, exists := facts[ConfigPipelineHibernationDistance].(int); exists {
+		if distance < 0 {
+			err := fmt.Errorf("--hibernation-distance cannot be negative (got %d)", distance)
+			pipeline.l.Error(err)
+
+			return err
+		}
+
+		pipeline.HibernationDistance = distance
+	}
+
+	return nil
+}
+
+func (pipeline *Pipeline) prepareRun(facts map[string]any, mergeTracks bool) {
+	commits, ok := facts[ConfigPipelineCommits].([]*object.Commit)
+	if !ok {
+		pipeline.preparedRun = nil
+		return
+	}
+
+	prepared := &preparedRun{commitCount: len(commits)}
+
+	prepared.plan, prepared.mergeHashCount = prepareRunPlan(
+		commits, pipeline.HibernationDistance, mergeTracks,
+	)
+	if mergeTracks {
+		facts[FactMergeHashCount] = prepared.mergeHashCount
+	}
+
+	pipeline.preparedRun = prepared
+}
+
+func (pipeline *Pipeline) configureItems(facts map[string]any) error {
+	for _, item := range pipeline.items {
+		err := item.Configure(facts)
+		if err != nil {
+			return errors.Wrapf(err, "%s failed to configure", item.Name())
+		}
+	}
+
+	return nil
+}
+
+func (pipeline *Pipeline) initializeItems(facts map[string]any) error {
+	for _, item := range slices.Backward(pipeline.items) {
 		err := item.ConfigureUpstream(facts)
 		if err != nil {
-			cleanReturn = true
 			return errors.Wrapf(err, "%s failed to configure upstream", item.Name())
 		}
 	}
@@ -944,17 +994,9 @@ func (pipeline *Pipeline) InitializeExt(facts map[string]any,
 	for _, item := range pipeline.items {
 		err := item.Initialize(pipeline.repository)
 		if err != nil {
-			cleanReturn = true
 			return errors.Wrapf(err, "%s failed to initialize", item.Name())
 		}
 	}
-
-	if pipeline.HibernationDistance > 0 {
-		// if we want hibernation, then we want to minimize RSS
-		debug.SetGCPercent(20) // the default is 100
-	}
-
-	cleanReturn = true
 
 	return nil
 }

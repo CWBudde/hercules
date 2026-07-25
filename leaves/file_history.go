@@ -114,64 +114,70 @@ func (history *FileHistoryAnalysis) Consume(deps map[string]any) (map[string]any
 	changes := deps[items.DependencyTreeChanges].(object.Changes)
 	for _, change := range changes {
 		action, _ := change.Action()
-
-		var fh *FileHistory
-		if action != merkletrie.Delete {
-			fh = history.files[change.To.Name]
-		} else {
-			fh = history.files[change.From.Name]
-		}
-
-		if fh == nil {
-			fh = &FileHistory{}
-			history.files[change.To.Name] = fh
-		}
-
-		switch action {
-		case merkletrie.Insert:
-			fh.Hashes = []plumbing.Hash{commit}
-		case merkletrie.Delete:
-			fh.Hashes = append(fh.Hashes, commit)
-		case merkletrie.Modify:
-			var hashes []plumbing.Hash
-			if fromFile := history.files[change.From.Name]; fromFile != nil {
-				hashes = fromFile.Hashes
-			}
-
-			if change.From.Name != change.To.Name {
-				delete(history.files, change.From.Name)
-			}
-
-			hashes = append(hashes, commit)
-			fh.Hashes = hashes
-		}
+		history.recordFileCommit(change, action, commit)
 	}
 
 	lineStats := deps[items.DependencyLineStats].(map[object.ChangeEntry]items.LineStats)
+
 	author := deps[identity.DependencyAuthor].(int)
-
 	for changeEntry, stats := range lineStats {
-		file := history.files[changeEntry.Name]
-		if file == nil {
-			file = &FileHistory{}
-			history.files[changeEntry.Name] = file
-		}
-
-		people := file.People
-		if people == nil {
-			people = map[int]items.LineStats{}
-			file.People = people
-		}
-
-		oldStats := people[author]
-		people[author] = items.LineStats{
-			Added:   oldStats.Added + stats.Added,
-			Removed: oldStats.Removed + stats.Removed,
-			Changed: oldStats.Changed + stats.Changed,
-		}
+		history.recordAuthorStats(changeEntry.Name, author, stats)
 	}
 
 	return nil, nil
+}
+
+func (history *FileHistoryAnalysis) recordFileCommit(
+	change *object.Change, action merkletrie.Action, commit plumbing.Hash,
+) {
+	name := change.To.Name
+	if action == merkletrie.Delete {
+		name = change.From.Name
+	}
+
+	file := history.files[name]
+	if file == nil {
+		file = &FileHistory{}
+		history.files[change.To.Name] = file
+	}
+
+	switch action {
+	case merkletrie.Insert:
+		file.Hashes = []plumbing.Hash{commit}
+	case merkletrie.Delete:
+		file.Hashes = append(file.Hashes, commit)
+	case merkletrie.Modify:
+		var hashes []plumbing.Hash
+		if previous := history.files[change.From.Name]; previous != nil {
+			hashes = previous.Hashes
+		}
+
+		if change.From.Name != change.To.Name {
+			delete(history.files, change.From.Name)
+		}
+
+		file.Hashes = append(hashes, commit)
+	}
+}
+
+func (history *FileHistoryAnalysis) recordAuthorStats(
+	name string, author int, stats items.LineStats,
+) {
+	file := history.files[name]
+	if file == nil {
+		file = &FileHistory{}
+		history.files[name] = file
+	}
+
+	if file.People == nil {
+		file.People = map[int]items.LineStats{}
+	}
+
+	oldStats := file.People[author]
+	file.People[author] = items.LineStats{
+		Added: oldStats.Added + stats.Added, Removed: oldStats.Removed + stats.Removed,
+		Changed: oldStats.Changed + stats.Changed,
+	}
 }
 
 // Finalize returns the result of the analysis. Further Consume() calls are not expected.

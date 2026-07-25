@@ -460,49 +460,12 @@ func extractByTypes(
 		}
 
 		if _, ok := nodeTypes[node.Type(spec.language)]; ok {
-			nameNode := node.ChildByFieldName("name", spec.language)
-			if nameNode == nil {
-				for i := range node.NamedChildCount() {
-					child := node.NamedChild(i)
-					switch child.Type(spec.language) {
-					case "identifier", "field_identifier", "property_identifier",
-						"private_property_identifier":
-						nameNode = child
-					}
-
-					if nameNode != nil {
-						break
-					}
-				}
-			}
-
-			name := ""
-			if nameNode != nil {
-				name = strings.TrimSpace(nameNode.Text(source))
-			}
-
-			if name == "" {
-				name = strings.TrimSpace(node.Text(source))
-			}
-
+			name := extractedNodeName(node, source, spec.language)
 			if requireName && name == "" {
 				goto recurse
 			}
 
-			startLine := int(node.StartPoint().Row) + 1
-
-			endLine := max(int(node.EndPoint().Row)+1, startLine)
-
-			nodes = append(nodes, Node{
-				ID:        fmt.Sprintf("%d:%d:%s:%s", startLine, endLine, node.Type(spec.language), name),
-				Type:      "ast:" + node.Type(spec.language),
-				Name:      name,
-				Text:      strings.TrimSpace(node.Text(source)),
-				StartLine: startLine,
-				StartCol:  int(node.StartPoint().Column),
-				EndLine:   endLine,
-				EndCol:    int(node.EndPoint().Column),
-			})
+			nodes = append(nodes, extractedNode(node, name, source, spec.language))
 		}
 
 	recurse:
@@ -521,4 +484,44 @@ func extractByTypes(
 	walk(root)
 
 	return nodes, nil
+}
+
+func extractedNodeName(node *sitter.Node, source []byte, language *sitter.Language) string {
+	nameNode := node.ChildByFieldName("name", language)
+	if nameNode == nil {
+		for i := range node.NamedChildCount() {
+			child := node.NamedChild(i)
+			switch child.Type(language) {
+			case "identifier", "field_identifier", "property_identifier", "private_property_identifier":
+				nameNode = child
+			}
+
+			if nameNode != nil {
+				break
+			}
+		}
+	}
+
+	if nameNode != nil {
+		if name := strings.TrimSpace(nameNode.Text(source)); name != "" {
+			return name
+		}
+	}
+
+	return strings.TrimSpace(node.Text(source))
+}
+
+func extractedNode(
+	node *sitter.Node, name string, source []byte, language *sitter.Language,
+) Node {
+	startLine := int(node.StartPoint().Row) + 1
+	endLine := max(int(node.EndPoint().Row)+1, startLine)
+	nodeType := node.Type(language)
+
+	return Node{
+		ID:   fmt.Sprintf("%d:%d:%s:%s", startLine, endLine, nodeType, name),
+		Type: "ast:" + nodeType, Name: name, Text: strings.TrimSpace(node.Text(source)),
+		StartLine: startLine, StartCol: int(node.StartPoint().Column),
+		EndLine: endLine, EndCol: int(node.EndPoint().Column),
+	}
 }

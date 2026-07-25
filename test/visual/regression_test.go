@@ -334,7 +334,8 @@ func writeSolidPNG(t *testing.T, path string, width, height int, c color.RGBA) {
 	}
 	defer func() { _ = file.Close() }()
 
-	if err := png.Encode(file, img); err != nil {
+	err = png.Encode(file, img)
+	if err != nil {
 		t.Fatalf("Failed to write PNG: %v", err)
 	}
 }

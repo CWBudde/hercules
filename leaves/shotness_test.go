@@ -100,7 +100,8 @@ func beta() int {
 			"demo.go": fileDiff,
 		},
 	}
-	if _, err := sh.Consume(insertDeps); err != nil {
+	_, err = sh.Consume(insertDeps)
+	if err != nil {
 		t.Fatalf("consume insert failed: %v", err)
 	}
 
@@ -130,7 +131,8 @@ func beta() int {
 			"demo.go": fileDiff,
 		},
 	}
-	if _, err := sh.Consume(modifyDeps); err != nil {
+	_, err = sh.Consume(modifyDeps)
+	if err != nil {
 		t.Fatalf("consume modify failed: %v", err)
 	}
 

@@ -255,11 +255,13 @@ func (saver *UASTChangesSaver) dumpChangeFiles(
 		return UASTChangeRecord{}, err
 	}
 
-	if err := os.WriteFile(uastBeforePath, beforeJSON, 0o600); err != nil {
+	err = os.WriteFile(uastBeforePath, beforeJSON, 0o600)
+	if err != nil {
 		return UASTChangeRecord{}, err
 	}
 
-	if err := os.WriteFile(uastAfterPath, afterJSON, 0o600); err != nil {
+	err = os.WriteFile(uastAfterPath, afterJSON, 0o600)
+	if err != nil {
 		return UASTChangeRecord{}, err
 	}
 

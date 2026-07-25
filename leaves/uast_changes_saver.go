@@ -155,7 +155,8 @@ func (saver *UASTChangesSaver) processChange(
 		return UASTChangeRecord{}, false, nil
 	}
 
-	if binary, err := eitherBlobIsBinary(fromBlob, toBlob); err != nil || binary {
+	binary, err := eitherBlobIsBinary(fromBlob, toBlob)
+	if err != nil || binary {
 		return UASTChangeRecord{}, false, err
 	}
 
@@ -180,9 +181,11 @@ func (saver *UASTChangesSaver) processChange(
 
 func eitherBlobIsBinary(blobs ...*items.CachedBlob) (bool, error) {
 	for _, blob := range blobs {
-		if _, err := blob.CountLines(); errors.Is(err, items.ErrBinary) {
+		_, err := blob.CountLines()
+		if errors.Is(err, items.ErrBinary) {
 			return true, nil
-		} else if err != nil {
+		}
+		if err != nil {
 			return false, err
 		}
 	}
@@ -232,11 +235,13 @@ func (saver *UASTChangesSaver) dumpChangeFiles(
 	uastBeforePath := filepath.Join(saver.OutputPath, fmt.Sprintf("%s_before_%s.ast.json", prefix, shortHash(fromHash)))
 	uastAfterPath := filepath.Join(saver.OutputPath, fmt.Sprintf("%s_after_%s.ast.json", prefix, shortHash(toHash)))
 
-	if err := os.WriteFile(srcBeforePath, srcBefore, 0o600); err != nil {
+	err := os.WriteFile(srcBeforePath, srcBefore, 0o600)
+	if err != nil {
 		return UASTChangeRecord{}, err
 	}
 
-	if err := os.WriteFile(srcAfterPath, srcAfter, 0o600); err != nil {
+	err = os.WriteFile(srcAfterPath, srcAfter, 0o600)
+	if err != nil {
 		return UASTChangeRecord{}, err
 	}
 

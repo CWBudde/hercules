@@ -258,12 +258,13 @@ func (analyser *LineHistoryLoader) Merge([]core.PipelineItem) {
 }
 
 func (analyser *LineHistoryLoader) loadChangesFrom(name string) error {
-	if input, err := os.Open(name); err == nil {
-		defer func() { _ = input.Close() }()
-		return analyser.loadChangesFromYaml(yaml.NewDecoder(input))
-	} else {
+	input, err := os.Open(name)
+	if err != nil {
 		return err
 	}
+	defer func() { _ = input.Close() }()
+
+	return analyser.loadChangesFromYaml(yaml.NewDecoder(input))
 }
 
 var regexSplitBySpace = regexp.MustCompile(`\s+`)

@@ -188,7 +188,8 @@ func writeLines(lines []string, out string) error {
 	}()
 
 	for _, name := range lines {
-		if _, err = authors.WriteString(name + "\n"); err != nil {
+		_, err = authors.WriteString(name + "\n")
+		if err != nil {
 			return err
 		}
 	}

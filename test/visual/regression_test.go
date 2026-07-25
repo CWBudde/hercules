@@ -161,7 +161,8 @@ func runVisualRegressionTest(t *testing.T, tc VisualTestCase) {
 	t.Helper()
 
 	// Check if golden file exists before doing expensive chart generation.
-	if _, err := os.Stat(tc.ExpectedPath); os.IsNotExist(err) {
+	_, err := os.Stat(tc.ExpectedPath)
+	if os.IsNotExist(err) {
 		t.Skipf("Golden file not found: %s (run with GENERATE_REFERENCES=true to create)",
 			tc.ExpectedPath)
 		return
@@ -211,7 +212,8 @@ func runPythonCompatibilityTest(t *testing.T, tc VisualTestCase) {
 	}()
 
 	// Check if Python reference exists
-	if _, err := os.Stat(tc.ExpectedPath); os.IsNotExist(err) {
+	_, err := os.Stat(tc.ExpectedPath)
+	if os.IsNotExist(err) {
 		t.Skipf("Python reference image not found: %s", tc.ExpectedPath)
 		return
 	}
@@ -249,7 +251,8 @@ func generateTestChart(t *testing.T, mode, inputFile string) string {
 	}
 
 	// Validate chart structure
-	if err := generator.ValidateChartStructure(t, outputPath); err != nil {
+	err = generator.ValidateChartStructure(t, outputPath)
+	if err != nil {
 		t.Errorf("Chart structure validation failed: %v", err)
 	}
 

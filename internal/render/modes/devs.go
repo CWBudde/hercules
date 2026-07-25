@@ -54,7 +54,7 @@ func Devs(reader readers.Reader, output string, maxPeople int) error {
 	developerStats, err := reader.GetDeveloperStats()
 	if err != nil {
 		progEstimator.FinishMultiOperation()
-		return fmt.Errorf("failed to get developer stats: %v", err)
+		return fmt.Errorf("failed to get developer stats: %w", err)
 	}
 
 	// Phase 2: Select top developers

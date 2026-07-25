@@ -64,7 +64,7 @@ func (r *ProtobufReader) GetHeader() (int64, int64) {
 // GetProjectBurndown retrieves the project-level burndown matrix
 func (r *ProtobufReader) GetProjectBurndown() (string, [][]int) {
 	// Parse burndown data from Contents
-	burndownData := r.parseBurndownAnalysisResults()
+	burndownData, _ := r.parseBurndownAnalysisResults()
 	if burndownData == nil || burndownData.Project == nil {
 		return "", nil
 	}
@@ -75,9 +75,12 @@ func (r *ProtobufReader) GetProjectBurndown() (string, [][]int) {
 
 // GetFilesBurndown retrieves burndown data for files
 func (r *ProtobufReader) GetFilesBurndown() ([]FileBurndown, error) {
-	burndownData := r.parseBurndownAnalysisResults()
-	if burndownData == nil || len(burndownData.Files) == 0 {
-		return nil, fmt.Errorf("no files burndown data found")
+	burndownData, err := r.parseBurndownAnalysisResults()
+	if err != nil {
+		return nil, err
+	}
+	if len(burndownData.Files) == 0 {
+		return nil, fmt.Errorf("%w: files burndown", ErrAnalysisMissing)
 	}
 
 	// Process each file's burndown matrix
@@ -95,9 +98,12 @@ func (r *ProtobufReader) GetFilesBurndown() ([]FileBurndown, error) {
 
 // GetPeopleBurndown retrieves burndown data for people
 func (r *ProtobufReader) GetPeopleBurndown() ([]PeopleBurndown, error) {
-	burndownData := r.parseBurndownAnalysisResults()
-	if burndownData == nil || len(burndownData.People) == 0 {
-		return nil, fmt.Errorf("no people burndown data found")
+	burndownData, err := r.parseBurndownAnalysisResults()
+	if err != nil {
+		return nil, err
+	}
+	if len(burndownData.People) == 0 {
+		return nil, fmt.Errorf("%w: people burndown", ErrAnalysisMissing)
 	}
 
 	// Process each person's burndown matrix
@@ -115,9 +121,12 @@ func (r *ProtobufReader) GetPeopleBurndown() ([]PeopleBurndown, error) {
 
 // GetRepositoriesBurndown retrieves per-repository burndown data from combined Hercules output.
 func (r *ProtobufReader) GetRepositoriesBurndown() ([]RepositoryBurndown, error) {
-	burndownData := r.parseBurndownAnalysisResults()
-	if burndownData == nil || len(burndownData.Repositories) == 0 {
-		return nil, fmt.Errorf("no repository burndown data found")
+	burndownData, err := r.parseBurndownAnalysisResults()
+	if err != nil {
+		return nil, err
+	}
+	if len(burndownData.Repositories) == 0 {
+		return nil, fmt.Errorf("%w: repository burndown", ErrAnalysisMissing)
 	}
 
 	repositories := make([]RepositoryBurndown, 0, len(burndownData.Repositories))
@@ -133,9 +142,9 @@ func (r *ProtobufReader) GetRepositoriesBurndown() ([]RepositoryBurndown, error)
 
 // GetRepositoryNames retrieves repository_sequence from combined Hercules output.
 func (r *ProtobufReader) GetRepositoryNames() ([]string, error) {
-	burndownData := r.parseBurndownAnalysisResults()
-	if burndownData == nil {
-		return nil, fmt.Errorf("no burndown data found")
+	burndownData, err := r.parseBurndownAnalysisResults()
+	if err != nil {
+		return nil, err
 	}
 	names := append([]string(nil), burndownData.RepositorySequence...)
 	return names, nil
@@ -146,7 +155,7 @@ func (r *ProtobufReader) GetOwnershipBurndown() ([]string, map[string][][]int, e
 	// Get people burndown data (matches Python behavior)
 	peopleBurndowns, err := r.GetPeopleBurndown()
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get people burndown data: %v", err)
+		return nil, nil, fmt.Errorf("failed to get people burndown data: %w", err)
 	}
 
 	// Extract people sequence (names) and build ownership map
@@ -166,9 +175,12 @@ func (r *ProtobufReader) GetOwnershipBurndown() ([]string, map[string][][]int, e
 
 // GetPeopleInteraction retrieves the interaction matrix for people
 func (r *ProtobufReader) GetPeopleInteraction() ([]string, [][]int, error) {
-	burndownData := r.parseBurndownAnalysisResults()
-	if burndownData == nil || burndownData.PeopleInteraction == nil {
-		return nil, nil, fmt.Errorf("no people interaction data found")
+	burndownData, err := r.parseBurndownAnalysisResults()
+	if err != nil {
+		return nil, nil, err
+	}
+	if burndownData.PeopleInteraction == nil {
+		return nil, nil, fmt.Errorf("%w: people interaction", ErrAnalysisMissing)
 	}
 
 	matrix := parseCompressedSparseRowMatrix(burndownData.PeopleInteraction)
@@ -184,9 +196,12 @@ func (r *ProtobufReader) GetPeopleInteraction() ([]string, [][]int, error) {
 
 // GetFileCooccurrence retrieves file coupling data
 func (r *ProtobufReader) GetFileCooccurrence() ([]string, [][]int, error) {
-	couplesData := r.parseCouplesAnalysisResults()
-	if couplesData == nil || couplesData.FileCouples == nil || couplesData.FileCouples.Matrix == nil {
-		return nil, nil, fmt.Errorf("no file coupling data found")
+	couplesData, err := r.parseCouplesAnalysisResults()
+	if err != nil {
+		return nil, nil, err
+	}
+	if couplesData.FileCouples == nil || couplesData.FileCouples.Matrix == nil {
+		return nil, nil, fmt.Errorf("%w: file coupling", ErrAnalysisMissing)
 	}
 
 	matrix := parseCompressedSparseRowMatrix(couplesData.FileCouples.Matrix)
@@ -195,9 +210,12 @@ func (r *ProtobufReader) GetFileCooccurrence() ([]string, [][]int, error) {
 
 // GetPeopleCooccurrence retrieves people coupling data
 func (r *ProtobufReader) GetPeopleCooccurrence() ([]string, [][]int, error) {
-	couplesData := r.parseCouplesAnalysisResults()
-	if couplesData == nil || couplesData.PeopleCouples == nil || couplesData.PeopleCouples.Matrix == nil {
-		return nil, nil, fmt.Errorf("no people coupling data found")
+	couplesData, err := r.parseCouplesAnalysisResults()
+	if err != nil {
+		return nil, nil, err
+	}
+	if couplesData.PeopleCouples == nil || couplesData.PeopleCouples.Matrix == nil {
+		return nil, nil, fmt.Errorf("%w: people coupling", ErrAnalysisMissing)
 	}
 
 	matrix := parseCompressedSparseRowMatrix(couplesData.PeopleCouples.Matrix)
@@ -217,9 +235,12 @@ func (r *ProtobufReader) GetShotnessCooccurrence() ([]string, [][]int, error) {
 
 // GetShotnessRecords retrieves shotness records
 func (r *ProtobufReader) GetShotnessRecords() ([]ShotnessRecord, error) {
-	shotnessData := r.parseShotnessAnalysisResults()
-	if shotnessData == nil || len(shotnessData.Records) == 0 {
-		return []ShotnessRecord{}, fmt.Errorf("no shotness data found - ensure the input data contains shotness analysis results")
+	shotnessData, err := r.parseShotnessAnalysisResults()
+	if err != nil {
+		return nil, err
+	}
+	if len(shotnessData.Records) == 0 {
+		return []ShotnessRecord{}, fmt.Errorf("%w: shotness", ErrAnalysisMissing)
 	}
 
 	pbRecords := shotnessData.Records
@@ -249,7 +270,7 @@ func (r *ProtobufReader) GetDeveloperStats() ([]DeveloperStat, error) {
 func (r *ProtobufReader) GetLanguageStats() ([]LanguageStat, error) {
 	timeSeries, err := r.GetDeveloperTimeSeriesData()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get developer time series data: %v", err)
+		return nil, fmt.Errorf("failed to get developer time series data: %w", err)
 	}
 	return aggregateLanguageStats(timeSeries)
 }
@@ -577,9 +598,9 @@ func (r *ProtobufReader) GetFileHistory() (*FileHistoryData, error) {
 // This now parses real temporal data from DevsAnalysisResults.Ticks (matches Python's approach)
 func (r *ProtobufReader) GetDeveloperTimeSeriesData() (*DeveloperTimeSeriesData, error) {
 	// Parse real developer time series data from protobuf (like Python does)
-	devsData := r.parseDevsAnalysisResults()
-	if devsData == nil {
-		return nil, fmt.Errorf("no developer analysis data found")
+	devsData, err := r.parseDevsAnalysisResults()
+	if err != nil {
+		return nil, err
 	}
 
 	// Extract people list from dev_index (matches Python's people = list(self.contents["Devs"].dev_index))
@@ -752,31 +773,23 @@ func parseCompressedSparseRowMatrix(matrix *pb.CompressedSparseRowMatrix) [][]in
 }
 
 // parseBurndownAnalysisResults extracts and parses burndown data from the Contents map
-func (r *ProtobufReader) parseBurndownAnalysisResults() *pb.BurndownAnalysisResults {
+func (r *ProtobufReader) parseBurndownAnalysisResults() (*pb.BurndownAnalysisResults, error) {
 	if r.data == nil || r.data.Contents == nil {
-		return nil
+		return nil, fmt.Errorf("%w: Burndown", ErrAnalysisMissing)
 	}
 
-	// Look for burndown data in Contents
-	burndownBytes, exists := r.data.Contents["Burndown"]
-	if !exists {
-		return nil
-	}
-
-	// Parse the burndown data
 	var burndownData pb.BurndownAnalysisResults
-	if err := proto.Unmarshal(burndownBytes, &burndownData); err != nil {
-		return nil
+	if err := r.unmarshalContent("Burndown", &burndownData); err != nil {
+		return nil, err
 	}
-
-	return &burndownData
+	return &burndownData, nil
 }
 
 // GetBurndownParameters retrieves burndown parameters in Python-compatible format
 func (r *ProtobufReader) GetBurndownParameters() (burndown.BurndownParameters, error) {
-	burndownData := r.parseBurndownAnalysisResults()
-	if burndownData == nil {
-		return burndown.BurndownParameters{}, fmt.Errorf("no burndown data found")
+	burndownData, err := r.parseBurndownAnalysisResults()
+	if err != nil {
+		return burndown.BurndownParameters{}, err
 	}
 
 	sampling := int(burndownData.Sampling)
@@ -802,9 +815,12 @@ func (r *ProtobufReader) GetBurndownParameters() (burndown.BurndownParameters, e
 
 // GetProjectBurndownWithHeader retrieves project burndown with full header info
 func (r *ProtobufReader) GetProjectBurndownWithHeader() (burndown.BurndownHeader, string, [][]int, error) {
-	burndownData := r.parseBurndownAnalysisResults()
-	if burndownData == nil || burndownData.Project == nil {
-		return burndown.BurndownHeader{}, "", nil, fmt.Errorf("no project burndown data found")
+	burndownData, err := r.parseBurndownAnalysisResults()
+	if err != nil {
+		return burndown.BurndownHeader{}, "", nil, err
+	}
+	if burndownData.Project == nil {
+		return burndown.BurndownHeader{}, "", nil, fmt.Errorf("%w: project burndown", ErrAnalysisMissing)
 	}
 
 	// Get header information
@@ -829,66 +845,39 @@ func (r *ProtobufReader) GetProjectBurndownWithHeader() (burndown.BurndownHeader
 }
 
 // parseCouplesAnalysisResults extracts and parses couples data from the Contents map
-func (r *ProtobufReader) parseCouplesAnalysisResults() *pb.CouplesAnalysisResults {
+func (r *ProtobufReader) parseCouplesAnalysisResults() (*pb.CouplesAnalysisResults, error) {
 	if r.data == nil || r.data.Contents == nil {
-		return nil
+		return nil, fmt.Errorf("%w: Couples", ErrAnalysisMissing)
 	}
-
-	// Look for couples data in Contents
-	couplesBytes, exists := r.data.Contents["Couples"]
-	if !exists {
-		return nil
-	}
-
-	// Parse the couples data
 	var couplesData pb.CouplesAnalysisResults
-	if err := proto.Unmarshal(couplesBytes, &couplesData); err != nil {
-		return nil
+	if err := r.unmarshalContent("Couples", &couplesData); err != nil {
+		return nil, err
 	}
-
-	return &couplesData
+	return &couplesData, nil
 }
 
 // parseShotnessAnalysisResults extracts and parses shotness data from the Contents map
-func (r *ProtobufReader) parseShotnessAnalysisResults() *pb.ShotnessAnalysisResults {
+func (r *ProtobufReader) parseShotnessAnalysisResults() (*pb.ShotnessAnalysisResults, error) {
 	if r.data == nil || r.data.Contents == nil {
-		return nil
+		return nil, fmt.Errorf("%w: Shotness", ErrAnalysisMissing)
 	}
-
-	// Look for shotness data in Contents
-	shotnessBytes, exists := r.data.Contents["Shotness"]
-	if !exists {
-		return nil
-	}
-
-	// Parse the shotness data
 	var shotnessData pb.ShotnessAnalysisResults
-	if err := proto.Unmarshal(shotnessBytes, &shotnessData); err != nil {
-		return nil
+	if err := r.unmarshalContent("Shotness", &shotnessData); err != nil {
+		return nil, err
 	}
-
-	return &shotnessData
+	return &shotnessData, nil
 }
 
 // parseDevsAnalysisResults extracts and parses devs data from the Contents map
-func (r *ProtobufReader) parseDevsAnalysisResults() *pb.DevsAnalysisResults {
+func (r *ProtobufReader) parseDevsAnalysisResults() (*pb.DevsAnalysisResults, error) {
 	if r.data == nil || r.data.Contents == nil {
-		return nil
+		return nil, fmt.Errorf("%w: Devs", ErrAnalysisMissing)
 	}
-
-	// Look for devs data in Contents
-	devsBytes, exists := r.data.Contents["Devs"]
-	if !exists {
-		return nil
-	}
-
-	// Parse the devs data
 	var devsData pb.DevsAnalysisResults
-	if err := proto.Unmarshal(devsBytes, &devsData); err != nil {
-		return nil
+	if err := r.unmarshalContent("Devs", &devsData); err != nil {
+		return nil, err
 	}
-
-	return &devsData
+	return &devsData, nil
 }
 
 func (r *ProtobufReader) parseSentimentAnalysisResults() (*pb.CommentSentimentResults, error) {

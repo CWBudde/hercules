@@ -22,7 +22,7 @@ func OverwritesMatrix(reader readers.Reader, output string) error {
 	// Step 1: Extract data from the reader
 	people, matrix, err := reader.GetPeopleInteraction()
 	if err != nil {
-		return fmt.Errorf("failed to get people interaction data: %v", err)
+		return fmt.Errorf("failed to get people interaction data: %w", err)
 	}
 
 	fmt.Println("Processing overwrites matrix...")

@@ -66,11 +66,11 @@ func (r *YamlReader) GetProjectBurndown() (string, [][]int) {
 func (r *YamlReader) GetFilesBurndown() ([]FileBurndown, error) {
 	burndownData, ok := r.data["Burndown"].(map[string]interface{})
 	if !ok {
-		return nil, fmt.Errorf("missing Burndown data in YAML")
+		return nil, fmt.Errorf("%w: Burndown", ErrAnalysisMissing)
 	}
 	filesData, ok := burndownData["files"].(map[string]interface{})
 	if !ok {
-		return nil, fmt.Errorf("missing files data in Burndown")
+		return nil, fmt.Errorf("%w: files burndown", ErrAnalysisMissing)
 	}
 
 	var fileBurndowns []FileBurndown
@@ -87,11 +87,11 @@ func (r *YamlReader) GetFilesBurndown() ([]FileBurndown, error) {
 func (r *YamlReader) GetPeopleBurndown() ([]PeopleBurndown, error) {
 	burndownData, ok := r.data["Burndown"].(map[string]interface{})
 	if !ok {
-		return nil, fmt.Errorf("missing Burndown data in YAML")
+		return nil, fmt.Errorf("%w: Burndown", ErrAnalysisMissing)
 	}
 	peopleData, ok := burndownData["people"].(map[string]interface{})
 	if !ok {
-		return nil, fmt.Errorf("missing people data in Burndown")
+		return nil, fmt.Errorf("%w: people burndown", ErrAnalysisMissing)
 	}
 
 	var peopleBurndowns []PeopleBurndown
@@ -108,16 +108,16 @@ func (r *YamlReader) GetPeopleBurndown() ([]PeopleBurndown, error) {
 func (r *YamlReader) GetOwnershipBurndown() ([]string, map[string][][]int, error) {
 	burndownData, ok := r.data["Burndown"].(map[string]interface{})
 	if !ok {
-		return nil, nil, fmt.Errorf("missing Burndown data in YAML")
+		return nil, nil, fmt.Errorf("%w: Burndown", ErrAnalysisMissing)
 	}
 	peopleSequence, ok := burndownData["people_sequence"].([]string)
 	if !ok {
-		return nil, nil, fmt.Errorf("missing people_sequence in Burndown")
+		return nil, nil, fmt.Errorf("%w: people sequence", ErrAnalysisMissing)
 	}
 
 	peopleData, ok := burndownData["people"].(map[string]interface{})
 	if !ok {
-		return nil, nil, fmt.Errorf("missing people data in Burndown")
+		return nil, nil, fmt.Errorf("%w: people burndown", ErrAnalysisMissing)
 	}
 
 	ownership := make(map[string][][]int)
@@ -132,15 +132,15 @@ func (r *YamlReader) GetOwnershipBurndown() ([]string, map[string][][]int, error
 func (r *YamlReader) GetPeopleInteraction() ([]string, [][]int, error) {
 	burndownData, ok := r.data["Burndown"].(map[string]interface{})
 	if !ok {
-		return nil, nil, fmt.Errorf("missing Burndown data in YAML")
+		return nil, nil, fmt.Errorf("%w: Burndown", ErrAnalysisMissing)
 	}
 	peopleSequence, ok := burndownData["people_sequence"].([]string)
 	if !ok {
-		return nil, nil, fmt.Errorf("missing people_sequence in Burndown")
+		return nil, nil, fmt.Errorf("%w: people sequence", ErrAnalysisMissing)
 	}
 	interactionData, ok := burndownData["people_interaction"].(string)
 	if !ok {
-		return nil, nil, fmt.Errorf("missing people_interaction data")
+		return nil, nil, fmt.Errorf("%w: people interaction", ErrAnalysisMissing)
 	}
 
 	matrix := parseBurndownMatrix(interactionData)
@@ -158,7 +158,7 @@ func (r *YamlReader) GetPeopleCooccurrence() ([]string, [][]int, error) {
 func (r *YamlReader) getCouplesCooccurrence(nestedKey, flatIndexKey, flatMatrixKey string) ([]string, [][]int, error) {
 	couplesData, ok := r.data["Couples"].(map[string]interface{})
 	if !ok {
-		return nil, nil, fmt.Errorf("missing Couples data in YAML")
+		return nil, nil, fmt.Errorf("%w: Couples", ErrAnalysisMissing)
 	}
 
 	if nested, exists := couplesData[nestedKey].(map[string]interface{}); exists {
@@ -169,11 +169,11 @@ func (r *YamlReader) getCouplesCooccurrence(nestedKey, flatIndexKey, flatMatrixK
 
 	index, ok := couplesData[flatIndexKey].([]string)
 	if !ok {
-		return nil, nil, fmt.Errorf("missing %s in Couples", flatIndexKey)
+		return nil, nil, fmt.Errorf("%w: %s", ErrAnalysisMissing, flatIndexKey)
 	}
 	matrixData, ok := couplesData[flatMatrixKey].(string)
 	if !ok {
-		return nil, nil, fmt.Errorf("missing %s in Couples", flatMatrixKey)
+		return nil, nil, fmt.Errorf("%w: %s", ErrAnalysisMissing, flatMatrixKey)
 	}
 
 	return index, parseBurndownMatrix(matrixData), nil
@@ -232,7 +232,7 @@ func shotnessCounterMatrix(records []ShotnessRecord) ([]string, [][]int) {
 func (r *YamlReader) GetShotnessRecords() ([]ShotnessRecord, error) {
 	shotnessData, ok := r.data["Shotness"].([]interface{})
 	if !ok {
-		return []ShotnessRecord{}, fmt.Errorf("missing Shotness data in YAML")
+		return []ShotnessRecord{}, fmt.Errorf("%w: Shotness", ErrAnalysisMissing)
 	}
 
 	var records []ShotnessRecord
@@ -369,7 +369,7 @@ func (r *YamlReader) GetDeveloperStats() ([]DeveloperStat, error) {
 func (r *YamlReader) GetDeveloperTimeSeriesData() (*DeveloperTimeSeriesData, error) {
 	devsData, ok := r.data["Devs"].(map[string]interface{})
 	if !ok {
-		return nil, fmt.Errorf("missing Devs data in YAML")
+		return nil, fmt.Errorf("%w: Devs", ErrAnalysisMissing)
 	}
 
 	// Get people list (dev names)
@@ -387,13 +387,13 @@ func (r *YamlReader) GetDeveloperTimeSeriesData() (*DeveloperTimeSeriesData, err
 			}
 		}
 	} else {
-		return nil, fmt.Errorf("missing people/dev_index in Devs")
+		return nil, fmt.Errorf("%w: Devs people index", ErrAnalysisMissing)
 	}
 
 	// Get ticks (time series data)
 	ticks, ok := asMap(devsData["ticks"])
 	if !ok {
-		return nil, fmt.Errorf("missing ticks in Devs")
+		return nil, fmt.Errorf("%w: Devs ticks", ErrAnalysisMissing)
 	}
 
 	days := make(map[int]map[int]DevDay)
@@ -441,7 +441,7 @@ func (r *YamlReader) GetDeveloperTimeSeriesData() (*DeveloperTimeSeriesData, err
 func (r *YamlReader) GetLanguageStats() ([]LanguageStat, error) {
 	timeSeries, err := r.GetDeveloperTimeSeriesData()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get developer time series data: %v", err)
+		return nil, fmt.Errorf("failed to get developer time series data: %w", err)
 	}
 	return aggregateLanguageStats(timeSeries)
 }
@@ -674,7 +674,7 @@ func parseYamlIntList(value interface{}) ([]int, bool) {
 func (r *YamlReader) GetBurndownParameters() (burndown.BurndownParameters, error) {
 	burndownData, ok := r.data["Burndown"].(map[string]interface{})
 	if !ok {
-		return burndown.BurndownParameters{}, fmt.Errorf("missing Burndown data in YAML")
+		return burndown.BurndownParameters{}, fmt.Errorf("%w: Burndown", ErrAnalysisMissing)
 	}
 
 	// Extract parameters from YAML - these ARE present in hercules YAML output
@@ -714,7 +714,7 @@ func (r *YamlReader) GetProjectBurndownWithHeader() (burndown.BurndownHeader, st
 	// Get the basic data
 	name, matrix := r.GetProjectBurndown()
 	if len(matrix) == 0 {
-		return burndown.BurndownHeader{}, "", nil, fmt.Errorf("no project burndown data")
+		return burndown.BurndownHeader{}, "", nil, fmt.Errorf("%w: project burndown", ErrAnalysisMissing)
 	}
 
 	// Get header info

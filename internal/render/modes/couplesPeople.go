@@ -27,15 +27,12 @@ func CouplesPeople(reader readers.Reader, output string) error {
 	peopleNames, couplingMatrix, err := reader.GetPeopleCooccurrence()
 	if err != nil {
 		progEstimator.FinishMultiOperation()
-		return fmt.Errorf("coupling stats were not collected; re-run hercules with --couples")
+		return fmt.Errorf("get people coupling data: %w", err)
 	}
 
 	if len(peopleNames) == 0 {
 		progEstimator.FinishMultiOperation()
-		if !quiet {
-			fmt.Println("Coupling stats were not collected. Re-run hercules with --couples.")
-		}
-		return nil
+		return fmt.Errorf("%w: people coupling", readers.ErrAnalysisMissing)
 	}
 
 	// Phase 2: Preprocess matrix (Python-compatible outlier handling)

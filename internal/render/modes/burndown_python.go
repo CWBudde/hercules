@@ -47,7 +47,7 @@ func GenerateBurndownProjectPython(reader readers.Reader, output string, relativ
 	header, name, matrix, err := reader.GetProjectBurndownWithHeader()
 	if err != nil {
 		progEstimator.FinishMultiOperation()
-		return fmt.Errorf("failed to load burndown data: %v", err)
+		return fmt.Errorf("failed to load burndown data: %w", err)
 	}
 
 	if !quiet {
@@ -105,13 +105,13 @@ func GenerateBurndownFilePython(reader readers.Reader, output string, relative b
 	// Get files burndown data
 	files, err := reader.GetFilesBurndown()
 	if err != nil {
-		return fmt.Errorf("failed to get files burndown data: %v", err)
+		return fmt.Errorf("failed to get files burndown data: %w", err)
 	}
 
 	// Get header information
 	header, _, _, err := reader.GetProjectBurndownWithHeader()
 	if err != nil {
-		return fmt.Errorf("failed to get burndown header: %v", err)
+		return fmt.Errorf("failed to get burndown header: %w", err)
 	}
 
 	quiet := viper.GetBool("quiet")
@@ -170,12 +170,12 @@ func GenerateBurndownRepositoryPython(reader readers.Reader, output string, rela
 
 	repoReader, ok := reader.(readers.RepositoryBurndownReader)
 	if !ok {
-		return fmt.Errorf("reader does not expose repository burndown data")
+		return fmt.Errorf("%w: repository burndown", readers.ErrAnalysisMissing)
 	}
 
 	repositories, err := repoReader.GetRepositoriesBurndown()
 	if err != nil {
-		return fmt.Errorf("failed to get repositories burndown data: %v", err)
+		return fmt.Errorf("failed to get repositories burndown data: %w", err)
 	}
 	if len(repositories) == 0 {
 		return fmt.Errorf("no repository burndown data found")
@@ -183,7 +183,7 @@ func GenerateBurndownRepositoryPython(reader readers.Reader, output string, rela
 
 	header, _, _, err := reader.GetProjectBurndownWithHeader()
 	if err != nil {
-		return fmt.Errorf("failed to get burndown header: %v", err)
+		return fmt.Errorf("failed to get burndown header: %w", err)
 	}
 
 	if output == "" {
@@ -248,7 +248,7 @@ func GenerateBurndownReposCombinedPython(reader readers.Reader, output string, r
 
 	repositories, err := repoReader.GetRepositoriesBurndown()
 	if err != nil {
-		return fmt.Errorf("failed to get repositories burndown data: %v", err)
+		return fmt.Errorf("failed to get repositories burndown data: %w", err)
 	}
 	if len(repositories) == 0 {
 		return fmt.Errorf("No repository data available")
@@ -256,7 +256,7 @@ func GenerateBurndownReposCombinedPython(reader readers.Reader, output string, r
 
 	header, _, _, err := reader.GetProjectBurndownWithHeader()
 	if err != nil {
-		return fmt.Errorf("failed to get burndown header: %v", err)
+		return fmt.Errorf("failed to get burndown header: %w", err)
 	}
 
 	// Build one stacked band per repository: each band is that repository's

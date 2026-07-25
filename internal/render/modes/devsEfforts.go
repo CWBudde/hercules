@@ -32,7 +32,7 @@ func DevsEfforts(reader readers.Reader, output string, maxPeople int, detail boo
 	developerStats, err := reader.GetDeveloperStats()
 	if err != nil {
 		progEstimator.FinishMultiOperation()
-		return fmt.Errorf("failed to get developer stats: %v", err)
+		return fmt.Errorf("failed to get developer stats: %w", err)
 	}
 
 	// Phase 2: Build the per-day efforts time series when available.

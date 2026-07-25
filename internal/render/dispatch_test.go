@@ -3,6 +3,7 @@ package render
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -37,46 +38,46 @@ func (r stubReader) GetProjectBurndownWithHeader() (burndown.BurndownHeader, str
 }
 
 func (r stubReader) GetFilesBurndown() ([]readers.FileBurndown, error) {
-	return nil, fmt.Errorf("missing files data")
+	return nil, fmt.Errorf("%w: files burndown", readers.ErrAnalysisMissing)
 }
 
 func (r stubReader) GetPeopleBurndown() ([]readers.PeopleBurndown, error) {
-	return nil, fmt.Errorf("missing people data")
+	return nil, fmt.Errorf("%w: people burndown", readers.ErrAnalysisMissing)
 }
 
 func (r stubReader) GetOwnershipBurndown() ([]string, map[string][][]int, error) {
-	return nil, nil, fmt.Errorf("missing people data")
+	return nil, nil, fmt.Errorf("%w: people burndown", readers.ErrAnalysisMissing)
 }
 
 func (r stubReader) GetPeopleInteraction() ([]string, [][]int, error) {
-	return nil, nil, fmt.Errorf("missing people interaction")
+	return nil, nil, fmt.Errorf("%w: people interaction", readers.ErrAnalysisMissing)
 }
 
 func (r stubReader) GetFileCooccurrence() ([]string, [][]int, error) {
-	return nil, nil, fmt.Errorf("missing couples data")
+	return nil, nil, fmt.Errorf("%w: file coupling", readers.ErrAnalysisMissing)
 }
 
 func (r stubReader) GetPeopleCooccurrence() ([]string, [][]int, error) {
-	return nil, nil, fmt.Errorf("missing couples data")
+	return nil, nil, fmt.Errorf("%w: people coupling", readers.ErrAnalysisMissing)
 }
 
 func (r stubReader) GetShotnessCooccurrence() ([]string, [][]int, error) {
-	return nil, nil, fmt.Errorf("missing shotness data")
+	return nil, nil, fmt.Errorf("%w: shotness", readers.ErrAnalysisMissing)
 }
 
 func (r stubReader) GetShotnessRecords() ([]readers.ShotnessRecord, error) {
-	return nil, fmt.Errorf("missing shotness data")
+	return nil, fmt.Errorf("%w: shotness", readers.ErrAnalysisMissing)
 }
 
 func (r stubReader) GetDeveloperStats() ([]readers.DeveloperStat, error) {
 	if r.developerStats == nil {
-		return nil, fmt.Errorf("missing Devs data")
+		return nil, fmt.Errorf("%w: Devs", readers.ErrAnalysisMissing)
 	}
 	return r.developerStats, nil
 }
 
 func (r stubReader) GetLanguageStats() ([]readers.LanguageStat, error) {
-	return nil, fmt.Errorf("missing Devs data")
+	return nil, fmt.Errorf("%w: Devs", readers.ErrAnalysisMissing)
 }
 
 func (r stubReader) GetRuntimeStats() (map[string]float64, error) {
@@ -84,7 +85,7 @@ func (r stubReader) GetRuntimeStats() (map[string]float64, error) {
 }
 
 func (r stubReader) GetDeveloperTimeSeriesData() (*readers.DeveloperTimeSeriesData, error) {
-	return nil, fmt.Errorf("missing Devs data")
+	return nil, fmt.Errorf("%w: Devs", readers.ErrAnalysisMissing)
 }
 
 func TestExecuteModesWithNoModesIsNoop(t *testing.T) {
@@ -101,7 +102,7 @@ func TestExecuteModesPrintsPythonMissingDataWarning(t *testing.T) {
 	defer viper.Set("quiet", previousQuiet)
 	viper.Set("quiet", true)
 
-	output := captureStdout(t, func() {
+	output := captureStderr(t, func() {
 		executeModes([]string{"devs"}, stubReader{}, filepath.Join(t.TempDir(), "devs.png"), nil, nil)
 	})
 
@@ -118,7 +119,7 @@ func TestExecuteModesPrintsDevsParallelPeopleBurndownWarning(t *testing.T) {
 	defer viper.Set("quiet", previousQuiet)
 	viper.Set("quiet", true)
 
-	output := captureStdout(t, func() {
+	output := captureStderr(t, func() {
 		executeModes([]string{"devs-parallel"}, stubReader{}, filepath.Join(t.TempDir(), "devs-parallel.png"), nil, nil)
 	})
 
@@ -222,6 +223,30 @@ func captureStdout(t *testing.T, fn func()) string {
 	return buf.String()
 }
 
+func captureStderr(t *testing.T, fn func()) string {
+	t.Helper()
+
+	original := os.Stderr
+	readPipe, writePipe, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("failed to create stderr pipe: %v", err)
+	}
+	os.Stderr = writePipe
+
+	fn()
+
+	if err := writePipe.Close(); err != nil {
+		t.Fatalf("failed to close stderr pipe: %v", err)
+	}
+	os.Stderr = original
+
+	var buf bytes.Buffer
+	if _, err := io.Copy(&buf, readPipe); err != nil {
+		t.Fatalf("failed to capture stderr: %v", err)
+	}
+	return buf.String()
+}
+
 func TestRunWithResultsClassifiesOutcomes(t *testing.T) {
 	previousQuiet := viper.GetBool("quiet")
 	defer viper.Set("quiet", previousQuiet)
@@ -245,24 +270,25 @@ func TestRunWithResultsClassifiesOutcomes(t *testing.T) {
 			modeHandlers["devs"] = func(readers.Reader, string, *time.Time, *time.Time) error {
 				return tt.handlerErr
 			}
-			var results []ModeResult
+			var aggregate Result
 			captureStdout(t, func() {
-				results = RunWithResults(stubReader{}, []string{"devs"}, Options{
+				aggregate = Run(stubReader{}, []string{"devs"}, Options{
 					Output: filepath.Join(t.TempDir(), "devs.png"),
 				})
 			})
+			results := aggregate.Modes
 			if len(results) != 1 {
 				t.Fatalf("RunWithResults() returned %d results, want 1", len(results))
 			}
-			result := results[0]
-			if result.Mode != "devs" {
-				t.Fatalf("result.Mode = %q, want %q", result.Mode, "devs")
+			modeResult := results[0]
+			if modeResult.Mode != "devs" {
+				t.Fatalf("result.Mode = %q, want %q", modeResult.Mode, "devs")
 			}
-			if (result.Err != nil) != tt.wantErr {
-				t.Fatalf("result.Err = %v, wantErr %v", result.Err, tt.wantErr)
+			if (modeResult.Err != nil) != tt.wantErr {
+				t.Fatalf("result.Err = %v, wantErr %v", modeResult.Err, tt.wantErr)
 			}
-			if (result.Warning != "") != tt.wantWarning {
-				t.Fatalf("result.Warning = %q, wantWarning %v", result.Warning, tt.wantWarning)
+			if (modeResult.Warning != "") != tt.wantWarning {
+				t.Fatalf("result.Warning = %q, wantWarning %v", modeResult.Warning, tt.wantWarning)
 			}
 		})
 	}
@@ -277,20 +303,21 @@ func TestRunWithResultsReportsUnimplementedModeAsWarning(t *testing.T) {
 	delete(modeHandlers, "devs")
 	defer func() { modeHandlers["devs"] = oldHandler }()
 
-	var results []ModeResult
-	captureStdout(t, func() {
-		results = RunWithResults(stubReader{}, []string{"devs"}, Options{
+	var result Result
+	captureStderr(t, func() {
+		result = Run(stubReader{}, []string{"devs"}, Options{
 			Output: filepath.Join(t.TempDir(), "devs.png"),
 		})
 	})
+	results := result.Modes
 	if len(results) != 1 {
 		t.Fatalf("RunWithResults() returned %d results, want 1", len(results))
 	}
-	if results[0].Err != nil {
-		t.Fatalf("unimplemented mode should not be a hard error: %v", results[0].Err)
+	if results[0].Err == nil {
+		t.Fatal("unimplemented mode should be a hard error")
 	}
-	if !strings.Contains(results[0].Warning, "Mode not implemented yet: devs") {
-		t.Fatalf("unexpected warning: %q", results[0].Warning)
+	if results[0].Warning != "" {
+		t.Fatalf("unimplemented mode should not be a warning: %q", results[0].Warning)
 	}
 }
 
@@ -306,8 +333,119 @@ func TestMissingAnalysisWarningClassifiesTypedErrors(t *testing.T) {
 }
 
 func TestMissingAnalysisWarningDoesNotHideProcessingErrors(t *testing.T) {
-	_, ok := missingAnalysisWarning("devs", fmt.Errorf("plot failed at %s", time.Unix(0, 0)))
-	if ok {
-		t.Fatal("unexpected warning classification for a non-missing processing error")
+	for _, message := range []string{
+		"no output device",
+		"plot target not found",
+		"missing font",
+	} {
+		t.Run(message, func(t *testing.T) {
+			_, ok := missingAnalysisWarning("devs", errors.New(message))
+			if ok {
+				t.Fatal("unexpected warning classification for a non-missing processing error")
+			}
+		})
+	}
+}
+
+func TestRunContinuesIndependentModesAndAggregatesStatus(t *testing.T) {
+	previousQuiet := viper.GetBool("quiet")
+	defer viper.Set("quiet", previousQuiet)
+	viper.Set("quiet", true)
+
+	oldDevs := modeHandlers["devs"]
+	oldLanguages := modeHandlers["languages"]
+	oldShotness := modeHandlers["shotness"]
+	defer func() {
+		modeHandlers["devs"] = oldDevs
+		modeHandlers["languages"] = oldLanguages
+		modeHandlers["shotness"] = oldShotness
+	}()
+
+	var called []string
+	modeHandlers["devs"] = func(readers.Reader, string, *time.Time, *time.Time) error {
+		called = append(called, "devs")
+		return nil
+	}
+	modeHandlers["languages"] = func(readers.Reader, string, *time.Time, *time.Time) error {
+		called = append(called, "languages")
+		return errors.New("missing font")
+	}
+	modeHandlers["shotness"] = func(readers.Reader, string, *time.Time, *time.Time) error {
+		called = append(called, "shotness")
+		return fmt.Errorf("%w: Shotness", readers.ErrAnalysisMissing)
+	}
+
+	var result Result
+	captureStderr(t, func() {
+		result = Run(
+			stubReader{},
+			[]string{"devs", "languages", "shotness"},
+			Options{Output: t.TempDir()},
+		)
+	})
+
+	if strings.Join(called, ",") != "devs,languages,shotness" {
+		t.Fatalf("modes called = %v, want all independent modes", called)
+	}
+	if len(result.Modes) != 3 {
+		t.Fatalf("Run() returned %d mode results, want 3", len(result.Modes))
+	}
+	if result.Modes[0].Err != nil || result.Modes[0].Warning != "" {
+		t.Fatalf("success result = %#v", result.Modes[0])
+	}
+	if result.Modes[1].Err == nil || result.Modes[1].Warning != "" {
+		t.Fatalf("hard failure result = %#v", result.Modes[1])
+	}
+	if result.Modes[2].Err != nil || result.Modes[2].Warning == "" {
+		t.Fatalf("warning result = %#v", result.Modes[2])
+	}
+	if result.Err() == nil {
+		t.Fatal("aggregate status did not expose hard failure")
+	}
+	if !result.HasWarnings() {
+		t.Fatal("aggregate status did not expose warning")
+	}
+}
+
+func TestRunReportsJSONOutputWriteFailure(t *testing.T) {
+	previousQuiet := viper.GetBool("quiet")
+	defer viper.Set("quiet", previousQuiet)
+	viper.Set("quiet", true)
+
+	output := filepath.Join(t.TempDir(), "missing", "results.json")
+	var result Result
+	captureStderr(t, func() {
+		result = Run(stubReader{
+			developerStats: []readers.DeveloperStat{{Name: "Ada"}},
+		}, []string{"devs"}, Options{Output: output})
+	})
+
+	if result.OutputError == nil {
+		t.Fatal("Run() did not retain the JSON output-write error")
+	}
+	if result.Err() == nil {
+		t.Fatal("Run().Err() succeeded despite JSON output-write failure")
+	}
+}
+
+func TestRunReportsImageOutputFailure(t *testing.T) {
+	previousQuiet := viper.GetBool("quiet")
+	defer viper.Set("quiet", previousQuiet)
+	viper.Set("quiet", true)
+
+	oldHandler := modeHandlers["devs"]
+	defer func() { modeHandlers["devs"] = oldHandler }()
+	modeHandlers["devs"] = func(readers.Reader, string, *time.Time, *time.Time) error {
+		return fmt.Errorf("save image: %w", os.ErrPermission)
+	}
+
+	var result Result
+	captureStderr(t, func() {
+		result = Run(stubReader{}, []string{"devs"}, Options{
+			Output: filepath.Join(t.TempDir(), "devs.png"),
+		})
+	})
+	if !errors.Is(result.Err(), os.ErrPermission) {
+		t.Fatalf("Run().Err() = %v, want image write failure", result.Err())
 	}
 }

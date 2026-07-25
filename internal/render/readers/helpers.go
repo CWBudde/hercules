@@ -108,7 +108,7 @@ func transposeMatrix(matrix [][]int) [][]int {
 
 func aggregateLanguageStats(timeSeries *DeveloperTimeSeriesData) ([]LanguageStat, error) {
 	if timeSeries == nil {
-		return nil, fmt.Errorf("no developer time series data found")
+		return nil, fmt.Errorf("%w: developer time series", ErrAnalysisMissing)
 	}
 
 	totals := make(map[string]int)
@@ -126,7 +126,7 @@ func aggregateLanguageStats(timeSeries *DeveloperTimeSeriesData) ([]LanguageStat
 	}
 
 	if len(totals) == 0 {
-		return nil, fmt.Errorf("no language stats found in developer time series")
+		return nil, fmt.Errorf("%w: language stats", ErrAnalysisMissing)
 	}
 
 	languages := make([]LanguageStat, 0, len(totals))

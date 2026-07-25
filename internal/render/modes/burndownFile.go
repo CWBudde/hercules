@@ -11,7 +11,7 @@ import (
 func BurndownFile(reader readers.Reader, output string, relative bool, startDate, endDate *time.Time, resample string) error {
 	fileBurndowns, err := reader.GetFilesBurndown()
 	if err != nil {
-		return fmt.Errorf("failed to get files burndown data: %v", err)
+		return fmt.Errorf("failed to get files burndown data: %w", err)
 	}
 
 	// Generate a chart for each file

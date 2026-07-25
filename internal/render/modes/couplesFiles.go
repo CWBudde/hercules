@@ -34,7 +34,7 @@ func runCouplingMode(title, label, output string, read func() ([]string, [][]int
 	names, matrix, err := read()
 	if err != nil {
 		progEstimator.FinishMultiOperation()
-		return fmt.Errorf("failed to get %s data: %v", label, err)
+		return fmt.Errorf("failed to get %s data: %w", label, err)
 	}
 	if len(names) == 0 {
 		progEstimator.FinishMultiOperation()

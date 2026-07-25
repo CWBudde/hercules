@@ -25,53 +25,49 @@ func parseFlexibleDate(dateStr string) (time.Time, error) {
 	return parsedDate, nil
 }
 
-func parseDates() (startTime, endTime *time.Time) {
+func parseDates() (startTime, endTime *time.Time, err error) {
 	if startTimeStr := viper.GetString("start-date"); startTimeStr != "" {
-		parsedStartTime, err := parseFlexibleDate(startTimeStr)
-		if err != nil {
-			fmt.Printf("Error parsing start date: %v\n", err)
-			os.Exit(1)
+		parsedStartTime, parseErr := parseFlexibleDate(startTimeStr)
+		if parseErr != nil {
+			return nil, nil, fmt.Errorf("parse start date: %w", parseErr)
 		}
 		startTime = &parsedStartTime
 	}
 
 	if endTimeStr := viper.GetString("end-date"); endTimeStr != "" {
-		parsedEndTime, err := parseFlexibleDate(endTimeStr)
-		if err != nil {
-			fmt.Printf("Error parsing end date: %v\n", err)
-			os.Exit(1)
+		parsedEndTime, parseErr := parseFlexibleDate(endTimeStr)
+		if parseErr != nil {
+			return nil, nil, fmt.Errorf("parse end date: %w", parseErr)
 		}
 		endTime = &parsedEndTime
 	}
 
-	return startTime, endTime
+	return startTime, endTime, nil
 }
 
-func validateDateRange(startTime, endTime *time.Time) {
+func validateDateRange(startTime, endTime *time.Time) error {
 	if startTime != nil && endTime != nil && endTime.Before(*startTime) {
-		fmt.Println("Error: end date must be after start date")
-		os.Exit(1)
+		return fmt.Errorf("end date must be after start date")
 	}
+	return nil
 }
 
-func detectAndReadInput(input, inputFormat string) readers.Reader {
+func detectAndReadInput(input, inputFormat string) (readers.Reader, error) {
 	reader, err := render.LoadInput(input, inputFormat)
 	if err != nil {
-		fmt.Printf("Error detecting or reading input: %v\n", err)
-		os.Exit(1)
+		return nil, fmt.Errorf("detect or read input: %w", err)
 	}
-	return reader
+	return reader, nil
 }
 
-func resolveModes() []string {
+func resolveModes() ([]string, error) {
 	rawModes := append([]string{}, viper.GetStringSlice("modes")...)
 	rawModes = append(rawModes, viper.GetStringSlice("mode")...)
 	modes, err := render.ResolveModes(rawModes)
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		return nil, err
 	}
-	return modes
+	return modes, nil
 }
 
 // isExecutable checks if a file exists and is executable
@@ -211,14 +207,23 @@ func runHerculesAndVisualize(herculesPath, repoPath, analysis string) error {
 		fmt.Printf("Creating %s visualization...\n", mode)
 
 		// Read the hercules output and create visualization
-		reader := detectAndReadInput(outputFile, "yaml")
-		startDate, endDate := parseDates()
+		reader, err := detectAndReadInput(outputFile, "yaml")
+		if err != nil {
+			return err
+		}
+		startDate, endDate, err := parseDates()
+		if err != nil {
+			return err
+		}
 
-		render.Run(reader, []string{mode}, render.Options{
+		result := render.Run(reader, []string{mode}, render.Options{
 			Output:    outputPath,
 			StartTime: startDate,
 			EndTime:   endDate,
 		})
+		if err := result.Err(); err != nil {
+			return err
+		}
 
 		fmt.Printf("Saved: %s\n", outputPath)
 	}

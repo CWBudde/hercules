@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -16,7 +17,7 @@ var rootCmd = &cobra.Command{
 	Use:   "labours",
 	Short: "Labours CLI for analyzing git repository data",
 	Long:  "Labours CLI for analyzing git repository data, visualizing trends, and generating reports.",
-	Run:   runLaboursCommand,
+	RunE:  runLaboursCommand,
 }
 
 func Execute() error {
@@ -81,7 +82,7 @@ func initializeFlags() {
 
 func bindFlagsToViper() {
 	if err := viper.BindPFlags(rootCmd.PersistentFlags()); err != nil {
-		fmt.Printf("Error binding flags: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Error binding flags: %v\n", err)
 		os.Exit(1)
 	}
 }
@@ -100,33 +101,31 @@ func initConfig() {
 
 	// Load user themes from standard directories
 	if err := graphics.LoadUserThemes(); err != nil {
-		fmt.Printf("Warning: failed to load user themes: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Warning: failed to load user themes: %v\n", err)
 	}
 }
 
-func runLaboursCommand(cmd *cobra.Command, args []string) {
+func runLaboursCommand(cmd *cobra.Command, args []string) error {
 	// --version short-circuits everything else, matching common CLI conventions.
 	if viper.GetBool("version") {
 		versionCmd.Run(cmd, args)
-		return
+		return nil
 	}
 
 	// Handle theme-specific commands first
 	if viper.GetBool("list-themes") {
 		listThemes()
-		return
+		return nil
 	}
 
 	if exportTheme := viper.GetString("export-theme"); exportTheme != "" {
-		handleExportTheme(exportTheme)
-		return
+		return handleExportTheme(exportTheme)
 	}
 
 	// Load custom theme if specified
 	if loadTheme := viper.GetString("load-theme"); loadTheme != "" {
 		if err := graphics.GlobalThemeManager.LoadThemeFromFile(loadTheme); err != nil {
-			fmt.Printf("Failed to load custom theme: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("load custom theme: %w", err)
 		}
 	}
 
@@ -146,16 +145,16 @@ func runLaboursCommand(cmd *cobra.Command, args []string) {
 	}
 
 	if err := graphics.SetTheme(themeName); err != nil {
-		fmt.Printf("Failed to set theme '%s': %v\n", themeName, err)
-		fmt.Printf("Available themes: %v\n", graphics.ListThemes())
-		os.Exit(1)
+		return fmt.Errorf(
+			"set theme %q (available: %v): %w",
+			themeName, graphics.ListThemes(), err,
+		)
 	}
 
 	// Handle matplotlib colors flag - force matplotlib theme if requested
 	if viper.GetBool("matplotlib-colors") {
 		if err := graphics.SetTheme("matplotlib"); err != nil {
-			fmt.Printf("Failed to set matplotlib theme: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("set matplotlib theme: %w", err)
 		}
 		if !viper.GetBool("quiet") {
 			fmt.Printf("Using matplotlib color scheme (Red #d62728 bottom, Blue #1f77b4 top)\n")
@@ -164,20 +163,26 @@ func runLaboursCommand(cmd *cobra.Command, args []string) {
 
 	// Handle hercules integration if --from-repo is specified
 	if repoPath := viper.GetString("from-repo"); repoPath != "" {
-		handleHerculesIntegration(repoPath)
-		return
+		return handleHerculesIntegration(repoPath)
 	}
 
 	input, inputFormat := viper.GetString("input"), viper.GetString("input-format")
 	inputFormat, err := render.NormalizeInputFormat(inputFormat)
 	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		os.Exit(1)
+		return err
 	}
-	startDate, endDate := parseDates()
-	validateDateRange(startDate, endDate)
+	startDate, endDate, err := parseDates()
+	if err != nil {
+		return err
+	}
+	if err := validateDateRange(startDate, endDate); err != nil {
+		return err
+	}
 
-	modes := resolveModes()
+	modes, err := resolveModes()
+	if err != nil {
+		return err
+	}
 
 	// Handle Python compatibility: if --sentiment flag is set, add sentiment mode
 	if viper.GetBool("sentiment") {
@@ -185,14 +190,18 @@ func runLaboursCommand(cmd *cobra.Command, args []string) {
 		fmt.Println("Added sentiment analysis mode (--sentiment flag)")
 	}
 
-	reader := detectAndReadInput(input, inputFormat)
-	render.Run(reader, modes, render.Options{
+	reader, err := detectAndReadInput(input, inputFormat)
+	if err != nil {
+		return err
+	}
+	result := render.Run(reader, modes, render.Options{
 		Output:               viper.GetString("output"),
 		StartTime:            startDate,
 		EndTime:              endDate,
 		SentimentFallback:    commandBoolFlag(cmd, "sentiment-fallback"),
 		DevsParallelFallback: commandBoolFlag(cmd, "devs-parallel-fallback"),
 	})
+	return result.Err()
 }
 
 func commandBoolFlag(cmd *cobra.Command, name string) bool {
@@ -213,16 +222,16 @@ func listThemes() {
 	}
 }
 
-func handleExportTheme(themeName string) {
+func handleExportTheme(themeName string) error {
 	outputPath := fmt.Sprintf("%s-theme.yaml", themeName)
 	if err := graphics.GlobalThemeManager.ExportTheme(themeName, outputPath); err != nil {
-		fmt.Printf("Failed to export theme '%s': %v\n", themeName, err)
-		os.Exit(1)
+		return fmt.Errorf("export theme %q: %w", themeName, err)
 	}
 	fmt.Printf("Theme '%s' exported to %s\n", themeName, outputPath)
+	return nil
 }
 
-func handleHerculesIntegration(repoPath string) {
+func handleHerculesIntegration(repoPath string) error {
 	// Auto-detect hercules binary
 	herculesPath := viper.GetString("hercules")
 	if herculesPath == "" {
@@ -241,8 +250,9 @@ func handleHerculesIntegration(repoPath string) {
 		}
 
 		if herculesPath == "" {
-			fmt.Println("Error: hercules binary not found. Please install hercules or specify path with --hercules flag")
-			os.Exit(1)
+			return errors.New(
+				"hercules binary not found; install hercules or specify its path with --hercules",
+			)
 		}
 	}
 
@@ -251,11 +261,13 @@ func handleHerculesIntegration(repoPath string) {
 
 	// Check if repository exists and is a git repo
 	if !isGitRepository(repoPath) {
-		fmt.Printf("Error: %s is not a git repository\n", repoPath)
-		os.Exit(1)
+		return fmt.Errorf("%s is not a git repository", repoPath)
 	}
 
-	modes := resolveModes()
+	modes, err := resolveModes()
+	if err != nil {
+		return err
+	}
 	if len(modes) == 0 {
 		modes = []string{"burndown-project", "devs"} // default modes
 	}
@@ -263,11 +275,14 @@ func handleHerculesIntegration(repoPath string) {
 	// Map labours-go modes to hercules analysis
 	herculesAnalyses := mapModesToHerculesAnalyses(modes)
 
+	var failures []error
 	for _, analysis := range herculesAnalyses {
 		if err := runHerculesAndVisualize(herculesPath, repoPath, analysis); err != nil {
-			fmt.Printf("Error running analysis '%s': %v\n", analysis, err)
+			fmt.Fprintf(os.Stderr, "Error running analysis %q: %v\n", analysis, err)
+			failures = append(failures, fmt.Errorf("analysis %s: %w", analysis, err))
 		}
 	}
+	return errors.Join(failures...)
 }
 
 // mapStyleToTheme maps matplotlib style names to labours-go theme names

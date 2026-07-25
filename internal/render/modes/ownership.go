@@ -56,7 +56,7 @@ func OwnershipBurndown(reader readers.Reader, output string) error {
 	peopleSequence, ownershipData, err := reader.GetOwnershipBurndown()
 	if err != nil {
 		progEstimator.FinishMultiOperation()
-		return fmt.Errorf("failed to get ownership burndown data: %v", err)
+		return fmt.Errorf("failed to get ownership burndown data: %w", err)
 	}
 	if len(peopleSequence) == 0 {
 		progEstimator.FinishMultiOperation()
@@ -66,7 +66,7 @@ func OwnershipBurndown(reader readers.Reader, output string) error {
 	params, err := reader.GetBurndownParameters()
 	if err != nil {
 		progEstimator.FinishMultiOperation()
-		return fmt.Errorf("failed to get burndown parameters: %v", err)
+		return fmt.Errorf("failed to get burndown parameters: %w", err)
 	}
 	startUnix, lastUnix := reader.GetHeader()
 	tickSize := params.TickSize

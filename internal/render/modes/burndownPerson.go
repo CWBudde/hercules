@@ -16,7 +16,7 @@ import (
 func BurndownPerson(reader readers.Reader, output string, relative bool, startDate, endDate *time.Time, resample string) error {
 	peopleBurndowns, err := reader.GetPeopleBurndown()
 	if err != nil {
-		return fmt.Errorf("failed to get people burndown data: %v", err)
+		return fmt.Errorf("failed to get people burndown data: %w", err)
 	}
 
 	header, _, _, headerErr := reader.GetProjectBurndownWithHeader()

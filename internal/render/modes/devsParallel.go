@@ -1,9 +1,11 @@
 package modes
 
 import (
+	"errors"
 	"fmt"
 	"image/color"
 	"math"
+	"os"
 	"sort"
 
 	"github.com/cwbudde/hercules/internal/render/graphics"
@@ -44,8 +46,8 @@ func DevsParallel(reader readers.Reader, output string, maxPeople int, allowSynt
 
 	parallelData, timeSeries, err := loadDevsParallelData(reader, maxPeople)
 	if err != nil {
-		if allowSyntheticFallback {
-			fmt.Printf("Warning: could not load devs-parallel data: %v\n", err)
+		if allowSyntheticFallback && errors.Is(err, readers.ErrAnalysisMissing) {
+			fmt.Fprintf(os.Stderr, "Warning: could not load devs-parallel data: %v\n", err)
 			return generateSyntheticParallelAnalysis(reader, output, detail)
 		}
 		return err
@@ -121,17 +123,17 @@ func plotDevsParallelCoordinates(data []ParallelDeveloperData, output string) er
 func loadDevsParallelData(reader readers.Reader, maxPeople int) ([]ParallelDeveloperData, *readers.DeveloperTimeSeriesData, error) {
 	people, ownership, err := reader.GetOwnershipBurndown()
 	if err != nil {
-		return nil, nil, fmt.Errorf("%w: devs-parallel ownership burndown: %v", readers.ErrAnalysisMissing, err)
+		return nil, nil, fmt.Errorf("devs-parallel ownership burndown: %w", err)
 	}
 
 	couplingPeople, couplingMatrix, err := reader.GetPeopleCooccurrence()
 	if err != nil {
-		return nil, nil, fmt.Errorf("%w: devs-parallel people cooccurrence: %v", readers.ErrAnalysisMissing, err)
+		return nil, nil, fmt.Errorf("devs-parallel people cooccurrence: %w", err)
 	}
 
 	timeSeries, err := reader.GetDeveloperTimeSeriesData()
 	if err != nil {
-		return nil, nil, fmt.Errorf("%w: devs-parallel devs time series: %v", readers.ErrAnalysisMissing, err)
+		return nil, nil, fmt.Errorf("devs-parallel devs time series: %w", err)
 	}
 
 	return calculateParallelDeveloperData(people, ownership, couplingPeople, couplingMatrix, timeSeries, maxPeople), timeSeries, nil

@@ -6,6 +6,8 @@ import (
 	"reflect"
 	"slices"
 	"testing"
+
+	"github.com/cwbudde/hercules/internal/pb"
 )
 
 func TestSelectReportAnalysisFlagsDefault(t *testing.T) {
@@ -143,5 +145,22 @@ func TestCollectReportAssets(t *testing.T) {
 	}
 	if !reflect.DeepEqual(assets, expectedAssets) {
 		t.Fatalf("unexpected assets: got %v want %v", assets, expectedAssets)
+	}
+}
+
+func TestFinalizeReportWritesPartialReportAndReturnsFailure(t *testing.T) {
+	output := t.TempDir()
+	err := finalizeReport(
+		reportOptions{outputDir: output, format: "png"},
+		pb.AnalysisResults{},
+		nil,
+		[]string{"devs", "languages"},
+		[]reportModeFailure{{Mode: "languages", Error: "missing font"}},
+	)
+	if err == nil {
+		t.Fatal("finalizeReport() succeeded despite a hard mode failure")
+	}
+	if _, statErr := os.Stat(filepath.Join(output, "index.html")); statErr != nil {
+		t.Fatalf("partial report index was not written: %v", statErr)
 	}
 }

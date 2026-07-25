@@ -1,8 +1,8 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -35,13 +35,10 @@ type combineAccumulator struct {
 	errors       map[string][]string
 	results      map[string]any
 	metadata     *hercules.CommonAnalysisResult
+	mergedInputs int
 }
 
 func runCombine(cmd *cobra.Command, files []string) error {
-	if len(files) == 1 {
-		return copyAnalysisResult(files[0], os.Stdout)
-	}
-
 	profile, err := cmd.Flags().GetBool("profile")
 	if err != nil {
 		return fmt.Errorf("read profile flag: %w", err)
@@ -58,21 +55,27 @@ func runCombine(cmd *cobra.Command, files []string) error {
 	accumulator := newCombineAccumulator()
 	accumulator.mergeFiles(files, only)
 	printErrors(accumulator.errors)
+	if only != "" {
+		if _, exists := accumulator.results[only]; !exists {
+			return errors.Join(
+				fmt.Errorf("combine: requested analysis %q was not present in any valid input", only),
+				accumulator.err(),
+			)
+		}
+	}
+	if accumulator.mergedInputs == 0 || len(accumulator.results) == 0 {
+		return errors.Join(
+			errors.New("combine: no valid analysis input was merged"),
+			accumulator.err(),
+		)
+	}
 	sort.Strings(accumulator.repositories)
-	return writeCombinedResult(os.Stdout, accumulator)
-}
-
-func copyAnalysisResult(fileName string, destination io.Writer) error {
-	file, err := os.Open(fileName)
-	if err != nil {
-		return fmt.Errorf("open %s: %w", fileName, err)
+	writeErr := writeCombinedResult(cmd.OutOrStdout(), accumulator)
+	inputErr := accumulator.err()
+	if writeErr != nil {
+		return errors.Join(inputErr, writeErr)
 	}
-	defer file.Close()
-
-	if _, err := io.Copy(destination, bufio.NewReader(file)); err != nil {
-		return fmt.Errorf("copy %s: %w", fileName, err)
-	}
-	return nil
+	return inputErr
 }
 
 func startCombineProfileServer() {
@@ -119,17 +122,39 @@ func newCombineProgress(fileCount int, currentFile *string) *progress.ProgressBa
 }
 
 func (accumulator *combineAccumulator) mergeFile(fileName, only string) {
-	results, metadata, repository, messages := loadMessage(fileName, &accumulator.repositories)
+	results, metadata, repository, messages := loadMessage(fileName)
 	if metadata == nil {
 		accumulator.errors[fileName] = messages
 		return
 	}
 
 	initializeBurndownRepository(results, repository)
-	for _, err := range mergeResults(accumulator.results, accumulator.metadata, results, metadata, only) {
+	merged, mergeErrors := mergeResults(
+		accumulator.results, accumulator.metadata, results, metadata, only,
+	)
+	for _, err := range mergeErrors {
 		messages = append(messages, err.Error())
 	}
+	if merged > 0 {
+		accumulator.mergedInputs++
+		accumulator.repositories = append(accumulator.repositories, repository)
+	}
 	accumulator.errors[fileName] = messages
+}
+
+func (accumulator *combineAccumulator) err() error {
+	var failures []error
+	files := make([]string, 0, len(accumulator.errors))
+	for fileName := range accumulator.errors {
+		files = append(files, fileName)
+	}
+	sort.Strings(files)
+	for _, fileName := range files {
+		for _, message := range accumulator.errors[fileName] {
+			failures = append(failures, fmt.Errorf("%s: %s", fileName, message))
+		}
+	}
+	return errors.Join(failures...)
 }
 
 func initializeBurndownRepository(results map[string]any, repository string) {
@@ -185,7 +210,7 @@ func serializeCombinedContents(contents map[string][]byte, results map[string]an
 	return nil
 }
 
-func loadMessage(fileName string, repos *[]string) (
+func loadMessage(fileName string) (
 	map[string]any, *hercules.CommonAnalysisResult, string, []string,
 ) {
 	var errs []string
@@ -214,7 +239,6 @@ func loadMessage(fileName string, repos *[]string) (
 		return nil, nil, "", errs
 	}
 	repoName := message.GetHeader().GetRepository()
-	*repos = append(*repos, repoName)
 	results := map[string]any{}
 	for key, val := range message.GetContents() {
 		summoned := hercules.Registry.Summon(key)
@@ -249,7 +273,13 @@ func printErrors(allErrors map[string][]string) {
 		return
 	}
 	fmt.Fprintln(os.Stderr, "Errors:")
-	for key, errs := range allErrors {
+	files := make([]string, 0, len(allErrors))
+	for fileName := range allErrors {
+		files = append(files, fileName)
+	}
+	sort.Strings(files)
+	for _, key := range files {
+		errs := allErrors[key]
 		if len(errs) > 0 {
 			fmt.Fprintln(os.Stderr, "  "+key)
 			for _, err := range errs {
@@ -264,8 +294,9 @@ func mergeResults(mergedResults map[string]any,
 	anotherResults map[string]any,
 	anotherCommons *hercules.CommonAnalysisResult,
 	only string,
-) []error {
+) (int, []error) {
 	var errors []error
+	merged := 0
 	for key, val := range anotherResults {
 		if only != "" && key != only {
 			continue
@@ -273,6 +304,7 @@ func mergeResults(mergedResults map[string]any,
 		mergedResult, exists := mergedResults[key]
 		if !exists {
 			mergedResults[key] = val
+			merged++
 			continue
 		}
 		summoned := hercules.Registry.Summon(key)
@@ -290,14 +322,17 @@ func mergeResults(mergedResults map[string]any,
 			errors = append(errors, fmt.Errorf("could not merge %s: %w", item.Name(), err))
 		} else {
 			mergedResults[key] = mergedResult
+			merged++
 		}
 	}
-	if mergedCommons.CommitsNumber == 0 {
-		*mergedCommons = *anotherCommons
-	} else {
-		mergedCommons.Merge(anotherCommons)
+	if merged > 0 {
+		if mergedCommons.CommitsNumber == 0 {
+			*mergedCommons = *anotherCommons
+		} else {
+			mergedCommons.Merge(anotherCommons)
+		}
 	}
-	return errors
+	return merged, errors
 }
 
 func getOptionsString() string {

@@ -18,6 +18,8 @@
 package render
 
 import (
+	"errors"
+	"fmt"
 	"time"
 
 	"github.com/spf13/viper"
@@ -43,43 +45,73 @@ type Options struct {
 	DevsParallelFallback bool
 }
 
-// ModeResult reports the outcome of a single mode executed by
-// RunWithResults. For a successful mode both Err and Warning are empty.
+// ModeResult reports the outcome of a single mode executed by Run. For a
+// successful mode both Err and Warning are empty.
 // Warning carries the Python-compatible message when a failure was
-// downgraded (missing analysis data) or the mode was unavailable, while Err
-// reports a hard rendering failure.
+// downgraded because optional analysis data is missing, while Err reports a
+// hard rendering failure.
 type ModeResult struct {
 	Mode    string
 	Err     error
 	Warning string
 }
 
-// Run executes the given render modes against reader and writes the
-// resulting files, mirroring the labours CLI semantics exactly: progress
-// output honors the viper "quiet" key, a ".json" output collects raw data
-// for all modes into a single JSON file, unknown or unimplemented modes are
-// reported on stdout, and missing-analysis errors are downgraded to
-// Python-compatible warnings. Failures in individual modes never abort the
-// run, which is why Run does not return an error.
-func Run(reader readers.Reader, modeNames []string, opts Options) {
-	RunWithResults(reader, modeNames, opts)
+// Result is the aggregate outcome of a render run. Modes contains one result
+// per requested mode. OutputError is reserved for a run-level output failure,
+// such as failing to create or write the combined JSON output.
+type Result struct {
+	Modes       []ModeResult
+	OutputError error
 }
 
-// RunWithResults behaves exactly like Run (same output, same warnings, no
-// early abort) but additionally returns the per-mode outcomes so that
-// embedding callers (e.g. `hercules report --strict`) can distinguish hard
-// mode failures from Python-compatible missing-analysis warnings.
-func RunWithResults(reader readers.Reader, modeNames []string, opts Options) []ModeResult {
+// Err joins all hard failures in the result. Warning-only runs return nil so
+// callers can use the error value as a stable process-status contract without
+// parsing diagnostics.
+func (r Result) Err() error {
+	failures := make([]error, 0, len(r.Modes)+1)
+	for _, mode := range r.Modes {
+		if mode.Err != nil {
+			failures = append(failures, fmt.Errorf("render mode %s: %w", mode.Mode, mode.Err))
+		}
+	}
+	if r.OutputError != nil {
+		failures = append(failures, fmt.Errorf("write render output: %w", r.OutputError))
+	}
+	return errors.Join(failures...)
+}
+
+// HasWarnings reports whether any mode completed with an optional-data
+// warning.
+func (r Result) HasWarnings() bool {
+	for _, mode := range r.Modes {
+		if mode.Warning != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// Run executes the given render modes against reader and writes the
+// resulting files. Independent modes continue after a failure. Typed
+// missing-analysis errors are warnings; all other mode and output failures
+// are retained in the returned aggregate result.
+func Run(reader readers.Reader, modeNames []string, opts Options) Result {
 	sentimentFallbackEnabled = opts.SentimentFallback
 	devsParallelFallbackEnabled = opts.DevsParallelFallback
 	return executeModes(modeNames, reader, opts.Output, opts.StartTime, opts.EndTime)
+}
+
+// RunWithResults is retained for source compatibility. New callers should
+// use Run.
+func RunWithResults(reader readers.Reader, modeNames []string, opts Options) []ModeResult {
+	return Run(reader, modeNames, opts).Modes
 }
 
 // SetRenderDefaults installs viper defaults for every setting the render
 // modes read from viper globals, mirroring the flag defaults established by
 // the labours CLI (cmd/labours/root.go). Callers that embed the renderer in
 // another CLI (e.g. `hercules report`) should call this once before Run or
-// RunWithResults. viper.SetDefault has the lowest precedence, so values
+// Run. viper.SetDefault has the lowest precedence, so values
 // already set or bound to flags are never overridden.
 func SetRenderDefaults() {
 	viper.SetDefault("relative", false)

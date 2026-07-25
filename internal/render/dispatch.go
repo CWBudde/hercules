@@ -50,9 +50,9 @@ var modeHandlers = map[string]func(reader readers.Reader, output string, startTi
 	"refactoring-proxy":       refactoringProxy,
 }
 
-func executeModes(modes []string, reader readers.Reader, output string, startTime, endTime *time.Time) []ModeResult {
+func executeModes(modes []string, reader readers.Reader, output string, startTime, endTime *time.Time) Result {
 	if len(modes) == 0 {
-		return nil
+		return Result{}
 	}
 	modeResults := make([]ModeResult, 0, len(modes))
 
@@ -82,7 +82,10 @@ func executeModes(modes []string, reader readers.Reader, output string, startTim
 
 			if _, ok := modeHandlers[mode]; !ok {
 				printModeUnavailable(mode)
-				modeResults = append(modeResults, ModeResult{Mode: mode, Warning: modeUnavailableMessage(mode)})
+				modeResults = append(modeResults, ModeResult{
+					Mode: mode,
+					Err:  errors.New(modeUnavailableMessage(mode)),
+				})
 				results[mode] = map[string]interface{}{
 					"error": "mode not implemented",
 				}
@@ -91,9 +94,16 @@ func executeModes(modes []string, reader readers.Reader, output string, startTim
 
 			data, err := extractModeDataForJSON(reader, mode)
 			if err != nil {
-				modeResults = append(modeResults, handleModeError(mode, err))
+				result := handleModeError(mode, err)
+				modeResults = append(modeResults, result)
+				key := "error"
+				message := err.Error()
+				if result.Warning != "" {
+					key = "warning"
+					message = result.Warning
+				}
 				results[mode] = map[string]interface{}{
-					"error": err.Error(),
+					key: message,
 				}
 				continue
 			}
@@ -107,11 +117,12 @@ func executeModes(modes []string, reader readers.Reader, output string, startTim
 
 		// Save results as JSON
 		if err := saveJSONResults(results, output); err != nil {
-			fmt.Printf("Error saving JSON results: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Error saving JSON results: %v\n", err)
+			return Result{Modes: modeResults, OutputError: err}
 		} else if !quiet {
 			fmt.Printf("Results saved as JSON to: %s\n", output)
 		}
-		return modeResults
+		return Result{Modes: modeResults}
 	} else {
 		// Regular image output
 		if len(modes) > 1 {
@@ -140,14 +151,14 @@ func executeModes(modes []string, reader readers.Reader, output string, startTim
 			}
 		}
 	}
-	return modeResults
+	return Result{Modes: modeResults}
 }
 
 func runSingleMode(mode string, reader readers.Reader, output string, modeCount int, startTime, endTime *time.Time) ModeResult {
 	modeFunc, ok := modeHandlers[mode]
 	if !ok {
 		printModeUnavailable(mode)
-		return ModeResult{Mode: mode, Warning: modeUnavailableMessage(mode)}
+		return ModeResult{Mode: mode, Err: errors.New(modeUnavailableMessage(mode))}
 	}
 	formattedOutput := planModeOutput(output, mode, modeCount)
 	if err := modeFunc(reader, formattedOutput, startTime, endTime); err != nil {
@@ -164,7 +175,7 @@ func modeUnavailableMessage(mode string) string {
 }
 
 func printModeUnavailable(mode string) {
-	fmt.Println(modeUnavailableMessage(mode))
+	fmt.Fprintln(os.Stderr, modeUnavailableMessage(mode))
 }
 
 // handleModeError prints the outcome of a failed mode and classifies it:
@@ -172,10 +183,10 @@ func printModeUnavailable(mode string) {
 // else stays a hard error.
 func handleModeError(mode string, err error) ModeResult {
 	if warning, ok := missingAnalysisWarning(mode, err); ok {
-		fmt.Println(warning)
+		fmt.Fprintln(os.Stderr, warning)
 		return ModeResult{Mode: mode, Warning: warning}
 	}
-	fmt.Printf("Error in mode %s: %v\n", mode, err)
+	fmt.Fprintf(os.Stderr, "Error in mode %s: %v\n", mode, err)
 	return ModeResult{Mode: mode, Err: err}
 }
 
@@ -242,18 +253,7 @@ func missingAnalysisWarning(mode string, err error) (string, bool) {
 }
 
 func isMissingAnalysisError(err error) bool {
-	if err == nil {
-		return false
-	}
-	if errors.Is(err, readers.ErrAnalysisMissing) {
-		return true
-	}
-	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "missing") ||
-		strings.Contains(msg, "not collected") ||
-		strings.Contains(msg, "not found") ||
-		strings.Contains(msg, "no ") ||
-		strings.Contains(msg, "does not expose")
+	return errors.Is(err, readers.ErrAnalysisMissing)
 }
 
 func burndownProject(reader readers.Reader, output string, _, _ *time.Time) error {
@@ -378,6 +378,7 @@ func runAllModes(reader readers.Reader, output string, startTime, endTime *time.
 		fmt.Printf("Running 'all' mode: executing %d analysis modes\n", len(pythonAllModes))
 	}
 
+	var failures []error
 	for _, modeName := range pythonAllModes {
 		if !viper.GetBool("quiet") {
 			fmt.Printf("  Running %s...\n", modeName)
@@ -386,15 +387,19 @@ func runAllModes(reader readers.Reader, output string, startTime, endTime *time.
 		modeFunc, ok := modeHandlers[modeName]
 		if !ok {
 			printModeUnavailable(modeName)
+			failures = append(failures, errors.New(modeUnavailableMessage(modeName)))
 			continue
 		}
 		modeOutput := planModeOutput(output, modeName, len(pythonAllModes))
 		if err := modeFunc(reader, modeOutput, startTime, endTime); err != nil {
-			handleModeError(modeName, err)
+			result := handleModeError(modeName, err)
+			if result.Err != nil {
+				failures = append(failures, fmt.Errorf("render mode %s: %w", modeName, result.Err))
+			}
 		}
 	}
 
-	return nil
+	return errors.Join(failures...)
 }
 
 // extractModeDataForJSON extracts raw reader data for JSON output without rendering plots.
@@ -433,7 +438,7 @@ func extractModeDataForJSON(reader readers.Reader, mode string) (interface{}, er
 	case "burndown-repository", "burndown-repos-combined":
 		repoReader, ok := reader.(readers.RepositoryBurndownReader)
 		if !ok {
-			return nil, fmt.Errorf("reader does not expose repository burndown data")
+			return nil, fmt.Errorf("%w: repository burndown", readers.ErrAnalysisMissing)
 		}
 		repos, err := repoReader.GetRepositoriesBurndown()
 		if err != nil {
@@ -491,7 +496,7 @@ func extractModeDataForJSON(reader readers.Reader, mode string) (interface{}, er
 	case "sentiment":
 		sentimentReader, ok := reader.(readers.SentimentReader)
 		if !ok {
-			return nil, fmt.Errorf("reader does not expose sentiment data")
+			return nil, fmt.Errorf("%w: sentiment", readers.ErrAnalysisMissing)
 		}
 		data, err := sentimentReader.GetSentimentByTick()
 		if err != nil {
@@ -501,7 +506,7 @@ func extractModeDataForJSON(reader readers.Reader, mode string) (interface{}, er
 	case "temporal-activity":
 		temporalReader, ok := reader.(readers.TemporalActivityReader)
 		if !ok {
-			return nil, fmt.Errorf("reader does not expose temporal activity data")
+			return nil, fmt.Errorf("%w: temporal activity", readers.ErrAnalysisMissing)
 		}
 		data, err := temporalReader.GetTemporalActivity()
 		if err != nil {
@@ -511,7 +516,7 @@ func extractModeDataForJSON(reader readers.Reader, mode string) (interface{}, er
 	case "bus-factor":
 		busFactorReader, ok := reader.(readers.BusFactorReader)
 		if !ok {
-			return nil, fmt.Errorf("reader does not expose bus factor data")
+			return nil, fmt.Errorf("%w: bus factor", readers.ErrAnalysisMissing)
 		}
 		data, err := busFactorReader.GetBusFactor()
 		if err != nil {
@@ -521,7 +526,7 @@ func extractModeDataForJSON(reader readers.Reader, mode string) (interface{}, er
 	case "ownership-concentration":
 		ownershipReader, ok := reader.(readers.OwnershipConcentrationReader)
 		if !ok {
-			return nil, fmt.Errorf("reader does not expose ownership concentration data")
+			return nil, fmt.Errorf("%w: ownership concentration", readers.ErrAnalysisMissing)
 		}
 		data, err := ownershipReader.GetOwnershipConcentration()
 		if err != nil {
@@ -531,7 +536,7 @@ func extractModeDataForJSON(reader readers.Reader, mode string) (interface{}, er
 	case "knowledge-diffusion":
 		diffusionReader, ok := reader.(readers.KnowledgeDiffusionReader)
 		if !ok {
-			return nil, fmt.Errorf("reader does not expose knowledge diffusion data")
+			return nil, fmt.Errorf("%w: knowledge diffusion", readers.ErrAnalysisMissing)
 		}
 		data, err := diffusionReader.GetKnowledgeDiffusion()
 		if err != nil {
@@ -541,7 +546,7 @@ func extractModeDataForJSON(reader readers.Reader, mode string) (interface{}, er
 	case "hotspot-risk":
 		hotspotReader, ok := reader.(readers.HotspotRiskReader)
 		if !ok {
-			return nil, fmt.Errorf("reader does not expose hotspot risk data")
+			return nil, fmt.Errorf("%w: hotspot risk", readers.ErrAnalysisMissing)
 		}
 		data, err := hotspotReader.GetHotspotRisk()
 		if err != nil {
@@ -551,7 +556,7 @@ func extractModeDataForJSON(reader readers.Reader, mode string) (interface{}, er
 	case "refactoring-proxy":
 		refactoringReader, ok := reader.(readers.RefactoringProxyReader)
 		if !ok {
-			return nil, fmt.Errorf("reader does not expose refactoring proxy data")
+			return nil, fmt.Errorf("%w: refactoring proxy", readers.ErrAnalysisMissing)
 		}
 		data, err := refactoringReader.GetRefactoringProxy()
 		if err != nil {
@@ -567,9 +572,8 @@ func extractModeDataForJSON(reader readers.Reader, mode string) (interface{}, er
 func saveJSONResults(results map[string]interface{}, outputPath string) error {
 	file, err := os.Create(outputPath) // #nosec G304 - JSON output path is explicitly requested by caller.
 	if err != nil {
-		return fmt.Errorf("failed to create JSON output file: %v", err)
+		return fmt.Errorf("failed to create JSON output file: %w", err)
 	}
-	defer func() { _ = file.Close() }()
 
 	encoder := json.NewEncoder(file)
 	encoder.SetIndent("", "  ") // Pretty print
@@ -584,5 +588,12 @@ func saveJSONResults(results map[string]interface{}, outputPath string) error {
 		"results": results,
 	}
 
-	return encoder.Encode(output)
+	if err := encoder.Encode(output); err != nil {
+		_ = file.Close()
+		return fmt.Errorf("encode JSON output: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("close JSON output: %w", err)
+	}
+	return nil
 }

@@ -364,27 +364,27 @@ func (r *reportMetricsReader) GetProjectBurndownWithHeader() (burndown.BurndownH
 }
 
 func (r *reportMetricsReader) GetFilesBurndown() ([]readers.FileBurndown, error) {
-	return nil, fmt.Errorf("not implemented")
+	return nil, fmt.Errorf("%w: files burndown", readers.ErrAnalysisMissing)
 }
 
 func (r *reportMetricsReader) GetPeopleBurndown() ([]readers.PeopleBurndown, error) {
-	return nil, fmt.Errorf("not implemented")
+	return nil, fmt.Errorf("%w: people burndown", readers.ErrAnalysisMissing)
 }
 
 func (r *reportMetricsReader) GetOwnershipBurndown() ([]string, map[string][][]int, error) {
-	return nil, nil, fmt.Errorf("not implemented")
+	return nil, nil, fmt.Errorf("%w: ownership burndown", readers.ErrAnalysisMissing)
 }
 
 func (r *reportMetricsReader) GetPeopleInteraction() ([]string, [][]int, error) {
-	return nil, nil, fmt.Errorf("not implemented")
+	return nil, nil, fmt.Errorf("%w: people interaction", readers.ErrAnalysisMissing)
 }
 
 func (r *reportMetricsReader) GetFileCooccurrence() ([]string, [][]int, error) {
-	return nil, nil, fmt.Errorf("not implemented")
+	return nil, nil, fmt.Errorf("%w: file coupling", readers.ErrAnalysisMissing)
 }
 
 func (r *reportMetricsReader) GetPeopleCooccurrence() ([]string, [][]int, error) {
-	return nil, nil, fmt.Errorf("not implemented")
+	return nil, nil, fmt.Errorf("%w: people coupling", readers.ErrAnalysisMissing)
 }
 
 func (r *reportMetricsReader) GetShotnessCooccurrence() ([]string, [][]int, error) {
@@ -396,7 +396,7 @@ func (r *reportMetricsReader) GetShotnessCooccurrence() ([]string, [][]int, erro
 }
 
 func (r *reportMetricsReader) GetShotnessRecords() ([]readers.ShotnessRecord, error) {
-	return nil, fmt.Errorf("not implemented")
+	return nil, fmt.Errorf("%w: shotness", readers.ErrAnalysisMissing)
 }
 
 func (r *reportMetricsReader) GetDeveloperStats() ([]readers.DeveloperStat, error) {
@@ -407,7 +407,7 @@ func (r *reportMetricsReader) GetDeveloperStats() ([]readers.DeveloperStat, erro
 }
 
 func (r *reportMetricsReader) GetLanguageStats() ([]readers.LanguageStat, error) {
-	return nil, fmt.Errorf("not implemented")
+	return nil, fmt.Errorf("%w: language stats", readers.ErrAnalysisMissing)
 }
 
 func (r *reportMetricsReader) GetRuntimeStats() (map[string]float64, error) {
@@ -419,7 +419,7 @@ func (r *reportMetricsReader) GetRuntimeStats() (map[string]float64, error) {
 }
 
 func (r *reportMetricsReader) GetDeveloperTimeSeriesData() (*readers.DeveloperTimeSeriesData, error) {
-	return nil, fmt.Errorf("not implemented")
+	return nil, fmt.Errorf("%w: developer time series", readers.ErrAnalysisMissing)
 }
 
 func (r *reportMetricsReader) GetTemporalActivity() (*readers.TemporalActivityData, error) {

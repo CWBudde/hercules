@@ -23,7 +23,7 @@ func Languages(reader readers.Reader, output string) error {
 	// Step 1: Read language statistics
 	languageStats, err := reader.GetLanguageStats()
 	if err != nil {
-		return fmt.Errorf("failed to get language stats: %v - ensure the input data contains language statistics", err)
+		return fmt.Errorf("failed to get language stats: %w", err)
 	}
 
 	if len(languageStats) == 0 {

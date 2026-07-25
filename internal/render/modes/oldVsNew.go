@@ -1,6 +1,7 @@
 package modes
 
 import (
+	"errors"
 	"fmt"
 	"image/color"
 	"math"
@@ -14,7 +15,11 @@ import (
 // This provides insights into development patterns - whether the project is in growth mode (lots of new code)
 // vs maintenance mode (lots of modifications to existing code).
 func OldVsNew(reader readers.Reader, output string, startTime, endTime *time.Time, resample string) error {
-	if timeSeries, err := reader.GetDeveloperTimeSeriesData(); err == nil && len(timeSeries.Days) > 0 {
+	timeSeries, timeSeriesErr := reader.GetDeveloperTimeSeriesData()
+	if timeSeriesErr != nil && !errors.Is(timeSeriesErr, readers.ErrAnalysisMissing) {
+		return fmt.Errorf("get developer time series: %w", timeSeriesErr)
+	}
+	if timeSeriesErr == nil && len(timeSeries.Days) > 0 {
 		startUnix, endUnix := reader.GetHeader()
 		if startUnix > 0 && endUnix > startUnix {
 			newLines, oldLines, dates := oldVsNewDailySeries(timeSeries, startUnix, endUnix)
@@ -24,6 +29,9 @@ func OldVsNew(reader readers.Reader, output string, startTime, endTime *time.Tim
 
 	// Try to get developer statistics first
 	developerStats, err := reader.GetDeveloperStats()
+	if err != nil && !errors.Is(err, readers.ErrAnalysisMissing) {
+		return fmt.Errorf("get developer stats: %w", err)
+	}
 
 	var totalLinesAdded, totalLinesModified int
 
@@ -31,38 +39,22 @@ func OldVsNew(reader readers.Reader, output string, startTime, endTime *time.Tim
 		// If developer stats are not available, try to derive data from project burndown
 		fmt.Println("Developer stats not available, using synthetic data based on project burndown...")
 
-		// Try to get burndown data, but handle potential panics
-		var burndownMatrix [][]int
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					fmt.Printf("Warning: error accessing burndown data: %v\n", r)
-					burndownMatrix = nil
-				}
-			}()
-			_, burndownMatrix = reader.GetProjectBurndown()
-		}()
-
+		_, _, burndownMatrix, burndownErr := reader.GetProjectBurndownWithHeader()
+		if burndownErr != nil {
+			return fmt.Errorf("get project burndown fallback: %w", burndownErr)
+		}
 		if len(burndownMatrix) == 0 {
-			fmt.Println("No burndown data available, using demo values for old-vs-new analysis")
-			// Use demo values that represent a typical project evolution
-			totalLinesAdded = 10000
-			totalLinesModified = 6000
-		} else {
-			// Estimate total lines from burndown data - use the final value as a proxy
-			if len(burndownMatrix) > 0 && len(burndownMatrix[len(burndownMatrix)-1]) > 0 {
-				finalLines := 0
-				for _, val := range burndownMatrix[len(burndownMatrix)-1] {
-					finalLines += val
-				}
-				// Rough estimation: assume 60% new code, 40% modified code for a typical project
-				totalLinesAdded = int(float64(finalLines) * 0.6)
-				totalLinesModified = int(float64(finalLines) * 0.4)
-			} else {
-				// Fallback to demo values
-				totalLinesAdded = 10000
-				totalLinesModified = 6000
+			return fmt.Errorf("%w: old-vs-new", readers.ErrAnalysisMissing)
+		}
+		// Estimate total lines from burndown data - use the final value as a proxy
+		if len(burndownMatrix[len(burndownMatrix)-1]) > 0 {
+			finalLines := 0
+			for _, val := range burndownMatrix[len(burndownMatrix)-1] {
+				finalLines += val
 			}
+			// Rough estimation: assume 60% new code, 40% modified code for a typical project
+			totalLinesAdded = int(float64(finalLines) * 0.6)
+			totalLinesModified = int(float64(finalLines) * 0.4)
 		}
 	} else {
 		// Aggregate the data across all developers

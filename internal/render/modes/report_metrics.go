@@ -78,11 +78,11 @@ func temporalWeekLabels() []string {
 func TemporalActivity(reader readers.Reader, output string, legendThreshold, singleColumnThreshold int, startTime, endTime *time.Time) error {
 	temporalReader, ok := reader.(readers.TemporalActivityReader)
 	if !ok {
-		return fmt.Errorf("reader does not expose temporal activity data")
+		return fmt.Errorf("%w: temporal activity", readers.ErrAnalysisMissing)
 	}
 	data, err := temporalReader.GetTemporalActivity()
 	if err != nil {
-		return fmt.Errorf("failed to get temporal activity data: %v", err)
+		return fmt.Errorf("failed to get temporal activity data: %w", err)
 	}
 
 	if startTime != nil || endTime != nil {
@@ -422,11 +422,11 @@ type temporalHourCommitSeries struct {
 func BusFactor(reader readers.Reader, output string) error {
 	busFactorReader, ok := reader.(readers.BusFactorReader)
 	if !ok {
-		return fmt.Errorf("reader does not expose bus factor data")
+		return fmt.Errorf("%w: bus factor", readers.ErrAnalysisMissing)
 	}
 	data, err := busFactorReader.GetBusFactor()
 	if err != nil {
-		return fmt.Errorf("failed to get bus factor data: %v", err)
+		return fmt.Errorf("failed to get bus factor data: %w", err)
 	}
 	if len(data.Snapshots) == 0 {
 		return fmt.Errorf("no bus factor snapshots found")
@@ -680,11 +680,11 @@ func hideAxesContent(ax *core.Axes) {
 func OwnershipConcentration(reader readers.Reader, output string) error {
 	ownershipReader, ok := reader.(readers.OwnershipConcentrationReader)
 	if !ok {
-		return fmt.Errorf("reader does not expose ownership concentration data")
+		return fmt.Errorf("%w: ownership concentration", readers.ErrAnalysisMissing)
 	}
 	data, err := ownershipReader.GetOwnershipConcentration()
 	if err != nil {
-		return fmt.Errorf("failed to get ownership concentration data: %v", err)
+		return fmt.Errorf("failed to get ownership concentration data: %w", err)
 	}
 	if len(data.Snapshots) == 0 {
 		return fmt.Errorf("no ownership concentration snapshots found")
@@ -819,11 +819,11 @@ func plotOwnershipSubsystemsBar(repoName string, giniByDir, hhiByDir map[string]
 func KnowledgeDiffusion(reader readers.Reader, output string, detail bool) error {
 	diffusionReader, ok := reader.(readers.KnowledgeDiffusionReader)
 	if !ok {
-		return fmt.Errorf("reader does not expose knowledge diffusion data")
+		return fmt.Errorf("%w: knowledge diffusion", readers.ErrAnalysisMissing)
 	}
 	data, err := diffusionReader.GetKnowledgeDiffusion()
 	if err != nil {
-		return fmt.Errorf("failed to get knowledge diffusion data: %v", err)
+		return fmt.Errorf("failed to get knowledge diffusion data: %w", err)
 	}
 	if len(data.Distribution) == 0 && len(data.Files) == 0 {
 		return fmt.Errorf("no knowledge diffusion data found")
@@ -910,11 +910,11 @@ func plotKnowledgeLorenz(repoName string, data *readers.KnowledgeDiffusionData, 
 func HotspotRisk(reader readers.Reader, output string) error {
 	hotspotReader, ok := reader.(readers.HotspotRiskReader)
 	if !ok {
-		return fmt.Errorf("reader does not expose hotspot risk data")
+		return fmt.Errorf("%w: hotspot risk", readers.ErrAnalysisMissing)
 	}
 	data, err := hotspotReader.GetHotspotRisk()
 	if err != nil {
-		return fmt.Errorf("failed to get hotspot risk data: %v", err)
+		return fmt.Errorf("failed to get hotspot risk data: %w", err)
 	}
 	if len(data.Files) == 0 {
 		return fmt.Errorf("no hotspot risk files found")

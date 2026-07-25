@@ -30,17 +30,11 @@ func Shotness(reader readers.Reader, output string) error {
 	// Step 1: Read shotness records
 	records, err := reader.GetShotnessRecords()
 	if err != nil {
-		fmt.Printf("Warning: No shotness data available - %v\n", err)
-		fmt.Println("To generate shotness analysis, run hercules with the --shotness flag:")
-		fmt.Println("  hercules --burndown --shotness <repo> | labours -m shotness")
-		return nil
+		return fmt.Errorf("get shotness records: %w", err)
 	}
 
 	if len(records) == 0 {
-		fmt.Println("No shotness records found in the data.")
-		fmt.Println("To generate shotness analysis, run hercules with the --shotness flag:")
-		fmt.Println("  hercules --burndown --shotness <repo> | labours -m shotness")
-		return nil
+		return fmt.Errorf("%w: Shotness", readers.ErrAnalysisMissing)
 	}
 
 	// Step 2: Process and aggregate shotness data
@@ -52,7 +46,7 @@ func Shotness(reader readers.Reader, output string) error {
 	// Step 4: Generate visualization (optional - only if output directory specified)
 	if output != "" {
 		if err := plotShotness(results, output); err != nil {
-			fmt.Printf("Warning: Failed to generate shotness plot: %v\n", err)
+			return fmt.Errorf("plot shotness: %w", err)
 		}
 	}
 

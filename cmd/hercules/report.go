@@ -313,7 +313,8 @@ func renderReportInProcess(options reportOptions, reportPB, chartsRoot string,
 	for _, mode := range modes {
 		output := reportModeOutput(chartsRoot, mode, options.format)
 		_, _ = fmt.Fprintf(os.Stderr, "report: rendering mode %s...\n", mode)
-		for _, result := range render.RunWithResults(reader, []string{mode}, render.Options{Output: output}) {
+		result := render.Run(reader, []string{mode}, render.Options{Output: output})
+		for _, result := range result.Modes {
 			if result.Err == nil {
 				continue
 			}
@@ -376,9 +377,18 @@ func finalizeReport(options reportOptions, message pb.AnalysisResults, analysisF
 
 	if len(modeResults) > 0 {
 		_, _ = fmt.Fprintf(os.Stderr, "report: %d mode(s) failed. See index.html for details.\n", len(modeResults))
+		return reportFailuresError(modeResults)
 	}
 	_, _ = fmt.Fprintf(os.Stderr, "report: done. Open %s\n", indexFile)
 	return nil
+}
+
+func reportFailuresError(failures []reportModeFailure) error {
+	errs := make([]error, 0, len(failures))
+	for _, failure := range failures {
+		errs = append(errs, fmt.Errorf("render mode %s: %s", failure.Mode, failure.Error))
+	}
+	return errors.Join(errs...)
 }
 
 // reportAnalysisFlagParents maps analysis flags that are sub-options of another

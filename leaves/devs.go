@@ -169,36 +169,39 @@ func (devs *DevsAnalysis) Consume(deps map[string]any) (map[string]any, error) {
 		return noDependencies(), nil
 	}
 
-	author := deps[identity.DependencyAuthor].(int)
+	commitDeps, err := getDevsCommitDependencies(deps)
+	if err != nil {
+		return nil, err
+	}
 
-	treeDiff := deps[items.DependencyTreeChanges].(object.Changes)
-	if len(treeDiff) == 0 && !devs.ConsiderEmptyCommits {
+	if len(commitDeps.treeDiff) == 0 && !devs.ConsiderEmptyCommits {
 		return noDependencies(), nil
 	}
 
-	tick := deps[items.DependencyTick].(int)
-
-	devstick, exists := devs.ticks[tick]
-	if !exists {
-		devstick = map[int]*DevTick{}
-		devs.ticks[tick] = devstick
+	statsDeps, err := getDevsStatsDependencies(deps)
+	if err != nil {
+		return nil, err
 	}
 
-	developerTick, exists := devstick[author]
+	devstick, exists := devs.ticks[statsDeps.tick]
+	if !exists {
+		devstick = map[int]*DevTick{}
+		devs.ticks[statsDeps.tick] = devstick
+	}
+
+	developerTick, exists := devstick[commitDeps.author]
 	if !exists {
 		developerTick = &DevTick{Languages: map[string]items.LineStats{}}
-		devstick[author] = developerTick
+		devstick[commitDeps.author] = developerTick
 	}
 
 	developerTick.Commits++
-	langs := deps[items.DependencyLanguages].(map[plumbing.Hash]string)
 
-	lineStats := deps[items.DependencyLineStats].(map[object.ChangeEntry]items.LineStats)
-	for changeEntry, stats := range lineStats {
+	for changeEntry, stats := range statsDeps.lineStats {
 		developerTick.Added += stats.Added
 		developerTick.Removed += stats.Removed
 		developerTick.Changed += stats.Changed
-		lang := langs[changeEntry.TreeEntry.Hash]
+		lang := statsDeps.languages[changeEntry.TreeEntry.Hash]
 		langStats := developerTick.Languages[lang]
 		developerTick.Languages[lang] = items.LineStats{
 			Added:   langStats.Added + stats.Added,
@@ -208,6 +211,38 @@ func (devs *DevsAnalysis) Consume(deps map[string]any) (map[string]any, error) {
 	}
 
 	return noDependencies(), nil
+}
+
+type devsCommitDependencies struct {
+	author   int
+	treeDiff object.Changes
+}
+
+func getDevsCommitDependencies(deps map[string]any) (devsCommitDependencies, error) {
+	reader := factReader{facts: deps}
+	values := devsCommitDependencies{
+		author:   readFact[int](&reader, identity.DependencyAuthor),
+		treeDiff: readFact[object.Changes](&reader, items.DependencyTreeChanges),
+	}
+
+	return values, reader.err
+}
+
+type devsStatsDependencies struct {
+	tick      int
+	languages map[plumbing.Hash]string
+	lineStats map[object.ChangeEntry]items.LineStats
+}
+
+func getDevsStatsDependencies(deps map[string]any) (devsStatsDependencies, error) {
+	reader := factReader{facts: deps}
+	values := devsStatsDependencies{
+		tick:      readFact[int](&reader, items.DependencyTick),
+		languages: readFact[map[plumbing.Hash]string](&reader, items.DependencyLanguages),
+		lineStats: readFact[map[object.ChangeEntry]items.LineStats](&reader, items.DependencyLineStats),
+	}
+
+	return values, reader.err
 }
 
 // Finalize returns the result of the analysis. Further Consume() calls are not expected.
@@ -228,7 +263,11 @@ func (devs *DevsAnalysis) Fork(n int) []core.PipelineItem {
 // Serialize converts the analysis result as returned by Finalize() to text or bytes.
 // The text format is YAML and the bytes format is Protocol Buffers.
 func (devs *DevsAnalysis) Serialize(result any, binary bool, writer io.Writer) error {
-	devsResult := result.(DevsResult)
+	devsResult, err := requiredResult[DevsResult](result)
+	if err != nil {
+		return fmt.Errorf("serialize developers: %w", err)
+	}
+
 	if binary {
 		return devs.serializeBinary(&devsResult, writer)
 	}
@@ -292,9 +331,16 @@ func (devs *DevsAnalysis) Deserialize(pbmessage []byte) (any, error) {
 func (devs *DevsAnalysis) MergeResults(result1, result2 any,
 	commonResult1, commonResult2 *core.CommonAnalysisResult,
 ) any {
-	cr1 := result1.(DevsResult)
+	cr1, err := requiredResult[DevsResult](result1)
+	if err != nil {
+		return fmt.Errorf("merge developers first result: %w", err)
+	}
 
-	cr2 := result2.(DevsResult)
+	cr2, err := requiredResult[DevsResult](result2)
+	if err != nil {
+		return fmt.Errorf("merge developers second result: %w", err)
+	}
+
 	if cr1.tickSize != cr2.tickSize {
 		return fmt.Errorf("%w (r1: %d, r2: %d) received",
 			errDevsMismatchingTickSizes, cr1.tickSize, cr2.tickSize)

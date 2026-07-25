@@ -60,7 +60,10 @@ const (
 	ConfigTreeDiffFilterRegexp = "TreeDiff.FilteredRegexes"
 )
 
-var errCommitDoesNotContinue = errors.New("commit does not continue from previous commit")
+var (
+	errCommitDoesNotContinue      = errors.New("commit does not continue from previous commit")
+	errInvalidTreeDiffConfigValue = errors.New("invalid tree diff configuration value")
+)
 
 // Name of this PipelineItem. Uniquely identifies the type, used for mapping keys, etc.
 func (treediff *TreeDiff) Name() string {
@@ -141,7 +144,8 @@ func (treediff *TreeDiff) Configure(facts map[string]any) error {
 		prefixes, ok := facts[ConfigTreeDiffBlacklistedPrefixes].([]string)
 		if !ok {
 			return fmt.Errorf(
-				"configuration %q has invalid type %T, expected []string",
+				"%w: configuration %q has type %T, expected []string",
+				errInvalidTreeDiffConfigValue,
 				ConfigTreeDiffBlacklistedPrefixes,
 				facts[ConfigTreeDiffBlacklistedPrefixes],
 			)

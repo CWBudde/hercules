@@ -264,6 +264,7 @@ func classifyRenameBlobs(
 // in Provides(). If there was an error, nil is returned.
 func (ra *RenameAnalysis) Consume(deps map[string]any) (map[string]any, error) {
 	beginTime := time.Now()
+
 	changes, err := dependencyValue[object.Changes](deps, DependencyTreeChanges)
 	if err != nil {
 		return nil, err

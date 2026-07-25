@@ -133,10 +133,16 @@ func (shotness *ShotnessAnalysis) Consume(deps map[string]any) (map[string]any, 
 		return noDependencies(), nil
 	}
 
-	commit := deps[core.DependencyCommit].(*object.Commit)
-	changes := deps[items.DependencyTreeChanges].(object.Changes)
-	diffs := deps[items.DependencyFileDiff].(map[string]items.FileDiffData)
-	cache := deps[items.DependencyBlobCache].(map[plumbing.Hash]*items.CachedBlob)
+	reader := factReader{facts: deps}
+	commit := readFact[*object.Commit](&reader, core.DependencyCommit)
+	changes := readFact[object.Changes](&reader, items.DependencyTreeChanges)
+	diffs := readFact[map[string]items.FileDiffData](&reader, items.DependencyFileDiff)
+	cache := readFact[map[plumbing.Hash]*items.CachedBlob](&reader, items.DependencyBlobCache)
+
+	if reader.err != nil {
+		return nil, reader.err
+	}
+
 	allNodes := map[string]bool{}
 
 	for _, change := range changes {
@@ -238,7 +244,11 @@ func (shotness *ShotnessAnalysis) Finalize() any {
 // Serialize converts the analysis result as returned by Finalize() to text or bytes.
 // The text format is YAML and the bytes format is Protocol Buffers.
 func (shotness *ShotnessAnalysis) Serialize(result any, binary bool, writer io.Writer) error {
-	shotnessResult := result.(ShotnessResult)
+	shotnessResult, err := requiredResult[ShotnessResult](result)
+	if err != nil {
+		return err
+	}
+
 	if binary {
 		return shotness.serializeBinary(&shotnessResult, writer)
 	}

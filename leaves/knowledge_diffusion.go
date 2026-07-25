@@ -116,8 +116,8 @@ func (kd *KnowledgeDiffusionAnalysis) Configure(facts map[string]any) error {
 		kd.l = l
 	}
 
-	if val, exists := facts[ConfigKnowledgeDiffusionWindowMonths]; exists {
-		kd.WindowMonths = val.(int)
+	if val, exists := facts[ConfigKnowledgeDiffusionWindowMonths].(int); exists {
+		kd.WindowMonths = val
 	}
 
 	if val, exists := facts[identity.FactIdentityDetectorReversedPeopleDict].([]string); exists {
@@ -162,9 +162,14 @@ func (kd *KnowledgeDiffusionAnalysis) Initialize(repository *git.Repository) err
 // Consume runs this PipelineItem on the next commit data.
 // For each changed file, it records the author as an editor.
 func (kd *KnowledgeDiffusionAnalysis) Consume(deps map[string]any) (map[string]any, error) {
-	changes := deps[items.DependencyTreeChanges].(object.Changes)
-	author := deps[identity.DependencyAuthor].(int)
-	tick := deps[items.DependencyTick].(int)
+	reader := factReader{facts: deps}
+	changes := readFact[object.Changes](&reader, items.DependencyTreeChanges)
+	author := readFact[int](&reader, identity.DependencyAuthor)
+	tick := readFact[int](&reader, items.DependencyTick)
+
+	if reader.err != nil {
+		return nil, reader.err
+	}
 
 	for _, change := range changes {
 		action, _ := change.Action()
@@ -257,7 +262,11 @@ func (kd *KnowledgeDiffusionAnalysis) Fork(n int) []core.PipelineItem {
 
 // Serialize converts the analysis result as returned by Finalize() to text or bytes.
 func (kd *KnowledgeDiffusionAnalysis) Serialize(result any, binary bool, writer io.Writer) error {
-	kdResult := result.(KnowledgeDiffusionResult)
+	kdResult, err := requiredResult[KnowledgeDiffusionResult](result)
+	if err != nil {
+		return err
+	}
+
 	if binary {
 		return kd.serializeBinary(&kdResult, writer)
 	}
@@ -315,10 +324,17 @@ func (kd *KnowledgeDiffusionAnalysis) Deserialize(pbmessage []byte) (any, error)
 
 // MergeResults combines two KnowledgeDiffusionResult-s together.
 func (kd *KnowledgeDiffusionAnalysis) MergeResults(
-	r1, r2 any, c1, c2 *core.CommonAnalysisResult,
+	firstResult, secondResult any, _, _ *core.CommonAnalysisResult,
 ) any {
-	kdr1 := r1.(KnowledgeDiffusionResult)
-	kdr2 := r2.(KnowledgeDiffusionResult)
+	kdr1, err := requiredResult[KnowledgeDiffusionResult](firstResult)
+	if err != nil {
+		return err
+	}
+
+	kdr2, err := requiredResult[KnowledgeDiffusionResult](secondResult)
+	if err != nil {
+		return err
+	}
 
 	merged := KnowledgeDiffusionResult{
 		Files:              make(map[string]*KnowledgeDiffusionFileResult),

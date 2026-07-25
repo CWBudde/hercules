@@ -252,11 +252,18 @@ func (hra *HotspotRiskAnalysis) Consume(deps map[string]any) (map[string]any, er
 		return noDependencies(), nil
 	}
 
-	hra.lastCommit = deps[core.DependencyCommit].(*object.Commit)
-	treeDiff := deps[items.DependencyTreeChanges].(object.Changes)
-	lineStats := deps[items.DependencyLineStats].(map[object.ChangeEntry]items.LineStats)
-	author := deps[identity.DependencyAuthor].(int)
-	tick := deps[items.DependencyTick].(int)
+	reader := factReader{facts: deps}
+	commit := readFact[*object.Commit](&reader, core.DependencyCommit)
+	treeDiff := readFact[object.Changes](&reader, items.DependencyTreeChanges)
+	lineStats := readFact[map[object.ChangeEntry]items.LineStats](&reader, items.DependencyLineStats)
+	author := readFact[int](&reader, identity.DependencyAuthor)
+	tick := readFact[int](&reader, items.DependencyTick)
+
+	if reader.err != nil {
+		return nil, reader.err
+	}
+
+	hra.lastCommit = commit
 	hra.currentTick = tick
 
 	// Track which files changed in this commit for coupling
@@ -396,7 +403,11 @@ func (hra *HotspotRiskAnalysis) Fork(n int) []core.PipelineItem {
 
 // Serialize converts the analysis result to text or bytes.
 func (hra *HotspotRiskAnalysis) Serialize(result any, binary bool, writer io.Writer) error {
-	riskResult := result.(HotspotRiskResult)
+	riskResult, err := requiredResult[HotspotRiskResult](result)
+	if err != nil {
+		return err
+	}
+
 	if binary {
 		return hra.serializeBinary(&riskResult, writer)
 	}
@@ -439,11 +450,20 @@ func (hra *HotspotRiskAnalysis) Deserialize(pbmessage []byte) (any, error) {
 }
 
 // MergeResults combines two HotspotRisk results (not really meaningful, but required by interface).
-func (hra *HotspotRiskAnalysis) MergeResults(r1, r2 any, c1, c2 *core.CommonAnalysisResult) any {
+func (hra *HotspotRiskAnalysis) MergeResults(
+	firstResult, secondResult any, _, _ *core.CommonAnalysisResult,
+) any {
 	// Merging hotspot risk across repositories doesn't make semantic sense,
 	// but we implement it by concatenating and re-sorting
-	cr1 := r1.(HotspotRiskResult)
-	cr2 := r2.(HotspotRiskResult)
+	cr1, err := requiredResult[HotspotRiskResult](firstResult)
+	if err != nil {
+		return err
+	}
+
+	cr2, err := requiredResult[HotspotRiskResult](secondResult)
+	if err != nil {
+		return err
+	}
 
 	allFiles := append([]FileRisk(nil), cr1.Files...)
 	allFiles = append(allFiles, cr2.Files...)

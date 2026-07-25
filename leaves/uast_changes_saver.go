@@ -126,9 +126,14 @@ func (saver *UASTChangesSaver) Consume(deps map[string]any) (map[string]any, err
 		return noDependencies(), nil
 	}
 
-	commit := deps[core.DependencyCommit].(*object.Commit)
-	changes := deps[items.DependencyTreeChanges].(object.Changes)
-	cache := deps[items.DependencyBlobCache].(map[plumbing.Hash]*items.CachedBlob)
+	reader := factReader{facts: deps}
+	commit := readFact[*object.Commit](&reader, core.DependencyCommit)
+	changes := readFact[object.Changes](&reader, items.DependencyTreeChanges)
+	cache := readFact[map[plumbing.Hash]*items.CachedBlob](&reader, items.DependencyBlobCache)
+
+	if reader.err != nil {
+		return nil, reader.err
+	}
 
 	for i, change := range changes {
 		record, keep, err := saver.processChange(commit, i, change, cache)

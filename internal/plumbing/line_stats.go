@@ -88,6 +88,7 @@ func (lsc *LinesStatsCalculator) Initialize(repository *git.Repository) error {
 // in Provides(). If there was an error, nil is returned.
 func (lsc *LinesStatsCalculator) Consume(deps map[string]any) (map[string]any, error) {
 	result := map[object.ChangeEntry]LineStats{}
+
 	treeDiff, err := dependencyValue[object.Changes](deps, DependencyTreeChanges)
 	if err != nil {
 		return nil, err

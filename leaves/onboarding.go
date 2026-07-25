@@ -229,10 +229,15 @@ func (oa *OnboardingAnalysis) Consume(deps map[string]any) (map[string]any, erro
 		return noDependencies(), nil
 	}
 
-	author := deps[identity.DependencyAuthor].(int)
-	tick := deps[items.DependencyTick].(int)
-	treeChanges := deps[items.DependencyTreeChanges].(object.Changes)
-	lineStats := deps[items.DependencyLineStats].(map[object.ChangeEntry]items.LineStats)
+	reader := factReader{facts: deps}
+	author := readFact[int](&reader, identity.DependencyAuthor)
+	tick := readFact[int](&reader, items.DependencyTick)
+	treeChanges := readFact[object.Changes](&reader, items.DependencyTreeChanges)
+	lineStats := readFact[map[object.ChangeEntry]items.LineStats](&reader, items.DependencyLineStats)
+
+	if reader.err != nil {
+		return nil, reader.err
+	}
 
 	if len(treeChanges) == 0 {
 		return noDependencies(), nil
@@ -586,7 +591,11 @@ func onboardingAverageToProto(snapshot *OnboardingSnapshot) (*pb.OnboardingAvera
 
 // Serialize converts the analysis result as returned by Finalize() to text or bytes.
 func (oa *OnboardingAnalysis) Serialize(result any, binary bool, writer io.Writer) error {
-	onboardingResult := result.(OnboardingResult)
+	onboardingResult, err := requiredResult[OnboardingResult](result)
+	if err != nil {
+		return err
+	}
+
 	if binary {
 		return oa.serializeBinary(&onboardingResult, writer)
 	}

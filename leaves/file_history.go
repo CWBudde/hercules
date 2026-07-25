@@ -108,23 +108,43 @@ func (history *FileHistoryAnalysis) Initialize(repository *git.Repository) error
 // This function returns the mapping with analysis results. The keys must be the same as
 // in Provides(). If there was an error, nil is returned.
 func (history *FileHistoryAnalysis) Consume(deps map[string]any) (map[string]any, error) {
-	history.lastCommit = deps[core.DependencyCommit].(*object.Commit)
+	values, err := getFileHistoryDependencies(deps)
+	if err != nil {
+		return nil, err
+	}
+
+	history.lastCommit = values.commit
 	commit := history.lastCommit.Hash
 
-	changes := deps[items.DependencyTreeChanges].(object.Changes)
-	for _, change := range changes {
+	for _, change := range values.changes {
 		action, _ := change.Action()
 		history.recordFileCommit(change, action, commit)
 	}
 
-	lineStats := deps[items.DependencyLineStats].(map[object.ChangeEntry]items.LineStats)
-
-	author := deps[identity.DependencyAuthor].(int)
-	for changeEntry, stats := range lineStats {
-		history.recordAuthorStats(changeEntry.Name, author, stats)
+	for changeEntry, stats := range values.lineStats {
+		history.recordAuthorStats(changeEntry.Name, values.author, stats)
 	}
 
 	return noDependencies(), nil
+}
+
+type fileHistoryDependencies struct {
+	commit    *object.Commit
+	changes   object.Changes
+	lineStats map[object.ChangeEntry]items.LineStats
+	author    int
+}
+
+func getFileHistoryDependencies(deps map[string]any) (fileHistoryDependencies, error) {
+	reader := factReader{facts: deps}
+	values := fileHistoryDependencies{
+		commit:    readFact[*object.Commit](&reader, core.DependencyCommit),
+		changes:   readFact[object.Changes](&reader, items.DependencyTreeChanges),
+		lineStats: readFact[map[object.ChangeEntry]items.LineStats](&reader, items.DependencyLineStats),
+		author:    readFact[int](&reader, identity.DependencyAuthor),
+	}
+
+	return values, reader.err
 }
 
 // Finalize returns the result of the analysis. Further Consume() calls are not expected.
@@ -163,7 +183,11 @@ func (history *FileHistoryAnalysis) Fork(n int) []core.PipelineItem {
 // Serialize converts the analysis result as returned by Finalize() to text or bytes.
 // The text format is YAML and the bytes format is Protocol Buffers.
 func (history *FileHistoryAnalysis) Serialize(result any, binary bool, writer io.Writer) error {
-	historyResult := result.(FileHistoryResult)
+	historyResult, err := requiredResult[FileHistoryResult](result)
+	if err != nil {
+		return fmt.Errorf("serialize file history: %w", err)
+	}
+
 	if binary {
 		return history.serializeBinary(&historyResult, writer)
 	}

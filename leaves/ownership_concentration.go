@@ -148,8 +148,14 @@ func (oc *OwnershipConcentrationAnalysis) Initialize(repository *git.Repository)
 
 // Consume runs this PipelineItem on the next commit data.
 func (oc *OwnershipConcentrationAnalysis) Consume(deps map[string]any) (map[string]any, error) {
-	changes := deps[linehistory.DependencyLineHistory].(core.LineHistoryChanges)
-	tick := deps[items.DependencyTick].(int)
+	reader := factReader{facts: deps}
+	changes := readFact[core.LineHistoryChanges](&reader, linehistory.DependencyLineHistory)
+	tick := readFact[int](&reader, items.DependencyTick)
+
+	if reader.err != nil {
+		return nil, reader.err
+	}
+
 	oc.fileResolver = changes.Resolver
 
 	if tick > oc.lastTick {
@@ -233,7 +239,11 @@ func (oc *OwnershipConcentrationAnalysis) Fork(n int) []core.PipelineItem {
 
 // Serialize converts the analysis result as returned by Finalize() to text or bytes.
 func (oc *OwnershipConcentrationAnalysis) Serialize(result any, binary bool, writer io.Writer) error {
-	ocResult := result.(OwnershipConcentrationResult)
+	ocResult, err := requiredResult[OwnershipConcentrationResult](result)
+	if err != nil {
+		return err
+	}
+
 	if binary {
 		return oc.serializeBinary(&ocResult, writer)
 	}
@@ -292,10 +302,17 @@ func (oc *OwnershipConcentrationAnalysis) Deserialize(pbmessage []byte) (any, er
 
 // MergeResults combines two OwnershipConcentrationResult-s together.
 func (oc *OwnershipConcentrationAnalysis) MergeResults(
-	r1, r2 any, c1, c2 *core.CommonAnalysisResult,
+	firstResult, secondResult any, _, _ *core.CommonAnalysisResult,
 ) any {
-	ocr1 := r1.(OwnershipConcentrationResult)
-	ocr2 := r2.(OwnershipConcentrationResult)
+	ocr1, err := requiredResult[OwnershipConcentrationResult](firstResult)
+	if err != nil {
+		return err
+	}
+
+	ocr2, err := requiredResult[OwnershipConcentrationResult](secondResult)
+	if err != nil {
+		return err
+	}
 
 	merged := OwnershipConcentrationResult{
 		Snapshots:              make(map[int]*OwnershipConcentrationSnapshot),

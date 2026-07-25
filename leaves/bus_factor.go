@@ -116,8 +116,13 @@ func (bf *BusFactorAnalysis) Configure(facts map[string]any) error {
 		bf.l = l
 	}
 
-	if val, exists := facts[ConfigBusFactorThreshold]; exists {
-		bf.Threshold = val.(float32)
+	if _, exists := facts[ConfigBusFactorThreshold]; exists {
+		threshold, err := requiredFact[float32](facts, ConfigBusFactorThreshold)
+		if err != nil {
+			return err
+		}
+
+		bf.Threshold = threshold
 	}
 
 	if val, exists := facts[identity.FactIdentityDetectorReversedPeopleDict].([]string); exists {
@@ -168,8 +173,14 @@ func (bf *BusFactorAnalysis) Initialize(repository *git.Repository) error {
 // It captures the file resolver from LineHistoryChanges and records the current tick.
 // The actual ownership scanning happens at each new tick boundary.
 func (bf *BusFactorAnalysis) Consume(deps map[string]any) (map[string]any, error) {
-	changes := deps[linehistory.DependencyLineHistory].(core.LineHistoryChanges)
-	tick := deps[items.DependencyTick].(int)
+	reader := factReader{facts: deps}
+	changes := readFact[core.LineHistoryChanges](&reader, linehistory.DependencyLineHistory)
+	tick := readFact[int](&reader, items.DependencyTick)
+
+	if reader.err != nil {
+		return nil, reader.err
+	}
+
 	bf.fileResolver = changes.Resolver
 
 	// Take a snapshot when we move to a new tick
@@ -239,7 +250,11 @@ func (bf *BusFactorAnalysis) Fork(n int) []core.PipelineItem {
 // Serialize converts the analysis result as returned by Finalize() to text or bytes.
 // The text format is YAML and the bytes format is Protocol Buffers.
 func (bf *BusFactorAnalysis) Serialize(result any, binary bool, writer io.Writer) error {
-	bfResult := result.(BusFactorResult)
+	bfResult, err := requiredResult[BusFactorResult](result)
+	if err != nil {
+		return fmt.Errorf("serialize bus factor: %w", err)
+	}
+
 	if binary {
 		return bf.serializeBinary(&bfResult, writer)
 	}
@@ -295,10 +310,17 @@ func (bf *BusFactorAnalysis) Deserialize(pbmessage []byte) (any, error) {
 
 // MergeResults combines two BusFactorResult-s together.
 func (bf *BusFactorAnalysis) MergeResults(
-	r1, r2 any, c1, c2 *core.CommonAnalysisResult,
+	result1, result2 any, common1, common2 *core.CommonAnalysisResult,
 ) any {
-	bfr1 := r1.(BusFactorResult)
-	bfr2 := r2.(BusFactorResult)
+	bfr1, err := requiredResult[BusFactorResult](result1)
+	if err != nil {
+		return fmt.Errorf("merge bus factor first result: %w", err)
+	}
+
+	bfr2, err := requiredResult[BusFactorResult](result2)
+	if err != nil {
+		return fmt.Errorf("merge bus factor second result: %w", err)
+	}
 
 	merged := BusFactorResult{
 		Snapshots:          make(map[int]*BusFactorSnapshot),

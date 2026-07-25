@@ -14,7 +14,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"plugin"
 	"regexp"
 	"runtime/pprof"
 	"sort"
@@ -299,10 +298,7 @@ func loadPlugins() {
 	pflag.Var(&pluginFlags, pluginFlagName, pluginDesc)
 	_ = pluginFlagSet.Parse(os.Args[1:])
 	for path := range pluginFlags {
-		_, err := plugin.Open(path)
-		if err != nil {
-			log.Printf("Failed to load plugin from %s %s\n", path, err)
-		}
+		loadPlugin(path)
 	}
 }
 

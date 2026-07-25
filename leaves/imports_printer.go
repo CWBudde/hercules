@@ -91,7 +91,12 @@ func (ipd *ImportsPerDeveloper) Configure(facts map[string]any) error {
 		ipd.l = l
 	}
 
-	ipd.reversedPeopleDict = facts[identity.FactIdentityDetectorReversedPeopleDict].([]string)
+	people, err := requiredFact[[]string](facts, identity.FactIdentityDetectorReversedPeopleDict)
+	if err != nil {
+		return err
+	}
+
+	ipd.reversedPeopleDict = people
 	if val, exists := facts[plumbing.FactTickSize].(time.Duration); exists {
 		ipd.TickSize = val
 	}
@@ -124,10 +129,16 @@ func (ipd *ImportsPerDeveloper) Initialize(repository *git.Repository) error {
 // This function returns the mapping with analysis results. The keys must be the same as
 // in Provides(). If there was an error, nil is returned.
 func (ipd *ImportsPerDeveloper) Consume(deps map[string]any) (map[string]any, error) {
-	author := deps[identity.DependencyAuthor].(int)
-	imps := deps[imports.DependencyImports].(map[gitplumbing.Hash]importslang.File)
+	reader := factReader{facts: deps}
+	author := readFact[int](&reader, identity.DependencyAuthor)
+	imps := readFact[map[gitplumbing.Hash]importslang.File](&reader, imports.DependencyImports)
+	tick := readFact[int](&reader, plumbing.DependencyTick)
+
+	if reader.err != nil {
+		return nil, reader.err
+	}
+
 	aimps := ipd.imports[author]
-	tick := deps[plumbing.DependencyTick].(int)
 
 	if aimps == nil {
 		aimps = map[string]map[string]map[int]int64{}
@@ -173,7 +184,11 @@ func (ipd *ImportsPerDeveloper) Fork(n int) []core.PipelineItem {
 // Serialize converts the analysis result as returned by Finalize() to text or bytes.
 // The text format is YAML and the bytes format is Protocol Buffers.
 func (ipd *ImportsPerDeveloper) Serialize(result any, binary bool, writer io.Writer) error {
-	importsResult := result.(ImportsPerDeveloperResult)
+	importsResult, err := requiredResult[ImportsPerDeveloperResult](result)
+	if err != nil {
+		return err
+	}
+
 	if binary {
 		return ipd.serializeBinary(&importsResult, writer)
 	}

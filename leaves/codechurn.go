@@ -225,7 +225,11 @@ func (analyser *CodeChurnAnalysis) Fork(n int) []core.PipelineItem {
 // This function returns the mapping with analysis results. The keys must be the same as
 // in Provides(). If there was an error, nil is returned.
 func (analyser *CodeChurnAnalysis) Consume(deps map[string]any) (map[string]any, error) {
-	changes := deps[linehistory.DependencyLineHistory].(core.LineHistoryChanges)
+	changes, err := requiredFact[core.LineHistoryChanges](deps, linehistory.DependencyLineHistory)
+	if err != nil {
+		return nil, err
+	}
+
 	analyser.fileResolver = changes.Resolver
 	peopleCount := analyser.peopleResolver.MaxCount()
 
@@ -384,11 +388,18 @@ func (analyser *CodeChurnAnalysis) Deserialize(message []byte) (any, error) {
 
 // MergeResults combines two BurndownResult-s together.
 func (analyser *CodeChurnAnalysis) MergeResults(
-	r1, r2 any, c1, c2 *core.CommonAnalysisResult,
+	result1, result2 any, common1, common2 *core.CommonAnalysisResult,
 ) any {
-	cr1 := r1.(CodeChurnResult)
+	cr1, err := requiredResult[CodeChurnResult](result1)
+	if err != nil {
+		return fmt.Errorf("merge code churn first result: %w", err)
+	}
 
-	cr2 := r2.(CodeChurnResult)
+	cr2, err := requiredResult[CodeChurnResult](result2)
+	if err != nil {
+		return fmt.Errorf("merge code churn second result: %w", err)
+	}
+
 	if cr1.tickSize != cr2.tickSize {
 		panic("cannot merge CodeChurn results with different tick sizes")
 	}

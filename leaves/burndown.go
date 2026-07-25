@@ -32,6 +32,7 @@ var (
 	errBurndownMismatchingTickSizes = errors.New("mismatching tick sizes")
 	errProtoInt32Range              = errors.New("value exceeds the protobuf int32 range")
 	errUnexpectedDependencyType     = errors.New("unexpected dependency type")
+	errUnexpectedResultType         = errors.New("unexpected analysis result type")
 )
 
 // BurndownAnalysis allows to gather the line burndown statistics for a Git repository.
@@ -200,6 +201,35 @@ func requiredFact[T any](facts map[string]any, key string) (T, error) {
 	return zero, fmt.Errorf(
 		"%w: %q has type %T", errUnexpectedDependencyType, key, facts[key],
 	)
+}
+
+type factReader struct {
+	facts map[string]any
+	err   error
+}
+
+func readFact[T any](reader *factReader, key string) T {
+	if reader.err != nil {
+		var zero T
+
+		return zero
+	}
+
+	value, err := requiredFact[T](reader.facts, key)
+	reader.err = err
+
+	return value
+}
+
+func requiredResult[T any](result any) (T, error) {
+	value, ok := result.(T)
+	if ok {
+		return value, nil
+	}
+
+	var zero T
+
+	return zero, fmt.Errorf("%w: got %T", errUnexpectedResultType, result)
 }
 
 func (analyser *BurndownAnalysis) ConfigureUpstream(_ map[string]any) error {

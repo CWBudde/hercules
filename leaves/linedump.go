@@ -139,9 +139,14 @@ func (analyser *LineDumper) Fork(n int) []core.PipelineItem {
 // This function returns the mapping with analysis results. The keys must be the same as
 // in Provides(). If there was an error, nil is returned.
 func (analyser *LineDumper) Consume(deps map[string]any) (map[string]any, error) {
-	commit := deps[core.DependencyCommit].(*object.Commit)
+	reader := factReader{facts: deps}
+	commit := readFact[*object.Commit](&reader, core.DependencyCommit)
+	changes := readFact[core.LineHistoryChanges](&reader, linehistory.DependencyLineHistory)
 
-	changes := deps[linehistory.DependencyLineHistory].(core.LineHistoryChanges)
+	if reader.err != nil {
+		return nil, reader.err
+	}
+
 	if analyser.primaryResolver == nil {
 		analyser.primaryResolver = changes.Resolver
 	}

@@ -159,9 +159,15 @@ func (couples *CouplesAnalysis) Initialize(repository *git.Repository) error {
 // in Provides(). If there was an error, nil is returned.
 func (couples *CouplesAnalysis) Consume(deps map[string]any) (map[string]any, error) {
 	firstMerge := couples.ShouldConsumeCommit(deps)
-	couples.lastCommit = deps[core.DependencyCommit].(*object.Commit)
 
-	author := deps[identity.DependencyAuthor].(int)
+	values, err := getCouplesDependencies(deps)
+	if err != nil {
+		return nil, err
+	}
+
+	couples.lastCommit = values.commit
+
+	author := values.author
 	if author == core.AuthorMissing {
 		author = couples.PeopleNumber
 	}
@@ -170,10 +176,8 @@ func (couples *CouplesAnalysis) Consume(deps map[string]any) (map[string]any, er
 		couples.peopleCommits[author]++
 	}
 
-	treeDiff := deps[items.DependencyTreeChanges].(object.Changes)
-
-	context := make([]string, 0, len(treeDiff))
-	for _, change := range treeDiff {
+	context := make([]string, 0, len(values.treeDiff))
+	for _, change := range values.treeDiff {
 		contextFile, includeInContext, err := consumeCouplesFileChange(couples, change, author)
 		if err != nil {
 			return nil, err
@@ -189,6 +193,23 @@ func (couples *CouplesAnalysis) Consume(deps map[string]any) (map[string]any, er
 	}
 
 	return noDependencies(), nil
+}
+
+type couplesDependencies struct {
+	commit   *object.Commit
+	author   int
+	treeDiff object.Changes
+}
+
+func getCouplesDependencies(deps map[string]any) (couplesDependencies, error) {
+	reader := factReader{facts: deps}
+	values := couplesDependencies{
+		commit:   readFact[*object.Commit](&reader, core.DependencyCommit),
+		author:   readFact[int](&reader, identity.DependencyAuthor),
+		treeDiff: readFact[object.Changes](&reader, items.DependencyTreeChanges),
+	}
+
+	return values, reader.err
 }
 
 func consumeCouplesFileChange(
@@ -303,7 +324,11 @@ func (couples *CouplesAnalysis) Fork(n int) []core.PipelineItem {
 // Serialize converts the analysis result as returned by Finalize() to text or bytes.
 // The text format is YAML and the bytes format is Protocol Buffers.
 func (couples *CouplesAnalysis) Serialize(result any, binary bool, writer io.Writer) error {
-	couplesResult := result.(CouplesResult)
+	couplesResult, err := requiredResult[CouplesResult](result)
+	if err != nil {
+		return fmt.Errorf("serialize couples: %w", err)
+	}
+
 	if binary {
 		return couples.serializeBinary(&couplesResult, writer)
 	}
@@ -368,9 +393,19 @@ func (couples *CouplesAnalysis) Deserialize(pbmessage []byte) (any, error) {
 }
 
 // MergeResults combines two CouplesAnalysis-s together.
-func (couples *CouplesAnalysis) MergeResults(r1, r2 any, c1, c2 *core.CommonAnalysisResult) any {
-	cr1 := r1.(CouplesResult)
-	cr2 := r2.(CouplesResult)
+func (couples *CouplesAnalysis) MergeResults(
+	result1, result2 any, common1, common2 *core.CommonAnalysisResult,
+) any {
+	cr1, err := requiredResult[CouplesResult](result1)
+	if err != nil {
+		return fmt.Errorf("merge couples first result: %w", err)
+	}
+
+	cr2, err := requiredResult[CouplesResult](result2)
+	if err != nil {
+		return fmt.Errorf("merge couples second result: %w", err)
+	}
+
 	merged := CouplesResult{}
 	var people, files map[string]join.JoinedIndex
 	people, merged.reversedPeopleDict = join.PeopleIdentities(

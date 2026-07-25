@@ -119,20 +119,20 @@ func (ca *CommitsAnalysis) Initialize(repository *git.Repository) error {
 // This function returns the mapping with analysis results. The keys must be the same as
 // in Provides(). If there was an error, nil is returned.
 func (ca *CommitsAnalysis) Consume(deps map[string]any) (map[string]any, error) {
-	commit := deps[core.DependencyCommit].(*object.Commit)
-	author := deps[identity.DependencyAuthor].(int)
-	lineStats := deps[items.DependencyLineStats].(map[object.ChangeEntry]items.LineStats)
-	langs := deps[items.DependencyLanguages].(map[plumbing.Hash]string)
+	values, err := getCommitsDependencies(deps)
+	if err != nil {
+		return nil, err
+	}
 
 	commitStat := CommitStat{
-		Hash:   commit.Hash.String(),
-		When:   commit.Author.When.Unix(),
-		Author: author,
+		Hash:   values.commit.Hash.String(),
+		When:   values.commit.Author.When.Unix(),
+		Author: values.author,
 	}
-	for entry, stats := range lineStats {
+	for entry, stats := range values.lineStats {
 		commitStat.Files = append(commitStat.Files, FileStat{
 			Name:      entry.Name,
-			Language:  langs[entry.TreeEntry.Hash],
+			Language:  values.languages[entry.TreeEntry.Hash],
 			LineStats: stats,
 		})
 	}
@@ -140,6 +140,25 @@ func (ca *CommitsAnalysis) Consume(deps map[string]any) (map[string]any, error) 
 	ca.commits = append(ca.commits, &commitStat)
 
 	return noDependencies(), nil
+}
+
+type commitsDependencies struct {
+	commit    *object.Commit
+	author    int
+	lineStats map[object.ChangeEntry]items.LineStats
+	languages map[plumbing.Hash]string
+}
+
+func getCommitsDependencies(deps map[string]any) (commitsDependencies, error) {
+	reader := factReader{facts: deps}
+	values := commitsDependencies{
+		commit:    readFact[*object.Commit](&reader, core.DependencyCommit),
+		author:    readFact[int](&reader, identity.DependencyAuthor),
+		lineStats: readFact[map[object.ChangeEntry]items.LineStats](&reader, items.DependencyLineStats),
+		languages: readFact[map[plumbing.Hash]string](&reader, items.DependencyLanguages),
+	}
+
+	return values, reader.err
 }
 
 // Finalize returns the result of the analysis. Further Consume() calls are not expected.
@@ -159,7 +178,11 @@ func (ca *CommitsAnalysis) Fork(n int) []core.PipelineItem {
 // Serialize converts the analysis result as returned by Finalize() to text or bytes.
 // The text format is YAML and the bytes format is Protocol Buffers.
 func (ca *CommitsAnalysis) Serialize(result any, binary bool, writer io.Writer) error {
-	commitsResult := result.(CommitsResult)
+	commitsResult, err := requiredResult[CommitsResult](result)
+	if err != nil {
+		return fmt.Errorf("serialize commits: %w", err)
+	}
+
 	if binary {
 		return ca.serializeBinary(&commitsResult, writer)
 	}

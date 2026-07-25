@@ -165,15 +165,20 @@ func (ta *TemporalActivityAnalysis) Consume(deps map[string]any) (map[string]any
 		return noDependencies(), nil
 	}
 
-	commit := deps[core.DependencyCommit].(*object.Commit)
-	author := deps[identity.DependencyAuthor].(int)
-	tick := deps[items.DependencyTick].(int)
+	reader := factReader{facts: deps}
+	commit := readFact[*object.Commit](&reader, core.DependencyCommit)
+	author := readFact[int](&reader, identity.DependencyAuthor)
+	tick := readFact[int](&reader, items.DependencyTick)
+	lineStats := readFact[map[object.ChangeEntry]items.LineStats](&reader, items.DependencyLineStats)
+
+	if reader.err != nil {
+		return nil, reader.err
+	}
+
 	weekday, hour, month, weekIndex := temporalIndices(commit.Author.When)
 	activity := ta.activityFor(author)
 
 	// Calculate line changes
-	lineStats := deps[items.DependencyLineStats].(map[object.ChangeEntry]items.LineStats)
-
 	totalLines := 0
 	for _, stats := range lineStats {
 		totalLines += stats.Added + stats.Removed
@@ -241,7 +246,11 @@ func (ta *TemporalActivityAnalysis) Fork(n int) []core.PipelineItem {
 // Serialize converts the analysis result as returned by Finalize() to text or bytes.
 // The text format is YAML and the bytes format is Protocol Buffers.
 func (ta *TemporalActivityAnalysis) Serialize(result any, binary bool, writer io.Writer) error {
-	temporalResult := result.(TemporalActivityResult)
+	temporalResult, err := requiredResult[TemporalActivityResult](result)
+	if err != nil {
+		return err
+	}
+
 	if binary {
 		return ta.serializeBinary(&temporalResult, writer)
 	}
@@ -502,10 +511,17 @@ var _ = core.RegisterPipelineItem(&TemporalActivityAnalysis{})
 
 // MergeResults combines two TemporalActivityResult-s together.
 func (ta *TemporalActivityAnalysis) MergeResults(
-	r1, r2 any, c1, c2 *core.CommonAnalysisResult,
+	firstResult, secondResult any, _, _ *core.CommonAnalysisResult,
 ) any {
-	tar1 := r1.(TemporalActivityResult)
-	tar2 := r2.(TemporalActivityResult)
+	tar1, err := requiredResult[TemporalActivityResult](firstResult)
+	if err != nil {
+		return err
+	}
+
+	tar2, err := requiredResult[TemporalActivityResult](secondResult)
+	if err != nil {
+		return err
+	}
 
 	merged := TemporalActivityResult{
 		Activities:         make(map[int]*DeveloperTemporalActivity),

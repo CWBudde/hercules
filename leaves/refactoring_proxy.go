@@ -150,8 +150,13 @@ func (rp *RefactoringProxy) Consume(deps map[string]any) (map[string]any, error)
 		return noDependencies(), nil
 	}
 
-	tick := deps[items.DependencyTick].(int)
-	treeChanges := deps[items.DependencyTreeChanges].(object.Changes)
+	reader := factReader{facts: deps}
+	tick := readFact[int](&reader, items.DependencyTick)
+	treeChanges := readFact[object.Changes](&reader, items.DependencyTreeChanges)
+
+	if reader.err != nil {
+		return nil, reader.err
+	}
 
 	if len(treeChanges) == 0 {
 		return noDependencies(), nil

@@ -4,6 +4,7 @@ package leaves
 
 import (
 	"errors"
+	"fmt"
 	"io"
 
 	"github.com/go-git/go-git/v5"
@@ -73,12 +74,22 @@ func (sent *CommentSentimentAnalysis) Configure(facts map[string]any) error {
 		sent.l = l
 	}
 
-	if val, exists := facts[ConfigCommentSentimentGap]; exists {
-		sent.Gap = val.(float32)
+	if _, exists := facts[ConfigCommentSentimentGap]; exists {
+		gap, err := requiredFact[float32](facts, ConfigCommentSentimentGap)
+		if err != nil {
+			return fmt.Errorf("configure sentiment gap: %w", err)
+		}
+
+		sent.Gap = gap
 	}
 
-	if val, exists := facts[ConfigCommentSentimentMinLength]; exists {
-		sent.MinCommentLength = val.(int)
+	if _, exists := facts[ConfigCommentSentimentMinLength]; exists {
+		minLength, err := requiredFact[int](facts, ConfigCommentSentimentMinLength)
+		if err != nil {
+			return fmt.Errorf("configure sentiment minimum length: %w", err)
+		}
+
+		sent.MinCommentLength = minLength
 	}
 
 	return nil

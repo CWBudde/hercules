@@ -712,30 +712,16 @@ func (analyser *LineHistoryAnalyser) handleModification(
 	blobTo := cache[change.To.TreeEntry.Hash]
 	_, errTo := blobTo.CountLines()
 
-	fromBinary := errors.Is(errFrom, items.ErrBinary)
-	toBinary := errors.Is(errTo, items.ErrBinary)
-
-	if errFrom != nil && !fromBinary {
-		return fmt.Errorf("count lines in previous version of %q: %w", change.From.Name, errFrom)
+	fromBinary, toBinary, err := classifyLineCountErrors(change, errFrom, errTo)
+	if err != nil {
+		return err
 	}
 
-	if errTo != nil && !toBinary {
-		return fmt.Errorf("count lines in new version of %q: %w", change.To.Name, errTo)
-	}
-
-	if fromBinary != toBinary {
-		if fromBinary {
-			// The file is no longer binary.
-			return analyser.handleInsertion(change, author, cache)
-		}
-
-		// The file became binary.
-		// TODO this is wrong
-		return analyser.handleDeletion(change, author, cache)
-	}
-
-	if fromBinary {
-		return nil
+	handled, err := analyser.handleBinaryModification(
+		change, author, cache, fromBinary, toBinary,
+	)
+	if handled {
+		return err
 	}
 
 	thisDiffs := diffs[change.To.Name]
@@ -764,6 +750,45 @@ func (analyser *LineHistoryAnalyser) handleModification(
 	}
 
 	return nil
+}
+
+func (analyser *LineHistoryAnalyser) handleBinaryModification(
+	change *object.Change, author core.AuthorId,
+	cache map[plumbing.Hash]*items.CachedBlob, fromBinary, toBinary bool,
+) (bool, error) {
+	if fromBinary == toBinary {
+		return fromBinary, nil
+	}
+
+	if fromBinary {
+		// The file is no longer binary.
+		return true, analyser.handleInsertion(change, author, cache)
+	}
+
+	// The file became binary.
+	// TODO this is wrong
+	return true, analyser.handleDeletion(change, author, cache)
+}
+
+func classifyLineCountErrors(
+	change *object.Change, errFrom, errTo error,
+) (bool, bool, error) {
+	fromBinary := errors.Is(errFrom, items.ErrBinary)
+	toBinary := errors.Is(errTo, items.ErrBinary)
+
+	if errFrom != nil && !fromBinary {
+		return false, false, fmt.Errorf(
+			"count lines in previous version of %q: %w", change.From.Name, errFrom,
+		)
+	}
+
+	if errTo != nil && !toBinary {
+		return false, false, fmt.Errorf(
+			"count lines in new version of %q: %w", change.To.Name, errTo,
+		)
+	}
+
+	return fromBinary, toBinary, nil
 }
 
 type lineHistoryDiffState struct {

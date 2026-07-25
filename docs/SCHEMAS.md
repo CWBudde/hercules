@@ -153,6 +153,13 @@ YAML fields:
 
 PB: `BusFactorAnalysisResults`
 
+Each occupied tick is an end-of-tick snapshot: it contains all commits from that tick and no
+commit from a later tick. The last occupied tick is always emitted; a repository with no commits
+has no snapshots. For a threshold `t` and `L` living lines, the required coverage is exactly
+`ceil(t * L)` lines using the configured decimal threshold, so small repositories do not lose a
+fractional line to truncation. Final subsystem values use the same ownership totals as the final
+global snapshot.
+
 Example:
 
 ```yaml
@@ -537,6 +544,11 @@ YAML fields:
 - `ownership_concentration.tick_size`
 
 PB: `OwnershipConcentrationResults`
+
+Tick and empty-repository semantics match Bus Factor: every occupied tick describes ownership
+after that tick's last commit and before any later tick, the final occupied tick is retained, and
+an input with no commits has no snapshots. Final subsystem Gini and HHI values are derived from the
+same per-file ownership totals as the final global snapshot.
 
 Example:
 

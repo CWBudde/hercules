@@ -334,6 +334,8 @@ Acceptance criteria:
 
 ### METRIC-03: Correct Bus Factor and Ownership Concentration snapshots
 
+Status: completed 2026-07-25
+
 Affected code:
 
 - `leaves/bus_factor.go`
@@ -359,8 +361,8 @@ Tests:
 
 Acceptance criteria:
 
-- [ ] each snapshot contains only commits from its labeled tick or earlier;
-- [ ] bus factor is the smallest author count whose exact share meets the threshold.
+- [x] each snapshot contains only commits from its labeled tick or earlier;
+- [x] bus factor is the smallest author count whose exact share meets the threshold.
 
 ### METRIC-04: Preserve File History across renames
 

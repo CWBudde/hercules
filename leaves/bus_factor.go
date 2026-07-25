@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"io"
 	"maps"
-	"path"
+	"math/big"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/go-git/go-git/v5"
@@ -33,8 +34,8 @@ type BusFactorAnalysis struct {
 	// Threshold is the ownership fraction that must be covered (default 0.8 = 80%).
 	Threshold float32
 
-	// fileResolver is used to scan files for current ownership state.
-	fileResolver core.FileIdResolver
+	// ownership incrementally tracks the shared alive-line ownership state.
+	ownership ownershipSnapshotAccumulator
 	// peopleResolver resolves author IDs to names.
 	peopleResolver core.IdentityResolver
 	// reversedPeopleDict references IdentityDetector.ReversedPeopleDict.
@@ -43,10 +44,7 @@ type BusFactorAnalysis struct {
 	tickSize time.Duration
 	// snapshots stores per-tick bus factor snapshots.
 	snapshots map[int]*BusFactorSnapshot
-	// lastTick tracks the most recent tick seen.
-	lastTick int
-
-	l core.Logger
+	l         core.Logger
 }
 
 const (
@@ -160,8 +158,7 @@ func (bf *BusFactorAnalysis) Description() string {
 func (bf *BusFactorAnalysis) Initialize(repository *git.Repository) error {
 	bf.l = core.NewLogger()
 	bf.snapshots = map[int]*BusFactorSnapshot{}
-
-	bf.lastTick = -1
+	bf.ownership.reset()
 	if bf.Threshold <= 0 || bf.Threshold > 1 {
 		bf.Threshold = 0.8
 	}
@@ -170,8 +167,7 @@ func (bf *BusFactorAnalysis) Initialize(repository *git.Repository) error {
 }
 
 // Consume runs this PipelineItem on the next commit data.
-// It captures the file resolver from LineHistoryChanges and records the current tick.
-// The actual ownership scanning happens at each new tick boundary.
+// It closes the previous tick before applying the first commit from a later tick.
 func (bf *BusFactorAnalysis) Consume(deps map[string]any) (map[string]any, error) {
 	reader := factReader{facts: deps}
 	changes := readFact[core.LineHistoryChanges](&reader, linehistory.DependencyLineHistory)
@@ -181,15 +177,13 @@ func (bf *BusFactorAnalysis) Consume(deps map[string]any) (map[string]any, error
 		return nil, reader.err
 	}
 
-	bf.fileResolver = changes.Resolver
+	closedTick, totals, err := bf.ownership.consume(tick, changes)
+	if err != nil {
+		return nil, fmt.Errorf("update bus factor ownership: %w", err)
+	}
 
-	// Take a snapshot when we move to a new tick
-	if tick > bf.lastTick {
-		if bf.lastTick >= 0 {
-			bf.takeSnapshot(bf.lastTick)
-		}
-
-		bf.lastTick = tick
+	if totals != nil {
+		bf.takeSnapshot(closedTick, *totals)
 	}
 
 	return noDependencies(), nil
@@ -213,7 +207,10 @@ func computeBusFactor(authorLines map[int]int64, totalLines int64, threshold flo
 		return counts[i] > counts[j]
 	})
 
-	target := int64(float64(threshold) * float64(totalLines))
+	target := busFactorTargetLines(totalLines, threshold)
+	if target == 0 {
+		return 0
+	}
 
 	var cumulative int64
 	for k, c := range counts {
@@ -226,11 +223,39 @@ func computeBusFactor(authorLines map[int]int64, totalLines int64, threshold flo
 	return len(counts)
 }
 
+// busFactorTargetLines computes ceil(totalLines * threshold) using the shortest decimal
+// representation of the configured float32. This treats a configured 0.8 as exactly four fifths
+// instead of inheriting its binary floating-point approximation.
+func busFactorTargetLines(totalLines int64, threshold float32) int64 {
+	if totalLines <= 0 || threshold <= 0 {
+		return 0
+	}
+
+	decimal := strconv.FormatFloat(float64(threshold), 'g', -1, 32)
+
+	ratio, ok := new(big.Rat).SetString(decimal)
+	if !ok {
+		return totalLines
+	}
+
+	numerator := new(big.Int).Mul(ratio.Num(), big.NewInt(totalLines))
+
+	target, remainder := new(big.Int).QuoRem(
+		numerator,
+		ratio.Denom(),
+		new(big.Int),
+	)
+	if remainder.Sign() > 0 {
+		target.Add(target, big.NewInt(1))
+	}
+
+	return target.Int64()
+}
+
 // Finalize returns the result of the analysis. Further Consume() calls are not expected.
 func (bf *BusFactorAnalysis) Finalize() any {
-	// Take the final snapshot for the last tick
-	if bf.lastTick >= 0 {
-		bf.takeSnapshot(bf.lastTick)
+	if tick, totals := bf.ownership.finalSnapshot(); totals != nil {
+		bf.takeSnapshot(tick, *totals)
 	}
 
 	return BusFactorResult{
@@ -351,65 +376,20 @@ func (bf *BusFactorAnalysis) MergeResults(
 	return merged
 }
 
-// takeSnapshot scans all files and computes the bus factor for the given tick.
-func (bf *BusFactorAnalysis) takeSnapshot(tick int) {
-	if bf.fileResolver == nil {
-		return
-	}
-
-	authorLines := map[int]int64{}
-
-	bf.fileResolver.ForEachFile(func(fileId core.FileId, fileName string) {
-		previousLine := 0
-		previousAuthor := int(core.AuthorMissing)
-
-		bf.fileResolver.ScanFile(fileId,
-			func(line int, _ core.TickNumber, author core.AuthorId) {
-				length := line - previousLine
-				if length > 0 && previousAuthor != int(core.AuthorMissing) {
-					authorLines[previousAuthor] += int64(length)
-				}
-
-				previousLine = line
-
-				if author >= core.AuthorMissing {
-					previousAuthor = int(core.AuthorMissing)
-				} else {
-					previousAuthor = int(author)
-				}
-			})
-	})
-
-	var totalLines int64
-	for _, lines := range authorLines {
-		totalLines += lines
-	}
-
-	busFactor := computeBusFactor(authorLines, totalLines, bf.Threshold)
-
-	// Copy the map for the snapshot
-	snapshotLines := make(map[int]int64, len(authorLines))
-	maps.Copy(snapshotLines, authorLines)
-
+func (bf *BusFactorAnalysis) takeSnapshot(tick int, totals ownershipTotals) {
 	bf.snapshots[tick] = &BusFactorSnapshot{
-		BusFactor:   busFactor,
-		TotalLines:  totalLines,
-		AuthorLines: snapshotLines,
+		BusFactor:   computeBusFactor(totals.AuthorLines, totals.TotalLines, bf.Threshold),
+		TotalLines:  totals.TotalLines,
+		AuthorLines: totals.AuthorLines,
 	}
 }
 
 // computeSubsystemBusFactor computes bus factor per directory prefix at the final tick.
 func (bf *BusFactorAnalysis) computeSubsystemBusFactor() map[string]int {
-	if bf.fileResolver == nil {
+	subsystems := bf.ownership.subsystemOwnership()
+	if subsystems == nil {
 		return nil
 	}
-
-	// Accumulate per-directory, per-author line counts
-	subsystems := map[string]map[int]int64{} // dir -> author -> lines
-
-	bf.fileResolver.ForEachFile(func(fileId core.FileId, fileName string) {
-		bf.accumulateSubsystemOwnership(fileId, subsystemDirectory(fileName), subsystems)
-	})
 
 	result := make(map[string]int, len(subsystems))
 	for dir, authorLines := range subsystems {
@@ -422,45 +402,6 @@ func (bf *BusFactorAnalysis) computeSubsystemBusFactor() map[string]int {
 	}
 
 	return result
-}
-
-func subsystemDirectory(fileName string) string {
-	directory := path.Dir(fileName)
-	if directory == "." {
-		return "/"
-	}
-
-	return directory
-}
-
-func (bf *BusFactorAnalysis) accumulateSubsystemOwnership(
-	fileID core.FileId,
-	directory string,
-	subsystems map[string]map[int]int64,
-) {
-	previousLine := 0
-	previousAuthor := int(core.AuthorMissing)
-
-	bf.fileResolver.ScanFile(fileID, func(line int, _ core.TickNumber, author core.AuthorId) {
-		length := line - previousLine
-		if length > 0 && previousAuthor != int(core.AuthorMissing) {
-			directoryAuthors := subsystems[directory]
-			if directoryAuthors == nil {
-				directoryAuthors = map[int]int64{}
-				subsystems[directory] = directoryAuthors
-			}
-
-			directoryAuthors[previousAuthor] += int64(length)
-		}
-
-		previousLine = line
-
-		if author >= core.AuthorMissing {
-			previousAuthor = int(core.AuthorMissing)
-		} else {
-			previousAuthor = int(author)
-		}
-	})
 }
 
 func (bf *BusFactorAnalysis) serializeText(result *BusFactorResult, writer io.Writer) {

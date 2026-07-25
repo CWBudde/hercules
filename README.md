@@ -590,7 +590,9 @@ labours -m bus-factor
 The [bus factor](https://en.wikipedia.org/wiki/Bus_factor) is the minimum number of developers whose
 departure would leave the project without sufficient knowledge to maintain it. Hercules computes this
 over time by finding the smallest set of developers who collectively own at least 80% (configurable
-via `--bus-factor-threshold`) of the living code lines.
+via `--bus-factor-threshold`) of the living code lines. Each occupied tick records ownership after
+that tick's last commit and before any later tick. Required coverage is rounded up to a whole line,
+so the configured threshold remains exact for small repositories.
 
 The analysis produces three visualizations:
 
@@ -613,7 +615,8 @@ The [Gini coefficient](https://en.wikipedia.org/wiki/Gini_coefficient) and
 quantify how concentrated or distributed code ownership is. Gini=0 means perfectly equal
 ownership, Gini=1 means one person owns everything. HHI ranges from 1/n (equal) to 1.0
 (single author). Both metrics are tracked over time using the same line ownership data as
-the bus factor analysis.
+the bus factor analysis. Their occupied-tick and final subsystem snapshots use the same
+incremental ownership accounting as Bus Factor.
 
 The analysis produces two visualizations:
 

@@ -55,7 +55,7 @@ func TestOwnershipConcentrationInitialize(t *testing.T) {
 	oc := OwnershipConcentrationAnalysis{}
 	assert.NoError(t, oc.Initialize(test.Repository))
 	assert.NotNil(t, oc.snapshots)
-	assert.Equal(t, -1, oc.lastTick)
+	assert.Equal(t, -1, oc.ownership.lastTick)
 }
 
 func TestOwnershipConcentrationListConfigurationOptions(t *testing.T) {

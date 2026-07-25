@@ -16,6 +16,17 @@ Each entry should include:
 
 ## Unreleased
 
+- YAML and PB: corrected `BusFactor` and `OwnershipConcentration` snapshot
+  semantics without changing fields or wire types. Occupied ticks now contain
+  only ownership state from commits at or before the labeled tick, including
+  the final tick. Both analyses share incremental global and per-file
+  ownership accounting, so their final subsystem metrics reconcile with the
+  global snapshot. Bus Factor now uses exact ceiling coverage for the
+  configured decimal threshold instead of truncating fractional required
+  lines. Compatibility: semantic breaking change (existing consumers will
+  parse the output unchanged, but corrected per-tick and subsystem values can
+  differ). User action: recompute stored Bus Factor and Ownership
+  Concentration results before comparing them across this release boundary.
 - YAML and PB: corrected `Onboarding` cohort and snapshot semantics without
   changing fields or wire types. Join cohorts now use each author's actual
   earliest author timestamp and offset. Day windows use exact 24-hour durations

@@ -66,7 +66,7 @@ func TestBusFactorInitialize(t *testing.T) {
 	bf := BusFactorAnalysis{}
 	assert.NoError(t, bf.Initialize(test.Repository))
 	assert.NotNil(t, bf.snapshots)
-	assert.Equal(t, -1, bf.lastTick)
+	assert.Equal(t, -1, bf.ownership.lastTick)
 	assert.InDelta(t, float32(0.8), bf.Threshold, 0.001)
 }
 
@@ -140,6 +140,34 @@ func TestComputeBusFactor(t *testing.T) {
 			authors:    map[int]int64{0: 60, 1: 40},
 			total:      100,
 			threshold:  0.5,
+			wantFactor: 1,
+		},
+		{
+			name:       "two lines require both authors",
+			authors:    map[int]int64{0: 1, 1: 1},
+			total:      2,
+			threshold:  0.8,
+			wantFactor: 2,
+		},
+		{
+			name:       "three lines require all three",
+			authors:    map[int]int64{0: 1, 1: 1, 2: 1},
+			total:      3,
+			threshold:  0.8,
+			wantFactor: 3,
+		},
+		{
+			name:       "seven lines require six",
+			authors:    map[int]int64{0: 5, 1: 2},
+			total:      7,
+			threshold:  0.8,
+			wantFactor: 2,
+		},
+		{
+			name:       "four of five exactly meets decimal threshold",
+			authors:    map[int]int64{0: 4, 1: 1},
+			total:      5,
+			threshold:  0.8,
 			wantFactor: 1,
 		},
 	}

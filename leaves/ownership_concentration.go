@@ -30,8 +30,8 @@ import (
 type OwnershipConcentrationAnalysis struct {
 	core.NoopMerger
 
-	// fileResolver is used to scan files for current ownership state.
-	fileResolver core.FileIdResolver
+	// ownership incrementally tracks the shared alive-line ownership state.
+	ownership ownershipSnapshotAccumulator
 	// peopleResolver resolves author IDs to names.
 	peopleResolver core.IdentityResolver
 	// reversedPeopleDict references IdentityDetector.ReversedPeopleDict.
@@ -40,10 +40,7 @@ type OwnershipConcentrationAnalysis struct {
 	tickSize time.Duration
 	// snapshots stores per-tick concentration snapshots.
 	snapshots map[int]*OwnershipConcentrationSnapshot
-	// lastTick tracks the most recent tick seen.
-	lastTick int
-
-	l core.Logger
+	l         core.Logger
 }
 
 // OwnershipConcentrationSnapshot stores concentration metrics at a single tick.
@@ -141,7 +138,7 @@ func (oc *OwnershipConcentrationAnalysis) Description() string {
 func (oc *OwnershipConcentrationAnalysis) Initialize(repository *git.Repository) error {
 	oc.l = core.NewLogger()
 	oc.snapshots = map[int]*OwnershipConcentrationSnapshot{}
-	oc.lastTick = -1
+	oc.ownership.reset()
 
 	return nil
 }
@@ -156,14 +153,13 @@ func (oc *OwnershipConcentrationAnalysis) Consume(deps map[string]any) (map[stri
 		return nil, reader.err
 	}
 
-	oc.fileResolver = changes.Resolver
+	closedTick, totals, err := oc.ownership.consume(tick, changes)
+	if err != nil {
+		return nil, fmt.Errorf("update ownership concentration: %w", err)
+	}
 
-	if tick > oc.lastTick {
-		if oc.lastTick >= 0 {
-			oc.takeSnapshot(oc.lastTick)
-		}
-
-		oc.lastTick = tick
+	if totals != nil {
+		oc.takeSnapshot(closedTick, *totals)
 	}
 
 	return noDependencies(), nil
@@ -220,8 +216,8 @@ func computeHHI(authorLines map[int]int64, totalLines int64) float64 {
 
 // Finalize returns the result of the analysis. Further Consume() calls are not expected.
 func (oc *OwnershipConcentrationAnalysis) Finalize() any {
-	if oc.lastTick >= 0 {
-		oc.takeSnapshot(oc.lastTick)
+	if tick, totals := oc.ownership.finalSnapshot(); totals != nil {
+		oc.takeSnapshot(tick, *totals)
 	}
 
 	return OwnershipConcentrationResult{
@@ -397,65 +393,21 @@ func (oc *OwnershipConcentrationAnalysis) serializeBinary(
 	return nil
 }
 
-// takeSnapshot scans all files and computes concentration metrics for the given tick.
-func (oc *OwnershipConcentrationAnalysis) takeSnapshot(tick int) {
-	if oc.fileResolver == nil {
-		return
-	}
-
-	authorLines := map[int]int64{}
-
-	oc.fileResolver.ForEachFile(func(fileId core.FileId, fileName string) {
-		previousLine := 0
-		previousAuthor := int(core.AuthorMissing)
-
-		oc.fileResolver.ScanFile(fileId,
-			func(line int, _ core.TickNumber, author core.AuthorId) {
-				length := line - previousLine
-				if length > 0 && previousAuthor != int(core.AuthorMissing) {
-					authorLines[previousAuthor] += int64(length)
-				}
-
-				previousLine = line
-
-				if author >= core.AuthorMissing {
-					previousAuthor = int(core.AuthorMissing)
-				} else {
-					previousAuthor = int(author)
-				}
-			})
-	})
-
-	var totalLines int64
-	for _, lines := range authorLines {
-		totalLines += lines
-	}
-
-	gini := computeGini(authorLines, totalLines)
-	hhi := computeHHI(authorLines, totalLines)
-
-	snapshotLines := make(map[int]int64, len(authorLines))
-	maps.Copy(snapshotLines, authorLines)
-
+func (oc *OwnershipConcentrationAnalysis) takeSnapshot(tick int, totals ownershipTotals) {
 	oc.snapshots[tick] = &OwnershipConcentrationSnapshot{
-		Gini:        gini,
-		HHI:         hhi,
-		TotalLines:  totalLines,
-		AuthorLines: snapshotLines,
+		Gini:        computeGini(totals.AuthorLines, totals.TotalLines),
+		HHI:         computeHHI(totals.AuthorLines, totals.TotalLines),
+		TotalLines:  totals.TotalLines,
+		AuthorLines: totals.AuthorLines,
 	}
 }
 
 // computeSubsystemConcentration computes Gini and HHI per directory prefix at the final tick.
 func (oc *OwnershipConcentrationAnalysis) computeSubsystemConcentration() map[string]*SubsystemConcentration {
-	if oc.fileResolver == nil {
+	subsystems := oc.ownership.subsystemOwnership()
+	if subsystems == nil {
 		return nil
 	}
-
-	subsystems := map[string]map[int]int64{} // dir -> author -> lines
-
-	oc.fileResolver.ForEachFile(func(fileId core.FileId, fileName string) {
-		oc.accumulateSubsystemOwnership(fileId, subsystemDirectory(fileName), subsystems)
-	})
 
 	result := make(map[string]*SubsystemConcentration, len(subsystems))
 	for dir, authorLines := range subsystems {
@@ -471,36 +423,6 @@ func (oc *OwnershipConcentrationAnalysis) computeSubsystemConcentration() map[st
 	}
 
 	return result
-}
-
-func (oc *OwnershipConcentrationAnalysis) accumulateSubsystemOwnership(
-	fileID core.FileId,
-	directory string,
-	subsystems map[string]map[int]int64,
-) {
-	previousLine := 0
-	previousAuthor := int(core.AuthorMissing)
-
-	oc.fileResolver.ScanFile(fileID, func(line int, _ core.TickNumber, author core.AuthorId) {
-		length := line - previousLine
-		if length > 0 && previousAuthor != int(core.AuthorMissing) {
-			directoryAuthors := subsystems[directory]
-			if directoryAuthors == nil {
-				directoryAuthors = map[int]int64{}
-				subsystems[directory] = directoryAuthors
-			}
-
-			directoryAuthors[previousAuthor] += int64(length)
-		}
-
-		previousLine = line
-
-		if author >= core.AuthorMissing {
-			previousAuthor = int(core.AuthorMissing)
-		} else {
-			previousAuthor = int(author)
-		}
-	})
 }
 
 func (oc *OwnershipConcentrationAnalysis) serializeText(result *OwnershipConcentrationResult, writer io.Writer) {

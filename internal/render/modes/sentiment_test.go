@@ -28,14 +28,16 @@ func (m *MockSentimentReader) GetOwnershipBurndown() ([]string, map[string][][]i
 
 func (m *MockSentimentReader) GetPeopleInteraction() ([]string, [][]int, error) { return nil, nil, nil }
 
-func (m *MockSentimentReader) GetFileCooccurrence() ([]string, [][]int, error) { return nil, nil, nil }
-
-func (m *MockSentimentReader) GetPeopleCooccurrence() ([]string, [][]int, error) {
-	return nil, nil, nil
+func (m *MockSentimentReader) GetFileCooccurrence() ([]string, readers.SparseMatrix, error) {
+	return nil, readers.SparseMatrix{}, nil
 }
 
-func (m *MockSentimentReader) GetShotnessCooccurrence() ([]string, [][]int, error) {
-	return nil, nil, nil
+func (m *MockSentimentReader) GetPeopleCooccurrence() ([]string, readers.SparseMatrix, error) {
+	return nil, readers.SparseMatrix{}, nil
+}
+
+func (m *MockSentimentReader) GetShotnessCooccurrence() ([]string, readers.SparseMatrix, error) {
+	return nil, readers.SparseMatrix{}, nil
 }
 
 func (m *MockSentimentReader) GetShotnessRecords() ([]readers.ShotnessRecord, error) { return nil, nil }
@@ -207,11 +209,17 @@ func (n *NoDataReader) GetOwnershipBurndown() ([]string, map[string][][]int, err
 
 func (n *NoDataReader) GetPeopleInteraction() ([]string, [][]int, error) { return nil, nil, nil }
 
-func (n *NoDataReader) GetFileCooccurrence() ([]string, [][]int, error) { return nil, nil, nil }
+func (n *NoDataReader) GetFileCooccurrence() ([]string, readers.SparseMatrix, error) {
+	return nil, readers.SparseMatrix{}, nil
+}
 
-func (n *NoDataReader) GetPeopleCooccurrence() ([]string, [][]int, error) { return nil, nil, nil }
+func (n *NoDataReader) GetPeopleCooccurrence() ([]string, readers.SparseMatrix, error) {
+	return nil, readers.SparseMatrix{}, nil
+}
 
-func (n *NoDataReader) GetShotnessCooccurrence() ([]string, [][]int, error)   { return nil, nil, nil }
+func (n *NoDataReader) GetShotnessCooccurrence() ([]string, readers.SparseMatrix, error) {
+	return nil, readers.SparseMatrix{}, nil
+}
 func (n *NoDataReader) GetShotnessRecords() ([]readers.ShotnessRecord, error) { return nil, nil }
 func (n *NoDataReader) GetRuntimeStats() (map[string]float64, error)          { return nil, nil }
 func (n *NoDataReader) GetBurndownParameters() (burndown.BurndownParameters, error) {

@@ -201,38 +201,44 @@ func (r *ProtobufReader) GetPeopleInteraction() ([]string, [][]int, error) {
 }
 
 // GetFileCooccurrence retrieves file coupling data
-func (r *ProtobufReader) GetFileCooccurrence() ([]string, [][]int, error) {
+func (r *ProtobufReader) GetFileCooccurrence() ([]string, SparseMatrix, error) {
 	couplesData, err := r.parseCouplesAnalysisResults()
 	if err != nil {
-		return nil, nil, err
+		return nil, SparseMatrix{}, err
 	}
 	if couplesData.FileCouples == nil || couplesData.FileCouples.Matrix == nil {
-		return nil, nil, fmt.Errorf("%w: file coupling", ErrAnalysisMissing)
+		return nil, SparseMatrix{}, fmt.Errorf("%w: file coupling", ErrAnalysisMissing)
 	}
 
-	matrix := parseCompressedSparseRowMatrix(couplesData.FileCouples.Matrix)
+	matrix, err := parseCompressedSparseCouplingMatrix(couplesData.FileCouples.Matrix)
+	if err != nil {
+		return nil, SparseMatrix{}, fmt.Errorf("%w: file coupling: %v", ErrAnalysisMalformed, err)
+	}
 	return couplesData.FileCouples.Index, matrix, nil
 }
 
 // GetPeopleCooccurrence retrieves people coupling data
-func (r *ProtobufReader) GetPeopleCooccurrence() ([]string, [][]int, error) {
+func (r *ProtobufReader) GetPeopleCooccurrence() ([]string, SparseMatrix, error) {
 	couplesData, err := r.parseCouplesAnalysisResults()
 	if err != nil {
-		return nil, nil, err
+		return nil, SparseMatrix{}, err
 	}
 	if couplesData.PeopleCouples == nil || couplesData.PeopleCouples.Matrix == nil {
-		return nil, nil, fmt.Errorf("%w: people coupling", ErrAnalysisMissing)
+		return nil, SparseMatrix{}, fmt.Errorf("%w: people coupling", ErrAnalysisMissing)
 	}
 
-	matrix := parseCompressedSparseRowMatrix(couplesData.PeopleCouples.Matrix)
+	matrix, err := parseCompressedSparseCouplingMatrix(couplesData.PeopleCouples.Matrix)
+	if err != nil {
+		return nil, SparseMatrix{}, fmt.Errorf("%w: people coupling: %v", ErrAnalysisMalformed, err)
+	}
 	return couplesData.PeopleCouples.Index, matrix, nil
 }
 
 // GetShotnessCooccurrence retrieves shotness coupling data
-func (r *ProtobufReader) GetShotnessCooccurrence() ([]string, [][]int, error) {
+func (r *ProtobufReader) GetShotnessCooccurrence() ([]string, SparseMatrix, error) {
 	shotnessRecords, err := r.GetShotnessRecords()
 	if err != nil {
-		return nil, nil, err
+		return nil, SparseMatrix{}, err
 	}
 
 	return shotnessCouplingMatrix(shotnessRecords)
@@ -771,6 +777,43 @@ func parseCompressedSparseRowMatrix(matrix *pb.CompressedSparseRowMatrix) [][]in
 	}
 
 	return result
+}
+
+func parseCompressedSparseCouplingMatrix(
+	matrix *pb.CompressedSparseRowMatrix,
+) (SparseMatrix, error) {
+	if matrix == nil {
+		return SparseMatrix{}, nil
+	}
+	rows, columns := int(matrix.NumberOfRows), int(matrix.NumberOfColumns)
+	if rows < 0 || columns < 0 || len(matrix.Indptr) != rows+1 {
+		return SparseMatrix{}, fmt.Errorf(
+			"invalid CSR dimensions or row offsets for %dx%d matrix", rows, columns,
+		)
+	}
+	entries := make([]SparseEntry, 0, len(matrix.Data))
+	for row := 0; row < rows; row++ {
+		start, end := int(matrix.Indptr[row]), int(matrix.Indptr[row+1])
+		if start < 0 || end < start || end > len(matrix.Data) || end > len(matrix.Indices) {
+			return SparseMatrix{}, fmt.Errorf(
+				"invalid CSR offsets [%d:%d] for row %d", start, end, row,
+			)
+		}
+		for index := start; index < end; index++ {
+			value := int(matrix.Data[index])
+			if int64(value) != matrix.Data[index] {
+				return SparseMatrix{}, fmt.Errorf(
+					"CSR value at index %d overflows int", index,
+				)
+			}
+			entries = append(entries, SparseEntry{
+				Row:    row,
+				Column: int(matrix.Indices[index]),
+				Value:  value,
+			})
+		}
+	}
+	return NewSparseMatrix(rows, columns, entries)
 }
 
 // parseBurndownAnalysisResults extracts and parses burndown data from the Contents map

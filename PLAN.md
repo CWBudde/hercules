@@ -442,15 +442,15 @@ Priority: P2
 
 ### PERF-01: Replace pathological coupling ranking
 
-- Preserve sparse coupling matrices through readers and modes.
-- Compute top pairs with a bounded min-heap instead of materializing and bubble-sorting all pairs.
-- Avoid dense `N×N` expansion unless the requested chart size is below a documented threshold.
-- Add benchmarks for 1,000 and 10,000 files/entities.
+Status: completed 2026-07-26.
 
-Acceptance criteria:
-
-- [ ] top-K ranking is `O(nonzero × log K)`;
-- [ ] memory is proportional to sparse nonzero entries plus bounded rendering data.
+Coupling data now stays in canonical CSR form through protobuf/YAML readers, shotness profile
+construction, ranking, developer modes, and streamed projector output. Ranked pairs and heatmap
+entity selection use bounded min-heaps with deterministic ties; only the selected at-most `60×60`
+heatmap is materialized densely. Sparse validation limits stored entries rather than logical
+`N×N` cells. Regression tests cover exact top-K/statistics, 10,000-entity CSR retention and bounded
+rendering, streamed normalized embeddings, and sparse resource limits. The 1,000/10,000-entity
+benchmark demonstrates entity-count-independent retained allocation for ranking.
 
 ### PERF-02: Stream burndown merges
 

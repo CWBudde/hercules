@@ -53,16 +53,16 @@ func (r stubReader) GetPeopleInteraction() ([]string, [][]int, error) {
 	return nil, nil, fmt.Errorf("%w: people interaction", readers.ErrAnalysisMissing)
 }
 
-func (r stubReader) GetFileCooccurrence() ([]string, [][]int, error) {
-	return nil, nil, fmt.Errorf("%w: file coupling", readers.ErrAnalysisMissing)
+func (r stubReader) GetFileCooccurrence() ([]string, readers.SparseMatrix, error) {
+	return nil, readers.SparseMatrix{}, fmt.Errorf("%w: file coupling", readers.ErrAnalysisMissing)
 }
 
-func (r stubReader) GetPeopleCooccurrence() ([]string, [][]int, error) {
-	return nil, nil, fmt.Errorf("%w: people coupling", readers.ErrAnalysisMissing)
+func (r stubReader) GetPeopleCooccurrence() ([]string, readers.SparseMatrix, error) {
+	return nil, readers.SparseMatrix{}, fmt.Errorf("%w: people coupling", readers.ErrAnalysisMissing)
 }
 
-func (r stubReader) GetShotnessCooccurrence() ([]string, [][]int, error) {
-	return nil, nil, fmt.Errorf("%w: shotness", readers.ErrAnalysisMissing)
+func (r stubReader) GetShotnessCooccurrence() ([]string, readers.SparseMatrix, error) {
+	return nil, readers.SparseMatrix{}, fmt.Errorf("%w: shotness", readers.ErrAnalysisMissing)
 }
 
 func (r stubReader) GetShotnessRecords() ([]readers.ShotnessRecord, error) {

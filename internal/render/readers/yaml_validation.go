@@ -75,7 +75,20 @@ func validateYAMLAnalysis(data map[string]interface{}, limits analysisio.Limits)
 		return fmt.Errorf("%w: Couples must be a mapping", ErrAnalysisMalformed)
 	}
 	for _, field := range []string{"file_couples_matrix", "people_couples_matrix"} {
-		if err := validateYAMLMatrixField(values, field, "Couples."+field, limits); err != nil {
+		raw, present := values[field]
+		if !present {
+			continue
+		}
+		text, ok := raw.(string)
+		if !ok {
+			return fmt.Errorf(
+				"%w: Couples.%s must be a matrix string",
+				ErrAnalysisMalformed, field,
+			)
+		}
+		if _, err := parseSparseMatrixTextChecked(
+			"Couples."+field, text, limits,
+		); err != nil {
 			return err
 		}
 	}
@@ -94,7 +107,7 @@ func validateYAMLAnalysis(data map[string]interface{}, limits analysisio.Limits)
 		}
 		switch typed := matrix.(type) {
 		case string:
-			if _, err := parseBurndownMatrixChecked("Couples."+field+".matrix", typed, limits); err != nil {
+			if _, err := parseSparseMatrixTextChecked("Couples."+field+".matrix", typed, limits); err != nil {
 				return err
 			}
 		case []interface{}:
@@ -245,6 +258,73 @@ func parseBurndownMatrixChecked(
 	return matrix, nil
 }
 
+// parseSparseMatrixTextChecked parses the historical whitespace-delimited
+// coupling format without allocating a dense rows-by-columns matrix.
+func parseSparseMatrixTextChecked(
+	name, data string, limits analysisio.Limits,
+) (SparseMatrix, error) {
+	limits = limits.WithDefaults()
+	lineCount := strings.Count(data, "\n") + 1
+	if err := analysisio.ValidateDimensions(name, int64(lineCount), 1, limits); err != nil {
+		return SparseMatrix{}, err
+	}
+
+	entries := make([]SparseEntry, 0)
+	rows, columns := 0, -1
+	lineIndex := 0
+	for line := range strings.Lines(data) {
+		fieldCount := countFields(line)
+		if fieldCount > limits.MaxColumns {
+			return SparseMatrix{}, fmt.Errorf(
+				"%w: %s row %d has %d columns, limit is %d",
+				ErrAnalysisTooLarge, name, lineIndex, fieldCount, limits.MaxColumns,
+			)
+		}
+		numbers := strings.Fields(line)
+		if len(numbers) == 0 {
+			lineIndex++
+			continue
+		}
+		if columns < 0 {
+			columns = len(numbers)
+		} else if len(numbers) != columns {
+			return SparseMatrix{}, fmt.Errorf(
+				"%w: %s row %d has %d columns, expected %d",
+				ErrAnalysisMalformed, name, lineIndex, len(numbers), columns,
+			)
+		}
+		if err := analysisio.ValidateDimensions(
+			name, int64(rows+1), int64(columns), limits,
+		); err != nil {
+			return SparseMatrix{}, err
+		}
+		for column, number := range numbers {
+			value, err := strconv.Atoi(number)
+			if err != nil {
+				return SparseMatrix{}, fmt.Errorf(
+					"%w: %s row %d column %d is not an integer",
+					ErrAnalysisMalformed, name, lineIndex, column,
+				)
+			}
+			if value != 0 {
+				entries = append(entries, SparseEntry{
+					Row: rows, Column: column, Value: value,
+				})
+			}
+		}
+		rows++
+		lineIndex++
+	}
+	if columns < 0 {
+		columns = 0
+	}
+	matrix, err := NewSparseMatrix(rows, columns, entries)
+	if err != nil {
+		return SparseMatrix{}, fmt.Errorf("%w: %s: %v", ErrAnalysisMalformed, name, err)
+	}
+	return matrix, nil
+}
+
 func countFields(value string) int {
 	count := 0
 	inField := false
@@ -263,6 +343,7 @@ func countFields(value string) int {
 
 func validateYAMLSparseRows(name string, rows []interface{}, limits analysisio.Limits) error {
 	maxColumn := -1
+	nonzero := 0
 	for rowIndex, raw := range rows {
 		values, ok := asMap(raw)
 		if !ok {
@@ -283,9 +364,12 @@ func validateYAMLSparseRows(name string, rows []interface{}, limits analysisio.L
 				)
 			}
 			maxColumn = max(maxColumn, column)
+			nonzero++
 		}
 	}
-	return analysisio.ValidateDimensions(name, int64(len(rows)), int64(maxColumn+1), limits)
+	return analysisio.ValidateSparseDimensions(
+		name, int64(len(rows)), int64(maxColumn+1), int64(nonzero), limits,
+	)
 }
 
 //nolint:cyclop,gocognit,noinlineerr // Recursive container cases share one aggregate counter.

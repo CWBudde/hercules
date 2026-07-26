@@ -27,12 +27,12 @@ type Reader interface {
 	GetPeopleBurndown() ([]PeopleBurndown, error)
 	GetOwnershipBurndown() ([]string, map[string][][]int, error)
 	GetPeopleInteraction() ([]string, [][]int, error)
-	GetFileCooccurrence() ([]string, [][]int, error)
-	GetPeopleCooccurrence() ([]string, [][]int, error)
+	GetFileCooccurrence() ([]string, SparseMatrix, error)
+	GetPeopleCooccurrence() ([]string, SparseMatrix, error)
 	// GetShotnessCooccurrence returns entity labels and their symmetric dot-product
-	// matrix over aligned entity-indexed co-occurrence profiles. Diagonal cells are
-	// squared profile magnitudes.
-	GetShotnessCooccurrence() ([]string, [][]int, error)
+	// sparse matrix over aligned entity-indexed co-occurrence profiles. Diagonal
+	// cells are squared profile magnitudes.
+	GetShotnessCooccurrence() ([]string, SparseMatrix, error)
 	GetShotnessRecords() ([]ShotnessRecord, error)
 	GetDeveloperStats() ([]DeveloperStat, error)
 	GetLanguageStats() ([]LanguageStat, error)

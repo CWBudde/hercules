@@ -174,11 +174,11 @@ func summarizeReportDefaultExtraction(t *testing.T, reader *ProtobufReader) fixt
 		PeopleInteraction: summarizeMatrix(peopleInteraction),
 		FileCooccurrence: indexedMatrix{
 			Items:  len(fileIndex),
-			Matrix: summarizeMatrix(fileCooccurrence),
+			Matrix: summarizeMatrix(fileCooccurrence.Dense()),
 		},
 		PeopleCooccurrence: indexedMatrix{
 			Items:  len(peopleIndex),
-			Matrix: summarizeMatrix(peopleCooccurrence),
+			Matrix: summarizeMatrix(peopleCooccurrence.Dense()),
 		},
 		Developers:             summarizeDevelopers(devs),
 		TemporalActivity:       summarizeTemporal(temporal),
@@ -215,7 +215,7 @@ func summarizeShotnessExtraction(t *testing.T, reader *ProtobufReader) shotnessE
 		CounterTotal: counterTotal,
 		Cooccurrence: indexedMatrix{
 			Items:  len(index),
-			Matrix: summarizeMatrix(cooccurrence),
+			Matrix: summarizeMatrix(cooccurrence.Dense()),
 		},
 		FirstRecord: first,
 	}

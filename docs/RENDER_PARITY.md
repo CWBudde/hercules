@@ -80,6 +80,17 @@ the profile squared norm, while ranked pairs contain only positive, distinct
 off-diagonal entries. Hand-authored fixtures cover the matrix and ranking
 policy.
 
+### Coupling scalability boundary
+
+Coupling matrices remain in compressed sparse row form from YAML/Protocol
+Buffer extraction through ranking and mode preprocessing. Top pairs use a
+bounded min-heap over positive upper-triangle non-zero entries. A complete
+dense coupling matrix is never built by production readers or modes:
+heatmaps first select the 60 highest-activity entities and materialize only
+that at-most `60×60` submatrix. TensorFlow Projector vectors are a dense file
+format, so `couples-people` streams each output row from CSR while retaining
+only sparse input plus row-sized working state in memory.
+
 ## How to re-run
 
 In this repository:

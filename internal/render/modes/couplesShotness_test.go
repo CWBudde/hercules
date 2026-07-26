@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/cwbudde/hercules/internal/render/readers"
 )
 
 func TestAnalyzeShotnessCouplingUsesHeatmapMatrixForRankedPairs(t *testing.T) {
@@ -14,10 +16,10 @@ func TestAnalyzeShotnessCouplingUsesHeatmapMatrixForRankedPairs(t *testing.T) {
 		{1, 20, 17},
 	}
 
-	analysis := analyzeShotnessCoupling(names, matrix)
+	analysis := analyzeShotnessCoupling(names, readers.SparseMatrixFromDense(matrix))
 
 	require.Equal(t, names, analysis.EntityNames)
-	require.Equal(t, matrix, analysis.CouplingMatrix)
+	require.Equal(t, matrix, analysis.CouplingMatrix.Dense())
 	require.Equal(t, []ShotnessCouplingPair{
 		{
 			Entity1:          "b.go:beta",
@@ -48,7 +50,9 @@ func TestAnalyzeShotnessCouplingUsesHeatmapMatrixForRankedPairs(t *testing.T) {
 }
 
 func TestAnalyzeShotnessCouplingSingleEntityHasNoPairStatistics(t *testing.T) {
-	analysis := analyzeShotnessCoupling([]string{"a.go:alpha"}, [][]int{{9}})
+	analysis := analyzeShotnessCoupling(
+		[]string{"a.go:alpha"}, readers.SparseMatrixFromDense([][]int{{9}}),
+	)
 
 	require.Empty(t, analysis.TopCoupling)
 	require.Equal(t, 1, analysis.Statistics.TotalEntities)

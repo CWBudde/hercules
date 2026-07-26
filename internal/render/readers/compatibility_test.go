@@ -55,14 +55,14 @@ func TestCriticalCompatibilityIssues(t *testing.T) {
 		// Test 3: File/People cooccurrence uses CompressedSparseRowMatrix format
 		_, fileMatrix, err := reader.GetFileCooccurrence()
 		if err == nil {
-			t.Logf("✓ File cooccurrence: CompressedSparseRowMatrix → %dx%d", len(fileMatrix), len(fileMatrix[0]))
+			t.Logf("✓ File cooccurrence: CompressedSparseRowMatrix → %dx%d", fileMatrix.Rows, fileMatrix.Columns)
 		} else {
 			t.Logf("  File cooccurrence not available: %v", err)
 		}
 
 		_, peopleMatrix, err := reader.GetPeopleCooccurrence()
 		if err == nil {
-			t.Logf("✓ People cooccurrence: CompressedSparseRowMatrix → %dx%d", len(peopleMatrix), len(peopleMatrix[0]))
+			t.Logf("✓ People cooccurrence: CompressedSparseRowMatrix → %dx%d", peopleMatrix.Rows, peopleMatrix.Columns)
 		} else {
 			t.Logf("  People cooccurrence not available: %v", err)
 		}

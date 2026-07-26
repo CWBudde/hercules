@@ -2,11 +2,15 @@ package modes
 
 import (
 	"io"
+	"math"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/spf13/viper"
+	"github.com/stretchr/testify/require"
 
 	"github.com/cwbudde/hercules/internal/render/burndown"
 	"github.com/cwbudde/hercules/internal/render/readers"
@@ -37,10 +41,12 @@ func (r *MockCouplesReader) GetOwnershipBurndown() ([]string, map[string][][]int
 
 func (r *MockCouplesReader) GetPeopleInteraction() ([]string, [][]int, error) { return nil, nil, nil }
 
-func (r *MockCouplesReader) GetFileCooccurrence() ([]string, [][]int, error) { return nil, nil, nil }
+func (r *MockCouplesReader) GetFileCooccurrence() ([]string, readers.SparseMatrix, error) {
+	return nil, readers.SparseMatrix{}, nil
+}
 
-func (r *MockCouplesReader) GetShotnessCooccurrence() ([]string, [][]int, error) {
-	return nil, nil, nil
+func (r *MockCouplesReader) GetShotnessCooccurrence() ([]string, readers.SparseMatrix, error) {
+	return nil, readers.SparseMatrix{}, nil
 }
 
 func (r *MockCouplesReader) GetShotnessRecords() ([]readers.ShotnessRecord, error) { return nil, nil }
@@ -56,7 +62,7 @@ func (r *MockCouplesReader) GetDeveloperTimeSeriesData() (*readers.DeveloperTime
 }
 
 // GetPeopleCooccurrence returns test coupling data mimicking real hercules output
-func (r *MockCouplesReader) GetPeopleCooccurrence() ([]string, [][]int, error) {
+func (r *MockCouplesReader) GetPeopleCooccurrence() ([]string, readers.SparseMatrix, error) {
 	// Simulate realistic people coupling data
 	people := []string{
 		"alice@example.com",
@@ -71,7 +77,7 @@ func (r *MockCouplesReader) GetPeopleCooccurrence() ([]string, [][]int, error) {
 		{8, 22, 30},  // charlie coupled with others
 	}
 
-	return people, matrix, nil
+	return people, readers.SparseMatrixFromDense(matrix), nil
 }
 
 func TestCouplesPeopleEmbeddings(t *testing.T) {
@@ -145,65 +151,53 @@ func TestCouplesPeopleWithDisabledProjector(t *testing.T) {
 	}
 }
 
-func TestPreprocessCouplingMatrix(t *testing.T) {
-	// Test data with outliers
-	input := [][]int{
-		{10, 5, 100}, // 100 is an outlier
-		{5, 20, 8},
-		{100, 8, 15}, // 100 is an outlier
+func TestSparseCouplingOutlierThreshold(t *testing.T) {
+	entries := make([]readers.SparseEntry, 101)
+	for index := range entries {
+		value := index + 1
+		if index == len(entries)-1 {
+			value = 1_000
+		}
+		entries[index] = readers.SparseEntry{
+			Row: index, Column: index, Value: value,
+		}
 	}
-
-	result := preprocessCouplingMatrix(input)
-
-	if len(result) != 3 || len(result[0]) != 3 {
-		t.Fatalf("Matrix dimensions incorrect: got %dx%d, expected 3x3", len(result), len(result[0]))
-	}
-
-	// The 99th percentile of [5, 8, 8, 10, 15, 20, 100, 100] should cap the outliers
-	// 99th percentile of 8 values is at index ceil(0.99*8)-1 = 8-1 = 7, so value 100
-	// But our implementation caps at the actual 99th percentile value
-
-	// Verify outliers are capped (exact values depend on percentile calculation)
-	if result[0][2] > 100 || result[2][0] > 100 {
-		t.Errorf("Outliers not properly capped")
-	}
-
-	// Verify non-outlier values are preserved as floats
-	if result[1][1] != 20.0 {
-		t.Errorf("Non-outlier value not preserved: got %f, expected 20.0", result[1][1])
-	}
+	matrix, err := readers.NewSparseMatrix(101, 101, entries)
+	require.NoError(t, err)
+	require.Equal(t, 100, sparseCouplingOutlierThreshold(matrix))
+	require.Equal(t, 100.0, cappedCouplingValue(1_000, 100))
 }
 
-func TestTrainEmbeddings(t *testing.T) {
+func TestSparseEmbeddingWriterNormalizesRows(t *testing.T) {
+	viper.Set("disable-projector", false)
+	viper.Set("tmpdir", "")
 	index := []string{"alice", "bob", "charlie"}
-	matrix := [][]float64{
-		{1.0, 0.5, 0.2},
-		{0.5, 1.0, 0.8},
-		{0.2, 0.8, 1.0},
+	dense := [][]int{
+		{50, 15, 8},
+		{15, 75, 22},
+		{8, 22, 30},
 	}
+	sparse := readers.SparseMatrixFromDense(dense)
+	threshold := sparseCouplingOutlierThreshold(sparse)
 
-	embeddings, err := trainEmbeddings(index, matrix)
-	if err != nil {
-		t.Fatalf("trainEmbeddings failed: %v", err)
-	}
+	sparseOutput := t.TempDir()
+	require.NoError(t, writeSparseEmbeddings(
+		"people", sparseOutput, index, sparse, threshold,
+	))
 
-	if len(embeddings) != 3 {
-		t.Fatalf("Wrong number of embeddings: got %d, expected 3", len(embeddings))
-	}
-
-	// Check that embeddings are normalized (L2 norm should be ~1.0)
-	for i, emb := range embeddings {
-		if emb.Label != index[i] {
-			t.Errorf("Wrong label for embedding %d: got %s, expected %s", i, emb.Label, index[i])
+	data, err := os.ReadFile(filepath.Join(sparseOutput, "people_vectors.tsv"))
+	require.NoError(t, err)
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	require.Len(t, lines, len(index))
+	for _, line := range lines {
+		fields := strings.Split(line, "\t")
+		require.Len(t, fields, len(index))
+		normSquared := 0.0
+		for _, field := range fields {
+			value, err := strconv.ParseFloat(field, 64)
+			require.NoError(t, err)
+			normSquared += value * value
 		}
-
-		// Calculate L2 norm
-		norm := 0.0
-		for _, val := range emb.Vector {
-			norm += val * val
-		}
-		if norm < 0.99 || norm > 1.01 { // Allow small floating-point errors
-			t.Errorf("Embedding %d not properly normalized: L2 norm = %f", i, norm)
-		}
+		require.InDelta(t, 1.0, math.Sqrt(normSquared), 0.00001)
 	}
 }

@@ -60,7 +60,10 @@ func TestCalculateParallelDeveloperDataUsesPythonInputs(t *testing.T) {
 		},
 	}
 
-	data := calculateParallelDeveloperData(people, ownership, couplingPeople, couplingMatrix, timeSeries, 2)
+	data := calculateParallelDeveloperData(
+		people, ownership, couplingPeople,
+		readers.SparseMatrixFromDense(couplingMatrix), timeSeries, 2,
+	)
 	if len(data) != 2 {
 		t.Fatalf("Expected 2 developers after max-people filtering, got %d", len(data))
 	}

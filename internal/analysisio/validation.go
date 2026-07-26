@@ -174,6 +174,45 @@ func ValidateDimensions(name string, rows, columns int64, limits Limits) error {
 	return nil
 }
 
+// ValidateSparseDimensions bounds a logical sparse matrix by its stored
+// non-zero cells rather than rows*columns. Dense dimensions remain bounded
+// independently so malformed declarations cannot create oversized row tables.
+func ValidateSparseDimensions(
+	name string, rows, columns, nonzero int64, limits Limits,
+) error {
+	limits = limits.WithDefaults()
+
+	if rows < 0 || columns < 0 || nonzero < 0 {
+		return fmt.Errorf(
+			"%w: %s has negative sparse dimensions %dx%d or nonzero count %d",
+			ErrAnalysisMalformed, name, rows, columns, nonzero,
+		)
+	}
+
+	if rows > int64(limits.MaxRows) {
+		return fmt.Errorf(
+			"%w: %s has %d rows, limit is %d",
+			ErrAnalysisTooLarge, name, rows, limits.MaxRows,
+		)
+	}
+
+	if columns > int64(limits.MaxColumns) {
+		return fmt.Errorf(
+			"%w: %s has %d columns, limit is %d",
+			ErrAnalysisTooLarge, name, columns, limits.MaxColumns,
+		)
+	}
+
+	if nonzero > limits.MaxDecodedCells {
+		return fmt.Errorf(
+			"%w: %s has %d non-zero cells, limit is %d",
+			ErrAnalysisTooLarge, name, nonzero, limits.MaxDecodedCells,
+		)
+	}
+
+	return nil
+}
+
 func ValidateDenseMatrix[T any](name string, matrix [][]T, limits Limits) error {
 	columns := 0
 	if len(matrix) > 0 {
@@ -239,13 +278,12 @@ func ValidateCSR(name string, matrix *pb.CompressedSparseRowMatrix, limits Limit
 	}
 
 	rows, columns := int64(matrix.GetNumberOfRows()), int64(matrix.GetNumberOfColumns())
+	data, indices, pointers := matrix.GetData(), matrix.GetIndices(), matrix.GetIndptr()
 
-	err := ValidateDimensions(name, rows, columns, limits)
+	err := ValidateSparseDimensions(name, rows, columns, int64(len(data)), limits)
 	if err != nil {
 		return err
 	}
-
-	data, indices, pointers := matrix.GetData(), matrix.GetIndices(), matrix.GetIndptr()
 	if len(data) != len(indices) {
 		return fmt.Errorf(
 			"%w: %s has %d data values but %d indices",

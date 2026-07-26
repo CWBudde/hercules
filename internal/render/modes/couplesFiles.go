@@ -1,6 +1,7 @@
 package modes
 
 import (
+	"container/heap"
 	"fmt"
 	"image/color"
 	"path/filepath"
@@ -20,13 +21,17 @@ func CouplesFiles(reader readers.Reader, output string) error {
 		"file coupling",
 		output,
 		reader.GetFileCooccurrence,
-		func(names []string, matrix [][]int, output string) error {
+		func(names []string, matrix readers.SparseMatrix, output string) error {
 			return plotFileCoupling(analyzeFileCoupling(names, matrix), output)
 		},
 	)
 }
 
-func runCouplingMode(title, label, output string, read func() ([]string, [][]int, error), plot func([]string, [][]int, string) error) error {
+func runCouplingMode(
+	title, label, output string,
+	read func() ([]string, readers.SparseMatrix, error),
+	plot func([]string, readers.SparseMatrix, string) error,
+) error {
 	quiet := viper.GetBool("quiet")
 	progEstimator := progress.NewProgressEstimator(!quiet)
 	progEstimator.StartMultiOperation(3, title)
@@ -67,7 +72,7 @@ type FileCouplingPair struct {
 // FileCouplingAnalysis represents the complete coupling analysis results
 type FileCouplingAnalysis struct {
 	FileNames      []string
-	CouplingMatrix [][]int
+	CouplingMatrix readers.SparseMatrix
 	TopCoupling    []FileCouplingPair
 	Statistics     CouplingStatistics
 }
@@ -82,7 +87,9 @@ type CouplingStatistics struct {
 }
 
 // analyzeFileCoupling performs analysis on file coupling data
-func analyzeFileCoupling(fileNames []string, couplingMatrix [][]int) FileCouplingAnalysis {
+func analyzeFileCoupling(
+	fileNames []string, couplingMatrix readers.SparseMatrix,
+) FileCouplingAnalysis {
 	pairs, stats := analyzeCouplingPairs(fileNames, couplingMatrix, 20)
 	filePairs := make([]FileCouplingPair, len(pairs))
 	for i, pair := range pairs {
@@ -124,56 +131,100 @@ type commonCouplingStats struct {
 	Min     int
 }
 
-func analyzeCouplingPairs(names []string, matrix [][]int, limit int) ([]commonCouplingPair, commonCouplingStats) {
-	var pairs []commonCouplingPair
+func analyzeCouplingPairs(
+	names []string, matrix readers.SparseMatrix, limit int,
+) ([]commonCouplingPair, commonCouplingStats) {
+	pairs := &couplingPairHeap{}
+	if limit > 0 {
+		heap.Init(pairs)
+	}
 	totalCoupling := 0
 	maxCoupling := 0
-	minCoupling := int(^uint(0) >> 1)
+	minCoupling := 0
+	positivePairs := 0
 
-	for i := 0; i < len(names); i++ {
-		for j := i + 1; j < len(names); j++ {
-			if i >= len(matrix) || j >= len(matrix[i]) {
-				continue
-			}
-			coupling := matrix[i][j]
-			totalCoupling += coupling
-			if coupling > maxCoupling {
-				maxCoupling = coupling
-			}
-			if coupling < minCoupling && coupling > 0 {
-				minCoupling = coupling
-			}
-			if coupling > 0 {
-				pairs = append(pairs, commonCouplingPair{
-					Name1: names[i],
-					Name2: names[j],
-					Score: float64(coupling),
-					Count: coupling,
-				})
-			}
+	matrix.ForEachNonZero(func(row, column, coupling int) bool {
+		if row >= len(names) || column >= len(names) || row >= column || coupling <= 0 {
+			return true
 		}
-	}
+		totalCoupling += coupling
+		positivePairs++
+		if coupling > maxCoupling {
+			maxCoupling = coupling
+		}
+		if minCoupling == 0 || coupling < minCoupling {
+			minCoupling = coupling
+		}
+		if limit <= 0 {
+			return true
+		}
+		pair := rankedCouplingPair{
+			commonCouplingPair: commonCouplingPair{
+				Name1: names[row],
+				Name2: names[column],
+				Score: float64(coupling),
+				Count: coupling,
+			},
+			row: row, column: column,
+		}
+		if pairs.Len() < limit {
+			heap.Push(pairs, pair)
+		} else if betterCouplingPair(pair, (*pairs)[0]) {
+			heap.Pop(pairs)
+			heap.Push(pairs, pair)
+		}
+		return true
+	})
 
-	for i := 0; i < len(pairs)-1; i++ {
-		for j := i + 1; j < len(pairs); j++ {
-			if pairs[i].Score < pairs[j].Score {
-				pairs[i], pairs[j] = pairs[j], pairs[i]
-			}
-		}
-	}
 	avgCoupling := 0.0
-	if len(pairs) > 0 {
-		avgCoupling = float64(totalCoupling) / float64(len(pairs))
+	if positivePairs > 0 {
+		avgCoupling = float64(totalCoupling) / float64(positivePairs)
 	}
-	if len(pairs) > limit {
-		pairs = pairs[:limit]
+	ranked := make([]commonCouplingPair, pairs.Len())
+	for index := len(ranked) - 1; index >= 0; index-- {
+		ranked[index] = heap.Pop(pairs).(rankedCouplingPair).commonCouplingPair
 	}
-	return pairs, commonCouplingStats{
+	return ranked, commonCouplingStats{
 		Total:   totalCoupling,
 		Average: avgCoupling,
 		Max:     maxCoupling,
 		Min:     minCoupling,
 	}
+}
+
+type rankedCouplingPair struct {
+	commonCouplingPair
+	row    int
+	column int
+}
+
+// couplingPairHeap keeps the worst retained pair at its root.
+type couplingPairHeap []rankedCouplingPair
+
+func (pairs couplingPairHeap) Len() int { return len(pairs) }
+func (pairs couplingPairHeap) Less(i, j int) bool {
+	return betterCouplingPair(pairs[j], pairs[i])
+}
+func (pairs couplingPairHeap) Swap(i, j int) { pairs[i], pairs[j] = pairs[j], pairs[i] }
+func (pairs *couplingPairHeap) Push(value any) {
+	*pairs = append(*pairs, value.(rankedCouplingPair))
+}
+func (pairs *couplingPairHeap) Pop() any {
+	old := *pairs
+	last := len(old) - 1
+	value := old[last]
+	*pairs = old[:last]
+	return value
+}
+
+func betterCouplingPair(left, right rankedCouplingPair) bool {
+	if left.Count != right.Count {
+		return left.Count > right.Count
+	}
+	if left.row != right.row {
+		return left.row < right.row
+	}
+	return left.column < right.column
 }
 
 // plotFileCoupling generates coupling visualization plots
@@ -193,7 +244,7 @@ func plotFileCoupling(analysis FileCouplingAnalysis, output string) error {
 
 // plotCouplingHeatmap creates a heatmap of file coupling relationships
 func plotCouplingHeatmap(analysis FileCouplingAnalysis, output string) error {
-	if len(analysis.CouplingMatrix) == 0 {
+	if analysis.CouplingMatrix.Rows == 0 {
 		return fmt.Errorf("no coupling matrix data available")
 	}
 

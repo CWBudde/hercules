@@ -20,7 +20,7 @@ func CouplesShotness(reader readers.Reader, output string) error {
 		"shotness coupling",
 		output,
 		reader.GetShotnessCooccurrence,
-		func(names []string, matrix [][]int, output string) error {
+		func(names []string, matrix readers.SparseMatrix, output string) error {
 			return plotShotnessCoupling(analyzeShotnessCoupling(names, matrix), output)
 		},
 	)
@@ -37,7 +37,7 @@ type ShotnessCouplingPair struct {
 // ShotnessCouplingAnalysis represents the complete shotness coupling analysis results
 type ShotnessCouplingAnalysis struct {
 	EntityNames    []string
-	CouplingMatrix [][]int
+	CouplingMatrix readers.SparseMatrix
 	TopCoupling    []ShotnessCouplingPair
 	Statistics     ShotnessCouplingStatistics
 }
@@ -53,7 +53,9 @@ type ShotnessCouplingStatistics struct {
 
 // analyzeShotnessCoupling derives ranked pairs and summary statistics directly
 // from the same symmetric entity matrix that is rendered as the heatmap.
-func analyzeShotnessCoupling(entityNames []string, couplingMatrix [][]int) ShotnessCouplingAnalysis {
+func analyzeShotnessCoupling(
+	entityNames []string, couplingMatrix readers.SparseMatrix,
+) ShotnessCouplingAnalysis {
 	pairs, stats := analyzeCouplingPairs(entityNames, couplingMatrix, 25)
 	if len(pairs) == 0 {
 		stats.Min = 0
@@ -106,7 +108,7 @@ func plotShotnessCoupling(analysis ShotnessCouplingAnalysis, output string) erro
 
 // plotShotnessCouplingHeatmap creates a heatmap of shotness coupling relationships
 func plotShotnessCouplingHeatmap(analysis ShotnessCouplingAnalysis, output string) error {
-	if len(analysis.CouplingMatrix) == 0 {
+	if analysis.CouplingMatrix.Rows == 0 {
 		return fmt.Errorf("no coupling matrix data available")
 	}
 

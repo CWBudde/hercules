@@ -334,12 +334,12 @@ func TestProtobufReader_CurrentHerculesReportDefaultFixture(t *testing.T) {
 	fileIndex, fileCooccurrence, err := reader.GetFileCooccurrence()
 	require.NoError(t, err)
 	require.NotEmpty(t, fileIndex)
-	require.NotEmpty(t, fileCooccurrence)
+	require.Positive(t, fileCooccurrence.NonZeroCount())
 
 	peopleIndex, peopleCooccurrence, err := reader.GetPeopleCooccurrence()
 	require.NoError(t, err)
 	require.NotEmpty(t, peopleIndex)
-	require.NotEmpty(t, peopleCooccurrence)
+	require.Positive(t, peopleCooccurrence.NonZeroCount())
 
 	devs, err := reader.GetDeveloperTimeSeriesData()
 	require.NoError(t, err)
@@ -385,8 +385,8 @@ func TestProtobufReader_CurrentHerculesShotnessFixture(t *testing.T) {
 	index, cooccurrence, err := reader.GetShotnessCooccurrence()
 	require.NoError(t, err)
 	require.Len(t, index, len(records))
-	require.Len(t, cooccurrence, len(records))
-	requireShotnessCooccurrenceMatchesAlignedProfileDotProducts(t, records, cooccurrence)
+	require.Equal(t, len(records), cooccurrence.Rows)
+	requireShotnessCooccurrenceMatchesAlignedProfileDotProducts(t, records, cooccurrence.Dense())
 }
 
 func TestShotnessCooccurrenceUsesAlignedEntityProfilesWithFormatParity(t *testing.T) {
@@ -435,7 +435,7 @@ func TestShotnessCooccurrenceUsesAlignedEntityProfilesWithFormatParity(t *testin
 		{6, 29, 20},
 		{1, 20, 17},
 	}
-	require.Equal(t, want, pbCooccurrence)
+	require.Equal(t, want, pbCooccurrence.Dense())
 
 	yamlReader := &YamlReader{}
 	require.NoError(t, yamlReader.Read(bytes.NewBufferString(`
@@ -475,7 +475,7 @@ func TestShotnessCouplingMatrixValidatesEntityDimensionsAndIdentity(t *testing.T
 		})
 		require.NoError(t, err)
 		require.Equal(t, []string{"demo.go:run [function]", "demo.go:run [method]"}, index)
-		require.Equal(t, [][]int{{1, 0}, {0, 1}}, matrix)
+		require.Equal(t, [][]int{{1, 0}, {0, 1}}, matrix.Dense())
 	})
 
 	t.Run("duplicate stable identity", func(t *testing.T) {
@@ -557,7 +557,7 @@ func TestShotnessReadersAgreeOnPresentEmptyPayload(t *testing.T) {
 	require.Equal(t, pbIndex, yamlIndex)
 	require.Equal(t, pbMatrix, yamlMatrix)
 	require.Empty(t, pbIndex)
-	require.Empty(t, pbMatrix)
+	require.Zero(t, pbMatrix.Rows)
 }
 
 func marshalProto(t *testing.T, message proto.Message) []byte {

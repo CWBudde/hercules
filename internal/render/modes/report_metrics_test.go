@@ -379,20 +379,21 @@ func (r *reportMetricsReader) GetPeopleInteraction() ([]string, [][]int, error) 
 	return nil, nil, fmt.Errorf("%w: people interaction", readers.ErrAnalysisMissing)
 }
 
-func (r *reportMetricsReader) GetFileCooccurrence() ([]string, [][]int, error) {
-	return nil, nil, fmt.Errorf("%w: file coupling", readers.ErrAnalysisMissing)
+func (r *reportMetricsReader) GetFileCooccurrence() ([]string, readers.SparseMatrix, error) {
+	return nil, readers.SparseMatrix{}, fmt.Errorf("%w: file coupling", readers.ErrAnalysisMissing)
 }
 
-func (r *reportMetricsReader) GetPeopleCooccurrence() ([]string, [][]int, error) {
-	return nil, nil, fmt.Errorf("%w: people coupling", readers.ErrAnalysisMissing)
+func (r *reportMetricsReader) GetPeopleCooccurrence() ([]string, readers.SparseMatrix, error) {
+	return nil, readers.SparseMatrix{}, fmt.Errorf("%w: people coupling", readers.ErrAnalysisMissing)
 }
 
-func (r *reportMetricsReader) GetShotnessCooccurrence() ([]string, [][]int, error) {
-	return []string{"main.go:funcA", "main.go:funcB", "doc.md:section"}, [][]int{
+func (r *reportMetricsReader) GetShotnessCooccurrence() ([]string, readers.SparseMatrix, error) {
+	matrix := readers.SparseMatrixFromDense([][]int{
 		{4, 3, 1},
 		{3, 5, 2},
 		{1, 2, 2},
-	}, nil
+	})
+	return []string{"main.go:funcA", "main.go:funcB", "doc.md:section"}, matrix, nil
 }
 
 func (r *reportMetricsReader) GetShotnessRecords() ([]readers.ShotnessRecord, error) {

@@ -113,6 +113,37 @@ func TestValidateCSRRejectsInconsistentStructures(t *testing.T) {
 	}
 }
 
+func TestValidateCSRLargeLogicalMatrixUsesNonzeroLimit(t *testing.T) {
+	matrix := &pb.CompressedSparseRowMatrix{
+		NumberOfRows:    10_000,
+		NumberOfColumns: 10_000,
+		Data:            []int64{7},
+		Indices:         []int32{9_999},
+		Indptr:          make([]int64, 10_001),
+	}
+	pointers := matrix.GetIndptr()
+	for index := 1; index < len(pointers); index++ {
+		pointers[index] = 1
+	}
+	limits := Limits{
+		MaxDecodedCells: 1,
+		MaxRows:         10_000,
+		MaxColumns:      10_000,
+	}
+	err := ValidateCSR("large sparse", matrix, limits)
+	if err != nil {
+		t.Fatalf("large sparse matrix failed: %v", err)
+	}
+
+	matrix.Data = append(matrix.Data, 8)
+	matrix.Indices = append(matrix.Indices, 9_998)
+	pointers[len(pointers)-1] = 2
+	err = ValidateCSR("too many nonzeros", matrix, limits)
+	if !errors.Is(err, ErrAnalysisTooLarge) {
+		t.Fatalf("error = %v, want ErrAnalysisTooLarge", err)
+	}
+}
+
 func TestValidateBurndownRejectsHugeDeclaredMatrixBeforeAllocation(t *testing.T) {
 	message := &pb.BurndownAnalysisResults{
 		Project: &pb.BurndownSparseMatrix{

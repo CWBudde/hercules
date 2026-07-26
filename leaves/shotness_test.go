@@ -465,7 +465,7 @@ func TestShotnessQualifiedEntitiesRoundTripYAMLAndProtobuf(t *testing.T) {
 	}
 	wantCoupling := [][]int{{5, 5}, {5, 10}}
 	if !reflect.DeepEqual(yamlNames, wantNames) ||
-		!reflect.DeepEqual(yamlCoupling, wantCoupling) {
+		!reflect.DeepEqual(yamlCoupling.Dense(), wantCoupling) {
 		t.Fatalf("unexpected qualified coupling: %v %+v", yamlNames, yamlCoupling)
 	}
 }

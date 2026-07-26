@@ -143,7 +143,7 @@ func calculateParallelDeveloperData(
 	people []string,
 	ownership map[string][][]int,
 	couplingPeople []string,
-	couplingMatrix [][]int,
+	couplingMatrix readers.SparseMatrix,
 	timeSeries *readers.DeveloperTimeSeriesData,
 	maxPeople int,
 ) []ParallelDeveloperData {
@@ -288,7 +288,9 @@ func finalOwnershipTotal(matrix [][]int) int {
 	return total
 }
 
-func orderNamesByCoupling(chosen, couplingPeople []string, couplingMatrix [][]int) map[string]int {
+func orderNamesByCoupling(
+	chosen, couplingPeople []string, couplingMatrix readers.SparseMatrix,
+) map[string]int {
 	indexByName := make(map[string]int, len(couplingPeople))
 	for i, name := range couplingPeople {
 		indexByName[name] = i
@@ -296,14 +298,14 @@ func orderNamesByCoupling(chosen, couplingPeople []string, couplingMatrix [][]in
 	values := make(map[string]int, len(chosen))
 	for _, name := range chosen {
 		idx, ok := indexByName[name]
-		if !ok || idx < 0 || idx >= len(couplingMatrix) {
+		if !ok || idx < 0 || idx >= couplingMatrix.Rows {
 			continue
 		}
 		total := 0
 		for _, other := range chosen {
 			otherIdx, ok := indexByName[other]
-			if ok && otherIdx >= 0 && otherIdx < len(couplingMatrix[idx]) {
-				total += couplingMatrix[idx][otherIdx]
+			if ok && otherIdx >= 0 && otherIdx < couplingMatrix.Columns {
+				total += couplingMatrix.At(idx, otherIdx)
 			}
 		}
 		values[name] = total

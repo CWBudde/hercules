@@ -3,6 +3,7 @@ package readers
 import (
 	"fmt"
 	"io"
+	"sort"
 	"strconv"
 
 	"github.com/spf13/viper"
@@ -181,39 +182,47 @@ func (r *YamlReader) GetPeopleInteraction() ([]string, [][]int, error) {
 	return peopleSequence, matrix, nil
 }
 
-func (r *YamlReader) GetFileCooccurrence() ([]string, [][]int, error) {
+func (r *YamlReader) GetFileCooccurrence() ([]string, SparseMatrix, error) {
 	return r.getCouplesCooccurrence("files_coocc", "file_couples_index", "file_couples_matrix")
 }
 
-func (r *YamlReader) GetPeopleCooccurrence() ([]string, [][]int, error) {
+func (r *YamlReader) GetPeopleCooccurrence() ([]string, SparseMatrix, error) {
 	return r.getCouplesCooccurrence("people_coocc", "people_couples_index", "people_couples_matrix")
 }
 
-func (r *YamlReader) getCouplesCooccurrence(nestedKey, flatIndexKey, flatMatrixKey string) ([]string, [][]int, error) {
+func (r *YamlReader) getCouplesCooccurrence(
+	nestedKey, flatIndexKey, flatMatrixKey string,
+) ([]string, SparseMatrix, error) {
 	couplesData, ok := r.data["Couples"].(map[string]interface{})
 	if !ok {
-		return nil, nil, fmt.Errorf("%w: Couples", ErrAnalysisMissing)
+		return nil, SparseMatrix{}, fmt.Errorf("%w: Couples", ErrAnalysisMissing)
 	}
 
 	if nested, exists := couplesData[nestedKey].(map[string]interface{}); exists {
-		if index, matrix, ok := parseNestedCooccurrence(nested); ok {
-			return index, matrix, nil
-		}
+		return parseNestedCooccurrence(nested, r.Limits)
 	}
 
 	index, ok := couplesData[flatIndexKey].([]string)
 	if !ok {
-		return nil, nil, fmt.Errorf("%w: %s", ErrAnalysisMissing, flatIndexKey)
+		return nil, SparseMatrix{}, fmt.Errorf("%w: %s", ErrAnalysisMissing, flatIndexKey)
 	}
 	matrixData, ok := couplesData[flatMatrixKey].(string)
 	if !ok {
-		return nil, nil, fmt.Errorf("%w: %s", ErrAnalysisMissing, flatMatrixKey)
+		return nil, SparseMatrix{}, fmt.Errorf("%w: %s", ErrAnalysisMissing, flatMatrixKey)
 	}
 
-	return index, parseBurndownMatrix(matrixData), nil
+	matrix, err := parseSparseMatrixTextChecked(
+		"Couples."+flatMatrixKey, matrixData, r.Limits,
+	)
+	if err != nil {
+		return nil, SparseMatrix{}, err
+	}
+	return index, matrix, nil
 }
 
-func parseNestedCooccurrence(data map[string]interface{}) ([]string, [][]int, bool) {
+func parseNestedCooccurrence(
+	data map[string]interface{}, limits analysisio.Limits,
+) ([]string, SparseMatrix, error) {
 	index, indexOk := data["index"].([]string)
 	if !indexOk {
 		if indexIntf, ok := data["index"].([]interface{}); ok {
@@ -227,21 +236,31 @@ func parseNestedCooccurrence(data map[string]interface{}) ([]string, [][]int, bo
 		}
 	}
 	if !indexOk {
-		return nil, nil, false
+		return nil, SparseMatrix{}, fmt.Errorf("%w: coupling index", ErrAnalysisMalformed)
 	}
 	if matrixStr, ok := data["matrix"].(string); ok {
-		return index, parseBurndownMatrix(matrixStr), true
+		matrix, err := parseSparseMatrixTextChecked(
+			"coupling matrix", matrixStr, limits,
+		)
+		if err != nil {
+			return nil, SparseMatrix{}, err
+		}
+		return index, matrix, nil
 	}
 	if matrixData, ok := data["matrix"].([]interface{}); ok {
-		return index, parseCoooccurrenceMatrix(matrixData), true
+		matrix, err := parseSparseCooccurrenceRows(matrixData, len(index), limits)
+		if err != nil {
+			return nil, SparseMatrix{}, err
+		}
+		return index, matrix, nil
 	}
-	return nil, nil, false
+	return nil, SparseMatrix{}, fmt.Errorf("%w: coupling matrix", ErrAnalysisMalformed)
 }
 
-func (r *YamlReader) GetShotnessCooccurrence() ([]string, [][]int, error) {
+func (r *YamlReader) GetShotnessCooccurrence() ([]string, SparseMatrix, error) {
 	shotnessRecords, err := r.GetShotnessRecords()
 	if err != nil {
-		return nil, nil, err
+		return nil, SparseMatrix{}, err
 	}
 
 	return shotnessCouplingMatrix(shotnessRecords)
@@ -255,15 +274,15 @@ func (r *YamlReader) GetShotnessCooccurrence() ([]string, [][]int, error) {
 // over aligned entity dimensions, so the matrix is symmetric. A diagonal cell
 // is the entity's squared profile magnitude (sum_k counters_i[k]^2); it is
 // useful as a self-similarity baseline, but is excluded from ranked pairs.
-func shotnessCouplingMatrix(records []ShotnessRecord) ([]string, [][]int, error) {
+func shotnessCouplingMatrix(records []ShotnessRecord) ([]string, SparseMatrix, error) {
 	index := make([]string, len(records))
-	matrix := make([][]int, len(records))
 	baseLabelCounts := make(map[string]int, len(records))
 	for _, record := range records {
 		baseLabelCounts[fmt.Sprintf("%s:%s", record.File, record.Name)]++
 	}
 
 	stableLabels := make(map[string]struct{}, len(records))
+	byDimension := make([][]shotnessDimensionValue, len(records))
 	for i, record := range records {
 		baseLabel := fmt.Sprintf("%s:%s", record.File, record.Name)
 		index[i] = baseLabel
@@ -271,61 +290,96 @@ func shotnessCouplingMatrix(records []ShotnessRecord) ([]string, [][]int, error)
 			index[i] = fmt.Sprintf("%s [%s]", baseLabel, record.Type)
 		}
 		if _, exists := stableLabels[index[i]]; exists {
-			return nil, nil, fmt.Errorf("duplicate shotness entity identity %q", index[i])
+			return nil, SparseMatrix{}, fmt.Errorf("duplicate shotness entity identity %q", index[i])
 		}
 		stableLabels[index[i]] = struct{}{}
 
-		matrix[i] = make([]int, len(records))
 		for dimension, count := range record.Counters {
 			if dimension < 0 || int64(dimension) >= int64(len(records)) {
-				return nil, nil, fmt.Errorf(
+				return nil, SparseMatrix{}, fmt.Errorf(
 					"shotness entity %q has out-of-range counter dimension %d for %d entities",
 					index[i], dimension, len(records),
 				)
 			}
 			if count < 0 {
-				return nil, nil, fmt.Errorf(
+				return nil, SparseMatrix{}, fmt.Errorf(
 					"shotness entity %q has negative co-occurrence %d at dimension %d",
 					index[i], count, dimension,
+				)
+			}
+			if count > 0 {
+				byDimension[dimension] = append(
+					byDimension[dimension],
+					shotnessDimensionValue{entity: i, value: int64(count)},
 				)
 			}
 		}
 	}
 
 	maxInt := int64(^uint(0) >> 1)
-	var pairTotal int64
-	for i := range records {
-		for j := i; j < len(records); j++ {
-			var score int64
-			left, right := records[i].Counters, records[j].Counters
-			if len(left) > len(right) {
-				left, right = right, left
-			}
-			for dimension, leftCount := range left {
-				rightCount := right[dimension]
-				product := int64(leftCount) * int64(rightCount)
-				if product > maxInt-score {
-					return nil, nil, fmt.Errorf(
+	upper := make([]map[int]int64, len(records))
+	for _, values := range byDimension {
+		for leftIndex, left := range values {
+			for _, right := range values[leftIndex:] {
+				row, column := left.entity, right.entity
+				if row > column {
+					row, column = column, row
+				}
+				if upper[row] == nil {
+					upper[row] = make(map[int]int64)
+				}
+				product := left.value * right.value
+				if product > maxInt-upper[row][column] {
+					return nil, SparseMatrix{}, fmt.Errorf(
 						"shotness coupling score overflows int for %q and %q",
-						index[i], index[j],
+						index[row], index[column],
 					)
 				}
-				score += product
+				upper[row][column] += product
 			}
-			if i != j {
+		}
+	}
+
+	entries := make([]SparseEntry, 0)
+	var pairTotal int64
+	for row, values := range upper {
+		columns := make([]int, 0, len(values))
+		for column := range values {
+			columns = append(columns, column)
+		}
+		sort.Ints(columns)
+		for _, column := range columns {
+			score := values[column]
+			if score == 0 {
+				continue
+			}
+			entries = append(entries, SparseEntry{
+				Row: row, Column: column, Value: int(score),
+			})
+			if row != column {
 				if score > maxInt-pairTotal {
-					return nil, nil, fmt.Errorf(
+					return nil, SparseMatrix{}, fmt.Errorf(
 						"total shotness coupling score overflows int while adding %q and %q",
-						index[i], index[j],
+						index[row], index[column],
 					)
 				}
 				pairTotal += score
+				entries = append(entries, SparseEntry{
+					Row: column, Column: row, Value: int(score),
+				})
 			}
-			matrix[i][j] = int(score)
-			matrix[j][i] = int(score)
 		}
 	}
+	matrix, err := NewSparseMatrix(len(records), len(records), entries)
+	if err != nil {
+		return nil, SparseMatrix{}, err
+	}
 	return index, matrix, nil
+}
+
+type shotnessDimensionValue struct {
+	entity int
+	value  int64
 }
 
 func (r *YamlReader) GetShotnessRecords() ([]ShotnessRecord, error) {
@@ -558,52 +612,48 @@ func parseBurndownMatrix(data string) [][]int {
 	return matrix
 }
 
-// parseCoooccurrenceMatrix converts Python's sparse matrix format to dense matrix
-// Python format: array of maps where each map represents non-zero values in that row
-func parseCoooccurrenceMatrix(data []interface{}) [][]int {
-	if len(data) == 0 {
-		return [][]int{}
-	}
+// parseSparseCooccurrenceRows converts Python's array-of-maps format directly
+// to CSR. size is the aligned coupling index length, including empty columns.
+func parseSparseCooccurrenceRows(
+	data []interface{}, size int, limits analysisio.Limits,
+) (SparseMatrix, error) {
 	if err := validateYAMLSparseRows(
-		"YAML co-occurrence matrix", data, analysisio.DefaultLimits(),
+		"YAML co-occurrence matrix", data, limits,
 	); err != nil {
-		return [][]int{}
+		return SparseMatrix{}, err
 	}
-
-	// Find maximum column index to determine matrix size
-	maxCol := -1
-	for _, rowData := range data {
-		if rowMap, ok := asMap(rowData); ok {
-			for colKey := range rowMap {
-				if colInt, ok := convertToInt(colKey); ok && colInt > maxCol {
-					maxCol = colInt
-				}
+	if len(data) != size {
+		return SparseMatrix{}, fmt.Errorf(
+			"%w: coupling matrix has %d rows for %d labels",
+			ErrAnalysisMalformed, len(data), size,
+		)
+	}
+	entries := make([]SparseEntry, 0)
+	for row, rowData := range data {
+		rowMap, _ := asMap(rowData)
+		for rawColumn, rawValue := range rowMap {
+			column, _ := convertToInt(rawColumn)
+			value, _ := convertToInt(rawValue)
+			if column >= size {
+				return SparseMatrix{}, fmt.Errorf(
+					"%w: coupling matrix row %d column %d exceeds %d labels",
+					ErrAnalysisMalformed, row, column, size,
+				)
+			}
+			if value != 0 {
+				entries = append(entries, SparseEntry{
+					Row: row, Column: column, Value: value,
+				})
 			}
 		}
 	}
-
-	// Create dense matrix
-	matrix := make([][]int, len(data))
-	for i := range matrix {
-		matrix[i] = make([]int, maxCol+1)
+	matrix, err := NewSparseMatrix(size, size, entries)
+	if err != nil {
+		return SparseMatrix{}, fmt.Errorf(
+			"%w: YAML co-occurrence matrix: %v", ErrAnalysisMalformed, err,
+		)
 	}
-
-	// Fill in non-zero values
-	for rowIdx, rowData := range data {
-		if rowMap, ok := asMap(rowData); ok {
-			for colKey, valKey := range rowMap {
-				if colInt, ok := convertToInt(colKey); ok {
-					if valInt, ok := convertToInt(valKey); ok {
-						if colInt >= 0 && colInt < len(matrix[rowIdx]) {
-							matrix[rowIdx][colInt] = valInt
-						}
-					}
-				}
-			}
-		}
-	}
-
-	return matrix
+	return matrix, nil
 }
 
 // convertToInt safely converts various number types to int

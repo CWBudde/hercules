@@ -30,12 +30,16 @@ func (m *MockLanguageReader) GetOwnershipBurndown() ([]string, map[string][][]in
 
 func (m *MockLanguageReader) GetPeopleInteraction() ([]string, [][]int, error) { return nil, nil, nil }
 
-func (m *MockLanguageReader) GetFileCooccurrence() ([]string, [][]int, error) { return nil, nil, nil }
+func (m *MockLanguageReader) GetFileCooccurrence() ([]string, readers.SparseMatrix, error) {
+	return nil, readers.SparseMatrix{}, nil
+}
 
-func (m *MockLanguageReader) GetPeopleCooccurrence() ([]string, [][]int, error) { return nil, nil, nil }
+func (m *MockLanguageReader) GetPeopleCooccurrence() ([]string, readers.SparseMatrix, error) {
+	return nil, readers.SparseMatrix{}, nil
+}
 
-func (m *MockLanguageReader) GetShotnessCooccurrence() ([]string, [][]int, error) {
-	return nil, nil, nil
+func (m *MockLanguageReader) GetShotnessCooccurrence() ([]string, readers.SparseMatrix, error) {
+	return nil, readers.SparseMatrix{}, nil
 }
 
 func (m *MockLanguageReader) GetShotnessRecords() ([]readers.ShotnessRecord, error) { return nil, nil }

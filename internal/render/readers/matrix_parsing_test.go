@@ -110,7 +110,7 @@ func testCompressedSparseRowMatrixParsing(t *testing.T, testFile string) {
 		} else {
 			t.Logf("CSR Matrix (FileCooccurrence) parsing successful:")
 			t.Logf("  File count: %d", len(fileIndex))
-			verifyMatrixStructure(t, fileMatrix, "FileCooccurrence")
+			verifyMatrixStructure(t, fileMatrix.Dense(), "FileCooccurrence")
 		}
 
 		// Test people co-occurrence (uses CSR format)
@@ -120,7 +120,7 @@ func testCompressedSparseRowMatrixParsing(t *testing.T, testFile string) {
 		} else {
 			t.Logf("CSR Matrix (PeopleCooccurrence) parsing successful:")
 			t.Logf("  People count: %d", len(peopleIndex))
-			verifyMatrixStructure(t, peopleMatrix, "PeopleCooccurrence")
+			verifyMatrixStructure(t, peopleMatrix.Dense(), "PeopleCooccurrence")
 		}
 	})
 }

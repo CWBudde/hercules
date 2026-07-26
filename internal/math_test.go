@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -15,4 +16,5 @@ func TestMinMaxAbs64Funcs(t *testing.T) {
 	assert.Equal(t, Max64(b, a), a)
 	assert.Equal(t, Abs64(a), a)
 	assert.Equal(t, Abs64(b), a)
+	assert.Equal(t, int64(math.MaxInt64), Abs64(math.MinInt64))
 }

@@ -3,6 +3,7 @@ package leaves
 import (
 	"fmt"
 	"io"
+	"sort"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -109,7 +110,10 @@ func (ca *CommitsAnalysis) Description() string {
 // Initialize resets the temporary caches and prepares this PipelineItem for a series of Consume()
 // calls. The repository which is going to be analysed is supplied as an argument.
 func (ca *CommitsAnalysis) Initialize(repository *git.Repository) error {
-	ca.l = core.NewLogger()
+	ca.commits = nil
+	if ca.l == nil {
+		ca.l = core.NewLogger()
+	}
 	return nil
 }
 
@@ -136,6 +140,8 @@ func (ca *CommitsAnalysis) Consume(deps map[string]any) (map[string]any, error) 
 			LineStats: stats,
 		})
 	}
+
+	sortFileStats(commitStat.Files)
 
 	ca.commits = append(ca.commits, &commitStat)
 
@@ -201,7 +207,7 @@ func (ca *CommitsAnalysis) serializeText(result *CommitsResult, writer io.Writer
 		fmt.Fprintf(writer, "      author: %d\n", commit.Author)
 		fmt.Fprintf(writer, "      files:\n")
 
-		for _, file := range commit.Files {
+		for _, file := range sortedFileStats(commit.Files) {
 			fmt.Fprintf(writer, "       - name: %s\n", file.Name)
 			fmt.Fprintf(writer, "         language: %s\n", file.Language)
 			fmt.Fprintf(writer, "         stat: [%d, %d, %d]\n", file.Added, file.Changed, file.Removed)
@@ -253,6 +259,7 @@ func (ca *CommitsAnalysis) serializeBinary(result *CommitsResult, writer io.Writ
 }
 
 func commitFilesToProto(files []FileStat) ([]*pb.CommitFile, error) {
+	files = sortedFileStats(files)
 	result := make([]*pb.CommitFile, len(files))
 	for fileIndex, file := range files {
 		stats, err := commitLineStatsToProto(file)
@@ -283,6 +290,31 @@ func commitLineStatsToProto(file FileStat) (*pb.LineStats, error) {
 	}
 
 	return &pb.LineStats{Added: added, Changed: changed, Removed: removed}, nil
+}
+
+func sortedFileStats(files []FileStat) []FileStat {
+	sorted := append([]FileStat(nil), files...)
+	sortFileStats(sorted)
+
+	return sorted
+}
+
+func sortFileStats(files []FileStat) {
+	sort.Slice(files, func(i, j int) bool {
+		left, right := files[i], files[j]
+		switch {
+		case left.Name != right.Name:
+			return left.Name < right.Name
+		case left.Language != right.Language:
+			return left.Language < right.Language
+		case left.Added != right.Added:
+			return left.Added < right.Added
+		case left.Changed != right.Changed:
+			return left.Changed < right.Changed
+		default:
+			return left.Removed < right.Removed
+		}
+	})
 }
 
 var _ = core.RegisterPipelineItem(&CommitsAnalysis{})

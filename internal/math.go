@@ -1,5 +1,7 @@
 package internal
 
+import "math"
+
 // The ugly side of Go.
 // template <typename T> please!
 
@@ -39,9 +41,15 @@ func Max64(a, b int64) int64 {
 	return a
 }
 
-// Abs64 calculates the absolute value of a 64-bit integer.
+// Abs64 calculates the absolute value of a 64-bit integer. Since the positive
+// magnitude of math.MinInt64 is not representable as int64, that input saturates
+// at math.MaxInt64.
 func Abs64(v int64) int64 {
-	if v <= 0 {
+	if v == math.MinInt64 {
+		return math.MaxInt64
+	}
+
+	if v < 0 {
 		return -v
 	}
 

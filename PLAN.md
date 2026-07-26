@@ -319,33 +319,16 @@ fixtures cover the lifecycle contract.
 
 ### CORE-06: Harden foundational boundary behavior
 
-Affected code:
+Status: completed 2026-07-26
 
-- `internal/rbtree/rbtree.go`
-- `internal/math.go`
-- `internal/core/pipeline.go`
-- `leaves/commits.go`
-
-Work:
-
-- Use `io.ReadFull` for fixed-size serialized allocator data and validate all lengths before
-  allocating.
-- Add integrity/version information to hibernated allocator files if they can survive beyond a
-  single process operation.
-- Define and test `Abs64(math.MinInt64)` rather than allowing signed overflow to return a negative
-  result.
-- Check `scanner.Err()` after commit-list parsing.
-- Reset `CommitsAnalysis` state during repeated initialization.
-- Sort file statistics before appending or serializing commit results.
-- Remove the stale RB-tree insertion TODO: `doInsert` already delays allocation until it finds an
-  empty insertion slot. Add an allocator-count regression test if the existing tests do not prove
-  that duplicate inserts allocate nothing.
-
-Acceptance criteria:
-
-- [ ] truncated or oversized allocator data returns an error;
-- [ ] numerical boundary behavior is explicit;
-- [ ] repeated analysis initialization and serialization are deterministic.
+Allocator hibernation now uses a versioned, checksummed format, validates every declared size before
+allocation, reads fixed payloads fully, and commits deserialized state only after complete
+validation. `Abs64` explicitly saturates `math.MinInt64` to `math.MaxInt64`. Commit-list scanner
+errors propagate; repeated Commits initialization resets collected state while preserving injected
+loggers, and file statistics are totally ordered during collection and non-mutating text/binary
+serialization. Duplicate RB-tree inserts are regression-tested to allocate no nodes, and the stale
+marker is removed. Truncation, oversizing, version, integrity, numerical-boundary, initialization,
+and deterministic-output fixtures cover the contract.
 
 ### CORE-07: Define line-history behavior for binary transitions and branch deletions
 
@@ -876,7 +859,7 @@ sources were classified separately.
 | Code Churn description and constant reinforcement factor in `leaves/codechurn.go` | Resolved by `METRIC-09`; the experimental equations and output contract are documented and hand-tested.                                |
 | Empty-string rename tombstones in `leaves/burndown_legacy.go`                     | Covered by `CORE-07`; test rename chains and cycles before changing the map behavior.                                                  |
 | Ignored survival flag and placeholder Kaplan–Meier output in the renderer         | One parity gap; covered by `DATA-07`.                                                                                                  |
-| RB-tree “delay creating” comment in `internal/rbtree/rbtree.go`                   | Behavior is already implemented by `doInsert`; remove the stale marker and prove duplicate inserts do not allocate under `CORE-06`.    |
+| RB-tree “delay creating” comment in `internal/rbtree/rbtree.go`                   | Resolved by `CORE-06`; the stale marker is removed and duplicate inserts are proven not to allocate.                                  |
 | Plugin-template description text                                                  | Intentional generated-code customization point, not Hercules backlog. Keep it unless `DATA-05` replaces it with a generator parameter. |
 | `LineHistory` loader replay gap                                                   | Resolved by `CORE-04`; replay reconstructs live ownership and `ScanFile` is lifecycle-tested.                                           |
 | Packed tick/author “hack” comments                                                | Resolved by `CORE-05`; configured capacity is checked before execution and custom inputs return typed errors without process exit.      |

@@ -1,16 +1,28 @@
 package rbtree
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
+	"hash/crc32"
+	"io"
 	"math"
 	"os"
 	"sync"
-
-	"github.com/go-git/go-git/v5/utils/binary"
 )
 
-var errIncompleteRead = errors.New("incomplete read")
+var (
+	errIncompleteRead             = errors.New("incomplete read")
+	errInvalidSerializedAllocator = errors.New("invalid serialized allocator")
+	errAllocatorIntegrity         = errors.New("serialized allocator integrity check failed")
+)
+
+const (
+	serializedAllocatorMagic       = "HCRBALOC"
+	serializedAllocatorVersion     = uint32(1)
+	serializedAllocatorBufferCount = 6
+	serializedAllocatorHeaderSize  = 8 + 4 + 8 + serializedAllocatorBufferCount*(8+4)
+)
 
 //
 // Public definitions
@@ -157,7 +169,9 @@ func (allocator *Allocator) Boot() {
 	}
 }
 
-// Serialize writes the hibernated allocator on disk.
+// Serialize writes the hibernated allocator on disk. The format is private to
+// Hercules' run-local hibernation files, but still carries a version and per-buffer
+// checksum so truncated or corrupted temporary state is rejected deterministically.
 func (allocator *Allocator) Serialize(path string) error {
 	if allocator.storage != nil {
 		panic("serialization requires the hibernated state")
@@ -169,22 +183,38 @@ func (allocator *Allocator) Serialize(path string) error {
 	}
 	defer file.Close()
 
-	err = binary.WriteVariableWidthInt(file, int64(allocator.hibernatedStorageLen))
+	header := make([]byte, serializedAllocatorHeaderSize)
+	copy(header, serializedAllocatorMagic)
+	binary.BigEndian.PutUint32(header[8:12], serializedAllocatorVersion)
+
+	if allocator.hibernatedStorageLen < 0 {
+		return fmt.Errorf("%w: negative storage length %d",
+			errInvalidSerializedAllocator, allocator.hibernatedStorageLen)
+	}
+
+	storageLength := uint64(allocator.hibernatedStorageLen)
+	binary.BigEndian.PutUint64(header[12:20], storageLength)
+
+	offset := 20
+	for _, hibernatedBuffer := range allocator.hibernatedData {
+		binary.BigEndian.PutUint64(header[offset:offset+8], uint64(len(hibernatedBuffer)))
+		binary.BigEndian.PutUint32(header[offset+8:offset+12], crc32.ChecksumIEEE(hibernatedBuffer))
+		offset += 12
+	}
+
+	err = writeFull(file, header)
 	if err != nil {
-		return fmt.Errorf("write allocator storage length: %w", err)
+		return fmt.Errorf("write allocator header: %w", err)
 	}
 
 	for bufferIndex, hibernatedBuffer := range allocator.hibernatedData {
-		err = binary.WriteVariableWidthInt(file, int64(len(hibernatedBuffer)))
-		if err != nil {
-			return fmt.Errorf("write allocator buffer %d length: %w", bufferIndex, err)
-		}
-
-		_, err = file.Write(hibernatedBuffer)
+		err = writeFull(file, hibernatedBuffer)
 		if err != nil {
 			return fmt.Errorf("write allocator buffer %d: %w", bufferIndex, err)
 		}
+	}
 
+	for bufferIndex := range allocator.hibernatedData {
 		allocator.hibernatedData[bufferIndex] = nil
 	}
 
@@ -203,34 +233,119 @@ func (allocator *Allocator) Deserialize(path string) error {
 	}
 	defer file.Close()
 
-	storageLength, err := binary.ReadVariableWidthInt(file)
+	fileInfo, err := file.Stat()
 	if err != nil {
-		return fmt.Errorf("read allocator storage length: %w", err)
+		return fmt.Errorf("stat serialized allocator %q: %w", path, err)
+	}
+
+	if fileInfo.Size() < serializedAllocatorHeaderSize {
+		return fmt.Errorf("%w: allocator header: got %d bytes, need %d",
+			errIncompleteRead, fileInfo.Size(), serializedAllocatorHeaderSize)
+	}
+
+	header := make([]byte, serializedAllocatorHeaderSize)
+
+	_, err = io.ReadFull(file, header)
+	if err != nil {
+		return fmt.Errorf("%w: allocator header: %w", errIncompleteRead, err)
+	}
+
+	if string(header[:8]) != serializedAllocatorMagic {
+		return fmt.Errorf("%w: unexpected format magic", errInvalidSerializedAllocator)
+	}
+
+	version := binary.BigEndian.Uint32(header[8:12])
+	if version != serializedAllocatorVersion {
+		return fmt.Errorf("%w: unsupported version %d", errInvalidSerializedAllocator, version)
+	}
+
+	storageLength := binary.BigEndian.Uint64(header[12:20])
+	if storageLength > uint64(negativeLimitNode) || storageLength > maxIntValue() {
+		return fmt.Errorf("%w: storage length %d exceeds the supported limit",
+			errInvalidSerializedAllocator, storageLength)
+	}
+
+	var bufferLengths [serializedAllocatorBufferCount]uint64
+	var checksums [serializedAllocatorBufferCount]uint32
+	var payloadLength uint64
+	maxBufferLength := maxSerializedBufferLength(storageLength)
+
+	offset := 20
+	for bufferIndex := range bufferLengths {
+		bufferLength := binary.BigEndian.Uint64(header[offset : offset+8])
+		checksums[bufferIndex] = binary.BigEndian.Uint32(header[offset+8 : offset+12])
+		offset += 12
+
+		if bufferLength > maxIntValue() || bufferLength > maxBufferLength {
+			return fmt.Errorf("%w: buffer %d length %d exceeds the supported limit %d",
+				errInvalidSerializedAllocator, bufferIndex, bufferLength, maxBufferLength)
+		}
+
+		if math.MaxUint64-payloadLength < bufferLength {
+			return fmt.Errorf("%w: allocator payload length overflow", errInvalidSerializedAllocator)
+		}
+
+		bufferLengths[bufferIndex] = bufferLength
+		payloadLength += bufferLength
+	}
+
+	actualPayloadLength := fileInfo.Size() - serializedAllocatorHeaderSize
+
+	actualPayloadLengthUint := uint64(actualPayloadLength) //nolint:gosec // header-size check proves non-negative
+	if payloadLength != actualPayloadLengthUint {
+		return fmt.Errorf("%w: allocator payload: got %d bytes, expected %d",
+			errIncompleteRead, actualPayloadLength, payloadLength)
+	}
+
+	var hibernatedData [serializedAllocatorBufferCount][]byte
+
+	for bufferIndex, bufferLength := range bufferLengths {
+		bufferLengthInt := int(bufferLength) //nolint:gosec // validated against maxIntValue above
+		hibernatedData[bufferIndex] = make([]byte, bufferLengthInt)
+
+		_, err = io.ReadFull(file, hibernatedData[bufferIndex])
+		if err != nil {
+			return fmt.Errorf("%w: allocator buffer %d: %w",
+				errIncompleteRead, bufferIndex, err)
+		}
+
+		if crc32.ChecksumIEEE(hibernatedData[bufferIndex]) != checksums[bufferIndex] {
+			return fmt.Errorf("%w: buffer %d", errAllocatorIntegrity, bufferIndex)
+		}
 	}
 
 	allocator.hibernatedStorageLen = int(storageLength)
-	for bufferIndex := range allocator.hibernatedData {
-		bufferLength, readErr := binary.ReadVariableWidthInt(file)
+	allocator.hibernatedData = hibernatedData
 
-		err = readErr
+	return nil
+}
+
+func writeFull(writer io.Writer, data []byte) error {
+	for len(data) > 0 {
+		written, err := writer.Write(data)
 		if err != nil {
-			return fmt.Errorf("read allocator buffer %d length: %w", bufferIndex, err)
+			return fmt.Errorf("write serialized allocator: %w", err)
 		}
 
-		allocator.hibernatedData[bufferIndex] = make([]byte, int(bufferLength))
-
-		bytesRead, err := file.Read(allocator.hibernatedData[bufferIndex])
-		if err != nil {
-			return fmt.Errorf("read allocator buffer %d: %w", bufferIndex, err)
+		if written == 0 {
+			return io.ErrShortWrite
 		}
 
-		if bytesRead != int(bufferLength) {
-			return fmt.Errorf("%w %d: %d instead of %d",
-				errIncompleteRead, bufferIndex, bytesRead, bufferLength)
-		}
+		data = data[written:]
 	}
 
 	return nil
+}
+
+func maxIntValue() uint64 {
+	return uint64(^uint(0) >> 1)
+}
+
+func maxSerializedBufferLength(storageLength uint64) uint64 {
+	rawLength := storageLength * 4
+	// LZ4_compressBound is raw + raw/255 + 16. The pure-Go encoding also
+	// carries an eight-byte original-length prefix.
+	return rawLength + rawLength/255 + 24
 }
 
 func (allocator *Allocator) malloc() uint32 {
@@ -447,7 +562,6 @@ func (tree *RBTree) FindLE(key uint32) Iterator {
 // Insert an item. If the item is already in the tree, do nothing and
 // return false. Else return true.
 func (tree *RBTree) Insert(item Item) (bool, Iterator) {
-	// TODO: delay creating n until it is found to be inserted
 	nodeIndex := tree.doInsert(item)
 	if nodeIndex == 0 {
 		return false, Iterator{}

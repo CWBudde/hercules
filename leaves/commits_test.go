@@ -2,7 +2,6 @@ package leaves
 
 import (
 	"bytes"
-	"sort"
 	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing"
@@ -146,7 +145,6 @@ func TestCommitsConsume(t *testing.T) {
 	assert.Equal(t, int64(1481563829), c.When)
 	assert.Equal(t, 0, c.Author)
 	assert.Len(t, c.Files, 3)
-	sort.Slice(c.Files, func(i, j int) bool { return c.Files[i].Name < c.Files[j].Name })
 	assert.Equal(t, testTravisPath, c.Files[0].Name)
 	assert.Equal(t, "Go", c.Files[0].Language)
 	assert.Equal(t, 12, c.Files[0].Added)
@@ -175,21 +173,21 @@ func fixtureCommits(t *testing.T) *CommitsAnalysis {
 			Author: 0,
 			Files: []FileStat{
 				{
-					Name:     testTravisPath,
-					Language: "Yaml",
-					LineStats: items.LineStats{
-						Added:   12,
-						Removed: 0,
-						Changed: 0,
-					},
-				},
-				{
 					Name:     testAnalyserPath,
 					Language: "Go",
 					LineStats: items.LineStats{
 						Added:   628,
 						Removed: 9,
 						Changed: 67,
+					},
+				},
+				{
+					Name:     testTravisPath,
+					Language: "Yaml",
+					LineStats: items.LineStats{
+						Added:   12,
+						Removed: 0,
+						Changed: 0,
 					},
 				},
 			},
@@ -224,12 +222,31 @@ func TestCommitsFinalize(t *testing.T) {
 	assert.Equal(t, x.reversedPeopleDict, ca.reversedPeopleDict)
 }
 
+func TestCommitsInitializeResetsStateAndPreservesLogger(t *testing.T) {
+	logger := core.NewLogger()
+	ca := CommitsAnalysis{
+		commits: []*CommitStat{{Hash: "stale"}},
+		l:       logger,
+	}
+
+	assert.NoError(t, ca.Initialize(test.Repository))
+	assert.Empty(t, ca.commits)
+	assert.Same(t, logger, ca.l)
+
+	ca.commits = []*CommitStat{{Hash: "stale-again"}}
+	assert.NoError(t, ca.Initialize(test.Repository))
+	assert.Empty(t, ca.commits)
+	assert.Same(t, logger, ca.l)
+}
+
 func TestCommitsSerialize(t *testing.T) {
 	ca := fixtureCommits(t)
 	res := ca.Finalize().(CommitsResult)
 	buffer := &bytes.Buffer{}
 	err := ca.Serialize(res, false, buffer)
 	assert.NoError(t, err)
+	assert.Equal(t, testAnalyserPath, res.Commits[0].Files[0].Name,
+		"serialization must not mutate the supplied result")
 	assert.Equal(t, `  commits:
     - hash: cce947b98a050c6d356bc6ba95030254914027b1
       when: 1481563829

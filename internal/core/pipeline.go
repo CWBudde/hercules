@@ -13,6 +13,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-git/go-git/v5"
@@ -65,6 +66,9 @@ var (
 	errGraphEdgeNotFound           = errors.New("toposort: edge not found")
 	errNegativeHibernationDistance = errors.New("--hibernation-distance cannot be negative")
 	errPlanCommitCountMismatch     = errors.New("execution plan commit count mismatch")
+	// The runtime GC percentage is process-global, so hibernating runs must restore it serially.
+	//nolint:gochecknoglobals
+	gcPercentMu sync.Mutex
 )
 
 // String() returns an empty string for the boolean type, "int" for integers and "string" for
@@ -176,9 +180,8 @@ type DisposablePipelineItem interface {
 	PipelineItem
 	// Dispose frees any previously allocated unmanaged resources. No Consume() calls are possible
 	// afterwards. The item needs to be Initialize()-d again.
-	// This method is invoked once for each item in the pipeline, **in a single forked instance**.
-	// Thus it is the responsibility of the item's programmer to deal with forks and merges, if
-	// necessary.
+	// This method is invoked once for every unique instance created for a run, including branch
+	// clones, on both successful and failed runs.
 	Dispose()
 }
 
@@ -356,6 +359,9 @@ type pipelineRunState struct {
 	mergeHashCount int
 	commitIndex    int
 	newestTime     int64
+	disposables    []DisposablePipelineItem
+	seenDisposable map[DisposablePipelineItem]struct{}
+	disposed       bool
 }
 
 const (
@@ -650,10 +656,6 @@ func (pipeline *Pipeline) InitializeExt(facts map[string]any,
 	if err != nil {
 		cleanReturn = true
 		return err
-	}
-
-	if pipeline.HibernationDistance > 0 {
-		debug.SetGCPercent(20)
 	}
 
 	cleanReturn = true
@@ -1108,6 +1110,16 @@ func (pipeline *Pipeline) runPlan(plan []runAction, commitCount, mergeHashCount 
 		return nil, ErrNoCommits
 	}
 
+	if pipeline.HibernationDistance > 0 {
+		gcPercentMu.Lock()
+
+		previousGCPercent := debug.SetGCPercent(20)
+		defer func() {
+			debug.SetGCPercent(previousGCPercent)
+			gcPercentMu.Unlock()
+		}()
+	}
+
 	startRunTime := time.Now()
 
 	cleanReturn := false
@@ -1118,6 +1130,7 @@ func (pipeline *Pipeline) runPlan(plan []runAction, commitCount, mergeHashCount 
 	progressSteps := len(plan) + 2
 
 	state := pipeline.newRunState(mergeHashCount)
+	defer state.dispose()
 
 	err := state.executePlan(plan, progressSteps, onProgress)
 	if err != nil {
@@ -1186,10 +1199,14 @@ func (pipeline *Pipeline) newRunState(mergeHashCount int) pipelineRunState {
 		branches:       map[int][]PipelineItem{},
 		runTimePerItem: map[string]float64{},
 		mergeHashCount: mergeHashCount,
+		seenDisposable: map[DisposablePipelineItem]struct{}{},
 	}
+	state.trackItems(pipeline.items)
+
 	if !pipeline.DryRun {
 		// We will need rootClone if there is more than one root branch.
 		state.rootClone = cloneItems(pipeline.items, 1)[0]
+		state.trackItems(state.rootClone)
 	}
 
 	return state
@@ -1229,10 +1246,6 @@ func (state *pipelineRunState) finalize() map[LeafPipelineItem]any {
 	}
 
 	for index, item := range getMasterBranch(state.branches) {
-		if disposable, ok := item.(DisposablePipelineItem); ok {
-			disposable.Dispose()
-		}
-
 		if leaf, ok := item.(LeafPipelineItem); ok {
 			registeredLeaf, registered := state.pipeline.items[index].(LeafPipelineItem)
 			if registered {
@@ -1332,6 +1345,7 @@ func (state *pipelineRunState) fork(firstItem int, items []int) {
 
 	for i, clone := range cloneItems(state.branches[firstItem], len(items)-1) {
 		state.branches[items[i+1]] = clone
+		state.trackItems(clone)
 	}
 
 	state.runTimePerItem["*.Fork"] += time.Since(startTime).Seconds()
@@ -1357,6 +1371,31 @@ func (state *pipelineRunState) emerge(firstItem int) {
 	}
 
 	state.branches[firstItem] = cloneItems(state.rootClone, 1)[0]
+	state.trackItems(state.branches[firstItem])
+}
+
+func (state *pipelineRunState) trackItems(items []PipelineItem) {
+	for _, item := range items {
+		if disposable, ok := item.(DisposablePipelineItem); ok {
+			if _, seen := state.seenDisposable[disposable]; seen {
+				continue
+			}
+
+			state.seenDisposable[disposable] = struct{}{}
+			state.disposables = append(state.disposables, disposable)
+		}
+	}
+}
+
+func (state *pipelineRunState) dispose() {
+	if state.disposed {
+		return
+	}
+
+	state.disposed = true
+	for _, disposable := range state.disposables {
+		disposable.Dispose()
+	}
 }
 
 func (state *pipelineRunState) changeHibernation(items []int, boot bool) error {

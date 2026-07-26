@@ -3,14 +3,13 @@ package linehistory
 import (
 	"errors"
 	"fmt"
-	"log"
 	"maps"
 	"math"
 	"os"
 	"path"
-	"runtime/debug"
 	"slices"
 	"sync/atomic"
+	"time"
 	"unicode/utf8"
 
 	"github.com/go-git/go-git/v5"
@@ -95,6 +94,10 @@ var (
 	errUnsupportedDiffOperation        = errors.New("diff operation is not supported")
 	errRenamedFileNotFound             = errors.New("file to rename does not exist")
 	errInvalidDependencyType           = errors.New("line history dependency has an invalid type")
+	// ErrPackedAuthorCapacity indicates that an author cannot be represented by line history.
+	ErrPackedAuthorCapacity = errors.New("line history author exceeds packed capacity")
+	// ErrPackedTickCapacity indicates that a tick cannot be represented by line history.
+	ErrPackedTickCapacity = errors.New("line history tick exceeds packed capacity")
 )
 
 func (p *counterHolder) next() FileId {
@@ -281,6 +284,11 @@ func (analyser *LineHistoryAnalyser) Configure(facts map[string]any) error {
 		analyser.ExcludePathPatterns = val
 	}
 
+	err := validateConfiguredPackedCapacity(facts)
+	if err != nil {
+		return err
+	}
+
 	var resolver core.FileIdResolver = FileIdResolver{analyser}
 	facts[core.FactLineHistoryResolver] = resolver
 
@@ -294,7 +302,12 @@ func (analyser *LineHistoryAnalyser) ConfigureUpstream(_ map[string]any) error {
 // Initialize resets the temporary caches and prepares this PipelineItem for a series of Consume()
 // calls. The repository which is going to be analysed is supplied as an argument.
 func (analyser *LineHistoryAnalyser) Initialize(repository *git.Repository) error {
-	analyser.l = core.NewLogger()
+	analyser.Dispose()
+
+	if analyser.l == nil {
+		analyser.l = core.NewLogger()
+	}
+
 	analyser.repository = repository
 	analyser.fileNames = map[FileId]string{}
 	analyser.fileIdCounter = &counterHolder{}
@@ -314,6 +327,11 @@ func (analyser *LineHistoryAnalyser) Consume(deps map[string]any) (map[string]an
 	}
 
 	author, tick, cache, treeDiffs, fileDiffs, err := lineHistoryDependencies(deps)
+	if err != nil {
+		return nil, err
+	}
+
+	err = validatePackedOwnership(author, tick)
 	if err != nil {
 		return nil, err
 	}
@@ -496,16 +514,23 @@ func (analyser *LineHistoryAnalyser) Hibernate() error {
 
 		err = file.Close()
 		if err != nil {
-			analyser.hibernatedFileName = ""
-			return fmt.Errorf("close line history hibernation file %q: %w", file.Name(), err)
+			removeErr := removeLineHistoryHibernationFile(analyser)
+
+			return errors.Join(
+				fmt.Errorf("close line history hibernation file %q: %w", file.Name(), err),
+				removeErr,
+			)
 		}
 
 		err = analyser.fileAllocator.Serialize(analyser.hibernatedFileName)
 		if err != nil {
 			hibernatedFileName := analyser.hibernatedFileName
-			analyser.hibernatedFileName = ""
+			removeErr := removeLineHistoryHibernationFile(analyser)
 
-			return fmt.Errorf("serialize line history allocator to %q: %w", hibernatedFileName, err)
+			return errors.Join(
+				fmt.Errorf("serialize line history allocator to %q: %w", hibernatedFileName, err),
+				removeErr,
+			)
 		}
 	}
 
@@ -515,22 +540,58 @@ func (analyser *LineHistoryAnalyser) Hibernate() error {
 // Boot decompresses the bound RBTree memory with the files.
 func (analyser *LineHistoryAnalyser) Boot() error {
 	if analyser.hibernatedFileName != "" {
-		err := analyser.fileAllocator.Deserialize(analyser.hibernatedFileName)
+		hibernatedFileName := analyser.hibernatedFileName
+
+		err := analyser.fileAllocator.Deserialize(hibernatedFileName)
 		if err != nil {
-			return fmt.Errorf("deserialize line history allocator from %q: %w", analyser.hibernatedFileName, err)
+			removeErr := removeLineHistoryHibernationFile(analyser)
+
+			return errors.Join(
+				fmt.Errorf("deserialize line history allocator from %q: %w", hibernatedFileName, err),
+				removeErr,
+			)
 		}
 
-		err = os.Remove(analyser.hibernatedFileName)
+		err = removeLineHistoryHibernationFile(analyser)
 		if err != nil {
-			return fmt.Errorf("remove line history hibernation file %q: %w", analyser.hibernatedFileName, err)
+			return fmt.Errorf("remove line history hibernation file %q: %w", hibernatedFileName, err)
 		}
-
-		analyser.hibernatedFileName = ""
 	}
 
 	analyser.fileAllocator.Boot()
 
 	return nil
+}
+
+// Dispose removes temporary hibernation state left by a completed or failed run.
+func (analyser *LineHistoryAnalyser) Dispose() {
+	_ = removeLineHistoryHibernationFile(analyser)
+}
+
+func removeLineHistoryHibernationFile(analyser *LineHistoryAnalyser) error {
+	hibernatedFileName := analyser.hibernatedFileName
+	if hibernatedFileName == "" {
+		return nil
+	}
+
+	err := os.Remove(hibernatedFileName)
+
+	err = ignoreNotExist(err)
+	if err != nil {
+		return fmt.Errorf("remove line history hibernation file %q: %w", hibernatedFileName, err)
+	}
+
+	analyser.hibernatedFileName = ""
+
+	return nil
+}
+
+func ignoreNotExist(err error) error {
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+
+	return err
 }
 
 func (analyser *LineHistoryAnalyser) consumeTreeDiffs(
@@ -654,14 +715,6 @@ func (analyser *LineHistoryAnalyser) inheritAbandonedNames() map[FileId]string {
 // This hack is needed to simplify the values storage inside File-s. We can compare
 // different values together and they are compared as ticks for the same author.
 func packPersonWithTick(author core.AuthorId, tick core.TickNumber) int {
-	if author > core.AuthorMissing {
-		log.Fatalf("person > AuthorMissing %d \n%s", author, string(debug.Stack()))
-	}
-
-	if tick > TreeMergeMark {
-		log.Fatalf("tick > TreeMergeMark %d %d\n%s", tick, TreeMergeMark, string(debug.Stack()))
-	}
-
 	result := int(tick) & TreeMergeMark
 	result |= int(author) << TreeMaxBinPower
 
@@ -672,6 +725,79 @@ func packPersonWithTick(author core.AuthorId, tick core.TickNumber) int {
 	// - core.AuthorMissing (-2)
 	// - authorSelf (-3)
 	return result
+}
+
+func validatePackedOwnership(author core.AuthorId, tick core.TickNumber) error {
+	if author < 0 || author > core.AuthorMissing {
+		return fmt.Errorf(
+			"%w: got %d, allowed range is [0, %d]",
+			ErrPackedAuthorCapacity, author, core.AuthorMissing,
+		)
+	}
+
+	if tick < 0 || tick >= TreeMergeMark {
+		return fmt.Errorf(
+			"%w: got %d, allowed range is [0, %d]",
+			ErrPackedTickCapacity, tick, TreeMergeMark-1,
+		)
+	}
+
+	return nil
+}
+
+func validateConfiguredPackedCapacity(facts map[string]any) error {
+	err := validateConfiguredAuthorCapacity(facts)
+	if err != nil {
+		return err
+	}
+
+	return validateConfiguredTickCapacity(facts)
+}
+
+func validateConfiguredAuthorCapacity(facts map[string]any) error {
+	if resolver, ok := facts[core.FactIdentityResolver].(core.IdentityResolver); ok &&
+		resolver.MaxCount() > int(core.AuthorMissing) {
+		return fmt.Errorf(
+			"%w: got %d authors, maximum is %d",
+			ErrPackedAuthorCapacity, resolver.MaxCount(), core.AuthorMissing,
+		)
+	}
+
+	return nil
+}
+
+func validateConfiguredTickCapacity(facts map[string]any) error {
+	commits, commitsOK := facts[core.ConfigPipelineCommits].([]*object.Commit)
+	tickSize, tickSizeOK := facts[items.FactTickSize].(time.Duration)
+
+	if !commitsOK || len(commits) == 0 || !tickSizeOK || tickSize <= 0 {
+		return nil
+	}
+
+	if commits[0] == nil {
+		return nil
+	}
+
+	tick0 := items.FloorTime(commits[0].Committer.When, tickSize)
+	previousTick := 0
+
+	for _, commit := range commits {
+		if commit == nil {
+			continue
+		}
+
+		tick := max(int(commit.Committer.When.Sub(tick0)/tickSize), previousTick)
+		if tick >= TreeMergeMark {
+			return fmt.Errorf(
+				"%w: commit %s requires tick %d, maximum is %d",
+				ErrPackedTickCapacity, commit.Hash.String(), tick, TreeMergeMark-1,
+			)
+		}
+
+		previousTick = tick
+	}
+
+	return nil
 }
 
 func unpackPersonWithTick(value int) (core.AuthorId, core.TickNumber) {

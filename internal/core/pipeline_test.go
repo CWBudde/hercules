@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"testing"
 	"time"
@@ -184,6 +185,47 @@ func (item *testPipelineItem) Finalize() any {
 
 func (item *testPipelineItem) Serialize(result any, binary bool, writer io.Writer) error {
 	return nil
+}
+
+type disposalTrackingItem struct {
+	testPipelineItem
+
+	instances     *[]*disposalTrackingItem
+	disposeCounts map[*disposalTrackingItem]int
+}
+
+func newDisposalTrackingItem() *disposalTrackingItem {
+	instances := make([]*disposalTrackingItem, 0, 1)
+	item := &disposalTrackingItem{
+		instances:     &instances,
+		disposeCounts: map[*disposalTrackingItem]int{},
+	}
+	instances = append(instances, item)
+
+	return item
+}
+
+func (item *disposalTrackingItem) Fork(n int) []PipelineItem {
+	clones := make([]PipelineItem, n)
+	for i := range clones {
+		clone := &disposalTrackingItem{
+			testPipelineItem: testPipelineItem{
+				TestError:  item.TestError,
+				Merged:     item.Merged,
+				MergeState: item.MergeState,
+			},
+			instances:     item.instances,
+			disposeCounts: item.disposeCounts,
+		}
+		*item.instances = append(*item.instances, clone)
+		clones[i] = clone
+	}
+
+	return clones
+}
+
+func (item *disposalTrackingItem) Dispose() {
+	item.disposeCounts[item]++
 }
 
 type dependingTestPipelineItem struct {
@@ -425,6 +467,54 @@ func TestPipelineRunBranches(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, 5, common.CommitsNumber)
 	assert.Equal(t, 6, *item.MergeState)
+}
+
+func TestPipelineDisposesEveryUniqueBranchItemOnce(t *testing.T) {
+	pipeline := NewPipeline(test.FixtureRepository())
+	item := newDisposalTrackingItem()
+	pipeline.AddItem(item)
+
+	state := pipeline.newRunState(-1)
+	state.emerge(rootBranchIndex)
+	state.fork(rootBranchIndex, []int{rootBranchIndex, 1})
+	state.emerge(2)
+	state.dispose()
+	state.dispose()
+
+	require.Len(t, *item.instances, 4)
+	for _, instance := range *item.instances {
+		assert.Equal(t, 1, item.disposeCounts[instance])
+	}
+}
+
+func TestPipelineFailureDisposesItemsAndRestoresGCPercent(t *testing.T) {
+	originalGCPercent := debug.SetGCPercent(137)
+	t.Cleanup(func() {
+		debug.SetGCPercent(originalGCPercent)
+	})
+
+	pipeline := NewPipeline(test.FixtureRepository())
+	pipeline.HibernationDistance = 1
+	item := newDisposalTrackingItem()
+	item.TestError = true
+	pipeline.AddItem(item)
+	require.NoError(t, pipeline.Initialize(map[string]any{}))
+
+	commit, err := test.FixtureRepository().CommitObject(plumbing.NewHash(
+		"af9ddc0db70f09f3f27b4b98e415592a7485171c",
+	))
+	require.NoError(t, err)
+
+	_, err = pipeline.Run([]*object.Commit{commit})
+	require.ErrorIs(t, err, errTestConsume)
+
+	currentGCPercent := debug.SetGCPercent(-1)
+	debug.SetGCPercent(currentGCPercent)
+	assert.Equal(t, 137, currentGCPercent)
+
+	for _, instance := range *item.instances {
+		assert.Equal(t, 1, item.disposeCounts[instance])
+	}
 }
 
 func TestPipelineOnProgress(t *testing.T) {

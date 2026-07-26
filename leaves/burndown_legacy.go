@@ -4,11 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"math"
 	"os"
 	"runtime"
-	"runtime/debug"
 	"time"
 	"unicode/utf8"
 
@@ -38,6 +36,10 @@ var (
 	errUnsupportedDiffOperation = errors.New("diff operation is not supported")
 	errLegacyFileMissing        = errors.New("file does not exist")
 	errLegacyHistoryMissing     = errors.New("file history does not exist")
+	// ErrLegacyBurndownAuthorCapacity indicates that people tracking cannot represent an author.
+	ErrLegacyBurndownAuthorCapacity = errors.New("legacy burndown author exceeds packed capacity")
+	// ErrLegacyBurndownTickCapacity indicates that line state cannot represent a tick.
+	ErrLegacyBurndownTickCapacity = errors.New("legacy burndown tick exceeds packed capacity")
 )
 
 // LegacyBurndownAnalysis allows to gather the line burndown statistics for a Git repository.
@@ -223,7 +225,7 @@ func (analyser *LegacyBurndownAnalysis) Configure(facts map[string]any) error {
 	assignFact(facts, ConfigLegacyBurndownHibernationDirectory, &analyser.HibernationDirectory)
 	assignFact(facts, ConfigLegacyBurndownDebug, &analyser.Debug)
 
-	return nil
+	return analyser.validateConfiguredPackedCapacity(facts)
 }
 
 func (analyser *LegacyBurndownAnalysis) ConfigureUpstream(_ map[string]any) error {
@@ -244,7 +246,12 @@ func (analyser *LegacyBurndownAnalysis) Description() string {
 // Initialize resets the temporary caches and prepares this PipelineItem for a series of Consume()
 // calls. The repository which is going to be analysed is supplied as an argument.
 func (analyser *LegacyBurndownAnalysis) Initialize(repository *git.Repository) error {
-	analyser.l = core.NewLogger()
+	analyser.Dispose()
+
+	if analyser.l == nil {
+		analyser.l = core.NewLogger()
+	}
+
 	if analyser.Granularity <= 0 {
 		analyser.l.Warnf("adjusted the granularity to %d ticks\n",
 			DefaultBurndownGranularity)
@@ -269,6 +276,13 @@ func (analyser *LegacyBurndownAnalysis) Initialize(repository *git.Repository) e
 	analyser.fileHistories = map[string]sparseHistory{}
 	if analyser.PeopleNumber < 0 {
 		return fmt.Errorf("%w: %d", errNegativePeopleNumber, analyser.PeopleNumber)
+	}
+
+	if analyser.PeopleNumber > int(core.AuthorMissing) {
+		return fmt.Errorf(
+			"%w: got %d people, maximum is %d",
+			ErrLegacyBurndownAuthorCapacity, analyser.PeopleNumber, core.AuthorMissing,
+		)
 	}
 
 	analyser.peopleHistories = make([]sparseHistory, analyser.PeopleNumber)
@@ -298,6 +312,11 @@ func (analyser *LegacyBurndownAnalysis) Consume(deps map[string]any) (map[string
 	}
 
 	author, tick, cache, treeDiffs, fileDiffs, err := legacyBurndownDependencies(deps)
+	if err != nil {
+		return nil, err
+	}
+
+	err = analyser.validatePackedOwnership(author, tick)
 	if err != nil {
 		return nil, err
 	}
@@ -512,14 +531,23 @@ func (analyser *LegacyBurndownAnalysis) Hibernate() error {
 
 		err = file.Close()
 		if err != nil {
-			analyser.hibernatedFileName = ""
-			return fmt.Errorf("close hibernation file: %w", err)
+			removeErr := removeLegacyHibernationFile(analyser)
+
+			return errors.Join(
+				fmt.Errorf("close hibernation file %q: %w", file.Name(), err),
+				removeErr,
+			)
 		}
 
 		err = analyser.fileAllocator.Serialize(analyser.hibernatedFileName)
 		if err != nil {
-			analyser.hibernatedFileName = ""
-			return fmt.Errorf("serialize hibernation state: %w", err)
+			hibernatedFileName := analyser.hibernatedFileName
+			removeErr := removeLegacyHibernationFile(analyser)
+
+			return errors.Join(
+				fmt.Errorf("serialize hibernation state to %q: %w", hibernatedFileName, err),
+				removeErr,
+			)
 		}
 	}
 
@@ -529,22 +557,58 @@ func (analyser *LegacyBurndownAnalysis) Hibernate() error {
 // Boot decompresses the bound RBTree memory with the files.
 func (analyser *LegacyBurndownAnalysis) Boot() error {
 	if analyser.hibernatedFileName != "" {
-		err := analyser.fileAllocator.Deserialize(analyser.hibernatedFileName)
+		hibernatedFileName := analyser.hibernatedFileName
+
+		err := analyser.fileAllocator.Deserialize(hibernatedFileName)
 		if err != nil {
-			return fmt.Errorf("deserialize hibernation state: %w", err)
+			removeErr := removeLegacyHibernationFile(analyser)
+
+			return errors.Join(
+				fmt.Errorf("deserialize hibernation state from %q: %w", hibernatedFileName, err),
+				removeErr,
+			)
 		}
 
-		err = os.Remove(analyser.hibernatedFileName)
+		err = removeLegacyHibernationFile(analyser)
 		if err != nil {
-			return fmt.Errorf("remove hibernation file: %w", err)
+			return err
 		}
-
-		analyser.hibernatedFileName = ""
 	}
 
 	analyser.fileAllocator.Boot()
 
 	return nil
+}
+
+// Dispose removes temporary hibernation state left by a completed or failed run.
+func (analyser *LegacyBurndownAnalysis) Dispose() {
+	_ = removeLegacyHibernationFile(analyser)
+}
+
+func removeLegacyHibernationFile(analyser *LegacyBurndownAnalysis) error {
+	hibernatedFileName := analyser.hibernatedFileName
+	if hibernatedFileName == "" {
+		return nil
+	}
+
+	err := os.Remove(hibernatedFileName)
+
+	err = ignoreMissingHibernationFile(err)
+	if err != nil {
+		return fmt.Errorf("remove hibernation file %q: %w", hibernatedFileName, err)
+	}
+
+	analyser.hibernatedFileName = ""
+
+	return nil
+}
+
+func ignoreMissingHibernationFile(err error) error {
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+
+	return err
 }
 
 // Finalize returns the result of the analysis. Further Consume() calls are not expected.
@@ -949,17 +1013,7 @@ func (analyser *LegacyBurndownAnalysis) packPersonWithTick(person, tick int) int
 
 	result := tick & linehistory.TreeMergeMark
 
-	if tick > linehistory.TreeMergeMark {
-		log.Fatalf("tick > burndown.TreeMergeMark %d %d\n%s", tick, linehistory.TreeMergeMark, string(debug.Stack()))
-		panic("tick >= burndown.TreeMergeMark")
-	}
-
 	result |= person << linehistory.TreeMaxBinPower
-
-	if (person >= analyser.PeopleNumber) && (person != core.AuthorMissing) {
-		log.Fatalf("person >= analyser.PeopleNumber %d %d\n%s", person, analyser.PeopleNumber, string(debug.Stack()))
-		panic("person >= analyser.PeopleNumber")
-	}
 
 	// This effectively means max (16383 - 1) ticks (>44 years) and (262143 - 3) devs.
 	// One tick less because burndown.TreeMergeMark = ((1 << 14) - 1) is a special tick.
@@ -968,6 +1022,66 @@ func (analyser *LegacyBurndownAnalysis) packPersonWithTick(person, tick int) int
 	// - core.AuthorMissing (-2)
 	// - authorSelf (-3)
 	return result
+}
+
+func (analyser *LegacyBurndownAnalysis) validatePackedOwnership(person, tick int) error {
+	if tick < 0 || tick >= linehistory.TreeMergeMark {
+		return fmt.Errorf(
+			"%w: got %d, allowed range is [0, %d]",
+			ErrLegacyBurndownTickCapacity, tick, linehistory.TreeMergeMark-1,
+		)
+	}
+
+	if analyser.PeopleNumber > 0 &&
+		(person < 0 || person >= analyser.PeopleNumber) &&
+		person != core.AuthorMissing {
+		return fmt.Errorf(
+			"%w: got %d, configured people count is %d",
+			ErrLegacyBurndownAuthorCapacity, person, analyser.PeopleNumber,
+		)
+	}
+
+	return nil
+}
+
+func (analyser *LegacyBurndownAnalysis) validateConfiguredPackedCapacity(
+	facts map[string]any,
+) error {
+	if analyser.PeopleNumber > int(core.AuthorMissing) {
+		return fmt.Errorf(
+			"%w: got %d people, maximum is %d",
+			ErrLegacyBurndownAuthorCapacity, analyser.PeopleNumber, core.AuthorMissing,
+		)
+	}
+
+	commits, commitsOK := facts[core.ConfigPipelineCommits].([]*object.Commit)
+	if !commitsOK || len(commits) == 0 || commits[0] == nil || analyser.tickSize <= 0 {
+		return nil
+	}
+
+	tick0 := items.FloorTime(commits[0].Committer.When, analyser.tickSize)
+	previousTick := 0
+
+	for _, commit := range commits {
+		if commit == nil {
+			continue
+		}
+
+		tick := max(int(commit.Committer.When.Sub(tick0)/analyser.tickSize), previousTick)
+		if tick >= linehistory.TreeMergeMark {
+			return fmt.Errorf(
+				"%w: commit %s requires tick %d, maximum is %d",
+				ErrLegacyBurndownTickCapacity,
+				commit.Hash.String(),
+				tick,
+				linehistory.TreeMergeMark-1,
+			)
+		}
+
+		previousTick = tick
+	}
+
+	return nil
 }
 
 func (analyser *LegacyBurndownAnalysis) unpackPersonWithTick(value int) (int, int) {

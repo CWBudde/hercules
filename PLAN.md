@@ -308,27 +308,14 @@ wire format omits edit positions; a lifecycle fixture proves export→load→exp
 
 ### CORE-05: Remove process termination and leaked global state
 
-Affected code:
+Status: completed 2026-07-26
 
-- `internal/linehistory/line_history.go`
-- `leaves/burndown_legacy.go`
-- `internal/core/pipeline.go`
-- hibernation code
-
-Work:
-
-- Validate packed author/tick capacity before running.
-- Replace `log.Fatalf`/panic limits with returned typed errors; consider widening the packed
-  representation.
-- Save and restore `debug.SetGCPercent` around the run.
-- Defer idempotent disposal for every unique branch item, including failure paths.
-- Remove failed hibernation temporary files.
-- Preserve injected loggers across `Initialize`.
-
-Acceptance criteria:
-
-- [ ] library use never terminates the host process for data/configuration limits;
-- [ ] failed runs leave no temporary artifacts and do not change process GC settings.
+Line History and legacy Burndown now reject packed author/tick overflow with typed errors, including
+pre-run commit-span validation, instead of terminating the host process. Hibernating runs serialize
+and restore the process GC setting, dispose every unique branch instance on success or failure, and
+remove disk state transactionally and idempotently across Line History and both Burndown analyzers.
+Initialization preserves injected loggers. Repeated, race, cleanup, failure-path, lint, and vet
+fixtures cover the lifecycle contract.
 
 ### CORE-06: Harden foundational boundary behavior
 
@@ -892,7 +879,7 @@ sources were classified separately.
 | RB-tree “delay creating” comment in `internal/rbtree/rbtree.go`                   | Behavior is already implemented by `doInsert`; remove the stale marker and prove duplicate inserts do not allocate under `CORE-06`.    |
 | Plugin-template description text                                                  | Intentional generated-code customization point, not Hercules backlog. Keep it unless `DATA-05` replaces it with a generator parameter. |
 | `LineHistory` loader replay gap                                                   | Resolved by `CORE-04`; replay reconstructs live ownership and `ScanFile` is lifecycle-tested.                                           |
-| Packed tick/author “hack” comments                                                | The capacity and host-process failure risk is covered by `CORE-05`.                                                                    |
+| Packed tick/author “hack” comments                                                | Resolved by `CORE-05`; configured capacity is checked before execution and custom inputs return typed errors without process exit.      |
 | Parallel branch deletion comments in line history and legacy burndown             | Folded into the merge cases in `CORE-07`.                                                                                              |
 | Basic `FloorDateTime` implementation                                              | Include in the historical-renderer comparison under `DATA-07`.                                                                         |
 | `XXX_*` protobuf members and LZ4 `DEBUGLOG` macros                                | Generated/vendored API names, not task markers; do not edit them by hand.                                                              |

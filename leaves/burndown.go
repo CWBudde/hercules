@@ -250,7 +250,12 @@ func (analyser *BurndownAnalysis) Description() string {
 // Initialize resets the temporary caches and prepares this PipelineItem for a series of Consume()
 // calls. The repository which is going to be analysed is supplied as an argument.
 func (analyser *BurndownAnalysis) Initialize(repository *git.Repository) error {
-	analyser.l = core.NewLogger()
+	analyser.Dispose()
+
+	if analyser.l == nil {
+		analyser.l = core.NewLogger()
+	}
+
 	// Force the safer defaults; mismatched sampling/granularity caused crashes in burndown.
 	analyser.Granularity = DefaultBurndownGranularity
 
@@ -441,19 +446,24 @@ func (analyser *BurndownAnalysis) Boot() error {
 	var data []byte
 
 	if analyser.hibernatedFileName != "" {
-		var err error
+		hibernatedFileName := analyser.hibernatedFileName
+		readData, readErr := os.ReadFile(hibernatedFileName)
+		removeErr := removeBurndownHibernationFile(analyser)
 
-		data, err = os.ReadFile(analyser.hibernatedFileName)
-		if err != nil {
-			return fmt.Errorf("read burndown hibernation file: %w", err)
+		if readErr != nil || removeErr != nil {
+			if readErr != nil {
+				readErr = fmt.Errorf(
+					"read burndown hibernation file %q: %w", hibernatedFileName, readErr,
+				)
+			}
+
+			return errors.Join(
+				readErr,
+				removeErr,
+			)
 		}
 
-		err = os.Remove(analyser.hibernatedFileName)
-		if err != nil {
-			return fmt.Errorf("remove burndown hibernation file: %w", err)
-		}
-
-		analyser.hibernatedFileName = ""
+		data = readData
 	} else {
 		data = analyser.hibernatedData
 		analyser.hibernatedData = nil
@@ -489,6 +499,30 @@ func (analyser *BurndownAnalysis) Boot() error {
 			analyser.peopleHistories[i] = mapToSparseHistory(v)
 		}
 	}
+
+	return nil
+}
+
+// Dispose removes temporary hibernation state left by a completed or failed run.
+func (analyser *BurndownAnalysis) Dispose() {
+	_ = removeBurndownHibernationFile(analyser)
+	analyser.hibernatedData = nil
+}
+
+func removeBurndownHibernationFile(analyser *BurndownAnalysis) error {
+	hibernatedFileName := analyser.hibernatedFileName
+	if hibernatedFileName == "" {
+		return nil
+	}
+
+	err := os.Remove(hibernatedFileName)
+
+	err = ignoreMissingHibernationFile(err)
+	if err != nil {
+		return fmt.Errorf("remove burndown hibernation file %q: %w", hibernatedFileName, err)
+	}
+
+	analyser.hibernatedFileName = ""
 
 	return nil
 }

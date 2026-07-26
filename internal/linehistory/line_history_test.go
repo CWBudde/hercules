@@ -1,7 +1,9 @@
 package linehistory
 
 import (
+	"os"
 	"testing"
+	"time"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -83,8 +85,52 @@ func TestLinesRegistration(t *testing.T) {
 func TestLinesInitialize(t *testing.T) {
 	bd := &LineHistoryAnalyser{}
 	bd.HibernationThreshold = 10
+	logger := core.NewLogger()
+	bd.l = logger
 	require.NoError(t, bd.Initialize(test.Repository))
 	assert.Equal(t, 10, bd.fileAllocator.HibernationThreshold)
+	assert.Same(t, logger, bd.l)
+}
+
+func TestLinesRejectPackedCapacity(t *testing.T) {
+	bd := &LineHistoryAnalyser{}
+	require.NoError(t, bd.Initialize(test.Repository))
+
+	deps := map[string]any{
+		identity.DependencyAuthor:   int(core.AuthorMissing) + 1,
+		items.DependencyTick:        0,
+		items.DependencyBlobCache:   map[plumbing.Hash]*items.CachedBlob{},
+		items.DependencyTreeChanges: object.Changes{},
+		items.DependencyFileDiff:    map[string]items.FileDiffData{},
+	}
+
+	_, err := bd.Consume(deps)
+	require.ErrorIs(t, err, ErrPackedAuthorCapacity)
+
+	deps[identity.DependencyAuthor] = 0
+	deps[items.DependencyTick] = TreeMergeMark
+	_, err = bd.Consume(deps)
+	require.ErrorIs(t, err, ErrPackedTickCapacity)
+}
+
+func TestLinesRejectConfiguredTickCapacityBeforeRun(t *testing.T) {
+	start := time.Unix(1_600_000_000, 0)
+	commits := []*object.Commit{
+		{
+			Hash:      plumbing.NewHash("1111111111111111111111111111111111111111"),
+			Committer: object.Signature{When: start},
+		},
+		{
+			Hash:      plumbing.NewHash("2222222222222222222222222222222222222222"),
+			Committer: object.Signature{When: start.Add(TreeMergeMark * time.Hour)},
+		},
+	}
+
+	err := (&LineHistoryAnalyser{}).Configure(map[string]any{
+		core.ConfigPipelineCommits: commits,
+		items.FactTickSize:         time.Hour,
+	})
+	require.ErrorIs(t, err, ErrPackedTickCapacity)
 }
 
 func TestLinesConsume(t *testing.T) {
@@ -501,4 +547,21 @@ func TestLinesHibernateBootSerialize(t *testing.T) {
 	assert.Equal(t, 157, bd.fileAllocator.Size())
 	assert.Equal(t, 155, bd.fileAllocator.Used())
 	assert.Empty(t, bd.hibernatedFileName)
+}
+
+func TestLinesDisposeRemovesHibernationFile(t *testing.T) {
+	bd := bakeBurndownForSerialization(t, 0, 1)
+	bd.HibernationToDisk = true
+	bd.HibernationDirectory = t.TempDir()
+	require.NoError(t, bd.Hibernate())
+
+	hibernatedFileName := bd.hibernatedFileName
+	require.FileExists(t, hibernatedFileName)
+
+	bd.Dispose()
+	bd.Dispose()
+
+	assert.Empty(t, bd.hibernatedFileName)
+	_, err := os.Stat(hibernatedFileName)
+	require.ErrorIs(t, err, os.ErrNotExist)
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/gogo/protobuf/proto"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/cwbudde/hercules/internal/burndown"
 	"github.com/cwbudde/hercules/internal/core"
@@ -111,10 +112,13 @@ func TestLegacyBurndownInitialize(t *testing.T) {
 	bd.Sampling = -10
 	bd.Granularity = DefaultBurndownGranularity
 	bd.HibernationThreshold = 10
+	logger := core.NewLogger()
+	bd.l = logger
 	assert.NoError(t, bd.Initialize(test.Repository))
 	assert.Equal(t, DefaultBurndownGranularity, bd.Sampling)
 	assert.Equal(t, DefaultBurndownGranularity, bd.Granularity)
 	assert.Equal(t, 10, bd.fileAllocator.HibernationThreshold)
+	assert.Same(t, logger, bd.l)
 	bd.Sampling = 0
 	bd.Granularity = DefaultBurndownGranularity - 1
 	assert.NoError(t, bd.Initialize(test.Repository))
@@ -125,6 +129,57 @@ func TestLegacyBurndownInitialize(t *testing.T) {
 	assert.NoError(t, bd.Initialize(test.Repository))
 	assert.Equal(t, DefaultBurndownGranularity-1, bd.Sampling)
 	assert.Equal(t, DefaultBurndownGranularity, bd.Granularity)
+}
+
+func TestLegacyBurndownRejectsPackedCapacity(t *testing.T) {
+	bd := LegacyBurndownAnalysis{
+		PeopleNumber: 1,
+		Sampling:     DefaultBurndownGranularity,
+		Granularity:  DefaultBurndownGranularity,
+	}
+	require.NoError(t, bd.Initialize(test.Repository))
+
+	deps := map[string]any{
+		identity.DependencyAuthor:   1,
+		items.DependencyTick:        0,
+		items.DependencyBlobCache:   map[plumbing.Hash]*items.CachedBlob{},
+		items.DependencyTreeChanges: object.Changes{},
+		items.DependencyFileDiff:    map[string]items.FileDiffData{},
+	}
+
+	_, err := bd.Consume(deps)
+	require.ErrorIs(t, err, ErrLegacyBurndownAuthorCapacity)
+
+	deps[identity.DependencyAuthor] = 0
+	deps[items.DependencyTick] = linehistory.TreeMergeMark
+	_, err = bd.Consume(deps)
+	require.ErrorIs(t, err, ErrLegacyBurndownTickCapacity)
+
+	bd.PeopleNumber = int(core.AuthorMissing) + 1
+	err = bd.Initialize(test.Repository)
+	require.ErrorIs(t, err, ErrLegacyBurndownAuthorCapacity)
+}
+
+func TestLegacyBurndownRejectsConfiguredTickCapacityBeforeRun(t *testing.T) {
+	start := time.Unix(1_600_000_000, 0)
+	commits := []*object.Commit{
+		{
+			Hash:      plumbing.NewHash("1111111111111111111111111111111111111111"),
+			Committer: object.Signature{When: start},
+		},
+		{
+			Hash: plumbing.NewHash("2222222222222222222222222222222222222222"),
+			Committer: object.Signature{
+				When: start.Add(linehistory.TreeMergeMark * time.Hour),
+			},
+		},
+	}
+
+	err := (&LegacyBurndownAnalysis{}).Configure(map[string]any{
+		core.ConfigPipelineCommits: commits,
+		items.FactTickSize:         time.Hour,
+	})
+	require.ErrorIs(t, err, ErrLegacyBurndownTickCapacity)
 }
 
 func TestLegacyBurndownConsumeFinalize(t *testing.T) {
@@ -1470,6 +1525,23 @@ func TestLegacyBurndownHibernateBootSerialize(t *testing.T) {
 	assert.Equal(t, 157, bd.fileAllocator.Size())
 	assert.Equal(t, 155, bd.fileAllocator.Used())
 	assert.Empty(t, bd.hibernatedFileName)
+}
+
+func TestLegacyBurndownDisposeRemovesHibernationFile(t *testing.T) {
+	_, bd := bakeBurndownForSerialization(t, 1)
+	bd.HibernationToDisk = true
+	bd.HibernationDirectory = t.TempDir()
+	require.NoError(t, bd.Hibernate())
+
+	hibernatedFileName := bd.hibernatedFileName
+	require.FileExists(t, hibernatedFileName)
+
+	bd.Dispose()
+	bd.Dispose()
+
+	assert.Empty(t, bd.hibernatedFileName)
+	_, err := os.Stat(hibernatedFileName)
+	require.ErrorIs(t, err, os.ErrNotExist)
 }
 
 func TestLegacyBurndownAddBurndownMatrix(t *testing.T) {

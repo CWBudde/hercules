@@ -123,10 +123,13 @@ func TestBurndownInitialize(t *testing.T) {
 		Sampling:    -10,
 		Granularity: DefaultBurndownGranularity,
 	}
+	logger := core.NewLogger()
+	bd.l = logger
 	assert.NoError(t, bd.Initialize(test.Repository))
 	// Initialize forces both to DefaultBurndownGranularity for safety
 	assert.Equal(t, DefaultBurndownGranularity, bd.Sampling)
 	assert.Equal(t, DefaultBurndownGranularity, bd.Granularity)
+	assert.Same(t, logger, bd.l)
 
 	// Even if we set different values, Initialize() forces defaults
 	bd.Sampling = 0

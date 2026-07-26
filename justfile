@@ -215,14 +215,12 @@ setup-deps:
     echo "Development dependencies installation complete!"
     echo "Note: Ensure $(go env GOPATH)/bin is in your PATH for Go-based tools"
 
-# Install protoc-gen-gogo if not present
+# Install the exact protoc-gen-gogo version used for committed output.
 protoc-gen-gogo:
     #!/usr/bin/env bash
     set -euo pipefail
-    if ! command -v protoc-gen-gogo &> /dev/null; then
-        echo "Installing protoc-gen-gogo..."
-        go install github.com/gogo/protobuf/protoc-gen-gogo@latest
-    fi
+    echo "Installing protoc-gen-gogo v1.3.2..."
+    go install github.com/gogo/protobuf/protoc-gen-gogo@v1.3.2
 
 # Ensure the generated Go protobuf code exists. The committed
 # internal/pb/pb.pb.go is the source of truth (proto drift is caught by the
@@ -239,7 +237,11 @@ pb-go:
 
 # Regenerate Go protobuf code from pb.proto (requires protoc + protoc-gen-gogo).
 pb-go-force: protoc-gen-gogo
-    protoc --gogo_out=internal/pb --proto_path=internal/pb internal/pb/pb.proto
+    PATH="$(go env GOPATH)/bin:${PATH}" protoc --gogo_out=paths=source_relative:internal/pb --proto_path=internal/pb internal/pb/pb.proto
+
+# Regenerate committed protobuf output and fail if pinned generation changes it.
+check-pb-generated: pb-go-force
+    git diff --exit-code -- internal/pb/pb.pb.go
 
 # Vendor dependencies
 vendor:

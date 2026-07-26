@@ -21,6 +21,33 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: "*/*.sum"
 
+      - name: Setup pinned protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          version: "3.20.3"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check generated protobuf and plugin output
+        run: |
+          set -euo pipefail
+
+          tool_bin=$(go env GOPATH)/bin
+          GOBIN="$tool_bin" go install github.com/gogo/protobuf/protoc-gen-gogo@v1.3.2
+          PATH="$tool_bin:$PATH" protoc \
+            --gogo_out=paths=source_relative:internal/pb \
+            --proto_path=internal/pb internal/pb/pb.proto
+          git diff --exit-code -- internal/pb/pb.pb.go
+
+          generated="$PWD/.generated-plugin"
+          trap 'rm -rf "$generated" /tmp/hercules-generated-plugin-first' EXIT
+          PATH="$tool_bin:$PATH" CGO_ENABLED=0 go run ./cmd/hercules \
+            generate-plugin --name ExamplePlugin --output "$generated"
+          cp -a "$generated" /tmp/hercules-generated-plugin-first
+          PATH="$tool_bin:$PATH" CGO_ENABLED=0 go run ./cmd/hercules \
+            generate-plugin --name ExamplePlugin --output "$generated"
+          diff -ru /tmp/hercules-generated-plugin-first "$generated"
+          make -C "$generated"
+
       - name: Check PB schema compatibility against base
         env:
           EVENT_NAME: ${{ github.event_name }}

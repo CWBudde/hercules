@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -234,38 +233,6 @@ func handleExportTheme(themeName string) error {
 }
 
 func handleHerculesIntegration(repoPath string) error {
-	// Auto-detect hercules binary
-	herculesPath := viper.GetString("hercules")
-	if herculesPath == "" {
-		// Try common locations
-		candidates := []string{
-			"hercules",
-			"./hercules",
-			"/usr/local/bin/hercules",
-		}
-
-		for _, candidate := range candidates {
-			if isExecutable(candidate) {
-				herculesPath = candidate
-				break
-			}
-		}
-
-		if herculesPath == "" {
-			return errors.New(
-				"hercules binary not found; install hercules or specify its path with --hercules",
-			)
-		}
-	}
-
-	fmt.Printf("Using hercules: %s\n", herculesPath)
-	fmt.Printf("Analyzing repository: %s\n", repoPath)
-
-	// Check if repository exists and is a git repo
-	if !isGitRepository(repoPath) {
-		return fmt.Errorf("%s is not a git repository", repoPath)
-	}
-
 	modes, err := resolveModes()
 	if err != nil {
 		return err
@@ -273,18 +240,38 @@ func handleHerculesIntegration(repoPath string) error {
 	if len(modes) == 0 {
 		modes = []string{"burndown-project", "devs"} // default modes
 	}
-
-	// Map labours-go modes to hercules analysis
-	herculesAnalyses := mapModesToHerculesAnalyses(modes)
-
-	var failures []error
-	for _, analysis := range herculesAnalyses {
-		if err := runHerculesAndVisualize(herculesPath, repoPath, analysis); err != nil {
-			fmt.Fprintf(os.Stderr, "Error running analysis %q: %v\n", analysis, err)
-			failures = append(failures, fmt.Errorf("analysis %s: %w", analysis, err))
-		}
+	if viper.GetBool("sentiment") {
+		modes = append(modes, "sentiment")
 	}
-	return errors.Join(failures...)
+
+	analyses, err := requiredAnalysesForModes(modes)
+	if err != nil {
+		return err
+	}
+
+	herculesName := viper.GetString("hercules")
+	if herculesName == "" {
+		herculesName = "hercules"
+	}
+	herculesPath, err := lookPath(herculesName)
+	if err != nil {
+		return fmt.Errorf(
+			"find Hercules executable %q: %w; install Hercules or specify --hercules",
+			herculesName, err,
+		)
+	}
+
+	discoveredRepo, err := discoverRepository(repoPath)
+	if err != nil {
+		return err
+	}
+
+	if !viper.GetBool("quiet") {
+		fmt.Printf("Using hercules: %s\n", herculesPath)
+		fmt.Printf("Analyzing repository: %s\n", discoveredRepo)
+		fmt.Printf("Running Hercules once with analyses: %s\n", strings.Join(analyses, ", "))
+	}
+	return runHerculesAndVisualize(herculesPath, discoveredRepo, modes, analyses)
 }
 
 // mapStyleToTheme maps matplotlib style names to labours-go theme names

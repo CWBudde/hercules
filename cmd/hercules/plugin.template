@@ -1,14 +1,16 @@
 // Hercules plugin "{{.name}}"
 //
-// How to build: execute "make" *OR*
+// How to build: execute "make" OR:
 //
-// 1. Update the Protocol Buffers definition as needed, regenerate {{.protogo}}
+// 1. Enter the generated directory and update the Protocol Buffers definition as needed.
 //
-//     PATH=$PATH:$GOPATH/bin protoc --gogo_out={{.outdir}} --proto_path={{.outdir}} {{.proto}}
+//     cd <generated-directory>
+//     GOBIN="$(go env GOPATH)/bin" go install github.com/gogo/protobuf/protoc-gen-gogo@v1.3.2
+//     PATH="$(go env GOPATH)/bin:$PATH" protoc --gogo_out=paths=source_relative:. --proto_path=. "{{.protobase}}"
 //
 // 2. Build {{.shlib}}
 //
-//     go build -buildmode=plugin -linkshared {{.output}} {{.protogo}}
+//     CGO_ENABLED=1 go build -tags purego -buildmode=plugin -o "{{.shlib}}" "{{.outputbase}}" "{{.protogobase}}"
 //
 // Step (1) requires GoGo Protobuf https://github.com/gogo/protobuf
 //
@@ -126,12 +128,12 @@ func ({{.varname}} *{{.name}}) Serialize(result interface{}, binary bool, writer
   if binary {
     return {{.varname}}.serializeBinary(&{{.varname}}Result, writer)
   }
-  {{.varname}}.serializeText(&{{.varname}}Result, writer)
-  return nil
+  return {{.varname}}.serializeText(&{{.varname}}Result, writer)
 }
 
-func ({{.varname}} *{{.name}}) serializeText(result *{{.name}}Result, writer io.Writer) {
+func ({{.varname}} *{{.name}}) serializeText(result *{{.name}}Result, writer io.Writer) error {
   // write YAML to writer
+  return nil
 }
 
 func ({{.varname}} *{{.name}}) serializeBinary(result *{{.name}}Result, writer io.Writer) error {
@@ -142,8 +144,8 @@ func ({{.varname}} *{{.name}}) serializeBinary(result *{{.name}}Result, writer i
   if err != nil {
     return err
   }
-  writer.Write(serialized)
-  return nil
+  _, err = writer.Write(serialized)
+  return err
 }
 
 func init() {

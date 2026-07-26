@@ -391,47 +391,25 @@ collisions, and long Unicode identities.
 
 ### DATA-04: Correct `labours --from-repo`
 
-Affected code:
+Status: completed 2026-07-26.
 
-- `cmd/labours/helpers.go`
-- `cmd/labours/root.go`
-
-Work:
-
-- Maintain one tested mode→required-analysis dependency table.
-- Run Hercules once with the union of required analyses.
-- Render the exact resolved mode list rather than a hardcoded substitute.
-- Discover the Hercules executable with `exec.LookPath`.
-- Support worktrees and bare repositories through Git-aware repository discovery.
-- Return aggregate errors.
-
-Acceptance criteria:
-
-- [ ] every valid mode either renders that exact mode or returns a precise unsupported error;
-- [ ] temporal, bus-factor, hotspot, couples-people, and burndown-file integration tests pass.
+`labours --from-repo` now resolves a tested mode→analysis dependency table, invokes the
+`exec.LookPath`-resolved Hercules executable once with the sorted union of required flags, and
+passes the exact requested modes to one aggregate renderer run. Git-based discovery accepts
+nested paths, linked worktrees, and bare repositories. Every concrete mode has either an explicit
+analysis mapping or a precise unsupported reason for single-repository input; integration tests
+cover temporal activity, bus factor, hotspot risk, people coupling, file burndown, aggregated
+render errors, and repository discovery.
 
 ### DATA-05: Make plugin and protobuf generation reproducible
 
-Affected code:
+Status: completed 2026-07-26.
 
-- `cmd/hercules/generate_plugin.go`
-- `PLUGINS.md`
-- `justfile`
-- schema-generation CI
-
-Work:
-
-- Validate plugin names before indexing split results.
-- Check template execution, file write, close, and required-flag errors.
-- Generate the build file documented to users.
-- Pin `protoc-gen-gogo`; do not install `@latest`.
-- Regenerate protobuf code in CI and fail on a diff from committed output.
-- Update broken and deprecated plugin documentation.
-
-Acceptance criteria:
-
-- [ ] a generated example plugin builds using only documented commands;
-- [ ] generation is byte-reproducible with pinned tooling.
+Plugin generation now validates names and overrides before deriving artifacts, propagates
+required-flag, template, write, close, and `protoc` failures, and emits a reproducible Makefile.
+The documented `make` workflow builds a generated example with the required cgo/pure-Go settings;
+GoGo Protobuf is pinned to v1.3.2 and `protoc` to 3.20.3 in CI. Schema CI regenerates committed
+protobuf output, rejects diffs, generates the same plugin twice byte-for-byte, and builds it.
 
 ### DATA-06: Harden repository-supplied text and configuration
 

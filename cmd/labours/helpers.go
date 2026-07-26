@@ -1,10 +1,13 @@
 package main
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -70,168 +73,197 @@ func resolveModes() ([]string, error) {
 	return modes, nil
 }
 
-// isExecutable checks if a file exists and is executable
-func isExecutable(path string) bool {
-	info, err := os.Stat(path)
-	if err != nil {
-		return false
-	}
-	return info.Mode()&0o111 != 0
+type repositoryModeRequirement struct {
+	Analyses    []string
+	Unsupported string
 }
 
-// isGitRepository checks if a directory is a git repository
-func isGitRepository(path string) bool {
-	gitDir := filepath.Join(path, ".git")
-	info, err := os.Stat(gitDir)
-	if err != nil {
-		return false
-	}
-	return info.IsDir()
+// repositoryModeRequirements is the single mode-to-analysis dependency table
+// for --from-repo. Entries are concrete modes returned by render.ResolveModes.
+var repositoryModeRequirements = map[string]repositoryModeRequirement{
+	"burndown-project":        {Analyses: []string{"burndown"}},
+	"burndown-file":           {Analyses: []string{"burndown", "burndown-files"}},
+	"burndown-person":         {Analyses: []string{"burndown", "burndown-people"}},
+	"burndown-repository":     {Unsupported: "requires combined multi-repository input, which --from-repo cannot produce"},
+	"burndown-repos-combined": {Unsupported: "requires combined multi-repository input, which --from-repo cannot produce"},
+	"overwrites-matrix":       {Analyses: []string{"burndown", "burndown-people"}},
+	"ownership":               {Analyses: []string{"burndown", "burndown-people"}},
+	"couples-files":           {Analyses: []string{"couples"}},
+	"couples-people":          {Analyses: []string{"couples"}},
+	"couples-shotness":        {Analyses: []string{"shotness"}},
+	"shotness":                {Analyses: []string{"shotness"}},
+	"devs":                    {Analyses: []string{"devs"}},
+	"devs-efforts":            {Analyses: []string{"devs"}},
+	"old-vs-new":              {Analyses: []string{"devs"}},
+	"languages":               {Analyses: []string{"devs"}},
+	"temporal-activity":       {Analyses: []string{"temporal-activity"}},
+	"devs-parallel":           {Analyses: []string{"burndown", "burndown-people", "couples", "devs"}},
+	"run-times":               {Analyses: []string{"commits-stat"}},
+	"bus-factor":              {Analyses: []string{"bus-factor"}},
+	"ownership-concentration": {Analyses: []string{"ownership-concentration"}},
+	"knowledge-diffusion":     {Analyses: []string{"knowledge-diffusion"}},
+	"hotspot-risk":            {Analyses: []string{"hotspot-risk"}},
+	"sentiment":               {Analyses: []string{"sentiment"}},
+	"refactoring-proxy":       {Analyses: []string{"refactoring-proxy"}},
 }
 
-// mapModesToHerculesAnalyses maps labours-go modes to hercules analysis types
-func mapModesToHerculesAnalyses(modes []string) []string {
-	analysisMap := make(map[string]bool)
+var (
+	lookPath              = exec.LookPath
+	discoverRepository    = discoverGitRepository
+	runRepositoryHercules = runHerculesForRepository
+	renderRepositoryModes = render.Run
+)
 
+func requiredAnalysesForModes(modes []string) ([]string, error) {
+	analyses := map[string]struct{}{}
+	var failures []error
 	for _, mode := range modes {
+		requirement, exists := repositoryModeRequirements[mode]
 		switch {
-		case strings.HasPrefix(mode, "burndown"):
-			analysisMap["burndown"] = true
-		case mode == "devs" || mode == "devs-efforts":
-			analysisMap["devs"] = true
-		case strings.HasPrefix(mode, "couples"):
-			analysisMap["couples"] = true
-		case mode == "ownership":
-			analysisMap["file-history"] = true
-		case mode == "overwrites-matrix":
-			analysisMap["couples"] = true // overwrites uses couples data
+		case !exists:
+			failures = append(failures, fmt.Errorf(
+				"mode %q is unsupported with --from-repo: no Hercules analysis mapping", mode,
+			))
+		case requirement.Unsupported != "":
+			failures = append(failures, fmt.Errorf(
+				"mode %q is unsupported with --from-repo: %s", mode, requirement.Unsupported,
+			))
+		default:
+			for _, analysis := range requirement.Analyses {
+				analyses[analysis] = struct{}{}
+			}
 		}
 	}
+	if err := errors.Join(failures...); err != nil {
+		return nil, err
+	}
 
-	result := make([]string, 0, len(analysisMap))
-	for analysis := range analysisMap {
+	result := make([]string, 0, len(analyses))
+	for analysis := range analyses {
 		result = append(result, analysis)
 	}
-
-	// Default to burndown if no specific analyses found
-	if len(result) == 0 {
-		result = []string{"burndown"}
-	}
-
-	return result
+	sort.Strings(result)
+	return result, nil
 }
 
-// runHerculesAndVisualize runs hercules analysis and then visualizes with labours-go
-func runHerculesAndVisualize(herculesPath, repoPath, analysis string) error {
-	// Generate temporary file for hercules output
-	outputFile := fmt.Sprintf("/tmp/hercules_%s.yaml", analysis)
-
-	// Build hercules command
-	var herculesFlags []string
-	switch analysis {
-	case "burndown":
-		herculesFlags = []string{"--burndown", "--burndown-files", "--burndown-people"}
-	case "devs":
-		herculesFlags = []string{"--devs"}
-	case "couples":
-		herculesFlags = []string{"--couples"}
-	case "file-history":
-		herculesFlags = []string{"--file-history"}
-	default:
-		herculesFlags = []string{"--" + analysis}
-	}
-
-	// Add any additional user-specified flags
-	if userFlags := viper.GetString("hercules-flags"); userFlags != "" {
-		herculesFlags = append(herculesFlags, strings.Fields(userFlags)...)
-	}
-
-	// Add repository path
-	herculesFlags = append(herculesFlags, repoPath)
-
-	fmt.Printf("Running hercules %s analysis...\n", analysis)
-
-	// Execute hercules
-	cmd := exec.Command(herculesPath, herculesFlags...) // #nosec G204 - user-configured Hercules executable is the purpose of this helper.
-	output, err := cmd.Output()
+func discoverGitRepository(path string) (string, error) {
+	absolutePath, err := filepath.Abs(path)
 	if err != nil {
-		return fmt.Errorf("hercules command failed: %v", err)
+		return "", fmt.Errorf("resolve repository path %q: %w", path, err)
+	}
+	gitPath, err := exec.LookPath("git")
+	if err != nil {
+		return "", fmt.Errorf("find git executable: %w", err)
 	}
 
-	// Write output to temporary file
-	if err := os.WriteFile(outputFile, output, 0o600); err != nil {
-		return fmt.Errorf("failed to write hercules output: %v", err)
+	bare, err := runGitRepositoryDiscovery(gitPath, absolutePath, "--is-bare-repository")
+	if err != nil {
+		return "", fmt.Errorf("%q is not a Git repository: %w", path, err)
 	}
-
-	fmt.Printf("Hercules analysis complete, creating visualizations...\n")
-
-	// Determine labours-go modes for this analysis
-	var laboursGoModes []string
-	switch analysis {
-	case "burndown":
-		laboursGoModes = []string{"burndown-project"}
-	case "devs":
-		laboursGoModes = []string{"devs"}
-	case "couples":
-		laboursGoModes = []string{"couples-files"}
-	case "file-history":
-		laboursGoModes = []string{"ownership"}
-	}
-
-	// Run visualization for each mode
-	for _, mode := range laboursGoModes {
-		outputPath := viper.GetString("output")
-		var format string
-
-		if outputPath == "" {
-			// Default to centralized analysis_results directory
-			if err := os.MkdirAll("analysis_results", 0o750); err != nil {
-				return fmt.Errorf("failed to create analysis_results directory: %v", err)
-			}
-			format = render.DetectOutputFormat("") // Will use backend flag or default to PNG
-			basePath := fmt.Sprintf("analysis_results/%s_%s", analysis, mode)
-			outputPath = render.GenerateOutputPath(basePath, format)
-		} else {
-			// If output is a directory, create filename
-			if info, err := os.Stat(outputPath); err == nil && info.IsDir() {
-				format = render.DetectOutputFormat("") // Will use backend flag or default to PNG
-				basePath := filepath.Join(outputPath, fmt.Sprintf("%s_%s", analysis, mode))
-				outputPath = render.GenerateOutputPath(basePath, format)
-			} else {
-				// outputPath is a file, detect format from it
-				format = render.DetectOutputFormat(outputPath)
-				outputPath = render.GenerateOutputPath(outputPath, format)
-			}
+	if strings.TrimSpace(bare) == "true" {
+		gitDir, gitErr := runGitRepositoryDiscovery(gitPath, absolutePath, "--absolute-git-dir")
+		if gitErr != nil {
+			return "", fmt.Errorf("discover bare repository %q: %w", path, gitErr)
 		}
-
-		fmt.Printf("Creating %s visualization...\n", mode)
-
-		// Read the hercules output and create visualization
-		reader, err := detectAndReadInput(outputFile, "yaml")
-		if err != nil {
-			return err
-		}
-		startDate, endDate, err := parseDates()
-		if err != nil {
-			return err
-		}
-
-		result := render.Run(reader, []string{mode}, render.Options{
-			Output:    outputPath,
-			StartTime: startDate,
-			EndTime:   endDate,
-		})
-		if err := result.Err(); err != nil {
-			return err
-		}
-
-		fmt.Printf("Saved: %s\n", outputPath)
+		return filepath.Clean(strings.TrimSpace(gitDir)), nil
 	}
 
-	// Clean up temporary file
-	if err := os.Remove(outputFile); err != nil {
-		return fmt.Errorf("failed to remove temporary output file: %v", err)
+	topLevel, err := runGitRepositoryDiscovery(gitPath, absolutePath, "--show-toplevel")
+	if err != nil {
+		return "", fmt.Errorf("discover worktree repository %q: %w", path, err)
+	}
+	return filepath.Clean(strings.TrimSpace(topLevel)), nil
+}
+
+func runGitRepositoryDiscovery(gitPath, path, argument string) (string, error) {
+	cmd := exec.Command(gitPath, "-C", path, "rev-parse", argument) // #nosec G204 -- executable is resolved with exec.LookPath.
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		message := strings.TrimSpace(string(output))
+		if message != "" {
+			return "", fmt.Errorf("%w: %s", err, message)
+		}
+		return "", err
+	}
+	return string(output), nil
+}
+
+func runHerculesForRepository(
+	herculesPath, repoPath string, analyses []string,
+) (reader readers.Reader, err error) {
+	output, err := os.CreateTemp(viper.GetString("tmpdir"), "labours-hercules-*.pb")
+	if err != nil {
+		return nil, fmt.Errorf("create temporary Hercules output: %w", err)
+	}
+	outputPath := output.Name()
+	defer func() {
+		if removeErr := os.Remove(outputPath); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+			err = errors.Join(err, fmt.Errorf("remove temporary Hercules output: %w", removeErr))
+		}
+	}()
+
+	arguments := []string{"--pb"}
+	for _, analysis := range analyses {
+		arguments = append(arguments, "--"+analysis)
+	}
+	if userFlags := viper.GetString("hercules-flags"); userFlags != "" {
+		arguments = append(arguments, strings.Fields(userFlags)...)
+	}
+	arguments = append(arguments, "--", repoPath)
+
+	var stderr bytes.Buffer
+	cmd := exec.Command(herculesPath, arguments...) // #nosec G204 -- executable is resolved with exec.LookPath or explicitly configured.
+	cmd.Stdout = output
+	cmd.Stderr = &stderr
+	if runErr := cmd.Run(); runErr != nil {
+		_ = output.Close()
+		message := strings.TrimSpace(stderr.String())
+		if message != "" {
+			return nil, fmt.Errorf("run Hercules: %w: %s", runErr, message)
+		}
+		return nil, fmt.Errorf("run Hercules: %w", runErr)
+	}
+	if closeErr := output.Close(); closeErr != nil {
+		return nil, fmt.Errorf("close Hercules output: %w", closeErr)
 	}
 
-	return nil
+	reader, err = detectAndReadInput(outputPath, "pb")
+	if err != nil {
+		return nil, fmt.Errorf("read Hercules output: %w", err)
+	}
+	return reader, nil
+}
+
+func runHerculesAndVisualize(
+	herculesPath, repoPath string, modes, analyses []string,
+) error {
+	reader, err := runRepositoryHercules(herculesPath, repoPath, analyses)
+	if err != nil {
+		return err
+	}
+
+	startDate, endDate, err := parseDates()
+	if err != nil {
+		return err
+	}
+	if err := validateDateRange(startDate, endDate); err != nil {
+		return err
+	}
+
+	outputPath := viper.GetString("output")
+	if outputPath == "" {
+		outputPath = "analysis_results"
+		if err := os.MkdirAll(outputPath, 0o750); err != nil {
+			return fmt.Errorf("create default output directory: %w", err)
+		}
+	}
+
+	result := renderRepositoryModes(reader, modes, render.Options{
+		Output:               outputPath,
+		StartTime:            startDate,
+		EndTime:              endDate,
+		SentimentFallback:    viper.GetBool("sentiment-fallback"),
+		DevsParallelFallback: viper.GetBool("devs-parallel-fallback"),
+	})
+	return result.Err()
 }

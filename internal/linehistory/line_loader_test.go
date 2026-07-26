@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing"
@@ -87,14 +88,25 @@ func TestLineHistoryLoaderConfigureUpstream(t *testing.T) {
 
 func TestLineHistoryLoaderInitialize(t *testing.T) {
 	loader := &LineHistoryLoader{}
-	loader.files = map[FileId]fileInfo{1: {Name: "test"}}
+	logger := &testLogger{}
+	loader.l = logger
+	loader.files = map[FileId]fileInfo{1: {
+		Name: "test",
+		Lines: []lineRun{{
+			Author: 0,
+			Tick:   1,
+			Count:  2,
+		}},
+	}}
 	loader.nextCommit = 5
 
 	err := loader.Initialize(nil)
 	require.NoError(t, err)
-	assert.Empty(t, loader.files)
+	require.Contains(t, loader.files, FileId(1))
+	assert.Equal(t, "test", loader.files[1].Name)
+	assert.Equal(t, []lineRun{{Author: 0, Tick: 1, Count: 2}}, loader.files[1].Lines)
 	assert.Equal(t, 0, loader.nextCommit)
-	assert.NotNil(t, loader.l)
+	assert.Same(t, logger, loader.l)
 }
 
 func TestLineHistoryLoaderConsumeEmpty(t *testing.T) {
@@ -271,18 +283,50 @@ func TestLoadedFileIdResolverForEachFileNil(t *testing.T) {
 	assert.False(t, result)
 }
 
-func TestLoadedFileIdResolverScanFileNotImplemented(t *testing.T) {
+func TestLoadedFileIdResolverScanFile(t *testing.T) {
 	loader := &LineHistoryLoader{}
 	loader.files = map[FileId]fileInfo{
-		1: {Name: testFileOnePath},
+		1: {
+			Name: testFileOnePath,
+			Lines: []lineRun{
+				{Author: 1, Tick: 10, Count: 2},
+				{Author: 2, Tick: 20, Count: 1},
+			},
+		},
 	}
 
 	resolver := loadedFileIdResolver{analyser: loader}
 
-	// ScanFile calls ForEach which panics "not implemented"
-	assert.Panics(t, func() {
-		resolver.ScanFile(1, func(line int, tick core.TickNumber, author core.AuthorId) {})
-	})
+	type visitedLine struct {
+		line   int
+		tick   core.TickNumber
+		author core.AuthorId
+	}
+	var visited []visitedLine
+	assert.True(t, resolver.ScanFile(1, func(line int, tick core.TickNumber, author core.AuthorId) {
+		visited = append(visited, visitedLine{line: line, tick: tick, author: author})
+	}))
+	assert.Equal(t, []visitedLine{
+		{line: 0, tick: 10, author: 1},
+		{line: 1, tick: 10, author: 1},
+		{line: 2, tick: 20, author: 2},
+	}, visited)
+}
+
+func TestLoadedFileIdResolverForEachFileIsSorted(t *testing.T) {
+	loader := &LineHistoryLoader{}
+	loader.files = map[FileId]fileInfo{
+		3: {Name: "three"},
+		1: {Name: "one"},
+		2: {Name: "two"},
+	}
+
+	var ids []FileId
+	resolver := loadedFileIdResolver{analyser: loader}
+	assert.True(t, resolver.ForEachFile(func(id FileId, _ string) {
+		ids = append(ids, id)
+	}))
+	assert.Equal(t, []FileId{1, 2, 3}, ids)
 }
 
 func TestLoadedFileIdResolverScanFileNil(t *testing.T) {
@@ -453,11 +497,11 @@ LineDumper:
     3: "dir/file3.go"
   commits:
     aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa: |
-      1 -1 -1 0 10 100
-      2 -1 -1 0 10 50
+      1 0 10 0 10 100
+      2 0 10 0 10 50
     bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb: |
       1 0 10 1 20 -10
-      2 0 10 1 20 5
+      2 1 20 1 20 5
 `
 
 	loader := &LineHistoryLoader{}
@@ -488,8 +532,8 @@ LineDumper:
 
 	change := loader.commits[0].Changes[0]
 	assert.Equal(t, core.FileId(1), change.FileId)
-	assert.Equal(t, core.AuthorId(-1), change.PrevAuthor)
-	assert.Equal(t, core.TickNumber(-1), change.PrevTick)
+	assert.Equal(t, core.AuthorId(0), change.PrevAuthor)
+	assert.Equal(t, core.TickNumber(10), change.PrevTick)
 	assert.Equal(t, core.AuthorId(0), change.CurrAuthor)
 	assert.Equal(t, core.TickNumber(10), change.CurrTick)
 	assert.Equal(t, 100, change.Delta)
@@ -507,6 +551,154 @@ LineDumper:
 	assert.Equal(t, core.AuthorId(1), change.CurrAuthor)
 	assert.Equal(t, core.TickNumber(20), change.CurrTick)
 	assert.Equal(t, -10, change.Delta)
+
+	resolver := loadedFileIdResolver{analyser: loader}
+	ownership := map[lineOwner]int{}
+	require.True(t, resolver.ScanFile(1, func(_ int, tick core.TickNumber, author core.AuthorId) {
+		ownership[lineOwner{Author: author, Tick: tick}]++
+	}))
+	assert.Equal(t, map[lineOwner]int{{Author: 0, Tick: 10}: 90}, ownership)
+
+	ownership = map[lineOwner]int{}
+	require.True(t, resolver.ScanFile(2, func(_ int, tick core.TickNumber, author core.AuthorId) {
+		ownership[lineOwner{Author: author, Tick: tick}]++
+	}))
+	assert.Equal(t, map[lineOwner]int{
+		{Author: 0, Tick: 10}: 50,
+		{Author: 1, Tick: 20}: 5,
+	}, ownership)
+}
+
+func TestLineHistoryLoaderLoadedResolversSurviveInitialize(t *testing.T) {
+	yamlData := `
+LineDumper:
+  author_sequence:
+    - "Alice"
+    - "Bob"
+  file_sequence:
+    1: "main.go"
+  commits:
+    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa: |
+      1 0 1 0 1 3
+    bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb: |
+      1 0 1 1 2 -2
+      1 1 2 1 2 1
+`
+
+	logger := &testLogger{}
+	loader := &LineHistoryLoader{}
+	facts := map[string]any{
+		core.ConfigLogger:   logger,
+		ConfigLinesLoadFrom: writeLineHistoryFixture(t, yamlData),
+	}
+	require.NoError(t, loader.Configure(facts))
+	require.NoError(t, loader.Initialize(nil))
+
+	assert.Same(t, logger, loader.l)
+	resolver, ok := facts[core.FactLineHistoryResolver].(core.FileIdResolver)
+	require.True(t, ok)
+	assert.Equal(t, "main.go", resolver.NameOf(1))
+
+	var files []FileId
+	require.True(t, resolver.ForEachFile(func(id FileId, name string) {
+		files = append(files, id)
+		assert.Equal(t, "main.go", name)
+	}))
+	assert.Equal(t, []FileId{1}, files)
+
+	var owners []lineOwner
+	require.True(t, resolver.ScanFile(1, func(line int, tick core.TickNumber, author core.AuthorId) {
+		assert.Equal(t, len(owners), line)
+		owners = append(owners, lineOwner{Author: author, Tick: tick})
+	}))
+	assert.Equal(t, []lineOwner{
+		{Author: 0, Tick: 1},
+		{Author: 1, Tick: 2},
+	}, owners)
+}
+
+func TestLineHistoryLoaderRejectsInvalidRangesAndState(t *testing.T) {
+	tests := map[string]struct {
+		yamlData string
+		target   error
+	}{
+		"invalid file ID": {yamlData: `
+LineDumper:
+  author_sequence: ["Alice"]
+  file_sequence: {0: "main.go"}
+  commits:
+    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa: "0 0 1 0 1 1"
+`, target: ErrLineHistoryRange},
+		"invalid author": {yamlData: `
+LineDumper:
+  author_sequence: ["Alice"]
+  file_sequence: {1: "main.go"}
+  commits:
+    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa: "1 1 1 1 1 1"
+`, target: ErrLineHistoryRange},
+		"invalid tick": {yamlData: `
+LineDumper:
+  author_sequence: ["Alice"]
+  file_sequence: {1: "main.go"}
+  commits:
+    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa: "1 0 16383 0 16383 1"
+`, target: ErrLineHistoryRange},
+		"state underflow": {yamlData: `
+LineDumper:
+  author_sequence: ["Alice"]
+  file_sequence: {1: "main.go"}
+  commits:
+    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa: "1 0 1 0 1 -1"
+`, target: ErrLineHistoryState},
+		"truncated change": {yamlData: `
+LineDumper:
+  author_sequence: ["Alice"]
+  file_sequence: {1: "main.go"}
+  commits:
+    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa: "1 0 1"
+`, target: ErrLineHistoryMalformed},
+		"second document": {yamlData: `
+LineDumper:
+  author_sequence: ["Alice"]
+  file_sequence: {1: "main.go"}
+  commits:
+    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa: "1 0 1 0 1 1"
+---
+LineDumper: {}
+`, target: ErrLineHistoryMalformed},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			loader := &LineHistoryLoader{}
+			err := loader.loadChangesFromYaml(yaml.NewDecoder(strings.NewReader(test.yamlData)))
+			require.Error(t, err)
+			require.ErrorIs(t, err, test.target)
+		})
+	}
+}
+
+func TestLineHistoryLoaderFailedLoadDoesNotEraseMetadata(t *testing.T) {
+	loader := &LineHistoryLoader{
+		authors: []string{"preserved"},
+		files:   map[FileId]fileInfo{7: {Name: "preserved.go"}},
+		commits: []commitInfo{{
+			Hash: plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+		}},
+	}
+
+	err := loader.loadChangesFromYaml(yaml.NewDecoder(strings.NewReader(`
+LineDumper:
+  author_sequence: ["Alice"]
+  file_sequence: {1: "main.go"}
+  commits:
+    invalid: "1 0 1 0 1 1"
+`)))
+	require.Error(t, err)
+	assert.Equal(t, []string{"preserved"}, loader.authors)
+	assert.Equal(t, "preserved.go", loader.files[7].Name)
+	require.Len(t, loader.commits, 1)
+	assert.Equal(t, plumbing.NewHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"), loader.commits[0].Hash)
 }
 
 func TestLineHistoryLoaderLoadChangesFromYamlInvalidFieldCount(t *testing.T) {
@@ -518,7 +710,7 @@ LineDumper:
     1: "file1.go"
   commits:
     aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa: |
-      1 -1 -1 0 10
+      1 0 10 0 10
 `
 
 	loader := &LineHistoryLoader{}
@@ -538,7 +730,7 @@ LineDumper:
     1: "file1.go"
   commits:
     aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa: |
-      1 -1 -1 0 invalid 100
+      1 0 10 0 invalid 100
 `
 
 	loader := &LineHistoryLoader{}
@@ -546,6 +738,7 @@ LineDumper:
 
 	err := loader.loadChangesFromYaml(decoder)
 	require.Error(t, err)
+	require.ErrorIs(t, err, ErrLineHistoryMalformed)
 	assert.Contains(t, err.Error(), "unable to parse")
 }
 
@@ -557,6 +750,7 @@ func TestLineHistoryLoaderLoadChangesFromYamlInvalidYaml(t *testing.T) {
 
 	err := loader.loadChangesFromYaml(decoder)
 	require.Error(t, err)
+	require.ErrorIs(t, err, ErrLineHistoryMalformed)
 }
 
 func TestLineHistoryLoaderLoadChangesFrom(t *testing.T) {
@@ -568,7 +762,7 @@ LineDumper:
     1: "file1.go"
   commits:
     aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa: |
-      1 -1 -1 0 10 100
+      1 0 10 0 10 100
 `
 
 	tmpDir := t.TempDir()
@@ -601,7 +795,7 @@ LineDumper:
     1: "main.go"
   commits:
     aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa: |
-      1 -1 -1 0 5 50
+      1 0 5 0 5 50
 `
 
 	tmpDir := t.TempDir()
@@ -634,11 +828,25 @@ func TestLineHistoryLoaderRegistration(t *testing.T) {
 	assert.Equal(t, "LineHistoryLoader", summoned[0].Name())
 }
 
-func TestFileInfoForEachPanics(t *testing.T) {
-	fi := fileInfo{Name: "test.go"}
-	assert.PanicsWithValue(t, "not implemented", func() {
-		fi.ForEach(func(line, value int) {})
+func writeLineHistoryFixture(t *testing.T, contents string) string {
+	t.Helper()
+
+	path := filepath.Join(t.TempDir(), "history.yml")
+	require.NoError(t, os.WriteFile(path, []byte(contents), 0o600))
+
+	return path
+}
+
+func TestFileInfoForEach(t *testing.T) {
+	fi := fileInfo{Name: "test.go", Lines: []lineRun{{Author: 2, Tick: 3, Count: 2}}}
+
+	var lines []int
+	fi.ForEach(func(line int, tick core.TickNumber, author core.AuthorId) {
+		lines = append(lines, line)
+		assert.Equal(t, core.TickNumber(3), tick)
+		assert.Equal(t, core.AuthorId(2), author)
 	})
+	assert.Equal(t, []int{0, 1}, lines)
 }
 
 // testLogger is a minimal logger implementation for testing.

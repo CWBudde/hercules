@@ -143,6 +143,12 @@ type LineHistoryChanges struct {
 type FileIdResolver interface {
 	NameOf(id FileId) string
 	MergedWith(id FileId) (FileId, string, bool)
+	// ForEachFile visits every live file. Implementations should use a stable file-ID order
+	// when their backing store does not otherwise define iteration order.
 	ForEachFile(callback func(id FileId, name string)) bool
+	// ScanFile visits every live line exactly once with a zero-based synthetic line index and
+	// its ownership. The index is stable for a resolver instance but is not a source position:
+	// replayed histories retain ownership counts even when their serialized format omits edits'
+	// original positions. It returns false when id does not identify a live file.
 	ScanFile(id FileId, callback func(line int, tick TickNumber, author AuthorId)) bool
 }

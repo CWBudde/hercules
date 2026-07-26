@@ -16,6 +16,14 @@ Each entry should include:
 
 ## Unreleased
 
+- YAML: completed `LineDumper` replay without changing fields or types.
+  `--history-line-load` now preserves loaded metadata through initialization,
+  reconstructs deterministic live-line ownership for `ScanFile`, and rejects
+  malformed hashes, ranges, inconsistent deltas, truncation, and trailing YAML
+  documents. Original source positions remain unavailable because the format
+  stores aggregate deltas. Compatibility: compatible for valid dumps; invalid
+  dumps that were previously accepted now fail with typed errors. User action:
+  fix or regenerate any rejected dump.
 - YAML and PB: defined and corrected the experimental `CodeChurn` semantics
   without changing wire fields or types. Awareness and memorability are bounded
   scores with documented 30-tick and 180-tick half-lives, affected-line

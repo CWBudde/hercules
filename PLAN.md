@@ -297,27 +297,14 @@ fixtures cover each path and deterministic diagnostics.
 
 ### CORE-04: Complete Line History replay
 
-Affected code:
+Status: completed 2026-07-25
 
-- `internal/linehistory/line_loader.go`
-- `internal/linehistory/line_loader_test.go`
-- public resolver contracts
-
-Work:
-
-- Keep parsed file metadata immutable across `Initialize`.
-- Implement file line-state reconstruction and `ScanFile`, or revise the public feature contract
-  and disable consumers that require unavailable state.
-- Reset only iteration state during initialization.
-- Preserve configured loggers.
-- Validate loaded file/tick/author ranges and reject truncated input.
-- Remove tests that expect a panic or erased state.
-
-Acceptance criteria:
-
-- [ ] an exported history can be loaded and consumed through the normal pipeline lifecycle;
-- [ ] `NameOf`, `ForEachFile`, and `ScanFile` work after initialization;
-- [ ] export→load→export is semantically equivalent.
+LineDumper replay now preserves immutable metadata and configured loggers across initialization,
+reconstructs deterministic live-line ownership for `NameOf`, `ForEachFile`, and `ScanFile`, and
+lets configuration-provided commits enter normal pipeline planning. Typed validation rejects
+malformed hashes, ranges, inconsistent ownership deltas, truncation, and trailing documents
+transactionally. The resolver contract documents synthetic replay indices because the aggregate
+wire format omits edit positions; a lifecycle fixture proves export→load→export equivalence.
 
 ### CORE-05: Remove process termination and leaked global state
 
@@ -904,7 +891,7 @@ sources were classified separately.
 | Ignored survival flag and placeholder Kaplan–Meier output in the renderer         | One parity gap; covered by `DATA-07`.                                                                                                  |
 | RB-tree “delay creating” comment in `internal/rbtree/rbtree.go`                   | Behavior is already implemented by `doInsert`; remove the stale marker and prove duplicate inserts do not allocate under `CORE-06`.    |
 | Plugin-template description text                                                  | Intentional generated-code customization point, not Hercules backlog. Keep it unless `DATA-05` replaces it with a generator parameter. |
-| `LineHistory` loader's `not implemented` panic                                    | Related unfinished work already covered by `CORE-04`.                                                                                  |
+| `LineHistory` loader replay gap                                                   | Resolved by `CORE-04`; replay reconstructs live ownership and `ScanFile` is lifecycle-tested.                                           |
 | Packed tick/author “hack” comments                                                | The capacity and host-process failure risk is covered by `CORE-05`.                                                                    |
 | Parallel branch deletion comments in line history and legacy burndown             | Folded into the merge cases in `CORE-07`.                                                                                              |
 | Basic `FloorDateTime` implementation                                              | Include in the historical-renderer comparison under `DATA-07`.                                                                         |

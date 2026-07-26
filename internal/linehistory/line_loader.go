@@ -4,9 +4,11 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -33,7 +35,24 @@ type LineHistoryLoader struct {
 }
 
 type fileInfo struct {
-	Name string
+	Name  string
+	Lines []lineRun
+}
+
+type lineRun struct {
+	Author core.AuthorId
+	Tick   core.TickNumber
+	Count  int
+}
+
+type lineOwner struct {
+	Author core.AuthorId
+	Tick   core.TickNumber
+}
+
+type replayFile struct {
+	owners map[lineOwner]int
+	order  []lineOwner
 }
 
 type commitInfo struct {
@@ -44,13 +63,28 @@ type commitInfo struct {
 }
 
 var (
-	errUnexpectedLineHistoryFieldCount = errors.New("unexpected number of fields in line history change")
-	errInvalidLineHistoryYAML          = errors.New("line history YAML does not contain a valid LineDumper section")
-	errLineHistoryIntegerRange         = errors.New("line history integer is out of range")
+	// ErrLineHistoryMalformed classifies structurally invalid LineDumper YAML.
+	ErrLineHistoryMalformed = errors.New("line history YAML is malformed")
+	// ErrLineHistoryRange classifies file, tick, author, and count values outside supported ranges.
+	ErrLineHistoryRange = errors.New("line history value is out of range")
+	// ErrLineHistoryState classifies a valid-looking change stream that cannot reconstruct file state.
+	ErrLineHistoryState = errors.New("line history changes do not form a valid file state")
+
+	errUnexpectedLineHistoryFieldCount = fmt.Errorf(
+		"%w: unexpected number of fields in line history change",
+		ErrLineHistoryMalformed,
+	)
 )
 
-func (v fileInfo) ForEach(func(line, value int)) {
-	panic("not implemented")
+func (v fileInfo) ForEach(callback func(line int, tick core.TickNumber, author core.AuthorId)) {
+	line := 0
+
+	for _, run := range v.Lines {
+		for range run.Count {
+			callback(line, run.Tick, run.Author)
+			line++
+		}
+	}
 }
 
 var _ core.FileIdResolver = loadedFileIdResolver{}
@@ -84,7 +118,15 @@ func (v loadedFileIdResolver) ForEachFile(callback func(id FileId, name string))
 		return false
 	}
 
-	for id, file := range v.analyser.files {
+	ids := make([]FileId, 0, len(v.analyser.files))
+	for id := range v.analyser.files {
+		ids = append(ids, id)
+	}
+
+	slices.Sort(ids)
+
+	for _, id := range ids {
+		file := v.analyser.files[id]
 		callback(id, file.Name)
 	}
 
@@ -104,10 +146,7 @@ func (v loadedFileIdResolver) ScanFile(
 		return false
 	}
 
-	file.ForEach(func(line, value int) {
-		author, tick := unpackPersonWithTick(value)
-		callback(line, tick, author)
-	})
+	file.ForEach(callback)
 
 	return true
 }
@@ -191,7 +230,7 @@ func (analyser *LineHistoryLoader) ListConfigurationOptions() []core.Configurati
 	return []core.ConfigurationOption{
 		{
 			Name:        ConfigLinesLoadFrom,
-			Description: "Temporary directory where to save the hibernated RBTree allocators.",
+			Description: "Path to a YAML LineDumper export to replay.",
 			Flag:        "history-line-load",
 			Type:        core.PathConfigurationOption,
 			Default:     "",
@@ -229,8 +268,9 @@ func (analyser *LineHistoryLoader) ConfigureUpstream(_ map[string]any) error {
 // Initialize resets the temporary caches and prepares this PipelineItem for a series of Consume()
 // calls. The repository which is going to be analysed is supplied as an argument.
 func (analyser *LineHistoryLoader) Initialize(*git.Repository) error {
-	analyser.l = core.NewLogger()
-	analyser.files = map[FileId]fileInfo{}
+	if analyser.l == nil {
+		analyser.l = core.NewLogger()
+	}
 	analyser.nextCommit = 0
 
 	return nil
@@ -282,12 +322,21 @@ func (analyser *LineHistoryLoader) loadChangesFromYaml(decoder *yaml.Decoder) er
 
 	err := decoder.Decode(&document)
 	if err != nil {
-		return fmt.Errorf("decode line history YAML: %w", err)
+		return fmt.Errorf("%w: decode YAML: %w", ErrLineHistoryMalformed, err)
+	}
+
+	var trailing any
+	switch err = decoder.Decode(&trailing); {
+	case errors.Is(err, io.EOF):
+	case err != nil:
+		return fmt.Errorf("%w: decode trailing YAML: %w", ErrLineHistoryMalformed, err)
+	default:
+		return fmt.Errorf("%w: multiple YAML documents", ErrLineHistoryMalformed)
 	}
 
 	dumper, ok := yamlMapValue(document, "LineDumper").(yaml.MapSlice)
 	if !ok {
-		return errInvalidLineHistoryYAML
+		return ErrLineHistoryMalformed
 	}
 
 	commits, commitsOK := yamlMapValue(dumper, "commits").(yaml.MapSlice)
@@ -295,60 +344,105 @@ func (analyser *LineHistoryLoader) loadChangesFromYaml(decoder *yaml.Decoder) er
 
 	files, filesOK := yamlMapValue(dumper, "file_sequence").(yaml.MapSlice)
 	if !commitsOK || !authorsOK || !filesOK {
-		return errInvalidLineHistoryYAML
+		return ErrLineHistoryMalformed
 	}
 
-	analyser.loadAuthors(authors)
-
-	err = analyser.loadFiles(files)
+	loadedAuthors, err := loadAuthors(authors)
 	if err != nil {
 		return err
 	}
 
-	return analyser.loadCommits(commits)
-}
-
-func (analyser *LineHistoryLoader) loadAuthors(authors []any) {
-	analyser.authors = make([]string, 0, len(authors))
-	for _, author := range authors {
-		if value, ok := author.(string); ok {
-			analyser.authors = append(analyser.authors, value)
-		}
+	loadedFiles, err := loadFiles(files)
+	if err != nil {
+		return err
 	}
+
+	loadedCommits, err := loadCommits(commits, loadedAuthors)
+	if err != nil {
+		return err
+	}
+
+	err = reconstructFileStates(loadedFiles, loadedCommits)
+	if err != nil {
+		return err
+	}
+
+	analyser.authors = loadedAuthors
+	analyser.files = loadedFiles
+	analyser.commits = loadedCommits
+
+	return nil
 }
 
-func (analyser *LineHistoryLoader) loadFiles(files yaml.MapSlice) error {
-	analyser.files = make(map[FileId]fileInfo, len(files))
+func loadAuthors(authors []any) ([]string, error) {
+	result := make([]string, len(authors))
+	for index, author := range authors {
+		value, ok := author.(string)
+		if !ok {
+			return nil, fmt.Errorf("%w: author %d has type %T", ErrLineHistoryMalformed, index, author)
+		}
+
+		result[index] = value
+	}
+
+	return result, nil
+}
+
+func loadFiles(files yaml.MapSlice) (map[FileId]fileInfo, error) {
+	result := make(map[FileId]fileInfo, len(files))
 	for _, item := range files {
 		id, idOK := item.Key.(int)
 		name, nameOK := item.Value.(string)
 
 		if !idOK || !nameOK {
-			continue
+			return nil, fmt.Errorf(
+				"%w: invalid file entry with key type %T and value type %T",
+				ErrLineHistoryMalformed, item.Key, item.Value,
+			)
 		}
 
-		if id < math.MinInt32 || id > math.MaxInt32 {
-			return fmt.Errorf("%w: file ID %d", errLineHistoryIntegerRange, id)
+		if id <= 0 || id > math.MaxInt32 {
+			return nil, fmt.Errorf("%w: file ID %d", ErrLineHistoryRange, id)
 		}
 
-		analyser.files[FileId(id)] = fileInfo{Name: name}
+		if name == "" {
+			return nil, fmt.Errorf("%w: file ID %d has an empty name", ErrLineHistoryMalformed, id)
+		}
+
+		fileID := FileId(id)
+		if _, exists := result[fileID]; exists {
+			return nil, fmt.Errorf("%w: duplicate file ID %d", ErrLineHistoryMalformed, id)
+		}
+
+		result[fileID] = fileInfo{Name: name}
 	}
 
-	return nil
+	return result, nil
 }
 
-func (analyser *LineHistoryLoader) loadCommits(commits yaml.MapSlice) error {
-	analyser.commits = make([]commitInfo, 0, len(commits))
-	for _, yamlCommit := range commits {
-		info, err := parseLineHistoryCommit(yamlCommit)
+func loadCommits(commits yaml.MapSlice, authors []string) ([]commitInfo, error) {
+	result := make([]commitInfo, 0, len(commits))
+	seen := make(map[plumbing.Hash]int, len(commits))
+
+	for index, yamlCommit := range commits {
+		info, err := parseLineHistoryCommit(yamlCommit, len(authors))
 		if err != nil {
-			return err
+			return nil, fmt.Errorf("commit %d: %w", index, err)
 		}
 
-		analyser.commits = append(analyser.commits, info)
+		if previous, exists := seen[info.Hash]; exists {
+			return nil, fmt.Errorf(
+				"%w: duplicate commit %s at positions %d and %d",
+				ErrLineHistoryMalformed, info.Hash, previous, index,
+			)
+		}
+
+		seen[info.Hash] = index
+
+		result = append(result, info)
 	}
 
-	return nil
+	return result, nil
 }
 
 func yamlMapValue(items yaml.MapSlice, key string) any {
@@ -361,39 +455,238 @@ func yamlMapValue(items yaml.MapSlice, key string) any {
 	return nil
 }
 
-func parseLineHistoryCommit(yamlCommit yaml.MapItem) (commitInfo, error) {
-	hash, hashOK := yamlCommit.Key.(string)
-
-	changes, changesOK := yamlCommit.Value.(string)
-	if !hashOK || !changesOK {
-		return commitInfo{}, fmt.Errorf("%w: invalid commit entry", errInvalidLineHistoryYAML)
+func parseLineHistoryCommit(yamlCommit yaml.MapItem, authorCount int) (commitInfo, error) {
+	hash, changes, err := lineHistoryCommitFields(yamlCommit)
+	if err != nil {
+		return commitInfo{}, err
 	}
 
 	info := commitInfo{Hash: plumbing.NewHash(hash)}
 
-	scanner := bufio.NewScanner(strings.NewReader(changes))
-	for scanner.Scan() {
-		change, err := parseLineHistoryChange(scanner.Text())
-		if err != nil {
-			return commitInfo{}, err
-		}
-
-		info.Changes = append(info.Changes, change)
-	}
-
-	err := scanner.Err()
+	info.Changes, err = parseLineHistoryChanges(changes, authorCount)
 	if err != nil {
-		return commitInfo{}, fmt.Errorf("scan line history changes: %w", err)
+		return commitInfo{}, err
 	}
 
 	if len(info.Changes) == 0 {
-		return commitInfo{}, fmt.Errorf("%w: commit %s has no changes", errInvalidLineHistoryYAML, hash)
+		return commitInfo{}, fmt.Errorf("%w: commit %s has no changes", ErrLineHistoryMalformed, hash)
 	}
 
 	info.Tick = info.Changes[0].CurrTick
 	info.Author = info.Changes[0].CurrAuthor
 
+	err = validateCommitOwnership(info)
+	if err != nil {
+		return commitInfo{}, err
+	}
+
 	return info, nil
+}
+
+func lineHistoryCommitFields(yamlCommit yaml.MapItem) (string, string, error) {
+	hash, hashOK := yamlCommit.Key.(string)
+	changes, changesOK := yamlCommit.Value.(string)
+	if !hashOK || !changesOK {
+		return "", "", fmt.Errorf("%w: invalid commit entry", ErrLineHistoryMalformed)
+	}
+
+	if !plumbing.IsHash(hash) {
+		return "", "", fmt.Errorf("%w: invalid commit hash %q", ErrLineHistoryMalformed, hash)
+	}
+
+	return hash, changes, nil
+}
+
+func parseLineHistoryChanges(changes string, authorCount int) ([]core.LineHistoryChange, error) {
+	var result []core.LineHistoryChange
+	scanner := bufio.NewScanner(strings.NewReader(changes))
+
+	for scanner.Scan() {
+		change, err := parseLineHistoryChange(scanner.Text())
+		if err != nil {
+			return nil, err
+		}
+
+		err = validateLineHistoryChange(change, authorCount)
+		if err != nil {
+			return nil, err
+		}
+
+		result = append(result, change)
+	}
+
+	err := scanner.Err()
+	if err != nil {
+		return nil, fmt.Errorf("%w: scan changes: %w", ErrLineHistoryMalformed, err)
+	}
+
+	return result, nil
+}
+
+func validateCommitOwnership(info commitInfo) error {
+	for index, change := range info.Changes[1:] {
+		if change.CurrTick == info.Tick && change.CurrAuthor == info.Author {
+			continue
+		}
+
+		return fmt.Errorf(
+			"%w: change %d has author/tick %d/%d, expected %d/%d",
+			ErrLineHistoryMalformed, index+1, change.CurrAuthor, change.CurrTick,
+			info.Author, info.Tick,
+		)
+	}
+
+	return nil
+}
+
+func validateLineHistoryChange(change core.LineHistoryChange, authorCount int) error {
+	if change.FileId <= 0 {
+		return fmt.Errorf("%w: file ID %d", ErrLineHistoryRange, change.FileId)
+	}
+
+	if change.CurrTick < 0 || change.CurrTick >= TreeMergeMark {
+		return fmt.Errorf("%w: current tick %d", ErrLineHistoryRange, change.CurrTick)
+	}
+
+	if change.IsDelete() {
+		if !validLoadedAuthor(change.CurrAuthor, authorCount) {
+			return fmt.Errorf("%w: current author %d", ErrLineHistoryRange, change.CurrAuthor)
+		}
+
+		return nil
+	}
+
+	return validateRegularLineHistoryChange(change, authorCount)
+}
+
+func validateRegularLineHistoryChange(change core.LineHistoryChange, authorCount int) error {
+	if change.Delta == math.MinInt {
+		return fmt.Errorf("%w: invalid deletion marker", ErrLineHistoryMalformed)
+	}
+
+	if change.Delta == 0 {
+		return fmt.Errorf("%w: zero line delta", ErrLineHistoryMalformed)
+	}
+
+	if change.PrevTick < 0 || change.PrevTick >= TreeMergeMark {
+		return fmt.Errorf("%w: previous tick %d", ErrLineHistoryRange, change.PrevTick)
+	}
+
+	if !validLoadedAuthor(change.PrevAuthor, authorCount) {
+		return fmt.Errorf("%w: previous author %d", ErrLineHistoryRange, change.PrevAuthor)
+	}
+
+	if !validLoadedAuthor(change.CurrAuthor, authorCount) {
+		return fmt.Errorf("%w: current author %d", ErrLineHistoryRange, change.CurrAuthor)
+	}
+
+	if change.Delta > 0 &&
+		(change.PrevAuthor != change.CurrAuthor || change.PrevTick != change.CurrTick) {
+		return fmt.Errorf(
+			"%w: inserted lines have different previous and current ownership",
+			ErrLineHistoryState,
+		)
+	}
+
+	return nil
+}
+
+func validLoadedAuthor(author core.AuthorId, count int) bool {
+	return author == core.AuthorMissing || author >= 0 && int(author) < count
+}
+
+func reconstructFileStates(files map[FileId]fileInfo, commits []commitInfo) error {
+	replayed := map[FileId]*replayFile{}
+
+	err := replayLineHistoryCommits(replayed, commits)
+	if err != nil {
+		return err
+	}
+
+	materializeReplayFiles(files, replayed)
+
+	return nil
+}
+
+func replayLineHistoryCommits(replayed map[FileId]*replayFile, commits []commitInfo) error {
+	for commitIndex, commit := range commits {
+		for changeIndex, change := range commit.Changes {
+			err := replayLineHistoryChange(replayed, change)
+			if err != nil {
+				return fmt.Errorf(
+					"commit %d (%s), change %d: %w",
+					commitIndex, commit.Hash, changeIndex, err,
+				)
+			}
+		}
+	}
+
+	return nil
+}
+
+func materializeReplayFiles(files map[FileId]fileInfo, replayed map[FileId]*replayFile) {
+	for id, file := range files {
+		state := replayed[id]
+		if state != nil {
+			file.Lines = make([]lineRun, 0, len(state.order))
+			for _, owner := range state.order {
+				if count := state.owners[owner]; count > 0 {
+					file.Lines = append(file.Lines, lineRun{
+						Author: owner.Author,
+						Tick:   owner.Tick,
+						Count:  count,
+					})
+				}
+			}
+		}
+
+		files[id] = file
+	}
+}
+
+func replayLineHistoryChange(files map[FileId]*replayFile, change core.LineHistoryChange) error {
+	if change.IsDelete() {
+		delete(files, change.FileId)
+
+		return nil
+	}
+
+	file := files[change.FileId]
+	if file == nil {
+		file = &replayFile{owners: map[lineOwner]int{}}
+		files[change.FileId] = file
+	}
+
+	if change.Delta > 0 {
+		owner := lineOwner{Author: change.CurrAuthor, Tick: change.CurrTick}
+		if _, exists := file.owners[owner]; !exists {
+			file.order = append(file.order, owner)
+		}
+
+		if file.owners[owner] > math.MaxInt-change.Delta {
+			return fmt.Errorf("%w: file %d line count overflow", ErrLineHistoryState, change.FileId)
+		}
+
+		file.owners[owner] += change.Delta
+
+		return nil
+	}
+
+	owner := lineOwner{Author: change.PrevAuthor, Tick: change.PrevTick}
+	removed := -change.Delta
+	available := file.owners[owner]
+
+	if available < removed {
+		return fmt.Errorf(
+			"%w: file %d removes %d lines owned by author %d at tick %d, only %d exist",
+			ErrLineHistoryState, change.FileId, removed,
+			change.PrevAuthor, change.PrevTick, available,
+		)
+	}
+
+	file.owners[owner] = available - removed
+
+	return nil
 }
 
 func parseLineHistoryChange(line string) (core.LineHistoryChange, error) {
@@ -409,7 +702,7 @@ func parseLineHistoryChange(line string) (core.LineHistoryChange, error) {
 		value, err := strconv.Atoi(raw)
 		if err != nil {
 			return core.LineHistoryChange{}, fmt.Errorf(
-				"unable to parse %q from %q: %w", raw, line, err,
+				"%w: unable to parse %q from %q: %w", ErrLineHistoryMalformed, raw, line, err,
 			)
 		}
 
@@ -449,7 +742,7 @@ func parseLineHistoryChange(line string) (core.LineHistoryChange, error) {
 
 func lineHistoryFileID(value int) (core.FileId, error) {
 	if value < math.MinInt32 || value > math.MaxInt32 {
-		return 0, fmt.Errorf("%w: file ID %d", errLineHistoryIntegerRange, value)
+		return 0, fmt.Errorf("%w: file ID %d", ErrLineHistoryRange, value)
 	}
 
 	return core.FileId(value), nil

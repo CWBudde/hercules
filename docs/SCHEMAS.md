@@ -526,6 +526,12 @@ Binary mode:
 
 - not supported (`Serialize()` returns error)
 
+`--history-line-load` replays this YAML through the normal pipeline lifecycle. The loader
+validates commit hashes and all file, tick, author, and ownership transitions before analysis.
+Because change rows contain aggregate ownership deltas rather than edit positions, the loaded
+file resolver exposes deterministic synthetic line indices; each live line's author and tick are
+preserved exactly, but its original source position is not part of this format.
+
 Example:
 
 ```yaml

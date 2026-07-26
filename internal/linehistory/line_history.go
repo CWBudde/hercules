@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 	"runtime/debug"
+	"slices"
 	"sync/atomic"
 	"unicode/utf8"
 
@@ -138,8 +139,18 @@ func (v FileIdResolver) ForEachFile(callback func(id FileId, name string)) bool 
 		return false
 	}
 
+	ids := make([]FileId, 0, len(v.analyser.files))
+	names := make(map[FileId]string, len(v.analyser.files))
+
 	for name, file := range v.analyser.files {
-		callback(file.Id, name)
+		ids = append(ids, file.Id)
+		names[file.Id] = name
+	}
+
+	slices.Sort(ids)
+
+	for _, id := range ids {
+		callback(id, names[id])
 	}
 
 	return true

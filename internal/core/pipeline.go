@@ -636,6 +636,16 @@ func (pipeline *Pipeline) InitializeExt(facts map[string]any,
 		return err
 	}
 
+	if preparePlan && pipeline.preparedRun == nil {
+		mergeTracks, _ := pipeline.GetFeature(FeatureMergeTracks)
+
+		err = pipeline.prepareRun(facts, mergeTracks)
+		if err != nil {
+			cleanReturn = true
+			return err
+		}
+	}
+
 	err = pipeline.initializeItems(facts)
 	if err != nil {
 		cleanReturn = true
@@ -673,7 +683,12 @@ func prepareInitialization(
 	}
 
 	if preparePlan {
-		return pipeline.prepareRun(facts, mergeTracks)
+		pipeline.preparedRun = nil
+		if _, exists := facts[ConfigPipelineCommits]; exists {
+			return pipeline.prepareRun(facts, mergeTracks)
+		}
+
+		return nil
 	}
 
 	if commitValue, exists := facts[ConfigPipelineCommits]; exists {

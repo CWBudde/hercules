@@ -71,6 +71,9 @@ type BurndownAnalysis struct {
 	globalHistory sparseHistory
 	// fileHistories is the daily deltas of each file's daily line counts.
 	fileHistories map[core.FileId]sparseHistory
+	// deletedFileHistories retains histories which may still be live in another branch.
+	// A later event for the same file ID restores the original history.
+	deletedFileHistories map[core.FileId]sparseHistory
 	// peopleHistories is the daily deltas of each person's daily line counts.
 	peopleHistories []sparseHistory
 	// matrix is the mutual deletions and self insertions.
@@ -281,6 +284,7 @@ func (analyser *BurndownAnalysis) Initialize(repository *git.Repository) error {
 	analyser.repository = repository
 	analyser.globalHistory = sparseHistory{}
 	analyser.fileHistories = map[core.FileId]sparseHistory{}
+	analyser.deletedFileHistories = map[core.FileId]sparseHistory{}
 
 	if analyser.peopleResolver == nil {
 		analyser.peopleResolver = core.NewIdentityResolver(nil, nil)
@@ -360,10 +364,11 @@ func consumeLineHistory(analyser *BurndownAnalysis, changes core.LineHistoryChan
 
 // burndownState holds the serializable state for hibernation.
 type burndownState struct {
-	GlobalHistory   map[int]map[int]int64
-	FileHistories   map[core.FileId]map[int]map[int]int64
-	PeopleHistories []map[int]map[int]int64
-	Matrix          []map[core.AuthorId]int64
+	GlobalHistory        map[int]map[int]int64
+	FileHistories        map[core.FileId]map[int]map[int]int64
+	DeletedFileHistories map[core.FileId]map[int]map[int]int64
+	PeopleHistories      []map[int]map[int]int64
+	Matrix               []map[core.AuthorId]int64
 }
 
 func sparseHistoryToMap(history sparseHistory) map[int]map[int]int64 {
@@ -412,6 +417,7 @@ func (analyser *BurndownAnalysis) Hibernate() error {
 
 	analyser.globalHistory = nil
 	analyser.fileHistories = nil
+	analyser.deletedFileHistories = nil
 	analyser.peopleHistories = nil
 	analyser.matrix = nil
 
@@ -491,6 +497,20 @@ func (analyser *BurndownAnalysis) Boot() error {
 		for k, v := range state.FileHistories {
 			analyser.fileHistories[k] = mapToSparseHistory(v)
 		}
+	}
+
+	if state.DeletedFileHistories != nil {
+		analyser.deletedFileHistories = make(
+			map[core.FileId]sparseHistory,
+			len(state.DeletedFileHistories),
+		)
+		for k, v := range state.DeletedFileHistories {
+			analyser.deletedFileHistories[k] = mapToSparseHistory(v)
+		}
+	}
+
+	if analyser.deletedFileHistories == nil {
+		analyser.deletedFileHistories = map[core.FileId]sparseHistory{}
 	}
 
 	if state.PeopleHistories != nil {
@@ -747,6 +767,16 @@ func (analyser *BurndownAnalysis) hibernationState() burndownState {
 		}
 	}
 
+	if analyser.deletedFileHistories != nil {
+		state.DeletedFileHistories = make(
+			map[core.FileId]map[int]map[int]int64,
+			len(analyser.deletedFileHistories),
+		)
+		for k, v := range analyser.deletedFileHistories {
+			state.DeletedFileHistories[k] = sparseHistoryToMap(v)
+		}
+	}
+
 	if analyser.peopleHistories != nil {
 		state.PeopleHistories = make([]map[int]map[int]int64, len(analyser.peopleHistories))
 		for i, v := range analyser.peopleHistories {
@@ -791,14 +821,34 @@ func (analyser *BurndownAnalysis) finalizeFileHistories(lastTick int) map[string
 	result := map[string]burndown.DenseHistory{}
 
 	for fileID, history := range analyser.fileHistories {
-		if len(history) > 0 {
-			if name := analyser.fileResolver.NameOf(fileID); name != "" {
-				result[name], _ = analyser.groupSparseHistory(history, lastTick)
-			}
+		analyser.finalizeFileHistory(result, fileID, history, lastTick)
+	}
+
+	for fileID, history := range analyser.deletedFileHistories {
+		if _, alreadyLive := analyser.fileHistories[fileID]; !alreadyLive {
+			analyser.finalizeFileHistory(result, fileID, history, lastTick)
 		}
 	}
 
 	return result
+}
+
+func (analyser *BurndownAnalysis) finalizeFileHistory(
+	result map[string]burndown.DenseHistory,
+	fileID core.FileId,
+	history sparseHistory,
+	lastTick int,
+) {
+	if len(history) == 0 || analyser.fileResolver == nil {
+		return
+	}
+
+	mergedID, name, present := analyser.fileResolver.MergedWith(fileID)
+	if !present || mergedID != fileID || name == "" {
+		return
+	}
+
+	result[name], _ = analyser.groupSparseHistory(history, lastTick)
 }
 
 func (analyser *BurndownAnalysis) finalizePeopleHistories(
@@ -876,15 +926,24 @@ func (analyser *BurndownAnalysis) updateGlobal(change core.LineHistoryChange) {
 func (analyser *BurndownAnalysis) updateFile(change core.LineHistoryChange) {
 	history := analyser.fileHistories[change.FileId]
 	if history == nil {
-		// can be not nil if the file was created in a future branch
-		history = sparseHistory{}
+		history = analyser.deletedFileHistories[change.FileId]
+		if history == nil {
+			// can be not nil if the file was created in a future branch
+			history = sparseHistory{}
+		}
+
 		analyser.fileHistories[change.FileId] = history
+		delete(analyser.deletedFileHistories, change.FileId)
 	}
 
 	history.updateDelta(int(change.PrevTick), int(change.CurrTick), change.Delta)
 }
 
 func (analyser *BurndownAnalysis) updateFileDelete(change core.LineHistoryChange) {
+	if history := analyser.fileHistories[change.FileId]; history != nil {
+		analyser.deletedFileHistories[change.FileId] = history
+	}
+
 	delete(analyser.fileHistories, change.FileId)
 }
 

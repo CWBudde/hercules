@@ -74,6 +74,11 @@ type LineHistoryAnalyser struct {
 	// previousTick is the tick from the previous sample period -
 	// different from TicksSinceStart.previousTick.
 	previousTick core.TickNumber
+	// mergedAuthor is the author of the merge commit currently waiting for Merge().
+	// Merge-commit edits use TreeMergeMark while Consume() runs, then Merge() resolves
+	// the remaining marked lines to this author at tick.
+	mergedAuthor core.AuthorId
+	mergePending bool
 
 	changes []core.LineHistoryChange
 
@@ -317,6 +322,8 @@ func (analyser *LineHistoryAnalyser) Initialize(repository *git.Repository) erro
 
 	analyser.tick = 0
 	analyser.previousTick = 0
+	analyser.mergedAuthor = core.AuthorMissing
+	analyser.mergePending = false
 
 	return nil
 }
@@ -340,7 +347,15 @@ func (analyser *LineHistoryAnalyser) Consume(deps map[string]any) (map[string]an
 	analyser.onNewTick()
 	analyser.changes = make([]core.LineHistoryChange, 0, len(treeDiffs)*4)
 
+	isMerge, _ := deps[core.DependencyIsMerge].(bool)
+	if isMerge {
+		analyser.mergedAuthor = author
+		analyser.mergePending = true
+		analyser.tick = TreeMergeMark
+	}
+
 	err = analyser.consumeTreeDiffs(treeDiffs, author, cache, fileDiffs)
+	analyser.tick = tick
 	if err != nil {
 		return nil, err
 	}
@@ -469,26 +484,83 @@ func (analyser *LineHistoryAnalyser) Fork(n int) []core.PipelineItem {
 	return result
 }
 
-// Merge combines several items together. We apply the special file merging logic here.
+// Merge resolves the merge commit against the other parents and synchronizes every branch to the
+// resulting tree. The branch which consumed the merge commit is authoritative for path presence;
+// equal-length files from the other parents supply ownership for lines left with TreeMergeMark.
 func (analyser *LineHistoryAnalyser) Merge(items []core.PipelineItem) {
-	analyser.onNewTick()
+	branches := make([]*LineHistoryAnalyser, 1, len(items)+1)
 
-	// clones := make([]*LineHistoryAnalyser, len(items))
+	branches[0] = analyser
 	for _, item := range items {
-		clone := mustLineHistoryAnalyser(item)
+		branches = append(branches, mustLineHistoryAnalyser(item))
+	}
 
-		for name, file := range clone.files {
-			if _, ok := analyser.fileNames[file.Id]; !ok {
-				analyser.mergeAbandonedName(file.Id, name)
-			}
-		}
-
-		for id, name := range clone.fileNames {
-			if _, ok := analyser.fileNames[id]; !ok {
-				analyser.mergeAbandonedName(id, name)
-			}
+	if analyser.mergePending {
+		for name, file := range analyser.files {
+			others := matchingMergeFiles(branches[1:], name, file)
+			file.Merge(packPersonWithTick(analyser.mergedAuthor, analyser.tick), others...)
 		}
 	}
+
+	for _, branch := range branches[1:] {
+		rememberLineHistoryBranchNames(analyser, branch)
+		synchronizeLineHistoryBranch(analyser, branch)
+	}
+
+	analyser.mergePending = false
+	analyser.mergedAuthor = core.AuthorMissing
+	analyser.changes = nil
+	analyser.onNewTick()
+}
+
+func matchingMergeFiles(
+	branches []*LineHistoryAnalyser, name string, target *File,
+) []*File {
+	files := make([]*File, 0, len(branches))
+	for _, branch := range branches {
+		file := branch.files[name]
+		if file != nil && file.Id == target.Id && file.Len() == target.Len() {
+			files = append(files, file)
+		}
+	}
+
+	return files
+}
+
+func rememberLineHistoryBranchNames(analyser, branch *LineHistoryAnalyser) {
+	for name, file := range branch.files {
+		if _, ok := analyser.fileNames[file.Id]; !ok {
+			analyser.mergeAbandonedName(file.Id, name)
+		}
+	}
+
+	for id, name := range branch.fileNames {
+		if _, ok := analyser.fileNames[id]; !ok {
+			analyser.mergeAbandonedName(id, name)
+		}
+	}
+}
+
+func synchronizeLineHistoryBranch(source, target *LineHistoryAnalyser) {
+	for _, file := range target.files {
+		file.Delete()
+	}
+
+	target.files = make(map[string]*File, len(source.files))
+	target.fileNames = make(map[FileId]string, len(source.fileNames))
+
+	for name, file := range source.files {
+		target.files[name] = file.CloneDeepWithUpdaters(target.fileAllocator, target.updateChangeList)
+		target.fileNames[file.Id] = name
+	}
+
+	target.fileAbandonedNames = maps.Clone(source.fileAbandonedNames)
+	target.fileAbandonedNamesOfParent = source.fileAbandonedNamesOfParent
+	target.tick = source.tick
+	target.previousTick = source.previousTick
+	target.mergedAuthor = core.AuthorMissing
+	target.mergePending = false
+	target.changes = nil
 }
 
 func mustLineHistoryAnalyser(item core.PipelineItem) *LineHistoryAnalyser {
@@ -727,6 +799,17 @@ func packPersonWithTick(author core.AuthorId, tick core.TickNumber) int {
 	return result
 }
 
+func packChangePersonWithTick(author core.AuthorId, tick core.TickNumber) int {
+	if tick == TreeMergeMark {
+		// The author bits are irrelevant until Merge() resolves the marker. Keeping
+		// them zero also avoids colliding with the reserved TreeEnd value when the
+		// merge author is AuthorMissing.
+		return TreeMergeMark
+	}
+
+	return packPersonWithTick(author, tick)
+}
+
 func validatePackedOwnership(author core.AuthorId, tick core.TickNumber) error {
 	if author < 0 || author > core.AuthorMissing {
 		return fmt.Errorf(
@@ -858,12 +941,42 @@ func (analyser *LineHistoryAnalyser) newFile(
 ) *File {
 	analyser.forgetFileName(name)
 
-	fileId := analyser.fileIdCounter.next()
+	fileId, found := analyser.abandonedFileID(name)
+	if tick != TreeMergeMark || !found {
+		fileId = analyser.fileIdCounter.next()
+	}
+
+	delete(analyser.fileAbandonedNames, fileId)
 	analyser.fileNames[fileId] = name
-	file := NewFile(fileId, packPersonWithTick(author, tick), size, analyser.fileAllocator, analyser.updateChangeList)
+	file := NewFile(
+		fileId,
+		packChangePersonWithTick(author, tick),
+		size,
+		analyser.fileAllocator,
+		analyser.updateChangeList,
+	)
 	analyser.files[name] = file
 
 	return file
+}
+
+func (analyser *LineHistoryAnalyser) abandonedFileID(name string) (FileId, bool) {
+	var selected FileId
+	found := false
+
+	for id, abandonedName := range analyser.fileAbandonedNamesOfParent {
+		if abandonedName == name && (!found || id > selected) {
+			selected, found = id, true
+		}
+	}
+
+	for id, abandonedName := range analyser.fileAbandonedNames {
+		if abandonedName == name && (!found || id > selected) {
+			selected, found = id, true
+		}
+	}
+
+	return selected, found
 }
 
 func (analyser *LineHistoryAnalyser) forgetFileName(name string) {
@@ -915,8 +1028,13 @@ func (analyser *LineHistoryAnalyser) handleDeletion(
 	blob := cache[change.From.TreeEntry.Hash]
 
 	lines, err := blob.CountLines()
-	if exists && errors.Is(err, items.ErrBinary) {
-		return fmt.Errorf("%w: %s", errPreviousVersionBecameBinary, name)
+	if errors.Is(err, items.ErrBinary) {
+		if exists && file.Len() != 0 {
+			return fmt.Errorf("%w: %s", errPreviousVersionBecameBinary, name)
+		}
+
+		lines = 0
+		err = nil
 	}
 
 	if exists && err != nil {
@@ -926,13 +1044,16 @@ func (analyser *LineHistoryAnalyser) handleDeletion(
 	if !exists {
 		return nil
 	}
-	// Parallel independent file removals are incorrectly handled. The solution seems to be quite
-	// complex, but feel free to suggest your ideas.
-	// These edge cases happen *very* rarely, so we don't bother for now.
-	file.Update(packPersonWithTick(author, analyser.tick), 0, 0, lines)
+
+	file.Update(packChangePersonWithTick(author, analyser.tick), 0, 0, lines)
 	file.Delete()
 
-	analyser.changes = append(analyser.changes, core.NewLineHistoryDeletion(file.Id, author, analyser.tick))
+	if analyser.tick != TreeMergeMark {
+		analyser.changes = append(
+			analyser.changes,
+			core.NewLineHistoryDeletion(file.Id, author, analyser.tick),
+		)
+	}
 	analyser.forgetFileName(name)
 
 	return nil
@@ -1011,13 +1132,32 @@ func (analyser *LineHistoryAnalyser) handleBinaryModification(
 	}
 
 	if fromBinary {
-		// The file is no longer binary.
-		return true, analyser.handleInsertion(change, author, cache)
+		// Binary contents are opaque. Reconstruct the visible text in the existing
+		// zero-line placeholder so the path keeps its file identity.
+		lines, err := cache[change.To.TreeEntry.Hash].CountLines()
+		if err != nil {
+			return true, fmt.Errorf("count lines in reconstructed file %q: %w", change.To.Name, err)
+		}
+
+		file := analyser.files[change.To.Name]
+		if file == nil {
+			return true, analyser.handleInsertion(change, author, cache)
+		}
+
+		file.Update(packChangePersonWithTick(author, analyser.tick), 0, lines, file.Len())
+
+		return true, nil
 	}
 
-	// The file became binary.
-	// TODO this is wrong
-	return true, analyser.handleDeletion(change, author, cache)
+	// Keep a zero-line placeholder instead of routing this transition through
+	// ordinary deletion. Ownership deltas remove the visible text, but no file
+	// deletion sentinel is emitted and the ID remains live.
+	file := analyser.files[change.To.Name]
+	if file != nil {
+		file.Update(packChangePersonWithTick(author, analyser.tick), 0, 0, file.Len())
+	}
+
+	return true, nil
 }
 
 func classifyLineCountErrors(
@@ -1073,7 +1213,7 @@ func (state *lineHistoryDiffState) process(edit diffmatchpatch.Diff) error {
 		}
 
 		state.file.Update(
-			packPersonWithTick(state.author, state.analyser.tick), state.position,
+			packChangePersonWithTick(state.author, state.analyser.tick), state.position,
 			length, utf8.RuneCountInString(state.pending.Text),
 		)
 
@@ -1106,12 +1246,12 @@ func (state *lineHistoryDiffState) flush() {
 	length := utf8.RuneCountInString(state.pending.Text)
 	if state.pending.Type == diffmatchpatch.DiffInsert {
 		state.file.Update(
-			packPersonWithTick(state.author, state.analyser.tick), state.position, length, 0,
+			packChangePersonWithTick(state.author, state.analyser.tick), state.position, length, 0,
 		)
 		state.position += length
 	} else {
 		state.file.Update(
-			packPersonWithTick(state.author, state.analyser.tick), state.position, 0, length,
+			packChangePersonWithTick(state.author, state.analyser.tick), state.position, 0, length,
 		)
 	}
 

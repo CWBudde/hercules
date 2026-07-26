@@ -94,6 +94,9 @@ type LegacyBurndownAnalysis struct {
 	globalHistory sparseHistory
 	// fileHistories is the daily deltas of each file's daily line counts.
 	fileHistories map[string]sparseHistory
+	// deletedFileHistories retains histories which may still be live in a parallel branch.
+	// A later change or merge insertion at the same path restores the original map.
+	deletedFileHistories map[string]sparseHistory
 	// peopleHistories is the daily deltas of each person's daily line counts.
 	peopleHistories []sparseHistory
 	// files is the mapping <file path> -> *File.
@@ -274,6 +277,8 @@ func (analyser *LegacyBurndownAnalysis) Initialize(repository *git.Repository) e
 	analyser.globalHistory = sparseHistory{}
 
 	analyser.fileHistories = map[string]sparseHistory{}
+	analyser.deletedFileHistories = map[string]sparseHistory{}
+
 	if analyser.PeopleNumber < 0 {
 		return fmt.Errorf("%w: %d", errNegativePeopleNumber, analyser.PeopleNumber)
 	}
@@ -323,6 +328,12 @@ func (analyser *LegacyBurndownAnalysis) Consume(deps map[string]any) (map[string
 
 	analyser.tick = tick
 	analyser.onNewTick()
+
+	isMerge, _ := deps[core.DependencyIsMerge].(bool)
+	if isMerge {
+		analyser.mergedAuthor = author
+		analyser.tick = linehistory.TreeMergeMark
+	}
 
 	for _, change := range treeDiffs {
 		action, _ := change.Action()
@@ -481,6 +492,8 @@ func deleteLegacyBranchFile(branches []*LegacyBurndownAnalysis, fileName string)
 		}
 
 		delete(branch.files, fileName)
+		delete(branch.fileHistories, fileName)
+		delete(branch.deletedFileHistories, fileName)
 	}
 }
 
@@ -734,8 +747,12 @@ func (analyser *LegacyBurndownAnalysis) finalizeFiles(
 			continue
 		}
 
-		histories[key], _ = analyser.groupSparseHistory(history, lastTick)
 		file := analyser.files[key]
+		if file == nil {
+			continue
+		}
+
+		histories[key], _ = analyser.groupSparseHistory(history, lastTick)
 		previousLine := 0
 		previousAuthor := core.AuthorMissing
 		ownership := map[int]int{}
@@ -1024,6 +1041,14 @@ func (analyser *LegacyBurndownAnalysis) packPersonWithTick(person, tick int) int
 	return result
 }
 
+func (analyser *LegacyBurndownAnalysis) packChangePersonWithTick(person, tick int) int {
+	if tick == linehistory.TreeMergeMark {
+		return linehistory.TreeMergeMark
+	}
+
+	return analyser.packPersonWithTick(person, tick)
+}
+
 func (analyser *LegacyBurndownAnalysis) validatePackedOwnership(person, tick int) error {
 	if tick < 0 || tick >= linehistory.TreeMergeMark {
 		return fmt.Errorf(
@@ -1175,11 +1200,15 @@ func (analyser *LegacyBurndownAnalysis) newFile(
 	if analyser.TrackFiles {
 		history := analyser.fileHistories[name]
 		if history == nil {
-			// can be not nil if the file was created in a future branch
-			history = sparseHistory{}
+			history = analyser.deletedFileHistories[name]
+			if history == nil {
+				// can be not nil if the file was created in a future branch
+				history = sparseHistory{}
+			}
 		}
 
 		analyser.fileHistories[name] = history
+		delete(analyser.deletedFileHistories, name)
 
 		updaters = append(updaters, func(_ *linehistory.File, currentTime, previousTime, delta int) {
 			analyser.updateFile(history, currentTime, previousTime, delta)
@@ -1189,7 +1218,7 @@ func (analyser *LegacyBurndownAnalysis) newFile(
 	if analyser.PeopleNumber > 0 {
 		updaters = append(updaters, analyser.updateAuthor)
 		updaters = append(updaters, analyser.updateChurnMatrix)
-		tick = analyser.packPersonWithTick(author, tick)
+		tick = analyser.packChangePersonWithTick(author, tick)
 	}
 
 	return linehistory.NewFile(0, tick, size, analyser.fileAllocator, updaters...)
@@ -1242,6 +1271,15 @@ func (analyser *LegacyBurndownAnalysis) handleDeletion(
 	blob := cache[change.From.TreeEntry.Hash]
 
 	lines, err := blob.CountLines()
+	if errors.Is(err, items.ErrBinary) {
+		if exists && file.Len() != 0 {
+			return fmt.Errorf("%w: %s", errPreviousFileBecameBinary, name)
+		}
+
+		lines = 0
+		err = nil
+	}
+
 	if exists && err != nil {
 		return fmt.Errorf("%w: %s", errPreviousFileBecameBinary, name)
 	}
@@ -1249,21 +1287,21 @@ func (analyser *LegacyBurndownAnalysis) handleDeletion(
 	if !exists {
 		return nil
 	}
-	// Parallel independent file removals are incorrectly handled. The solution seems to be quite
-	// complex, but feel free to suggest your ideas.
-	// These edge cases happen *very* rarely, so we don't bother for now.
 	tick := analyser.tick
 	// Are we merging and this file has never been actually deleted in any branch?
 	if analyser.tick == linehistory.TreeMergeMark && !analyser.deletions[name] {
 		tick = 0
-		// Early removal in one branch with pre-merge changes in another is not handled correctly.
 	}
 
 	analyser.deletions[name] = true
-	file.Update(analyser.packPersonWithTick(author, tick), 0, 0, lines)
+	file.Update(analyser.packChangePersonWithTick(author, tick), 0, 0, lines)
 	file.Delete()
 	delete(analyser.files, name)
-	delete(analyser.fileHistories, name)
+
+	if history := analyser.fileHistories[name]; history != nil {
+		analyser.deletedFileHistories[name] = history
+		delete(analyser.fileHistories, name)
+	}
 
 	analyser.clearRenameChain(name)
 
@@ -1275,12 +1313,20 @@ func (analyser *LegacyBurndownAnalysis) handleDeletion(
 }
 
 func (analyser *LegacyBurndownAnalysis) clearRenameChain(name string) {
+	delete(analyser.renames, "")
+
 	stack := []string{name}
+	visited := map[string]bool{}
 	for len(stack) > 0 {
 		head := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
 
-		analyser.renames[head] = "" // TODO delete instead of zero value
+		if head == "" || visited[head] {
+			continue
+		}
+
+		visited[head] = true
+		delete(analyser.renames, head)
 		for key, val := range analyser.renames {
 			if val == head {
 				stack = append(stack, key)
@@ -1293,6 +1339,8 @@ func (analyser *LegacyBurndownAnalysis) handleModification(
 	change *object.Change, author int, cache map[plumbing.Hash]*items.CachedBlob,
 	diffs map[string]items.FileDiffData,
 ) error {
+	analyser.restoreDeletedFileHistory(change.From.Name)
+
 	if analyser.tick == linehistory.TreeMergeMark {
 		analyser.mergedFiles[change.To.Name] = true
 	}
@@ -1339,20 +1387,48 @@ func (analyser *LegacyBurndownAnalysis) handleModification(
 	return nil
 }
 
+func (analyser *LegacyBurndownAnalysis) restoreDeletedFileHistory(name string) {
+	if !analyser.TrackFiles || analyser.fileHistories[name] != nil {
+		return
+	}
+
+	if history := analyser.deletedFileHistories[name]; history != nil {
+		analyser.fileHistories[name] = history
+		delete(analyser.deletedFileHistories, name)
+	}
+}
+
 func (analyser *LegacyBurndownAnalysis) handleBinaryModification(
 	change *object.Change, author int, cache map[plumbing.Hash]*items.CachedBlob,
 ) (bool, error) {
 	_, errFrom := cache[change.From.TreeEntry.Hash].CountLines()
 
-	_, errTo := cache[change.To.TreeEntry.Hash].CountLines()
+	toLines, errTo := cache[change.To.TreeEntry.Hash].CountLines()
 	if !errors.Is(errFrom, errTo) {
-		if errFrom != nil {
-			// The file is no longer binary.
-			return true, analyser.handleInsertion(change, author, cache)
+		file := analyser.files[change.To.Name]
+		if errors.Is(errFrom, items.ErrBinary) {
+			if file == nil {
+				return true, analyser.handleInsertion(change, author, cache)
+			}
+
+			file.Update(analyser.packChangePersonWithTick(author, analyser.tick), 0, toLines, file.Len())
+
+			return true, nil
 		}
 
-		// The file became binary.
-		return true, analyser.handleDeletion(change, author, cache)
+		if errFrom != nil {
+			return true, fmt.Errorf("count lines in previous version of %s: %w", change.From.Name, errFrom)
+		}
+
+		if !errors.Is(errTo, items.ErrBinary) {
+			return true, fmt.Errorf("count lines in new version of %s: %w", change.To.Name, errTo)
+		}
+
+		if file != nil {
+			file.Update(analyser.packChangePersonWithTick(author, analyser.tick), 0, 0, file.Len())
+		}
+
+		return true, nil
 	}
 
 	if errFrom == nil {
@@ -1414,7 +1490,7 @@ func (state *legacyDiffState) process(edit diffmatchpatch.Diff) error {
 		}
 
 		state.file.Update(
-			state.analyser.packPersonWithTick(state.author, state.analyser.tick),
+			state.analyser.packChangePersonWithTick(state.author, state.analyser.tick),
 			state.position, length, utf8.RuneCountInString(state.pending.Text),
 		)
 
@@ -1446,7 +1522,7 @@ func (state *legacyDiffState) flush() {
 
 	length := utf8.RuneCountInString(state.pending.Text)
 
-	packed := state.analyser.packPersonWithTick(state.author, state.analyser.tick)
+	packed := state.analyser.packChangePersonWithTick(state.author, state.analyser.tick)
 	if state.pending.Type == diffmatchpatch.DiffInsert {
 		state.file.Update(packed, state.position, length, 0)
 		state.position += length
@@ -1533,8 +1609,16 @@ func (analyser *LegacyBurndownAnalysis) historyAfterRename(sourceName, targetNam
 }
 
 func (analyser *LegacyBurndownAnalysis) futureHistoryName(sourceName string, known map[string]bool) string {
+	if sourceName == "" {
+		return ""
+	}
+
 	future, exists := analyser.renames[sourceName]
 	for exists {
+		if future == "" {
+			return ""
+		}
+
 		next, nextExists := analyser.renames[future]
 		if !nextExists {
 			return future

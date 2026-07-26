@@ -332,38 +332,17 @@ and deterministic-output fixtures cover the contract.
 
 ### CORE-07: Define line-history behavior for binary transitions and branch deletions
 
-Affected code:
+Status: completed 2026-07-26
 
-- `internal/linehistory/line_history.go`
-- `internal/linehistory/line_history_test.go`
-- `leaves/burndown_legacy.go`
-- line-history consumers that interpret insertion and deletion events
-
-Work:
-
-- Define whether a tracked path keeps its file identity and history across
-  text→binary→text transitions.
-- Replace the current text→binary shortcut through ordinary file deletion with transition-specific
-  behavior that preserves the chosen identity and event semantics.
-- Ensure binary→text reconstruction neither loses prior ownership unexpectedly nor double-counts
-  the file as both deleted and newly inserted.
-- Correct merge handling when one branch deletes a file while another independently edits it.
-- Make legacy-burndown rename-chain cleanup delete map entries rather than leaving empty-string
-  tombstones, and prove that an empty path cannot enter rename traversal.
-
-Tests:
-
-- text→binary, binary→text, and text→binary→text;
-- each transition combined with a rename;
-- deletion on one branch and modification on another before merge;
-- rename cycles and deletion after a rename chain;
-- emitted file IDs, ownership deltas, and downstream burndown/churn totals.
-
-Acceptance criteria:
-
-- [ ] transition and merge behavior is documented and identical across line-history consumers;
-- [ ] no valid sequence loses a live branch's state or creates a synthetic empty filename;
-- [ ] file IDs and line totals satisfy the documented invariants after every transition.
+Tracked text files now retain one file ID as a zero-line placeholder while binary: text→binary
+removes visible ownership without a deletion sentinel, and binary→text reconstructs visible lines
+under the transition author without allocating a second identity. Renames preserve that contract.
+Merge commits stage line edits with merge markers, reuse abandoned IDs, resolve ownership from live
+parents, and synchronize every branch, including deletion-versus-edit histories. Modern and legacy
+Burndown retain restorable per-file histories across branch-local deletion; Code Churn receives only
+the documented ownership deltas. Legacy rename cleanup deletes graph entries cycle-safely and
+rejects empty-path traversal. Transition, rename, binary deletion, merge, downstream-total,
+hibernation-state, cycle, and rename-chain deletion fixtures cover the invariants.
 
 ## Phase 4 — Harden readers, formats, and report generation
 
@@ -855,15 +834,15 @@ sources were classified separately.
 | --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | Graph ordering in `internal/toposort/toposort.go` and `internal/core/pipeline.go` | One issue; covered by `CORE-01`.                                                                                                       |
 | Negative-value clamping in `internal/yaml/utils.go`                               | Resolved by `METRIC-10`; valid burndown histories are checked before serialization and no longer request clamping.                     |
-| Text/binary conversion in `internal/linehistory/line_history.go`                  | Correct transition semantics and downstream invariants are covered by `CORE-07` and `METRIC-10`.                                       |
+| Text/binary conversion in `internal/linehistory/line_history.go`                  | Resolved by `CORE-07`; tracked files retain identity through an explicit zero-line binary state.                                      |
 | Code Churn description and constant reinforcement factor in `leaves/codechurn.go` | Resolved by `METRIC-09`; the experimental equations and output contract are documented and hand-tested.                                |
-| Empty-string rename tombstones in `leaves/burndown_legacy.go`                     | Covered by `CORE-07`; test rename chains and cycles before changing the map behavior.                                                  |
+| Empty-string rename tombstones in `leaves/burndown_legacy.go`                     | Resolved by `CORE-07`; cycle-safe cleanup deletes entries and excludes empty paths from traversal.                                    |
 | Ignored survival flag and placeholder Kaplan–Meier output in the renderer         | One parity gap; covered by `DATA-07`.                                                                                                  |
 | RB-tree “delay creating” comment in `internal/rbtree/rbtree.go`                   | Resolved by `CORE-06`; the stale marker is removed and duplicate inserts are proven not to allocate.                                  |
 | Plugin-template description text                                                  | Intentional generated-code customization point, not Hercules backlog. Keep it unless `DATA-05` replaces it with a generator parameter. |
 | `LineHistory` loader replay gap                                                   | Resolved by `CORE-04`; replay reconstructs live ownership and `ScanFile` is lifecycle-tested.                                           |
 | Packed tick/author “hack” comments                                                | Resolved by `CORE-05`; configured capacity is checked before execution and custom inputs return typed errors without process exit.      |
-| Parallel branch deletion comments in line history and legacy burndown             | Folded into the merge cases in `CORE-07`.                                                                                              |
+| Parallel branch deletion comments in line history and legacy burndown             | Resolved by `CORE-07`; merge markers preserve the live edited branch and synchronize all parents.                                    |
 | Basic `FloorDateTime` implementation                                              | Include in the historical-renderer comparison under `DATA-07`.                                                                         |
 | `XXX_*` protobuf members and LZ4 `DEBUGLOG` macros                                | Generated/vendored API names, not task markers; do not edit them by hand.                                                              |
 

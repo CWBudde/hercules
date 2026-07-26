@@ -476,26 +476,15 @@ full-rescan shape and reports changed runs, snapshot entries, stable files, allo
 
 ### PERF-04: Bound blob and rename processing
 
-Affected code:
+Status: completed 2026-07-26.
 
-- `internal/plumbing/blob_cache.go`
-- `internal/plumbing/renames.go`
-- import extraction worker lifecycle
-
-Work:
-
-- Introduce maximum blob size and total per-commit cache budgets with configurable behavior.
-- Avoid pre-growing buffers directly from untrusted declared sizes without a limit.
-- Give rename comparisons a shared context/deadline.
-- Replace the hardcoded one-hour diff timeout.
-- Buffer the worker error channel and cancel peer work on error.
-- Ensure import workers are closed on every return path; consider a reusable bounded pool.
-
-Acceptance criteria:
-
-- [ ] configured time and memory limits are real upper bounds;
-- [ ] rename errors cannot deadlock;
-- [ ] worker-leak tests pass under `-race`.
+Blob caching now rejects declared sizes before allocation, enforces configurable 100 MiB per-blob
+and 512 MiB per-commit defaults, reads into exact bounded storage, and fails closed with typed
+errors. Both rename directions share the configured commit deadline; nested diffs use its remaining
+time, peer completion cancels the other direction, and a two-result buffered join prevents
+simultaneous errors from deadlocking. Import workers have one deferred close-and-join lifecycle on
+all returns. Hostile-size, aggregate-budget, deadline, simultaneous-error, and worker-exit
+regressions pass under the race detector.
 
 ## Phase 6 — Isolate configuration and simplify architecture
 

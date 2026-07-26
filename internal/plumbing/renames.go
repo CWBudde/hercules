@@ -1,12 +1,12 @@
 package plumbing
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"path/filepath"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -263,7 +263,8 @@ func classifyRenameBlobs(
 // This function returns the mapping with analysis results. The keys must be the same as
 // in Provides(). If there was an error, nil is returned.
 func (ra *RenameAnalysis) Consume(deps map[string]any) (map[string]any, error) {
-	beginTime := time.Now()
+	ctx, cancel := context.WithTimeout(context.Background(), ra.Timeout)
+	defer cancel()
 
 	changes, err := dependencyValue[object.Changes](deps, DependencyTreeChanges)
 	if err != nil {
@@ -291,7 +292,7 @@ func (ra *RenameAnalysis) Consume(deps map[string]any) (map[string]any, error) {
 	addedBlobs, deletedBlobs, smallChanges := classifyRenameBlobs(stillAdded, stillDeleted, cache)
 
 	matches, addedBlobs, deletedBlobs, err := ra.matchSimilarRenames(
-		beginTime, addedBlobs, deletedBlobs, cache, maxCandidates, changes.Len(),
+		ctx, addedBlobs, deletedBlobs, cache, maxCandidates,
 	)
 	if err != nil {
 		return nil, err
@@ -329,7 +330,7 @@ func appendRenameResults(
 }
 
 type renameCandidateMatcher func(
-	*CachedBlob, []int, sortableBlobs, map[plumbing.Hash]*CachedBlob, int, <-chan bool,
+	context.Context, *CachedBlob, []int, sortableBlobs, map[plumbing.Hash]*CachedBlob, int,
 ) (int, error)
 
 func renameBlobHash(blob sortableBlob, deleted bool) plumbing.Hash {
@@ -371,101 +372,116 @@ func (ra *RenameAnalysis) Fork(n int) []core.PipelineItem {
 }
 
 func (ra *RenameAnalysis) matchSimilarRenames(
-	beginTime time.Time,
+	ctx context.Context,
 	addedBlobs, deletedBlobs sortableBlobs,
 	cache map[plumbing.Hash]*CachedBlob,
-	maxCandidates, changeCount int,
+	maxCandidates int,
 ) (object.Changes, sortableBlobs, sortableBlobs, error) {
-	finished := make(chan bool, 2)
-	finishedA := make(chan bool, 1)
-	finishedB := make(chan bool, 1)
-	errs := make(chan error)
-	matchesA := make(object.Changes, 0, changeCount)
-	matchesB := make(object.Changes, 0, changeCount)
-	addedBlobsA := addedBlobs
-	deletedBlobsA := deletedBlobs
-	addedBlobsB := cloneSortableBlobs(addedBlobs)
-	deletedBlobsB := cloneSortableBlobs(deletedBlobs)
-
-	waitGroup := sync.WaitGroup{}
-	matchA := func() {
-		defer func() { finished <- true; waitGroup.Done() }()
-
-		matchesA, addedBlobsA, deletedBlobsA = ra.matchDeletedBlobs(
-			beginTime, addedBlobsA, deletedBlobsA, cache, maxCandidates, finished, errs,
+	first, second := runRenameWorkers(ctx, func(workerCtx context.Context) renameMatchResult {
+		matches, added, deleted, err := ra.matchDeletedBlobs(
+			workerCtx, addedBlobs, deletedBlobs, cache, maxCandidates,
 		)
 
-		finishedA <- true
-	}
-	matchB := func() {
-		defer func() { finished <- true; waitGroup.Done() }()
-
-		matchesB, addedBlobsB, deletedBlobsB = ra.matchAddedBlobs(
-			beginTime, addedBlobsB, deletedBlobsB, cache, maxCandidates, finished, errs,
+		return renameMatchResult{matches, added, deleted, err}
+	}, func(workerCtx context.Context) renameMatchResult {
+		matches, added, deleted, err := ra.matchAddedBlobs(
+			workerCtx,
+			cloneSortableBlobs(addedBlobs),
+			cloneSortableBlobs(deletedBlobs),
+			cache,
+			maxCandidates,
 		)
 
-		finishedB <- true
+		return renameMatchResult{matches, added, deleted, err}
+	})
+
+	if first.err != nil {
+		return nil, nil, nil, first.err
 	}
-	// run two functions in parallel, and take the result from the one which finished earlier
-	waitGroup.Add(2)
-
-	go matchA()
-	go matchB()
-
-	waitGroup.Wait()
-	var matches object.Changes
-
-	select {
-	case err := <-errs:
-		return nil, nil, nil, err
-	case <-finishedA:
-		addedBlobs = addedBlobsA
-		deletedBlobs = deletedBlobsA
-		matches = matchesA
-	case <-finishedB:
-		addedBlobs = addedBlobsB
-		deletedBlobs = deletedBlobsB
-		matches = matchesB
-	default:
-		panic("Impossible happened: two functions returned without an error " +
-			"but no results from both")
+	if second.err != nil && !isRenameCancellation(second.err) {
+		return nil, nil, nil, second.err
 	}
 
-	return matches, addedBlobs, deletedBlobs, nil
+	return first.matches, first.added, first.deleted, nil
+}
+
+type renameMatchResult struct {
+	matches object.Changes
+	added   sortableBlobs
+	deleted sortableBlobs
+	err     error
+}
+
+type renameWorker func(context.Context) renameMatchResult
+
+func runRenameWorkers(
+	ctx context.Context, firstWorker, secondWorker renameWorker,
+) (renameMatchResult, renameMatchResult) {
+	workerCtx, cancelWorkers := context.WithCancel(ctx)
+	defer cancelWorkers()
+
+	// The channel holds both terminal results, so simultaneous worker failures cannot block.
+	results := make(chan renameMatchResult, 2)
+
+	for _, worker := range []renameWorker{firstWorker, secondWorker} {
+		go func() {
+			results <- worker(workerCtx)
+		}()
+	}
+
+	// Use the direction which completes first and cancel its peer, but join both before returning.
+	first := <-results
+
+	cancelWorkers()
+
+	second := <-results
+
+	return first, second
+}
+
+func isRenameCancellation(err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }
 
 func (ra *RenameAnalysis) matchDeletedBlobs(
-	start time.Time, added, deleted sortableBlobs,
-	cache map[plumbing.Hash]*CachedBlob, maxCandidates int,
-	finished <-chan bool, errs chan<- error,
-) (object.Changes, sortableBlobs, sortableBlobs) {
+	ctx context.Context,
+	added, deleted sortableBlobs,
+	cache map[plumbing.Hash]*CachedBlob,
+	maxCandidates int,
+) (object.Changes, sortableBlobs, sortableBlobs, error) {
 	return ra.matchBlobs(
-		start, added, deleted, cache, maxCandidates, finished, errs, true,
+		ctx, added, deleted, cache, maxCandidates, true,
 	)
 }
 
 func (ra *RenameAnalysis) matchAddedBlobs(
-	start time.Time, added, deleted sortableBlobs,
-	cache map[plumbing.Hash]*CachedBlob, maxCandidates int,
-	finished <-chan bool, errs chan<- error,
-) (object.Changes, sortableBlobs, sortableBlobs) {
+	ctx context.Context,
+	added, deleted sortableBlobs,
+	cache map[plumbing.Hash]*CachedBlob,
+	maxCandidates int,
+) (object.Changes, sortableBlobs, sortableBlobs, error) {
 	return ra.matchBlobs(
-		start, added, deleted, cache, maxCandidates, finished, errs, false,
+		ctx, added, deleted, cache, maxCandidates, false,
 	)
 }
 
 func (ra *RenameAnalysis) matchBlobs(
-	start time.Time, added, deleted sortableBlobs,
-	cache map[plumbing.Hash]*CachedBlob, maxCandidates int,
-	finished <-chan bool, errs chan<- error, matchDeleted bool,
-) (object.Changes, sortableBlobs, sortableBlobs) {
+	ctx context.Context,
+	added, deleted sortableBlobs,
+	cache map[plumbing.Hash]*CachedBlob,
+	maxCandidates int,
+	matchDeleted bool,
+) (object.Changes, sortableBlobs, sortableBlobs, error) {
 	var matches object.Changes
 	primary, secondary, matchCandidate := ra.renameMatchDirection(added, deleted, matchDeleted)
 
 	secondaryStart := 0
 
-	for primaryIndex := 0; primaryIndex < primary.Len() &&
-		time.Since(start) < ra.Timeout; primaryIndex++ {
+	for primaryIndex := 0; primaryIndex < primary.Len(); primaryIndex++ {
+		if ctx.Err() != nil {
+			break
+		}
+
 		blob := cache[renameBlobHash(primary[primaryIndex], matchDeleted)]
 		size := primary[primaryIndex].size
 
@@ -485,10 +501,13 @@ func (ra *RenameAnalysis) matchBlobs(
 			},
 		)
 
-		match, err := matchCandidate(blob, candidates, secondary, cache, maxCandidates, finished)
+		match, err := matchCandidate(ctx, blob, candidates, secondary, cache, maxCandidates)
 		if err != nil {
-			errs <- err
-			return matches, added, deleted
+			if isRenameCancellation(err) {
+				break
+			}
+
+			return nil, nil, nil, err
 		}
 
 		if match >= 0 {
@@ -501,10 +520,10 @@ func (ra *RenameAnalysis) matchBlobs(
 	}
 
 	if matchDeleted {
-		return matches, secondary, primary
+		return matches, secondary, primary, nil
 	}
 
-	return matches, primary, secondary
+	return matches, primary, secondary, nil
 }
 
 func (ra *RenameAnalysis) renameMatchDirection(
@@ -518,13 +537,17 @@ func (ra *RenameAnalysis) renameMatchDirection(
 }
 
 func (ra *RenameAnalysis) matchDeletedCandidate(
-	blob *CachedBlob, candidates []int, added sortableBlobs,
-	cache map[plumbing.Hash]*CachedBlob, limit int, finished <-chan bool,
+	ctx context.Context,
+	blob *CachedBlob,
+	candidates []int,
+	added sortableBlobs,
+	cache map[plumbing.Hash]*CachedBlob,
+	limit int,
 ) (int, error) {
 	for candidateIndex, index := range candidates {
 		select {
-		case <-finished:
-			return -1, nil
+		case <-ctx.Done():
+			return -1, fmt.Errorf("match deleted rename candidate: %w", ctx.Err())
 		default:
 		}
 
@@ -532,7 +555,9 @@ func (ra *RenameAnalysis) matchDeletedCandidate(
 			break
 		}
 
-		areClose, err := ra.blobsAreClose(blob, cache[added[index].change.To.TreeEntry.Hash])
+		areClose, err := ra.blobsAreCloseContext(
+			ctx, blob, cache[added[index].change.To.TreeEntry.Hash],
+		)
 		if err != nil {
 			return -1, err
 		}
@@ -546,13 +571,17 @@ func (ra *RenameAnalysis) matchDeletedCandidate(
 }
 
 func (ra *RenameAnalysis) matchAddedCandidate(
-	blob *CachedBlob, candidates []int, deleted sortableBlobs,
-	cache map[plumbing.Hash]*CachedBlob, limit int, finished <-chan bool,
+	ctx context.Context,
+	blob *CachedBlob,
+	candidates []int,
+	deleted sortableBlobs,
+	cache map[plumbing.Hash]*CachedBlob,
+	limit int,
 ) (int, error) {
 	for candidateIndex, index := range candidates {
 		select {
-		case <-finished:
-			return -1, nil
+		case <-ctx.Done():
+			return -1, fmt.Errorf("match added rename candidate: %w", ctx.Err())
 		default:
 		}
 
@@ -560,7 +589,9 @@ func (ra *RenameAnalysis) matchAddedCandidate(
 			break
 		}
 
-		areClose, err := ra.blobsAreClose(blob, cache[deleted[index].change.From.TreeEntry.Hash])
+		areClose, err := ra.blobsAreCloseContext(
+			ctx, blob, cache[deleted[index].change.From.TreeEntry.Hash],
+		)
 		if err != nil || areClose {
 			if areClose {
 				return index, err
@@ -579,8 +610,26 @@ func (ra *RenameAnalysis) sizesAreClose(size1, size2 int64) bool {
 }
 
 func (ra *RenameAnalysis) blobsAreClose(blob1, blob2 *CachedBlob) (bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), ra.Timeout)
+	defer cancel()
+
+	return ra.blobsAreCloseContext(ctx, blob1, blob2)
+}
+
+func (ra *RenameAnalysis) blobsAreCloseContext(
+	ctx context.Context, blob1, blob2 *CachedBlob,
+) (bool, error) {
 	cleanReturn := false
-	defer ra.warnUncleanBlobComparison(&cleanReturn, blob1, blob2)
+
+	defer func() {
+		if ctx.Err() == nil {
+			ra.warnUncleanBlobComparison(&cleanReturn, blob1, blob2)
+		}
+	}()
+
+	if err := ctx.Err(); err != nil {
+		return false, fmt.Errorf("compare rename blobs: %w", err)
+	}
 
 	if binary, similar := ra.binaryBlobsAreClose(blob1, blob2); binary {
 		cleanReturn = true
@@ -588,70 +637,161 @@ func (ra *RenameAnalysis) blobsAreClose(blob1, blob2 *CachedBlob) (bool, error) 
 	}
 
 	src, dst := string(blob1.Data), string(blob2.Data)
+
+	diffs, srcPositions, dstPositions, err := renameLineDiffs(ctx, src, dst)
+	if err != nil {
+		return false, err
+	}
+
+	similar, err := ra.renameDiffSimilarity(ctx, src, dst, diffs, srcPositions, dstPositions)
+	if err != nil {
+		return false, err
+	}
+
+	cleanReturn = true
+
+	return similar, nil
+}
+
+type renameSimilarityState struct {
+	common              int
+	posSrc              int
+	prevPosSrc          int
+	posDst              int
+	possibleDelInsBlock bool
+}
+
+func (ra *RenameAnalysis) renameDiffSimilarity(
+	ctx context.Context,
+	src, dst string,
+	diffs []diffmatchpatch.Diff,
+	srcPositions, dstPositions []int,
+) (bool, error) {
+	state := renameSimilarityState{}
 	maxSize := internal.Max(1, internal.Max(utf8.RuneCountInString(src), utf8.RuneCountInString(dst)))
 
-	diffs, srcPositions, dstPositions := renameLineDiffs(src, dst)
-	var common, posSrc, prevPosSrc, posDst int
-	possibleDelInsBlock := false
-
 	for _, edit := range diffs {
-		switch edit.Type {
-		case diffmatchpatch.DiffDelete:
-			possibleDelInsBlock = true
-			prevPosSrc = posSrc
-			posSrc += utf8.RuneCountInString(edit.Text)
-		case diffmatchpatch.DiffInsert:
-			nextPosDst := posDst + utf8.RuneCountInString(edit.Text)
-
-			if possibleDelInsBlock {
-				possibleDelInsBlock = false
-				common += delInsCommonRunes(
-					src, dst, srcPositions, dstPositions, prevPosSrc, posSrc, posDst, nextPosDst,
-				)
-			}
-
-			posDst = nextPosDst
-		case diffmatchpatch.DiffEqual:
-			possibleDelInsBlock = false
-			step := utf8.RuneCountInString(edit.Text)
-			// for i := range edit.Text does *not* work
-			// idk why, but `i` appears to be bigger than the number of runes
-			for i := range step {
-				common += srcPositions[posSrc+i+1] - srcPositions[posSrc+i]
-			}
-
-			posSrc += step
-			posDst += step
+		if err := ctx.Err(); err != nil {
+			return false, fmt.Errorf("evaluate rename similarity: %w", err)
 		}
 
-		if possibleDelInsBlock {
+		err := state.applyEdit(ctx, edit, src, dst, srcPositions, dstPositions)
+		if err != nil {
+			return false, err
+		}
+
+		if state.possibleDelInsBlock {
 			continue
 		}
+
 		// supposing that the rest of the lines are the same (they are not - too optimistic),
 		// estimate the maximum similarity and exit the loop if it lower than our threshold
 		if decided, similar := ra.similarityDecision(
-			common, maxSize, len(src)-srcPositions[posSrc], len(dst)-dstPositions[posDst],
+			state.common,
+			maxSize,
+			len(src)-srcPositions[state.posSrc],
+			len(dst)-dstPositions[state.posDst],
 		); decided {
-			cleanReturn = true
 			return similar, nil
 		}
 	}
+
 	// the very last "overly optimistic" estimate was actually precise, so since we are still here
 	// the blobs are similar
-	cleanReturn = true
-
 	return true, nil
 }
 
-func renameLineDiffs(src, dst string) ([]diffmatchpatch.Diff, []int, []int) {
+func (state *renameSimilarityState) applyEdit(
+	ctx context.Context,
+	edit diffmatchpatch.Diff,
+	src, dst string,
+	srcPositions, dstPositions []int,
+) error {
+	switch edit.Type {
+	case diffmatchpatch.DiffDelete:
+		state.possibleDelInsBlock = true
+		state.prevPosSrc = state.posSrc
+		state.posSrc += utf8.RuneCountInString(edit.Text)
+	case diffmatchpatch.DiffInsert:
+		nextPosDst := state.posDst + utf8.RuneCountInString(edit.Text)
+		if state.possibleDelInsBlock {
+			state.possibleDelInsBlock = false
+
+			localCommon, err := delInsCommonRunes(
+				ctx,
+				src,
+				dst,
+				srcPositions,
+				dstPositions,
+				state.prevPosSrc,
+				state.posSrc,
+				state.posDst,
+				nextPosDst,
+			)
+			if err != nil {
+				return err
+			}
+
+			state.common += localCommon
+		}
+
+		state.posDst = nextPosDst
+	case diffmatchpatch.DiffEqual:
+		state.applyEqual(edit.Text, srcPositions)
+	}
+
+	return nil
+}
+
+func (state *renameSimilarityState) applyEqual(text string, srcPositions []int) {
+	state.possibleDelInsBlock = false
+	step := utf8.RuneCountInString(text)
+
+	// Ranging over text does not work here because its indices are byte offsets, not rune offsets.
+	for index := range step {
+		state.common += srcPositions[state.posSrc+index+1] - srcPositions[state.posSrc+index]
+	}
+
+	state.posSrc += step
+	state.posDst += step
+}
+
+func renameLineDiffs(
+	ctx context.Context, src, dst string,
+) ([]diffmatchpatch.Diff, []int, []int, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, nil, nil, fmt.Errorf("prepare rename line diff: %w", err)
+	}
+
 	// Compute the line-by-line diff, then the char-level diffs of the del-ins blocks.
 	// The ignored []string mapping is approximate and collides for huge files.
 	dmp := diffmatchpatch.New()
-	dmp.DiffTimeout = time.Hour
+	dmp.DiffTimeout = remainingRenameTime(ctx)
 	srcLineRunes, dstLineRunes, _ := dmp.DiffLinesToRunes(src, dst)
-	diffs := dmp.DiffMainRunes(srcLineRunes, dstLineRunes, false)
+	if err := ctx.Err(); err != nil {
+		return nil, nil, nil, fmt.Errorf("encode rename line diff: %w", err)
+	}
 
-	return diffs, calcLinePositions(src), calcLinePositions(dst)
+	diffs := dmp.DiffMainRunes(srcLineRunes, dstLineRunes, false)
+	if err := ctx.Err(); err != nil {
+		return nil, nil, nil, fmt.Errorf("compute rename line diff: %w", err)
+	}
+
+	return diffs, calcLinePositions(src), calcLinePositions(dst), nil
+}
+
+func remainingRenameTime(ctx context.Context) time.Duration {
+	deadline, exists := ctx.Deadline()
+	if !exists {
+		return time.Duration(RenameAnalysisDefaultTimeout) * time.Millisecond
+	}
+
+	remaining := time.Until(deadline)
+	if remaining <= 0 {
+		return time.Nanosecond
+	}
+
+	return remaining
 }
 
 func (ra *RenameAnalysis) warnUncleanBlobComparison(cleanReturn *bool, blob1, blob2 *CachedBlob) {
@@ -690,23 +830,34 @@ func (ra *RenameAnalysis) similarityDecision(common, maxSize, srcPendingSize, ds
 	return false, false
 }
 
-func delInsCommonRunes(src, dst string, srcPositions, dstPositions []int,
+func delInsCommonRunes(
+	ctx context.Context,
+	src, dst string,
+	srcPositions, dstPositions []int,
 	prevPosSrc, posSrc, posDst, nextPosDst int,
-) int {
+) (int, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, fmt.Errorf("prepare byte-level rename diff: %w", err)
+	}
+
 	srcSize := srcPositions[posSrc] - srcPositions[prevPosSrc]
 
 	dstSize := dstPositions[nextPosDst] - dstPositions[posDst]
 	if internal.Max(srcSize, dstSize) >= RenameAnalysisByteDiffSizeThreshold {
-		return 0
+		return 0, nil
 	}
 
 	localDmp := diffmatchpatch.New()
-	localDmp.DiffTimeout = time.Hour
+	localDmp.DiffTimeout = remainingRenameTime(ctx)
 	localSrc := src[srcPositions[prevPosSrc]:srcPositions[posSrc]]
 	localDst := dst[dstPositions[posDst]:dstPositions[nextPosDst]]
 	localDiffs := localDmp.DiffMainRunes(
 		strToLiteralRunes(localSrc), strToLiteralRunes(localDst), false,
 	)
+	if err := ctx.Err(); err != nil {
+		return 0, fmt.Errorf("compute byte-level rename diff: %w", err)
+	}
+
 	common := 0
 
 	for _, localEdit := range localDiffs {
@@ -715,7 +866,7 @@ func delInsCommonRunes(src, dst string, srcPositions, dstPositions []int,
 		}
 	}
 
-	return common
+	return common, nil
 }
 
 func calcLinePositions(text string) []int {

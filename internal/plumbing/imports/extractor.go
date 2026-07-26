@@ -151,19 +151,10 @@ func (ex *Extractor) Consume(deps map[string]any) (map[string]any, error) {
 	}
 
 	result := map[gitplumbing.Hash]lang.File{}
-	jobs := make(chan *object.Change, ex.Goroutines)
 	resultSync := sync.Mutex{}
-	waitGroup := sync.WaitGroup{}
-	waitGroup.Add(ex.Goroutines)
-
-	for range ex.Goroutines {
-		go extractImports(ex, jobs, cache, result, &resultSync, &waitGroup)
-	}
-
-	err := enqueueImportChanges(changes, jobs)
-	close(jobs)
-	waitGroup.Wait()
-
+	err := runImportWorkers(ex.Goroutines, changes, func(jobs <-chan *object.Change) {
+		extractImports(ex, jobs, cache, result, &resultSync)
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -177,10 +168,7 @@ func extractImports(
 	cache map[gitplumbing.Hash]*plumbing.CachedBlob,
 	result map[gitplumbing.Hash]lang.File,
 	resultSync *sync.Mutex,
-	waitGroup *sync.WaitGroup,
 ) {
-	defer waitGroup.Done()
-
 	for change := range jobs {
 		blob := cache[change.To.TreeEntry.Hash]
 		if blob.Size > int64(extractor.MaxFileSize) {
@@ -203,6 +191,32 @@ func extractImports(
 		result[change.To.TreeEntry.Hash] = *file
 		resultSync.Unlock()
 	}
+}
+
+func runImportWorkers(
+	workerCount int,
+	changes object.Changes,
+	worker func(<-chan *object.Change),
+) error {
+	jobs := make(chan *object.Change, workerCount)
+	waitGroup := sync.WaitGroup{}
+	waitGroup.Add(workerCount)
+
+	for range workerCount {
+		go func() {
+			defer waitGroup.Done()
+
+			worker(jobs)
+		}()
+	}
+
+	// Keep shutdown next to startup so every future return path joins all workers.
+	defer func() {
+		close(jobs)
+		waitGroup.Wait()
+	}()
+
+	return enqueueImportChanges(changes, jobs)
 }
 
 func enqueueImportChanges(changes object.Changes, jobs chan<- *object.Change) error {

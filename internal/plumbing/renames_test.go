@@ -3,6 +3,8 @@ package plumbing
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
+	"errors"
 	"io"
 	"os"
 	"path"
@@ -18,6 +20,8 @@ import (
 	"github.com/cwbudde/hercules/internal/core"
 	"github.com/cwbudde/hercules/internal/test"
 )
+
+var errTestRenameWorker = errors.New("rename worker failed")
 
 func fixtureRenameAnalysis() *RenameAnalysis {
 	ra := RenameAnalysis{SimilarityThreshold: 80}
@@ -209,6 +213,46 @@ func TestRenameAnalysisSizesAreClose(t *testing.T) {
 	assert.True(t, ra.sizesAreClose(941, 1150))
 	assert.True(t, ra.sizesAreClose(941, 803))
 	assert.False(t, ra.sizesAreClose(1320, 1668))
+}
+
+func TestRunRenameWorkersSimultaneousErrorsDoNotDeadlock(t *testing.T) {
+	ready := make(chan struct{}, 2)
+	release := make(chan struct{})
+	worker := func(context.Context) renameMatchResult {
+		ready <- struct{}{}
+		<-release
+
+		return renameMatchResult{err: errTestRenameWorker}
+	}
+
+	done := make(chan [2]renameMatchResult, 1)
+	go func() {
+		first, second := runRenameWorkers(context.Background(), worker, worker)
+		done <- [2]renameMatchResult{first, second}
+	}()
+
+	<-ready
+	<-ready
+	close(release)
+
+	select {
+	case results := <-done:
+		require.ErrorIs(t, results[0].err, errTestRenameWorker)
+		require.ErrorIs(t, results[1].err, errTestRenameWorker)
+	case <-time.After(time.Second):
+		t.Fatal("simultaneous rename worker errors deadlocked")
+	}
+}
+
+func TestRenameComparisonHonorsExpiredContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	ra := fixtureRenameAnalysis()
+	blob := &CachedBlob{Data: []byte("hello\n")}
+	blob.Size = int64(len(blob.Data))
+	_, err := ra.blobsAreCloseContext(ctx, blob, blob)
+	require.ErrorIs(t, err, context.Canceled)
 }
 
 func TestRenameAnalysisSortRenameCandidates(t *testing.T) {

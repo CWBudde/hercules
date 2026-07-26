@@ -23,6 +23,12 @@ var ErrBinary = errors.New("binary")
 var (
 	errIncompleteBlobRead         = errors.New("incomplete blob read")
 	errInvalidBlobCacheDependency = errors.New("invalid blob cache dependency")
+	errInvalidBlobSize            = errors.New("invalid blob size")
+	// ErrBlobTooLarge indicates that a blob exceeds the configured per-blob cache limit.
+	ErrBlobTooLarge = errors.New("blob exceeds cache size limit")
+	// ErrBlobCacheBudgetExceeded indicates that the changed blobs exceed the configured
+	// aggregate cache budget for one commit.
+	ErrBlobCacheBudgetExceeded = errors.New("commit blob cache budget exceeded")
 )
 
 // CachedBlob allows to explicitly cache the binary data associated with the Blob object.
@@ -38,30 +44,88 @@ func (b *CachedBlob) Reader() (io.ReadCloser, error) {
 	return io.NopCloser(bytes.NewReader(b.Data)), nil
 }
 
-// Cache reads the underlying blob object and sets CachedBlob.Data.
+// Cache reads the underlying blob object and sets CachedBlob.Data using the default safety limit.
 func (b *CachedBlob) Cache() error {
+	return b.CacheWithLimit(DefaultBlobCacheMaxBlobSize)
+}
+
+// CacheWithLimit reads the underlying blob object without allocating more than maxBytes for Data.
+// A non-positive maxBytes uses the default safety limit.
+func (b *CachedBlob) CacheWithLimit(maxBytes int64) error {
+	size, err := b.validatedCacheSize(maxBytes)
+	if err != nil {
+		return err
+	}
+
 	reader, err := b.Blob.Reader()
 	if err != nil {
 		return fmt.Errorf("open blob %s for caching: %w", b.Hash.String(), err)
 	}
 	defer reader.Close()
 
-	buf := new(bytes.Buffer)
-	buf.Grow(int(b.Size))
-
-	size, err := buf.ReadFrom(reader)
+	data, err := readExactBlob(reader, size, b.Hash)
 	if err != nil {
-		return fmt.Errorf("read blob %s into cache: %w", b.Hash.String(), err)
+		return err
 	}
 
-	if size != b.Size {
-		return fmt.Errorf("%w for %s: got %d bytes, expected %d",
-			errIncompleteBlobRead, b.Hash.String(), size, b.Size)
-	}
-
-	b.Data = buf.Bytes()
+	b.Data = data
 
 	return nil
+}
+
+func (b *CachedBlob) validatedCacheSize(maxBytes int64) (int, error) {
+	if b.Size < 0 {
+		return 0, fmt.Errorf("%w for %s: %d", errInvalidBlobSize, b.Hash.String(), b.Size)
+	}
+
+	if maxBytes <= 0 {
+		maxBytes = DefaultBlobCacheMaxBlobSize
+	}
+
+	if b.Size > maxBytes {
+		return 0, fmt.Errorf(
+			"%w for %s: %d bytes exceeds %d",
+			ErrBlobTooLarge, b.Hash.String(), b.Size, maxBytes,
+		)
+	}
+
+	size := int(b.Size)
+	if int64(size) != b.Size {
+		return 0, fmt.Errorf(
+			"%w for %s: %d cannot fit in an int", errInvalidBlobSize, b.Hash, b.Size,
+		)
+	}
+
+	return size, nil
+}
+
+func readExactBlob(reader io.Reader, size int, hash plumbing.Hash) ([]byte, error) {
+	data := make([]byte, size)
+
+	read, err := io.ReadFull(reader, data)
+	if err != nil {
+		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+			return nil, fmt.Errorf("%w for %s: got %d bytes, expected %d",
+				errIncompleteBlobRead, hash.String(), read, size)
+		}
+
+		return nil, fmt.Errorf("read blob %s into cache: %w", hash.String(), err)
+	}
+
+	var extra [1]byte
+
+	extraRead, err := io.ReadFull(reader, extra[:])
+	if err != nil && !errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("verify blob %s cache size: %w", hash.String(), err)
+	}
+
+	if extraRead != 0 {
+		return nil, fmt.Errorf(
+			"%w for %s: got more than %d bytes", errIncompleteBlobRead, hash.String(), size,
+		)
+	}
+
+	return data, nil
 }
 
 // CountLines returns the number of lines in the blob or (0, ErrBinary) if it is binary.
@@ -100,6 +164,10 @@ type BlobCache struct {
 	// without the blob. If true, we look inside .gitmodules and if we don't find it,
 	// raise an error. If false, we do not look inside .gitmodules and always succeed.
 	FailOnMissingSubmodules bool
+	// MaxBlobSize is the maximum number of bytes cached for one blob.
+	MaxBlobSize int64
+	// MaxCommitSize is the maximum aggregate size of distinct blobs cached for one commit.
+	MaxCommitSize int64
 
 	repository *git.Repository
 	cache      map[plumbing.Hash]*CachedBlob
@@ -111,6 +179,14 @@ const (
 	// ConfigBlobCacheFailOnMissingSubmodules is the name of the configuration option for
 	// BlobCache.Configure() to check if the referenced submodules are registered in .gitignore.
 	ConfigBlobCacheFailOnMissingSubmodules = "BlobCache.FailOnMissingSubmodules"
+	// ConfigBlobCacheMaxBlobSize sets the maximum cached blob size in bytes.
+	ConfigBlobCacheMaxBlobSize = "BlobCache.MaxBlobSize"
+	// ConfigBlobCacheMaxCommitSize sets the aggregate per-commit blob cache budget in bytes.
+	ConfigBlobCacheMaxCommitSize = "BlobCache.MaxCommitSize"
+	// DefaultBlobCacheMaxBlobSize is the default per-blob cache limit (100 MiB).
+	DefaultBlobCacheMaxBlobSize int64 = 100 * 1024 * 1024
+	// DefaultBlobCacheMaxCommitSize is the default aggregate per-commit cache limit (512 MiB).
+	DefaultBlobCacheMaxCommitSize int64 = 512 * 1024 * 1024
 	// DependencyBlobCache identifies the dependency provided by BlobCache.
 	DependencyBlobCache = "blob_cache"
 )
@@ -136,15 +212,32 @@ func (blobCache *BlobCache) Requires() []string {
 
 // ListConfigurationOptions returns the list of changeable public properties of this PipelineItem.
 func (blobCache *BlobCache) ListConfigurationOptions() []core.ConfigurationOption {
-	options := [...]core.ConfigurationOption{{
-		Name: ConfigBlobCacheFailOnMissingSubmodules,
-		Description: "Specifies whether to panic if any referenced submodule does " +
-			"not exist in .gitmodules and thus the corresponding Git object cannot be loaded. " +
-			"Override this if you want to ensure that your repository is integral.",
-		Flag:    "fail-on-missing-submodules",
-		Type:    core.BoolConfigurationOption,
-		Default: false,
-	}}
+	options := [...]core.ConfigurationOption{
+		{
+			Name: ConfigBlobCacheFailOnMissingSubmodules,
+			Description: "Specifies whether to panic if any referenced submodule does " +
+				"not exist in .gitmodules and thus the corresponding Git object cannot be loaded. " +
+				"Override this if you want to ensure that your repository is integral.",
+			Flag:    "fail-on-missing-submodules",
+			Type:    core.BoolConfigurationOption,
+			Default: false,
+		},
+		{
+			Name:        ConfigBlobCacheMaxBlobSize,
+			Description: "Maximum size in bytes of a single cached blob; non-positive values use the default.",
+			Flag:        "blob-cache-max-blob-size",
+			Type:        core.IntConfigurationOption,
+			Default:     int(DefaultBlobCacheMaxBlobSize),
+		},
+		{
+			Name: ConfigBlobCacheMaxCommitSize,
+			Description: "Maximum aggregate size in bytes of distinct blobs cached for one commit; " +
+				"non-positive values use the default.",
+			Flag:    "blob-cache-max-commit-size",
+			Type:    core.IntConfigurationOption,
+			Default: int(DefaultBlobCacheMaxCommitSize),
+		},
+	}
 
 	return options[:]
 }
@@ -161,7 +254,23 @@ func (blobCache *BlobCache) Configure(facts map[string]any) error {
 		blobCache.FailOnMissingSubmodules = val
 	}
 
+	blobCache.MaxBlobSize = configuredBlobLimit(
+		facts, ConfigBlobCacheMaxBlobSize, DefaultBlobCacheMaxBlobSize,
+	)
+	blobCache.MaxCommitSize = configuredBlobLimit(
+		facts, ConfigBlobCacheMaxCommitSize, DefaultBlobCacheMaxCommitSize,
+	)
+
 	return nil
+}
+
+func configuredBlobLimit(facts map[string]any, name string, fallback int64) int64 {
+	value, exists := facts[name].(int)
+	if !exists || value <= 0 {
+		return fallback
+	}
+
+	return int64(value)
 }
 
 func (*BlobCache) ConfigureUpstream(facts map[string]any) error {
@@ -174,6 +283,12 @@ func (blobCache *BlobCache) Initialize(repository *git.Repository) error {
 	blobCache.l = core.NewLogger()
 	blobCache.repository = repository
 	blobCache.cache = map[plumbing.Hash]*CachedBlob{}
+	if blobCache.MaxBlobSize <= 0 {
+		blobCache.MaxBlobSize = DefaultBlobCacheMaxBlobSize
+	}
+	if blobCache.MaxCommitSize <= 0 {
+		blobCache.MaxCommitSize = DefaultBlobCacheMaxCommitSize
+	}
 
 	return nil
 }
@@ -197,6 +312,7 @@ func (blobCache *BlobCache) Consume(deps map[string]any) (map[string]any, error)
 
 	cache := map[plumbing.Hash]*CachedBlob{}
 	newCache := map[plumbing.Hash]*CachedBlob{}
+	budget := newCommitBlobBudget(blobCache.MaxCommitSize)
 
 	for _, change := range changes {
 		action, err := change.Action()
@@ -211,13 +327,13 @@ func (blobCache *BlobCache) Consume(deps map[string]any) (map[string]any, error)
 
 		switch action {
 		case merkletrie.Insert:
-			err = blobCache.cacheTo(change.To, commit, cache, newCache)
+			err = blobCache.cacheTo(change.To, commit, cache, newCache, budget)
 		case merkletrie.Delete:
-			err = blobCache.cacheFrom(change.From, commit, cache, true)
+			err = blobCache.cacheFrom(change.From, commit, cache, budget, true)
 		case merkletrie.Modify:
-			err = blobCache.cacheTo(change.To, commit, cache, newCache)
+			err = blobCache.cacheTo(change.To, commit, cache, newCache, budget)
 			if err == nil {
-				err = blobCache.cacheFrom(change.From, commit, cache, false)
+				err = blobCache.cacheFrom(change.From, commit, cache, budget, false)
 			}
 		}
 
@@ -240,6 +356,8 @@ func (blobCache *BlobCache) Fork(n int) []core.PipelineItem {
 
 		caches[i] = &BlobCache{
 			FailOnMissingSubmodules: blobCache.FailOnMissingSubmodules,
+			MaxBlobSize:             blobCache.MaxBlobSize,
+			MaxCommitSize:           blobCache.MaxCommitSize,
 			repository:              blobCache.repository,
 			cache:                   cache,
 		}
@@ -252,9 +370,24 @@ func (blobCache *BlobCache) cacheTo(
 	entry object.ChangeEntry,
 	commit *object.Commit,
 	cache, newCache map[plumbing.Hash]*CachedBlob,
+	budget *commitBlobBudget,
 ) error {
-	cache[entry.TreeEntry.Hash] = &CachedBlob{}
-	newCache[entry.TreeEntry.Hash] = &CachedBlob{}
+	if cached, exists := cache[entry.TreeEntry.Hash]; exists {
+		newCache[entry.TreeEntry.Hash] = cached
+		return nil
+	}
+
+	if cached, exists := blobCache.cache[entry.TreeEntry.Hash]; exists {
+		err := blobCache.validateCachedAndReserve(cached, budget)
+		if err != nil {
+			return err
+		}
+
+		cache[entry.TreeEntry.Hash] = cached
+		newCache[entry.TreeEntry.Hash] = cached
+
+		return nil
+	}
 
 	blob, err := blobCache.getBlob(&entry, commit.File)
 	if err != nil {
@@ -262,9 +395,14 @@ func (blobCache *BlobCache) cacheTo(
 		return err
 	}
 
+	err = blobCache.validateAndReserve(blob, budget)
+	if err != nil {
+		return fmt.Errorf("cache new blob %q (%s): %w", entry.Name, entry.TreeEntry.Hash, err)
+	}
+
 	cached := &CachedBlob{Blob: *blob}
 
-	err = cached.Cache()
+	err = cached.CacheWithLimit(blobCache.MaxBlobSize)
 	if err != nil {
 		blobCache.l.Errorf("file to %s %s: %v\n", entry.Name, entry.TreeEntry.Hash, err)
 		return err
@@ -280,19 +418,28 @@ func (blobCache *BlobCache) cacheFrom(
 	entry object.ChangeEntry,
 	commit *object.Commit,
 	cache map[plumbing.Hash]*CachedBlob,
+	budget *commitBlobBudget,
 	dummyWhenMissing bool,
 ) error {
 	if cached, exists := blobCache.cache[entry.TreeEntry.Hash]; exists {
+		err := blobCache.validateCachedAndReserve(cached, budget)
+		if err != nil {
+			return err
+		}
+
 		cache[entry.TreeEntry.Hash] = cached
 		return nil
 	}
-
-	cache[entry.TreeEntry.Hash] = &CachedBlob{}
 
 	blob, err := blobCache.getBlob(&entry, commit.File)
 	if err != nil && dummyWhenMissing && errors.Is(err, plumbing.ErrObjectNotFound) {
 		blob, err = internal.CreateDummyBlob(entry.TreeEntry.Hash)
 		if err == nil {
+			budgetErr := blobCache.validateAndReserve(blob, budget)
+			if budgetErr != nil {
+				return budgetErr
+			}
+
 			cache[entry.TreeEntry.Hash] = &CachedBlob{Blob: *blob}
 		}
 
@@ -308,15 +455,85 @@ func (blobCache *BlobCache) cacheFrom(
 		return fmt.Errorf("load previous blob %q (%s): %w", entry.Name, entry.TreeEntry.Hash, err)
 	}
 
+	err = blobCache.validateAndReserve(blob, budget)
+	if err != nil {
+		return fmt.Errorf("cache previous blob %q (%s): %w", entry.Name, entry.TreeEntry.Hash, err)
+	}
+
 	cached := &CachedBlob{Blob: *blob}
 
-	err = cached.Cache()
+	err = cached.CacheWithLimit(blobCache.MaxBlobSize)
 	if err != nil {
 		blobCache.l.Errorf("file from %s %s: %v\n", entry.Name, entry.TreeEntry.Hash, err)
 		return err
 	}
 
 	cache[entry.TreeEntry.Hash] = cached
+
+	return nil
+}
+
+func (blobCache *BlobCache) validateAndReserve(
+	blob *object.Blob, budget *commitBlobBudget,
+) error {
+	if blob.Size < 0 {
+		return fmt.Errorf("%w for %s: %d", errInvalidBlobSize, blob.Hash, blob.Size)
+	}
+
+	if blob.Size > blobCache.MaxBlobSize {
+		return fmt.Errorf(
+			"%w for %s: %d bytes exceeds %d",
+			ErrBlobTooLarge, blob.Hash, blob.Size, blobCache.MaxBlobSize,
+		)
+	}
+
+	return budget.reserve(blob.Hash, blob.Size)
+}
+
+func (blobCache *BlobCache) validateCachedAndReserve(
+	blob *CachedBlob, budget *commitBlobBudget,
+) error {
+	if blob.Size > blobCache.MaxBlobSize {
+		return fmt.Errorf(
+			"%w for %s: %d bytes exceeds %d",
+			ErrBlobTooLarge, blob.Hash, blob.Size, blobCache.MaxBlobSize,
+		)
+	}
+
+	return budget.reserve(blob.Hash, blob.Size)
+}
+
+type commitBlobBudget struct {
+	max  int64
+	used int64
+	seen map[plumbing.Hash]struct{}
+}
+
+func newCommitBlobBudget(maxBytes int64) *commitBlobBudget {
+	return &commitBlobBudget{
+		max:  maxBytes,
+		seen: map[plumbing.Hash]struct{}{},
+	}
+}
+
+func (budget *commitBlobBudget) reserve(hash plumbing.Hash, size int64) error {
+	if _, exists := budget.seen[hash]; exists {
+		return nil
+	}
+
+	if size < 0 {
+		return fmt.Errorf("%w for %s: %d", errInvalidBlobSize, hash, size)
+	}
+
+	if size > budget.max-budget.used {
+		return fmt.Errorf(
+			"%w: adding %s (%d bytes) would exceed %d bytes",
+			ErrBlobCacheBudgetExceeded, hash, size, budget.max,
+		)
+	}
+
+	budget.used += size
+	budget.seen[hash] = struct{}{}
 
 	return nil
 }

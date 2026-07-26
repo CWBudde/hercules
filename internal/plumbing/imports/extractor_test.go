@@ -2,6 +2,7 @@ package imports
 
 import (
 	"runtime"
+	"sync/atomic"
 	"testing"
 
 	gitplumbing "github.com/go-git/go-git/v5/plumbing"
@@ -62,6 +63,30 @@ func TestExtractorRegistration(t *testing.T) {
 	summoned = core.Registry.Summon((&Extractor{}).Provides()[0])
 	assert.Len(t, summoned, 1)
 	assert.Equal(t, "Imports", summoned[0].Name())
+}
+
+func TestImportWorkersExitOnEnqueueError(t *testing.T) {
+	const (
+		iterations  = 25
+		workerCount = 8
+	)
+
+	var active, started atomic.Int64
+	invalidChanges := object.Changes{&object.Change{}}
+	for range iterations {
+		err := runImportWorkers(workerCount, invalidChanges, func(jobs <-chan *object.Change) {
+			started.Add(1)
+			active.Add(1)
+			defer active.Add(-1)
+
+			for range jobs {
+			}
+		})
+		require.Error(t, err)
+		assert.Zero(t, active.Load())
+	}
+
+	assert.Equal(t, int64(iterations*workerCount), started.Load())
 }
 
 func TestExtractorConsumeModification(t *testing.T) {

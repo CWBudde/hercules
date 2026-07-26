@@ -184,6 +184,33 @@ The incremental cases report `changed-ownership-runs/op` and
 `rescanned-ownership-runs/op`. `stable-live-files` and `stable-live-lines`
 describe the state deliberately excluded from incremental tick work.
 
+## Bounded blob and rename processing
+
+Blob loading is fail-closed and bounded before allocation. By default,
+`--blob-cache-max-blob-size=104857600` limits one blob to 100 MiB and
+`--blob-cache-max-commit-size=536870912` limits the distinct changed blobs
+retained for one commit to 512 MiB. Both values are byte counts and can be
+lowered for constrained environments. A blob or commit that exceeds its limit
+returns an explicit error; Hercules does not substitute empty content and
+silently alter downstream metrics. Declared Git blob sizes are validated
+before an exact-size allocation, and readers must produce exactly that many
+bytes.
+
+`--renames-timeout` is one deadline shared by both rename-search directions
+and every line- or byte-level comparison in that commit. The first completed
+direction cancels its peer, and both workers are joined through a buffered
+result channel before processing continues. Import-extraction workers are
+likewise bounded by `--import-goroutines` and joined on successful and error
+returns.
+
+The hostile-input, simultaneous-error, deadline, and worker-lifecycle
+regressions can be reproduced under the race detector with:
+
+```bash
+go test -race ./internal/plumbing ./internal/plumbing/imports \
+  -run 'TestBlobCache|TestCachedBlob|TestRename|TestRunRename|TestImportWorkers|TestExtractor'
+```
+
 If even `--preset large-repo` is too tight, the next escape hatches are:
 
 1. Lower output resolution further: append `--granularity=90 --sampling=90`.

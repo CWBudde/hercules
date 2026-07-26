@@ -1,6 +1,7 @@
 package plumbing
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing"
@@ -37,13 +38,21 @@ func TestBlobCacheConfigureInitialize(t *testing.T) {
 	cache := fixtureBlobCache()
 	assert.Equal(t, test.Repository, cache.repository)
 	assert.False(t, cache.FailOnMissingSubmodules)
+	assert.Equal(t, DefaultBlobCacheMaxBlobSize, cache.MaxBlobSize)
+	assert.Equal(t, DefaultBlobCacheMaxCommitSize, cache.MaxCommitSize)
 	facts := map[string]any{}
 	facts[ConfigBlobCacheFailOnMissingSubmodules] = true
+	facts[ConfigBlobCacheMaxBlobSize] = 1024
+	facts[ConfigBlobCacheMaxCommitSize] = 4096
 	require.NoError(t, cache.Configure(facts))
 	assert.True(t, cache.FailOnMissingSubmodules)
+	assert.Equal(t, int64(1024), cache.MaxBlobSize)
+	assert.Equal(t, int64(4096), cache.MaxCommitSize)
 	facts = map[string]any{}
 	require.NoError(t, cache.Configure(facts))
 	assert.True(t, cache.FailOnMissingSubmodules)
+	assert.Equal(t, DefaultBlobCacheMaxBlobSize, cache.MaxBlobSize)
+	assert.Equal(t, DefaultBlobCacheMaxCommitSize, cache.MaxCommitSize)
 }
 
 func TestBlobCacheMetadata(t *testing.T) {
@@ -55,8 +64,84 @@ func TestBlobCacheMetadata(t *testing.T) {
 	changes := &TreeDiff{}
 	assert.Equal(t, cache.Requires()[0], changes.Provides()[0])
 	opts := cache.ListConfigurationOptions()
-	assert.Len(t, opts, 1)
+	assert.Len(t, opts, 3)
 	assert.Equal(t, ConfigBlobCacheFailOnMissingSubmodules, opts[0].Name)
+	assert.Equal(t, ConfigBlobCacheMaxBlobSize, opts[1].Name)
+	assert.Equal(t, int(DefaultBlobCacheMaxBlobSize), opts[1].Default)
+	assert.Equal(t, ConfigBlobCacheMaxCommitSize, opts[2].Name)
+	assert.Equal(t, int(DefaultBlobCacheMaxCommitSize), opts[2].Default)
+}
+
+func TestCachedBlobCacheWithLimitRejectsDeclaredOversize(t *testing.T) {
+	blob, err := test.Repository.BlobObject(plumbing.NewHash(
+		"c872b8d2291a5224e2c9f6edd7f46039b96b4742",
+	))
+	require.NoError(t, err)
+
+	cached := &CachedBlob{Blob: *blob}
+	err = cached.CacheWithLimit(blob.Size - 1)
+	require.ErrorIs(t, err, ErrBlobTooLarge)
+	assert.Nil(t, cached.Data)
+}
+
+func TestReadExactBlobRejectsDeclaredSizeMismatch(t *testing.T) {
+	hash := plumbing.NewHash("ffffffffffffffffffffffffffffffffffffffff")
+
+	data, err := readExactBlob(strings.NewReader("abc"), 4, hash)
+	require.ErrorIs(t, err, errIncompleteBlobRead)
+	assert.Nil(t, data)
+
+	data, err = readExactBlob(strings.NewReader("abcde"), 4, hash)
+	require.ErrorIs(t, err, errIncompleteBlobRead)
+	assert.Nil(t, data)
+
+	data, err = readExactBlob(strings.NewReader("abcd"), 4, hash)
+	require.NoError(t, err)
+	assert.Equal(t, []byte("abcd"), data)
+}
+
+func TestBlobCacheCommitBudgetIsAggregateUpperBound(t *testing.T) {
+	commit, err := test.Repository.CommitObject(plumbing.NewHash(
+		"af2d8db70f287b52d2428d9887a69a10bc4d1f46",
+	))
+	require.NoError(t, err)
+	treeFrom, err := test.Repository.TreeObject(plumbing.NewHash(
+		"80fe25955b8e725feee25c08ea5759d74f8b670d",
+	))
+	require.NoError(t, err)
+	treeTo, err := test.Repository.TreeObject(plumbing.NewHash(
+		"63076fa0dfd93e94b6d2ef0fc8b1fdf9092f83c4",
+	))
+	require.NoError(t, err)
+
+	change := &object.Change{From: object.ChangeEntry{
+		Name: testLaboursPath,
+		Tree: treeFrom,
+		TreeEntry: object.TreeEntry{
+			Name: testLaboursPath,
+			Mode: 0o100644,
+			Hash: plumbing.NewHash("1cacfc1bf0f048eb2f31973750983ae5d8de647a"),
+		},
+	}, To: object.ChangeEntry{
+		Name: testLaboursPath,
+		Tree: treeTo,
+		TreeEntry: object.TreeEntry{
+			Name: testLaboursPath,
+			Mode: 0o100644,
+			Hash: plumbing.NewHash("c872b8d2291a5224e2c9f6edd7f46039b96b4742"),
+		},
+	}}
+	cache := fixtureBlobCache()
+	cache.MaxCommitSize = 10_000
+
+	result, err := cache.Consume(map[string]any{
+		core.DependencyCommit: commit,
+		DependencyTreeChanges: object.Changes{
+			change,
+		},
+	})
+	require.ErrorIs(t, err, ErrBlobCacheBudgetExceeded)
+	assert.Nil(t, result)
 }
 
 func TestBlobCacheRegistration(t *testing.T) {
@@ -471,12 +556,16 @@ func TestBlobCacheFork(t *testing.T) {
 	deps[DependencyTreeChanges] = changes
 	cache1 := fixtureBlobCache()
 	cache1.FailOnMissingSubmodules = true
+	cache1.MaxBlobSize = 12345
+	cache1.MaxCommitSize = 23456
 	_, err := cache1.Consume(deps)
 	require.NoError(t, err)
 	clones := cache1.Fork(1)
 	assert.Len(t, clones, 1)
 	cache2 := clones[0].(*BlobCache)
 	assert.True(t, cache2.FailOnMissingSubmodules)
+	assert.Equal(t, int64(12345), cache2.MaxBlobSize)
+	assert.Equal(t, int64(23456), cache2.MaxCommitSize)
 	assert.Equal(t, cache1.repository, cache2.repository)
 	cache1.cache[plumbing.ZeroHash] = nil
 	assert.Len(t, cache1.cache, 2)

@@ -281,7 +281,7 @@ func (devs *DevsAnalysis) Serialize(result any, binary bool, writer io.Writer) e
 func (devs *DevsAnalysis) Deserialize(pbmessage []byte) (any, error) {
 	message := pb.DevsAnalysisResults{}
 
-	err := proto.Unmarshal(pbmessage, &message)
+	err := unmarshalAnalysis(pbmessage, &message)
 	if err != nil {
 		return nil, fmt.Errorf("unmarshal developers result: %w", err)
 	}

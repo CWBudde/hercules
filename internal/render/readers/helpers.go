@@ -41,7 +41,7 @@ func DetectAndReadInput(input, format string) (Reader, error) {
 
 	// Read the input using the Reader
 	if err := reader.Read(file); err != nil {
-		return nil, fmt.Errorf("error reading input with %s reader: %v", format, err)
+		return nil, fmt.Errorf("error reading input with %s reader: %w", format, err)
 	}
 
 	return reader, nil
@@ -89,6 +89,11 @@ func transposeMatrix(matrix [][]int) [][]int {
 
 	rows := len(matrix)
 	cols := len(matrix[0])
+	for _, row := range matrix {
+		if len(row) != cols {
+			return [][]int{}
+		}
+	}
 
 	// Create transposed matrix
 	transposed := make([][]int, cols)

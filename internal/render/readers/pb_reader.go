@@ -8,13 +8,15 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/spf13/viper"
 
+	"github.com/cwbudde/hercules/internal/analysisio"
 	"github.com/cwbudde/hercules/internal/pb"
 	"github.com/cwbudde/hercules/internal/render/burndown"
 	"github.com/cwbudde/hercules/internal/render/progress"
 )
 
 type ProtobufReader struct {
-	data *pb.AnalysisResults
+	data   *pb.AnalysisResults
+	Limits analysisio.Limits
 }
 
 // Read loads the Protobuf data into the ProtobufReader structure
@@ -27,17 +29,21 @@ func (r *ProtobufReader) Read(file io.Reader) error {
 	progEstimator.StartOperation("Reading protobuf data", 2) // read + parse phases
 
 	progEstimator.UpdateProgress(1)
-	allBytes, err := io.ReadAll(file)
+	allBytes, err := analysisio.ReadAll(file, r.Limits)
 	if err != nil {
 		progEstimator.FinishOperation()
-		return fmt.Errorf("error reading Protobuf file: %v", err)
+		return fmt.Errorf("read protobuf input: %w", err)
 	}
 
 	progEstimator.UpdateProgress(1)
 	var results pb.AnalysisResults
 	if err := proto.Unmarshal(allBytes, &results); err != nil {
 		progEstimator.FinishOperation()
-		return fmt.Errorf("error unmarshalling Protobuf: %v", err)
+		return fmt.Errorf("%w: unmarshal protobuf envelope: %v", ErrAnalysisMalformed, err)
+	}
+	if err := analysisio.ValidateAnalysisResults(&results, r.Limits); err != nil {
+		progEstimator.FinishOperation()
+		return err
 	}
 
 	r.data = &results
@@ -985,8 +991,8 @@ func (r *ProtobufReader) unmarshalContent(key string, message proto.Message) err
 	if !exists {
 		return fmt.Errorf("%w: %s", ErrAnalysisMissing, key)
 	}
-	if err := proto.Unmarshal(contentBytes, message); err != nil {
-		return fmt.Errorf("%w: %s: %v", ErrAnalysisMalformed, key, err)
+	if err := analysisio.Unmarshal(contentBytes, message, r.Limits); err != nil {
+		return fmt.Errorf("%s: %w", key, err)
 	}
 	return nil
 }

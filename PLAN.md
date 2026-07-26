@@ -350,35 +350,17 @@ Priority: P1/P2
 
 ### DATA-01: Validate YAML and PB before allocation or indexing
 
-Affected code:
+Status: completed 2026-07-26
 
-- `internal/render/readers/yaml_reader.go`
-- `internal/render/readers/pb_reader.go`
-- `internal/render/readers/helpers.go`
-- leaf `Deserialize` implementations
-
-Work:
-
-- Introduce typed `ErrAnalysisMalformed`, `ErrAnalysisTooLarge`, and
-  `ErrAnalysisVersionUnsupported`.
-- Validate nonnegative matrix dimensions and indices.
-- Validate rectangular dense matrices.
-- Validate CSR pointer monotonicity, terminal pointer, index bounds, and data/indices lengths.
-- Validate all parallel-array lengths before indexing.
-- Apply configurable limits to input bytes, decoded cells, rows, columns, and nested records.
-- Use `io.LimitReader` for file/stdin input.
-- Centralize validators so leaves and renderer use the same rules.
-
-Tests:
-
-- negative, overflowed, ragged, truncated, and inconsistent structures;
-- extremely large declared dimensions with tiny payloads;
-- fuzzing for YAML, PB envelopes, CSR matrices, and each leaf deserializer.
-
-Acceptance criteria:
-
-- [ ] malformed input returns a bounded error without panic or excessive allocation;
-- [ ] valid historical fixtures continue to load.
+Renderer readers and every leaf protobuf deserializer now share typed malformed, oversized, and
+unsupported-version errors plus configurable limits for input bytes, decoded cells, dimensions,
+and nested records. File and stdin reads use `io.LimitReader`; dense YAML matrices must be
+rectangular, sparse indices nonnegative, protobuf dimensions bounded before allocation, CSR
+pointers/data/indices internally consistent, and index-coupled arrays length-compatible before
+access. Historical unknown-author and sparse-author shapes remain supported. Hostile fixtures cover
+negative, overflowed, ragged, truncated, inconsistent, and tiny-payload/huge-dimension inputs;
+short fuzz runs cover YAML, protobuf envelopes, burndown/CSR messages, and all leaf deserializers,
+while the historical renderer fixtures continue to load.
 
 ### DATA-02: Enforce schema compatibility
 

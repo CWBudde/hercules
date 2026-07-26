@@ -346,7 +346,7 @@ func (couples *CouplesAnalysis) Serialize(result any, binary bool, writer io.Wri
 func (couples *CouplesAnalysis) Deserialize(pbmessage []byte) (any, error) {
 	message := pb.CouplesAnalysisResults{}
 
-	err := proto.Unmarshal(pbmessage, &message)
+	err := unmarshalAnalysis(pbmessage, &message)
 	if err != nil {
 		return nil, fmt.Errorf("unmarshal couples protobuf: %w", err)
 	}

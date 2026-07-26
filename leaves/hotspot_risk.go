@@ -500,7 +500,7 @@ func (hra *HotspotRiskAnalysis) Serialize(result any, binary bool, writer io.Wri
 func (hra *HotspotRiskAnalysis) Deserialize(pbmessage []byte) (any, error) {
 	message := pb.HotspotRiskResults{}
 
-	err := proto.Unmarshal(pbmessage, &message)
+	err := unmarshalAnalysis(pbmessage, &message)
 	if err != nil {
 		return nil, fmt.Errorf("unmarshal hotspot risk result: %w", err)
 	}

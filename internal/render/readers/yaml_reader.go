@@ -4,17 +4,18 @@ import (
 	"fmt"
 	"io"
 	"strconv"
-	"strings"
 
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"
 
+	"github.com/cwbudde/hercules/internal/analysisio"
 	"github.com/cwbudde/hercules/internal/render/burndown"
 	"github.com/cwbudde/hercules/internal/render/progress"
 )
 
 type YamlReader struct {
-	data map[string]interface{}
+	data   map[string]interface{}
+	Limits analysisio.Limits
 }
 
 func (r *YamlReader) Read(file io.Reader) error {
@@ -24,12 +25,22 @@ func (r *YamlReader) Read(file io.Reader) error {
 
 	progEstimator.StartOperation("Reading YAML data", 1)
 
-	decoder := yaml.NewDecoder(file)
-	if err := decoder.Decode(&r.data); err != nil {
+	input, err := analysisio.ReadAll(file, r.Limits)
+	if err != nil {
 		progEstimator.FinishOperation()
-		return fmt.Errorf("error decoding YAML: %v", err)
+		return fmt.Errorf("read YAML input: %w", err)
+	}
+	var data map[string]interface{}
+	if err := yaml.Unmarshal(input, &data); err != nil {
+		progEstimator.FinishOperation()
+		return fmt.Errorf("%w: decode YAML: %v", ErrAnalysisMalformed, err)
+	}
+	if err := validateYAMLAnalysis(data, r.Limits); err != nil {
+		progEstimator.FinishOperation()
+		return err
 	}
 
+	r.data = data
 	progEstimator.UpdateProgress(1)
 	progEstimator.FinishOperation()
 	return nil
@@ -40,7 +51,8 @@ func (r *YamlReader) GetName() string {
 	if !ok {
 		return ""
 	}
-	return herculesData["repository"].(string)
+	repository, _ := herculesData["repository"].(string)
+	return repository
 }
 
 func (r *YamlReader) GetHeader() (int64, int64) {
@@ -48,9 +60,12 @@ func (r *YamlReader) GetHeader() (int64, int64) {
 	if !ok {
 		return 0, 0
 	}
-	begin := int64(herculesData["begin_unix_time"].(int))
-	end := int64(herculesData["end_unix_time"].(int))
-	return begin, end
+	begin, beginOK := convertToInt(herculesData["begin_unix_time"])
+	end, endOK := convertToInt(herculesData["end_unix_time"])
+	if !beginOK || !endOK {
+		return 0, 0
+	}
+	return int64(begin), int64(end)
 }
 
 func (r *YamlReader) GetProjectBurndown() (string, [][]int) {
@@ -59,7 +74,11 @@ func (r *YamlReader) GetProjectBurndown() (string, [][]int) {
 		return "", nil
 	}
 	repo := r.GetName()
-	matrix := parseBurndownMatrix(burndownData["project"].(string))
+	project, ok := burndownData["project"].(string)
+	if !ok {
+		return "", nil
+	}
+	matrix := parseBurndownMatrix(project)
 	return repo, transposeMatrix(matrix)
 }
 
@@ -75,7 +94,11 @@ func (r *YamlReader) GetFilesBurndown() ([]FileBurndown, error) {
 
 	var fileBurndowns []FileBurndown
 	for filename, matrixData := range filesData {
-		matrix := parseBurndownMatrix(matrixData.(string))
+		matrixText, ok := matrixData.(string)
+		if !ok {
+			return nil, fmt.Errorf("%w: file burndown %q is not a matrix string", ErrAnalysisMalformed, filename)
+		}
+		matrix := parseBurndownMatrix(matrixText)
 		fileBurndowns = append(fileBurndowns, FileBurndown{
 			Filename: filename,
 			Matrix:   transposeMatrix(matrix),
@@ -96,7 +119,11 @@ func (r *YamlReader) GetPeopleBurndown() ([]PeopleBurndown, error) {
 
 	var peopleBurndowns []PeopleBurndown
 	for person, matrixData := range peopleData {
-		matrix := parseBurndownMatrix(matrixData.(string))
+		matrixText, ok := matrixData.(string)
+		if !ok {
+			return nil, fmt.Errorf("%w: people burndown %q is not a matrix string", ErrAnalysisMalformed, person)
+		}
+		matrix := parseBurndownMatrix(matrixText)
 		peopleBurndowns = append(peopleBurndowns, PeopleBurndown{
 			Person: person,
 			Matrix: transposeMatrix(matrix),
@@ -122,7 +149,14 @@ func (r *YamlReader) GetOwnershipBurndown() ([]string, map[string][][]int, error
 
 	ownership := make(map[string][][]int)
 	for person, matrixData := range peopleData {
-		matrix := parseBurndownMatrix(matrixData.(string))
+		matrixText, ok := matrixData.(string)
+		if !ok {
+			return nil, nil, fmt.Errorf(
+				"%w: people burndown %q is not a matrix string",
+				ErrAnalysisMalformed, person,
+			)
+		}
+		matrix := parseBurndownMatrix(matrixText)
 		ownership[person] = matrix
 	}
 
@@ -515,24 +549,11 @@ func (r *YamlReader) GetRuntimeStats() (map[string]float64, error) {
 
 // Helper function to parse burndown matrices
 func parseBurndownMatrix(data string) [][]int {
-	lines := strings.Split(data, "\n")
-	var matrix [][]int
-	for _, line := range lines {
-		if strings.TrimSpace(line) == "" {
-			continue
-		}
-		numbers := strings.Fields(line)
-		var row []int
-		for _, num := range numbers {
-			val, err := strconv.Atoi(strings.TrimSpace(num))
-			if err != nil {
-				continue
-			}
-			row = append(row, val)
-		}
-		if len(row) > 0 {
-			matrix = append(matrix, row)
-		}
+	matrix, err := parseBurndownMatrixChecked(
+		"YAML matrix", data, analysisio.DefaultLimits(),
+	)
+	if err != nil {
+		return [][]int{}
 	}
 	return matrix
 }
@@ -543,11 +564,16 @@ func parseCoooccurrenceMatrix(data []interface{}) [][]int {
 	if len(data) == 0 {
 		return [][]int{}
 	}
+	if err := validateYAMLSparseRows(
+		"YAML co-occurrence matrix", data, analysisio.DefaultLimits(),
+	); err != nil {
+		return [][]int{}
+	}
 
 	// Find maximum column index to determine matrix size
-	maxCol := 0
+	maxCol := -1
 	for _, rowData := range data {
-		if rowMap, ok := rowData.(map[interface{}]interface{}); ok {
+		if rowMap, ok := asMap(rowData); ok {
 			for colKey := range rowMap {
 				if colInt, ok := convertToInt(colKey); ok && colInt > maxCol {
 					maxCol = colInt
@@ -564,11 +590,11 @@ func parseCoooccurrenceMatrix(data []interface{}) [][]int {
 
 	// Fill in non-zero values
 	for rowIdx, rowData := range data {
-		if rowMap, ok := rowData.(map[interface{}]interface{}); ok {
+		if rowMap, ok := asMap(rowData); ok {
 			for colKey, valKey := range rowMap {
 				if colInt, ok := convertToInt(colKey); ok {
 					if valInt, ok := convertToInt(valKey); ok {
-						if colInt < len(matrix[rowIdx]) {
+						if colInt >= 0 && colInt < len(matrix[rowIdx]) {
 							matrix[rowIdx][colInt] = valInt
 						}
 					}

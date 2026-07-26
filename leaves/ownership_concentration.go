@@ -253,7 +253,7 @@ func (oc *OwnershipConcentrationAnalysis) Serialize(result any, binary bool, wri
 func (oc *OwnershipConcentrationAnalysis) Deserialize(pbmessage []byte) (any, error) {
 	message := pb.OwnershipConcentrationResults{}
 
-	err := proto.Unmarshal(pbmessage, &message)
+	err := unmarshalAnalysis(pbmessage, &message)
 	if err != nil {
 		return nil, fmt.Errorf("unmarshal ownership concentration result: %w", err)
 	}

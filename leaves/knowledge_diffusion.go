@@ -280,7 +280,7 @@ func (kd *KnowledgeDiffusionAnalysis) Serialize(result any, binary bool, writer 
 func (kd *KnowledgeDiffusionAnalysis) Deserialize(pbmessage []byte) (any, error) {
 	message := pb.KnowledgeDiffusionResults{}
 
-	err := proto.Unmarshal(pbmessage, &message)
+	err := unmarshalAnalysis(pbmessage, &message)
 	if err != nil {
 		return nil, fmt.Errorf("unmarshal knowledge diffusion result: %w", err)
 	}

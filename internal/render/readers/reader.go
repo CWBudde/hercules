@@ -4,12 +4,15 @@ import (
 	"errors"
 	"io"
 
+	"github.com/cwbudde/hercules/internal/analysisio"
 	"github.com/cwbudde/hercules/internal/render/burndown"
 )
 
 var (
-	ErrAnalysisMissing   = errors.New("analysis missing")
-	ErrAnalysisMalformed = errors.New("analysis malformed")
+	ErrAnalysisMissing            = errors.New("analysis missing")
+	ErrAnalysisMalformed          = analysisio.ErrAnalysisMalformed
+	ErrAnalysisTooLarge           = analysisio.ErrAnalysisTooLarge
+	ErrAnalysisVersionUnsupported = analysisio.ErrAnalysisVersionUnsupported
 )
 
 type Reader interface {

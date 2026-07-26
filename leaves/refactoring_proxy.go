@@ -238,7 +238,7 @@ func (rp *RefactoringProxy) Serialize(result any, binary bool, writer io.Writer)
 func (rp *RefactoringProxy) Deserialize(pbmessage []byte) (any, error) {
 	message := pb.RefactoringProxyResults{}
 
-	err := proto.Unmarshal(pbmessage, &message)
+	err := unmarshalAnalysis(pbmessage, &message)
 	if err != nil {
 		return nil, fmt.Errorf("unmarshal refactoring proxy result: %w", err)
 	}

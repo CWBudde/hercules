@@ -293,7 +293,7 @@ func (bf *BusFactorAnalysis) Serialize(result any, binary bool, writer io.Writer
 func (bf *BusFactorAnalysis) Deserialize(pbmessage []byte) (any, error) {
 	message := pb.BusFactorAnalysisResults{}
 
-	err := proto.Unmarshal(pbmessage, &message)
+	err := unmarshalAnalysis(pbmessage, &message)
 	if err != nil {
 		return nil, fmt.Errorf("unmarshal bus factor result: %w", err)
 	}

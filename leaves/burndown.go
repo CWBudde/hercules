@@ -611,7 +611,7 @@ func (analyser *BurndownAnalysis) Serialize(result any, binary bool, writer io.W
 func (analyser *BurndownAnalysis) Deserialize(message []byte) (any, error) {
 	msg := pb.BurndownAnalysisResults{}
 
-	err := proto.Unmarshal(message, &msg)
+	err := unmarshalAnalysis(message, &msg)
 	if err != nil {
 		return nil, fmt.Errorf("unmarshal burndown protobuf: %w", err)
 	}

@@ -264,7 +264,7 @@ func (ta *TemporalActivityAnalysis) Serialize(result any, binary bool, writer io
 func (ta *TemporalActivityAnalysis) Deserialize(pbmessage []byte) (any, error) {
 	message := pb.TemporalActivityResults{}
 
-	err := proto.Unmarshal(pbmessage, &message)
+	err := unmarshalAnalysis(pbmessage, &message)
 	if err != nil {
 		return nil, fmt.Errorf("unmarshal temporal activity result: %w", err)
 	}

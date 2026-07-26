@@ -202,7 +202,7 @@ func (ipd *ImportsPerDeveloper) Serialize(result any, binary bool, writer io.Wri
 func (ipd *ImportsPerDeveloper) Deserialize(pbmessage []byte) (any, error) {
 	msg := pb.ImportsPerDeveloperResults{}
 
-	err := proto.Unmarshal(pbmessage, &msg)
+	err := unmarshalAnalysis(pbmessage, &msg)
 	if err != nil {
 		return nil, fmt.Errorf("unmarshal imports result: %w", err)
 	}

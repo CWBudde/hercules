@@ -367,7 +367,7 @@ func (analyser *CodeChurnAnalysis) Serialize(result any, binary bool, writer io.
 func (analyser *CodeChurnAnalysis) Deserialize(message []byte) (any, error) {
 	payload := pb.CodeChurnAnalysisResults{}
 
-	err := proto.Unmarshal(message, &payload)
+	err := unmarshalAnalysis(message, &payload)
 	if err != nil {
 		return nil, fmt.Errorf("unmarshal code churn result: %w", err)
 	}

@@ -614,7 +614,7 @@ func (oa *OnboardingAnalysis) Serialize(result any, binary bool, writer io.Write
 func (oa *OnboardingAnalysis) Deserialize(pbmessage []byte) (any, error) {
 	message := pb.OnboardingResults{}
 
-	err := proto.Unmarshal(pbmessage, &message)
+	err := unmarshalAnalysis(pbmessage, &message)
 	if err != nil {
 		return nil, fmt.Errorf("unmarshal onboarding result: %w", err)
 	}

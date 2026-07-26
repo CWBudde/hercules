@@ -1,6 +1,7 @@
 package identity
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -296,8 +297,63 @@ anonymous <linux@horizon.net>
 func TestParseMailmapBadFormat(t *testing.T) {
 	contents := `Denis Engemann <denis-alexander.engemann@inria.fr> <dengemann <denis.engemann@gmail.com>`
 	mm := ParseMailmap(contents)
-	assert.Equal(t, "Denis Engemann", mm["denis.engemann@gmail.com"].Name)
-	assert.Equal(t, "denis-alexander.engemann@inria.fr", mm["denis.engemann@gmail.com"].Email)
-	assert.Equal(t, "Denis Engemann", mm["<dengemann"].Name)
-	assert.Equal(t, "denis-alexander.engemann@inria.fr", mm["<dengemann"].Email)
+	assert.Empty(t, mm)
+}
+
+func TestParseMailmapMalformedLines(t *testing.T) {
+	tests := []struct {
+		name     string
+		contents string
+	}{
+		{name: "no delimiters", contents: "Somebody"},
+		{name: "missing left delimiter", contents: "Somebody email@example.com>"},
+		{name: "missing right delimiter", contents: "Somebody <email@example.com"},
+		{name: "empty source email", contents: "Somebody <>"},
+		{name: "empty canonical identity", contents: "<source@example.com>"},
+		{name: "unmatched canonical delimiter", contents: "Somebody canonical@example.com> <source@example.com>"},
+		{name: "delimiter in source email", contents: "Somebody <bad<email@example.com>"},
+		{name: "delimiter in source name", contents: "Somebody <canonical@example.com> Bad <Name <source@example.com>"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			assert.Empty(t, ParseMailmap(test.contents))
+		})
+	}
+}
+
+func TestParseMailmapRejectsConflictingAlias(t *testing.T) {
+	contents := `First Person <first@example.com> <alias@example.com>
+Second Person <second@example.com> <alias@example.com>`
+
+	mailmap := ParseMailmap(contents)
+
+	assert.Equal(t, "First Person", mailmap["alias@example.com"].Name)
+	assert.Equal(t, "first@example.com", mailmap["alias@example.com"].Email)
+	assert.NotContains(t, mailmap, "second@example.com")
+}
+
+func TestParseMailmapSkipsMalformedLineAndContinues(t *testing.T) {
+	contents := `Broken <
+Valid Person <valid@example.com> <alias@example.com>`
+
+	mailmap := ParseMailmap(contents)
+
+	assert.Len(t, mailmap, 1)
+	assert.Equal(t, "Valid Person", mailmap["alias@example.com"].Name)
+}
+
+func FuzzParseMailmap(f *testing.F) {
+	f.Add("Canonical <canonical@example.com> Alias <alias@example.com>")
+	f.Add("<canonical@example.com> <alias@example.com>")
+	f.Add("malformed <")
+	f.Add("")
+
+	f.Fuzz(func(t *testing.T, contents string) {
+		first := ParseMailmap(contents)
+		second := ParseMailmap(contents)
+		if !reflect.DeepEqual(first, second) {
+			t.Fatalf("mailmap parsing is not deterministic: %#v != %#v", first, second)
+		}
+	})
 }

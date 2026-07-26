@@ -24,38 +24,88 @@ func ParseMailmap(contents string) map[string]object.Signature {
 			continue
 		}
 
-		if strings.LastIndex(line, ">") != len(line)-1 {
+		aliases, signature, ok := parseMailmapLine(line)
+		if !ok {
 			continue
 		}
 
-		ltp := strings.LastIndex(line, "<")
-		fromEmail := line[ltp+1 : len(line)-1]
-		line = strings.TrimSpace(line[:ltp])
-		gtp := strings.LastIndex(line, ">")
-
-		fromName := ""
-		if gtp != len(line)-1 {
-			fromName = strings.TrimSpace(line[gtp+1:])
+		if mailmapAliasesConflict(signatures, aliases, signature) {
+			continue
 		}
 
-		toEmail := ""
-
-		if gtp > 0 {
-			line = line[:gtp]
-			ltp = strings.LastIndex(line, "<")
-			toEmail = line[ltp+1:]
-			line = strings.TrimSpace(line[:ltp])
-		}
-
-		toName := line
-		if fromEmail != "" {
-			signatures[fromEmail] = object.Signature{Name: toName, Email: toEmail}
-		}
-
-		if fromName != "" {
-			signatures[fromName] = object.Signature{Name: toName, Email: toEmail}
+		for _, alias := range aliases {
+			signatures[alias] = signature
 		}
 	}
 
 	return signatures
+}
+
+func parseMailmapLine(line string) ([]string, object.Signature, bool) {
+	lastLeft := strings.LastIndexByte(line, '<')
+	if lastLeft < 0 || line[len(line)-1] != '>' {
+		return nil, object.Signature{}, false
+	}
+
+	fromEmail := strings.TrimSpace(line[lastLeft+1 : len(line)-1])
+	if fromEmail == "" || strings.ContainsAny(fromEmail, "<>") {
+		return nil, object.Signature{}, false
+	}
+
+	prefix := strings.TrimSpace(line[:lastLeft])
+
+	toName, toEmail, fromName, ok := parseMailmapCanonical(prefix)
+	if !ok {
+		return nil, object.Signature{}, false
+	}
+
+	aliases := []string{fromEmail}
+	if fromName != "" {
+		aliases = append(aliases, fromName)
+	}
+
+	return aliases, object.Signature{Name: toName, Email: toEmail}, true
+}
+
+func parseMailmapCanonical(prefix string) (string, string, string, bool) {
+	previousRight := strings.LastIndexByte(prefix, '>')
+	if previousRight < 0 {
+		return prefix, "", "", !strings.ContainsAny(prefix, "<>") && prefix != ""
+	}
+
+	previousLeft := strings.LastIndexByte(prefix[:previousRight], '<')
+	if previousLeft < 0 {
+		return "", "", "", false
+	}
+
+	toName := strings.TrimSpace(prefix[:previousLeft])
+	toEmail := strings.TrimSpace(prefix[previousLeft+1 : previousRight])
+	fromName := strings.TrimSpace(prefix[previousRight+1:])
+	valid := !mailmapContainsDelimiter(toName, toEmail, fromName) && (toName != "" || toEmail != "")
+
+	return toName, toEmail, fromName, valid
+}
+
+func mailmapContainsDelimiter(values ...string) bool {
+	for _, value := range values {
+		if strings.ContainsAny(value, "<>") {
+			return true
+		}
+	}
+
+	return false
+}
+
+func mailmapAliasesConflict(
+	signatures map[string]object.Signature,
+	aliases []string,
+	signature object.Signature,
+) bool {
+	for _, alias := range aliases {
+		if existing, found := signatures[alias]; found && existing != signature {
+			return true
+		}
+	}
+
+	return false
 }

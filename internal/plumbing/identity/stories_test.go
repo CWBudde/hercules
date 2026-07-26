@@ -2,6 +2,8 @@ package identity
 
 import (
 	"os"
+	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -422,7 +424,97 @@ func TestStoryDetectorLoadMergeDictDuplicateHash(t *testing.T) {
 
 	err = sd.LoadMergeDict(tmpf.Name())
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "ambigous hash")
+	assert.Contains(t, err.Error(), "ambiguous hash")
+}
+
+func TestParseMergeDictValidation(t *testing.T) {
+	hash := "1111111111111111111111111111111111111111"
+	tests := []struct {
+		name    string
+		content string
+		error   string
+	}{
+		{
+			name:    "empty record",
+			content: "\n",
+			error:   "record must not be empty",
+		},
+		{
+			name:    "missing hash",
+			content: "Story only",
+			error:   "must contain at least one hash",
+		},
+		{
+			name:    "empty name",
+			content: hash + "|",
+			error:   "name must not be empty",
+		},
+		{
+			name:    "duplicate hash in one record",
+			content: hash + "|" + hash + "|Story",
+			error:   "ambiguous hash",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, _, err := parseMergeDict(strings.NewReader(test.content))
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), test.error)
+		})
+	}
+}
+
+func TestParseMergeDictSupportsLongRecords(t *testing.T) {
+	hash := "1111111111111111111111111111111111111111"
+	name := strings.Repeat("a", initialIdentityRecordSize+1)
+
+	dict, names, err := parseMergeDict(strings.NewReader(hash + "|" + name))
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{name}, names)
+	assert.Equal(t, 0, dict[plumbing.NewHash(hash)])
+}
+
+func TestStoryDetectorLoadMergeDictRejectsTruncatedInputAtomically(t *testing.T) {
+	dictPath := t.TempDir() + "/stories"
+	require.NoError(t, os.WriteFile(
+		dictPath,
+		[]byte(strings.Repeat("a", maxIdentityRecordSize+1)),
+		0o600,
+	))
+
+	originalHash := plumbing.NewHash("1111111111111111111111111111111111111111")
+	sd := &StoryDetector{
+		MergeHashDict: map[plumbing.Hash]int{originalHash: 0},
+		MergeNames:    []string{"Original"},
+	}
+
+	err := sd.LoadMergeDict(dictPath)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "scan merge dictionary")
+	assert.Equal(t, map[plumbing.Hash]int{originalHash: 0}, sd.MergeHashDict)
+	assert.Equal(t, []string{"Original"}, sd.MergeNames)
+}
+
+func FuzzParseMergeDict(f *testing.F) {
+	f.Add("1111111111111111111111111111111111111111|Story")
+	f.Add("1111111111111111111111111111111111111111|bad|Story")
+	f.Add("")
+
+	f.Fuzz(func(t *testing.T, contents string) {
+		firstDict, firstNames, firstErr := parseMergeDict(strings.NewReader(contents))
+		secondDict, secondNames, secondErr := parseMergeDict(strings.NewReader(contents))
+		if (firstErr == nil) != (secondErr == nil) ||
+			!reflect.DeepEqual(firstDict, secondDict) ||
+			!reflect.DeepEqual(firstNames, secondNames) {
+			t.Fatalf(
+				"merge dictionary parsing is not deterministic: (%#v, %#v, %v) != (%#v, %#v, %v)",
+				firstDict, firstNames, firstErr, secondDict, secondNames, secondErr,
+			)
+		}
+	})
 }
 
 func TestStoryDetectorMakeMergeName(t *testing.T) {
@@ -570,6 +662,7 @@ func TestSplitMergeDict(t *testing.T) {
 	hashDict, names := splitMergeDict(input)
 
 	// Should have 3 unique names
+	assert.Equal(t, []string{"Alice", "Bob", "Charlie"}, names)
 	assert.Len(t, names, 3)
 	assert.Len(t, hashDict, 4)
 
@@ -591,6 +684,22 @@ func TestSplitMergeDict(t *testing.T) {
 	assert.NotEqual(t, id1, id2)
 	assert.NotEqual(t, id1, id4)
 	assert.NotEqual(t, id2, id4)
+}
+
+func TestSplitMergeDictIsDeterministic(t *testing.T) {
+	input := map[plumbing.Hash]string{
+		plumbing.NewHash("4444444444444444444444444444444444444444"): "Charlie",
+		plumbing.NewHash("2222222222222222222222222222222222222222"): "Bob",
+		plumbing.NewHash("3333333333333333333333333333333333333333"): "Alice",
+		plumbing.NewHash("1111111111111111111111111111111111111111"): "Alice",
+	}
+
+	expectedHashes, expectedNames := splitMergeDict(input)
+	for range 100 {
+		hashes, names := splitMergeDict(input)
+		assert.Equal(t, expectedNames, names)
+		assert.Equal(t, expectedHashes, hashes)
+	}
 }
 
 func TestSplitMergeDictEmpty(t *testing.T) {

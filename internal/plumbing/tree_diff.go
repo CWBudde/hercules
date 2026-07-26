@@ -168,7 +168,18 @@ func (treediff *TreeDiff) Configure(facts map[string]any) error {
 	}
 
 	if val, exists := facts[ConfigTreeDiffFilterRegexp].(string); exists {
-		treediff.NameFilter = regexp.MustCompile(val)
+		nameFilter, err := regexp.Compile(val)
+		if err != nil {
+			return fmt.Errorf(
+				"%w: configuration %q contains invalid regular expression %q: %w",
+				errInvalidTreeDiffConfigValue,
+				ConfigTreeDiffFilterRegexp,
+				val,
+				err,
+			)
+		}
+
+		treediff.NameFilter = nameFilter
 	}
 
 	return nil

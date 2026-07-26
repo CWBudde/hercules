@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"regexp"
 	"slices"
@@ -18,7 +19,11 @@ import (
 	"github.com/cwbudde/hercules/internal/core"
 )
 
-var errInvalidPeopleCommitDependency = errors.New("invalid people commit dependency")
+var (
+	errInvalidPeopleCommitDependency = errors.New("invalid people commit dependency")
+	errEmptyIdentityAlias            = errors.New("identity aliases must not be empty")
+	errConflictingIdentityAlias      = errors.New("identity alias conflicts with another identity")
+)
 
 // PeopleDetector determines the author of a commit. Same person can commit under different
 // signatures, and we apply some heuristics to merge those together.
@@ -62,6 +67,8 @@ const (
 
 	defaultIdentityMergeThreshold = 0.92
 	ambiguousIdentityThreshold    = 0.85
+	initialIdentityRecordSize     = 64 * 1024
+	maxIdentityRecordSize         = 1024 * 1024
 )
 
 var _ core.IdentityResolver = peopleResolver{}
@@ -435,26 +442,9 @@ func (detector *PeopleDetector) LoadPeopleDict(path string) error {
 
 	defer func() { _ = file.Close() }()
 
-	scanner := bufio.NewScanner(file)
-	dict := make(map[string]int)
-	var reverseDict []string
-	size := 0
-
-	for scanner.Scan() {
-		ids := strings.Split(scanner.Text(), "|")
-		canon := ids[0]
-		var exists bool
-		var canonIndex int
-		// lookup or create a new canonical value
-		if canonIndex, exists = dict[strings.ToLower(canon)]; !exists {
-			reverseDict = append(reverseDict, canon)
-			canonIndex = size
-			size++
-		}
-
-		for _, id := range ids {
-			dict[strings.ToLower(id)] = canonIndex
-		}
+	dict, reverseDict, err := parsePeopleDict(file)
+	if err != nil {
+		return err
 	}
 
 	detector.PeopleDict = dict
@@ -462,6 +452,82 @@ func (detector *PeopleDetector) LoadPeopleDict(path string) error {
 	detector.rebuildAuditFromState(nil, nil, nil)
 
 	return nil
+}
+
+func parsePeopleDict(reader io.Reader) (map[string]int, []string, error) {
+	scanner := newIdentityScanner(reader)
+	dict := make(map[string]int)
+	var reverseDict []string
+	lineNumber := 0
+
+	for scanner.Scan() {
+		lineNumber++
+
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+
+		err := addPeopleDictLine(line, dict, &reverseDict)
+		if err != nil {
+			return nil, nil, fmt.Errorf("parse people dictionary line %d: %w", lineNumber, err)
+		}
+	}
+
+	err := scanner.Err()
+	if err != nil {
+		return nil, nil, fmt.Errorf("scan people dictionary: %w", err)
+	}
+
+	return dict, reverseDict, nil
+}
+
+func addPeopleDictLine(line string, dict map[string]int, reverseDict *[]string) error {
+	ids := strings.Split(line, "|")
+	for index := range ids {
+		ids[index] = strings.TrimSpace(ids[index])
+		if ids[index] == "" {
+			return errEmptyIdentityAlias
+		}
+	}
+
+	canon := ids[0]
+
+	canonIndex, exists := dict[strings.ToLower(canon)]
+	if !exists {
+		canonIndex = len(*reverseDict)
+	}
+
+	for _, id := range ids {
+		key := strings.ToLower(id)
+
+		existing, found := dict[key]
+		if found && existing != canonIndex {
+			return fmt.Errorf(
+				"%w: alias %q belongs to %q",
+				errConflictingIdentityAlias,
+				id,
+				(*reverseDict)[existing],
+			)
+		}
+	}
+
+	if !exists {
+		*reverseDict = append(*reverseDict, canon)
+	}
+
+	for _, id := range ids {
+		dict[strings.ToLower(id)] = canonIndex
+	}
+
+	return nil
+}
+
+func newIdentityScanner(reader io.Reader) *bufio.Scanner {
+	scanner := bufio.NewScanner(reader)
+	scanner.Buffer(make([]byte, initialIdentityRecordSize), maxIdentityRecordSize)
+
+	return scanner
 }
 
 // GeneratePeopleDict loads author signatures from the specified list of Git commits.
@@ -549,7 +615,17 @@ func loadMailmapIdentities(
 		return
 	}
 
-	for key, value := range ParseMailmap(contents) {
+	mailmap := ParseMailmap(contents)
+
+	keys := make([]string, 0, len(mailmap))
+	for key := range mailmap {
+		keys = append(keys, key)
+	}
+
+	sort.Strings(keys)
+
+	for _, key := range keys {
+		value := mailmap[key]
 		key = strings.ToLower(key)
 		email := strings.ToLower(value.Email)
 		name := strings.ToLower(value.Name)

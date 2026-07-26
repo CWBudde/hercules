@@ -67,6 +67,37 @@ func TestTreeDiffConfigure(t *testing.T) {
 	assert.Equal(t, []string{"test"}, td.SkipFiles)
 }
 
+func TestTreeDiffConfigureRejectsInvalidRegexp(t *testing.T) {
+	td := fixtureTreeDiff()
+	original := regexp.MustCompile("^safe/")
+	td.NameFilter = original
+
+	err := td.Configure(map[string]any{
+		ConfigTreeDiffFilterRegexp: "[",
+	})
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, errInvalidTreeDiffConfigValue)
+	assert.Contains(t, err.Error(), ConfigTreeDiffFilterRegexp)
+	assert.Same(t, original, td.NameFilter)
+}
+
+func FuzzTreeDiffConfigureRegexp(f *testing.F) {
+	f.Add("^src/.*\\.go$")
+	f.Add("[")
+	f.Add("")
+
+	f.Fuzz(func(t *testing.T, expression string) {
+		td := &TreeDiff{}
+		err := td.Configure(map[string]any{
+			ConfigTreeDiffFilterRegexp: expression,
+		})
+		if err == nil && td.NameFilter == nil {
+			t.Fatal("valid regular expression did not configure a filter")
+		}
+	})
+}
+
 func TestTreeDiffRegistration(t *testing.T) {
 	summoned := core.Registry.Summon((&TreeDiff{}).Name())
 	assert.Len(t, summoned, 1)

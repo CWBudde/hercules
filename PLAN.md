@@ -413,31 +413,16 @@ protobuf output, rejects diffs, generates the same plugin twice byte-for-byte, a
 
 ### DATA-06: Harden repository-supplied text and configuration
 
-Affected code:
+Status: completed 2026-07-26.
 
-- `internal/plumbing/identity/mailmap.go`
-- `internal/plumbing/identity/people.go`
-- `internal/plumbing/identity/stories.go`
-- `internal/plumbing/tree_diff.go`
-
-Work:
-
-- Bounds-check every `.mailmap` delimiter before slicing; skip or report malformed lines without
-  panic.
-- Increase scanner token limits where long identity records are supported and always check
-  `scanner.Err()`.
-- Reject conflicting aliases rather than silently overwriting them.
-- Replace `regexp.MustCompile` on user configuration with `regexp.Compile` and a returned
-  configuration error.
-- Make merge-dictionary identity assignment deterministic rather than dependent on map iteration.
-- Add table and fuzz tests for malformed `.mailmap`, people dictionaries, merge dictionaries, and
-  regular expressions.
-
-Acceptance criteria:
-
-- [ ] committed repository text cannot panic configuration or identity detection;
-- [ ] truncated input is never accepted as a complete identity map;
-- [ ] identical input produces identical identity IDs.
+Mailmap parsing now validates every delimiter and skips malformed or conflicting records without
+panicking. People and merge dictionaries accept bounded long records, reject empty/conflicting
+aliases, check scanner errors, and install parsed state only after the complete input succeeds;
+oversized/truncated input therefore cannot masquerade as a complete map. Merge identities and
+mailmap-derived IDs are assigned deterministically. Invalid user whitelist expressions return
+configuration errors instead of panicking. Table, atomic-state, repeated-run, and fuzz tests cover
+malformed mailmaps, both dictionary formats, oversized records, duplicate hashes, and arbitrary
+regular expressions.
 
 ### DATA-07: Complete burndown survival-analysis parity
 

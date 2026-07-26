@@ -219,6 +219,87 @@ func TestPeopleDetectorLoadPeopleDictWrongPath(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestParsePeopleDictValidation(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		error   string
+	}{
+		{
+			name:    "conflicting alias",
+			content: "Alice|shared@example.com\nBob|shared@example.com",
+			error:   `alias "shared@example.com" belongs to "Alice"`,
+		},
+		{
+			name:    "empty alias",
+			content: "Alice||alice@example.com",
+			error:   "identity aliases must not be empty",
+		},
+		{
+			name:    "leading empty canonical alias",
+			content: "|alice@example.com",
+			error:   "identity aliases must not be empty",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, _, err := parsePeopleDict(strings.NewReader(test.content))
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), test.error)
+		})
+	}
+}
+
+func TestParsePeopleDictSupportsLongRecords(t *testing.T) {
+	canonical := strings.Repeat("a", initialIdentityRecordSize+1)
+	dict, names, err := parsePeopleDict(strings.NewReader(canonical + "|alias"))
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{canonical}, names)
+	assert.Equal(t, 0, dict["alias"])
+}
+
+func TestPeopleDetectorLoadPeopleDictRejectsTruncatedInputAtomically(t *testing.T) {
+	dictPath := path.Join(t.TempDir(), "people")
+	require.NoError(t, os.WriteFile(
+		dictPath,
+		[]byte(strings.Repeat("a", maxIdentityRecordSize+1)),
+		0o600,
+	))
+
+	id := fixturePeopleDetector()
+	originalDict := id.PeopleDict
+	originalNames := id.ReversedPeopleDict
+
+	err := id.LoadPeopleDict(dictPath)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "scan people dictionary")
+	assert.Equal(t, originalDict, id.PeopleDict)
+	assert.Equal(t, originalNames, id.ReversedPeopleDict)
+}
+
+func FuzzParsePeopleDict(f *testing.F) {
+	f.Add("Alice|alice@example.com\nBob|bob@example.com")
+	f.Add("Alice|shared\nBob|shared")
+	f.Add("Alice||alias")
+	f.Add("")
+
+	f.Fuzz(func(t *testing.T, contents string) {
+		firstDict, firstNames, firstErr := parsePeopleDict(strings.NewReader(contents))
+		secondDict, secondNames, secondErr := parsePeopleDict(strings.NewReader(contents))
+		if (firstErr == nil) != (secondErr == nil) ||
+			!reflect.DeepEqual(firstDict, secondDict) ||
+			!reflect.DeepEqual(firstNames, secondNames) {
+			t.Fatalf(
+				"people dictionary parsing is not deterministic: (%#v, %#v, %v) != (%#v, %#v, %v)",
+				firstDict, firstNames, firstErr, secondDict, secondNames, secondErr,
+			)
+		}
+	})
+}
+
 func TestPeopleDetectorGeneratePeopleDict(t *testing.T) {
 	id := fixturePeopleDetector()
 	commits := make([]*object.Commit, 0)
@@ -535,12 +616,37 @@ func TestPeopleDetectorGeneratePeopleDictMailmap(t *testing.T) {
 	}
 	fake := getFakeCommitWithFile(
 		".mailmap",
-		"Strange Guy <vadim@sourced.tech>\nVadim Markovtsev <vadim@sourced.tech> Strange Guy <vadim@sourced.tech>",
+		"Vadim Markovtsev <vadim@sourced.tech> Strange Guy <vadim@sourced.tech>",
 	)
 	commits = append(commits, fake)
 	id.GeneratePeopleDict(commits)
 	assert.Contains(t, id.ReversedPeopleDict,
 		"strange guy|vadim markovtsev|gmarkhor@gmail.com|vadim@athenian.co|vadim@sourced.tech")
+}
+
+func TestPeopleDetectorGeneratePeopleDictMailmapDeterministic(t *testing.T) {
+	commits := []*object.Commit{getFakeCommitWithFile(
+		".mailmap",
+		`Charlie <charlie@example.com> <charlie-alias@example.com>
+Alice <alice@example.com> <alice-alias@example.com>
+Bob <bob@example.com> <bob-alias@example.com>`,
+	)}
+
+	var expectedDict map[string]int
+	var expectedNames []string
+	for iteration := range 100 {
+		id := fixturePeopleDetector()
+		id.GeneratePeopleDict(commits)
+		if iteration == 0 {
+			expectedDict = id.PeopleDict
+			expectedNames = id.ReversedPeopleDict
+
+			continue
+		}
+
+		assert.Equal(t, expectedDict, id.PeopleDict)
+		assert.Equal(t, expectedNames, id.ReversedPeopleDict)
+	}
 }
 
 func TestPeopleDetectorFork(t *testing.T) {

@@ -1,11 +1,12 @@
 package identity
 
 import (
-	"bufio"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"math"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -189,22 +190,26 @@ func configureMergeTracks(detector *StoryDetector, facts map[string]any) error {
 }
 
 func splitMergeDict(dict map[plumbing.Hash]string) (map[plumbing.Hash]int, []string) {
-	uniqueNames := map[string]int{}
+	uniqueNames := make(map[string]struct{}, len(dict))
+	for _, name := range dict {
+		uniqueNames[name] = struct{}{}
+	}
+
+	names := make([]string, 0, len(uniqueNames))
+	for name := range uniqueNames {
+		names = append(names, name)
+	}
+
+	sort.Strings(names)
+
+	nameIDs := make(map[string]int, len(names))
+	for id, name := range names {
+		nameIDs[name] = id
+	}
 
 	hashDict := make(map[plumbing.Hash]int, len(dict))
 	for hash, name := range dict {
-		id, ok := uniqueNames[name]
-		if !ok {
-			id = len(uniqueNames)
-			uniqueNames[name] = id
-		}
-
-		hashDict[hash] = id
-	}
-
-	names := make([]string, len(uniqueNames))
-	for name, id := range uniqueNames {
-		names[id] = name
+		hashDict[hash] = nameIDs[name]
 	}
 
 	return hashDict, names
@@ -259,19 +264,9 @@ func (detector *StoryDetector) LoadMergeDict(path string) error {
 	}
 	defer func() { _ = file.Close() }()
 
-	scanner := bufio.NewScanner(file)
-	dict := make(map[plumbing.Hash]int)
-	var reverseDict []string
-
-	for scanner.Scan() {
-		id := len(reverseDict)
-
-		name, err := parseMergeDictLine(scanner.Text(), id, dict, reverseDict)
-		if err != nil {
-			return err
-		}
-
-		reverseDict = append(reverseDict, name)
+	dict, reverseDict, err := parseMergeDict(file)
+	if err != nil {
+		return err
 	}
 
 	detector.MergeHashDict = dict
@@ -280,12 +275,42 @@ func (detector *StoryDetector) LoadMergeDict(path string) error {
 	return nil
 }
 
+func parseMergeDict(reader io.Reader) (map[plumbing.Hash]int, []string, error) {
+	scanner := newIdentityScanner(reader)
+	dict := make(map[plumbing.Hash]int)
+	var reverseDict []string
+	lineNumber := 0
+
+	for scanner.Scan() {
+		lineNumber++
+		id := len(reverseDict)
+
+		name, err := parseMergeDictLine(scanner.Text(), id, dict, reverseDict)
+		if err != nil {
+			return nil, nil, fmt.Errorf("parse merge dictionary line %d: %w", lineNumber, err)
+		}
+
+		reverseDict = append(reverseDict, name)
+	}
+
+	err := scanner.Err()
+	if err != nil {
+		return nil, nil, fmt.Errorf("scan merge dictionary: %w", err)
+	}
+
+	return dict, reverseDict, nil
+}
+
 func parseMergeDictLine(
 	line string,
 	id int,
 	dict map[plumbing.Hash]int,
 	names []string,
 ) (string, error) {
+	if strings.TrimSpace(line) == "" {
+		return "", errors.New("merge dictionary record must not be empty")
+	}
+
 	values := strings.Split(line, "|")
 
 	nameIndex, err := addMergeHashes(values, id, dict, names)
@@ -293,8 +318,17 @@ func parseMergeDictLine(
 		return "", err
 	}
 
+	if nameIndex == 0 {
+		return "", errors.New("merge dictionary record must contain at least one hash")
+	}
+
 	if nameIndex < len(values) {
-		return values[nameIndex], nil
+		name := strings.TrimSpace(values[nameIndex])
+		if name == "" {
+			return "", errors.New("merge dictionary name must not be empty")
+		}
+
+		return name, nil
 	}
 
 	return fmt.Sprintf("Merge #%d", id), nil
@@ -317,7 +351,14 @@ func addMergeHashes(
 		}
 
 		if existingID, found := dict[key]; found {
-			return 0, errors.Errorf("ambigous hash: %s = (%d) %s", value, existingID, names[existingID])
+			existingName := "current record"
+			if existingID >= 0 && existingID < len(names) {
+				existingName = names[existingID]
+			}
+
+			return 0, errors.Errorf(
+				"ambiguous hash: %s = (%d) %s", value, existingID, existingName,
+			)
 		}
 
 		dict[key] = id
@@ -328,6 +369,11 @@ func addMergeHashes(
 
 func decodeMergeHash(value string) (plumbing.Hash, error) {
 	var key plumbing.Hash
+
+	expectedLength := hex.EncodedLen(len(key))
+	if len(value) != expectedLength {
+		return key, errors.Errorf("hash must be of %d hexadecimal characters: %s", expectedLength, value)
+	}
 
 	n, err := hex.Decode(key[:], []byte(value))
 	if err == nil && n != len(key) {

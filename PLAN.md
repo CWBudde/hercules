@@ -454,15 +454,15 @@ benchmark demonstrates entity-count-independent retained allocation for ranking.
 
 ### PERF-02: Stream burndown merges
 
-- Replace duration-squared full intermediate matrices with row/band streaming or sparse chunked
-  accumulation.
-- Remove explicit `runtime.GC()` calls from algorithmic code.
-- Add allocation and peak-RSS benchmarks for multi-year daily histories.
+Status: completed 2026-07-26.
 
-Acceptance criteria:
-
-- [ ] output remains numerically equivalent within documented rounding tolerance;
-- [ ] peak memory grows sub-quadratically with history duration.
+Burndown result merging now interpolates one source-sampling chunk per age band and finalizes one
+output row at a time, replacing the duration-squared daily float workspace with linear auxiliary
+state. The legacy analyser shares the same implementation and algorithmic code no longer forces
+garbage collection. Existing interpolation invariants plus a mixed-resolution/start-offset golden
+test preserve the documented one-line float32 rounding tolerance. Allocation and Linux current-RSS
+benchmarks cover two-, five-, and ten-year daily histories and report interpolation workspace
+separately from the unavoidable dense result size.
 
 ### PERF-03: Incremental ownership snapshots
 

@@ -120,6 +120,39 @@ This satisfies the scaling acceptance criterion from the former ROADMAP
 Milestone 2: "a documented command set completes without OOM and with
 reproducible results."
 
+## Merging multi-repository burndown histories
+
+Combining burndown results resamples both histories onto their shared daily
+timeline. The merge keeps one source-sampling chunk for each age band and
+finalizes one output row at a time. Its interpolation workspace therefore
+grows linearly with the history duration; it does not allocate the former
+daily `duration × duration` float matrix.
+
+`DenseHistory` is still the public result type. A fully populated returned
+history is itself quadratic in its number of sampled rows and age bands, so
+that required output storage is a lower bound rather than merge workspace.
+Choose coarser `--sampling` and `--granularity` when the returned matrix is the
+remaining memory constraint.
+
+The streaming implementation retains the historical float32 accumulation and
+int64 truncation contract. Merge outputs are considered numerically equivalent
+within one line per cell, which covers float32 rounding at resampling
+boundaries. The mixed-resolution golden regression exercises different
+sampling, granularity, and start-time offsets.
+
+Reproduce the allocation and Linux resident-memory benchmarks with:
+
+```bash
+go test -run '^$' \
+  -bench '^BenchmarkMergeBurndownMatrices(PeakRSS)?MultiYearDaily$' \
+  -benchtime=1x -benchmem ./internal/burndown
+```
+
+The benchmark reports `interpolation-workspace-bytes`,
+`required-output-bytes`, and (on Linux) `peak-RSS-delta-bytes` separately.
+The two-, five-, and ten-year fixtures use daily samples with 30-day age
+bands.
+
 If even `--preset large-repo` is too tight, the next escape hatches are:
 
 1. Lower output resolution further: append `--granularity=90 --sampling=90`.

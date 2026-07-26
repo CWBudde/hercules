@@ -616,6 +616,69 @@ func TestBurndownMergeMatrices(t *testing.T) {
 	}
 }
 
+func TestBurndownMergeMatricesMixedSamplingAndOffset(t *testing.T) {
+	first := DenseHistory{
+		{10},
+		{8, 6},
+		{6, 5},
+		{4, 4, 8},
+	}
+	second := DenseHistory{
+		{9},
+		{7, 5},
+		{4, 3, 6},
+	}
+	day := int64((24 * time.Hour) / time.Second)
+	commonFirst := &core.CommonAnalysisResult{
+		BeginTime: 100 * day,
+		EndTime:   108 * day,
+	}
+	commonSecond := &core.CommonAnalysisResult{
+		BeginTime: 102 * day,
+		EndTime:   111 * day,
+	}
+
+	actual := MergeBurndownMatrices(
+		first, second,
+		4, 2,
+		3, 3,
+		24*time.Hour,
+		commonFirst, commonSecond,
+	)
+	// Captured from the duration-squared implementation that preceded the
+	// streaming merge. That implementation accumulated float32 daily cohorts
+	// before truncating them to int64, so one line is the documented numerical
+	// tolerance for equivalent implementations.
+	expected := DenseHistory{
+		{10, 0, 0, 0},
+		{11, 3, 0, 0},
+		{8, 7, 0, 0},
+		{6, 6, 3, 0},
+		{5, 4, 4, 2},
+		{5, 3, 4, 4},
+	}
+
+	if !assert.Len(t, actual, len(expected)) {
+		return
+	}
+	for rowIndex, expectedRow := range expected {
+		if !assert.Len(t, actual[rowIndex], len(expectedRow)) {
+			continue
+		}
+		for columnIndex, expectedValue := range expectedRow {
+			assert.InDelta(
+				t,
+				expectedValue,
+				actual[rowIndex][columnIndex],
+				1,
+				"row=%d column=%d",
+				rowIndex,
+				columnIndex,
+			)
+		}
+	}
+}
+
 func TestBurndownAddBurndownMatrix(t *testing.T) {
 	h := DenseHistory{
 		[]int64{13430},

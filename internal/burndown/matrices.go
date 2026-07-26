@@ -3,7 +3,6 @@ package burndown
 import (
 	"log"
 	"math"
-	"runtime"
 	"time"
 
 	"github.com/cwbudde/hercules/internal/core"
@@ -21,52 +20,37 @@ type DenseHistory [][]int64
 // Columns: *at least* len(matrix[...]) * granularity + offset
 // `matrix` can be sparse, so that the last columns which are equal to 0 are truncated.
 func AddBurndownMatrix(matrix DenseHistory, granularity, sampling int, accPerTick [][]float32, offset int) {
-	//	defer print("AddBurndownMatrix exit\n")
-	//	print("AddBurndownMatrix enter\n")
-
-	// Determine the maximum number of bands; the actual one may be larger but we do not care
 	maxCols := maximumMatrixColumns(matrix)
-	validatePerTickDimensions(matrix, sampling, accPerTick, offset, maxCols)
+	validatePerTickDimensions(matrix, granularity, sampling, accPerTick, offset, maxCols)
 
-	var memoryStats runtime.MemStats
-	runtime.ReadMemStats(&memoryStats)
+	stream := newBurndownMatrixStream(matrix, granularity, sampling)
+	for tick := range accPerTick {
+		stream.advanceTo(tick - offset)
 
-	perTick := makePerTickAccumulator(accPerTick)
-	interpolator := burndownInterpolator{
-		matrix: matrix, granularity: granularity, sampling: sampling, perTick: perTick, offset: offset,
-	}
-	interpolator.interpolate(maxCols)
-
-	for y := len(matrix) * sampling; y+offset < len(perTick); y++ {
-		copy(perTick[y+offset], perTick[len(matrix)*sampling-1+offset])
-	}
-	// the original matrix has been resampled by tick
-	// add it to the accumulator
-	for y, row := range perTick {
-		for x, val := range row {
-			accPerTick[y][x] += val
+		for cohort := range maxCols * granularity {
+			accPerTick[tick][cohort+offset] += stream.valueAt(cohort)
 		}
 	}
-
-	runtime.ReadMemStats(&memoryStats)
-
-	for i := range perTick {
-		perTick[i] = nil
-	}
-
-	runtime.GC()
-	var a runtime.MemStats
-	runtime.ReadMemStats(&a)
-
-	//	print("AddBurndownMatrix Deallocated: ", (m.Alloc-a.Alloc)/1024/1024, "\n")
 }
 
-type burndownInterpolator struct {
-	matrix      DenseHistory
+type burndownMatrixStream struct {
+	bands       []burndownBandStream
 	granularity int
 	sampling    int
-	perTick     [][]float32
-	offset      int
+	rows        int
+	preparedRow int
+	position    int
+	active      bool
+}
+
+type burndownBandStream struct {
+	matrix      DenseHistory
+	column      int
+	granularity int
+	sampling    int
+	row         int
+	previous    []float32
+	chunk       []float32
 }
 
 func maximumMatrixColumns(matrix DenseHistory) int {
@@ -80,71 +64,135 @@ func maximumMatrixColumns(matrix DenseHistory) int {
 
 func validatePerTickDimensions(
 	matrix DenseHistory,
+	granularity,
 	sampling int,
 	accPerTick [][]float32,
 	offset, maximumColumns int,
 ) {
+	if granularity <= 0 || sampling <= 0 || offset < 0 {
+		log.Panicf(
+			"merge bug: invalid interpolation dimensions: granularity=%d sampling=%d offset=%d",
+			granularity, sampling, offset,
+		)
+	}
+
 	neededRows := len(matrix)*sampling + offset
 	if len(accPerTick) < neededRows {
 		log.Panicf("merge bug: too few per-tick rows: required %d, have %d",
 			neededRows, len(accPerTick))
 	}
 
-	if len(accPerTick[0]) < maximumColumns {
-		log.Panicf("merge bug: too few per-tick cols: required %d, have %d",
-			maximumColumns, len(accPerTick[0]))
-	}
-}
-
-func makePerTickAccumulator(accPerTick [][]float32) [][]float32 {
-	perTick := make([][]float32, len(accPerTick))
+	neededColumns := maximumColumns*granularity + offset
 	for rowIndex, row := range accPerTick {
-		perTick[rowIndex] = make([]float32, len(row))
-	}
-
-	return perTick
-}
-
-func (interpolator *burndownInterpolator) interpolate(maximumColumns int) {
-	for columnIndex := range maximumColumns {
-		for rowIndex := range interpolator.matrix {
-			if columnIndex >= len(interpolator.matrix[rowIndex]) {
-				// Sparse rows omit trailing zero-valued bands.
-				continue
-			}
-
-			if columnIndex*interpolator.granularity > (rowIndex+1)*interpolator.sampling {
-				// The future is zeros.
-				continue
-			}
-
-			interpolator.interpolateCell(rowIndex, columnIndex)
+		if len(row) < neededColumns {
+			log.Panicf("merge bug: too few per-tick cols in row %d: required %d, have %d",
+				rowIndex, neededColumns, len(row))
 		}
 	}
 }
 
-func (interpolator *burndownInterpolator) interpolateCell(rowIndex, columnIndex int) {
+func newBurndownMatrixStream(
+	matrix DenseHistory,
+	granularity, sampling int,
+) *burndownMatrixStream {
+	maximumColumns := maximumMatrixColumns(matrix)
+	stream := &burndownMatrixStream{
+		bands:       make([]burndownBandStream, maximumColumns),
+		granularity: granularity,
+		sampling:    sampling,
+		rows:        len(matrix),
+		preparedRow: -1,
+	}
+
+	for column := range stream.bands {
+		stream.bands[column] = burndownBandStream{
+			matrix:      matrix,
+			column:      column,
+			granularity: granularity,
+			sampling:    sampling,
+			row:         -1,
+			previous:    make([]float32, granularity),
+			chunk:       make([]float32, sampling*granularity),
+		}
+	}
+
+	return stream
+}
+
+func (stream *burndownMatrixStream) advanceTo(tick int) {
+	stream.active = tick >= 0 && stream.rows > 0
+	if !stream.active {
+		return
+	}
+
+	lastTick := stream.rows*stream.sampling - 1
+	tick = min(tick, lastTick)
+
+	targetRow := tick / stream.sampling
+	for stream.preparedRow < targetRow {
+		stream.preparedRow++
+		for bandIndex := range stream.bands {
+			stream.bands[bandIndex].prepare(stream.preparedRow)
+		}
+	}
+
+	stream.position = tick % stream.sampling
+}
+
+func (stream *burndownMatrixStream) valueAt(cohort int) float32 {
+	if !stream.active || cohort < 0 {
+		return 0
+	}
+
+	column := cohort / stream.granularity
+	if column >= len(stream.bands) {
+		return 0
+	}
+
+	bandOffset := cohort % stream.granularity
+
+	return stream.bands[column].chunk[stream.position*stream.granularity+bandOffset]
+}
+
+func (stream *burndownBandStream) prepare(rowIndex int) {
+	if stream.row >= 0 {
+		copy(stream.previous, stream.rowAt(stream.rowEnd()-1))
+	}
+
+	clear(stream.chunk)
+	stream.row = rowIndex
+
+	if stream.column >= len(stream.matrix[rowIndex]) ||
+		stream.column*stream.granularity > (rowIndex+1)*stream.sampling {
+		// Sparse rows omit trailing zero-valued bands, and future bands are zero.
+		return
+	}
+
+	stream.interpolateCell()
+}
+
+func (stream *burndownBandStream) interpolateCell() {
 	switch {
-	case (columnIndex+1)*interpolator.granularity >= (rowIndex+1)*interpolator.sampling:
-		interpolator.interpolateRisingCell(rowIndex, columnIndex)
-	case (columnIndex+1)*interpolator.granularity >= rowIndex*interpolator.sampling:
-		peak := interpolator.interpolationPeak(rowIndex, columnIndex)
-		finishIndex := (columnIndex + 1) * interpolator.granularity
-		interpolator.raise(rowIndex, columnIndex, finishIndex, peak)
-		interpolator.decay(rowIndex, columnIndex, finishIndex, peak)
+	case (stream.column+1)*stream.granularity >= stream.rowEnd():
+		stream.interpolateRisingCell()
+	case (stream.column+1)*stream.granularity >= stream.rowStart():
+		peak := stream.interpolationPeak()
+		finishIndex := (stream.column + 1) * stream.granularity
+		stream.raise(finishIndex, peak)
+		stream.decay(finishIndex, peak)
 	default:
-		startValue := interpolator.value(rowIndex-1, columnIndex)
-		interpolator.decay(rowIndex, columnIndex, rowIndex*interpolator.sampling, startValue)
+		startValue := stream.value(stream.row - 1)
+		stream.decay(stream.rowStart(), startValue)
 	}
 }
 
-func (interpolator *burndownInterpolator) interpolateRisingCell(rowIndex, columnIndex int) {
-	finishIndex := (rowIndex + 1) * interpolator.sampling
-	finishValue := interpolator.value(rowIndex, columnIndex)
+func (stream *burndownBandStream) interpolateRisingCell() {
+	finishIndex := stream.rowEnd()
+	finishValue := stream.value(stream.row)
 
-	columnStart := columnIndex * interpolator.granularity
-	if columnStart <= rowIndex*interpolator.sampling {
-		interpolator.raise(rowIndex, columnIndex, finishIndex, finishValue)
+	columnStart := stream.column * stream.granularity
+	if columnStart <= stream.rowStart() {
+		stream.raise(finishIndex, finishValue)
 
 		return
 	}
@@ -153,53 +201,46 @@ func (interpolator *burndownInterpolator) interpolateRisingCell(rowIndex, column
 		return
 	}
 
-	interpolator.raise(rowIndex, columnIndex, finishIndex, finishValue)
+	stream.raise(finishIndex, finishValue)
 
 	average := finishValue / float32(finishIndex-columnStart)
 	for tickIndex := columnStart; tickIndex < finishIndex; tickIndex++ {
 		for bandIndex := columnStart; bandIndex <= tickIndex; bandIndex++ {
-			interpolator.perTick[tickIndex+interpolator.offset][bandIndex+interpolator.offset] = average
+			stream.set(tickIndex, bandIndex, average)
 		}
 	}
 }
 
-func (interpolator *burndownInterpolator) decay(
-	rowIndex, columnIndex, startIndex int,
-	startValue float32,
-) {
+func (stream *burndownBandStream) decay(startIndex int, startValue float32) {
 	if startValue == 0 {
 		return
 	}
 
-	decayRatio := interpolator.value(rowIndex, columnIndex) / startValue
-	scale := float32((rowIndex+1)*interpolator.sampling - startIndex)
+	decayRatio := stream.value(stream.row) / startValue
+	scale := float32(stream.rowEnd() - startIndex)
 
-	columnStart := columnIndex * interpolator.granularity
+	columnStart := stream.column * stream.granularity
+	columnEnd := (stream.column + 1) * stream.granularity
 
-	columnEnd := (columnIndex + 1) * interpolator.granularity
 	for bandIndex := columnStart; bandIndex < columnEnd; bandIndex++ {
-		initial := interpolator.perTick[startIndex-1+interpolator.offset][bandIndex+interpolator.offset]
-		for tickIndex := startIndex; tickIndex < (rowIndex+1)*interpolator.sampling; tickIndex++ {
-			interpolator.perTick[tickIndex+interpolator.offset][bandIndex+interpolator.offset] = initial *
-				(1 + (decayRatio-1)*float32(tickIndex-startIndex+1)/scale)
+		initial := stream.at(startIndex-1, bandIndex)
+		for tickIndex := startIndex; tickIndex < stream.rowEnd(); tickIndex++ {
+			stream.set(tickIndex, bandIndex, initial*
+				(1+(decayRatio-1)*float32(tickIndex-startIndex+1)/scale),
+			)
 		}
 	}
 }
 
-func (interpolator *burndownInterpolator) raise(
-	rowIndex, columnIndex, finishIndex int,
-	finishValue float32,
-) {
+func (stream *burndownBandStream) raise(finishIndex int, finishValue float32) {
 	var initial float32
-	if rowIndex > 0 {
-		initial = interpolator.value(rowIndex-1, columnIndex)
+	if stream.row > 0 {
+		initial = stream.value(stream.row - 1)
 	}
 
-	startIndex := max(rowIndex*interpolator.sampling, columnIndex*interpolator.granularity)
+	startIndex := max(stream.rowStart(), stream.column*stream.granularity)
 	if finishValue < initial {
-		interpolator.lowerExistingBand(
-			columnIndex, startIndex, finishIndex, initial, finishValue,
-		)
+		stream.lowerExistingBand(startIndex, finishIndex, initial, finishValue)
 
 		return
 	}
@@ -209,32 +250,29 @@ func (interpolator *burndownInterpolator) raise(
 	}
 
 	average := (finishValue - initial) / float32(finishIndex-startIndex)
-	for tickIndex := rowIndex * interpolator.sampling; tickIndex < finishIndex; tickIndex++ {
+	for tickIndex := stream.rowStart(); tickIndex < finishIndex; tickIndex++ {
 		for bandIndex := startIndex; bandIndex <= tickIndex; bandIndex++ {
-			interpolator.perTick[tickIndex+interpolator.offset][bandIndex+interpolator.offset] = average
+			stream.set(tickIndex, bandIndex, average)
 		}
 	}
 
-	// Copy [columnIndex*granularity..rowIndex*sampling).
-	for tickIndex := rowIndex * interpolator.sampling; tickIndex < finishIndex; tickIndex++ {
-		bandStart := columnIndex * interpolator.granularity
-		bandEnd := rowIndex * interpolator.sampling
+	// Copy [column*granularity..row*sampling).
+	for tickIndex := stream.rowStart(); tickIndex < finishIndex; tickIndex++ {
+		bandStart := stream.column * stream.granularity
+		bandEnd := stream.rowStart()
 
 		if bandStart >= bandEnd {
 			continue
 		}
 
-		targetRow := interpolator.perTick[tickIndex+interpolator.offset]
-		sourceRow := interpolator.perTick[tickIndex-1+interpolator.offset]
-
 		for bandIndex := bandStart; bandIndex < bandEnd; bandIndex++ {
-			targetRow[bandIndex+interpolator.offset] = sourceRow[bandIndex+interpolator.offset]
+			stream.set(tickIndex, bandIndex, stream.at(tickIndex-1, bandIndex))
 		}
 	}
 }
 
-func (interpolator *burndownInterpolator) lowerExistingBand(
-	columnIndex, startIndex, finishIndex int,
+func (stream *burndownBandStream) lowerExistingBand(
+	startIndex, finishIndex int,
 	initial, finish float32,
 ) {
 	steps := finishIndex - startIndex
@@ -242,16 +280,13 @@ func (interpolator *burndownInterpolator) lowerExistingBand(
 		return
 	}
 
-	bandStart := columnIndex * interpolator.granularity
-	bandEnd := (columnIndex + 1) * interpolator.granularity
+	bandStart := stream.column * stream.granularity
+	bandEnd := (stream.column + 1) * stream.granularity
 
 	for tickIndex := startIndex; tickIndex < finishIndex; tickIndex++ {
-		source := interpolator.perTick[tickIndex-1+interpolator.offset]
-		target := interpolator.perTick[tickIndex+interpolator.offset]
-
 		sourceTotal := float32(0)
 		for bandIndex := bandStart; bandIndex < bandEnd; bandIndex++ {
-			sourceTotal += source[bandIndex+interpolator.offset]
+			sourceTotal += stream.at(tickIndex-1, bandIndex)
 		}
 
 		progress := float32(tickIndex-startIndex+1) / float32(steps)
@@ -263,58 +298,89 @@ func (interpolator *burndownInterpolator) lowerExistingBand(
 
 		scale := targetTotal / sourceTotal
 		for bandIndex := bandStart; bandIndex < bandEnd; bandIndex++ {
-			target[bandIndex+interpolator.offset] = source[bandIndex+interpolator.offset] * scale
+			stream.set(
+				tickIndex,
+				bandIndex,
+				stream.at(tickIndex-1, bandIndex)*scale,
+			)
 		}
 	}
 }
 
-func (interpolator *burndownInterpolator) interpolationPeak(rowIndex, columnIndex int) float32 {
-	previousValue := interpolator.value(rowIndex-1, columnIndex)
-	currentValue := interpolator.value(rowIndex, columnIndex)
-	delta := float32((columnIndex+1)*interpolator.granularity - rowIndex*interpolator.sampling)
-	previous, scale := interpolator.previousPeakValueAndScale(rowIndex, columnIndex)
+func (stream *burndownBandStream) interpolationPeak() float32 {
+	previousValue := stream.value(stream.row - 1)
+	currentValue := stream.value(stream.row)
+	delta := float32((stream.column+1)*stream.granularity - stream.rowStart())
+	previous, scale := stream.previousPeakValueAndScale()
 
 	peak := previousValue + (previousValue-previous)/scale*delta
 	if currentValue <= peak {
 		return peak
 	}
 
-	if rowIndex == len(interpolator.matrix)-1 {
+	if stream.row == len(stream.matrix)-1 {
 		// Not enough data to interpolate; this is at least not restricted.
 		return currentValue
 	}
 
-	nextValue := interpolator.value(rowIndex+1, columnIndex)
-	decayPerTick := (currentValue - nextValue) / float32(interpolator.sampling)
+	nextValue := stream.value(stream.row + 1)
+	decayPerTick := (currentValue - nextValue) / float32(stream.sampling)
 
 	return currentValue +
-		decayPerTick*float32((rowIndex+1)*interpolator.sampling-(columnIndex+1)*interpolator.granularity)
+		decayPerTick*float32(stream.rowEnd()-(stream.column+1)*stream.granularity)
 }
 
-func (interpolator *burndownInterpolator) previousPeakValueAndScale(rowIndex, columnIndex int) (float32, float32) {
-	if rowIndex > 0 && (rowIndex-1)*interpolator.sampling >= columnIndex*interpolator.granularity {
+func (stream *burndownBandStream) previousPeakValueAndScale() (float32, float32) {
+	if stream.row > 0 &&
+		(stream.row-1)*stream.sampling >= stream.column*stream.granularity {
 		var previous float32
-		if rowIndex > 1 {
-			previous = interpolator.value(rowIndex-2, columnIndex)
+		if stream.row > 1 {
+			previous = stream.value(stream.row - 2)
 		}
 
-		return previous, float32(interpolator.sampling)
+		return previous, float32(stream.sampling)
 	}
 
-	if rowIndex == 0 {
-		return 0, float32(interpolator.sampling)
+	if stream.row == 0 {
+		return 0, float32(stream.sampling)
 	}
 
-	return 0, float32(rowIndex*interpolator.sampling - columnIndex*interpolator.granularity)
+	return 0, float32(stream.rowStart() - stream.column*stream.granularity)
 }
 
-func (interpolator *burndownInterpolator) value(rowIndex, columnIndex int) float32 {
-	if rowIndex < 0 || rowIndex >= len(interpolator.matrix) ||
-		columnIndex < 0 || columnIndex >= len(interpolator.matrix[rowIndex]) {
+func (stream *burndownBandStream) value(rowIndex int) float32 {
+	if rowIndex < 0 || rowIndex >= len(stream.matrix) ||
+		stream.column >= len(stream.matrix[rowIndex]) {
 		return 0
 	}
 
-	return float32(interpolator.matrix[rowIndex][columnIndex])
+	return float32(stream.matrix[rowIndex][stream.column])
+}
+
+func (stream *burndownBandStream) rowStart() int {
+	return stream.row * stream.sampling
+}
+
+func (stream *burndownBandStream) rowEnd() int {
+	return (stream.row + 1) * stream.sampling
+}
+
+func (stream *burndownBandStream) rowAt(tick int) []float32 {
+	if tick == stream.rowStart()-1 {
+		return stream.previous
+	}
+
+	offset := (tick - stream.rowStart()) * stream.granularity
+
+	return stream.chunk[offset : offset+stream.granularity]
+}
+
+func (stream *burndownBandStream) at(tick, cohort int) float32 {
+	return stream.rowAt(tick)[cohort-stream.column*stream.granularity]
+}
+
+func (stream *burndownBandStream) set(tick, cohort int, value float32) {
+	stream.rowAt(tick)[cohort-stream.column*stream.granularity] = value
 }
 
 func roundTime(t time.Time, d time.Duration, dir bool) int {
@@ -337,67 +403,41 @@ func MergeBurndownMatrices(
 	matrix1, matrix2 DenseHistory, granularity1, sampling1, granularity2, sampling2 int, tickSize time.Duration,
 	common1, common2 *core.CommonAnalysisResult,
 ) DenseHistory {
-	//	defer print("MergeBurndownMatrices exit\n\n\n")
-	//	print("MergeBurndownMatrices enter\n\n\n")
 	commonMerged := common1.Copy()
 	commonMerged.Merge(common2)
 
-	var granularity, sampling int
-	sampling = min(sampling1, sampling2)
-
-	granularity = min(granularity1, granularity2)
+	sampling := min(sampling1, sampling2)
+	granularity := min(granularity1, granularity2)
 
 	size := roundTime(commonMerged.EndTimeAsTime(), tickSize, true) -
 		roundTime(commonMerged.BeginTimeAsTime(), tickSize, false)
-
-	perTick := make([][]float32, size+granularity)
-	for i := range perTick {
-		perTick[i] = make([]float32, size+sampling)
-	}
-
-	//	var m runtime.MemStats
-	//	runtime.ReadMemStats(&m)
-
-	if len(matrix1) > 0 {
-		AddBurndownMatrix(matrix1, granularity1, sampling1, perTick,
-			roundTime(common1.BeginTimeAsTime(), tickSize, false)-
-				roundTime(commonMerged.BeginTimeAsTime(), tickSize, false))
-	}
-
-	if len(matrix2) > 0 {
-		AddBurndownMatrix(matrix2, granularity2, sampling2, perTick,
-			roundTime(common2.BeginTimeAsTime(), tickSize, false)-
-				roundTime(commonMerged.BeginTimeAsTime(), tickSize, false))
-	}
-
-	// convert daily to [][]int64
 	result := make(DenseHistory, (size+sampling-1)/sampling)
-	for rowIndex := range result {
-		result[rowIndex] = make([]int64, (size+granularity-1)/granularity)
+	resultColumns := (size + granularity - 1) / granularity
 
+	first := newBurndownMatrixStream(matrix1, granularity1, sampling1)
+	second := newBurndownMatrixStream(matrix2, granularity2, sampling2)
+	mergedBegin := roundTime(commonMerged.BeginTimeAsTime(), tickSize, false)
+	firstOffset := roundTime(common1.BeginTimeAsTime(), tickSize, false) - mergedBegin
+	secondOffset := roundTime(common2.BeginTimeAsTime(), tickSize, false) - mergedBegin
+
+	// Only the currently sampled output row is accumulated. The interpolation
+	// streams retain one source-sampling chunk per age band instead of a full
+	// duration-by-duration per-tick matrix.
+	for rowIndex := range result {
 		sampledIndex := (rowIndex+1)*sampling - 1
-		for bandIndex := range len(result[rowIndex]) {
+		first.advanceTo(sampledIndex - firstOffset)
+		second.advanceTo(sampledIndex - secondOffset)
+
+		result[rowIndex] = make([]int64, resultColumns)
+		for bandIndex := range resultColumns {
 			accum := float32(0)
 			for k := bandIndex * granularity; k < (bandIndex+1)*granularity; k++ {
-				accum += perTick[sampledIndex][k]
+				accum += first.valueAt(k-firstOffset) + second.valueAt(k-secondOffset)
 			}
 
 			result[rowIndex][bandIndex] = int64(accum)
 		}
 	}
-
-	//	runtime.ReadMemStats(&m)
-
-	for i := range perTick {
-		perTick[i] = nil
-	}
-
-	runtime.GC()
-
-	//	var a runtime.MemStats
-	//	runtime.ReadMemStats(&a)
-
-	//	print("MergeBurndownMatrices Deallocated: ", (m.Alloc-a.Alloc)/1024/1024, "\n")
 
 	return result
 }

@@ -4,9 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"os"
-	"runtime"
 	"time"
 	"unicode/utf8"
 
@@ -818,19 +816,6 @@ func (analyser *LegacyBurndownAnalysis) finalizePeopleMatrix() DenseHistory {
 	return matrix
 }
 
-func roundTime(t time.Time, d time.Duration, dir bool) int {
-	if !dir {
-		t = items.FloorTime(t, d)
-	}
-
-	ticks := float64(t.Unix()) / d.Seconds()
-	if dir {
-		return int(math.Ceil(ticks))
-	}
-
-	return int(math.Floor(ticks))
-}
-
 // mergeMatrices takes two [number of samples][number of bands] matrices,
 // resamples them to ticks so that they become square, sums and resamples back to the
 // least of (sampling1, sampling2) and (granularity1, granularity2).
@@ -838,69 +823,11 @@ func (analyser *LegacyBurndownAnalysis) mergeMatrices(
 	matrix1, matrix2 DenseHistory, granularity1, sampling1, granularity2, sampling2 int, tickSize time.Duration,
 	common1, common2 *core.CommonAnalysisResult,
 ) DenseHistory {
-	//	defer print("mergeMatrices exit\n\n\n")
-	//	print("mergeMatrices enter\n\n\n")
-	commonMerged := common1.Copy()
-	commonMerged.Merge(common2)
-
-	var granularity, sampling int
-	sampling = min(sampling1, sampling2)
-
-	granularity = min(granularity1, granularity2)
-
-	size := roundTime(commonMerged.EndTimeAsTime(), tickSize, true) -
-		roundTime(commonMerged.BeginTimeAsTime(), tickSize, false)
-
-	perTick := make([][]float32, size+granularity)
-	for i := range perTick {
-		perTick[i] = make([]float32, size+sampling)
-	}
-
-	//	var m runtime.MemStats
-	//	runtime.ReadMemStats(&m)
-
-	if len(matrix1) > 0 {
-		addBurndownMatrix(matrix1, granularity1, sampling1, perTick,
-			roundTime(common1.BeginTimeAsTime(), tickSize, false)-
-				roundTime(commonMerged.BeginTimeAsTime(), tickSize, false))
-	}
-
-	if len(matrix2) > 0 {
-		addBurndownMatrix(matrix2, granularity2, sampling2, perTick,
-			roundTime(common2.BeginTimeAsTime(), tickSize, false)-
-				roundTime(commonMerged.BeginTimeAsTime(), tickSize, false))
-	}
-
-	// convert daily to [][]int64
-	result := make(DenseHistory, (size+sampling-1)/sampling)
-	for sampleIndex := range result {
-		result[sampleIndex] = make([]int64, (size+granularity-1)/granularity)
-
-		sampledIndex := (sampleIndex+1)*sampling - 1
-		for bandIndex := range len(result[sampleIndex]) {
-			accum := float32(0)
-			for k := bandIndex * granularity; k < (bandIndex+1)*granularity; k++ {
-				accum += perTick[sampledIndex][k]
-			}
-
-			result[sampleIndex][bandIndex] = int64(accum)
-		}
-	}
-
-	//	runtime.ReadMemStats(&m)
-
-	for i := range perTick {
-		perTick[i] = nil
-	}
-
-	runtime.GC()
-
-	//	var a runtime.MemStats
-	//	runtime.ReadMemStats(&a)
-
-	//	print("mergeMatrices Deallocated: ", (m.Alloc-a.Alloc)/1024/1024, "\n")
-
-	return result
+	return burndown.MergeBurndownMatrices(
+		matrix1, matrix2,
+		granularity1, sampling1, granularity2, sampling2,
+		tickSize, common1, common2,
+	)
 }
 
 // Explode `matrix` so that it is daily sampled and has daily bands, shift by `offset` ticks

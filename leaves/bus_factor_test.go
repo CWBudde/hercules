@@ -18,7 +18,7 @@ func TestBusFactorMeta(t *testing.T) {
 	assert.Equal(t, "BusFactor", bf.Name())
 	assert.Empty(t, bf.Provides())
 	assert.Contains(t, bf.Requires(), identity.DependencyAuthor)
-	assert.Contains(t, bf.Requires(), items.DependencyTick)
+	assert.Contains(t, bf.Requires(), dependencyOwnershipSnapshot)
 	assert.Equal(t, "bus-factor", bf.Flag())
 	assert.NotEmpty(t, bf.Description())
 }
@@ -66,7 +66,7 @@ func TestBusFactorInitialize(t *testing.T) {
 	bf := BusFactorAnalysis{}
 	assert.NoError(t, bf.Initialize(test.Repository))
 	assert.NotNil(t, bf.snapshots)
-	assert.Equal(t, -1, bf.ownership.lastTick)
+	assert.Nil(t, bf.ownership)
 	assert.InDelta(t, float32(0.8), bf.Threshold, 0.001)
 }
 

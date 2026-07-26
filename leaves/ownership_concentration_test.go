@@ -18,7 +18,7 @@ func TestOwnershipConcentrationMeta(t *testing.T) {
 	assert.Equal(t, "OwnershipConcentration", oc.Name())
 	assert.Empty(t, oc.Provides())
 	assert.Contains(t, oc.Requires(), identity.DependencyAuthor)
-	assert.Contains(t, oc.Requires(), items.DependencyTick)
+	assert.Contains(t, oc.Requires(), dependencyOwnershipSnapshot)
 	assert.Equal(t, "ownership-concentration", oc.Flag())
 	assert.NotEmpty(t, oc.Description())
 }
@@ -55,7 +55,7 @@ func TestOwnershipConcentrationInitialize(t *testing.T) {
 	oc := OwnershipConcentrationAnalysis{}
 	assert.NoError(t, oc.Initialize(test.Repository))
 	assert.NotNil(t, oc.snapshots)
-	assert.Equal(t, -1, oc.ownership.lastTick)
+	assert.Nil(t, oc.ownership)
 }
 
 func TestOwnershipConcentrationListConfigurationOptions(t *testing.T) {

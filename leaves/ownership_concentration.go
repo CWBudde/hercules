@@ -13,7 +13,6 @@ import (
 	"github.com/gogo/protobuf/proto"
 
 	"github.com/cwbudde/hercules/internal/core"
-	"github.com/cwbudde/hercules/internal/linehistory"
 	"github.com/cwbudde/hercules/internal/pb"
 	items "github.com/cwbudde/hercules/internal/plumbing"
 	"github.com/cwbudde/hercules/internal/plumbing/identity"
@@ -30,8 +29,8 @@ import (
 type OwnershipConcentrationAnalysis struct {
 	core.NoopMerger
 
-	// ownership incrementally tracks the shared alive-line ownership state.
-	ownership ownershipSnapshotAccumulator
+	// ownership references the shared incremental alive-line ownership state.
+	ownership *ownershipSnapshotAccumulator
 	// peopleResolver resolves author IDs to names.
 	peopleResolver core.IdentityResolver
 	// reversedPeopleDict references IdentityDetector.ReversedPeopleDict.
@@ -86,9 +85,8 @@ func (oc *OwnershipConcentrationAnalysis) Provides() []string {
 // Requires returns the list of names of entities which are needed by this PipelineItem.
 func (oc *OwnershipConcentrationAnalysis) Requires() []string {
 	return []string{
-		linehistory.DependencyLineHistory,
+		dependencyOwnershipSnapshot,
 		identity.DependencyAuthor,
-		items.DependencyTick,
 	}
 }
 
@@ -138,7 +136,7 @@ func (oc *OwnershipConcentrationAnalysis) Description() string {
 func (oc *OwnershipConcentrationAnalysis) Initialize(repository *git.Repository) error {
 	oc.l = core.NewLogger()
 	oc.snapshots = map[int]*OwnershipConcentrationSnapshot{}
-	oc.ownership.reset()
+	oc.ownership = nil
 
 	return nil
 }
@@ -146,20 +144,16 @@ func (oc *OwnershipConcentrationAnalysis) Initialize(repository *git.Repository)
 // Consume runs this PipelineItem on the next commit data.
 func (oc *OwnershipConcentrationAnalysis) Consume(deps map[string]any) (map[string]any, error) {
 	reader := factReader{facts: deps}
-	changes := readFact[core.LineHistoryChanges](&reader, linehistory.DependencyLineHistory)
-	tick := readFact[int](&reader, items.DependencyTick)
+	update := readFact[ownershipSnapshotUpdate](&reader, dependencyOwnershipSnapshot)
 
 	if reader.err != nil {
 		return nil, reader.err
 	}
 
-	closedTick, totals, err := oc.ownership.consume(tick, changes)
-	if err != nil {
-		return nil, fmt.Errorf("update ownership concentration: %w", err)
-	}
+	oc.ownership = update.State
 
-	if totals != nil {
-		oc.takeSnapshot(closedTick, *totals)
+	if update.ClosedTotals != nil {
+		oc.takeSnapshot(update.ClosedTick, *update.ClosedTotals)
 	}
 
 	return noDependencies(), nil
@@ -216,8 +210,10 @@ func computeHHI(authorLines map[int]int64, totalLines int64) float64 {
 
 // Finalize returns the result of the analysis. Further Consume() calls are not expected.
 func (oc *OwnershipConcentrationAnalysis) Finalize() any {
-	if tick, totals := oc.ownership.finalSnapshot(); totals != nil {
-		oc.takeSnapshot(tick, *totals)
+	if oc.ownership != nil {
+		if tick, totals := oc.ownership.finalSnapshot(); totals != nil {
+			oc.takeSnapshot(tick, *totals)
+		}
 	}
 
 	return OwnershipConcentrationResult{
@@ -404,6 +400,10 @@ func (oc *OwnershipConcentrationAnalysis) takeSnapshot(tick int, totals ownershi
 
 // computeSubsystemConcentration computes Gini and HHI per directory prefix at the final tick.
 func (oc *OwnershipConcentrationAnalysis) computeSubsystemConcentration() map[string]*SubsystemConcentration {
+	if oc.ownership == nil {
+		return nil
+	}
+
 	subsystems := oc.ownership.subsystemOwnership()
 	if subsystems == nil {
 		return nil

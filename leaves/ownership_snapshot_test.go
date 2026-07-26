@@ -25,18 +25,14 @@ func (resolver ownershipTestResolver) MergedWith(id core.FileId) (core.FileId, s
 }
 
 func (resolver ownershipTestResolver) ForEachFile(callback func(core.FileId, string)) bool {
-	for id, name := range resolver {
-		callback(id, name)
-	}
-
-	return true
+	panic("incremental ownership snapshots must not enumerate live files")
 }
 
 func (ownershipTestResolver) ScanFile(
 	core.FileId,
 	func(int, core.TickNumber, core.AuthorId),
 ) bool {
-	return false
+	panic("incremental ownership snapshots must not rescan live lines")
 }
 
 func ownershipChange(
@@ -56,8 +52,33 @@ func ownershipChange(
 	}
 }
 
+func TestOwnershipSnapshotterMetaAndRegistration(t *testing.T) {
+	snapshotter := &ownershipSnapshotter{}
+	assert.Equal(t, "OwnershipSnapshot", snapshotter.Name())
+	assert.Equal(t, []string{dependencyOwnershipSnapshot}, snapshotter.Provides())
+	assert.ElementsMatch(t, []string{
+		linehistory.DependencyLineHistory,
+		items.DependencyTick,
+	}, snapshotter.Requires())
+
+	summoned := core.Registry.Summon(dependencyOwnershipSnapshot)
+	require.Len(t, summoned, 1)
+	assert.IsType(t, &ownershipSnapshotter{}, summoned[0])
+}
+
+func TestOwnershipAnalysesDeployOneSharedSnapshotter(t *testing.T) {
+	pipeline := core.NewPipeline(test.Repository)
+	pipeline.DeployItem(&BusFactorAnalysis{})
+	afterBusFactor := pipeline.Len()
+
+	pipeline.DeployItem(&OwnershipConcentrationAnalysis{})
+
+	assert.Equal(t, afterBusFactor+1, pipeline.Len())
+}
+
 func consumeOwnershipAnalyses(
 	t *testing.T,
+	snapshotter *ownershipSnapshotter,
 	busFactor *BusFactorAnalysis,
 	concentration *OwnershipConcentrationAnalysis,
 	tick int,
@@ -74,10 +95,13 @@ func consumeOwnershipAnalyses(
 		items.DependencyTick: tick,
 	}
 
-	_, err := busFactor.Consume(dependencies)
+	update, err := snapshotter.Consume(dependencies)
 	require.NoError(t, err)
 
-	_, err = concentration.Consume(dependencies)
+	_, err = busFactor.Consume(update)
+	require.NoError(t, err)
+
+	_, err = concentration.Consume(update)
 	require.NoError(t, err)
 }
 
@@ -89,20 +113,22 @@ func TestOwnershipAnalysesSnapshotBeforeNextTick(t *testing.T) {
 
 	busFactor := &BusFactorAnalysis{Threshold: 0.8}
 	concentration := &OwnershipConcentrationAnalysis{}
+	snapshotter := &ownershipSnapshotter{}
+	require.NoError(t, snapshotter.Initialize(test.Repository))
 	require.NoError(t, busFactor.Initialize(test.Repository))
 	require.NoError(t, concentration.Initialize(test.Repository))
 
 	// Two commits in tick 0 establish 4 Alice lines and 1 Bob line.
-	consumeOwnershipAnalyses(t, busFactor, concentration, 0, resolver,
+	consumeOwnershipAnalyses(t, snapshotter, busFactor, concentration, 0, resolver,
 		ownershipChange(1, 4, 0, 0, 0),
 	)
-	consumeOwnershipAnalyses(t, busFactor, concentration, 0, resolver,
+	consumeOwnershipAnalyses(t, snapshotter, busFactor, concentration, 0, resolver,
 		ownershipChange(2, 1, 1, 1, 0),
 	)
 
 	// The first tick-1 commit transfers two lines from Alice to Bob and replaces them with
 	// three Bob lines. Tick 0 must be closed before these changes are applied.
-	consumeOwnershipAnalyses(t, busFactor, concentration, 1, resolver,
+	consumeOwnershipAnalyses(t, snapshotter, busFactor, concentration, 1, resolver,
 		ownershipChange(1, -2, 0, 1, 1),
 		ownershipChange(1, 3, 1, 1, 1),
 	)
@@ -119,7 +145,7 @@ func TestOwnershipAnalysesSnapshotBeforeNextTick(t *testing.T) {
 	assert.InDelta(t, 0.68, concentration.snapshots[0].HHI, 1e-9)
 
 	// A second commit in tick 1 grows the file. The immutable tick-0 snapshot must not move.
-	consumeOwnershipAnalyses(t, busFactor, concentration, 1, resolver,
+	consumeOwnershipAnalyses(t, snapshotter, busFactor, concentration, 1, resolver,
 		ownershipChange(1, 1, 1, 1, 1),
 	)
 	assert.Equal(t, map[int]int64{0: 4, 1: 1}, busFactor.snapshots[0].AuthorLines)
@@ -155,7 +181,7 @@ func TestOwnershipAnalysesSnapshotBeforeNextTick(t *testing.T) {
 	assert.InDelta(t, 0, concentrationResult.SubsystemConcentration["docs"].Gini, 1e-9)
 	assert.InDelta(t, 1, concentrationResult.SubsystemConcentration["docs"].HHI, 1e-9)
 
-	subsystems := busFactor.ownership.subsystemOwnership()
+	subsystems := snapshotter.ownership.subsystemOwnership()
 	var subsystemTotal int64
 	for _, authors := range subsystems {
 		for _, lines := range authors {
@@ -272,10 +298,12 @@ func TestOwnershipAnalysesEmptyAndSingleAuthorRepositories(t *testing.T) {
 		resolver := ownershipTestResolver{1: "main.go"}
 		busFactor := &BusFactorAnalysis{Threshold: 0.8}
 		concentration := &OwnershipConcentrationAnalysis{}
+		snapshotter := &ownershipSnapshotter{}
+		require.NoError(t, snapshotter.Initialize(test.Repository))
 		require.NoError(t, busFactor.Initialize(test.Repository))
 		require.NoError(t, concentration.Initialize(test.Repository))
 
-		consumeOwnershipAnalyses(t, busFactor, concentration, 7, resolver,
+		consumeOwnershipAnalyses(t, snapshotter, busFactor, concentration, 7, resolver,
 			ownershipChange(1, 3, 0, 0, 7),
 		)
 

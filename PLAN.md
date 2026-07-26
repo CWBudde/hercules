@@ -466,13 +466,13 @@ separately from the unavoidable dense result size.
 
 ### PERF-03: Incremental ownership snapshots
 
-- Share the incremental ownership accumulator created in `METRIC-03`.
-- Avoid rescanning all live files and lines for every occupied tick.
-- Benchmark repositories with many ticks and stable large files.
+Status: completed 2026-07-26.
 
-Acceptance criteria:
-
-- [ ] work scales primarily with changed ownership runs plus snapshot output size.
+Bus Factor and Ownership Concentration now depend on one registered incremental ownership stage,
+so every changed ownership run is applied once and immutable tick maps are shared by both metrics.
+Tick boundaries never enumerate files or scan living lines; final totals and subsystem ownership
+are cached across both leaves. A stable-large-file benchmark compares this path with the former
+full-rescan shape and reports changed runs, snapshot entries, stable files, allocations, and time.
 
 ### PERF-04: Bound blob and rename processing
 

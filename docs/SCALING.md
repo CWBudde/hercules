@@ -153,6 +153,37 @@ The benchmark reports `interpolation-workspace-bytes`,
 The two-, five-, and ten-year fixtures use daily samples with 30-day age
 bands.
 
+## Incremental ownership snapshots
+
+Bus Factor and Ownership Concentration share one pipeline accumulator. Each
+line-history ownership run is applied once, and both analyses consume the same
+immutable end-of-tick author totals. Stable files are not enumerated and their
+lines are not scanned at tick boundaries. Per-tick work is therefore driven by
+the changed ownership runs plus the author entries retained in the snapshot
+output. Final subsystem summaries make one pass over the accumulator's
+per-file ownership totals and are cached across both analyses.
+
+The synthetic comparison keeps 32 authors and two changed ownership runs per
+tick while varying the stable repository from 1,000 to 50,000 files (one
+million lines each). On the same i7-1255U reference machine used above, the
+incremental path remained approximately flat at 1.7–1.8 µs/tick and 1,368
+bytes/tick. The full-rescan reference grew from about 71 µs/tick to 8.8
+ms/tick. These timings are illustrative; the reported run counts are the
+complexity contract.
+
+Reproduce the benchmark with:
+
+```bash
+go test -run '^$' \
+  -bench '^BenchmarkOwnershipSnapshotsStableLargeFiles$' \
+  -benchtime=200ms -benchmem ./leaves
+```
+
+The incremental cases report `changed-ownership-runs/op` and
+`snapshot-author-entries/op`; the reference cases report
+`rescanned-ownership-runs/op`. `stable-live-files` and `stable-live-lines`
+describe the state deliberately excluded from incremental tick work.
+
 If even `--preset large-repo` is too tight, the next escape hatches are:
 
 1. Lower output resolution further: append `--granularity=90 --sampling=90`.

@@ -13,7 +13,6 @@ import (
 	"github.com/gogo/protobuf/proto"
 
 	"github.com/cwbudde/hercules/internal/core"
-	"github.com/cwbudde/hercules/internal/linehistory"
 	"github.com/cwbudde/hercules/internal/pb"
 	items "github.com/cwbudde/hercules/internal/plumbing"
 	"github.com/cwbudde/hercules/internal/plumbing/identity"
@@ -34,8 +33,8 @@ type BusFactorAnalysis struct {
 	// Threshold is the ownership fraction that must be covered (default 0.8 = 80%).
 	Threshold float32
 
-	// ownership incrementally tracks the shared alive-line ownership state.
-	ownership ownershipSnapshotAccumulator
+	// ownership references the shared incremental alive-line ownership state.
+	ownership *ownershipSnapshotAccumulator
 	// peopleResolver resolves author IDs to names.
 	peopleResolver core.IdentityResolver
 	// reversedPeopleDict references IdentityDetector.ReversedPeopleDict.
@@ -89,9 +88,8 @@ func (bf *BusFactorAnalysis) Provides() []string {
 // Requires returns the list of names of entities which are needed by this PipelineItem.
 func (bf *BusFactorAnalysis) Requires() []string {
 	return []string{
-		linehistory.DependencyLineHistory,
+		dependencyOwnershipSnapshot,
 		identity.DependencyAuthor,
-		items.DependencyTick,
 	}
 }
 
@@ -158,7 +156,8 @@ func (bf *BusFactorAnalysis) Description() string {
 func (bf *BusFactorAnalysis) Initialize(repository *git.Repository) error {
 	bf.l = core.NewLogger()
 	bf.snapshots = map[int]*BusFactorSnapshot{}
-	bf.ownership.reset()
+	bf.ownership = nil
+
 	if bf.Threshold <= 0 || bf.Threshold > 1 {
 		bf.Threshold = 0.8
 	}
@@ -170,20 +169,16 @@ func (bf *BusFactorAnalysis) Initialize(repository *git.Repository) error {
 // It closes the previous tick before applying the first commit from a later tick.
 func (bf *BusFactorAnalysis) Consume(deps map[string]any) (map[string]any, error) {
 	reader := factReader{facts: deps}
-	changes := readFact[core.LineHistoryChanges](&reader, linehistory.DependencyLineHistory)
-	tick := readFact[int](&reader, items.DependencyTick)
+	update := readFact[ownershipSnapshotUpdate](&reader, dependencyOwnershipSnapshot)
 
 	if reader.err != nil {
 		return nil, reader.err
 	}
 
-	closedTick, totals, err := bf.ownership.consume(tick, changes)
-	if err != nil {
-		return nil, fmt.Errorf("update bus factor ownership: %w", err)
-	}
+	bf.ownership = update.State
 
-	if totals != nil {
-		bf.takeSnapshot(closedTick, *totals)
+	if update.ClosedTotals != nil {
+		bf.takeSnapshot(update.ClosedTick, *update.ClosedTotals)
 	}
 
 	return noDependencies(), nil
@@ -254,8 +249,10 @@ func busFactorTargetLines(totalLines int64, threshold float32) int64 {
 
 // Finalize returns the result of the analysis. Further Consume() calls are not expected.
 func (bf *BusFactorAnalysis) Finalize() any {
-	if tick, totals := bf.ownership.finalSnapshot(); totals != nil {
-		bf.takeSnapshot(tick, *totals)
+	if bf.ownership != nil {
+		if tick, totals := bf.ownership.finalSnapshot(); totals != nil {
+			bf.takeSnapshot(tick, *totals)
+		}
 	}
 
 	return BusFactorResult{
@@ -386,6 +383,10 @@ func (bf *BusFactorAnalysis) takeSnapshot(tick int, totals ownershipTotals) {
 
 // computeSubsystemBusFactor computes bus factor per directory prefix at the final tick.
 func (bf *BusFactorAnalysis) computeSubsystemBusFactor() map[string]int {
+	if bf.ownership == nil {
+		return nil
+	}
+
 	subsystems := bf.ownership.subsystemOwnership()
 	if subsystems == nil {
 		return nil

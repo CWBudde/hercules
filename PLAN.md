@@ -364,25 +364,17 @@ while the historical renderer fixtures continue to load.
 
 ### DATA-02: Enforce schema compatibility
 
-Affected code:
+Status: completed 2026-07-26.
 
-- `internal/pb/version.go`
-- readers
-- `cmd/hercules/combine.go`
-- schema documentation
-
-Work:
-
-- Require a valid metadata header.
-- Reject newer breaking versions and explicitly migrate supported older versions.
-- Require compatible input versions before combine.
-- Never relabel an unvalidated old payload as the current schema.
-- Apply equivalent validation to YAML headers.
-
-Acceptance criteria:
-
-- [ ] supported old, current, newer, missing, and malformed versions have explicit tests;
-- [ ] combine never emits current-version metadata for unvalidated contents.
+Readers now require valid metadata and enforce a documented format-specific
+compatibility matrix. PB schema 1 is decoded and migrated content-by-content
+(including the incompatible Couples wrapper and UAST representation) before
+being marked schema 2; legacy YAML `version: 0` is normalized only after full
+schema-2 validation. Missing, malformed, unsupported, and future versions are
+rejected. Combine uses the same bounded migration/validation path and has a
+regression test proving that unknown legacy contents cannot be relabelled as
+current output. Explicit old/current/newer/missing/malformed cases cover both
+reader formats.
 
 ### DATA-03: Make report output transactional and collision-free
 

@@ -123,6 +123,7 @@ func TestProtobufReaderGetBurndownParametersPreservesHerculesTiming(t *testing.T
 	}
 	data, err := proto.Marshal(&pb.AnalysisResults{
 		Header: &pb.Metadata{
+			Version:       pb.SchemaVersion,
 			Repository:    "test-repo",
 			BeginUnixTime: 1640995200,
 			EndUnixTime:   1672531200,
@@ -219,6 +220,7 @@ func createTestProtobufReader(t *testing.T) *ProtobufReader {
 
 	testResults := &pb.AnalysisResults{
 		Header: &pb.Metadata{
+			Version:       pb.SchemaVersion,
 			Repository:    "test-repo",
 			BeginUnixTime: 1640995200,
 			EndUnixTime:   1672531200,

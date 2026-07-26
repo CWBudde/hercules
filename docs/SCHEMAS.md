@@ -34,6 +34,37 @@ Compatible changes (see policy below) keep the version; every breaking change
 must bump it. CI enforces this via `cmd/schema-guard`
 (`.github/workflows/test-schema.yaml`, locally `just check-schema`).
 
+### Reader compatibility
+
+Readers require a metadata header and an explicit, integral schema version. The
+accepted inputs and migrations are:
+
+| Format | Input version | Behavior |
+| ------ | ------------- | -------- |
+| PB | `2` | Validate the envelope and all recognized payloads as the current schema. |
+| PB | `1` | Decode and validate every legacy content entry, migrate it to schema 2, then expose it to consumers. |
+| YAML | `2` | Validate the header and complete document as the current schema. |
+| YAML | `0` | Accept the known module-rename emitter bug, validate the complete document as the schema-2 shape, then normalize the in-memory header to 2. |
+
+PB schema 1 migration clears metadata field 2 because it was a command line,
+not a Git hash; metadata fields which did not yet exist remain unset.
+`Burndown.files_ownership` and `Couples.files_lines`, which were unavailable,
+are initialized with explicit empty/zero values. The schema-1 nested Couples
+touched-file wrapper is flattened, and the old protobuf UAST change payload is
+converted to the current JSON-bytes representation. Any other schema-1 content
+key is rejected because it has no validated migration.
+
+Missing headers, absent or malformed versions, unsupported older versions, and
+versions newer than 2 are rejected. A newer wire payload must not be decoded
+under an older contract merely because protobuf can skip unknown fields.
+Likewise, the historical universal YAML `version: 3` value was an application
+version rather than this schema contract and is not treated as compatible.
+
+`hercules combine` applies the same PB validation and migration before it
+deserializes or merges an input. Its schema-2 output therefore contains only
+payloads that were validated as schema 2 or passed a complete supported
+migration; an old envelope is never relabelled without validating its contents.
+
 ## Top-Level Envelope
 
 ### YAML

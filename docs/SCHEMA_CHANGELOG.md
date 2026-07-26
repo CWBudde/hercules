@@ -16,6 +16,16 @@ Each entry should include:
 
 ## Unreleased
 
+- PB and YAML: readers now require a valid metadata header and enforce the
+  documented schema compatibility matrix. PB schema 1 is migrated
+  content-by-content to schema 2; legacy YAML `version: 0` is normalized only
+  after full schema-2 validation. Missing, malformed, unsupported, and future
+  versions are rejected, and `hercules combine` cannot emit schema-2 metadata
+  for unvalidated legacy contents. Compatibility: supported historical PB v1
+  Burndown, Couples, and UAST payloads and known YAML v0 files remain readable;
+  previously accepted unversioned or falsely versioned inputs now fail. User
+  action: regenerate or explicitly migrate rejected files before rendering or
+  combining them.
 - YAML: completed `LineDumper` replay without changing fields or types.
   `--history-line-load` now preserves loaded metadata through initialization,
   reconstructs deterministic live-line ownership for `ScanFile`, and rejects

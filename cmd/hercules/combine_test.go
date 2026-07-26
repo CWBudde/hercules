@@ -16,6 +16,8 @@ import (
 	"github.com/cwbudde/hercules/internal/pb"
 )
 
+const combineTestDevs = "Devs"
+
 func TestRunCombineValidatesSingleInput(t *testing.T) {
 	input := filepath.Join(t.TempDir(), "invalid.pb")
 	if err := os.WriteFile(input, []byte("not protobuf"), 0o600); err != nil {
@@ -44,7 +46,7 @@ func TestRunCombineWritesValidatedSingleInput(t *testing.T) {
 	if err := proto.Unmarshal(output.Bytes(), &result); err != nil {
 		t.Fatalf("combined output is malformed: %v", err)
 	}
-	if _, exists := result.GetContents()["Devs"]; !exists {
+	if _, exists := result.GetContents()[combineTestDevs]; !exists {
 		t.Fatalf("combined output lacks validated Devs result: %v", result.GetContents())
 	}
 }
@@ -63,6 +65,72 @@ func TestRunCombineMixedValidityWritesPartialOutputAndFails(t *testing.T) {
 	}
 	if output.Len() == 0 {
 		t.Fatal("runCombine() did not preserve the independently valid result")
+	}
+}
+
+func TestRunCombineMigratesSupportedV1BeforeEmittingCurrent(t *testing.T) {
+	burndown := &pb.BurndownAnalysisResults{
+		Project: &pb.BurndownSparseMatrix{
+			Name:            "project",
+			NumberOfRows:    1,
+			NumberOfColumns: 1,
+			Rows:            []*pb.BurndownSparseMatrixRow{{Columns: []uint32{1}}},
+		},
+	}
+	input := writeCombineEnvelope(t, &pb.AnalysisResults{
+		Header: &pb.Metadata{Version: 1, Repository: "legacy"},
+		Contents: map[string][]byte{
+			"Burndown": marshalCombineProto(t, burndown),
+		},
+	})
+	var output bytes.Buffer
+
+	if err := runCombine(newCombineTestCommand(&output, ""), []string{input}); err != nil {
+		t.Fatalf("runCombine() failed for supported schema 1: %v", err)
+	}
+
+	var result pb.AnalysisResults
+	if err := proto.Unmarshal(output.Bytes(), &result); err != nil {
+		t.Fatalf("combined output is malformed: %v", err)
+	}
+	if result.GetHeader().GetVersion() != pb.SchemaVersion {
+		t.Fatalf("combined version = %d, want %d", result.GetHeader().GetVersion(), pb.SchemaVersion)
+	}
+	if _, exists := result.GetContents()["Burndown"]; !exists {
+		t.Fatalf("combined output lacks migrated Burndown: %v", result.GetContents())
+	}
+}
+
+func TestRunCombineNeverRelabelsUnvalidatedV1Content(t *testing.T) {
+	input := writeCombineEnvelope(t, &pb.AnalysisResults{
+		Header: &pb.Metadata{Version: 1, Repository: "legacy"},
+		Contents: map[string][]byte{
+			combineTestDevs: marshalCombineProto(t, &pb.DevsAnalysisResults{}),
+		},
+	})
+	var output bytes.Buffer
+
+	err := runCombine(newCombineTestCommand(&output, ""), []string{input})
+	if err == nil || !strings.Contains(err.Error(), "analysis version unsupported") {
+		t.Fatalf("runCombine() error = %v, want unsupported schema error", err)
+	}
+	if output.Len() != 0 {
+		t.Fatalf("runCombine() emitted %d bytes for unvalidated v1 content", output.Len())
+	}
+}
+
+func TestRunCombineRejectsIncompatibleInputVersion(t *testing.T) {
+	input := writeCombineEnvelope(t, &pb.AnalysisResults{
+		Header: &pb.Metadata{Version: pb.SchemaVersion + 1, Repository: "future"},
+	})
+	var output bytes.Buffer
+
+	err := runCombine(newCombineTestCommand(&output, ""), []string{input})
+	if err == nil || !strings.Contains(err.Error(), "analysis version unsupported") {
+		t.Fatalf("runCombine() error = %v, want unsupported schema error", err)
+	}
+	if output.Len() != 0 {
+		t.Fatalf("runCombine() emitted %d bytes for a future schema", output.Len())
 	}
 }
 
@@ -99,7 +167,7 @@ func TestMergeResultsUpdatesMetadataOnlyAfterResultSuccess(t *testing.T) {
 	merged, mergeErrors := mergeResults(
 		mergedResults,
 		mergedMetadata,
-		map[string]any{"Devs": struct{}{}},
+		map[string]any{combineTestDevs: struct{}{}},
 		inputMetadata,
 		"Burndown",
 	)
@@ -138,15 +206,26 @@ func writeCombineTestInput(t *testing.T, repository string) string {
 			Repository: repository,
 			Commits:    1,
 		},
-		Contents: map[string][]byte{"Devs": devs},
+		Contents: map[string][]byte{combineTestDevs: devs},
 	}
-	serialized, err := proto.Marshal(&message)
-	if err != nil {
-		t.Fatal(err)
-	}
+	return writeCombineEnvelope(t, &message)
+}
+
+func writeCombineEnvelope(t *testing.T, message *pb.AnalysisResults) string {
+	t.Helper()
+	serialized := marshalCombineProto(t, message)
 	path := filepath.Join(t.TempDir(), "analysis.pb")
 	if err := os.WriteFile(path, serialized, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	return path
+}
+
+func marshalCombineProto(t *testing.T, message proto.Message) []byte {
+	t.Helper()
+	serialized, err := proto.Marshal(message)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return serialized
 }

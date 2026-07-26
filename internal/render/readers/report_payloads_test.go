@@ -183,6 +183,7 @@ func TestProtobufReader_CurrentHerculesReportPayloads(t *testing.T) {
 
 	payload := &pb.AnalysisResults{
 		Header: &pb.Metadata{
+			Version:       pb.SchemaVersion,
 			Repository:    "repo",
 			BeginUnixTime: 1700000000,
 			EndUnixTime:   1700864000,
@@ -264,7 +265,7 @@ func TestProtobufReader_ReportPayloadErrorsAreTyped(t *testing.T) {
 	t.Run("missing", func(t *testing.T) {
 		reader := &ProtobufReader{}
 		payload := &pb.AnalysisResults{
-			Header:   &pb.Metadata{Repository: "repo"},
+			Header:   &pb.Metadata{Version: pb.SchemaVersion, Repository: "repo"},
 			Contents: map[string][]byte{},
 		}
 		require.NoError(t, reader.Read(bytes.NewReader(marshalProto(t, payload))))
@@ -277,7 +278,7 @@ func TestProtobufReader_ReportPayloadErrorsAreTyped(t *testing.T) {
 	t.Run("malformed", func(t *testing.T) {
 		reader := &ProtobufReader{}
 		payload := &pb.AnalysisResults{
-			Header: &pb.Metadata{Repository: "repo"},
+			Header: &pb.Metadata{Version: pb.SchemaVersion, Repository: "repo"},
 			Contents: map[string][]byte{
 				"TemporalActivity": []byte("not protobuf"),
 			},
@@ -390,6 +391,7 @@ func TestProtobufReader_CurrentHerculesShotnessFixture(t *testing.T) {
 
 func TestShotnessCooccurrenceUsesAlignedEntityProfilesWithFormatParity(t *testing.T) {
 	payload := &pb.AnalysisResults{
+		Header: &pb.Metadata{Version: pb.SchemaVersion},
 		Contents: map[string][]byte{
 			"Shotness": marshalProto(t, &pb.ShotnessAnalysisResults{
 				Records: []*pb.ShotnessRecord{
@@ -437,6 +439,8 @@ func TestShotnessCooccurrenceUsesAlignedEntityProfilesWithFormatParity(t *testin
 
 	yamlReader := &YamlReader{}
 	require.NoError(t, yamlReader.Read(bytes.NewBufferString(`
+hercules:
+  version: 2
 Shotness:
   - type: function
     name: alpha
@@ -535,6 +539,7 @@ func TestShotnessCouplingMatrixValidatesEntityDimensionsAndIdentity(t *testing.T
 func TestShotnessReadersAgreeOnPresentEmptyPayload(t *testing.T) {
 	pbReader := &ProtobufReader{}
 	require.NoError(t, pbReader.Read(bytes.NewReader(marshalProto(t, &pb.AnalysisResults{
+		Header: &pb.Metadata{Version: pb.SchemaVersion},
 		Contents: map[string][]byte{
 			"Shotness": marshalProto(t, &pb.ShotnessAnalysisResults{}),
 		},
@@ -543,7 +548,9 @@ func TestShotnessReadersAgreeOnPresentEmptyPayload(t *testing.T) {
 	require.NoError(t, err)
 
 	yamlReader := &YamlReader{}
-	require.NoError(t, yamlReader.Read(bytes.NewBufferString("Shotness: []\n")))
+	require.NoError(t, yamlReader.Read(bytes.NewBufferString(
+		"hercules:\n  version: 2\nShotness: []\n",
+	)))
 	yamlIndex, yamlMatrix, err := yamlReader.GetShotnessCooccurrence()
 	require.NoError(t, err)
 

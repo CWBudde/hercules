@@ -393,7 +393,9 @@ func TestShotnessQualifiedEntitiesRoundTripYAMLAndProtobuf(t *testing.T) {
 		t.Fatalf("serialize YAML failed: %v", err)
 	}
 	yamlReader := &readers.YamlReader{}
-	err = yamlReader.Read(strings.NewReader("Shotness:\n" + yamlBody.String()))
+	err = yamlReader.Read(strings.NewReader(
+		"hercules:\n  version: 2\nShotness:\n" + yamlBody.String(),
+	))
 	if err != nil {
 		t.Fatalf("read YAML failed: %v", err)
 	}
@@ -404,6 +406,7 @@ func TestShotnessQualifiedEntitiesRoundTripYAMLAndProtobuf(t *testing.T) {
 		t.Fatalf("serialize protobuf failed: %v", err)
 	}
 	payload, err := proto.Marshal(&pb.AnalysisResults{
+		Header:   &pb.Metadata{Version: pb.SchemaVersion},
 		Contents: map[string][]byte{testShotnessAnalysisName: pbBody.Bytes()},
 	})
 	if err != nil {
@@ -486,7 +489,9 @@ func TestShotnessSerializeEmptyCountersProducesValidYAML(t *testing.T) {
 	}
 
 	reader := &readers.YamlReader{}
-	err = reader.Read(strings.NewReader("Shotness:\n" + body.String()))
+	err = reader.Read(strings.NewReader(
+		"hercules:\n  version: 2\nShotness:\n" + body.String(),
+	))
 	if err != nil {
 		t.Fatalf("serialized empty counters are invalid YAML: %v", err)
 	}

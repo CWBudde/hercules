@@ -2,15 +2,22 @@ package readers
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"unicode"
 
 	"github.com/cwbudde/hercules/internal/analysisio"
+	"github.com/cwbudde/hercules/internal/pb"
 )
 
 //nolint:cyclop,gocognit,noinlineerr // YAML analyses contain several independent optional sections.
 func validateYAMLAnalysis(data map[string]interface{}, limits analysisio.Limits) error {
+	header, sourceVersion, err := validateYAMLHeader(data)
+	if err != nil {
+		return err
+	}
+
 	total := 0
 	if err := validateYAMLRecords(data, &total, limits); err != nil {
 		return err
@@ -58,6 +65,9 @@ func validateYAMLAnalysis(data map[string]interface{}, limits analysisio.Limits)
 
 	couples, exists := data["Couples"]
 	if !exists {
+		if sourceVersion != pb.SchemaVersion {
+			header["version"] = int(pb.SchemaVersion)
+		}
 		return nil
 	}
 	values, ok := couples.(map[string]interface{})
@@ -98,7 +108,65 @@ func validateYAMLAnalysis(data map[string]interface{}, limits analysisio.Limits)
 			)
 		}
 	}
+	if sourceVersion != pb.SchemaVersion {
+		header["version"] = int(pb.SchemaVersion)
+	}
 	return nil
+}
+
+func validateYAMLHeader(data map[string]interface{}) (map[string]interface{}, int32, error) {
+	rawHeader, exists := data["hercules"]
+	if !exists {
+		return nil, 0, fmt.Errorf("%w: YAML metadata header is missing", ErrAnalysisMalformed)
+	}
+
+	header, ok := rawHeader.(map[string]interface{})
+	if !ok || header == nil {
+		return nil, 0, fmt.Errorf("%w: YAML metadata header must be a mapping", ErrAnalysisMalformed)
+	}
+
+	rawVersion, exists := header["version"]
+	if !exists {
+		return nil, 0, fmt.Errorf("%w: YAML metadata schema version is missing", ErrAnalysisMalformed)
+	}
+
+	version, ok := strictYAMLVersion(rawVersion)
+	if !ok || version < 0 {
+		return nil, 0, fmt.Errorf(
+			"%w: YAML metadata schema version %v is malformed",
+			ErrAnalysisMalformed, rawVersion,
+		)
+	}
+
+	switch version {
+	case pb.LegacyYAMLSchemaVersion, pb.SchemaVersion:
+		return header, version, nil
+	default:
+		return nil, 0, fmt.Errorf(
+			"%w: YAML schema version %d is not supported; expected %d or legacy %d",
+			ErrAnalysisVersionUnsupported, version, pb.SchemaVersion, pb.LegacyYAMLSchemaVersion,
+		)
+	}
+}
+
+func strictYAMLVersion(value interface{}) (int32, bool) {
+	var number int64
+	switch typed := value.(type) {
+	case int:
+		number = int64(typed)
+	case int32:
+		number = int64(typed)
+	case int64:
+		number = typed
+	default:
+		return 0, false
+	}
+
+	if number < math.MinInt32 || number > math.MaxInt32 {
+		return 0, false
+	}
+
+	return int32(number), true
 }
 
 func validateYAMLMatrixField(

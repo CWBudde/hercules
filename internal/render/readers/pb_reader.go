@@ -41,7 +41,7 @@ func (r *ProtobufReader) Read(file io.Reader) error {
 		progEstimator.FinishOperation()
 		return fmt.Errorf("%w: unmarshal protobuf envelope: %v", ErrAnalysisMalformed, err)
 	}
-	if err := analysisio.ValidateAnalysisResults(&results, r.Limits); err != nil {
+	if err := analysisio.ValidateAndMigrateAnalysisResults(&results, r.Limits); err != nil {
 		progEstimator.FinishOperation()
 		return err
 	}

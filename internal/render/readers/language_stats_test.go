@@ -13,6 +13,7 @@ import (
 
 func TestProtobufReaderGetLanguageStatsFromDevsTicks(t *testing.T) {
 	reader := readProtobufAnalysis(t, &pb.AnalysisResults{
+		Header: &pb.Metadata{Version: pb.SchemaVersion},
 		Contents: map[string][]byte{
 			"Devs": marshalLanguageStatsProto(t, &pb.DevsAnalysisResults{
 				DevIndex: []string{"alice", "bob"},

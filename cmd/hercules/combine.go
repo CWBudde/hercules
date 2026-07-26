@@ -16,6 +16,7 @@ import (
 	progress "gopkg.in/cheggaaa/pb.v1"
 
 	"github.com/cwbudde/hercules"
+	"github.com/cwbudde/hercules/internal/analysisio"
 	"github.com/cwbudde/hercules/internal/burndown"
 	"github.com/cwbudde/hercules/internal/pb"
 	"github.com/cwbudde/hercules/leaves"
@@ -223,9 +224,19 @@ func loadMessage(fileName string) (
 		errs = append(errs, "Cannot parse "+fileName+": file size is 0")
 		return nil, nil, "", errs
 	}
-	buffer, err := os.ReadFile(fileName)
+	file, err := os.Open(fileName)
 	if err != nil {
 		errs = append(errs, "Cannot read "+fileName+": "+err.Error())
+		return nil, nil, "", errs
+	}
+	buffer, err := analysisio.ReadAll(file, analysisio.DefaultLimits())
+	if err != nil {
+		_ = file.Close()
+		errs = append(errs, "Cannot read "+fileName+": "+err.Error())
+		return nil, nil, "", errs
+	}
+	if err := file.Close(); err != nil {
+		errs = append(errs, "Cannot close "+fileName+": "+err.Error())
 		return nil, nil, "", errs
 	}
 	message := pb.AnalysisResults{}
@@ -236,6 +247,12 @@ func loadMessage(fileName string) (
 	}
 	if message.GetHeader() == nil {
 		errs = append(errs, "Cannot parse "+fileName+": corrupted header")
+		return nil, nil, "", errs
+	}
+	if err := analysisio.ValidateAndMigrateAnalysisResults(
+		&message, analysisio.DefaultLimits(),
+	); err != nil {
+		errs = append(errs, "Cannot parse "+fileName+": "+err.Error())
 		return nil, nil, "", errs
 	}
 	repoName := message.GetHeader().GetRepository()

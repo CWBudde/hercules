@@ -675,35 +675,6 @@ func imageToNRGBA(img image.Image) *image.NRGBA {
 	return rgba
 }
 
-// PrintSurvivalFunction prints survival ratios to match Python output (placeholder)
-func PrintSurvivalFunction(matrix [][]float64) {
-	fmt.Println("           Ratio of survived lines")
-	// TODO: Implement Kaplan-Meier survival analysis like Python
-	// For now, just print a placeholder that shows we're processing survival data
-
-	if len(matrix) > 0 && len(matrix[0]) > 0 {
-		total := 0.0
-		for i := range matrix {
-			for j := range matrix[i] {
-				total += matrix[i][j]
-			}
-		}
-
-		for i := 0; i < len(matrix[0]); i++ {
-			alive := 0.0
-			for j := range matrix {
-				if i < len(matrix[j]) {
-					alive += matrix[j][i]
-				}
-			}
-			if total > 0 {
-				ratio := alive / total
-				fmt.Printf("%d days\t\t%.6f\n", i, ratio)
-			}
-		}
-	}
-}
-
 // PythonLaboursColorPalette returns the color cycle Python labours actually
 // produces. Python labours applies the requested matplotlib style and then
 // overrides axes.prop_cycle with pyplot.cm.tab20.colors in plotting.import_pyplot.

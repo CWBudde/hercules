@@ -81,9 +81,11 @@ func GenerateBurndownProjectPython(reader readers.Reader, output string, relativ
 		fmt.Printf("Final matrix dimensions: %dx%d\n", len(processedData.Matrix), len(processedData.Matrix[0]))
 	}
 
-	// Print survival analysis (like Python does)
 	if !quiet {
-		graphics.PrintSurvivalFunction(processedData.Matrix)
+		if err := burndown.WriteSurvivalFunction(os.Stdout, processedData.Survival, header.Sampling); err != nil {
+			progEstimator.FinishMultiOperation()
+			return fmt.Errorf("print survival analysis: %w", err)
+		}
 	}
 
 	// Phase 4: Generate visualization

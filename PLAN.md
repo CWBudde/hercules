@@ -426,31 +426,15 @@ regular expressions.
 
 ### DATA-07: Complete burndown survival-analysis parity
 
-Affected code:
+Status: completed 2026-07-26.
 
-- `internal/render/burndown/python_compatible.go`
-- `internal/render/graphics/burndown_matplotlib.go`
-- `internal/render/modes/burndown.go`
-- `internal/render/modes/burndown_python.go`
-- renderer parity fixtures
-
-Work:
-
-- Replace the ignored `reportSurvival` branch and placeholder printer with one tested
-  Kaplan–Meier implementation matching the historical Python renderer.
-- Route native and Python-compatible burndown modes through the same survival calculation; remove
-  the current ad-hoc column-ratio implementations if they are not mathematically equivalent.
-- Define censoring, zero-line, empty-matrix, sampling, and granularity behavior.
-- Make survival rows deterministic and send diagnostics to the appropriate output stream.
-- Replace the basic duration truncation in `FloorDateTime` if calendar/tick boundary parity tests
-  show it differs from the Python behavior.
-
-Acceptance criteria:
-
-- [ ] golden fixtures match the historical Python survival output for raw and resampled matrices;
-- [ ] toggling `reportSurvival` has observable, tested behavior;
-- [ ] survival output order is stable across repeated runs;
-- [ ] no placeholder survival path remains.
+Native and Python-compatible burndown modes now share the historical weighted Kaplan–Meier
+calculation over the raw age-band matrix, with explicit entry, death, final-sample censoring,
+empty/zero-line, sampling, and granularity semantics. `reportSurvival` controls the returned curve,
+and a writer-based deterministic formatter reproduces Python's sampled survival table without
+mixing it with plotting state. Raw and resampled golden fixtures, repeated-run, censoring, invalid
+matrix, and flag tests cover the contract. Unix-epoch flooring now matches Python for calendar,
+non-calendar, fractional, and timezone-sensitive tick boundaries.
 
 ## Phase 5 — Bound resource use and improve large-repository scaling
 

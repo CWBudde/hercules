@@ -133,35 +133,6 @@ func TestFindEarliestTime(t *testing.T) {
 	}
 }
 
-func TestCalculateSurvivalRatio(t *testing.T) {
-	// Test survival ratio calculation
-	testMatrix := [][]int{
-		{100, 50, 0},   // 100% -> 50% -> 0%
-		{200, 100, 50}, // 100% -> 50% -> 25%
-	}
-
-	ratios := mockCalculateSurvivalRatio(testMatrix)
-
-	if len(ratios) != len(testMatrix) {
-		t.Errorf("Expected %d ratios, got %d", len(testMatrix), len(ratios))
-	}
-
-	// Check first row survival ratios
-	if len(ratios[0]) != 3 {
-		t.Errorf("Expected 3 ratio values for first row, got %d", len(ratios[0]))
-	}
-
-	// First value should be 1.0 (100%)
-	if ratios[0][0] != 1.0 {
-		t.Errorf("Expected first survival ratio to be 1.0, got %f", ratios[0][0])
-	}
-
-	// Second value should be 0.5 (50%)
-	if ratios[0][1] != 0.5 {
-		t.Errorf("Expected second survival ratio to be 0.5, got %f", ratios[0][1])
-	}
-}
-
 func TestResampleMatrix(t *testing.T) {
 	// Test matrix resampling functionality
 	testMatrix := [][]int{
@@ -183,32 +154,6 @@ func TestResampleMatrix(t *testing.T) {
 	if len(resampled[0]) >= len(testMatrix[0]) {
 		t.Errorf("Expected resampling to reduce columns, but got %d >= %d", len(resampled[0]), len(testMatrix[0]))
 	}
-}
-
-// Mock functions for testing
-
-func mockCalculateSurvivalRatio(matrix [][]int) [][]float64 {
-	if len(matrix) == 0 || len(matrix[0]) == 0 {
-		return [][]float64{}
-	}
-
-	ratios := make([][]float64, len(matrix))
-	for i := range matrix {
-		ratios[i] = make([]float64, len(matrix[i]))
-
-		if len(matrix[i]) > 0 {
-			firstValue := float64(matrix[i][0])
-			if firstValue == 0 {
-				firstValue = 1.0 // Avoid division by zero
-			}
-
-			for j, val := range matrix[i] {
-				ratios[i][j] = float64(val) / firstValue
-			}
-		}
-	}
-
-	return ratios
 }
 
 func mockResampleMatrix(matrix [][]int, startTime, endTime time.Time, resample string) [][]int {

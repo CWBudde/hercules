@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/viper"
 
+	"github.com/cwbudde/hercules/internal/render/burndown"
 	"github.com/cwbudde/hercules/internal/render/graphics"
 	"github.com/cwbudde/hercules/internal/render/progress"
 )
@@ -15,6 +16,9 @@ import (
 // generateBurndownPlot creates the burndown plot with stacking, resampling, and survival ratio output.
 func generateBurndownPlot(name string, matrix [][]int, output string, relative bool, startTime, endTime *time.Time, resample string) error {
 	fmt.Println("Running: burndown-project")
+	if len(matrix) == 0 || len(matrix[0]) == 0 {
+		return fmt.Errorf("empty burndown matrix")
+	}
 
 	// Initialize progress tracking
 	quiet := viper.GetBool("quiet")
@@ -69,15 +73,21 @@ func generateBurndownPlot(name string, matrix [][]int, output string, relative b
 
 	// Phase 3: Interpolation with enhanced progress tracking
 	progEstimator.NextOperation("Interpolating burndown data")
+	survival, err := burndown.FitKaplanMeier(matrix)
+	if err != nil {
+		progEstimator.FinishMultiOperation()
+		return fmt.Errorf("calculate survival: %w", err)
+	}
 	interpolatedMatrix, dateRange := interpolateBurndownMatrixWithProgress(matrix, *startTime, *endTime, resample, progEstimator)
 
 	// Phase 4: Final processing and visualization
 	progEstimator.NextOperation("Generating visualization")
 
-	// Survival analysis
-	survivalRatios := calculateSurvivalRatios(interpolatedMatrix)
 	if !quiet {
-		printSurvivalRatios(survivalRatios)
+		if err := burndown.WriteSurvivalFunction(os.Stdout, survival, 1); err != nil {
+			progEstimator.FinishMultiOperation()
+			return err
+		}
 	}
 
 	// Normalize if relative is true
@@ -229,33 +239,6 @@ func interpolateBurndownMatrixWithProgress(matrix [][]int, startTime, endTime ti
 
 	progEstimator.FinishOperation()
 	return interpolated, dateRange
-}
-
-// calculateSurvivalRatios computes survival ratios for the matrix.
-func calculateSurvivalRatios(matrix [][]float64) map[int]float64 {
-	survival := make(map[int]float64)
-	total := 0.0
-
-	for i := range matrix[0] { // Iterate over columns (time ticks)
-		alive := 0.0
-		for _, row := range matrix {
-			if row[i] > 0 {
-				alive += row[i]
-			}
-		}
-		total += alive
-		survival[i] = alive / total
-	}
-
-	return survival
-}
-
-// printSurvivalRatios prints the survival ratios to mimic the Python output.
-func printSurvivalRatios(survival map[int]float64) {
-	fmt.Println("           Ratio of survived lines")
-	for days, ratio := range survival {
-		fmt.Printf("%d days\t\t%.6f\n", days, ratio)
-	}
 }
 
 // normalizeMatrix normalizes each column to sum to 1.

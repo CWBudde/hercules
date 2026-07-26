@@ -2,6 +2,7 @@ package burndown
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -32,6 +33,7 @@ type ProcessedBurndown struct {
 	Granularity  int         // Original granularity
 	Sampling     int         // Original sampling
 	ResampleMode string      // Resampling mode used
+	Survival     []SurvivalPoint
 }
 
 // InterpolateBurndownMatrix converts sparse age-band data into a daily matrix with proper code persistence
@@ -177,9 +179,14 @@ func InterpolateBurndownMatrix(matrix [][]int, granularity, sampling int, progre
 
 // FloorDateTime mimics Python's floor_datetime function
 func FloorDateTime(dt time.Time, tickSize float64) time.Time {
-	// This function should floor datetime according to tick size
-	// For now, we'll implement a basic version
-	return dt.Truncate(time.Duration(tickSize) * time.Second)
+	if tickSize <= 0 || math.IsNaN(tickSize) || math.IsInf(tickSize, 0) {
+		return dt
+	}
+	seconds := float64(dt.Unix()) + float64(dt.Nanosecond())/float64(time.Second)
+	floored := math.Floor(seconds/tickSize) * tickSize
+	wholeSeconds := math.Floor(floored)
+	nanoseconds := math.Round((floored - wholeSeconds) * float64(time.Second))
+	return time.Unix(int64(wholeSeconds), int64(nanoseconds)).In(dt.Location())
 }
 
 // LoadBurndown is the main function that replicates Python's load_burndown
@@ -187,17 +194,26 @@ func LoadBurndown(header BurndownHeader, name string, matrix [][]int, resample s
 	if header.Sampling <= 0 || header.Granularity <= 0 {
 		return nil, fmt.Errorf("invalid sampling (%d) or granularity (%d)", header.Sampling, header.Granularity)
 	}
+	if header.TickSize <= 0 || math.IsNaN(header.TickSize) || math.IsInf(header.TickSize, 0) {
+		return nil, fmt.Errorf("invalid tick size %v", header.TickSize)
+	}
+	if len(matrix) == 0 || len(matrix[0]) == 0 {
+		return nil, fmt.Errorf("empty matrix")
+	}
+
+	var survival []SurvivalPoint
+	if reportSurvival {
+		var err error
+		survival, err = FitKaplanMeier(matrix)
+		if err != nil {
+			return nil, fmt.Errorf("calculate survival: %w", err)
+		}
+	} else if _, err := validateSurvivalMatrix(matrix); err != nil {
+		return nil, fmt.Errorf("validate burndown: %w", err)
+	}
 
 	start := FloorDateTime(time.Unix(header.Start, 0), header.TickSize)
 	last := time.Unix(header.Last, 0)
-
-	// TODO: Implement survival analysis if reportSurvival is true
-	// if reportSurvival {
-	//     kmf := fitKaplanMeier(matrix)
-	//     if kmf != nil {
-	//         printSurvivalFunction(kmf, header.Sampling)
-	//     }
-	// }
 
 	finish := start.Add(time.Duration(len(matrix[0])*header.Sampling) * time.Duration(header.TickSize) * time.Second)
 
@@ -230,13 +246,25 @@ func LoadBurndown(header BurndownHeader, name string, matrix [][]int, resample s
 				switch base {
 				case "YE":
 					fmt.Println("too loose resampling - by year, trying by month")
-					return LoadBurndown(header, name, matrix, "month", false, interpolationProgress)
+					fallback, fallbackErr := LoadBurndown(header, name, matrix, "month", false, interpolationProgress)
+					if fallback != nil {
+						fallback.Survival = survival
+					}
+					return fallback, fallbackErr
 				case "ME":
 					fmt.Println("too loose resampling - by month, trying by day")
-					return LoadBurndown(header, name, matrix, "day", false, interpolationProgress)
+					fallback, fallbackErr := LoadBurndown(header, name, matrix, "day", false, interpolationProgress)
+					if fallback != nil {
+						fallback.Survival = survival
+					}
+					return fallback, fallbackErr
 				case "W":
 					fmt.Println("too loose resampling - by week, trying by day")
-					return LoadBurndown(header, name, matrix, "day", false, interpolationProgress)
+					fallback, fallbackErr := LoadBurndown(header, name, matrix, "day", false, interpolationProgress)
+					if fallback != nil {
+						fallback.Survival = survival
+					}
+					return fallback, fallbackErr
 				}
 			}
 			return nil, fmt.Errorf("too loose resampling: %s. Try finer", resample)
@@ -276,6 +304,7 @@ func LoadBurndown(header BurndownHeader, name string, matrix [][]int, resample s
 		Granularity:  header.Granularity,
 		Sampling:     header.Sampling,
 		ResampleMode: resample,
+		Survival:     survival,
 	}, nil
 }
 

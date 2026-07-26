@@ -1,0 +1,8 @@
+        Ratio of survived lines
+1 days                 0.805556
+2 days                 0.611111
+3 days                 0.416667
+4 days                 0.222222
+5 days                 0.055556
+6 days                 0.027778
+6 days                 0.027778

@@ -207,6 +207,16 @@ func TestOutputConventionsMatchPlanner(t *testing.T) {
 	}
 }
 
+func TestValidateModeOutputPlanRejectsDuplicateDestinations(t *testing.T) {
+	err := validateModeOutputPlan(
+		filepath.Join(t.TempDir(), "charts"),
+		[]string{"devs", "devs"},
+	)
+	if err == nil {
+		t.Fatal("validateModeOutputPlan() accepted duplicate destinations")
+	}
+}
+
 func TestFileFanoutModesKeepRequestedBasename(t *testing.T) {
 	previousBackend := viper.GetString("backend")
 	defer viper.Set("backend", previousBackend)

@@ -664,7 +664,11 @@ hercules report -o ./report https://github.com/go-git/go-git
 
 This command runs Hercules in Protocol Buffers mode, renders the charts with the
 built-in in-process renderer (no separate `labours` process and no Python needed),
-and writes a report directory with generated plots plus `index.html`. The default
+and transactionally publishes a report directory with generated plots, `report.pb`,
+`index.html`, and a `manifest.json` inventory. Each run starts in a fresh staging
+directory, so rerunning with fewer modes removes charts from the previous run. In
+`--strict` mode, a rendering failure leaves any previously published report intact.
+The default
 report includes the usual project, file, people, ownership, temporal activity,
 bus factor, knowledge diffusion, hotspot risk, and refactoring proxy
 views without requiring separate `labours` flags. An external drop-in renderer can

@@ -378,27 +378,16 @@ reader formats.
 
 ### DATA-03: Make report output transactional and collision-free
 
-Affected code:
+Status: completed 2026-07-26.
 
-- `cmd/hercules/report.go`
-- `internal/render/output.go`
-- fan-out modes such as burndown person/file/repository
-
-Work:
-
-- Render into a fresh staging directory.
-- Record an explicit manifest of files produced in the current run.
-- Replace or publish the report directory atomically after required work succeeds.
-- Do not recursively include stale assets from previous runs.
-- Generate rune-safe slugs plus a stable short hash of the original identity.
-- Detect duplicate planned paths before rendering.
-- Include warnings and failures in the report summary.
-
-Acceptance criteria:
-
-- [ ] rerunning with fewer modes cannot retain stale charts;
-- [ ] colliding paths and long Unicode names produce unique stable filenames;
-- [ ] strict mode leaves the previous complete report intact on failure.
+Report generation now writes exclusively to a fresh sibling staging directory, records the
+current files plus warnings and failures in `manifest.json` and `index.html`, and atomically
+installs or exchanges the completed directory. A strict render failure discards staging without
+touching the previous report; successful reruns replace the entire old tree, so stale charts
+cannot survive. File, person, and repository fan-outs preflight every destination and use
+rune-safe bounded slugs plus a stable SHA-256-derived short hash. Regression tests cover stale
+asset removal, failed/abandoned publication, manifest outcomes, duplicate plans, sanitization
+collisions, and long Unicode identities.
 
 ### DATA-04: Correct `labours --from-repo`
 

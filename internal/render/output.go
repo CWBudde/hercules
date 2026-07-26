@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/spf13/viper"
+
+	"github.com/cwbudde/hercules/internal/render/outputpath"
 )
 
 // DetectOutputFormat determines the output format ("png", "svg", or "pdf")
@@ -81,18 +83,18 @@ var modeOutputConventions = map[string]outputConvention{
 	},
 	"burndown-file": {
 		Kind:        outputFileFanout,
-		Description: "uses the requested file path as a basename and writes one chart per file",
-		Assets:      []string{"<base>_<sanitized-file><ext>"},
+		Description: "uses the requested file path as a basename and writes one chart per file with a stable identity hash",
+		Assets:      []string{"<base>_<rune-safe-file-slug>-<hash><ext>"},
 	},
 	"burndown-person": {
 		Kind:        outputFileFanout,
-		Description: "uses the requested file path as a basename and writes one chart per person",
-		Assets:      []string{"<base>_<sanitized-person><ext>"},
+		Description: "uses the requested file path as a basename and writes one chart per person with a stable identity hash",
+		Assets:      []string{"<base>_<rune-safe-person-slug>-<hash><ext>"},
 	},
 	"burndown-repository": {
 		Kind:        outputAssetDir,
-		Description: "writes one chart per repository into the requested asset directory",
-		Assets:      []string{"burndown-repository_<sanitized-repository>.png", "burndown-repository_<sanitized-repository>.svg"},
+		Description: "writes one PNG and SVG per repository using stable identity hashes",
+		Assets:      []string{"burndown-repository_<rune-safe-repository-slug>-<hash>.png", "burndown-repository_<rune-safe-repository-slug>-<hash>.svg"},
 	},
 	"burndown-repos-combined": {
 		Kind:        outputSingleFile,
@@ -222,6 +224,20 @@ func planModeOutput(baseOutput, mode string, modeCount int) string {
 	}
 
 	return GenerateOutputPath(baseOutput, format)
+}
+
+func validateModeOutputPlan(baseOutput string, modes []string) error {
+	if strings.HasSuffix(strings.ToLower(baseOutput), ".json") {
+		return nil
+	}
+	paths := make([]string, 0, len(modes))
+	for _, mode := range modes {
+		if outputConventionFor(mode).Kind == outputAssetDir {
+			continue
+		}
+		paths = append(paths, planModeOutput(baseOutput, mode, len(modes)))
+	}
+	return outputpath.RejectDuplicates(paths)
 }
 
 func planMultiAssetModeOutput(baseOutput string) string {

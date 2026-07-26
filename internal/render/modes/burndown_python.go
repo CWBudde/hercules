@@ -13,6 +13,7 @@ import (
 
 	"github.com/cwbudde/hercules/internal/render/burndown"
 	"github.com/cwbudde/hercules/internal/render/graphics"
+	"github.com/cwbudde/hercules/internal/render/outputpath"
 	"github.com/cwbudde/hercules/internal/render/progress"
 	"github.com/cwbudde/hercules/internal/render/readers"
 )
@@ -120,6 +121,15 @@ func GenerateBurndownFilePython(reader readers.Reader, output string, relative b
 		fmt.Printf("Processing %d files\n", len(files))
 	}
 
+	identities := make([]string, len(files))
+	for index, file := range files {
+		identities[index] = file.Filename
+	}
+	outputFiles, err := outputpath.FanoutPaths(output, "burndown_file", identities)
+	if err != nil {
+		return fmt.Errorf("plan file burndown outputs: %w", err)
+	}
+
 	// Process each file
 	var failures []error
 	for i, file := range files {
@@ -137,17 +147,7 @@ func GenerateBurndownFilePython(reader readers.Reader, output string, relative b
 			continue
 		}
 
-		// Generate output filename
-		var fileOutput string
-		if output == "" {
-			fileOutput = fmt.Sprintf("burndown_file_%s.png", sanitizeFilename(file.Filename))
-		} else {
-			dir := filepath.Dir(output)
-			ext := filepath.Ext(output)
-			base := filepath.Base(output)
-			base = base[:len(base)-len(ext)]
-			fileOutput = filepath.Join(dir, fmt.Sprintf("%s_%s%s", base, sanitizeFilename(file.Filename), ext))
-		}
+		fileOutput := outputFiles[i]
 
 		if err := graphics.PlotBurndownMatplotlib(processedData, fileOutput, relative); err != nil {
 			failures = append(failures, fmt.Errorf("create plot for %s: %w", file.Filename, err))
@@ -195,6 +195,17 @@ func GenerateBurndownRepositoryPython(reader readers.Reader, output string, rela
 	}
 
 	quiet := viper.GetBool("quiet")
+	identities := make([]string, len(repositories))
+	for index, repository := range repositories {
+		identities[index] = repository.Repository
+	}
+	outputFiles, err := outputpath.AssetFanoutPaths(
+		output, "burndown-repository", identities, []string{".png", ".svg"},
+	)
+	if err != nil {
+		return fmt.Errorf("plan repository burndown outputs: %w", err)
+	}
+
 	var failures []error
 	for i, repository := range repositories {
 		if !quiet {
@@ -207,13 +218,12 @@ func GenerateBurndownRepositoryPython(reader readers.Reader, output string, rela
 			continue
 		}
 
-		repoBase := filepath.Join(output, fmt.Sprintf("burndown-repository_%s", sanitizeFilename(repository.Repository)))
-		repoPNG := repoBase + ".png"
+		repoPNG := outputFiles[i][0]
 		if err := graphics.PlotBurndownMatplotlib(processedData, repoPNG, relative); err != nil {
 			failures = append(failures, fmt.Errorf("create plot for repository %s: %w", repository.Repository, err))
 			continue
 		}
-		repoSVG := repoBase + ".svg"
+		repoSVG := outputFiles[i][1]
 		if err := graphics.PlotBurndownMatplotlib(processedData, repoSVG, relative); err != nil {
 			failures = append(failures, fmt.Errorf("create SVG plot for repository %s: %w", repository.Repository, err))
 			continue
@@ -394,24 +404,4 @@ func limitRepositoryBands(matrix [][]float64, labels []string, maxRepos int) ([]
 		newLabels = append(newLabels, fmt.Sprintf("Other (%d repos)", otherCount))
 	}
 	return newMatrix, newLabels
-}
-
-// sanitizeFilename removes problematic characters from filenames
-func sanitizeFilename(filename string) string {
-	// Simple sanitization - replace path separators and problematic characters
-	result := ""
-	for _, r := range filename {
-		switch r {
-		case '/', '\\', ':', '*', '?', '"', '<', '>', '|':
-			result += "_"
-		case '.':
-			result += "_"
-		default:
-			result += string(r)
-		}
-	}
-	if len(result) > 50 {
-		result = result[:50]
-	}
-	return result
 }

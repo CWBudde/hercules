@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"html/template"
@@ -180,15 +181,60 @@ func runReport(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	reportPB, message, err := generateReportInput(cmd.Context(), options, analysisFlags)
+	destination, stagingDir, err := prepareReportStaging(options.outputDir)
 	if err != nil {
 		return err
 	}
-	modeResults, err := renderReportModes(cmd.Context(), options, reportPB, modes)
+	stagingPublished := false
+	defer func() {
+		if !stagingPublished {
+			_ = os.RemoveAll(stagingDir)
+		}
+	}()
+	stagingOptions := options
+	stagingOptions.outputDir = stagingDir
+
+	reportOutcomeErr, err := buildStagedReport(
+		cmd.Context(), stagingOptions, analysisFlags, modes,
+	)
 	if err != nil {
 		return err
 	}
-	return finalizeReport(options, message, analysisFlags, modes, modeResults)
+	if err := publishReport(stagingDir, destination); err != nil {
+		return err
+	}
+	stagingPublished = true
+	if reportOutcomeErr != nil {
+		_, _ = fmt.Fprintf(
+			os.Stderr, "report: published with mode failures. See %s\n",
+			filepath.Join(destination.path, "index.html"),
+		)
+		return reportOutcomeErr
+	}
+	_, _ = fmt.Fprintf(os.Stderr, "report: done. Open %s\n",
+		filepath.Join(destination.path, "index.html"))
+	return nil
+}
+
+func buildStagedReport(
+	ctx context.Context,
+	options reportOptions,
+	analysisFlags, modes []string,
+) (error, error) {
+	reportPB, message, err := generateReportInput(ctx, options, analysisFlags)
+	if err != nil {
+		return nil, err
+	}
+	modeResults, err := renderReportModes(ctx, options, reportPB, modes)
+	if err != nil {
+		return nil, err
+	}
+	finalizeErr := finalizeReport(options, message, analysisFlags, modes, modeResults)
+	var renderErr *reportRenderError
+	if finalizeErr != nil && !errors.As(finalizeErr, &renderErr) {
+		return nil, finalizeErr
+	}
+	return finalizeErr, nil
 }
 
 type reportOptions struct {
@@ -202,6 +248,134 @@ type reportOptions struct {
 	laboursExtra      []string
 	laboursCommand    string
 	repositoryArgs    []string
+}
+
+type reportDestination struct {
+	path   string
+	exists bool
+}
+
+var (
+	installReportDirectory = atomicInstallCacheDirectory
+	swapReportDirectories  = atomicSwapCacheDirectories
+)
+
+func prepareReportStaging(outputDir string) (reportDestination, string, error) {
+	destination, err := resolveReportDestination(outputDir)
+	if err != nil {
+		return reportDestination{}, "", err
+	}
+	stagingDir, err := createReportStaging(destination.path)
+	if err != nil {
+		return reportDestination{}, "", err
+	}
+	return destination, stagingDir, nil
+}
+
+func resolveReportDestination(outputDir string) (reportDestination, error) {
+	absolutePath, err := filepath.Abs(outputDir)
+	if err != nil {
+		return reportDestination{}, fmt.Errorf("resolve report output directory: %w", err)
+	}
+	absolutePath = filepath.Clean(absolutePath)
+	if err := validateReportDestination(absolutePath); err != nil {
+		return reportDestination{}, err
+	}
+
+	parent := filepath.Dir(absolutePath)
+	if err := os.MkdirAll(parent, 0o755); err != nil {
+		return reportDestination{}, fmt.Errorf("create report output parent: %w", err)
+	}
+	resolvedParent, err := filepath.EvalSymlinks(parent)
+	if err != nil {
+		return reportDestination{}, fmt.Errorf("resolve report output parent: %w", err)
+	}
+	destinationPath := filepath.Join(resolvedParent, filepath.Base(absolutePath))
+	info, err := os.Lstat(destinationPath)
+	exists := err == nil
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return reportDestination{}, fmt.Errorf("inspect report output directory: %w", err)
+	}
+	if exists && (!info.IsDir() || info.Mode()&os.ModeSymlink != 0) {
+		return reportDestination{}, fmt.Errorf(
+			"report output %s must be a directory and not a symbolic link", destinationPath,
+		)
+	}
+	return reportDestination{path: destinationPath, exists: exists}, nil
+}
+
+func createReportStaging(destinationPath string) (string, error) {
+	stagingDir, err := os.MkdirTemp(
+		filepath.Dir(destinationPath), "."+filepath.Base(destinationPath)+".hercules-report-",
+	)
+	if err != nil {
+		return "", fmt.Errorf("create report staging directory: %w", err)
+	}
+	if err := os.Chmod(stagingDir, 0o755); err != nil {
+		_ = os.Remove(stagingDir)
+		return "", fmt.Errorf("set report staging permissions: %w", err)
+	}
+	return stagingDir, nil
+}
+
+func validateReportDestination(path string) error {
+	if isFilesystemRoot(path) {
+		return fmt.Errorf("refusing to replace filesystem root %s with a report", path)
+	}
+	currentDirectory, err := canonicalExistingPath(".")
+	if err != nil {
+		return fmt.Errorf("resolve current working directory: %w", err)
+	}
+	if sameCachePath(path, currentDirectory) {
+		return fmt.Errorf("refusing to replace current working directory %s with a report", path)
+	}
+	homeDirectory, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("resolve home directory: %w", err)
+	}
+	homeDirectory, err = canonicalExistingPath(homeDirectory)
+	if err != nil {
+		return fmt.Errorf("resolve home directory: %w", err)
+	}
+	if sameCachePath(path, homeDirectory) {
+		return fmt.Errorf("refusing to replace home directory %s with a report", path)
+	}
+	return nil
+}
+
+func publishReport(stagingDir string, destination reportDestination) error {
+	currentlyExists, err := revalidateReportDestination(destination)
+	if err != nil {
+		return err
+	}
+	if !currentlyExists {
+		if err := installReportDirectory(stagingDir, destination.path); err != nil {
+			return fmt.Errorf("atomically publish report at %s: %w", destination.path, err)
+		}
+		return nil
+	}
+	if err := swapReportDirectories(stagingDir, destination.path); err != nil {
+		return fmt.Errorf("atomically replace report at %s: %w", destination.path, err)
+	}
+	if err := os.RemoveAll(stagingDir); err != nil {
+		return fmt.Errorf("remove previous report after publication: %w", err)
+	}
+	return nil
+}
+
+func revalidateReportDestination(destination reportDestination) (bool, error) {
+	info, err := os.Lstat(destination.path)
+	currentlyExists := err == nil
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return false, fmt.Errorf("revalidate report destination: %w", err)
+	}
+	if currentlyExists != destination.exists {
+		return false, fmt.Errorf("report destination %s changed while generating", destination.path)
+	}
+	if currentlyExists && (!info.IsDir() || info.Mode()&os.ModeSymlink != 0) {
+		return false, fmt.Errorf("report destination %s changed while generating", destination.path)
+	}
+	return currentlyExists, nil
 }
 
 func readReportOptions(cmd *cobra.Command, args []string) (reportOptions, error) {
@@ -290,10 +464,10 @@ func generateReportInput(ctx context.Context, options reportOptions, analysisFla
 
 func renderReportModes(ctx context.Context, options reportOptions, reportPB string,
 	modes []string,
-) ([]reportModeFailure, error) {
+) (reportModeResults, error) {
 	chartsRoot := filepath.Join(options.outputDir, "charts")
 	if err := os.MkdirAll(chartsRoot, 0o755); err != nil {
-		return nil, err
+		return reportModeResults{}, err
 	}
 	if options.laboursCommand == "" {
 		return renderReportInProcess(options, reportPB, chartsRoot, modes)
@@ -303,51 +477,78 @@ func renderReportModes(ctx context.Context, options reportOptions, reportPB stri
 
 func renderReportInProcess(options reportOptions, reportPB, chartsRoot string,
 	modes []string,
-) ([]reportModeFailure, error) {
+) (reportModeResults, error) {
 	render.SetRenderDefaults()
 	reader, err := render.LoadInput(reportPB, "pb")
 	if err != nil {
-		return nil, fmt.Errorf("load generated protobuf report for rendering: %w", err)
+		return reportModeResults{}, fmt.Errorf("load generated protobuf report for rendering: %w", err)
 	}
-	var failures []reportModeFailure
+	var outcomes reportModeResults
 	for _, mode := range modes {
 		output := reportModeOutput(chartsRoot, mode, options.format)
 		_, _ = fmt.Fprintf(os.Stderr, "report: rendering mode %s...\n", mode)
 		result := render.Run(reader, []string{mode}, render.Options{Output: output})
-		for _, result := range result.Modes {
-			if result.Err == nil {
-				continue
-			}
-			failures = append(failures, reportModeFailure{Mode: mode, Error: result.Err.Error()})
-			if options.strict {
-				return nil, fmt.Errorf("render mode %s failed: %w", mode, result.Err)
-			}
+		if err := recordInProcessResult(&outcomes, mode, result, options.strict); err != nil {
+			return reportModeResults{}, err
 		}
 	}
-	return failures, nil
+	return outcomes, nil
+}
+
+func recordInProcessResult(
+	outcomes *reportModeResults, mode string, result render.Result, strict bool,
+) error {
+	for _, modeResult := range result.Modes {
+		if modeResult.Warning != "" {
+			outcomes.Warnings = append(
+				outcomes.Warnings, reportModeWarning{Mode: mode, Warning: modeResult.Warning},
+			)
+		}
+		if modeResult.Err == nil {
+			continue
+		}
+		outcomes.Failures = append(
+			outcomes.Failures, reportModeFailure{Mode: mode, Error: modeResult.Err.Error()},
+		)
+		if strict {
+			return fmt.Errorf("render mode %s failed: %w", mode, modeResult.Err)
+		}
+	}
+	if result.OutputError == nil {
+		return nil
+	}
+	outcomes.Failures = append(outcomes.Failures, reportModeFailure{
+		Mode: mode, Error: result.OutputError.Error(),
+	})
+	if strict {
+		return fmt.Errorf("write render mode %s output: %w", mode, result.OutputError)
+	}
+	return nil
 }
 
 func renderReportExternally(ctx context.Context, options reportOptions, reportPB, chartsRoot string,
 	modes []string,
-) ([]reportModeFailure, error) {
+) (reportModeResults, error) {
 	command, err := resolveLaboursCommand(options.laboursCommand)
 	if err != nil {
-		return nil, err
+		return reportModeResults{}, err
 	}
-	var failures []reportModeFailure
+	var outcomes reportModeResults
 	for _, mode := range modes {
 		args := externalReportModeArgs(
 			command, options.laboursExtra, reportPB, reportModeOutput(chartsRoot, mode, options.format), mode,
 		)
 		_, _ = fmt.Fprintf(os.Stderr, "report: running labours mode %s...\n", mode)
 		if err := runAndCaptureTo(ctx, os.Stderr, command[0], args, nil); err != nil {
-			failures = append(failures, reportModeFailure{Mode: mode, Error: err.Error()})
+			outcomes.Failures = append(
+				outcomes.Failures, reportModeFailure{Mode: mode, Error: err.Error()},
+			)
 			if options.strict {
-				return nil, fmt.Errorf("labours mode %s failed: %w", mode, err)
+				return reportModeResults{}, fmt.Errorf("labours mode %s failed: %w", mode, err)
 			}
 		}
 	}
-	return failures, nil
+	return outcomes, nil
 }
 
 func externalReportModeArgs(command, extra []string, reportPB, output, mode string) []string {
@@ -362,24 +563,42 @@ func reportModeOutput(chartsRoot, mode, format string) string {
 }
 
 func finalizeReport(options reportOptions, message pb.AnalysisResults, analysisFlags, modes []string,
-	modeResults []reportModeFailure,
+	modeResults reportModeResults,
 ) error {
 	plots, assets, err := collectReportAssets(options.outputDir)
 	if err != nil {
 		return err
 	}
+	assets = append(assets, "manifest.json")
+	sort.Strings(assets)
 
 	indexFile := filepath.Join(options.outputDir, "index.html")
 	indexData := newReportIndexData(message, analysisFlags, modes, modeResults, plots, assets, options.format)
 	if err := writeReportIndex(indexFile, indexData); err != nil {
 		return err
 	}
-
-	if len(modeResults) > 0 {
-		_, _ = fmt.Fprintf(os.Stderr, "report: %d mode(s) failed. See index.html for details.\n", len(modeResults))
-		return reportFailuresError(modeResults)
+	files, err := collectReportManifestFiles(options.outputDir)
+	if err != nil {
+		return err
 	}
-	_, _ = fmt.Fprintf(os.Stderr, "report: done. Open %s\n", indexFile)
+	files = append(files, "manifest.json")
+	sort.Strings(files)
+	if err := writeReportManifest(
+		filepath.Join(options.outputDir, "manifest.json"),
+		reportManifest{
+			Version:   1,
+			Files:     files,
+			Warnings:  modeResults.Warnings,
+			Failures:  modeResults.Failures,
+			Generated: indexData.GeneratedAt,
+		},
+	); err != nil {
+		return err
+	}
+
+	if len(modeResults.Failures) > 0 {
+		return reportFailuresError(modeResults.Failures)
+	}
 	return nil
 }
 
@@ -388,7 +607,7 @@ func reportFailuresError(failures []reportModeFailure) error {
 	for _, failure := range failures {
 		errs = append(errs, fmt.Errorf("render mode %s: %s", failure.Mode, failure.Error))
 	}
-	return errors.Join(errs...)
+	return &reportRenderError{err: errors.Join(errs...)}
 }
 
 // reportAnalysisFlagParents maps analysis flags that are sub-options of another
@@ -488,6 +707,18 @@ func validateReportLaboursFlags(laboursCmdOverride string, laboursExtra []string
 		return errors.New(
 			"--labours-arg requires --labours-cmd: the built-in renderer does not accept extra labours arguments",
 		)
+	}
+	for _, argument := range laboursExtra {
+		for _, reserved := range []string{
+			"-o", "--output", "-i", "--input", "-f", "--input-format",
+			"-m", "--mode", "--modes", "--backend",
+		} {
+			if argument == reserved || strings.HasPrefix(argument, reserved+"=") {
+				return fmt.Errorf(
+					"--labours-arg may not override report-controlled flag %q", reserved,
+				)
+			}
+		}
 	}
 	return nil
 }
@@ -589,8 +820,38 @@ func collectReportAssets(root string) ([]string, []string, error) {
 }
 
 type reportModeFailure struct {
-	Mode  string
-	Error string
+	Mode  string `json:"mode"`
+	Error string `json:"error"`
+}
+
+type reportModeWarning struct {
+	Mode    string `json:"mode"`
+	Warning string `json:"warning"`
+}
+
+type reportModeResults struct {
+	Warnings []reportModeWarning
+	Failures []reportModeFailure
+}
+
+type reportRenderError struct {
+	err error
+}
+
+func (err *reportRenderError) Error() string {
+	return err.err.Error()
+}
+
+func (err *reportRenderError) Unwrap() error {
+	return err.err
+}
+
+type reportManifest struct {
+	Version   int                 `json:"version"`
+	Generated string              `json:"generatedAt"`
+	Files     []string            `json:"files"`
+	Warnings  []reportModeWarning `json:"warnings,omitempty"`
+	Failures  []reportModeFailure `json:"failures,omitempty"`
 }
 
 type reportIndexData struct {
@@ -604,6 +865,7 @@ type reportIndexData struct {
 	RuntimeMS   int64
 	Analyses    []string
 	Modes       []string
+	Warnings    []reportModeWarning
 	Failures    []reportModeFailure
 	Plots       []string
 	Assets      []string
@@ -614,7 +876,7 @@ func newReportIndexData(
 	message pb.AnalysisResults,
 	analysisFlags []string,
 	modes []string,
-	modeResults []reportModeFailure,
+	modeResults reportModeResults,
 	plots []string,
 	assets []string,
 	format string,
@@ -661,7 +923,8 @@ func newReportIndexData(
 		RuntimeMS:   runtimeMS,
 		Analyses:    analyses,
 		Modes:       modes,
-		Failures:    modeResults,
+		Warnings:    modeResults.Warnings,
+		Failures:    modeResults.Failures,
 		Plots:       plots,
 		Assets:      assets,
 		Format:      strings.ToUpper(format),
@@ -743,6 +1006,15 @@ const reportIndexTemplate = `<!doctype html>
     </ul>
   </section>
 
+  {{if .Warnings}}
+  <section class="card">
+    <h2>Mode Warnings</h2>
+    <ul>
+      {{range .Warnings}}<li><code>{{.Mode}}</code>: {{.Warning}}</li>{{end}}
+    </ul>
+  </section>
+  {{end}}
+
   {{if .Failures}}
   <section class="card">
     <h2>Mode Failures</h2>
@@ -789,6 +1061,41 @@ func writeReportIndex(path string, data reportIndexData) error {
 	}
 	defer file.Close()
 	return tmpl.Execute(file, data)
+}
+
+func collectReportManifestFiles(root string) ([]string, error) {
+	files := make([]string, 0)
+	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			return nil
+		}
+		relative, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		files = append(files, filepath.ToSlash(relative))
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	sort.Strings(files)
+	return files, nil
+}
+
+func writeReportManifest(path string, manifest reportManifest) error {
+	payload, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode report manifest: %w", err)
+	}
+	payload = append(payload, '\n')
+	if err := os.WriteFile(path, payload, 0o600); err != nil {
+		return fmt.Errorf("write report manifest: %w", err)
+	}
+	return nil
 }
 
 func init() {

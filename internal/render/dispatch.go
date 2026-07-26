@@ -54,6 +54,9 @@ func executeModes(modes []string, reader readers.Reader, output string, startTim
 	if len(modes) == 0 {
 		return Result{}
 	}
+	if err := validateModeOutputPlan(output, modes); err != nil {
+		return Result{OutputError: fmt.Errorf("plan renderer outputs: %w", err)}
+	}
 	modeResults := make([]ModeResult, 0, len(modes))
 
 	// Check if JSON output is requested

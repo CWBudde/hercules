@@ -4,13 +4,13 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/spf13/viper"
 
 	"github.com/cwbudde/hercules/internal/render/burndown"
 	"github.com/cwbudde/hercules/internal/render/graphics"
+	"github.com/cwbudde/hercules/internal/render/outputpath"
 	"github.com/cwbudde/hercules/internal/render/readers"
 )
 
@@ -33,20 +33,18 @@ func BurndownPerson(reader readers.Reader, output string, relative bool, startDa
 		resample = "year"
 	}
 
-	// Generate a chart for each person
-	for _, person := range peopleBurndowns {
-		outputFile := fmt.Sprintf("burndown_person_%s.png", sanitizeFilename(person.Person))
-		if output != "" {
-			dir := filepath.Dir(output)
-			ext := filepath.Ext(output)
-			if ext == "" {
-				ext = ".png"
-			}
-			base := filepath.Base(output)
-			base = base[:len(base)-len(filepath.Ext(base))]
-			outputFile = filepath.Join(dir, fmt.Sprintf("%s_%s%s", base, sanitizeFilename(person.Person), ext))
-		}
+	identities := make([]string, len(peopleBurndowns))
+	for index, person := range peopleBurndowns {
+		identities[index] = person.Person
+	}
+	outputFiles, err := outputpath.FanoutPaths(output, "burndown_person", identities)
+	if err != nil {
+		return fmt.Errorf("plan person burndown outputs: %w", err)
+	}
 
+	// Generate a chart for each person
+	for index, person := range peopleBurndowns {
+		outputFile := outputFiles[index]
 		if usePythonRenderer {
 			processedData, err := burndown.LoadBurndown(header, person.Person, person.Matrix, resample, false, false)
 			if err != nil {

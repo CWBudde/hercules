@@ -42,13 +42,21 @@ type ParallelDeveloperData struct {
 // is a Go-only chart (Python labours needs a shared couples_people_data.tsv and
 // emits nothing standalone), so it is gated behind detail (--devs-parallel-detail).
 func DevsParallel(reader readers.Reader, output string, maxPeople int, allowSyntheticFallback, detail bool) error {
+	opts := defaultOptions()
+	opts.MaxPeople = maxPeople
+	opts.DevsParallelFallback = allowSyntheticFallback
+	opts.DevsParallelDetail = detail
+	return DevsParallelWithOptions(reader, output, opts)
+}
+
+func DevsParallelWithOptions(reader readers.Reader, output string, opts Options) error {
 	fmt.Println("Analyzing parallel development patterns...")
 
-	parallelData, timeSeries, err := loadDevsParallelData(reader, maxPeople)
+	parallelData, timeSeries, err := loadDevsParallelData(reader, opts.MaxPeople)
 	if err != nil {
-		if allowSyntheticFallback && errors.Is(err, readers.ErrAnalysisMissing) {
+		if opts.DevsParallelFallback && errors.Is(err, readers.ErrAnalysisMissing) {
 			fmt.Fprintf(os.Stderr, "Warning: could not load devs-parallel data: %v\n", err)
-			return generateSyntheticParallelAnalysis(reader, output, detail)
+			return generateSyntheticParallelAnalysis(reader, output, opts.DevsParallelDetail, opts.Graphics)
 		}
 		return err
 	}
@@ -58,7 +66,7 @@ func DevsParallel(reader readers.Reader, output string, maxPeople int, allowSynt
 	}
 
 	// Primary output: the Python-parity parallel-coordinates "Developers" chart.
-	if err := plotDevsParallelCoordinates(parallelData, output); err != nil {
+	if err := plotDevsParallelCoordinates(parallelData, output, opts.Graphics); err != nil {
 		return fmt.Errorf("failed to create parallel coordinates plot: %v", err)
 	}
 
@@ -66,9 +74,9 @@ func DevsParallel(reader readers.Reader, output string, maxPeople int, allowSynt
 
 	// The concurrency timeline is a Go-only auxiliary chart, emitted as a
 	// sibling only when detail is requested.
-	if detail {
+	if opts.DevsParallelDetail {
 		timelineOutput := siblingOutputPath(output, "devs-parallel.png", "concurrency_timeline")
-		if err := plotParallelActivity(metrics, timelineOutput); err != nil {
+		if err := plotParallelActivity(metrics, timelineOutput, opts.Graphics); err != nil {
 			return fmt.Errorf("failed to create parallel activity plot: %v", err)
 		}
 	}
@@ -84,7 +92,15 @@ func DevsParallel(reader readers.Reader, output string, maxPeople int, allowSynt
 // labours' show_devs_parallel draws: each developer is a smooth curve flowing
 // across the commits / lines / ownership / couples / commit-cooccurrence rank
 // axes, normalized by the developer count.
-func plotDevsParallelCoordinates(data []ParallelDeveloperData, output string) error {
+func plotDevsParallelCoordinates(
+	data []ParallelDeveloperData,
+	output string,
+	optionValues ...graphics.Options,
+) error {
+	visuals := graphics.DefaultOptions()
+	if len(optionValues) > 0 {
+		visuals = optionValues[0]
+	}
 	if output == "" {
 		output = "devs-parallel.png"
 	}
@@ -112,6 +128,7 @@ func plotDevsParallelCoordinates(data []ParallelDeveloperData, output string) er
 		WidthInches:  16,
 		HeightInches: 12,
 		Axes:         5,
+		FontSize:     visuals.PlotFontSize(),
 	}); err != nil {
 		return err
 	}
@@ -587,7 +604,15 @@ func calculateParallelismMetrics(peopleBurndown []readers.PeopleBurndown) Parall
 }
 
 // plotParallelActivity creates a timeline showing concurrent developer activity
-func plotParallelActivity(metrics ParallelismMetrics, output string) error {
+func plotParallelActivity(
+	metrics ParallelismMetrics,
+	output string,
+	optionValues ...graphics.Options,
+) error {
+	visuals := graphics.DefaultOptions()
+	if len(optionValues) > 0 {
+		visuals = optionValues[0]
+	}
 	if len(metrics.PeriodConcurrency) == 0 {
 		metrics.PeriodConcurrency = []int{0}
 	}
@@ -636,6 +661,7 @@ func plotParallelActivity(metrics ParallelismMetrics, output string) error {
 		Output:   output,
 		ShowGrid: true,
 		Legend:   true,
+		FontSize: visuals.PlotFontSize(),
 	}); err != nil {
 		return fmt.Errorf("failed to save parallel activity plot: %w", err)
 	}
@@ -645,7 +671,12 @@ func plotParallelActivity(metrics ParallelismMetrics, output string) error {
 }
 
 // generateSyntheticParallelAnalysis creates a fallback analysis when real data is not available
-func generateSyntheticParallelAnalysis(reader readers.Reader, output string, detail bool) error {
+func generateSyntheticParallelAnalysis(
+	reader readers.Reader,
+	output string,
+	detail bool,
+	optionValues ...graphics.Options,
+) error {
 	fmt.Println("Generating synthetic parallel development analysis...")
 
 	// Try to get basic developer stats for fallback
@@ -702,7 +733,7 @@ func generateSyntheticParallelAnalysis(reader readers.Reader, output string, det
 	}
 
 	if detail {
-		if err := plotParallelActivity(metrics, output); err != nil {
+		if err := plotParallelActivity(metrics, output, optionValues...); err != nil {
 			return fmt.Errorf("failed to create parallel activity plot: %v", err)
 		}
 	}

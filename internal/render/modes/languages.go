@@ -9,8 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spf13/viper"
-
 	"github.com/cwbudde/hercules/internal/render/graphics"
 	"github.com/cwbudde/hercules/internal/render/readers"
 )
@@ -18,6 +16,10 @@ import (
 // Languages generates language statistics and visualization showing the distribution
 // of programming languages used in the repository.
 func Languages(reader readers.Reader, output string) error {
+	return LanguagesWithOptions(reader, output, defaultOptions())
+}
+
+func LanguagesWithOptions(reader readers.Reader, output string, opts Options) error {
 	timeSeries, timeSeriesErr := reader.GetDeveloperTimeSeriesData()
 
 	// Step 1: Read language statistics
@@ -38,9 +40,9 @@ func Languages(reader readers.Reader, output string) error {
 	// Step 3: Generate visualization
 	startUnix, endUnix := reader.GetHeader()
 	if timeSeriesErr == nil && timeSeries != nil && len(timeSeries.Days) > 0 && startUnix > 0 && endUnix > startUnix {
-		err = plotLanguageEvolution(timeSeries, startUnix, endUnix, viper.GetString("resample"), output)
+		err = plotLanguageEvolutionWithOptions(timeSeries, startUnix, endUnix, opts.Resample, output, opts.Graphics)
 	} else {
-		err = plotLanguages(languageStats, output)
+		err = plotLanguages(languageStats, output, opts.Graphics)
 	}
 	if err != nil {
 		return fmt.Errorf("failed to generate language plot: %v", err)
@@ -58,6 +60,15 @@ type languageEvolution struct {
 }
 
 func plotLanguageEvolution(timeSeries *readers.DeveloperTimeSeriesData, startUnix, endUnix int64, resample, output string) error {
+	return plotLanguageEvolutionWithOptions(timeSeries, startUnix, endUnix, resample, output, graphics.DefaultOptions())
+}
+
+func plotLanguageEvolutionWithOptions(
+	timeSeries *readers.DeveloperTimeSeriesData,
+	startUnix, endUnix int64,
+	resample, output string,
+	opts graphics.Options,
+) error {
 	data, err := buildLanguageEvolution(timeSeries, startUnix, endUnix, resample)
 	if err != nil {
 		return err
@@ -97,6 +108,7 @@ func plotLanguageEvolution(timeSeries *readers.DeveloperTimeSeriesData, startUni
 			YMin:         0,
 			YMax:         math.Max(data.Total*1.05, 1),
 			ShowGrid:     false,
+			FontSize:     opts.PlotFontSize(),
 		}); err != nil {
 			return err
 		}
@@ -304,7 +316,15 @@ func reverseString(s string) string {
 }
 
 // plotLanguages creates a bar chart showing language distribution by lines of code
-func plotLanguages(languageStats []readers.LanguageStat, output string) error {
+func plotLanguages(
+	languageStats []readers.LanguageStat,
+	output string,
+	optionValues ...graphics.Options,
+) error {
+	visuals := graphics.DefaultOptions()
+	if len(optionValues) > 0 {
+		visuals = optionValues[0]
+	}
 	// Prepare data for the bar chart
 	names := make([]string, len(languageStats))
 	values := make([]float64, len(languageStats))
@@ -328,6 +348,7 @@ func plotLanguages(languageStats []readers.LanguageStat, output string) error {
 			WidthInches:  16,
 			HeightInches: 12,
 			RotateX:      len(languageStats) > 10,
+			FontSize:     visuals.PlotFontSize(),
 		}); err != nil {
 			return err
 		}

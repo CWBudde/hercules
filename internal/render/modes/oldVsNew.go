@@ -15,6 +15,17 @@ import (
 // This provides insights into development patterns - whether the project is in growth mode (lots of new code)
 // vs maintenance mode (lots of modifications to existing code).
 func OldVsNew(reader readers.Reader, output string, startTime, endTime *time.Time, resample string) error {
+	opts := defaultOptions()
+	opts.Resample = resample
+	return OldVsNewWithOptions(reader, output, startTime, endTime, opts)
+}
+
+func OldVsNewWithOptions(
+	reader readers.Reader,
+	output string,
+	startTime, endTime *time.Time,
+	opts Options,
+) error {
 	timeSeries, timeSeriesErr := reader.GetDeveloperTimeSeriesData()
 	if timeSeriesErr != nil && !errors.Is(timeSeriesErr, readers.ErrAnalysisMissing) {
 		return fmt.Errorf("get developer time series: %w", timeSeriesErr)
@@ -23,7 +34,7 @@ func OldVsNew(reader readers.Reader, output string, startTime, endTime *time.Tim
 		startUnix, endUnix := reader.GetHeader()
 		if startUnix > 0 && endUnix > startUnix {
 			newLines, oldLines, dates := oldVsNewDailySeries(timeSeries, startUnix, endUnix)
-			return generateOldVsNewPlot(newLines, oldLines, dates, output)
+			return generateOldVsNewPlot(newLines, oldLines, dates, output, opts.Graphics)
 		}
 	}
 
@@ -74,7 +85,7 @@ func OldVsNew(reader readers.Reader, output string, startTime, endTime *time.Tim
 		dates[i] = time.Unix(0, 0).AddDate(0, 0, i)
 	}
 
-	return generateOldVsNewPlot(newCodeSeries, modifiedCodeSeries, dates, output)
+	return generateOldVsNewPlot(newCodeSeries, modifiedCodeSeries, dates, output, opts.Graphics)
 }
 
 // generateOldVsNewTimeSeries creates a time series showing the evolution of code changes over time.
@@ -210,7 +221,16 @@ func convolveSame(series, window []float64) []float64 {
 }
 
 // generateOldVsNewPlot creates an overlaid area chart showing new vs modified code over time.
-func generateOldVsNewPlot(newCodeSeries, modifiedCodeSeries []float64, dates []time.Time, output string) error {
+func generateOldVsNewPlot(
+	newCodeSeries, modifiedCodeSeries []float64,
+	dates []time.Time,
+	output string,
+	optionValues ...graphics.Options,
+) error {
+	visuals := graphics.DefaultOptions()
+	if len(optionValues) > 0 {
+		visuals = optionValues[0]
+	}
 	length := len(newCodeSeries)
 	if len(modifiedCodeSeries) != length {
 		return fmt.Errorf("new code and modified code series must have the same length")
@@ -246,6 +266,7 @@ func generateOldVsNewPlot(newCodeSeries, modifiedCodeSeries []float64, dates []t
 		HideFrame:    true,
 		AutoXMargin:  true,
 		Alpha:        1,
+		FontSize:     visuals.PlotFontSize(),
 	}); err != nil {
 		return fmt.Errorf("failed to save old-vs-new plot: %v", err)
 	}

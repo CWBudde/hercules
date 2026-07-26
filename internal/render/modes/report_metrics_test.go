@@ -8,8 +8,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/spf13/viper"
-
 	"github.com/cwbudde/hercules/internal/render/burndown"
 	"github.com/cwbudde/hercules/internal/render/readers"
 )
@@ -151,10 +149,6 @@ func TestBusFactorSubsystemOutputPreservesTransparentBackground(t *testing.T) {
 }
 
 func TestDirectoryChartModesCreatePNGAndSVGAssets(t *testing.T) {
-	previousQuiet := viper.GetBool("quiet")
-	defer viper.Set("quiet", previousQuiet)
-	viper.Set("quiet", true)
-
 	reader := &reportMetricsReader{}
 	tests := []struct {
 		name  string

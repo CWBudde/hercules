@@ -3,28 +3,18 @@ package render
 import (
 	"path/filepath"
 	"testing"
-
-	"github.com/spf13/viper"
 )
 
 func TestDetectOutputFormatTreatsAggAsRenderingBackend(t *testing.T) {
-	previousBackend := viper.GetString("backend")
-	defer viper.Set("backend", previousBackend)
-
-	viper.Set("backend", "Agg")
-	if got := DetectOutputFormat("chart.svg"); got != "svg" {
+	if got := detectOutputFormat("chart.svg", "Agg"); got != "svg" {
 		t.Fatalf("DetectOutputFormat() = %q, want svg", got)
 	}
-	if got := DetectOutputFormat("chart"); got != "png" {
+	if got := detectOutputFormat("chart", "Agg"); got != "png" {
 		t.Fatalf("DetectOutputFormat() = %q, want png", got)
 	}
 }
 
 func TestPlanModeOutputSingleMode(t *testing.T) {
-	previousBackend := viper.GetString("backend")
-	defer viper.Set("backend", previousBackend)
-	viper.Set("backend", "auto")
-
 	tmpDir := t.TempDir()
 	tests := []struct {
 		name       string
@@ -73,10 +63,6 @@ func TestPlanModeOutputSingleMode(t *testing.T) {
 }
 
 func TestPlanModeOutputMultipleModes(t *testing.T) {
-	previousBackend := viper.GetString("backend")
-	defer viper.Set("backend", previousBackend)
-	viper.Set("backend", "auto")
-
 	tmpDir := t.TempDir()
 	tests := []struct {
 		name       string
@@ -175,10 +161,6 @@ func TestModeOutputConventionsCoverImplementedModes(t *testing.T) {
 }
 
 func TestOutputConventionsMatchPlanner(t *testing.T) {
-	previousBackend := viper.GetString("backend")
-	defer viper.Set("backend", previousBackend)
-	viper.Set("backend", "auto")
-
 	tmpDir := t.TempDir()
 	requestedFile := filepath.Join(tmpDir, "requested.svg")
 
@@ -218,10 +200,6 @@ func TestValidateModeOutputPlanRejectsDuplicateDestinations(t *testing.T) {
 }
 
 func TestFileFanoutModesKeepRequestedBasename(t *testing.T) {
-	previousBackend := viper.GetString("backend")
-	defer viper.Set("backend", previousBackend)
-	viper.Set("backend", "auto")
-
 	tmpDir := t.TempDir()
 	for _, mode := range []string{"burndown-file", "burndown-person"} {
 		t.Run(mode, func(t *testing.T) {

@@ -11,7 +11,8 @@ import (
 	"github.com/cwbudde/matplotlib-go/core"
 	"github.com/cwbudde/matplotlib-go/render"
 	"github.com/cwbudde/matplotlib-go/style"
-	"github.com/spf13/viper"
+
+	"github.com/cwbudde/hercules/internal/render/graphics"
 )
 
 func TestGenerateOwnershipPlot(t *testing.T) {
@@ -422,9 +423,6 @@ func TestOwnershipChartTitle(t *testing.T) {
 // "0000" and the rotated date labels disappeared entirely. Assert that both
 // margins actually receive ink at the smallest figure size the CLI is used with.
 func TestPlotOwnershipBurndownKeepsTickLabelsInsideCanvas(t *testing.T) {
-	viper.Set("size", "16,10")
-	t.Cleanup(func() { viper.Set("size", "") })
-
 	start := time.Date(2017, 1, 11, 0, 0, 0, 0, time.UTC)
 	points := 24
 	dates := make([]time.Time, points)
@@ -438,6 +436,7 @@ func TestPlotOwnershipBurndownKeepsTickLabelsInsideCanvas(t *testing.T) {
 	output := filepath.Join(t.TempDir(), "ownership.png")
 	if err := plotOwnershipBurndown(
 		".", []string{"Alice"}, [][]float64{owned}, dates, dates[points-1], output,
+		Options{Graphics: graphics.Options{Size: "16,10"}},
 	); err != nil {
 		t.Fatalf("plotOwnershipBurndown: %v", err)
 	}

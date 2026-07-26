@@ -7,16 +7,12 @@ import (
 	"testing"
 
 	"github.com/gogo/protobuf/proto"
-	"github.com/spf13/viper"
 
 	"github.com/cwbudde/hercules/internal/analysisio"
 	"github.com/cwbudde/hercules/internal/pb"
 )
 
 func TestYAMLReaderRejectsMalformedAndOversizedMatrices(t *testing.T) {
-	viper.Set("quiet", true)
-	t.Cleanup(func() { viper.Set("quiet", false) })
-
 	tests := []struct {
 		name string
 		yaml string
@@ -40,7 +36,7 @@ func TestYAMLReaderRejectsMalformedAndOversizedMatrices(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			reader := &YamlReader{}
+			reader := &YamlReader{Quiet: true}
 			err := reader.Read(strings.NewReader(test.yaml))
 			if !errors.Is(err, test.want) {
 				t.Fatalf("error = %v, want %v", err, test.want)
@@ -48,7 +44,7 @@ func TestYAMLReaderRejectsMalformedAndOversizedMatrices(t *testing.T) {
 		})
 	}
 
-	reader := &YamlReader{Limits: analysisio.Limits{MaxDecodedCells: 3}}
+	reader := &YamlReader{Limits: analysisio.Limits{MaxDecodedCells: 3}, Quiet: true}
 	err := reader.Read(strings.NewReader(
 		"hercules:\n  version: 2\nBurndown:\n  project: |\n    1 2\n    3 4\n",
 	))
@@ -58,12 +54,9 @@ func TestYAMLReaderRejectsMalformedAndOversizedMatrices(t *testing.T) {
 }
 
 func TestReadersEnforceConfigurableInputLimit(t *testing.T) {
-	viper.Set("quiet", true)
-	t.Cleanup(func() { viper.Set("quiet", false) })
-
 	for name, reader := range map[string]Reader{
-		"YAML":     &YamlReader{Limits: analysisio.Limits{MaxInputBytes: 4}},
-		"protobuf": &ProtobufReader{Limits: analysisio.Limits{MaxInputBytes: 4}},
+		"YAML":     &YamlReader{Limits: analysisio.Limits{MaxInputBytes: 4}, Quiet: true},
+		"protobuf": &ProtobufReader{Limits: analysisio.Limits{MaxInputBytes: 4}, Quiet: true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			err := reader.Read(strings.NewReader("12345"))
@@ -75,9 +68,6 @@ func TestReadersEnforceConfigurableInputLimit(t *testing.T) {
 }
 
 func TestReadersValidateSchemaVersions(t *testing.T) {
-	viper.Set("quiet", true)
-	t.Cleanup(func() { viper.Set("quiet", false) })
-
 	t.Run("protobuf", func(t *testing.T) {
 		tests := []struct {
 			name    string
@@ -98,7 +88,7 @@ func TestReadersValidateSchemaVersions(t *testing.T) {
 					t.Fatal(err)
 				}
 
-				reader := &ProtobufReader{}
+				reader := &ProtobufReader{Quiet: true}
 				err = reader.Read(bytes.NewReader(data))
 				if !errors.Is(err, test.wantErr) {
 					t.Fatalf("error = %v, want %v", err, test.wantErr)
@@ -122,7 +112,7 @@ func TestReadersValidateSchemaVersions(t *testing.T) {
 		}
 		for _, test := range tests {
 			t.Run(test.name, func(t *testing.T) {
-				reader := &YamlReader{}
+				reader := &YamlReader{Quiet: true}
 				err := reader.Read(strings.NewReader(test.input))
 				if !errors.Is(err, test.wantErr) {
 					t.Fatalf("error = %v, want %v", err, test.wantErr)
@@ -139,9 +129,6 @@ func TestReadersValidateSchemaVersions(t *testing.T) {
 }
 
 func TestProtobufReaderRejectsHostileDeclaredDimensions(t *testing.T) {
-	viper.Set("quiet", true)
-	t.Cleanup(func() { viper.Set("quiet", false) })
-
 	payload, err := proto.Marshal(&pb.BurndownAnalysisResults{
 		Project: &pb.BurndownSparseMatrix{
 			NumberOfRows:    1_000_000,
@@ -159,7 +146,7 @@ func TestProtobufReaderRejectsHostileDeclaredDimensions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	reader := &ProtobufReader{}
+	reader := &ProtobufReader{Quiet: true}
 	err = reader.Read(bytes.NewReader(envelope))
 	if !errors.Is(err, ErrAnalysisTooLarge) {
 		t.Fatalf("error = %v, want ErrAnalysisTooLarge", err)
@@ -167,7 +154,6 @@ func TestProtobufReaderRejectsHostileDeclaredDimensions(t *testing.T) {
 }
 
 func FuzzYAMLReader(f *testing.F) {
-	viper.Set("quiet", true)
 	f.Add([]byte("hercules:\n  repository: test\n"))
 	f.Add([]byte("Burndown:\n  project: |\n    1 2\n"))
 	f.Fuzz(func(t *testing.T, data []byte) {
@@ -177,13 +163,12 @@ func FuzzYAMLReader(f *testing.F) {
 			MaxRows:          1 << 10,
 			MaxColumns:       1 << 10,
 			MaxNestedRecords: 1 << 16,
-		}}
+		}, Quiet: true}
 		_ = reader.Read(bytes.NewReader(data))
 	})
 }
 
 func FuzzProtobufReader(f *testing.F) {
-	viper.Set("quiet", true)
 	f.Add([]byte{})
 	f.Add([]byte{0xff})
 	f.Fuzz(func(t *testing.T, data []byte) {
@@ -193,7 +178,7 @@ func FuzzProtobufReader(f *testing.F) {
 			MaxRows:          1 << 10,
 			MaxColumns:       1 << 10,
 			MaxNestedRecords: 1 << 16,
-		}}
+		}, Quiet: true}
 		_ = reader.Read(bytes.NewReader(data))
 	})
 }

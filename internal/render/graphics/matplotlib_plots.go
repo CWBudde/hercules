@@ -51,6 +51,7 @@ type MatplotlibTimeAreaOptions struct {
 	YMax         float64
 	Baselines    [][]float64
 	TextLabels   []MatplotlibTextLabel
+	FontSize     float64
 }
 
 type MatplotlibBarOptions struct {
@@ -73,6 +74,7 @@ type MatplotlibBarOptions struct {
 	// each bar with a non-empty label. Mirrors gonum's per-bar XYLabels.
 	BarLabels     []string
 	BarLabelAngle float64
+	FontSize      float64
 }
 
 type MatplotlibGroupedBarSeries struct {
@@ -90,6 +92,7 @@ type MatplotlibGroupedBarOptions struct {
 	WidthInches  float64
 	HeightInches float64
 	RotateX      bool
+	FontSize     float64
 }
 
 type MatplotlibLineSeries struct {
@@ -113,6 +116,7 @@ type MatplotlibLineOptions struct {
 	HeightInches float64
 	ShowGrid     bool
 	Legend       bool
+	FontSize     float64
 }
 
 type MatplotlibHeatmapOptions struct {
@@ -123,6 +127,7 @@ type MatplotlibHeatmapOptions struct {
 	HeightInches float64
 	XLabelLimit  int
 	YLabelLimit  int
+	FontSize     float64
 }
 
 // drawSubtitle renders an optional secondary caption line centered just below
@@ -159,7 +164,7 @@ func PlotTimeAreasMatplotlib(dates []time.Time, series []MatplotlibTimeAreaSerie
 	fig := core.NewFigure(
 		width,
 		height,
-		pythonTransparentFigureOptions()...,
+		pythonTransparentFigureOptions(opts.FontSize)...,
 	)
 	ax := fig.AddSubplot(1, 1, 1)
 	if ax == nil {
@@ -270,7 +275,7 @@ func PlotLineChartMatplotlib(series []MatplotlibLineSeries, opts MatplotlibLineO
 	fig := core.NewFigure(
 		width,
 		height,
-		pythonTransparentFigureOptions()...,
+		pythonTransparentFigureOptions(opts.FontSize)...,
 	)
 	ax := fig.AddSubplot(1, 1, 1)
 	if ax == nil {
@@ -425,7 +430,7 @@ func PlotBarChartMatplotlib(labels []string, values []float64, opts MatplotlibBa
 	}
 
 	width, height := pythonPlotPixelSize(defaultPlotWidth(opts.WidthInches), defaultPlotHeight(opts.HeightInches))
-	figureOptions := pythonTransparentFigureOptions()
+	figureOptions := pythonTransparentFigureOptions(opts.FontSize)
 	if opts.DefaultStyle {
 		figureOptions = nil
 	}
@@ -506,7 +511,7 @@ func PlotGroupedBarChartMatplotlib(labels []string, series []MatplotlibGroupedBa
 	fig := core.NewFigure(
 		width,
 		height,
-		pythonTransparentFigureOptions()...,
+		pythonTransparentFigureOptions(opts.FontSize)...,
 	)
 	ax := fig.AddSubplot(1, 1, 1)
 	if ax == nil {
@@ -588,6 +593,7 @@ type MatplotlibScatterOptions struct {
 	// labels (one per index 0..len-1), mirroring gonum's NominalX.
 	XTickLabels []string
 	RotateX     bool
+	FontSize    float64
 }
 
 // PlotScatterMatplotlib renders one or more scatter series via matplotlib-go,
@@ -599,7 +605,7 @@ func PlotScatterMatplotlib(series []MatplotlibScatterSeries, opts MatplotlibScat
 	}
 
 	width, height := pythonPlotPixelSize(defaultPlotWidth(opts.WidthInches), defaultPlotHeight(opts.HeightInches))
-	fig := core.NewFigure(width, height, pythonTransparentFigureOptions()...)
+	fig := core.NewFigure(width, height, pythonTransparentFigureOptions(opts.FontSize)...)
 	ax := fig.AddSubplot(1, 1, 1)
 	if ax == nil {
 		return fmt.Errorf("failed to create axes")
@@ -685,7 +691,7 @@ func PlotStackedBarChartMatplotlib(labels []string, series []MatplotlibGroupedBa
 	}
 
 	width, height := pythonPlotPixelSize(defaultPlotWidth(opts.WidthInches), defaultPlotHeight(opts.HeightInches))
-	fig := core.NewFigure(width, height, pythonTransparentFigureOptions()...)
+	fig := core.NewFigure(width, height, pythonTransparentFigureOptions(opts.FontSize)...)
 	ax := fig.AddSubplot(1, 1, 1)
 	if ax == nil {
 		return fmt.Errorf("failed to create axes")
@@ -750,6 +756,7 @@ type MatplotlibDevsEffortsOptions struct {
 	Output       string
 	WidthInches  float64
 	HeightInches float64
+	FontSize     float64
 }
 
 // PlotDevsEffortsMatplotlib renders the Python labours "Efforts through time"
@@ -771,7 +778,7 @@ func PlotDevsEffortsMatplotlib(dates []time.Time, cumLayers, instLayers [][]floa
 	}
 
 	width, height := pythonPlotPixelSize(defaultPlotWidth(opts.WidthInches), defaultPlotHeight(opts.HeightInches))
-	fig := core.NewFigure(width, height, pythonTransparentFigureOptions()...)
+	fig := core.NewFigure(width, height, pythonTransparentFigureOptions(opts.FontSize)...)
 	ax := fig.AddSubplot(1, 1, 1)
 	if ax == nil {
 		return fmt.Errorf("failed to create axes")
@@ -848,6 +855,7 @@ type MatplotlibParallelCoordinatesOptions struct {
 	Output       string
 	WidthInches  float64
 	HeightInches float64
+	FontSize     float64
 	// Axes is the number of vertical axes (Python uses 5).
 	Axes int
 }
@@ -865,7 +873,7 @@ func PlotParallelCoordinatesMatplotlib(series []MatplotlibParallelCoordinatesSer
 	}
 
 	width, height := pythonPlotPixelSize(defaultPlotWidth(opts.WidthInches), defaultPlotHeight(opts.HeightInches))
-	fig := core.NewFigure(width, height, pythonTransparentFigureOptions()...)
+	fig := core.NewFigure(width, height, pythonTransparentFigureOptions(opts.FontSize)...)
 	ax := fig.AddSubplot(1, 1, 1)
 	if ax == nil {
 		return fmt.Errorf("failed to create axes")
@@ -1010,7 +1018,10 @@ func nonNegativeNiceTicks(maxValue float64) []float64 {
 	return ticks
 }
 
-func pythonTransparentFigureOptions() []style.Option {
+func pythonTransparentFigureOptions(fontSize float64) []style.Option {
+	if fontSize <= 0 {
+		fontSize = PythonPlotFontSize()
+	}
 	transparent := render.Color{R: 1, G: 1, B: 1, A: 0}
 	white := render.Color{R: 1, G: 1, B: 1, A: 1}
 	text := render.Color{R: 0, G: 0, B: 0, A: 1}
@@ -1020,7 +1031,7 @@ func pythonTransparentFigureOptions() []style.Option {
 	// composited against a non-white surface.
 	return []style.Option{
 		style.WithTheme(style.ThemeGGPlot),
-		style.WithFont(PythonPlotFontFamily, PythonPlotFontSize()),
+		style.WithFont(PythonPlotFontFamily, fontSize),
 		style.WithBackground(1, 1, 1, 0),
 		style.WithAxesBackground(transparent),
 		style.WithAxesEdgeColor(text),

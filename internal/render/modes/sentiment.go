@@ -34,6 +34,12 @@ type SentimentResult struct {
 // When allowHeuristicFallback is true, legacy developer/language heuristics are used
 // for old fixtures that do not contain CommentSentimentResults.
 func Sentiment(reader readers.Reader, output string, allowHeuristicFallback bool) error {
+	opts := defaultOptions()
+	opts.SentimentFallback = allowHeuristicFallback
+	return SentimentWithOptions(reader, output, opts)
+}
+
+func SentimentWithOptions(reader readers.Reader, output string, opts Options) error {
 	fmt.Println("Analyzing repository sentiment patterns...")
 
 	var sentimentResults []SentimentResult
@@ -48,7 +54,7 @@ func Sentiment(reader readers.Reader, output string, allowHeuristicFallback bool
 		}
 	}
 
-	if len(sentimentResults) == 0 && !allowHeuristicFallback {
+	if len(sentimentResults) == 0 && !opts.SentimentFallback {
 		return fmt.Errorf("%w: Sentiment", readers.ErrAnalysisMissing)
 	}
 
@@ -87,15 +93,15 @@ func Sentiment(reader readers.Reader, output string, allowHeuristicFallback bool
 
 	if len(collectedTicks) > 0 {
 		start, _ := reader.GetHeader()
-		if err := plotCollectedSentimentTimeline(reader.GetName(), start, collectedTicks, output); err != nil {
+		if err := plotCollectedSentimentTimelineWithOptions(reader.GetName(), start, collectedTicks, output, opts.Graphics); err != nil {
 			return fmt.Errorf("failed to generate collected sentiment timeline: %v", err)
 		}
 	} else {
-		if err := plotSentimentOverview(sentimentResults, output); err != nil {
+		if err := plotSentimentOverviewWithOptions(sentimentResults, output, opts.Graphics); err != nil {
 			return fmt.Errorf("failed to generate sentiment overview: %v", err)
 		}
 
-		if err := plotSentimentByType(sentimentResults, output); err != nil {
+		if err := plotSentimentByTypeWithOptions(sentimentResults, output, opts.Graphics); err != nil {
 			return fmt.Errorf("failed to plot sentiment by type: %v", err)
 		}
 	}
@@ -143,6 +149,16 @@ func sentimentResultsFromTicks(ticks map[int]readers.SentimentTick) []SentimentR
 }
 
 func plotCollectedSentimentTimeline(name string, startUnix int64, ticks map[int]readers.SentimentTick, output string) error {
+	return plotCollectedSentimentTimelineWithOptions(name, startUnix, ticks, output, graphics.DefaultOptions())
+}
+
+func plotCollectedSentimentTimelineWithOptions(
+	name string,
+	startUnix int64,
+	ticks map[int]readers.SentimentTick,
+	output string,
+	visuals graphics.Options,
+) error {
 	if len(ticks) == 0 {
 		return fmt.Errorf("no collected sentiment ticks")
 	}
@@ -207,6 +223,7 @@ func plotCollectedSentimentTimeline(name string, startUnix int64, ticks map[int]
 		Alpha:        1,
 		YMin:         -1,
 		YMax:         1,
+		FontSize:     visuals.PlotFontSize(),
 	}
 
 	pngFile := filepath.Join(output, "sentiment-overview.png")
@@ -453,6 +470,10 @@ func clamp(value, minValue, maxValue float64) float64 {
 
 // plotSentimentOverview creates a stacked bar chart showing overall sentiment distribution
 func plotSentimentOverview(results []SentimentResult, output string) error {
+	return plotSentimentOverviewWithOptions(results, output, graphics.DefaultOptions())
+}
+
+func plotSentimentOverviewWithOptions(results []SentimentResult, output string, visuals graphics.Options) error {
 	// Sort by sentiment score (descending)
 	sort.Slice(results, func(i, j int) bool {
 		return results[i].Score > results[j].Score
@@ -471,10 +492,11 @@ func plotSentimentOverview(results []SentimentResult, output string) error {
 		negativeVals[i] = result.Negative
 	}
 
+	palette := visuals.Palette()
 	series := []graphics.MatplotlibGroupedBarSeries{
-		{Name: "Positive", Values: positiveVals, Color: graphics.ColorPalette[2]}, // Green
-		{Name: "Neutral", Values: neutralVals, Color: graphics.ColorPalette[7]},   // Gray
-		{Name: "Negative", Values: negativeVals, Color: graphics.ColorPalette[3]}, // Red
+		{Name: "Positive", Values: positiveVals, Color: palette[2%len(palette)]},
+		{Name: "Neutral", Values: neutralVals, Color: palette[7%len(palette)]},
+		{Name: "Negative", Values: negativeVals, Color: palette[3%len(palette)]},
 	}
 	opts := graphics.MatplotlibGroupedBarOptions{
 		Title:        "Repository Sentiment Analysis Overview",
@@ -484,6 +506,7 @@ func plotSentimentOverview(results []SentimentResult, output string) error {
 		WidthInches:  16,
 		HeightInches: 12,
 		RotateX:      len(results) > 8,
+		FontSize:     visuals.PlotFontSize(),
 	}
 
 	outputFile := filepath.Join(output, "sentiment-overview.png")
@@ -504,6 +527,10 @@ func plotSentimentOverview(results []SentimentResult, output string) error {
 
 // plotSentimentByType creates separate charts for developers and languages
 func plotSentimentByType(results []SentimentResult, output string) error {
+	return plotSentimentByTypeWithOptions(results, output, graphics.DefaultOptions())
+}
+
+func plotSentimentByTypeWithOptions(results []SentimentResult, output string, visuals graphics.Options) error {
 	// Separate by type
 	var developers, languages []SentimentResult
 	for _, result := range results {
@@ -517,14 +544,14 @@ func plotSentimentByType(results []SentimentResult, output string) error {
 
 	// Plot developer sentiment if available
 	if len(developers) > 0 {
-		if err := plotSentimentForType(developers, "Developer Sentiment Analysis", output, "sentiment-developers"); err != nil {
+		if err := plotSentimentForTypeWithOptions(developers, "Developer Sentiment Analysis", output, "sentiment-developers", visuals); err != nil {
 			return fmt.Errorf("failed to plot developer sentiment: %v", err)
 		}
 	}
 
 	// Plot language sentiment if available
 	if len(languages) > 0 {
-		if err := plotSentimentForType(languages, "Language Sentiment Analysis", output, "sentiment-languages"); err != nil {
+		if err := plotSentimentForTypeWithOptions(languages, "Language Sentiment Analysis", output, "sentiment-languages", visuals); err != nil {
 			return fmt.Errorf("failed to plot language sentiment: %v", err)
 		}
 	}
@@ -534,6 +561,14 @@ func plotSentimentByType(results []SentimentResult, output string) error {
 
 // plotSentimentForType creates a sentiment chart for a specific type
 func plotSentimentForType(results []SentimentResult, title, output, filename string) error {
+	return plotSentimentForTypeWithOptions(results, title, output, filename, graphics.DefaultOptions())
+}
+
+func plotSentimentForTypeWithOptions(
+	results []SentimentResult,
+	title, output, filename string,
+	visuals graphics.Options,
+) error {
 	// Sort by sentiment score
 	sort.Slice(results, func(i, j int) bool {
 		return results[i].Score > results[j].Score
@@ -547,8 +582,9 @@ func plotSentimentForType(results []SentimentResult, title, output, filename str
 		names[i] = result.Entity
 	}
 
+	palette := visuals.Palette()
 	series := []graphics.MatplotlibScatterSeries{
-		{Name: "Sentiment score", Points: points, Color: graphics.ColorPalette[0], Size: 32},
+		{Name: "Sentiment score", Points: points, Color: palette[0], Size: 32},
 	}
 	opts := graphics.MatplotlibScatterOptions{
 		Title:        title,
@@ -561,6 +597,7 @@ func plotSentimentForType(results []SentimentResult, title, output, filename str
 		ZeroLine:     true,
 		XTickLabels:  names,
 		RotateX:      len(results) > 6,
+		FontSize:     visuals.PlotFontSize(),
 	}
 
 	outputFile := filepath.Join(output, filename+".png")

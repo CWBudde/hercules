@@ -18,7 +18,6 @@ import (
 	"github.com/cwbudde/matplotlib-go/core"
 	"github.com/cwbudde/matplotlib-go/render"
 	"github.com/cwbudde/matplotlib-go/style"
-	"github.com/spf13/viper"
 
 	"github.com/cwbudde/hercules/internal/render/burndown"
 )
@@ -28,6 +27,18 @@ import (
 // legacy/fallback burndown path that operates on already-interpolated matrices
 // (the header-driven path uses PlotBurndownMatplotlib).
 func PlotStackedBurndownMatplotlib(matrix [][]float64, dateRange []time.Time, output string, relative bool) error {
+	return PlotStackedBurndownMatplotlibWithOptions(matrix, dateRange, output, relative, DefaultOptions())
+}
+
+// PlotStackedBurndownMatplotlibWithOptions renders using an explicit visual
+// configuration.
+func PlotStackedBurndownMatplotlibWithOptions(
+	matrix [][]float64,
+	dateRange []time.Time,
+	output string,
+	relative bool,
+	opts Options,
+) error {
 	if len(matrix) == 0 || len(dateRange) == 0 {
 		return fmt.Errorf("empty matrix or date range")
 	}
@@ -38,7 +49,7 @@ func PlotStackedBurndownMatplotlib(matrix [][]float64, dateRange []time.Time, ou
 		dateRange = dateRange[:numPoints]
 	}
 
-	colors := GetBurndownColors(len(matrix))
+	colors := GetBurndownColorsForTheme(opts.Theme, len(matrix))
 	series := make([]MatplotlibTimeAreaSeries, len(matrix))
 	for i, row := range matrix {
 		values := make([]float64, numPoints)
@@ -63,11 +74,22 @@ func PlotStackedBurndownMatplotlib(matrix [][]float64, dateRange []time.Time, ou
 		Stacked:  true,
 		ShowGrid: true,
 		Legend:   true,
+		FontSize: opts.PlotFontSize(),
 	})
 }
 
 // PlotBurndownMatplotlib creates a burndown plot with matplotlib-go stackplot rendering.
 func PlotBurndownMatplotlib(data *burndown.ProcessedBurndown, output string, relative bool) error {
+	return PlotBurndownMatplotlibWithOptions(data, output, relative, DefaultOptions())
+}
+
+// PlotBurndownMatplotlibWithOptions creates a burndown plot using opts.
+func PlotBurndownMatplotlibWithOptions(
+	data *burndown.ProcessedBurndown,
+	output string,
+	relative bool,
+	opts Options,
+) error {
 	if data == nil || len(data.Matrix) == 0 || len(data.DateRange) == 0 {
 		return fmt.Errorf("empty burndown data")
 	}
@@ -90,30 +112,6 @@ func PlotBurndownMatplotlib(data *burndown.ProcessedBurndown, output string, rel
 	// remains unnormalized and is only clipped by ylim(0, 1).
 	matrix := data.Matrix
 
-	if !viper.GetBool("quiet") {
-		fmt.Printf("DEBUG MATRIX ANALYSIS:\n")
-		fmt.Printf("  Matrix dimensions: %dx%d\n", len(matrix), len(matrix[0]))
-		for i := 0; i < len(matrix); i++ {
-			minVal, maxVal := matrix[i][0], matrix[i][0]
-			negCount, posCount := 0, 0
-			for j := 0; j < len(matrix[i]); j++ {
-				if matrix[i][j] < minVal {
-					minVal = matrix[i][j]
-				}
-				if matrix[i][j] > maxVal {
-					maxVal = matrix[i][j]
-				}
-				if matrix[i][j] < 0 {
-					negCount++
-				}
-				if matrix[i][j] > 0 {
-					posCount++
-				}
-			}
-			fmt.Printf("  Layer %d: min=%.2f, max=%.2f, negatives=%d, positives=%d\n", i, minVal, maxVal, negCount, posCount)
-		}
-	}
-
 	colors := PythonLaboursColorPalette(numSeries)
 	renderColors := make([]render.Color, len(colors))
 	for i, c := range colors {
@@ -127,9 +125,9 @@ func PlotBurndownMatplotlib(data *burndown.ProcessedBurndown, output string, rel
 		}
 	}
 
-	width, height := pythonPlotPixelSize(PythonPlotDefaultWidthInches, PythonPlotDefaultHeightInches)
-	fontSize := PythonPlotFontSize()
-	background, foreground := LaboursPlotColors(viper.GetString("background"))
+	width, height := pythonPlotPixelSize(PythonPlotDefaultWidthInches, PythonPlotDefaultHeightInches, opts.Size)
+	fontSize := opts.PlotFontSize()
+	background, foreground := LaboursPlotColors(opts.Background)
 	transparentBackground := background
 	transparentBackground.A = 0
 	// Python labours forces the legend frame fully opaque in `apply_plot_style`
@@ -593,10 +591,14 @@ func renderColor(c color.Color) render.Color {
 	}
 }
 
-func pythonPlotPixelSize(defaultWidth, defaultHeight float64) (int, int) {
+func pythonPlotPixelSize(defaultWidth, defaultHeight float64, configuredSize ...string) (int, int) {
 	width := defaultWidth
 	height := defaultHeight
-	if sizeStr := viper.GetString("size"); sizeStr != "" {
+	sizeStr := ""
+	if len(configuredSize) > 0 {
+		sizeStr = configuredSize[0]
+	}
+	if sizeStr != "" {
 		parsedWidth, parsedHeight, err := parsePlotSizeFloats(sizeStr)
 		if err == nil {
 			width, height = parsedWidth, parsedHeight

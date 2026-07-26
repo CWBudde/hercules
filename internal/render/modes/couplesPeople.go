@@ -7,15 +7,17 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/spf13/viper"
-
 	"github.com/cwbudde/hercules/internal/render/progress"
 	"github.com/cwbudde/hercules/internal/render/readers"
 )
 
 // CouplesPeople generates people coupling embeddings (Python-compatible)
 func CouplesPeople(reader readers.Reader, output string) error {
-	quiet := viper.GetBool("quiet")
+	return CouplesPeopleWithOptions(reader, output, defaultOptions())
+}
+
+func CouplesPeopleWithOptions(reader readers.Reader, output string, opts Options) error {
+	quiet := opts.Quiet
 	progEstimator := progress.NewProgressEstimator(!quiet)
 
 	totalPhases := 3 // data extraction, preprocessing, embeddings
@@ -41,7 +43,7 @@ func CouplesPeople(reader readers.Reader, output string) error {
 	// Phase 3: Generate embeddings
 	progEstimator.NextOperation("Training embeddings")
 	if err := writeSparseEmbeddings(
-		"people", output, peopleNames, couplingMatrix, outlierThreshold,
+		"people", output, peopleNames, couplingMatrix, outlierThreshold, opts,
 	); err != nil {
 		progEstimator.FinishMultiOperation()
 		return fmt.Errorf("failed to write people embeddings: %v", err)
@@ -86,8 +88,13 @@ func writeSparseEmbeddings(
 	index []string,
 	matrix readers.SparseMatrix,
 	outlierThreshold int,
+	optionValues ...Options,
 ) error {
-	tmpdir := viper.GetString("tmpdir")
+	opts := defaultOptions()
+	if len(optionValues) > 0 {
+		opts = optionValues[0]
+	}
+	tmpdir := opts.TempDir
 	if len(index) == 0 || matrix.Rows == 0 {
 		return fmt.Errorf("empty matrix or index")
 	}
@@ -104,7 +111,7 @@ func writeSparseEmbeddings(
 		return fmt.Errorf("failed to write vector file: %v", err)
 	}
 
-	disableProjector := viper.GetBool("disable-projector")
+	disableProjector := opts.DisableProjector
 	if !disableProjector {
 		metadataFile := filepath.Join(outputDir, prefix+"_metadata.tsv")
 		if err := writeSparseMetadataFile(

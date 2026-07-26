@@ -27,6 +27,10 @@ type ShotnessResult struct {
 // units (functions, classes, etc.) have been modified most frequently.
 // Provides both text-based statistics (primary) and visualization (optional).
 func Shotness(reader readers.Reader, output string) error {
+	return ShotnessWithOptions(reader, output, defaultOptions())
+}
+
+func ShotnessWithOptions(reader readers.Reader, output string, opts Options) error {
 	// Step 1: Read shotness records
 	records, err := reader.GetShotnessRecords()
 	if err != nil {
@@ -45,7 +49,7 @@ func Shotness(reader readers.Reader, output string) error {
 
 	// Step 4: Generate visualization (optional - only if output directory specified)
 	if output != "" {
-		if err := plotShotness(results, output); err != nil {
+		if err := plotShotness(results, output, opts.Graphics); err != nil {
 			return fmt.Errorf("plot shotness: %w", err)
 		}
 	}
@@ -121,7 +125,15 @@ func safeInt32(value int) int32 {
 }
 
 // plotShotness creates a bar chart showing the hottest code spots by modification frequency
-func plotShotness(results []ShotnessResult, output string) error {
+func plotShotness(
+	results []ShotnessResult,
+	output string,
+	optionValues ...graphics.Options,
+) error {
+	visuals := graphics.DefaultOptions()
+	if len(optionValues) > 0 {
+		visuals = optionValues[0]
+	}
 	// Limit to top 20 hottest spots for better visualization
 	maxItems := 20
 	if len(results) > maxItems {
@@ -139,7 +151,7 @@ func plotShotness(results []ShotnessResult, output string) error {
 		}
 	}
 
-	width, height := graphics.GetPlotSizeInches(graphics.ChartTypeWide)
+	width, height := graphics.GetPlotSizeInchesWithOptions(graphics.ChartTypeWide, visuals)
 	outputFile := filepath.Join(output, "shotness.png")
 	if err := graphics.PlotBarChartMatplotlib(labels, values, graphics.MatplotlibBarOptions{
 		Title:        "Code Hotspots (Most Frequently Modified Structural Units)",
@@ -156,6 +168,7 @@ func plotShotness(results []ShotnessResult, output string) error {
 		XMin:       -0.53,
 		XMax:       float64(len(results)) + 0.60,
 		YMax:       maxValue * 1.05,
+		FontSize:   visuals.PlotFontSize(),
 	}); err != nil {
 		return fmt.Errorf("failed to save shotness plot: %v", err)
 	}

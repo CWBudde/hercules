@@ -8,22 +8,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spf13/viper"
-
 	"github.com/cwbudde/hercules/internal/render/modes"
 	"github.com/cwbudde/hercules/internal/render/progress"
 	"github.com/cwbudde/hercules/internal/render/readers"
 )
 
-// Fallback toggles set by Run from Options; they mirror the labours CLI
-// --sentiment-fallback and --devs-parallel-fallback flags.
-var (
-	sentimentFallbackEnabled    bool
-	devsParallelFallbackEnabled bool
-)
-
 // Map of mode names to their handlers
-var modeHandlers = map[string]func(reader readers.Reader, output string, startTime, endTime *time.Time) error{
+type modeHandler func(reader readers.Reader, output string, startTime, endTime *time.Time, opts modes.Options) error
+
+var modeHandlers = map[string]modeHandler{
 	"burndown-project":        burndownProject,
 	"burndown-file":           burndownFile,
 	"burndown-person":         burndownPerson,
@@ -50,32 +43,45 @@ var modeHandlers = map[string]func(reader readers.Reader, output string, startTi
 	"refactoring-proxy":       refactoringProxy,
 }
 
-func executeModes(modes []string, reader readers.Reader, output string, startTime, endTime *time.Time) Result {
-	if len(modes) == 0 {
+func executeModes(modeNames []string, reader readers.Reader, output string, startTime, endTime *time.Time) Result {
+	opts := DefaultOptions()
+	opts.Output, opts.StartTime, opts.EndTime = output, startTime, endTime
+	renderer, err := NewRenderer(opts)
+	if err != nil {
+		return Result{OutputError: err}
+	}
+	return renderer.executeModes(modeNames, reader)
+}
+
+func (r *Renderer) executeModes(modeNames []string, reader readers.Reader) Result {
+	output := r.options.Output
+	startTime, endTime := r.options.StartTime, r.options.EndTime
+	modesConfig := r.modeOptions()
+	if len(modeNames) == 0 {
 		return Result{}
 	}
-	if err := validateModeOutputPlan(output, modes); err != nil {
+	if err := r.validateModeOutputPlan(output, modeNames); err != nil {
 		return Result{OutputError: fmt.Errorf("plan renderer outputs: %w", err)}
 	}
-	modeResults := make([]ModeResult, 0, len(modes))
+	modeResults := make([]ModeResult, 0, len(modeNames))
 
 	// Check if JSON output is requested
 	jsonOutput := strings.HasSuffix(strings.ToLower(output), ".json")
 
 	// Initialize progress tracking for multiple modes
-	quiet := viper.GetBool("quiet")
+	quiet := r.options.Quiet
 	progEstimator := progress.NewProgressEstimator(!quiet)
 
 	// If JSON output, collect all results and save as JSON
 	if jsonOutput {
-		results := make(map[string]interface{}, len(modes))
+		results := make(map[string]interface{}, len(modeNames))
 
-		if len(modes) > 1 {
-			progEstimator.StartMultiOperation(len(modes), "Analysis Modes")
+		if len(modeNames) > 1 {
+			progEstimator.StartMultiOperation(len(modeNames), "Analysis Modes")
 		}
 
-		for _, mode := range modes {
-			if len(modes) > 1 {
+		for _, mode := range modeNames {
+			if len(modeNames) > 1 {
 				progEstimator.NextOperation(fmt.Sprintf("Running %s", mode))
 			}
 
@@ -114,7 +120,7 @@ func executeModes(modes []string, reader readers.Reader, output string, startTim
 			results[mode] = data
 		}
 
-		if len(modes) > 1 {
+		if len(modeNames) > 1 {
 			progEstimator.FinishMultiOperation()
 		}
 
@@ -128,43 +134,50 @@ func executeModes(modes []string, reader readers.Reader, output string, startTim
 		return Result{Modes: modeResults}
 	} else {
 		// Regular image output
-		if len(modes) > 1 {
+		if len(modeNames) > 1 {
 			// Start multi-mode progress tracking
-			progEstimator.StartMultiOperation(len(modes), "Analysis Modes")
+			progEstimator.StartMultiOperation(len(modeNames), "Analysis Modes")
 
-			for _, mode := range modes {
+			for _, mode := range modeNames {
 				progEstimator.NextOperation(fmt.Sprintf("Running %s", mode))
 
 				if !quiet {
 					fmt.Printf("Running: %s\n", mode)
 				}
 
-				modeResults = append(modeResults, runSingleMode(mode, reader, output, len(modes), startTime, endTime))
+				modeResults = append(modeResults, r.runSingleMode(mode, reader, output, len(modeNames), startTime, endTime, modesConfig))
 			}
 
 			progEstimator.FinishMultiOperation()
 		} else {
 			// Single mode - let the individual mode handle its own progress
-			for _, mode := range modes {
+			for _, mode := range modeNames {
 				if !quiet {
 					fmt.Printf("Running: %s\n", mode)
 				}
 
-				modeResults = append(modeResults, runSingleMode(mode, reader, output, len(modes), startTime, endTime))
+				modeResults = append(modeResults, r.runSingleMode(mode, reader, output, len(modeNames), startTime, endTime, modesConfig))
 			}
 		}
 	}
 	return Result{Modes: modeResults}
 }
 
-func runSingleMode(mode string, reader readers.Reader, output string, modeCount int, startTime, endTime *time.Time) ModeResult {
+func (r *Renderer) runSingleMode(
+	mode string,
+	reader readers.Reader,
+	output string,
+	modeCount int,
+	startTime, endTime *time.Time,
+	opts modes.Options,
+) ModeResult {
 	modeFunc, ok := modeHandlers[mode]
 	if !ok {
 		printModeUnavailable(mode)
 		return ModeResult{Mode: mode, Err: errors.New(modeUnavailableMessage(mode))}
 	}
-	formattedOutput := planModeOutput(output, mode, modeCount)
-	if err := modeFunc(reader, formattedOutput, startTime, endTime); err != nil {
+	formattedOutput := r.planModeOutput(output, mode, modeCount)
+	if err := modeFunc(reader, formattedOutput, startTime, endTime, opts); err != nil {
 		return handleModeError(mode, err)
 	}
 	return ModeResult{Mode: mode}
@@ -259,131 +272,123 @@ func isMissingAnalysisError(err error) bool {
 	return errors.Is(err, readers.ErrAnalysisMissing)
 }
 
-func burndownProject(reader readers.Reader, output string, _, _ *time.Time) error {
-	relative := viper.GetBool("relative")
-	resample := viper.GetString("resample")
+func burndownProject(reader readers.Reader, output string, _, _ *time.Time, opts modes.Options) error {
 	// Use Python-compatible implementation
-	return modes.GenerateBurndownProjectPython(reader, output, relative, resample)
+	return modes.GenerateBurndownProjectPythonWithOptions(reader, output, opts)
 }
 
-func burndownFile(reader readers.Reader, output string, _, _ *time.Time) error {
-	relative := viper.GetBool("relative")
-	resample := viper.GetString("resample")
+func burndownFile(reader readers.Reader, output string, _, _ *time.Time, opts modes.Options) error {
 	// Use Python-compatible implementation
-	return modes.GenerateBurndownFilePython(reader, output, relative, resample)
+	return modes.GenerateBurndownFilePythonWithOptions(reader, output, opts)
 }
 
-func burndownPerson(reader readers.Reader, output string, startTime, endTime *time.Time) error {
-	relative := viper.GetBool("relative")
-	resample := viper.GetString("resample")
-	return modes.BurndownPerson(reader, output, relative, startTime, endTime, resample)
+func burndownPerson(reader readers.Reader, output string, startTime, endTime *time.Time, opts modes.Options) error {
+	return modes.BurndownPersonWithOptions(reader, output, startTime, endTime, opts)
 }
 
-func burndownRepository(reader readers.Reader, output string, _, _ *time.Time) error {
-	relative := viper.GetBool("relative")
-	resample := viper.GetString("resample")
-	return modes.GenerateBurndownRepositoryPython(reader, output, relative, resample)
+func burndownRepository(reader readers.Reader, output string, _, _ *time.Time, opts modes.Options) error {
+	return modes.GenerateBurndownRepositoryPythonWithOptions(reader, output, opts)
 }
 
-func burndownReposCombined(reader readers.Reader, output string, _, _ *time.Time) error {
-	relative := viper.GetBool("relative")
-	resample := viper.GetString("resample")
-	maxRepos := viper.GetInt("max-repos")
-	return modes.GenerateBurndownReposCombinedPython(reader, output, relative, resample, maxRepos)
+func burndownReposCombined(reader readers.Reader, output string, _, _ *time.Time, opts modes.Options) error {
+	return modes.GenerateBurndownReposCombinedPythonWithOptions(reader, output, opts)
 }
 
-func overwritesMatrix(reader readers.Reader, output string, _, _ *time.Time) error {
-	return modes.OverwritesMatrix(reader, output)
+func overwritesMatrix(reader readers.Reader, output string, _, _ *time.Time, opts modes.Options) error {
+	return modes.OverwritesMatrixWithOptions(reader, output, opts)
 }
 
-func ownershipBurndown(reader readers.Reader, output string, _, _ *time.Time) error {
-	return modes.OwnershipBurndown(reader, output)
+func ownershipBurndown(reader readers.Reader, output string, _, _ *time.Time, opts modes.Options) error {
+	return modes.OwnershipBurndownWithOptions(reader, output, opts)
 }
 
-func couplesFiles(reader readers.Reader, output string, _, _ *time.Time) error {
+func couplesFiles(reader readers.Reader, output string, _, _ *time.Time, opts modes.Options) error {
 	// Note: --disable-projector flag is supported for Python compatibility but not used
 	// Our Go implementation focuses on core coupling analysis without TensorFlow embeddings
-	return modes.CouplesFiles(reader, output)
+	return modes.CouplesFilesWithOptions(reader, output, opts)
 }
 
-func couplesPeople(reader readers.Reader, output string, _, _ *time.Time) error {
-	return modes.CouplesPeople(reader, output)
+func couplesPeople(reader readers.Reader, output string, _, _ *time.Time, opts modes.Options) error {
+	return modes.CouplesPeopleWithOptions(reader, output, opts)
 }
 
-func couplesShotness(reader readers.Reader, output string, _, _ *time.Time) error {
-	return modes.CouplesShotness(reader, output)
+func couplesShotness(reader readers.Reader, output string, _, _ *time.Time, opts modes.Options) error {
+	return modes.CouplesShotnessWithOptions(reader, output, opts)
 }
 
-func shotness(reader readers.Reader, output string, _, _ *time.Time) error {
-	return modes.Shotness(reader, output)
+func shotness(reader readers.Reader, output string, _, _ *time.Time, opts modes.Options) error {
+	return modes.ShotnessWithOptions(reader, output, opts)
 }
 
-func devs(reader readers.Reader, output string, _, _ *time.Time) error {
-	maxPeople := viper.GetInt("max-people")
-	return modes.Devs(reader, output, maxPeople)
+func devs(reader readers.Reader, output string, _, _ *time.Time, opts modes.Options) error {
+	return modes.DevsWithOptions(reader, output, opts)
 }
 
-func devsEfforts(reader readers.Reader, output string, _, _ *time.Time) error {
-	maxPeople := viper.GetInt("max-people")
-	return modes.DevsEfforts(reader, output, maxPeople, viper.GetBool("devs-efforts-detail"))
+func devsEfforts(reader readers.Reader, output string, _, _ *time.Time, opts modes.Options) error {
+	return modes.DevsEffortsWithOptions(reader, output, opts)
 }
 
-func oldVsNew(reader readers.Reader, output string, startTime, endTime *time.Time) error {
-	resample := viper.GetString("resample")
-	return modes.OldVsNew(reader, output, startTime, endTime, resample)
+func oldVsNew(reader readers.Reader, output string, startTime, endTime *time.Time, opts modes.Options) error {
+	return modes.OldVsNewWithOptions(reader, output, startTime, endTime, opts)
 }
 
-func languages(reader readers.Reader, output string, _, _ *time.Time) error {
-	return modes.Languages(reader, output)
+func languages(reader readers.Reader, output string, _, _ *time.Time, opts modes.Options) error {
+	return modes.LanguagesWithOptions(reader, output, opts)
 }
 
-func temporalActivity(reader readers.Reader, output string, startTime, endTime *time.Time) error {
-	legendThreshold := viper.GetInt("temporal-legend-threshold")
-	singleColumnThreshold := viper.GetInt("temporal-legend-single-col-threshold")
-	return modes.TemporalActivity(reader, output, legendThreshold, singleColumnThreshold, startTime, endTime)
+func temporalActivity(reader readers.Reader, output string, startTime, endTime *time.Time, opts modes.Options) error {
+	return modes.TemporalActivity(reader, output, opts.TemporalLegendThreshold, opts.TemporalLegendSingleColumn, startTime, endTime)
 }
 
-func devsParallel(reader readers.Reader, output string, _, _ *time.Time) error {
-	return modes.DevsParallel(reader, output, viper.GetInt("max-people"), devsParallelFallbackEnabled, viper.GetBool("devs-parallel-detail"))
+func devsParallel(reader readers.Reader, output string, _, _ *time.Time, opts modes.Options) error {
+	return modes.DevsParallelWithOptions(reader, output, opts)
 }
 
-func runTimes(reader readers.Reader, output string, _, _ *time.Time) error {
-	return modes.RunTimes(reader, output, viper.GetBool("run-times-detail"))
+func runTimes(reader readers.Reader, output string, _, _ *time.Time, opts modes.Options) error {
+	return modes.RunTimesWithOptions(reader, output, opts)
 }
 
-func busFactor(reader readers.Reader, output string, _, _ *time.Time) error {
+func busFactor(reader readers.Reader, output string, _, _ *time.Time, _ modes.Options) error {
 	return modes.BusFactor(reader, output)
 }
 
-func ownershipConcentration(reader readers.Reader, output string, _, _ *time.Time) error {
+func ownershipConcentration(reader readers.Reader, output string, _, _ *time.Time, _ modes.Options) error {
 	return modes.OwnershipConcentration(reader, output)
 }
 
-func knowledgeDiffusion(reader readers.Reader, output string, _, _ *time.Time) error {
-	return modes.KnowledgeDiffusion(reader, output, viper.GetBool("knowledge-diffusion-detail"))
+func knowledgeDiffusion(reader readers.Reader, output string, _, _ *time.Time, opts modes.Options) error {
+	return modes.KnowledgeDiffusion(reader, output, opts.KnowledgeDiffusionDetail)
 }
 
-func hotspotRisk(reader readers.Reader, output string, _, _ *time.Time) error {
+func hotspotRisk(reader readers.Reader, output string, _, _ *time.Time, _ modes.Options) error {
 	return modes.HotspotRisk(reader, output)
 }
 
-func sentiment(reader readers.Reader, output string, _, _ *time.Time) error {
-	return modes.Sentiment(reader, output, sentimentFallbackEnabled)
+func sentiment(reader readers.Reader, output string, _, _ *time.Time, opts modes.Options) error {
+	return modes.SentimentWithOptions(reader, output, opts)
 }
 
-func refactoringProxy(reader readers.Reader, output string, _, _ *time.Time) error {
+func refactoringProxy(reader readers.Reader, output string, _, _ *time.Time, _ modes.Options) error {
 	return modes.RefactoringProxy(reader, output)
 }
 
 //nolint:unparam // Mode handlers share an error-returning signature.
 func runAllModes(reader readers.Reader, output string, startTime, endTime *time.Time) error {
-	if !viper.GetBool("quiet") {
+	renderer, err := NewRenderer(DefaultOptions())
+	if err != nil {
+		return err
+	}
+	return renderer.runAllModes(reader, output, startTime, endTime)
+}
+
+func (r *Renderer) runAllModes(reader readers.Reader, output string, startTime, endTime *time.Time) error {
+	if !r.options.Quiet {
 		fmt.Printf("Running 'all' mode: executing %d analysis modes\n", len(pythonAllModes))
 	}
 
 	var failures []error
 	for _, modeName := range pythonAllModes {
-		if !viper.GetBool("quiet") {
+		if !r.options.Quiet {
 			fmt.Printf("  Running %s...\n", modeName)
 		}
 
@@ -393,8 +398,8 @@ func runAllModes(reader readers.Reader, output string, startTime, endTime *time.
 			failures = append(failures, errors.New(modeUnavailableMessage(modeName)))
 			continue
 		}
-		modeOutput := planModeOutput(output, modeName, len(pythonAllModes))
-		if err := modeFunc(reader, modeOutput, startTime, endTime); err != nil {
+		modeOutput := r.planModeOutput(output, modeName, len(pythonAllModes))
+		if err := modeFunc(reader, modeOutput, startTime, endTime, r.modeOptions()); err != nil {
 			result := handleModeError(modeName, err)
 			if result.Err != nil {
 				failures = append(failures, fmt.Errorf("render mode %s: %w", modeName, result.Err))

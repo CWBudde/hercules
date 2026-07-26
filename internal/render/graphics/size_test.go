@@ -2,8 +2,6 @@ package graphics
 
 import (
 	"testing"
-
-	"github.com/spf13/viper"
 )
 
 func TestParsePlotSizeFloats(t *testing.T) {
@@ -52,10 +50,6 @@ func TestParsePlotSizeFloats(t *testing.T) {
 }
 
 func TestGetPlotSizeInches(t *testing.T) {
-	oldSize := viper.GetString("size")
-	defer viper.Set("size", oldSize)
-	viper.Set("size", "")
-
 	tests := []struct {
 		name           string
 		chartType      ChartType
@@ -83,11 +77,7 @@ func TestGetPlotSizeInches(t *testing.T) {
 }
 
 func TestGetPlotSizeInchesHonorsSizeFlag(t *testing.T) {
-	oldSize := viper.GetString("size")
-	defer viper.Set("size", oldSize)
-
-	viper.Set("size", "14,9")
-	width, height := GetPlotSizeInches(ChartTypeDefault)
+	width, height := GetPlotSizeInchesWithOptions(ChartTypeDefault, Options{Size: "14,9"})
 	if width != 14.0 || height != 9.0 {
 		t.Fatalf("GetPlotSizeInches() = (%f, %f), want (14, 9)", width, height)
 	}

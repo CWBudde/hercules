@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spf13/viper"
 	"github.com/stretchr/testify/require"
 
 	"github.com/cwbudde/hercules/internal/render/burndown"
@@ -81,11 +80,6 @@ func (r *MockCouplesReader) GetPeopleCooccurrence() ([]string, readers.SparseMat
 }
 
 func TestCouplesPeopleEmbeddings(t *testing.T) {
-	// Set up test environment
-	viper.Set("quiet", true)
-	viper.Set("disable-projector", false)
-	viper.Set("tmpdir", "")
-
 	// Create temporary output directory
 	tempDir := t.TempDir()
 
@@ -93,7 +87,7 @@ func TestCouplesPeopleEmbeddings(t *testing.T) {
 	reader := &MockCouplesReader{}
 
 	// Test the couples-people function
-	err := CouplesPeople(reader, tempDir)
+	err := CouplesPeopleWithOptions(reader, tempDir, Options{Quiet: true})
 	if err != nil {
 		t.Fatalf("CouplesPeople failed: %v", err)
 	}
@@ -114,11 +108,6 @@ func TestCouplesPeopleEmbeddings(t *testing.T) {
 }
 
 func TestCouplesPeopleWithDisabledProjector(t *testing.T) {
-	// Set up test environment with projector disabled
-	viper.Set("quiet", true)
-	viper.Set("disable-projector", true)
-	viper.Set("tmpdir", "")
-
 	// Create temporary output directory
 	tempDir := t.TempDir()
 
@@ -126,7 +115,7 @@ func TestCouplesPeopleWithDisabledProjector(t *testing.T) {
 	reader := &MockCouplesReader{}
 
 	// Test the couples-people function
-	err := CouplesPeople(reader, tempDir)
+	err := CouplesPeopleWithOptions(reader, tempDir, Options{Quiet: true, DisableProjector: true})
 	if err != nil {
 		t.Fatalf("CouplesPeople failed: %v", err)
 	}
@@ -169,8 +158,6 @@ func TestSparseCouplingOutlierThreshold(t *testing.T) {
 }
 
 func TestSparseEmbeddingWriterNormalizesRows(t *testing.T) {
-	viper.Set("disable-projector", false)
-	viper.Set("tmpdir", "")
 	index := []string{"alice", "bob", "charlie"}
 	dense := [][]int{
 		{50, 15, 8},

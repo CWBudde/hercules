@@ -12,9 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spf13/viper"
-
 	"github.com/cwbudde/hercules/internal/render/burndown"
+	renderModes "github.com/cwbudde/hercules/internal/render/modes"
 	"github.com/cwbudde/hercules/internal/render/readers"
 )
 
@@ -98,10 +97,6 @@ func TestExecuteModesWithNoModesIsNoop(t *testing.T) {
 }
 
 func TestExecuteModesPrintsPythonMissingDataWarning(t *testing.T) {
-	previousQuiet := viper.GetBool("quiet")
-	defer viper.Set("quiet", previousQuiet)
-	viper.Set("quiet", true)
-
 	output := captureStderr(t, func() {
 		executeModes([]string{"devs"}, stubReader{}, filepath.Join(t.TempDir(), "devs.png"), nil, nil)
 	})
@@ -115,10 +110,6 @@ func TestExecuteModesPrintsPythonMissingDataWarning(t *testing.T) {
 }
 
 func TestExecuteModesPrintsDevsParallelPeopleBurndownWarning(t *testing.T) {
-	previousQuiet := viper.GetBool("quiet")
-	defer viper.Set("quiet", previousQuiet)
-	viper.Set("quiet", true)
-
 	output := captureStderr(t, func() {
 		executeModes([]string{"devs-parallel"}, stubReader{}, filepath.Join(t.TempDir(), "devs-parallel.png"), nil, nil)
 	})
@@ -132,16 +123,12 @@ func TestExecuteModesPrintsDevsParallelPeopleBurndownWarning(t *testing.T) {
 }
 
 func TestRunAllModesUsesPythonAllComposition(t *testing.T) {
-	previousQuiet := viper.GetBool("quiet")
-	defer viper.Set("quiet", previousQuiet)
-	viper.Set("quiet", true)
-
-	oldHandlers := make(map[string]func(readers.Reader, string, *time.Time, *time.Time) error, len(pythonAllModes))
+	oldHandlers := make(map[string]modeHandler, len(pythonAllModes))
 	var called []string
 	for _, mode := range pythonAllModes {
 		oldHandlers[mode] = modeHandlers[mode]
 		modeName := mode
-		modeHandlers[mode] = func(readers.Reader, string, *time.Time, *time.Time) error {
+		modeHandlers[mode] = func(readers.Reader, string, *time.Time, *time.Time, renderModes.Options) error {
 			called = append(called, modeName)
 			return nil
 		}
@@ -152,7 +139,11 @@ func TestRunAllModesUsesPythonAllComposition(t *testing.T) {
 		}
 	}()
 
-	if err := runAllModes(stubReader{}, t.TempDir(), nil, nil); err != nil {
+	renderer, err := NewRenderer(Options{Quiet: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := renderer.runAllModes(stubReader{}, t.TempDir(), nil, nil); err != nil {
 		t.Fatalf("runAllModes() unexpected error: %v", err)
 	}
 	if strings.Join(called, ",") != strings.Join(pythonAllModes, ",") {
@@ -161,10 +152,6 @@ func TestRunAllModesUsesPythonAllComposition(t *testing.T) {
 }
 
 func TestExecuteModesJSONWritesReaderData(t *testing.T) {
-	previousQuiet := viper.GetBool("quiet")
-	defer viper.Set("quiet", previousQuiet)
-	viper.Set("quiet", true)
-
 	outputPath := filepath.Join(t.TempDir(), "devs.json")
 	reader := stubReader{
 		developerStats: []readers.DeveloperStat{{
@@ -248,10 +235,6 @@ func captureStderr(t *testing.T, fn func()) string {
 }
 
 func TestRunWithResultsClassifiesOutcomes(t *testing.T) {
-	previousQuiet := viper.GetBool("quiet")
-	defer viper.Set("quiet", previousQuiet)
-	viper.Set("quiet", true)
-
 	oldHandler := modeHandlers["devs"]
 	defer func() { modeHandlers["devs"] = oldHandler }()
 
@@ -267,13 +250,14 @@ func TestRunWithResultsClassifiesOutcomes(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			modeHandlers["devs"] = func(readers.Reader, string, *time.Time, *time.Time) error {
+			modeHandlers["devs"] = func(readers.Reader, string, *time.Time, *time.Time, renderModes.Options) error {
 				return tt.handlerErr
 			}
 			var aggregate Result
 			captureStdout(t, func() {
 				aggregate = Run(stubReader{}, []string{"devs"}, Options{
 					Output: filepath.Join(t.TempDir(), "devs.png"),
+					Quiet:  true,
 				})
 			})
 			results := aggregate.Modes
@@ -298,10 +282,6 @@ func TestRunWithResultsClassifiesOutcomes(t *testing.T) {
 }
 
 func TestRunWithResultsReportsUnimplementedModeAsWarning(t *testing.T) {
-	previousQuiet := viper.GetBool("quiet")
-	defer viper.Set("quiet", previousQuiet)
-	viper.Set("quiet", true)
-
 	oldHandler := modeHandlers["devs"]
 	delete(modeHandlers, "devs")
 	defer func() { modeHandlers["devs"] = oldHandler }()
@@ -351,10 +331,6 @@ func TestMissingAnalysisWarningDoesNotHideProcessingErrors(t *testing.T) {
 }
 
 func TestRunContinuesIndependentModesAndAggregatesStatus(t *testing.T) {
-	previousQuiet := viper.GetBool("quiet")
-	defer viper.Set("quiet", previousQuiet)
-	viper.Set("quiet", true)
-
 	oldDevs := modeHandlers["devs"]
 	oldLanguages := modeHandlers["languages"]
 	oldShotness := modeHandlers["shotness"]
@@ -365,15 +341,15 @@ func TestRunContinuesIndependentModesAndAggregatesStatus(t *testing.T) {
 	}()
 
 	var called []string
-	modeHandlers["devs"] = func(readers.Reader, string, *time.Time, *time.Time) error {
+	modeHandlers["devs"] = func(readers.Reader, string, *time.Time, *time.Time, renderModes.Options) error {
 		called = append(called, "devs")
 		return nil
 	}
-	modeHandlers["languages"] = func(readers.Reader, string, *time.Time, *time.Time) error {
+	modeHandlers["languages"] = func(readers.Reader, string, *time.Time, *time.Time, renderModes.Options) error {
 		called = append(called, "languages")
 		return errors.New("missing font")
 	}
-	modeHandlers["shotness"] = func(readers.Reader, string, *time.Time, *time.Time) error {
+	modeHandlers["shotness"] = func(readers.Reader, string, *time.Time, *time.Time, renderModes.Options) error {
 		called = append(called, "shotness")
 		return fmt.Errorf("%w: Shotness", readers.ErrAnalysisMissing)
 	}
@@ -383,7 +359,7 @@ func TestRunContinuesIndependentModesAndAggregatesStatus(t *testing.T) {
 		result = Run(
 			stubReader{},
 			[]string{"devs", "languages", "shotness"},
-			Options{Output: t.TempDir()},
+			Options{Output: t.TempDir(), Quiet: true},
 		)
 	})
 
@@ -411,16 +387,12 @@ func TestRunContinuesIndependentModesAndAggregatesStatus(t *testing.T) {
 }
 
 func TestRunReportsJSONOutputWriteFailure(t *testing.T) {
-	previousQuiet := viper.GetBool("quiet")
-	defer viper.Set("quiet", previousQuiet)
-	viper.Set("quiet", true)
-
 	output := filepath.Join(t.TempDir(), "missing", "results.json")
 	var result Result
 	captureStderr(t, func() {
 		result = Run(stubReader{
 			developerStats: []readers.DeveloperStat{{Name: "Ada"}},
-		}, []string{"devs"}, Options{Output: output})
+		}, []string{"devs"}, Options{Output: output, Quiet: true})
 	})
 
 	if result.OutputError == nil {
@@ -432,13 +404,9 @@ func TestRunReportsJSONOutputWriteFailure(t *testing.T) {
 }
 
 func TestRunReportsImageOutputFailure(t *testing.T) {
-	previousQuiet := viper.GetBool("quiet")
-	defer viper.Set("quiet", previousQuiet)
-	viper.Set("quiet", true)
-
 	oldHandler := modeHandlers["devs"]
 	defer func() { modeHandlers["devs"] = oldHandler }()
-	modeHandlers["devs"] = func(readers.Reader, string, *time.Time, *time.Time) error {
+	modeHandlers["devs"] = func(readers.Reader, string, *time.Time, *time.Time, renderModes.Options) error {
 		return fmt.Errorf("save image: %w", os.ErrPermission)
 	}
 
@@ -446,6 +414,7 @@ func TestRunReportsImageOutputFailure(t *testing.T) {
 	captureStderr(t, func() {
 		result = Run(stubReader{}, []string{"devs"}, Options{
 			Output: filepath.Join(t.TempDir(), "devs.png"),
+			Quiet:  true,
 		})
 	})
 	if !errors.Is(result.Err(), os.ErrPermission) {

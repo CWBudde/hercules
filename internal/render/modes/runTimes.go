@@ -7,22 +7,27 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/cwbudde/hercules/internal/render/graphics"
+	"github.com/cwbudde/hercules/internal/render/progress"
+	"github.com/cwbudde/hercules/internal/render/readers"
 	"github.com/cwbudde/matplotlib-go/backends"
 	"github.com/cwbudde/matplotlib-go/core"
 	"github.com/cwbudde/matplotlib-go/render"
 	"github.com/cwbudde/matplotlib-go/style"
-	"github.com/spf13/viper"
-
-	"github.com/cwbudde/hercules/internal/render/graphics"
-	"github.com/cwbudde/hercules/internal/render/progress"
-	"github.com/cwbudde/hercules/internal/render/readers"
 )
 
 // RunTimes generates runtime analysis. Python labours is text-only for this
 // mode, so by default we only print the summary; the Go-only breakdown chart is
 // gated behind detail (--run-times-detail).
 func RunTimes(reader readers.Reader, output string, detail bool) error {
-	quiet := viper.GetBool("quiet")
+	opts := defaultOptions()
+	opts.RunTimesDetail = detail
+	return RunTimesWithOptions(reader, output, opts)
+}
+
+func RunTimesWithOptions(reader readers.Reader, output string, opts Options) error {
+	quiet := opts.Quiet
+	detail := opts.RunTimesDetail
 	progEstimator := progress.NewProgressEstimator(!quiet)
 
 	totalPhases := 3 // data extraction, analysis, plotting
@@ -51,7 +56,7 @@ func RunTimes(reader readers.Reader, output string, detail bool) error {
 	// Phase 3: Generate visualizations (detail only) and print the summary.
 	progEstimator.NextOperation("Generating visualization")
 	if detail {
-		if err := plotRuntimeBreakdown(runtimeAnalysis, runtimeOutputPath(output)); err != nil {
+		if err := plotRuntimeBreakdown(runtimeAnalysis, runtimeOutputPath(output), opts.Graphics); err != nil {
 			progEstimator.FinishMultiOperation()
 			return fmt.Errorf("failed to generate runtime plots: %v", err)
 		}
@@ -174,7 +179,7 @@ func printRuntimeSummary(analysis RuntimeAnalysis) {
 }
 
 // plotRuntimeBreakdown creates a bar chart showing runtime for each operation
-func plotRuntimeBreakdown(analysis RuntimeAnalysis, output string) error {
+func plotRuntimeBreakdown(analysis RuntimeAnalysis, output string, visuals graphics.Options) error {
 	if len(analysis.Metrics) == 0 {
 		return fmt.Errorf("no runtime metrics available")
 	}
@@ -209,6 +214,7 @@ func plotRuntimeBreakdown(analysis RuntimeAnalysis, output string) error {
 		ManualXLim:   true,
 		XMin:         -0.4 - xMargin,
 		XMax:         float64(maxOps) - 0.6 + xMargin,
+		FontSize:     visuals.PlotFontSize(),
 	}); err != nil {
 		return fmt.Errorf("failed to save runtime breakdown plot: %v", err)
 	}

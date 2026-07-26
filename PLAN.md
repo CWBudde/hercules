@@ -492,25 +492,14 @@ Priority: P2/P3
 
 ### ARCH-01: Introduce an instance-scoped renderer
 
-Affected code:
+Status: completed 2026-07-26.
 
-- `internal/render/render.go`
-- `internal/render/dispatch.go`
-- graphics/theme configuration
-- mode implementations
-
-Work:
-
-- Add a `Renderer` type carrying immutable options, theme, output policy, and fallback behavior.
-- Pass configuration into handlers instead of reading global Viper state.
-- Keep Viper only in the CLI adapter.
-- Remove package-global fallback booleans.
-- Make concurrent renders independent and race-free.
-
-Acceptance criteria:
-
-- [ ] parallel renders with opposite options do not leak configuration;
-- [ ] `go test -race ./internal/render/... ./cmd/labours` passes.
+`Renderer` now snapshots the complete typed options set, time bounds, theme palette, output backend,
+and fallback policy. Dispatch and mode handlers receive that configuration explicitly; renderer,
+graphics, mode, and reader packages no longer import Viper, while the labours CLI is the sole Viper
+adapter. Legacy entry points retain deterministic defaults without mutable fallback switches.
+Parallel renderers with opposite fallback, limit, theme, and backend settings are synchronized in a
+regression test and remain isolated under the race detector.
 
 ### ARCH-02: Replace unsafe flag fact aliasing
 

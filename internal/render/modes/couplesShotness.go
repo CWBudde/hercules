@@ -15,14 +15,19 @@ import (
 // entity co-occurrence profiles. The heatmap diagonal is each entity's squared
 // profile magnitude; ranked pairs contain only distinct entities.
 func CouplesShotness(reader readers.Reader, output string) error {
+	return CouplesShotnessWithOptions(reader, output, defaultOptions())
+}
+
+func CouplesShotnessWithOptions(reader readers.Reader, output string, opts Options) error {
 	return runCouplingMode(
 		"Shotness Coupling Analysis",
 		"shotness coupling",
 		output,
 		reader.GetShotnessCooccurrence,
 		func(names []string, matrix readers.SparseMatrix, output string) error {
-			return plotShotnessCoupling(analyzeShotnessCoupling(names, matrix), output)
+			return plotShotnessCouplingWithOptions(analyzeShotnessCoupling(names, matrix), output, opts.Graphics)
 		},
+		opts.Quiet,
 	)
 }
 
@@ -89,8 +94,16 @@ func analyzeShotnessCoupling(
 
 // plotShotnessCoupling generates coupling visualization plots
 func plotShotnessCoupling(analysis ShotnessCouplingAnalysis, output string) error {
+	return plotShotnessCouplingWithOptions(analysis, output, graphics.DefaultOptions())
+}
+
+func plotShotnessCouplingWithOptions(
+	analysis ShotnessCouplingAnalysis,
+	output string,
+	visuals graphics.Options,
+) error {
 	// Create heatmap for shotness entities
-	if err := plotShotnessCouplingHeatmap(analysis, output); err != nil {
+	if err := plotShotnessCouplingHeatmap(analysis, output, visuals); err != nil {
 		return err
 	}
 
@@ -99,7 +112,7 @@ func plotShotnessCoupling(analysis ShotnessCouplingAnalysis, output string) erro
 	}
 
 	// Create bar chart of top coupling pairs
-	if err := plotTopShotnessCouplingPairs(analysis, output); err != nil {
+	if err := plotTopShotnessCouplingPairs(analysis, output, visuals); err != nil {
 		return err
 	}
 
@@ -107,18 +120,28 @@ func plotShotnessCoupling(analysis ShotnessCouplingAnalysis, output string) erro
 }
 
 // plotShotnessCouplingHeatmap creates a heatmap of shotness coupling relationships
-func plotShotnessCouplingHeatmap(analysis ShotnessCouplingAnalysis, output string) error {
+func plotShotnessCouplingHeatmap(
+	analysis ShotnessCouplingAnalysis,
+	output string,
+	optionValues ...graphics.Options,
+) error {
 	if analysis.CouplingMatrix.Rows == 0 {
 		return fmt.Errorf("no coupling matrix data available")
 	}
 
 	pngFile := filepath.Join(output, "shotness_coupling_heatmap.png")
-	if err := plotPythonCouplingHeatmap("Shotness Coupling Heatmap", pngFile, analysis.EntityNames, analysis.CouplingMatrix, "Greens"); err != nil {
+	if err := plotPythonCouplingHeatmap(
+		"Shotness Coupling Heatmap", pngFile, analysis.EntityNames,
+		analysis.CouplingMatrix, "Greens", optionValues...,
+	); err != nil {
 		return fmt.Errorf("failed to save heatmap: %v", err)
 	}
 
 	svgFile := filepath.Join(output, "shotness_coupling_heatmap.svg")
-	if err := plotPythonCouplingHeatmap("Shotness Coupling Heatmap", svgFile, analysis.EntityNames, analysis.CouplingMatrix, "Greens"); err != nil {
+	if err := plotPythonCouplingHeatmap(
+		"Shotness Coupling Heatmap", svgFile, analysis.EntityNames,
+		analysis.CouplingMatrix, "Greens", optionValues...,
+	); err != nil {
 		return fmt.Errorf("failed to save heatmap: %v", err)
 	}
 
@@ -127,7 +150,15 @@ func plotShotnessCouplingHeatmap(analysis ShotnessCouplingAnalysis, output strin
 }
 
 // plotTopShotnessCouplingPairs creates a bar chart of the most coupled shotness entities
-func plotTopShotnessCouplingPairs(analysis ShotnessCouplingAnalysis, output string) error {
+func plotTopShotnessCouplingPairs(
+	analysis ShotnessCouplingAnalysis,
+	output string,
+	optionValues ...graphics.Options,
+) error {
+	visuals := graphics.DefaultOptions()
+	if len(optionValues) > 0 {
+		visuals = optionValues[0]
+	}
 	if len(analysis.TopCoupling) == 0 {
 		return fmt.Errorf("no coupling pairs data available")
 	}
@@ -167,6 +198,7 @@ func plotTopShotnessCouplingPairs(analysis ShotnessCouplingAnalysis, output stri
 		YMax:          maxCouplingValue(values) * 1.05,
 		BarLabels:     barLabels,
 		BarLabelAngle: 70,
+		FontSize:      visuals.PlotFontSize(),
 	}
 	pngFile := filepath.Join(output, "top_shotness_coupling_pairs.png")
 	opts.Output = pngFile

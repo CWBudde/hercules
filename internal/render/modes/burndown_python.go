@@ -9,8 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spf13/viper"
-
 	"github.com/cwbudde/hercules/internal/render/burndown"
 	"github.com/cwbudde/hercules/internal/render/graphics"
 	"github.com/cwbudde/hercules/internal/render/outputpath"
@@ -20,10 +18,16 @@ import (
 
 // GenerateBurndownProjectPython creates a Python-compatible burndown chart
 func GenerateBurndownProjectPython(reader readers.Reader, output string, relative bool, resample string) error {
+	opts := defaultOptions()
+	opts.Relative, opts.Resample = relative, resample
+	return GenerateBurndownProjectPythonWithOptions(reader, output, opts)
+}
+
+func GenerateBurndownProjectPythonWithOptions(reader readers.Reader, output string, opts Options) error {
 	fmt.Println("Running: burndown-project (Python-compatible)")
 
 	// Initialize progress tracking
-	quiet := viper.GetBool("quiet")
+	quiet := opts.Quiet
 	progEstimator := progress.NewProgressEstimator(!quiet)
 
 	totalPhases := 4 // validation, data loading, processing, plotting
@@ -60,8 +64,8 @@ func GenerateBurndownProjectPython(reader readers.Reader, output string, relativ
 
 	// Phase 3: Process data using Python-compatible algorithms
 	progEstimator.NextOperation("Processing data with Python algorithms")
-	if resample == "" {
-		resample = "year" // Default to yearly like Python
+	if opts.Resample == "" {
+		opts.Resample = "year" // Default to yearly like Python
 	}
 
 	// Python labours always titles the aggregate burndown "project" (see
@@ -70,7 +74,7 @@ func GenerateBurndownProjectPython(reader readers.Reader, output string, relativ
 	// name here (a "&"-joined list of every repo) overflows the title.
 	_ = name
 	titleName := "project"
-	processedData, err := burndown.LoadBurndown(header, titleName, matrix, resample, true, true)
+	processedData, err := burndown.LoadBurndown(header, titleName, matrix, opts.Resample, true, true)
 	if err != nil {
 		progEstimator.FinishMultiOperation()
 		return fmt.Errorf("failed to process burndown data: %v", err)
@@ -90,7 +94,7 @@ func GenerateBurndownProjectPython(reader readers.Reader, output string, relativ
 
 	// Phase 4: Generate visualization
 	progEstimator.NextOperation("Generating Python-style visualization")
-	if err := graphics.PlotBurndownMatplotlib(processedData, output, relative); err != nil {
+	if err := graphics.PlotBurndownMatplotlibWithOptions(processedData, output, opts.Relative, opts.Graphics); err != nil {
 		progEstimator.FinishMultiOperation()
 		return fmt.Errorf("error creating Python-style burndown plot: %v", err)
 	}
@@ -104,6 +108,12 @@ func GenerateBurndownProjectPython(reader readers.Reader, output string, relativ
 
 // GenerateBurndownFilePython creates Python-compatible file-level burndown charts
 func GenerateBurndownFilePython(reader readers.Reader, output string, relative bool, resample string) error {
+	opts := defaultOptions()
+	opts.Relative, opts.Resample = relative, resample
+	return GenerateBurndownFilePythonWithOptions(reader, output, opts)
+}
+
+func GenerateBurndownFilePythonWithOptions(reader readers.Reader, output string, opts Options) error {
 	fmt.Println("Running: burndown-file (Python-compatible)")
 
 	// Get files burndown data
@@ -118,7 +128,7 @@ func GenerateBurndownFilePython(reader readers.Reader, output string, relative b
 		return fmt.Errorf("failed to get burndown header: %w", err)
 	}
 
-	quiet := viper.GetBool("quiet")
+	quiet := opts.Quiet
 	if !quiet {
 		fmt.Printf("Processing %d files\n", len(files))
 	}
@@ -139,11 +149,11 @@ func GenerateBurndownFilePython(reader readers.Reader, output string, relative b
 			fmt.Printf("Processing file %d/%d: %s\n", i+1, len(files), file.Filename)
 		}
 
-		if resample == "" {
-			resample = "year"
+		if opts.Resample == "" {
+			opts.Resample = "year"
 		}
 
-		processedData, err := burndown.LoadBurndown(header, file.Filename, file.Matrix, resample, false, false)
+		processedData, err := burndown.LoadBurndown(header, file.Filename, file.Matrix, opts.Resample, false, false)
 		if err != nil {
 			failures = append(failures, fmt.Errorf("process %s: %w", file.Filename, err))
 			continue
@@ -151,7 +161,7 @@ func GenerateBurndownFilePython(reader readers.Reader, output string, relative b
 
 		fileOutput := outputFiles[i]
 
-		if err := graphics.PlotBurndownMatplotlib(processedData, fileOutput, relative); err != nil {
+		if err := graphics.PlotBurndownMatplotlibWithOptions(processedData, fileOutput, opts.Relative, opts.Graphics); err != nil {
 			failures = append(failures, fmt.Errorf("create plot for %s: %w", file.Filename, err))
 			continue
 		}
@@ -166,6 +176,12 @@ func GenerateBurndownFilePython(reader readers.Reader, output string, relative b
 
 // GenerateBurndownRepositoryPython creates Python-compatible repository-level burndown charts.
 func GenerateBurndownRepositoryPython(reader readers.Reader, output string, relative bool, resample string) error {
+	opts := defaultOptions()
+	opts.Relative, opts.Resample = relative, resample
+	return GenerateBurndownRepositoryPythonWithOptions(reader, output, opts)
+}
+
+func GenerateBurndownRepositoryPythonWithOptions(reader readers.Reader, output string, opts Options) error {
 	fmt.Println("Running: burndown-repository (Python-compatible)")
 
 	repoReader, ok := reader.(readers.RepositoryBurndownReader)
@@ -192,11 +208,11 @@ func GenerateBurndownRepositoryPython(reader readers.Reader, output string, rela
 	if err := os.MkdirAll(output, 0o750); err != nil {
 		return fmt.Errorf("failed to create output directory %s: %w", output, err)
 	}
-	if resample == "" {
-		resample = "year"
+	if opts.Resample == "" {
+		opts.Resample = "year"
 	}
 
-	quiet := viper.GetBool("quiet")
+	quiet := opts.Quiet
 	identities := make([]string, len(repositories))
 	for index, repository := range repositories {
 		identities[index] = repository.Repository
@@ -214,19 +230,19 @@ func GenerateBurndownRepositoryPython(reader readers.Reader, output string, rela
 			fmt.Printf("Processing repository %d/%d: %s\n", i+1, len(repositories), repository.Repository)
 		}
 
-		processedData, err := burndown.LoadBurndown(header, repository.Repository, repository.Matrix, resample, false, false)
+		processedData, err := burndown.LoadBurndown(header, repository.Repository, repository.Matrix, opts.Resample, false, false)
 		if err != nil {
 			failures = append(failures, fmt.Errorf("process repository %s: %w", repository.Repository, err))
 			continue
 		}
 
 		repoPNG := outputFiles[i][0]
-		if err := graphics.PlotBurndownMatplotlib(processedData, repoPNG, relative); err != nil {
+		if err := graphics.PlotBurndownMatplotlibWithOptions(processedData, repoPNG, opts.Relative, opts.Graphics); err != nil {
 			failures = append(failures, fmt.Errorf("create plot for repository %s: %w", repository.Repository, err))
 			continue
 		}
 		repoSVG := outputFiles[i][1]
-		if err := graphics.PlotBurndownMatplotlib(processedData, repoSVG, relative); err != nil {
+		if err := graphics.PlotBurndownMatplotlibWithOptions(processedData, repoSVG, opts.Relative, opts.Graphics); err != nil {
 			failures = append(failures, fmt.Errorf("create SVG plot for repository %s: %w", repository.Repository, err))
 			continue
 		}
@@ -243,6 +259,12 @@ func GenerateBurndownRepositoryPython(reader readers.Reader, output string, rela
 // remaining (smallest) repositories are aggregated into a single "Other" band.
 // A value <= 0 disables the limit and shows every repository.
 func GenerateBurndownReposCombinedPython(reader readers.Reader, output string, relative bool, resample string, maxRepos int) error {
+	opts := defaultOptions()
+	opts.Relative, opts.Resample, opts.MaxRepos = relative, resample, maxRepos
+	return GenerateBurndownReposCombinedPythonWithOptions(reader, output, opts)
+}
+
+func GenerateBurndownReposCombinedPythonWithOptions(reader readers.Reader, output string, opts Options) error {
 	fmt.Println("Running: burndown-repos-combined (Python-compatible)")
 
 	repoReader, ok := reader.(readers.RepositoryBurndownReader)
@@ -277,7 +299,7 @@ func GenerateBurndownReposCombinedPython(reader readers.Reader, output string, r
 	// Keep only the largest maxRepos repositories as individual bands and fold
 	// the rest into a single "Other" band so the legend stays legible when many
 	// repositories are combined.
-	repoMatrix, labels = limitRepositoryBands(repoMatrix, labels, maxRepos)
+	repoMatrix, labels = limitRepositoryBands(repoMatrix, labels, opts.MaxRepos)
 	cols := len(repoMatrix[0])
 
 	// Sample dates along the shared tick axis: start + t * sampling * tick.
@@ -304,14 +326,14 @@ func GenerateBurndownReposCombinedPython(reader readers.Reader, output string, r
 		Labels:       labels,
 		Granularity:  header.Granularity,
 		Sampling:     header.Sampling,
-		ResampleMode: resample,
+		ResampleMode: opts.Resample,
 	}
 
-	if err := graphics.PlotBurndownMatplotlib(processedData, output, relative); err != nil {
+	if err := graphics.PlotBurndownMatplotlibWithOptions(processedData, output, opts.Relative, opts.Graphics); err != nil {
 		return fmt.Errorf("error creating combined repository burndown plot: %v", err)
 	}
 
-	if !viper.GetBool("quiet") {
+	if !opts.Quiet {
 		fmt.Printf("Combined repository burndown chart saved to %s\n", output)
 	}
 	return nil

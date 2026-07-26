@@ -14,22 +14,24 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cwbudde/hercules/internal/render/graphics"
+	"github.com/cwbudde/hercules/internal/render/progress"
+	"github.com/cwbudde/hercules/internal/render/readers"
 	"github.com/cwbudde/matplotlib-go/backends"
 	_ "github.com/cwbudde/matplotlib-go/backends/agg"
 	_ "github.com/cwbudde/matplotlib-go/backends/svg"
 	"github.com/cwbudde/matplotlib-go/core"
 	"github.com/cwbudde/matplotlib-go/render"
 	"github.com/cwbudde/matplotlib-go/style"
-	"github.com/spf13/viper"
-
-	"github.com/cwbudde/hercules/internal/render/graphics"
-	"github.com/cwbudde/hercules/internal/render/progress"
-	"github.com/cwbudde/hercules/internal/render/readers"
 )
 
 func OwnershipBurndown(reader readers.Reader, output string) error {
+	return OwnershipBurndownWithOptions(reader, output, defaultOptions())
+}
+
+func OwnershipBurndownWithOptions(reader readers.Reader, output string, opts Options) error {
 	// Initialize progress tracking
-	quiet := viper.GetBool("quiet")
+	quiet := opts.Quiet
 	progEstimator := progress.NewProgressEstimator(!quiet)
 
 	// Start multi-phase operation for ownership analysis
@@ -85,11 +87,11 @@ func OwnershipBurndown(reader readers.Reader, output string) error {
 
 	// Phase 3: Process the data
 	progEstimator.NextOperation("Processing ownership data")
-	maxPeople := viper.GetInt("max-people")
+	maxPeople := opts.MaxPeople
 	if maxPeople <= 0 {
 		maxPeople = 20
 	}
-	orderByTime := viper.GetBool("order-ownership-by-time")
+	orderByTime := opts.OrderOwnershipByTime
 	names, peopleMatrix, dateRange := processOwnershipBurndownWithProgress(
 		startTime, lastTime, sampling, tickSize, peopleSequence, ownershipData, maxPeople, orderByTime, progEstimator,
 	)
@@ -104,7 +106,7 @@ func OwnershipBurndown(reader readers.Reader, output string) error {
 	}
 
 	// Visualize the data
-	if err := plotOwnershipBurndown(reader.GetName(), names, peopleMatrix, dateRange, lastTime, output); err != nil {
+	if err := plotOwnershipBurndown(reader.GetName(), names, peopleMatrix, dateRange, lastTime, output, opts); err != nil {
 		progEstimator.FinishMultiOperation()
 		return fmt.Errorf("failed to plot ownership burndown: %v", err)
 	}
@@ -309,7 +311,19 @@ func processOwnershipBurndownWithProgress(
 	return sequence, people, dateRange
 }
 
-func plotOwnershipBurndown(repoName string, names []string, people [][]float64, dateRange []time.Time, lastTime time.Time, output string) error {
+func plotOwnershipBurndown(
+	repoName string,
+	names []string,
+	people [][]float64,
+	dateRange []time.Time,
+	lastTime time.Time,
+	output string,
+	optionValues ...Options,
+) error {
+	opts := defaultOptions()
+	if len(optionValues) > 0 {
+		opts = optionValues[0]
+	}
 	if len(people) == 0 || len(dateRange) == 0 {
 		return fmt.Errorf("no ownership burndown data to plot")
 	}
@@ -343,13 +357,17 @@ func plotOwnershipBurndown(repoName string, names []string, people [][]float64, 
 	if len(matrix) == 0 {
 		return fmt.Errorf("no ownership burndown data to plot")
 	}
-	if viper.GetBool("relative") {
+	if opts.Relative {
 		normalizeOwnershipColumns(matrix)
 	}
 
-	width, height := ownershipPlotPixelSize(graphics.PythonPlotDefaultWidthInches, graphics.PythonPlotDefaultHeightInches)
-	fontSize := graphics.PythonPlotFontSize()
-	background, foreground := graphics.LaboursPlotColors(viper.GetString("background"))
+	width, height := ownershipPlotPixelSize(
+		graphics.PythonPlotDefaultWidthInches,
+		graphics.PythonPlotDefaultHeightInches,
+		opts.Graphics.Size,
+	)
+	fontSize := opts.Graphics.PlotFontSize()
+	background, foreground := graphics.LaboursPlotColors(opts.Graphics.Background)
 	transparentBackground := background
 	transparentBackground.A = 0
 	legendBackground := background
@@ -397,7 +415,7 @@ func plotOwnershipBurndown(repoName string, names []string, people [][]float64, 
 		xMax = float64(dateRange[0].AddDate(2, 0, 0).Unix())
 	}
 	ax.SetXLim(xMin, xMax)
-	if viper.GetBool("relative") {
+	if opts.Relative {
 		ax.SetYLim(0, 1)
 	} else {
 		ax.SetYLim(0, math.Max(maxOwnershipStackY(matrix)*1.05, 1))
@@ -408,7 +426,7 @@ func plotOwnershipBurndown(repoName string, names []string, people [][]float64, 
 	legend.BackgroundColor = legendBackground
 	legend.BorderColor = legendBackground
 	legend.TextColor = foreground
-	if viper.GetBool("relative") {
+	if opts.Relative {
 		legend.Location = core.LegendLowerLeft
 	}
 
@@ -549,10 +567,14 @@ func ownershipRenderColor(c color.Color) render.Color {
 	}
 }
 
-func ownershipPlotPixelSize(defaultWidth, defaultHeight float64) (int, int) {
+func ownershipPlotPixelSize(defaultWidth, defaultHeight float64, configuredSize ...string) (int, int) {
 	width := defaultWidth
 	height := defaultHeight
-	if sizeStr := viper.GetString("size"); sizeStr != "" {
+	sizeStr := ""
+	if len(configuredSize) > 0 {
+		sizeStr = configuredSize[0]
+	}
+	if sizeStr != "" {
 		if parsedWidth, parsedHeight, err := parseOwnershipPlotSize(sizeStr); err == nil {
 			width, height = parsedWidth, parsedHeight
 		} else {

@@ -7,12 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cwbudde/matplotlib-go/core"
-	"github.com/spf13/viper"
-
 	"github.com/cwbudde/hercules/internal/render/graphics"
 	"github.com/cwbudde/hercules/internal/render/progress"
 	"github.com/cwbudde/hercules/internal/render/readers"
+	"github.com/cwbudde/matplotlib-go/core"
 )
 
 // Python labours highlights per-developer summary stats with a green or red
@@ -26,8 +24,15 @@ var (
 
 // Devs generates plots for individual developers' contributions over time.
 func Devs(reader readers.Reader, output string, maxPeople int) error {
+	opts := defaultOptions()
+	opts.MaxPeople = maxPeople
+	return DevsWithOptions(reader, output, opts)
+}
+
+func DevsWithOptions(reader readers.Reader, output string, opts Options) error {
 	// Initialize progress tracking
-	quiet := viper.GetBool("quiet")
+	quiet := opts.Quiet
+	maxPeople := opts.MaxPeople
 	progEstimator := progress.NewProgressEstimator(!quiet)
 
 	// Start multi-phase operation for developer analysis
@@ -39,7 +44,7 @@ func Devs(reader readers.Reader, output string, maxPeople int) error {
 	if timeSeries, err := reader.GetDeveloperTimeSeriesData(); err == nil && len(timeSeries.Days) > 0 {
 		startUnix, endUnix := reader.GetHeader()
 		if startUnix > 0 && endUnix > startUnix {
-			if err := plotDevsPythonStyle(timeSeries, startUnix, endUnix, output, maxPeople); err != nil {
+			if err := plotDevsPythonStyle(timeSeries, startUnix, endUnix, output, maxPeople, opts.Graphics); err != nil {
 				progEstimator.FinishMultiOperation()
 				return fmt.Errorf("failed to generate Python-style developer plot: %v", err)
 			}
@@ -72,7 +77,7 @@ func Devs(reader readers.Reader, output string, maxPeople int) error {
 
 	// Phase 4: Plot the developer contributions
 	progEstimator.NextOperation("Generating visualization")
-	if err := plotDevs(developerStats, devSeries, output); err != nil {
+	if err := plotDevs(developerStats, devSeries, output, opts.Graphics); err != nil {
 		progEstimator.FinishMultiOperation()
 		return fmt.Errorf("failed to generate developer plots: %v", err)
 	}
@@ -94,7 +99,13 @@ type devSeriesRow struct {
 	LinesChange int
 }
 
-func plotDevsPythonStyle(timeSeries *readers.DeveloperTimeSeriesData, startUnix, endUnix int64, output string, maxPeople int) error {
+func plotDevsPythonStyle(
+	timeSeries *readers.DeveloperTimeSeriesData,
+	startUnix, endUnix int64,
+	output string,
+	maxPeople int,
+	visuals graphics.Options,
+) error {
 	rows, dates := buildDeveloperSeriesRows(timeSeries, startUnix, endUnix, maxPeople)
 	if len(rows) == 0 {
 		return fmt.Errorf("no developer time series to plot")
@@ -178,6 +189,7 @@ func plotDevsPythonStyle(timeSeries *readers.DeveloperTimeSeriesData, startUnix,
 		YMax:         float64(len(rows))*rowHeight + rowHeight*0.4,
 		Baselines:    baselines,
 		TextLabels:   labels,
+		FontSize:     visuals.PlotFontSize(),
 	}); err != nil {
 		return err
 	}
@@ -302,7 +314,12 @@ func generateTimeSeriesWithProgress(stats []readers.DeveloperStat, progEstimator
 }
 
 // plotDevs generates plots for developers' contributions.
-func plotDevs(developerStats []readers.DeveloperStat, devSeries map[string][]float64, output string) error {
+func plotDevs(
+	developerStats []readers.DeveloperStat,
+	devSeries map[string][]float64,
+	output string,
+	visuals graphics.Options,
+) error {
 	if len(developerStats) == 0 {
 		return fmt.Errorf("no developer stats to plot")
 	}
@@ -348,6 +365,7 @@ func plotDevs(developerStats []readers.DeveloperStat, devSeries map[string][]flo
 		LegendTop:    true,
 		Alpha:        0.7,
 		ShowGrid:     true,
+		FontSize:     visuals.PlotFontSize(),
 	}); err != nil {
 		return err
 	}

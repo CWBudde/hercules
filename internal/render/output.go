@@ -5,18 +5,17 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/spf13/viper"
-
 	"github.com/cwbudde/hercules/internal/render/outputpath"
 )
 
 // DetectOutputFormat determines the output format ("png", "svg", or "pdf")
-// from the output path's file extension, unless the viper "backend" key
-// overrides it. Unknown extensions and rendering backends (e.g. "Agg")
-// fall back to PNG.
+// from the output path's file extension.
 func DetectOutputFormat(outputPath string) string {
-	// Check if backend flag overrides format detection
-	if backend := viper.GetString("backend"); backend != "" {
+	return detectOutputFormat(outputPath, "")
+}
+
+func detectOutputFormat(outputPath, backend string) string {
+	if backend != "" {
 		switch strings.ToLower(backend) {
 		case "pdf":
 			return "pdf"
@@ -203,22 +202,26 @@ var modeOutputConventions = map[string]outputConvention{
 }
 
 func planModeOutput(baseOutput, mode string, modeCount int) string {
+	return defaultRenderer().planModeOutput(baseOutput, mode, modeCount)
+}
+
+func (r *Renderer) planModeOutput(baseOutput, mode string, modeCount int) string {
 	if outputConventionFor(mode).Kind == outputAssetDir {
 		return planMultiAssetModeOutput(baseOutput)
 	}
 
-	format := DetectOutputFormat(baseOutput)
+	format := detectOutputFormat(baseOutput, r.output.backend)
 	if baseOutput == "" {
 		return GenerateOutputPath(mode, format)
 	}
 
 	if isDirectoryPath(baseOutput) {
-		return GenerateOutputPath(filepath.Join(baseOutput, mode), DetectOutputFormat(""))
+		return GenerateOutputPath(filepath.Join(baseOutput, mode), detectOutputFormat("", r.output.backend))
 	}
 
 	if modeCount > 1 {
 		if filepath.Ext(baseOutput) == "" {
-			return GenerateOutputPath(filepath.Join(baseOutput, mode), DetectOutputFormat(""))
+			return GenerateOutputPath(filepath.Join(baseOutput, mode), detectOutputFormat("", r.output.backend))
 		}
 		return GenerateOutputPath(filepath.Join(filepath.Dir(baseOutput), mode), format)
 	}
@@ -227,6 +230,10 @@ func planModeOutput(baseOutput, mode string, modeCount int) string {
 }
 
 func validateModeOutputPlan(baseOutput string, modes []string) error {
+	return defaultRenderer().validateModeOutputPlan(baseOutput, modes)
+}
+
+func (r *Renderer) validateModeOutputPlan(baseOutput string, modes []string) error {
 	if strings.HasSuffix(strings.ToLower(baseOutput), ".json") {
 		return nil
 	}
@@ -235,9 +242,17 @@ func validateModeOutputPlan(baseOutput string, modes []string) error {
 		if outputConventionFor(mode).Kind == outputAssetDir {
 			continue
 		}
-		paths = append(paths, planModeOutput(baseOutput, mode, len(modes)))
+		paths = append(paths, r.planModeOutput(baseOutput, mode, len(modes)))
 	}
 	return outputpath.RejectDuplicates(paths)
+}
+
+func defaultRenderer() *Renderer {
+	renderer, err := NewRenderer(DefaultOptions())
+	if err != nil {
+		panic(err)
+	}
+	return renderer
 }
 
 func planMultiAssetModeOutput(baseOutput string) string {

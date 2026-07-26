@@ -6,7 +6,6 @@ import (
 	"sort"
 
 	"github.com/gogo/protobuf/proto"
-	"github.com/spf13/viper"
 
 	"github.com/cwbudde/hercules/internal/analysisio"
 	"github.com/cwbudde/hercules/internal/pb"
@@ -17,13 +16,13 @@ import (
 type ProtobufReader struct {
 	data   *pb.AnalysisResults
 	Limits analysisio.Limits
+	Quiet  bool
 }
 
 // Read loads the Protobuf data into the ProtobufReader structure
 func (r *ProtobufReader) Read(file io.Reader) error {
 	// Initialize progress tracking for file reading
-	quiet := viper.GetBool("quiet")
-	progEstimator := progress.NewProgressEstimator(!quiet)
+	progEstimator := progress.NewProgressEstimator(!r.Quiet)
 
 	// Start reading operation
 	progEstimator.StartOperation("Reading protobuf data", 2) // read + parse phases

@@ -7,8 +7,6 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"github.com/spf13/viper"
-
 	"github.com/cwbudde/hercules/internal/render/graphics"
 	"github.com/cwbudde/hercules/internal/render/progress"
 	"github.com/cwbudde/hercules/internal/render/readers"
@@ -16,14 +14,19 @@ import (
 
 // CouplesFiles generates file coupling analysis and visualization
 func CouplesFiles(reader readers.Reader, output string) error {
+	return CouplesFilesWithOptions(reader, output, defaultOptions())
+}
+
+func CouplesFilesWithOptions(reader readers.Reader, output string, opts Options) error {
 	return runCouplingMode(
 		"File Coupling Analysis",
 		"file coupling",
 		output,
 		reader.GetFileCooccurrence,
 		func(names []string, matrix readers.SparseMatrix, output string) error {
-			return plotFileCoupling(analyzeFileCoupling(names, matrix), output)
+			return plotFileCouplingWithOptions(analyzeFileCoupling(names, matrix), output, opts.Graphics)
 		},
+		opts.Quiet,
 	)
 }
 
@@ -31,8 +34,12 @@ func runCouplingMode(
 	title, label, output string,
 	read func() ([]string, readers.SparseMatrix, error),
 	plot func([]string, readers.SparseMatrix, string) error,
+	quietValues ...bool,
 ) error {
-	quiet := viper.GetBool("quiet")
+	quiet := false
+	if len(quietValues) > 0 {
+		quiet = quietValues[0]
+	}
 	progEstimator := progress.NewProgressEstimator(!quiet)
 	progEstimator.StartMultiOperation(3, title)
 	progEstimator.NextOperation("Extracting " + label + " data")
@@ -229,13 +236,17 @@ func betterCouplingPair(left, right rankedCouplingPair) bool {
 
 // plotFileCoupling generates coupling visualization plots
 func plotFileCoupling(analysis FileCouplingAnalysis, output string) error {
+	return plotFileCouplingWithOptions(analysis, output, graphics.DefaultOptions())
+}
+
+func plotFileCouplingWithOptions(analysis FileCouplingAnalysis, output string, opts graphics.Options) error {
 	// Create heatmap for top coupled files
-	if err := plotCouplingHeatmap(analysis, output); err != nil {
+	if err := plotCouplingHeatmap(analysis, output, opts); err != nil {
 		return err
 	}
 
 	// Create bar chart of top coupling pairs
-	if err := plotTopCouplingPairs(analysis, output); err != nil {
+	if err := plotTopCouplingPairsWithOptions(analysis, output, opts); err != nil {
 		return err
 	}
 
@@ -243,13 +254,24 @@ func plotFileCoupling(analysis FileCouplingAnalysis, output string) error {
 }
 
 // plotCouplingHeatmap creates a heatmap of file coupling relationships
-func plotCouplingHeatmap(analysis FileCouplingAnalysis, output string) error {
+func plotCouplingHeatmap(
+	analysis FileCouplingAnalysis,
+	output string,
+	optionValues ...graphics.Options,
+) error {
 	if analysis.CouplingMatrix.Rows == 0 {
 		return fmt.Errorf("no coupling matrix data available")
 	}
 
 	outputFile := filepath.Join(output, "file_coupling_heatmap.png")
-	if err := plotPythonCouplingHeatmap("File Coupling Heatmap", outputFile, analysis.FileNames, analysis.CouplingMatrix, "Reds"); err != nil {
+	if err := plotPythonCouplingHeatmap(
+		"File Coupling Heatmap",
+		outputFile,
+		analysis.FileNames,
+		analysis.CouplingMatrix,
+		"Reds",
+		optionValues...,
+	); err != nil {
 		return fmt.Errorf("failed to save heatmap: %v", err)
 	}
 
@@ -259,6 +281,10 @@ func plotCouplingHeatmap(analysis FileCouplingAnalysis, output string) error {
 
 // plotTopCouplingPairs creates a bar chart of the most coupled file pairs
 func plotTopCouplingPairs(analysis FileCouplingAnalysis, output string) error {
+	return plotTopCouplingPairsWithOptions(analysis, output, graphics.DefaultOptions())
+}
+
+func plotTopCouplingPairsWithOptions(analysis FileCouplingAnalysis, output string, opts graphics.Options) error {
 	if len(analysis.TopCoupling) == 0 {
 		return fmt.Errorf("no coupling pairs data available")
 	}
@@ -282,7 +308,7 @@ func plotTopCouplingPairs(analysis FileCouplingAnalysis, output string) error {
 	}
 
 	outputFile := filepath.Join(output, "top_file_coupling_pairs.png")
-	widthBar, heightBar := graphics.GetPlotSizeInches(graphics.ChartTypeDefault)
+	widthBar, heightBar := graphics.GetPlotSizeInchesWithOptions(graphics.ChartTypeDefault, opts)
 	if err := graphics.PlotBarChartMatplotlib(rankLabels, values, graphics.MatplotlibBarOptions{
 		Title:         "Top File Coupling Pairs",
 		XLabel:        "Coupling Pair Rank",
@@ -295,6 +321,7 @@ func plotTopCouplingPairs(analysis FileCouplingAnalysis, output string) error {
 		YMax:          maxCouplingValue(values) * 1.05,
 		BarLabels:     barLabels,
 		BarLabelAngle: 70,
+		FontSize:      opts.PlotFontSize(),
 	}); err != nil {
 		return fmt.Errorf("failed to save coupling pairs plot: %v", err)
 	}

@@ -56,7 +56,11 @@ func validateDateRange(startTime, endTime *time.Time) error {
 }
 
 func detectAndReadInput(input, inputFormat string) (readers.Reader, error) {
-	reader, err := render.LoadInput(input, inputFormat)
+	format, err := render.NormalizeInputFormat(inputFormat)
+	if err != nil {
+		return nil, fmt.Errorf("detect or read input: %w", err)
+	}
+	reader, err := readers.DetectAndReadInputWithOptions(input, format, viper.GetBool("quiet"))
 	if err != nil {
 		return nil, fmt.Errorf("detect or read input: %w", err)
 	}
@@ -236,6 +240,7 @@ func runHerculesForRepository(
 
 func runHerculesAndVisualize(
 	herculesPath, repoPath string, modes, analyses []string,
+	rendererOptions ...render.Options,
 ) error {
 	reader, err := runRepositoryHercules(herculesPath, repoPath, analyses)
 	if err != nil {
@@ -258,12 +263,21 @@ func runHerculesAndVisualize(
 		}
 	}
 
-	result := renderRepositoryModes(reader, modes, render.Options{
-		Output:               outputPath,
-		StartTime:            startDate,
-		EndTime:              endDate,
-		SentimentFallback:    viper.GetBool("sentiment-fallback"),
-		DevsParallelFallback: viper.GetBool("devs-parallel-fallback"),
-	})
+	var opts render.Options
+	if len(rendererOptions) > 0 {
+		opts = rendererOptions[0]
+	} else {
+		themeName := viper.GetString("theme")
+		if viper.GetBool("matplotlib-colors") {
+			themeName = "matplotlib"
+		}
+		opts, err = renderOptionsFromViper(themeName)
+		if err != nil {
+			return err
+		}
+	}
+	opts.Output = outputPath
+	opts.StartTime, opts.EndTime = startDate, endDate
+	result := renderRepositoryModes(reader, modes, opts)
 	return result.Err()
 }

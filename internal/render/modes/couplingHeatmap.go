@@ -14,8 +14,16 @@ import (
 const MaxDenseCouplingChartEntries = 60
 
 func plotPythonCouplingHeatmap(
-	title, output string, names []string, matrix readers.SparseMatrix, colormap string,
+	title, output string,
+	names []string,
+	matrix readers.SparseMatrix,
+	colormap string,
+	optionValues ...graphics.Options,
 ) error {
+	visuals := graphics.DefaultOptions()
+	if len(optionValues) > 0 {
+		visuals = optionValues[0]
+	}
 	if len(names) == 0 || matrix.Rows == 0 {
 		return fmt.Errorf("no coupling matrix data available")
 	}
@@ -33,6 +41,7 @@ func plotPythonCouplingHeatmap(
 		HeightInches: 11.52,
 		XLabelLimit:  18,
 		YLabelLimit:  28,
+		FontSize:     visuals.PlotFontSize(),
 	})
 }
 

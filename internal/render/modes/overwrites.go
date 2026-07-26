@@ -19,6 +19,10 @@ import (
 )
 
 func OverwritesMatrix(reader readers.Reader, output string) error {
+	return OverwritesMatrixWithOptions(reader, output, defaultOptions())
+}
+
+func OverwritesMatrixWithOptions(reader readers.Reader, output string, opts Options) error {
 	// Step 1: Extract data from the reader
 	people, matrix, err := reader.GetPeopleInteraction()
 	if err != nil {
@@ -28,7 +32,7 @@ func OverwritesMatrix(reader readers.Reader, output string) error {
 	fmt.Println("Processing overwrites matrix...")
 
 	// Step 2: Process the matrix
-	maxPeople := 20 // This can be passed as a parameter or read from configuration
+	maxPeople := opts.MaxPeople
 	people, colLabels, normalizedMatrix := processOverwritesMatrix(people, matrix, maxPeople, true)
 
 	// Step 3: Check if JSON output is required
@@ -37,7 +41,7 @@ func OverwritesMatrix(reader readers.Reader, output string) error {
 	}
 
 	// Step 4: Visualize the matrix
-	if err := plotOverwritesMatrix(people, colLabels, normalizedMatrix, output); err != nil {
+	if err := plotOverwritesMatrixWithOptions(people, colLabels, normalizedMatrix, output, opts.Graphics); err != nil {
 		return fmt.Errorf("failed to plot overwrites matrix: %v", err)
 	}
 
@@ -93,19 +97,32 @@ func processOverwritesMatrix(people []string, matrix [][]int, maxPeople int, nor
 }
 
 func plotOverwritesMatrix(people, colLabels []string, matrix [][]float64, output string) error {
+	return plotOverwritesMatrixWithOptions(people, colLabels, matrix, output, graphics.DefaultOptions())
+}
+
+func plotOverwritesMatrixWithOptions(
+	people, colLabels []string,
+	matrix [][]float64,
+	output string,
+	opts graphics.Options,
+) error {
 	if err := graphics.ValidateHeatMap(matrix, people, colLabels); err != nil {
 		return err
 	}
 
 	minValue, maxValue := matrixRange(matrix)
 
-	width, height := ownershipPlotPixelSize(graphics.PythonPlotDefaultWidthInches, graphics.PythonPlotDefaultHeightInches)
-	background, foreground := graphics.LaboursPlotColors("")
+	width, height := ownershipPlotPixelSize(
+		graphics.PythonPlotDefaultWidthInches,
+		graphics.PythonPlotDefaultHeightInches,
+		opts.Size,
+	)
+	background, foreground := graphics.LaboursPlotColors(opts.Background)
 	graphics.RegisterPythonLaboursHeatmapColormaps()
 	fig := core.NewFigure(
 		width,
 		height,
-		style.WithFont(graphics.PythonPlotFontFamily, graphics.PythonPlotFontSize()),
+		style.WithFont(graphics.PythonPlotFontFamily, opts.PlotFontSize()),
 		style.WithBackground(background.R, background.G, background.B, 0),
 		style.WithAxesBackground(render.Color{R: background.R, G: background.G, B: background.B, A: 0}),
 		style.WithAxesEdgeColor(foreground),

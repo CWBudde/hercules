@@ -5,8 +5,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-
-	"github.com/spf13/viper"
 )
 
 // ChartType represents different types of charts with their default dimensions
@@ -31,7 +29,12 @@ var defaultSizes = map[ChartType][2]float64{
 // chart type. matplotlib-go renderers take figure sizes in inches, so this is the
 // single sizing entry point modes should use.
 func GetPlotSizeInches(chartType ChartType) (width, height float64) {
-	sizeStr := viper.GetString("size")
+	return GetPlotSizeInchesWithOptions(chartType, DefaultOptions())
+}
+
+// GetPlotSizeInchesWithOptions resolves an instance-scoped figure size.
+func GetPlotSizeInchesWithOptions(chartType ChartType, opts Options) (width, height float64) {
+	sizeStr := opts.Size
 	if sizeStr == "" {
 		defaultSize := defaultSizes[chartType]
 		return defaultSize[0], defaultSize[1]

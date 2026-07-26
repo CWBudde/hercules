@@ -8,8 +8,6 @@ import (
 	"sort"
 	"time"
 
-	"github.com/spf13/viper"
-
 	"github.com/cwbudde/hercules/internal/render/graphics"
 	"github.com/cwbudde/hercules/internal/render/progress"
 	"github.com/cwbudde/hercules/internal/render/readers"
@@ -21,7 +19,14 @@ import (
 // to a commits-vs-lines scatter. With detail set it also renders the Go-only
 // productivity ranking chart as a sibling of the requested output path.
 func DevsEfforts(reader readers.Reader, output string, maxPeople int, detail bool) error {
-	quiet := viper.GetBool("quiet")
+	opts := defaultOptions()
+	opts.MaxPeople, opts.DevsEffortsDetail = maxPeople, detail
+	return DevsEffortsWithOptions(reader, output, opts)
+}
+
+func DevsEffortsWithOptions(reader readers.Reader, output string, opts Options) error {
+	quiet := opts.Quiet
+	maxPeople, detail := opts.MaxPeople, opts.DevsEffortsDetail
 	progEstimator := progress.NewProgressEstimator(!quiet)
 
 	totalPhases := 4 // data extraction, time series, analysis, plotting
@@ -54,7 +59,7 @@ func DevsEfforts(reader readers.Reader, output string, maxPeople int, detail boo
 	// Phase 4: Generate the primary plot.
 	progEstimator.NextOperation("Generating visualization")
 	if effortsTimeSeries != nil {
-		if err := plotDevEffortsTimeSeries(*effortsTimeSeries, output); err != nil {
+		if err := plotDevEffortsTimeSeries(*effortsTimeSeries, output, opts.Graphics); err != nil {
 			progEstimator.FinishMultiOperation()
 			return fmt.Errorf("failed to generate developer efforts plot: %v", err)
 		}
@@ -64,7 +69,7 @@ func DevsEfforts(reader readers.Reader, output string, maxPeople int, detail boo
 				fmt.Printf("Picking top %d developers by commit count.\n", maxPeople)
 			}
 		}
-		if err := plotDevEfforts(effortMetricsForRanking(developerStats, maxPeople), output); err != nil {
+		if err := plotDevEfforts(effortMetricsForRanking(developerStats, maxPeople), output, opts.Graphics); err != nil {
 			progEstimator.FinishMultiOperation()
 			return fmt.Errorf("failed to generate developer efforts plots: %v", err)
 		}
@@ -72,7 +77,7 @@ func DevsEfforts(reader readers.Reader, output string, maxPeople int, detail boo
 
 	if detail {
 		rankingOutput := siblingOutputPath(output, "devs-efforts.png", "productivity_ranking")
-		if err := plotProductivityRanking(effortMetricsForRanking(developerStats, maxPeople), rankingOutput); err != nil {
+		if err := plotProductivityRanking(effortMetricsForRanking(developerStats, maxPeople), rankingOutput, opts.Graphics); err != nil {
 			progEstimator.FinishMultiOperation()
 			return fmt.Errorf("failed to generate developer productivity ranking: %v", err)
 		}
@@ -140,15 +145,15 @@ func analyzeDevEfforts(stats []readers.DeveloperStat) []EffortMetric {
 // plotDevEfforts renders the commits-vs-lines scatter used as a fallback when
 // per-day developer time series are not present in the input (the Python-parity
 // "Efforts through time" chart requires per-day data and a valid header range).
-func plotDevEfforts(metrics []EffortMetric, output string) error {
+func plotDevEfforts(metrics []EffortMetric, output string, visuals graphics.Options) error {
 	if output == "" {
 		output = "devs-efforts.png"
 	}
-	return plotCommitsVsLines(metrics, output)
+	return plotCommitsVsLines(metrics, output, visuals)
 }
 
 // plotCommitsVsLines creates scatter plot of commits vs total lines changed
-func plotCommitsVsLines(metrics []EffortMetric, output string) error {
+func plotCommitsVsLines(metrics []EffortMetric, output string, visuals graphics.Options) error {
 	points := make([]graphics.MatplotlibScatterPoint, len(metrics))
 	for i, metric := range metrics {
 		point := graphics.MatplotlibScatterPoint{
@@ -161,8 +166,9 @@ func plotCommitsVsLines(metrics []EffortMetric, output string) error {
 		points[i] = point
 	}
 
+	palette := visuals.Palette()
 	series := []graphics.MatplotlibScatterSeries{
-		{Name: "Developers", Points: points, Color: graphics.ColorPalette[0], Size: 32},
+		{Name: "Developers", Points: points, Color: palette[0], Size: 32},
 	}
 	if err := graphics.PlotScatterMatplotlib(series, graphics.MatplotlibScatterOptions{
 		Title:          "Developer Efforts: Commits vs Lines Changed",
@@ -173,6 +179,7 @@ func plotCommitsVsLines(metrics []EffortMetric, output string) error {
 		HeightInches:   8,
 		ShowGrid:       true,
 		AnnotateLabels: true,
+		FontSize:       visuals.PlotFontSize(),
 	}); err != nil {
 		return fmt.Errorf("failed to save devs-efforts plot %s: %v", output, err)
 	}
@@ -183,7 +190,7 @@ func plotCommitsVsLines(metrics []EffortMetric, output string) error {
 
 // plotProductivityRanking creates a bar chart of developer productivity ranking
 // at the requested sibling output path (Go-only --devs-efforts-detail chart).
-func plotProductivityRanking(metrics []EffortMetric, output string) error {
+func plotProductivityRanking(metrics []EffortMetric, output string, visuals graphics.Options) error {
 	if output == "" {
 		output = "devs-efforts_productivity_ranking.png"
 	}
@@ -217,6 +224,7 @@ func plotProductivityRanking(metrics []EffortMetric, output string) error {
 		ManualXLim:   true,
 		XMin:         -0.64,
 		XMax:         float64(maxDev) - 0.36,
+		FontSize:     visuals.PlotFontSize(),
 	}); err != nil {
 		return fmt.Errorf("failed to save productivity ranking plot: %v", err)
 	}
@@ -364,7 +372,7 @@ func buildDevEffortsMatrix(ts *readers.DeveloperTimeSeriesData, startUnix, endUn
 }
 
 // plotDevEffortsTimeSeries renders the dual mirror stackplot at the requested path.
-func plotDevEffortsTimeSeries(data devEffortsMatrix, output string) error {
+func plotDevEffortsTimeSeries(data devEffortsMatrix, output string, visuals graphics.Options) error {
 	if output == "" {
 		output = "devs-efforts.png"
 	}
@@ -373,6 +381,7 @@ func plotDevEffortsTimeSeries(data devEffortsMatrix, output string) error {
 		Output:       output,
 		WidthInches:  16,
 		HeightInches: 10,
+		FontSize:     visuals.PlotFontSize(),
 	}); err != nil {
 		return err
 	}

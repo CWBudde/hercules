@@ -6,8 +6,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/spf13/viper"
-
 	"github.com/cwbudde/hercules/internal/render/burndown"
 	"github.com/cwbudde/hercules/internal/render/graphics"
 	"github.com/cwbudde/hercules/internal/render/progress"
@@ -15,13 +13,19 @@ import (
 
 // generateBurndownPlot creates the burndown plot with stacking, resampling, and survival ratio output.
 func generateBurndownPlot(name string, matrix [][]int, output string, relative bool, startTime, endTime *time.Time, resample string) error {
+	opts := defaultOptions()
+	opts.Relative, opts.Resample = relative, resample
+	return generateBurndownPlotWithOptions(name, matrix, output, startTime, endTime, opts)
+}
+
+func generateBurndownPlotWithOptions(name string, matrix [][]int, output string, startTime, endTime *time.Time, opts Options) error {
 	fmt.Println("Running: burndown-project")
 	if len(matrix) == 0 || len(matrix[0]) == 0 {
 		return fmt.Errorf("empty burndown matrix")
 	}
 
 	// Initialize progress tracking
-	quiet := viper.GetBool("quiet")
+	quiet := opts.Quiet
 	progEstimator := progress.NewProgressEstimator(!quiet)
 
 	// Start multi-phase operation
@@ -45,11 +49,11 @@ func generateBurndownPlot(name string, matrix [][]int, output string, relative b
 
 	// Phase 2: Resampling setup
 	progEstimator.NextOperation("Setting up resampling")
-	if resample == "" {
-		resample = "year"
+	if opts.Resample == "" {
+		opts.Resample = "year"
 	}
 	if !quiet {
-		fmt.Printf("resampling to %s, please wait...\n", resample)
+		fmt.Printf("resampling to %s, please wait...\n", opts.Resample)
 	}
 
 	// Use default endTime if not provided
@@ -61,7 +65,7 @@ func generateBurndownPlot(name string, matrix [][]int, output string, relative b
 	// Use earliest time in the matrix if startTime is not provided
 	if startTime == nil {
 		tickSize := time.Duration(365*24) * time.Hour // Assuming yearly granularity by default
-		switch resample {
+		switch opts.Resample {
 		case "month":
 			tickSize = time.Duration(30*24) * time.Hour
 		case "day":
@@ -78,7 +82,7 @@ func generateBurndownPlot(name string, matrix [][]int, output string, relative b
 		progEstimator.FinishMultiOperation()
 		return fmt.Errorf("calculate survival: %w", err)
 	}
-	interpolatedMatrix, dateRange := interpolateBurndownMatrixWithProgress(matrix, *startTime, *endTime, resample, progEstimator)
+	interpolatedMatrix, dateRange := interpolateBurndownMatrixWithProgress(matrix, *startTime, *endTime, opts.Resample, progEstimator)
 
 	// Phase 4: Final processing and visualization
 	progEstimator.NextOperation("Generating visualization")
@@ -91,12 +95,12 @@ func generateBurndownPlot(name string, matrix [][]int, output string, relative b
 	}
 
 	// Normalize if relative is true
-	if relative {
+	if opts.Relative {
 		interpolatedMatrix = normalizeMatrix(interpolatedMatrix)
 	}
 
 	// Create plot
-	if err := graphics.PlotStackedBurndownMatplotlib(interpolatedMatrix, dateRange, output, relative); err != nil {
+	if err := graphics.PlotStackedBurndownMatplotlibWithOptions(interpolatedMatrix, dateRange, output, opts.Relative, opts.Graphics); err != nil {
 		progEstimator.FinishMultiOperation()
 		return fmt.Errorf("error creating burndown plot: %v", err)
 	}

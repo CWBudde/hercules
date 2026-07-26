@@ -7,14 +7,6 @@
 //	reader, err := render.LoadInput("analysis.pb", "pb")
 //	modes, err := render.ResolveModes([]string{"burndown-project,devs"})
 //	render.Run(reader, modes, render.Options{Output: "out.png"})
-//
-// Known coupling: the mode implementations (and several helpers in this
-// package) read additional settings from spf13/viper globals — e.g.
-// "relative", "resample", "max-people", "max-repos", "quiet", "backend",
-// "temporal-legend-threshold" and friends. Callers that do not go through
-// the labours CLI should set the relevant viper keys (or rely on the
-// defaults) before calling Run. Options only carries the values that the
-// labours CLI does not route through viper.
 package render
 
 import (
@@ -22,12 +14,14 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/spf13/viper"
-
+	"github.com/cwbudde/hercules/internal/render/graphics"
+	"github.com/cwbudde/hercules/internal/render/modes"
 	"github.com/cwbudde/hercules/internal/render/readers"
 )
 
-// Options carries per-run settings for Run that are not read from viper.
+// Options is the complete, instance-scoped renderer configuration. NewRenderer
+// copies it, including the theme palette and optional time bounds, so callers
+// may safely reuse or mutate their input after construction.
 type Options struct {
 	// Output is the requested output path (file or directory). An empty
 	// value falls back to per-mode default filenames in the current
@@ -43,6 +37,45 @@ type Options struct {
 	// DevsParallelFallback allows synthetic devs-parallel charts when
 	// people burndown data is missing (labours --devs-parallel-fallback).
 	DevsParallelFallback bool
+
+	Quiet      bool
+	Relative   bool
+	Resample   string
+	MaxPeople  int
+	MaxRepos   int
+	Backend    string
+	Background string
+	FontSize   int
+	Size       string
+	TempDir    string
+
+	TemporalLegendThreshold    int
+	TemporalLegendSingleColumn int
+	OrderOwnershipByTime       bool
+	DisableProjector           bool
+	RunTimesDetail             bool
+	DevsEffortsDetail          bool
+	DevsParallelDetail         bool
+	KnowledgeDiffusionDetail   bool
+	Theme                      graphics.Theme
+}
+
+type outputPolicy struct {
+	backend string
+}
+
+type fallbackPolicy struct {
+	sentiment    bool
+	devsParallel bool
+}
+
+// Renderer is a reusable rendering instance with an immutable configuration
+// snapshot. It contains no process-global state.
+type Renderer struct {
+	options   Options
+	theme     graphics.Theme
+	output    outputPolicy
+	fallbacks fallbackPolicy
 }
 
 // ModeResult reports the outcome of a single mode executed by Run. For a
@@ -96,9 +129,11 @@ func (r Result) HasWarnings() bool {
 // missing-analysis errors are warnings; all other mode and output failures
 // are retained in the returned aggregate result.
 func Run(reader readers.Reader, modeNames []string, opts Options) Result {
-	sentimentFallbackEnabled = opts.SentimentFallback
-	devsParallelFallbackEnabled = opts.DevsParallelFallback
-	return executeModes(modeNames, reader, opts.Output, opts.StartTime, opts.EndTime)
+	renderer, err := NewRenderer(opts)
+	if err != nil {
+		return Result{OutputError: fmt.Errorf("configure renderer: %w", err)}
+	}
+	return renderer.Render(reader, modeNames)
 }
 
 // RunWithResults is retained for source compatibility. New callers should
@@ -107,31 +142,118 @@ func RunWithResults(reader readers.Reader, modeNames []string, opts Options) []M
 	return Run(reader, modeNames, opts).Modes
 }
 
-// SetRenderDefaults installs viper defaults for every setting the render
-// modes read from viper globals, mirroring the flag defaults established by
-// the labours CLI (cmd/labours/root.go). Callers that embed the renderer in
-// another CLI (e.g. `hercules report`) should call this once before Run.
-// viper.SetDefault has the lowest precedence, so values
-// already set or bound to flags are never overridden.
-func SetRenderDefaults() {
-	viper.SetDefault("relative", false)
-	viper.SetDefault("resample", "year")
-	viper.SetDefault("max-people", 20)
-	viper.SetDefault("max-repos", 25)
-	viper.SetDefault("quiet", false)
-	viper.SetDefault("backend", "")
-	viper.SetDefault("background", "white")
-	viper.SetDefault("font-size", 12)
-	viper.SetDefault("size", "")
-	viper.SetDefault("tmpdir", "")
-	viper.SetDefault("temporal-legend-threshold", 32)
-	viper.SetDefault("temporal-legend-single-col-threshold", 10)
-	viper.SetDefault("order-ownership-by-time", false)
-	viper.SetDefault("disable-projector", false)
-	viper.SetDefault("run-times-detail", false)
-	viper.SetDefault("devs-efforts-detail", false)
-	viper.SetDefault("devs-parallel-detail", false)
-	viper.SetDefault("knowledge-diffusion-detail", false)
+// DefaultOptions returns the standalone renderer defaults used by labours.
+func DefaultOptions() Options {
+	return Options{
+		Resample:                   "year",
+		MaxPeople:                  20,
+		MaxRepos:                   25,
+		Background:                 "white",
+		FontSize:                   12,
+		TemporalLegendThreshold:    32,
+		TemporalLegendSingleColumn: 10,
+		Theme:                      graphics.DefaultTheme,
+	}
+}
+
+// SetRenderDefaults is retained for source compatibility. Configuration is
+// now instance-scoped; use DefaultOptions and override the desired fields.
+func SetRenderDefaults() {}
+
+// NewRenderer validates and snapshots opts.
+func NewRenderer(opts Options) (*Renderer, error) {
+	opts = normalizeOptions(opts)
+	if err := opts.Theme.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid renderer theme: %w", err)
+	}
+	opts.Theme = cloneTheme(opts.Theme)
+	opts.StartTime = cloneTime(opts.StartTime)
+	opts.EndTime = cloneTime(opts.EndTime)
+	return &Renderer{
+		options: opts,
+		theme:   opts.Theme,
+		output: outputPolicy{
+			backend: opts.Backend,
+		},
+		fallbacks: fallbackPolicy{
+			sentiment:    opts.SentimentFallback,
+			devsParallel: opts.DevsParallelFallback,
+		},
+	}, nil
+}
+
+// Render executes modeNames with this renderer's immutable configuration.
+func (r *Renderer) Render(reader readers.Reader, modeNames []string) Result {
+	return r.executeModes(modeNames, reader)
+}
+
+func normalizeOptions(opts Options) Options {
+	defaults := DefaultOptions()
+	if opts.Resample == "" {
+		opts.Resample = defaults.Resample
+	}
+	if opts.MaxPeople == 0 {
+		opts.MaxPeople = defaults.MaxPeople
+	}
+	if opts.MaxRepos == 0 {
+		opts.MaxRepos = defaults.MaxRepos
+	}
+	if opts.Background == "" {
+		opts.Background = defaults.Background
+	}
+	if opts.FontSize <= 0 {
+		opts.FontSize = defaults.FontSize
+	}
+	if opts.TemporalLegendThreshold == 0 {
+		opts.TemporalLegendThreshold = defaults.TemporalLegendThreshold
+	}
+	if opts.TemporalLegendSingleColumn == 0 {
+		opts.TemporalLegendSingleColumn = defaults.TemporalLegendSingleColumn
+	}
+	if opts.Theme.Name == "" {
+		opts.Theme = defaults.Theme
+	}
+	return opts
+}
+
+func cloneTheme(theme graphics.Theme) graphics.Theme {
+	theme.ColorPalette = append([]graphics.ColorRGB(nil), theme.ColorPalette...)
+	return theme
+}
+
+func cloneTime(value *time.Time) *time.Time {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
+}
+
+func (r *Renderer) modeOptions() modes.Options {
+	return modes.Options{
+		Quiet:                      r.options.Quiet,
+		Relative:                   r.options.Relative,
+		Resample:                   r.options.Resample,
+		MaxPeople:                  r.options.MaxPeople,
+		MaxRepos:                   r.options.MaxRepos,
+		TempDir:                    r.options.TempDir,
+		TemporalLegendThreshold:    r.options.TemporalLegendThreshold,
+		TemporalLegendSingleColumn: r.options.TemporalLegendSingleColumn,
+		OrderOwnershipByTime:       r.options.OrderOwnershipByTime,
+		DisableProjector:           r.options.DisableProjector,
+		RunTimesDetail:             r.options.RunTimesDetail,
+		DevsEffortsDetail:          r.options.DevsEffortsDetail,
+		DevsParallelDetail:         r.options.DevsParallelDetail,
+		KnowledgeDiffusionDetail:   r.options.KnowledgeDiffusionDetail,
+		SentimentFallback:          r.fallbacks.sentiment,
+		DevsParallelFallback:       r.fallbacks.devsParallel,
+		Graphics: graphics.Options{
+			Theme:      cloneTheme(r.theme),
+			FontSize:   r.options.FontSize,
+			Background: r.options.Background,
+			Size:       r.options.Size,
+		},
+	}
 }
 
 // LoadInput builds a Reader from an input path ("-" for stdin) and a format

@@ -6,7 +6,6 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"
 
 	"github.com/cwbudde/hercules/internal/analysisio"
@@ -17,12 +16,12 @@ import (
 type YamlReader struct {
 	data   map[string]interface{}
 	Limits analysisio.Limits
+	Quiet  bool
 }
 
 func (r *YamlReader) Read(file io.Reader) error {
 	// Initialize progress tracking for YAML reading
-	quiet := viper.GetBool("quiet")
-	progEstimator := progress.NewProgressEstimator(!quiet)
+	progEstimator := progress.NewProgressEstimator(!r.Quiet)
 
 	progEstimator.StartOperation("Reading YAML data", 1)
 

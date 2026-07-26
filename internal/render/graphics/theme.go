@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"image/color"
 	"math"
-
-	"github.com/spf13/viper"
 )
 
 // Python labours render-style constants. These mirror matplotlib's savefig
@@ -33,9 +31,6 @@ const (
 // PythonPlotFontSize resolves the configured font size (--font-size), falling
 // back to the Python-parity default of 12pt.
 func PythonPlotFontSize() float64 {
-	if fontSize := viper.GetInt("font-size"); fontSize > 0 {
-		return float64(fontSize)
-	}
 	return pythonPlotDefaultFontSize
 }
 

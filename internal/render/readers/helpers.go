@@ -11,6 +11,12 @@ import (
 
 // DetectAndReadInput detects the format (if "auto"), creates the appropriate Reader, and reads the input.
 func DetectAndReadInput(input, format string) (Reader, error) {
+	return DetectAndReadInputWithOptions(input, format, false)
+}
+
+// DetectAndReadInputWithOptions reads input without consulting global
+// configuration.
+func DetectAndReadInputWithOptions(input, format string, quiet bool) (Reader, error) {
 	// Open input source
 	var file io.Reader
 	if input == "-" {
@@ -34,7 +40,7 @@ func DetectAndReadInput(input, format string) (Reader, error) {
 	}
 
 	// Create the appropriate Reader
-	reader, err := createReader(format)
+	reader, err := createReaderWithOptions(format, quiet)
 	if err != nil {
 		return nil, err
 	}
@@ -71,11 +77,15 @@ func isYAML(buffer []byte) bool {
 
 // createReader initializes the correct Reader implementation.
 func createReader(format string) (Reader, error) {
+	return createReaderWithOptions(format, false)
+}
+
+func createReaderWithOptions(format string, quiet bool) (Reader, error) {
 	switch strings.ToLower(format) {
 	case "yaml":
-		return &YamlReader{}, nil
+		return &YamlReader{Quiet: quiet}, nil
 	case "pb":
-		return &ProtobufReader{}, nil
+		return &ProtobufReader{Quiet: quiet}, nil
 	default:
 		return nil, fmt.Errorf("unsupported format: %s", format)
 	}

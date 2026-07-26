@@ -9,8 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spf13/viper"
-
 	"github.com/cwbudde/hercules/internal/render/burndown"
 )
 
@@ -58,18 +56,6 @@ func TestPythonLaboursColorPaletteMatchesTab20Cycle(t *testing.T) {
 }
 
 func TestPlotBurndownMatplotlibUsesBackends(t *testing.T) {
-	oldQuiet := viper.GetBool("quiet")
-	oldSize := viper.GetString("size")
-	oldBackground := viper.GetString("background")
-	viper.Set("quiet", true)
-	viper.Set("size", "2,1.5")
-	viper.Set("background", "white")
-	defer func() {
-		viper.Set("quiet", oldQuiet)
-		viper.Set("size", oldSize)
-		viper.Set("background", oldBackground)
-	}()
-
 	data := &burndown.ProcessedBurndown{
 		Name: "repo",
 		Matrix: [][]float64{
@@ -89,7 +75,8 @@ func TestPlotBurndownMatplotlibUsesBackends(t *testing.T) {
 
 	dir := t.TempDir()
 	pngPath := filepath.Join(dir, "burndown.png")
-	if err := PlotBurndownMatplotlib(data, pngPath, false); err != nil {
+	opts := Options{Size: "2,1.5", Background: "white"}
+	if err := PlotBurndownMatplotlibWithOptions(data, pngPath, false, opts); err != nil {
 		t.Fatalf("plot png: %v", err)
 	}
 	pngFile, err := os.Open(pngPath) // #nosec G304 - test path is under t.TempDir.
@@ -106,7 +93,7 @@ func TestPlotBurndownMatplotlibUsesBackends(t *testing.T) {
 	}
 
 	svgPath := filepath.Join(dir, "burndown.svg")
-	if err := PlotBurndownMatplotlib(data, svgPath, true); err != nil {
+	if err := PlotBurndownMatplotlibWithOptions(data, svgPath, true, opts); err != nil {
 		t.Fatalf("plot svg: %v", err)
 	}
 	svgBytes, err := os.ReadFile(svgPath) // #nosec G304 - test path is under t.TempDir.

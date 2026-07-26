@@ -53,15 +53,24 @@ func GetMatplotlibBurndownColors(opacity uint8) []color.Color {
 // GetBurndownColors returns appropriate colors for burndown charts
 // Uses matplotlib colors if matplotlib theme is active, otherwise uses theme colors
 func GetBurndownColors(numColors int) []color.Color {
-	opacity := uint8(float64(255) * CurrentTheme.Chart.FillOpacity)
+	return GetBurndownColorsForTheme(CurrentTheme, numColors)
+}
+
+// GetBurndownColorsForTheme returns burndown colors without consulting mutable
+// package theme state.
+func GetBurndownColorsForTheme(theme Theme, numColors int) []color.Color {
+	if theme.Name == "" {
+		theme = DefaultTheme
+	}
+	opacity := uint8(float64(255) * theme.Chart.FillOpacity)
 
 	// Use matplotlib colors for 2-layer burndown when matplotlib theme is active
-	if numColors == 2 && CurrentTheme.Name == "matplotlib" {
+	if numColors == 2 && theme.Name == "matplotlib" {
 		return GetMatplotlibBurndownColors(opacity)
 	}
 
 	// Otherwise use standard theme colors
-	themePalette := CurrentTheme.GetColorPalette()
+	themePalette := theme.GetColorPalette()
 	colors := make([]color.Color, numColors)
 
 	for i := 0; i < numColors; i++ {

@@ -145,7 +145,7 @@ func runLaboursCommand(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if err := graphics.SetTheme(themeName); err != nil {
+	if _, err := graphics.GetTheme(themeName); err != nil {
 		return fmt.Errorf(
 			"set theme %q (available: %v): %w",
 			themeName, graphics.ListThemes(), err,
@@ -154,21 +154,26 @@ func runLaboursCommand(cmd *cobra.Command, args []string) error {
 
 	// Handle matplotlib colors flag - force matplotlib theme if requested
 	if viper.GetBool("matplotlib-colors") {
-		if err := graphics.SetTheme("matplotlib"); err != nil {
-			return fmt.Errorf("set matplotlib theme: %w", err)
-		}
+		themeName = "matplotlib"
 		if !viper.GetBool("quiet") {
 			fmt.Printf("Using matplotlib color scheme (Red #d62728 bottom, Blue #1f77b4 top)\n")
 		}
 	}
 
+	rendererOptions, err := renderOptionsFromViper(themeName)
+	if err != nil {
+		return err
+	}
+	rendererOptions.SentimentFallback = commandBoolFlag(cmd, "sentiment-fallback")
+	rendererOptions.DevsParallelFallback = commandBoolFlag(cmd, "devs-parallel-fallback")
+
 	// Handle hercules integration if --from-repo is specified
 	if repoPath := viper.GetString("from-repo"); repoPath != "" {
-		return handleHerculesIntegration(repoPath)
+		return handleHerculesIntegration(repoPath, rendererOptions)
 	}
 
 	input, inputFormat := viper.GetString("input"), viper.GetString("input-format")
-	inputFormat, err := render.NormalizeInputFormat(inputFormat)
+	inputFormat, err = render.NormalizeInputFormat(inputFormat)
 	if err != nil {
 		return err
 	}
@@ -195,14 +200,46 @@ func runLaboursCommand(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	result := render.Run(reader, modes, render.Options{
-		Output:               viper.GetString("output"),
-		StartTime:            startDate,
-		EndTime:              endDate,
-		SentimentFallback:    commandBoolFlag(cmd, "sentiment-fallback"),
-		DevsParallelFallback: commandBoolFlag(cmd, "devs-parallel-fallback"),
-	})
+	rendererOptions.Output = viper.GetString("output")
+	rendererOptions.StartTime, rendererOptions.EndTime = startDate, endDate
+	result := render.Run(reader, modes, rendererOptions)
 	return result.Err()
+}
+
+func renderOptionsFromViper(themeName string) (render.Options, error) {
+	theme, err := graphics.GetTheme(themeName)
+	if err != nil {
+		return render.Options{}, fmt.Errorf("get renderer theme %q: %w", themeName, err)
+	}
+	opts := render.DefaultOptions()
+	opts.Quiet = viper.GetBool("quiet")
+	opts.Relative = viper.GetBool("relative")
+	opts.Resample = viper.GetString("resample")
+	opts.MaxPeople = viper.GetInt("max-people")
+	opts.MaxRepos = viper.GetInt("max-repos")
+	if opts.MaxRepos == 0 {
+		opts.MaxRepos = -1
+	}
+	opts.Backend = viper.GetString("backend")
+	opts.Background = viper.GetString("background")
+	opts.FontSize = viper.GetInt("font-size")
+	opts.Size = viper.GetString("size")
+	opts.TempDir = viper.GetString("tmpdir")
+	opts.TemporalLegendThreshold = viper.GetInt("temporal-legend-threshold")
+	if opts.TemporalLegendThreshold == 0 {
+		opts.TemporalLegendThreshold = -1
+	}
+	opts.TemporalLegendSingleColumn = viper.GetInt("temporal-legend-single-col-threshold")
+	opts.OrderOwnershipByTime = viper.GetBool("order-ownership-by-time")
+	opts.DisableProjector = viper.GetBool("disable-projector")
+	opts.RunTimesDetail = viper.GetBool("run-times-detail")
+	opts.DevsEffortsDetail = viper.GetBool("devs-efforts-detail")
+	opts.DevsParallelDetail = viper.GetBool("devs-parallel-detail")
+	opts.KnowledgeDiffusionDetail = viper.GetBool("knowledge-diffusion-detail")
+	opts.SentimentFallback = viper.GetBool("sentiment-fallback")
+	opts.DevsParallelFallback = viper.GetBool("devs-parallel-fallback")
+	opts.Theme = *theme
+	return opts, nil
 }
 
 func commandBoolFlag(cmd *cobra.Command, name string) bool {
@@ -232,7 +269,7 @@ func handleExportTheme(themeName string) error {
 	return nil
 }
 
-func handleHerculesIntegration(repoPath string) error {
+func handleHerculesIntegration(repoPath string, rendererOptions ...render.Options) error {
 	modes, err := resolveModes()
 	if err != nil {
 		return err
@@ -271,7 +308,9 @@ func handleHerculesIntegration(repoPath string) error {
 		fmt.Printf("Analyzing repository: %s\n", discoveredRepo)
 		fmt.Printf("Running Hercules once with analyses: %s\n", strings.Join(analyses, ", "))
 	}
-	return runHerculesAndVisualize(herculesPath, discoveredRepo, modes, analyses)
+	return runHerculesAndVisualize(
+		herculesPath, discoveredRepo, modes, analyses, rendererOptions...,
+	)
 }
 
 // mapStyleToTheme maps matplotlib style names to labours-go theme names

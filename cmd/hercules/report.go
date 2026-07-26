@@ -478,7 +478,6 @@ func renderReportModes(ctx context.Context, options reportOptions, reportPB stri
 func renderReportInProcess(options reportOptions, reportPB, chartsRoot string,
 	modes []string,
 ) (reportModeResults, error) {
-	render.SetRenderDefaults()
 	reader, err := render.LoadInput(reportPB, "pb")
 	if err != nil {
 		return reportModeResults{}, fmt.Errorf("load generated protobuf report for rendering: %w", err)
@@ -487,7 +486,9 @@ func renderReportInProcess(options reportOptions, reportPB, chartsRoot string,
 	for _, mode := range modes {
 		output := reportModeOutput(chartsRoot, mode, options.format)
 		_, _ = fmt.Fprintf(os.Stderr, "report: rendering mode %s...\n", mode)
-		result := render.Run(reader, []string{mode}, render.Options{Output: output})
+		renderOptions := render.DefaultOptions()
+		renderOptions.Output = output
+		result := render.Run(reader, []string{mode}, renderOptions)
 		if err := recordInProcessResult(&outcomes, mode, result, options.strict); err != nil {
 			return reportModeResults{}, err
 		}

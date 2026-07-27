@@ -531,23 +531,15 @@ Priority: P3
 
 ### CI-01: Run meaningful checks on pull requests
 
-Affected code:
+Status: completed 2026-07-27
 
-- `.github/workflows/test.yaml`
-- reusable workflows
-
-Work:
-
-- Add `pull_request` alongside `push`.
-- Add a repeated deterministic core test.
-- Add targeted race jobs for core, plumbing, leaves, and renderer.
-- Add fuzz smoke runs with fixed short budgets.
-- Add `govulncheck`.
-- Add end-to-end CLI tests for cache safety, combine, report, `--from-repo`, and exit codes.
-
-Acceptance criteria:
-
-- [ ] fork pull requests receive the same required correctness and security gates as pushes.
+Pushes and pull requests, including forks, now receive the same read-only unit, deterministic,
+targeted race, schema, lint, vulnerability, cross-compilation, fuzz-smoke, and CLI end-to-end
+gates. Repeated graph/pipeline tests exercise deterministic ordering; short fixed-budget fuzzing
+covers analysis input, plumbing, identity, leaf, and renderer-reader boundaries. Binary-level
+tests cover managed-cache replacement and refusal, combine, report publication, `--from-repo`,
+and success/failure exit codes. The new fuzz gate also exposed and fixed a malformed Couples
+payload panic caused by `people_files`/`files_lines` without their corresponding index metadata.
 
 ### CI-02: Make visual parity a real regression gate
 

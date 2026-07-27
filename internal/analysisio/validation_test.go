@@ -182,6 +182,22 @@ func TestValidateParallelPayloadArrays(t *testing.T) {
 	if !errors.Is(err, ErrAnalysisMalformed) {
 		t.Fatalf("burndown error = %v, want ErrAnalysisMalformed", err)
 	}
+
+	for name, couples := range map[string]*pb.CouplesAnalysisResults{
+		"people files without people index": {
+			PeopleFiles: []*pb.TouchedFiles{{}},
+		},
+		"file lines without file index": {
+			FilesLines: []int32{1},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			err = ValidateCouplesResults(couples, DefaultLimits())
+			if !errors.Is(err, ErrAnalysisMalformed) {
+				t.Fatalf("couples error = %v, want ErrAnalysisMalformed", err)
+			}
+		})
+	}
 }
 
 func TestUnmarshalEnforcesAggregateNestedRecordLimit(t *testing.T) {

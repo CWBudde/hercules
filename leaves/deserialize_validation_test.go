@@ -70,6 +70,7 @@ func FuzzLeafDeserializers(f *testing.F) {
 	f.Add([]byte{})
 	f.Add([]byte{0xff})
 	f.Add([]byte{0x08, 0xff, 0xff, 0xff, 0xff, 0x0f})
+	f.Add([]byte{0x42, 0x00}) // people_files without people_couples metadata
 
 	f.Fuzz(func(t *testing.T, data []byte) {
 		deserializers := []interface {

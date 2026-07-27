@@ -414,23 +414,22 @@ func ValidateCouplesResults(message *pb.CouplesAnalysisResults, limits Limits) e
 		return err
 	}
 
-	if message.GetFileCouples() != nil {
-		if err := ValidateParallelLengths("file index", len(message.GetFileCouples().GetIndex()),
-			NamedLength{"file line counts", len(message.GetFilesLines())}); err != nil {
-			return err
-		}
-	}
-
-	if message.GetPeopleCouples() != nil {
-		if err := ValidateParallelLengths("people index", len(message.GetPeopleCouples().GetIndex()),
-			NamedLength{"people touched files", len(message.GetPeopleFiles())}); err != nil {
-			return err
-		}
-	}
-
 	fileCount := 0
 	if message.GetFileCouples() != nil {
 		fileCount = len(message.GetFileCouples().GetIndex())
+	}
+	if err := ValidateParallelLengths("file index", fileCount,
+		NamedLength{"file line counts", len(message.GetFilesLines())}); err != nil {
+		return err
+	}
+
+	peopleCount := 0
+	if message.GetPeopleCouples() != nil {
+		peopleCount = len(message.GetPeopleCouples().GetIndex())
+	}
+	if err := ValidateParallelLengths("people index", peopleCount,
+		NamedLength{"people touched files", len(message.GetPeopleFiles())}); err != nil {
+		return err
 	}
 
 	for person, files := range message.GetPeopleFiles() {

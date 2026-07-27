@@ -1,0 +1,36 @@
+name: test-e2e
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  cli-e2e:
+    name: CLI end-to-end
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CGO_ENABLED: "0"
+      GOFLAGS: -mod=mod
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Build CLI binaries
+        run: |
+          mkdir -p "${RUNNER_TEMP}/hercules-e2e-bin"
+          go build -o "${RUNNER_TEMP}/hercules-e2e-bin/hercules" ./cmd/hercules
+          go build -o "${RUNNER_TEMP}/hercules-e2e-bin/labours" ./cmd/labours
+
+      - name: Exercise CLI workflows
+        env:
+          HERCULES_E2E_BIN: ${{ runner.temp }}/hercules-e2e-bin/hercules
+          LABOURS_E2E_BIN: ${{ runner.temp }}/hercules-e2e-bin/labours
+        run: go test -count=1 -v ./test/e2e

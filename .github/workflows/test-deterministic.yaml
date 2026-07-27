@@ -1,0 +1,30 @@
+name: test-deterministic
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  deterministic-core:
+    name: repeated deterministic core tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CGO_ENABLED: "0"
+      GOFLAGS: -mod=mod
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Repeat graph and pipeline determinism tests
+        run: >-
+          go test -count=100
+          -run '^(TestToposortDeterministicAcrossInsertionOrder|TestPipelineResolveDeterministicAcrossItemInsertionOrder)$'
+          ./internal/toposort ./internal/core

@@ -1,0 +1,49 @@
+name: test-race
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  race:
+    name: race (${{ matrix.scope }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - scope: core
+            packages: ./internal/core
+            tests: >-
+              ^(TestPipelineDisposesEveryUniqueBranchItemOnce|TestPipelineRepeatedInitializeDisposesPreviousResources|TestPipelineReplacementFailureDisposesPreviousResources|TestPipelineInitializeFailureDisposesResources|TestPipelineConfigureFailureDisposesResources|TestPipelineInitializePanicDisposesResources|TestPipelineFailureDisposesItemsAndRestoresGCPercent|TestPipelineResolveDeterministicAcrossItemInsertionOrder|TestMergeTrackingStress)$
+          - scope: plumbing
+            packages: ./internal/plumbing/...
+            tests: >-
+              ^(TestRunRenameWorkersSimultaneousErrorsDoNotDeadlock|TestRenameComparisonHonorsExpiredContext|TestBlobCacheFork|TestTreeDiffFork|TestFileDiffFork|TestImportWorkersExitOnEnqueueError|TestPeopleDetectorFork|TestStoryDetectorFork)$
+          - scope: leaves
+            packages: ./leaves/...
+            tests: .
+          - scope: renderer
+            packages: ./internal/render
+            tests: >-
+              ^(TestParallelRenderersKeepOppositeOptionsIsolated|TestRunContinuesIndependentModesAndAggregatesStatus)$
+    env:
+      CGO_ENABLED: "1"
+      GOFLAGS: -mod=mod
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Run targeted race tests
+        env:
+          RACE_PACKAGES: ${{ matrix.packages }}
+          RACE_TESTS: ${{ matrix.tests }}
+        run: go test -race -tags purego -count=1 -run "$RACE_TESTS" "$RACE_PACKAGES"

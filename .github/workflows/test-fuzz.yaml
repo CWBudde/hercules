@@ -1,0 +1,52 @@
+name: test-fuzz
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    name: fuzz smoke (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: FuzzUnmarshalBurndown
+            package: ./internal/analysisio
+          - target: FuzzUnmarshalCSR
+            package: ./internal/analysisio
+          - target: FuzzTreeDiffConfigureRegexp
+            package: ./internal/plumbing
+          - target: FuzzParseMergeDict
+            package: ./internal/plumbing/identity
+          - target: FuzzParsePeopleDict
+            package: ./internal/plumbing/identity
+          - target: FuzzParseMailmap
+            package: ./internal/plumbing/identity
+          - target: FuzzLeafDeserializers
+            package: ./leaves
+          - target: FuzzYAMLReader
+            package: ./internal/render/readers
+          - target: FuzzProtobufReader
+            package: ./internal/render/readers
+    env:
+      CGO_ENABLED: "0"
+      GOFLAGS: -mod=mod
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Run fixed-budget fuzz smoke tests
+        env:
+          FUZZ_PACKAGE: ${{ matrix.package }}
+          FUZZ_TARGET: ${{ matrix.target }}
+        run: go test -run '^$' -fuzz "^${FUZZ_TARGET}$" -fuzztime=5s "$FUZZ_PACKAGE"

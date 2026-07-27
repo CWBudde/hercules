@@ -42,6 +42,22 @@ test-all: hercules labours
 # Run unit tests (alias for test)
 test-unit: test
 
+# Repeat the graph and pipeline ordering checks used by CI.
+test-deterministic:
+    go test -count=100 -run '^(TestToposortDeterministicAcrossInsertionOrder|TestPipelineResolveDeterministicAcrossItemInsertionOrder)$' ./internal/toposort ./internal/core
+
+# Run the binary-level CLI workflow tests used by CI.
+test-e2e:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    bin_dir=$(mktemp -d)
+    trap 'rm -rf "$bin_dir"' EXIT
+    go build -o "$bin_dir/hercules{{exe}}" ./cmd/hercules
+    go build -o "$bin_dir/labours{{exe}}" ./cmd/labours
+    HERCULES_E2E_BIN="$bin_dir/hercules{{exe}}" \
+        LABOURS_E2E_BIN="$bin_dir/labours{{exe}}" \
+        go test -count=1 -v ./test/e2e
+
 # Run the plugin compatibility smoke test. Go plugins need cgo, so this
 # overrides the repo-wide CGO_ENABLED=0 default; the test builds a dedicated
 # `-tags purego` hercules binary (the cgo FreeType path is not shipped).

@@ -1,12 +1,15 @@
 # Visual Validation Framework
 
-This directory contains a comprehensive visual validation testing framework for the in-repo Go renderer (`internal/render`, formerly labours-go). The framework focuses on **functional similarity** rather than pixel-perfect matching, making it practical for real-world testing scenarios.
+This directory contains the visual validation framework for the in-repo Go renderer
+(`internal/render`, formerly labours-go). Pull requests use deterministic, pixel-exact
+Go-renderer goldens; the extended historical suite uses perceptual comparison where
+the Go and Python rendering engines cannot be pixel-identical.
 
 ## 📁 Directory Layout (hercules port)
 
 - Harness code: `test/visual/*.go` (tracked)
-- Input fixtures: `internal/render/testdata/example_data/` and `internal/render/testdata/hercules/` (tracked)
-- Golden reference images: `test/visual/golden/` (tracked once generated; currently absent — golden test cases skip cleanly)
+- Input fixtures: `test/visual/testdata/`, `internal/render/testdata/example_data/`, and `internal/render/testdata/hercules/` (tracked)
+- Golden reference images: `test/visual/golden/` (tracked and required by the CI gate)
 - Python reference images: `test/visual/reference/` (untracked, git-ignored; copied from labours-go `analysis_results/reference/python_*.png`)
 - Failure analysis dumps: `test/visual/analysis_output/` (untracked, git-ignored; written only when a parity test fails)
 
@@ -71,8 +74,8 @@ Auto-detects input formats (YAML/Protobuf) and uses appropriate readers.
 ### 4. Test Framework (`regression_test.go`)
 
 **Chart Structure Tests**: Validate that generated images exist, decode, are non-empty, and have sane dimensions. These run by default.
-**Visual Regression Tests**: Compare current output with golden files. These are opt-in with `LABOURS_GO_VISUAL_PARITY=1`.
-**Python Compatibility Tests**: Validate functional similarity with Python labours. These are opt-in with `LABOURS_GO_PYTHON_PARITY=1`.
+**Visual Regression Tests**: Require the exact expected artifact set and compare deterministic PNG bytes with the committed goldens. CI and `just test-visual-gate` enable these with `LABOURS_GO_VISUAL_PARITY=1`; absent references fail.
+**Python Compatibility Tests**: Validate functional similarity with historical Python labours references. `just test-visual-extended` enables these with `LABOURS_GO_PYTHON_PARITY=1`; absent references fail.
 
 ## 🚀 Usage
 
@@ -82,8 +85,14 @@ Auto-detects input formats (YAML/Protobuf) and uses appropriate readers.
 # Run structural visual tests (always on, no goldens required)
 just test-visual
 
-# Run opt-in golden and Python visual parity tests
-just test-visual-parity
+# Run the same committed regression gate as pull-request CI
+just test-visual-gate
+
+# Deliberately refresh the reviewed Go goldens
+just update-visual-goldens
+
+# Also run historical Python compatibility (requires reference/*.png)
+just test-visual-extended
 ```
 
 ### Custom Testing
@@ -186,9 +195,10 @@ Supports both hercules output formats:
 
 ### For Visual Regression Tests
 
-- Place golden reference images in `test/visual/golden/`
-- Name format: `{mode}_golden.png` (e.g., `burndown_project_golden.png`)
-- If a golden file is missing, its test case skips cleanly
+- The required, license-safe PNGs are committed in `test/visual/golden/`.
+- They are generated only from the small, repository-owned fixtures listed above.
+- A missing golden or output artifact fails the test.
+- Use `just update-visual-goldens` after reviewing an intentional renderer change.
 
 ### For Python Compatibility Tests
 
@@ -202,9 +212,10 @@ Supports both hercules output formats:
 
 | Test                 | Mode                          | Threshold |
 | -------------------- | ----------------------------- | --------- |
-| Go golden regression | `burndown-project`            | Standard  |
-| Go golden regression | `burndown-project-relative`   | Standard  |
-| Go golden regression | `ownership`                   | Lenient   |
+| Go golden regression | `burndown-project`            | Exact PNG |
+| Go golden regression | `devs`                        | Exact PNG |
+| Go golden regression | `couples-files` heatmap       | Exact PNG |
+| Go golden regression | `couples-files` ranked pairs  | Exact PNG |
 | Python compatibility | `burndown-project`            | Lenient   |
 | Python compatibility | `burndown-project --relative` | Lenient   |
 

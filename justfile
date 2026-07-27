@@ -68,9 +68,21 @@ test-plugin:
 test-visual:
     go test ./test/visual/
 
-# Run opt-in golden and Python visual parity tests
+# Run the committed visual regression set used on every pull request.
+test-visual-gate:
+    LABOURS_GO_VISUAL_PARITY=1 go test -count=1 ./test/visual/ -v
+
+# Backward-compatible name for the committed visual regression gate.
 test-visual-parity:
-    LABOURS_GO_VISUAL_PARITY=1 LABOURS_GO_PYTHON_PARITY=1 go test ./test/visual/ -v
+    just test-visual-gate
+
+# Run the committed gate plus the historical Python-reference comparisons.
+test-visual-extended:
+    LABOURS_GO_VISUAL_PARITY=1 LABOURS_GO_PYTHON_PARITY=1 go test -count=1 ./test/visual/ -v
+
+# Intentionally refresh the committed, pure-Go visual references.
+update-visual-goldens:
+    LABOURS_GO_VISUAL_PARITY=1 UPDATE_VISUAL_GOLDENS=1 go test -count=1 -run '^TestVisualRegression$' ./test/visual/ -v
 
 # Generate a complete report directory for a repository.
 report REPO OUTPUT="./report": hercules

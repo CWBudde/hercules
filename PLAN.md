@@ -543,14 +543,14 @@ payload panic caused by `people_files`/`files_lines` without their corresponding
 
 ### CI-02: Make visual parity a real regression gate
 
-- Commit or reliably fetch a small, license-safe representative golden set.
-- Fail the job when required references are absent instead of skipping.
-- Cover one chart from each major rendering family.
-- Keep the full historical parity suite available as an extended job.
+Status: completed 2026-07-27
 
-Acceptance criteria:
-
-- [ ] layout, artifact-set, and major color/label regressions fail CI.
+Every push and pull request now renders a committed, license-safe golden set from the repository's
+small fixtures. The deterministic gate covers stacked and annotated time-area charts, a heatmap,
+and a ranked bar chart; it enforces both the exact multi-file artifact contract and PNG contents,
+so missing references, layout, palette, and label changes fail instead of skipping. A manual
+checksum-pinned extended workflow retains the historical Python-reference comparisons without
+making external assets part of the fork-safe pull-request gate.
 
 ### CI-03: Pay down and enforce lint debt
 

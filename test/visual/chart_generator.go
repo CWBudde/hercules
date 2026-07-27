@@ -17,6 +17,8 @@ const (
 	chartModeBurndownProject         = "burndown-project"
 	chartModeBurndownProjectRelative = "burndown-project-relative"
 	chartModeOwnership               = "ownership"
+	chartModeDevs                    = "devs"
+	chartModeCouplesFiles            = "couples-files"
 )
 
 var (
@@ -46,41 +48,73 @@ func NewChartGenerator(outputDir string) *ChartGenerator {
 func (cg *ChartGenerator) GenerateChart(t *testing.T, mode, inputFile string) (string, error) {
 	t.Helper()
 
+	artifacts, err := cg.GenerateChartSet(t, mode, inputFile)
+	if err != nil {
+		return "", err
+	}
+	if len(artifacts) != 1 {
+		return "", fmt.Errorf("%s generated %d artifacts, expected one", mode, len(artifacts))
+	}
+	for _, path := range artifacts {
+		return path, nil
+	}
+	return "", fmt.Errorf("%w: %s", errChartNotCreated, mode)
+}
+
+// GenerateChartSet renders one mode and returns every file in its public
+// artifact contract, keyed by basename. Multi-artifact modes are deliberately
+// explicit so a missing secondary chart fails visual regression tests.
+func (cg *ChartGenerator) GenerateChartSet(
+	t *testing.T,
+	mode, inputFile string,
+) (map[string]string, error) {
+	t.Helper()
+
 	// Ensure output directory exists
 	err := os.MkdirAll(cg.OutputDir, 0o750)
 	if err != nil {
-		return "", fmt.Errorf("failed to create output directory: %w", err)
+		return nil, fmt.Errorf("failed to create output directory: %w", err)
 	}
 
-	// Create output file path
 	outputPath := filepath.Join(cg.OutputDir, fmt.Sprintf("test_%s.png", mode))
+	if mode == chartModeCouplesFiles {
+		outputPath = cg.OutputDir
+	}
 
 	// Read input data - auto-detect format
 	reader := chartReader(inputFile)
 
 	file, err := os.Open(inputFile) // #nosec G304 - visual test input path is provided by test setup.
 	if err != nil {
-		return "", fmt.Errorf("failed to open input file %s: %w", inputFile, err)
+		return nil, fmt.Errorf("failed to open input file %s: %w", inputFile, err)
 	}
 	defer func() { _ = file.Close() }()
 
 	err = reader.Read(file)
 	if err != nil {
-		return "", fmt.Errorf("failed to read input data: %w", err)
+		return nil, fmt.Errorf("failed to read input data: %w", err)
 	}
 
 	err = generateChartByMode(cg, mode, reader, outputPath)
 	if err != nil {
-		return "", fmt.Errorf("failed to generate %s chart: %w", mode, err)
+		return nil, fmt.Errorf("failed to generate %s chart: %w", mode, err)
 	}
 
-	// Verify output file was created
-	_, err = os.Stat(outputPath)
-	if os.IsNotExist(err) {
-		return "", fmt.Errorf("%w: %s", errChartNotCreated, outputPath)
+	entries, err := os.ReadDir(cg.OutputDir)
+	if err != nil {
+		return nil, fmt.Errorf("list generated charts: %w", err)
+	}
+	artifacts := make(map[string]string, len(entries))
+	for _, entry := range entries {
+		if entry.Type().IsRegular() {
+			artifacts[entry.Name()] = filepath.Join(cg.OutputDir, entry.Name())
+		}
+	}
+	if len(artifacts) == 0 {
+		return nil, fmt.Errorf("%w: %s", errChartNotCreated, outputPath)
 	}
 
-	return outputPath, nil
+	return artifacts, nil
 }
 
 func chartReader(inputFile string) readers.Reader {
@@ -104,11 +138,11 @@ func generateChartByMode(generator *ChartGenerator, mode string, reader readers.
 		return generator.generateBurndownPerson(reader, outputPath)
 	case chartModeOwnership:
 		return generator.generateOwnership(reader, outputPath)
-	case "devs":
+	case chartModeDevs:
 		return generator.generateDevs(reader, outputPath)
 	case "couples-people":
 		return generator.generateCouplesPeople(reader, outputPath)
-	case "couples-files":
+	case chartModeCouplesFiles:
 		return generator.generateCouplesFiles(reader, outputPath)
 	default:
 		return fmt.Errorf("%w: %s", errUnsupportedChartMode, mode)

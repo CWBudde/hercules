@@ -1,15 +1,18 @@
 package visual
 
 import (
+	"bytes"
+	"fmt"
 	"image"
 	"image/color"
 	"image/png"
 	"os"
 	"path/filepath"
+	"sort"
 	"testing"
 )
 
-const testDefaultReportPath = "../../internal/render/testdata/hercules/report_default.pb"
+const testExampleDataPath = "../../internal/render/testdata/example_data"
 
 // VisualTestCase defines a test case for visual regression testing.
 type VisualTestCase struct {
@@ -19,37 +22,46 @@ type VisualTestCase struct {
 	ExpectedPath    string
 	ValidationLevel ValidationLevel
 	Description     string
+	Artifacts       map[string]string
 }
 
-// TestVisualRegression runs comprehensive visual regression tests.
+// TestVisualRegression is the small, deterministic pull-request gate. It
+// covers the stacked-area, annotated time-area, heatmap, and bar-chart
+// renderer families using license-safe fixtures and committed references.
 func TestVisualRegression(t *testing.T) {
 	requireVisualParityOptIn(t)
 
-	// Define test cases for different chart types and modes
 	testCases := []VisualTestCase{
 		{
 			Name:            "BurndownProject",
 			Mode:            chartModeBurndownProject,
-			InputFile:       testDefaultReportPath,
-			ExpectedPath:    "golden/burndown_project_golden.png",
-			ValidationLevel: ValidationStandard,
-			Description:     "Project-level burndown chart visual consistency",
+			InputFile:       filepath.Join(testExampleDataPath, "hercules_burndown.pb"),
+			ValidationLevel: ValidationStrict,
+			Description:     "stacked project burndown",
+			Artifacts: map[string]string{
+				"test_burndown-project.png": "golden/burndown_project.png",
+			},
 		},
 		{
-			Name:            "BurndownProjectRelative",
-			Mode:            chartModeBurndownProjectRelative,
-			InputFile:       testDefaultReportPath,
-			ExpectedPath:    "golden/burndown_project_relative_golden.png",
-			ValidationLevel: ValidationStandard,
-			Description:     "Relative burndown chart (percentage-based)",
+			Name:            "Developers",
+			Mode:            chartModeDevs,
+			InputFile:       "testdata/devs.yaml",
+			ValidationLevel: ValidationStrict,
+			Description:     "annotated developer time-area chart",
+			Artifacts: map[string]string{
+				"test_devs.png": "golden/devs.png",
+			},
 		},
 		{
-			Name:            "Ownership",
-			Mode:            chartModeOwnership,
-			InputFile:       testDefaultReportPath,
-			ExpectedPath:    "golden/ownership_golden.png",
-			ValidationLevel: ValidationLenient, // More tolerance for complex heatmaps
-			Description:     "Code ownership visualization",
+			Name:            "FileCoupling",
+			Mode:            chartModeCouplesFiles,
+			InputFile:       filepath.Join(testExampleDataPath, "hercules_couples.pb"),
+			ValidationLevel: ValidationStrict,
+			Description:     "coupling heatmap and ranked bar chart",
+			Artifacts: map[string]string{
+				"file_coupling_heatmap.png":   "golden/file_coupling_heatmap.png",
+				"top_file_coupling_pairs.png": "golden/top_file_coupling_pairs.png",
+			},
 		},
 	}
 
@@ -158,46 +170,96 @@ func TestSimilarityMetricsAccuracy(t *testing.T) {
 	})
 }
 
+func TestArtifactSetValidation(t *testing.T) {
+	expected := map[string]string{"chart.png": "golden/chart.png"}
+
+	if err := validateArtifactSet(
+		map[string]string{"chart.png": "/tmp/chart.png"},
+		expected,
+	); err != nil {
+		t.Fatalf("matching artifact set rejected: %v", err)
+	}
+	if err := validateArtifactSet(map[string]string{}, expected); err == nil {
+		t.Fatal("missing required artifact was accepted")
+	}
+	if err := validateArtifactSet(
+		map[string]string{
+			"chart.png":      "/tmp/chart.png",
+			"unexpected.png": "/tmp/unexpected.png",
+		},
+		expected,
+	); err == nil {
+		t.Fatal("unexpected artifact was accepted")
+	}
+}
+
 // runVisualRegressionTest executes a single visual regression test case.
 func runVisualRegressionTest(t *testing.T, tc VisualTestCase) {
 	t.Helper()
 
-	// Check if golden file exists before doing expensive chart generation.
-	_, err := os.Stat(tc.ExpectedPath)
-	if os.IsNotExist(err) {
-		t.Skipf("Golden file not found: %s (run with GENERATE_REFERENCES=true to create)",
-			tc.ExpectedPath)
-		return
-	}
-
-	// Generate current output
-	currentOutput := generateTestChart(t, tc.Mode, tc.InputFile)
-	defer func() {
-		// Clean up generated file
-		err := os.Remove(currentOutput)
-		if err != nil {
-			t.Logf("Failed to clean up test file %s: %v", currentOutput, err)
-		}
-	}()
-
-	// Compare images
-	metrics, err := CompareImages(currentOutput, tc.ExpectedPath)
+	generator := NewChartGenerator(t.TempDir())
+	current, err := generator.GenerateChartSet(t, tc.Mode, tc.InputFile)
 	if err != nil {
-		t.Fatalf("Failed to compare images: %v", err)
+		t.Fatalf("Failed to generate %s: %v", tc.Description, err)
+	}
+	if setErr := validateArtifactSet(current, tc.Artifacts); setErr != nil {
+		t.Fatalf("%s artifact contract failed: %v", tc.Description, setErr)
 	}
 
-	// Generate detailed report
-	report := metrics.GetDetailedReport(tc.ValidationLevel)
-	t.Logf("Visual regression test results:\n%s", report)
+	for name, expectedPath := range tc.Artifacts {
+		currentPath := current[name]
+		if os.Getenv("UPDATE_VISUAL_GOLDENS") == "1" {
+			if mkdirErr := os.MkdirAll(filepath.Dir(expectedPath), 0o750); mkdirErr != nil {
+				t.Fatalf("create golden directory: %v", mkdirErr)
+			}
+			copyFile(t, currentPath, expectedPath)
+		}
 
-	// Check if validation passes
-	if !metrics.IsValidationPassing(tc.ValidationLevel) {
-		t.Errorf("Visual regression test failed for %s:\n%s\nDescription: %s",
-			tc.Name, report, tc.Description)
+		expected, readErr := os.ReadFile(expectedPath)
+		if readErr != nil {
+			t.Fatalf("required visual reference %s is unavailable: %v", expectedPath, readErr)
+		}
+		actual, readErr := os.ReadFile(currentPath)
+		if readErr != nil {
+			t.Fatalf("read generated artifact %s: %v", currentPath, readErr)
+		}
 
-		// Save difference image for manual inspection
-		saveDifferenceAnalysis(t, tc.Name, currentOutput, tc.ExpectedPath, metrics)
+		metrics, compareErr := CompareImages(currentPath, expectedPath)
+		if compareErr != nil {
+			t.Fatalf("Failed to compare %s: %v", name, compareErr)
+		}
+		report := metrics.GetDetailedReport(tc.ValidationLevel)
+		t.Logf("%s visual regression results:\n%s", name, report)
+
+		// PNG encoding is deterministic in the pure-Go CI build. Requiring the
+		// committed bytes makes label, palette, layout, and metadata changes
+		// intentional while the similarity report remains useful diagnostics.
+		if !bytes.Equal(actual, expected) {
+			t.Errorf("visual regression for %s (%s): generated PNG differs from committed golden\n%s",
+				tc.Name, name, report)
+			saveDifferenceAnalysis(t, tc.Name+"_"+name, currentPath, expectedPath, metrics)
+		}
 	}
+}
+
+func validateArtifactSet(actual, expected map[string]string) error {
+	var missing, unexpected []string
+	for name := range expected {
+		if _, ok := actual[name]; !ok {
+			missing = append(missing, name)
+		}
+	}
+	for name := range actual {
+		if _, ok := expected[name]; !ok {
+			unexpected = append(unexpected, name)
+		}
+	}
+	if len(missing) == 0 && len(unexpected) == 0 {
+		return nil
+	}
+	sort.Strings(missing)
+	sort.Strings(unexpected)
+	return fmt.Errorf("missing=%v unexpected=%v", missing, unexpected)
 }
 
 // runPythonCompatibilityTest executes compatibility test against Python reference.
@@ -216,8 +278,7 @@ func runPythonCompatibilityTest(t *testing.T, tc VisualTestCase) {
 	// Check if Python reference exists
 	_, err := os.Stat(tc.ExpectedPath)
 	if os.IsNotExist(err) {
-		t.Skipf("Python reference image not found: %s", tc.ExpectedPath)
-		return
+		t.Fatalf("required Python reference image not found: %s", tc.ExpectedPath)
 	}
 
 	// Compare with Python output

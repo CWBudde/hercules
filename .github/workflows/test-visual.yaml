@@ -1,0 +1,38 @@
+name: test-visual
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  visual-regression:
+    name: Visual regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CGO_ENABLED: "0"
+      GOFLAGS: -mod=mod
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Setup just
+        uses: extractions/setup-just@v2
+
+      - name: Compare required visual artifacts
+        run: just test-visual-gate
+
+      - name: Upload visual differences
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-regression-differences
+          path: test/visual/analysis_output/
+          if-no-files-found: ignore

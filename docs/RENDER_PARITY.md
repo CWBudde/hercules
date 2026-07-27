@@ -96,16 +96,24 @@ only sparse input plus row-sized working state in memory.
 In this repository:
 
 ```bash
-just test-visual          # structural visual tests, no references required
-just test-visual-parity   # golden + Python-reference parity suite
+just test-visual           # structural tests, no references required
+just test-visual-gate      # committed PR-gate goldens
+just test-visual-extended  # gate + historical Python references
 ```
 
-The parity suite (`test/visual/`, gated by `LABOURS_GO_VISUAL_PARITY=1` and
-`LABOURS_GO_PYTHON_PARITY=1`) compares in-process renders against the pre-baked Python
+The pull-request gate renders four required artifacts from the small committed fixtures:
+stacked and annotated time-area charts, a coupling heatmap, and a ranked bar chart. The
+pure-Go render is deterministic, so CI checks both the exact artifact set and PNG bytes;
+a missing golden is an error. Refreshes use `just update-visual-goldens` and should be
+reviewed as image changes.
+
+The extended suite additionally compares in-process renders against the pre-baked Python
 reference PNGs in `test/visual/reference/` (untracked; copied from the archived
 `labours-go` repo's `analysis_results/reference/python_*.png`). Its metric is a weighted
 Histogram-Intersection (0.4) + SSIM (0.4) + ColorRMS (0.2) score with Strict 0.95 /
-Standard 0.90 / Lenient 0.85 thresholds — see `test/visual/README.md`.
+Standard 0.90 / Lenient 0.85 thresholds. The manual `extended visual parity` workflow
+accepts a checksum-pinned `tar.gz` whose root contains `reference/*.png`; missing
+references fail rather than skip.
 
 Regenerating the RMSE matrix itself requires the archived `labours-go` repository, which
 hosts the `system-optimiser-core` fixture, the Python baseline PNGs, `cmd/parityviewer`,

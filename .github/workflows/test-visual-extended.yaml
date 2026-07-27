@@ -1,0 +1,58 @@
+name: extended visual parity
+
+on:
+  workflow_dispatch:
+    inputs:
+      references_url:
+        description: URL of a tar.gz containing reference/*.png
+        required: true
+        type: string
+      references_sha256:
+        description: SHA-256 of the reference archive
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  historical-parity:
+    name: Historical Python parity
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CGO_ENABLED: "0"
+      GOFLAGS: -mod=mod
+      VISUAL_REFERENCES_URL: ${{ inputs.references_url }}
+      VISUAL_REFERENCES_SHA256: ${{ inputs.references_sha256 }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Setup just
+        uses: extractions/setup-just@v2
+
+      - name: Fetch pinned historical references
+        run: |
+          curl --fail --location --silent --show-error \
+            "${VISUAL_REFERENCES_URL}" --output "${RUNNER_TEMP}/visual-references.tar.gz"
+          echo "${VISUAL_REFERENCES_SHA256}  ${RUNNER_TEMP}/visual-references.tar.gz" \
+            | sha256sum --check -
+          tar --extract --gzip --file "${RUNNER_TEMP}/visual-references.tar.gz" \
+            --directory test/visual
+
+      - name: Run full historical parity suite
+        run: just test-visual-extended
+
+      - name: Upload visual differences
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: extended-visual-parity-differences
+          path: test/visual/analysis_output/
+          if-no-files-found: ignore

@@ -773,12 +773,15 @@ type MatplotlibDevsEffortsOptions struct {
 	FontSize     float64
 }
 
-// PlotDevsEffortsMatplotlib renders the Python labours "Efforts through time"
-// chart: a dual mirror stackplot where smoothed cumulative efforts stack upward
-// and the negated, scaled instantaneous efforts stack downward over a shared
-// date x-axis. cumLayers and instLayers must share the same shape and the last
+// PlotDevsEffortsMatplotlib renders the "Efforts through time" chart as
+// non-negative cumulative effort layers over a shared date x-axis. The last
 // layer is the aggregated "others" series.
-func PlotDevsEffortsMatplotlib(dates []time.Time, cumLayers, instLayers [][]float64, labels []string, opts MatplotlibDevsEffortsOptions) error {
+func PlotDevsEffortsMatplotlib(
+	dates []time.Time,
+	cumLayers [][]float64,
+	labels []string,
+	opts MatplotlibDevsEffortsOptions,
+) error {
 	if len(dates) < 2 {
 		return fmt.Errorf("not enough dates to plot devs-efforts time series")
 	}
@@ -799,46 +802,21 @@ func PlotDevsEffortsMatplotlib(dates []time.Time, cumLayers, instLayers [][]floa
 	}
 	ax.SetTitle(opts.Title)
 
-	rows := len(cumLayers)
-	palette := tab20Palette()
-	// Python uses the axes color cycle, which advances through both stackplot
-	// calls, so the bottom (instantaneous) layers continue past the top ones.
-	topColors := make([]render.Color, rows)
-	bottomColors := make([]render.Color, rows)
-	for i := 0; i < rows; i++ {
-		topColors[i] = renderColor(palette[i%len(palette)])
-		bottomColors[i] = renderColor(palette[(rows+i)%len(palette)])
-	}
-
+	renderedLayers := nonNegativeEffortLayers(cumLayers)
 	edge := 0.0
 	alpha := 1.0
-	ax.StackPlot(x, cumLayers, core.StackPlotOptions{
-		Colors:    topColors,
+	ax.StackPlot(x, renderedLayers, core.StackPlotOptions{
+		Colors:    effortLayerColors(len(cumLayers)),
 		Labels:    labels,
-		EdgeWidth: &edge,
-		Alpha:     &alpha,
-	})
-	ax.StackPlot(x, instLayers, core.StackPlotOptions{
-		Colors:    bottomColors,
 		EdgeWidth: &edge,
 		Alpha:     &alpha,
 	})
 
 	ax.SetXLim(x[0], x[len(x)-1])
-	topMax := stackedSumMax(cumLayers)
-	bottomMin := stackedSumMin(instLayers)
-	if topMax <= 0 {
-		topMax = 1
-	}
-	span := topMax
-	if -bottomMin > span {
-		span = -bottomMin
-	}
-	ax.SetYLim(bottomMin-span*0.02, topMax+span*0.02)
 
-	// Python keeps only the non-negative y ticks (the mirrored lower half is
-	// unlabelled).
-	ConfigureLineCountYAxis(ax, topMax)
+	yRange := devsEffortsYRange(renderedLayers)
+	ax.SetYLim(yRange.AxisMin, yRange.AxisMax)
+	ConfigureLineCountYAxis(ax, yRange.DataMax)
 
 	ticks, tlabels := timeAxisDateTicks(dates, "")
 	if len(ticks) > 0 {
@@ -854,6 +832,57 @@ func PlotDevsEffortsMatplotlib(dates []time.Time, cumLayers, instLayers [][]floa
 	legend.NumColumns = 2
 
 	return saveMatplotlibFigure(fig, opts.Output, width, height)
+}
+
+func effortLayerColors(count int) []render.Color {
+	palette := tab20Palette()
+
+	colors := make([]render.Color, count)
+	for i := range colors {
+		colors[i] = renderColor(palette[i%len(palette)])
+	}
+
+	return colors
+}
+
+func nonNegativeEffortLayers(layers [][]float64) [][]float64 {
+	result := make([][]float64, len(layers))
+	for i, layer := range layers {
+		result[i] = make([]float64, len(layer))
+		for j, value := range layer {
+			if value >= 0 && !math.IsInf(value, 0) && !math.IsNaN(value) {
+				result[i][j] = value
+			}
+		}
+	}
+
+	return result
+}
+
+type devsEffortsRange struct {
+	DataMin float64
+	DataMax float64
+	AxisMin float64
+	AxisMax float64
+}
+
+// devsEffortsYRange returns both the rendered cumulative-stack extent and the
+// padded axis range derived from it. The baseline is always zero; a small top
+// margin keeps the highest polygon clear of the frame without reserving space
+// for data that is not rendered.
+func devsEffortsYRange(cumLayers [][]float64) devsEffortsRange {
+	dataMax := stackedSumMax(cumLayers)
+
+	if dataMax <= 0 || math.IsInf(dataMax, 0) || math.IsNaN(dataMax) {
+		dataMax = 1
+	}
+
+	return devsEffortsRange{
+		DataMin: 0,
+		DataMax: dataMax,
+		AxisMin: 0,
+		AxisMax: dataMax * 1.02,
+	}
 }
 
 type MatplotlibParallelCoordinatesSeries struct {
@@ -981,29 +1010,6 @@ func stackedSumMax(layers [][]float64) float64 {
 		return 0
 	}
 	return maxValue
-}
-
-// stackedSumMin returns the smallest column sum across stacked layers.
-func stackedSumMin(layers [][]float64) float64 {
-	if len(layers) == 0 || len(layers[0]) == 0 {
-		return 0
-	}
-	minValue := math.Inf(1)
-	for d := range layers[0] {
-		sum := 0.0
-		for _, row := range layers {
-			if d < len(row) {
-				sum += row[d]
-			}
-		}
-		if sum < minValue {
-			minValue = sum
-		}
-	}
-	if math.IsInf(minValue, 1) {
-		return 0
-	}
-	return minValue
 }
 
 // nonNegativeNiceTicks produces 1-2-5 rounded ticks from 0 up to maxValue.

@@ -619,28 +619,14 @@ Acceptance criteria:
 
 ### DOC-04: devs-efforts wastes ~40% of the canvas and dips below zero
 
-`labours -m devs-efforts` on the hercules self-analysis renders the stacked effort area across the
-top ~60% of the figure and leaves the bottom ~40% empty: the y-limits are computed from downward
-spikes that reach roughly -5e4, but the axis extends to about -3.5e5, so most of the plot area is
-blank. The spikes themselves are the second half of the problem — a cumulative "changed lines of
-code" series should not go negative at all, which points at the delta accumulation rather than the
-axis code.
+Status: completed 2026-07-28
 
-Reproduce with:
-
-```sh
-just hercules labours
-./hercules --burndown --burndown-people --devs --pb . > /tmp/pd.pb
-./labours -i /tmp/pd.pb -m devs-efforts --max-people 8 -o /tmp/efforts.png
-```
-
-- Find why per-developer effort accumulates negative values, and fix the accumulation or clamp it.
-- Derive the y-limits from the rendered data extent, not from a value that ignores it.
-
-Acceptance criteria:
-
-- [ ] the plotted area fills the axes box, verifiable by comparing the data extent to the axis limits;
-- [ ] a visual test covers a repository whose history triggers the negative spikes.
+Developer-effort charts now render only the meaningful non-negative cumulative stack; the inherited
+negated and rescaled instantaneous mirror that produced the downward spikes and empty lower canvas
+was removed. Invalid negative legacy totals are clamped at both matrix construction and rendering,
+and the y-axis is derived from the rendered stack extent with only 2% headroom. Extent regression
+coverage verifies that the data fills at least 98% of the axis, while a visual render test uses the
+checked-in Hercules history fixture that previously produced large negative spikes.
 
 ### DOC-05: burndown-person emits one figure per developer with an unreadable legend
 

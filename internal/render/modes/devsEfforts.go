@@ -13,11 +13,11 @@ import (
 	"github.com/cwbudde/hercules/internal/render/readers"
 )
 
-// DevsEfforts generates the Python labours "Efforts through time" chart: a dual
-// mirror stackplot of cumulative versus instantaneous changed lines of code per
-// developer over time. When per-day time series are unavailable it falls back
-// to a commits-vs-lines scatter. With detail set it also renders the Go-only
-// productivity ranking chart as a sibling of the requested output path.
+// DevsEfforts generates the "Efforts through time" chart: a stackplot of
+// cumulative changed lines of code per developer over time. When per-day time
+// series are unavailable it falls back to a commits-vs-lines scatter. With
+// detail set it also renders the Go-only productivity ranking chart as a
+// sibling of the requested output path.
 func DevsEfforts(reader readers.Reader, output string, maxPeople int, detail bool) error {
 	opts := defaultOptions()
 	opts.MaxPeople, opts.DevsEffortsDetail = maxPeople, detail
@@ -233,18 +233,17 @@ func plotProductivityRanking(metrics []EffortMetric, output string, visuals grap
 	return nil
 }
 
-// devEffortsMatrix holds the smoothed cumulative and mirrored instantaneous
-// effort layers used by the Python-parity "Efforts through time" stackplot.
+// devEffortsMatrix holds the smoothed cumulative effort layers used by the
+// "Efforts through time" stackplot.
 type devEffortsMatrix struct {
-	Dates      []time.Time
-	Names      []string    // chosen developers in effort order, then "others"
-	CumLayers  [][]float64 // smoothed cumulative efforts (stacked upward)
-	InstLayers [][]float64 // negated, scaled instantaneous efforts (stacked downward)
+	Dates     []time.Time
+	Names     []string    // chosen developers in effort order, then "others"
+	CumLayers [][]float64 // smoothed cumulative efforts (stacked upward)
 }
 
-// buildDevEffortsMatrix mirrors Python labours' show_devs_efforts data pipeline:
-// per-day changed-lines per developer, top-N selection by total effort with an
-// aggregated "others" row, cumulative sums, and Slepian/DPSS smoothing.
+// buildDevEffortsMatrix builds per-day changed-lines per developer, selects the
+// top contributors by total effort with an aggregated "others" row, computes
+// cumulative sums, and applies Slepian/DPSS smoothing.
 func buildDevEffortsMatrix(ts *readers.DeveloperTimeSeriesData, startUnix, endUnix int64, maxPeople int, quiet bool) (devEffortsMatrix, error) {
 	start := dateOnly(time.Unix(startUnix, 0))
 	end := dateOnly(time.Unix(endUnix, 0))
@@ -256,7 +255,7 @@ func buildDevEffortsMatrix(ts *readers.DeveloperTimeSeriesData, startUnix, endUn
 	effortsByDev := make(map[int]int)
 	for _, devs := range ts.Days {
 		for dev, stats := range devs {
-			effortsByDev[dev] += stats.LinesAdded + stats.LinesRemoved + stats.LinesModified
+			effortsByDev[dev] += nonNegativeDevEffort(stats)
 		}
 	}
 	if len(effortsByDev) == 0 {
@@ -306,7 +305,8 @@ func buildDevEffortsMatrix(ts *readers.DeveloperTimeSeriesData, startUnix, endUn
 			if !ok {
 				row = othersRow
 			}
-			efforts[row][day] += float64(stats.LinesAdded + stats.LinesRemoved + stats.LinesModified)
+
+			efforts[row][day] += float64(nonNegativeDevEffort(stats))
 		}
 	}
 
@@ -326,22 +326,7 @@ func buildDevEffortsMatrix(ts *readers.DeveloperTimeSeriesData, startUnix, endUn
 			window[i] /= sum
 		}
 	}
-	smoothRowsPreserveTail(efforts, window)
 	smoothRowsPreserveTail(cumulative, window)
-
-	cumMax := matrixMaxFloat64(cumulative)
-	effMax := matrixMaxFloat64(efforts)
-	scale := 0.0
-	if effMax != 0 {
-		scale = cumMax / effMax
-	}
-	instantaneous := make([][]float64, rows)
-	for i := range efforts {
-		instantaneous[i] = make([]float64, numDays)
-		for d := range efforts[i] {
-			instantaneous[i][d] = -efforts[i][d] * scale
-		}
-	}
 
 	names := make([]string, 0, rows)
 	for _, item := range chosen {
@@ -368,21 +353,37 @@ func buildDevEffortsMatrix(ts *readers.DeveloperTimeSeriesData, startUnix, endUn
 		dates[i] = start.AddDate(0, 0, i)
 	}
 
-	return devEffortsMatrix{Dates: dates, Names: names, CumLayers: cumulative, InstLayers: instantaneous}, nil
+	return devEffortsMatrix{Dates: dates, Names: names, CumLayers: cumulative}, nil
 }
 
-// plotDevEffortsTimeSeries renders the dual mirror stackplot at the requested path.
+func nonNegativeDevEffort(stats readers.DevDay) int {
+	effort := stats.LinesAdded + stats.LinesRemoved + stats.LinesModified
+	if effort < 0 {
+		return 0
+	}
+
+	return effort
+}
+
+// plotDevEffortsTimeSeries renders the cumulative stackplot at the requested path.
 func plotDevEffortsTimeSeries(data devEffortsMatrix, output string, visuals graphics.Options) error {
 	if output == "" {
 		output = "devs-efforts.png"
 	}
-	if err := graphics.PlotDevsEffortsMatplotlib(data.Dates, data.CumLayers, data.InstLayers, data.Names, graphics.MatplotlibDevsEffortsOptions{
-		Title:        "Efforts through time (changed lines of code)",
-		Output:       output,
-		WidthInches:  16,
-		HeightInches: 10,
-		FontSize:     visuals.PlotFontSize(),
-	}); err != nil {
+
+	err := graphics.PlotDevsEffortsMatplotlib(
+		data.Dates,
+		data.CumLayers,
+		data.Names,
+		graphics.MatplotlibDevsEffortsOptions{
+			Title:        "Efforts through time (changed lines of code)",
+			Output:       output,
+			WidthInches:  16,
+			HeightInches: 10,
+			FontSize:     visuals.PlotFontSize(),
+		},
+	)
+	if err != nil {
 		return err
 	}
 	fmt.Printf("Saved devs-efforts plot to %s\n", output)
@@ -507,19 +508,4 @@ func sumFloat64(values []float64) float64 {
 		total += v
 	}
 	return total
-}
-
-func matrixMaxFloat64(matrix [][]float64) float64 {
-	maxValue := math.Inf(-1)
-	for _, row := range matrix {
-		for _, v := range row {
-			if v > maxValue {
-				maxValue = v
-			}
-		}
-	}
-	if math.IsInf(maxValue, -1) {
-		return 0
-	}
-	return maxValue
 }

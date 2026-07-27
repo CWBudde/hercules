@@ -600,9 +600,9 @@ hercules --devs [--people-dict=/path/to/identities]
 labours -m devs-efforts -o <name>
 ```
 
-Besides, `--devs` allows to plot how many lines have been changed (added or removed) by each developer.
-The upper part of the plot is an accumulated (integrated) lower part. It is impossible to have the same scale
-for both parts, so the lower values are scaled, and hence there are no lower Y axis ticks.
+Besides, `--devs` allows to plot how many lines have been changed (added, removed, or modified) by each
+developer. The plot stacks each developer's cumulative effort over time. Invalid negative daily totals in
+legacy input are treated as zero, so cumulative effort and the chart's Y axis remain non-negative.
 There is a difference between the efforts plot and the ownership plot, although changing lines correlate
 with owning lines.
 

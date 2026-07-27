@@ -12,7 +12,7 @@ jobs:
       - name: Hercules Analysis
         uses: ./
         with:
-          args-json: '["--burndown","--burndown-people","--devs","--couples","--temporal-activity"]'
+          args-json: '["--first-parent","--burndown","--burndown-people","--devs","--couples","--temporal-activity"]'
           output: "analysis ü.yml"
           generate-charts: "true"
           labours-mode: "all"

@@ -39,7 +39,7 @@
     }
   },
   "peopleCooccurrence": {
-    "items": 5,
+    "items": 6,
     "matrix": {
       "rows": 6,
       "cols": 6,

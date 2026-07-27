@@ -230,7 +230,13 @@ func (r *ProtobufReader) GetPeopleCooccurrence() ([]string, SparseMatrix, error)
 	if err != nil {
 		return nil, SparseMatrix{}, fmt.Errorf("%w: people coupling: %w", ErrAnalysisMalformed, err)
 	}
-	return couplesData.PeopleCouples.Index, matrix, nil
+
+	index, err := alignCouplingLabels(couplesData.GetPeopleCouples().GetIndex(), matrix, true)
+	if err != nil {
+		return nil, SparseMatrix{}, fmt.Errorf("%w: people coupling: %w", ErrAnalysisMalformed, err)
+	}
+
+	return index, matrix, nil
 }
 
 // GetShotnessCooccurrence retrieves shotness coupling data

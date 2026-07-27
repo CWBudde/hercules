@@ -137,7 +137,8 @@ func (r *YamlReader) GetOwnershipBurndown() ([]string, map[string][][]int, error
 	if !ok {
 		return nil, nil, fmt.Errorf("%w: Burndown", ErrAnalysisMissing)
 	}
-	peopleSequence, ok := burndownData["people_sequence"].([]string)
+
+	peopleSequence, ok := stringSlice(burndownData["people_sequence"])
 	if !ok {
 		return nil, nil, fmt.Errorf("%w: people sequence", ErrAnalysisMissing)
 	}
@@ -168,7 +169,8 @@ func (r *YamlReader) GetPeopleInteraction() ([]string, [][]int, error) {
 	if !ok {
 		return nil, nil, fmt.Errorf("%w: Burndown", ErrAnalysisMissing)
 	}
-	peopleSequence, ok := burndownData["people_sequence"].([]string)
+
+	peopleSequence, ok := stringSlice(burndownData["people_sequence"])
 	if !ok {
 		return nil, nil, fmt.Errorf("%w: people sequence", ErrAnalysisMissing)
 	}
@@ -182,15 +184,19 @@ func (r *YamlReader) GetPeopleInteraction() ([]string, [][]int, error) {
 }
 
 func (r *YamlReader) GetFileCooccurrence() ([]string, SparseMatrix, error) {
-	return r.getCouplesCooccurrence("files_coocc", "file_couples_index", "file_couples_matrix")
+	return r.getCouplesCooccurrence(
+		"files_coocc", "file_couples_index", "file_couples_matrix", false,
+	)
 }
 
 func (r *YamlReader) GetPeopleCooccurrence() ([]string, SparseMatrix, error) {
-	return r.getCouplesCooccurrence("people_coocc", "people_couples_index", "people_couples_matrix")
+	return r.getCouplesCooccurrence(
+		"people_coocc", "people_couples_index", "people_couples_matrix", true,
+	)
 }
 
 func (r *YamlReader) getCouplesCooccurrence(
-	nestedKey, flatIndexKey, flatMatrixKey string,
+	nestedKey, flatIndexKey, flatMatrixKey string, allowUnknown bool,
 ) ([]string, SparseMatrix, error) {
 	couplesData, ok := r.data["Couples"].(map[string]interface{})
 	if !ok {
@@ -198,10 +204,10 @@ func (r *YamlReader) getCouplesCooccurrence(
 	}
 
 	if nested, exists := couplesData[nestedKey].(map[string]interface{}); exists {
-		return parseNestedCooccurrence(nested, r.Limits)
+		return parseNestedCooccurrence(nested, r.Limits, allowUnknown)
 	}
 
-	index, ok := couplesData[flatIndexKey].([]string)
+	index, ok := stringSlice(couplesData[flatIndexKey])
 	if !ok {
 		return nil, SparseMatrix{}, fmt.Errorf("%w: %s", ErrAnalysisMissing, flatIndexKey)
 	}
@@ -216,24 +222,19 @@ func (r *YamlReader) getCouplesCooccurrence(
 	if err != nil {
 		return nil, SparseMatrix{}, err
 	}
+
+	index, err = alignCouplingLabels(index, matrix, allowUnknown)
+	if err != nil {
+		return nil, SparseMatrix{}, err
+	}
+
 	return index, matrix, nil
 }
 
 func parseNestedCooccurrence(
-	data map[string]interface{}, limits analysisio.Limits,
+	data map[string]any, limits analysisio.Limits, allowUnknown bool,
 ) ([]string, SparseMatrix, error) {
-	index, indexOk := data["index"].([]string)
-	if !indexOk {
-		if indexIntf, ok := data["index"].([]interface{}); ok {
-			index = make([]string, len(indexIntf))
-			for i, v := range indexIntf {
-				if str, ok := v.(string); ok {
-					index[i] = str
-				}
-			}
-			indexOk = true
-		}
-	}
+	index, indexOk := stringSlice(data["index"])
 	if !indexOk {
 		return nil, SparseMatrix{}, fmt.Errorf("%w: coupling index", ErrAnalysisMalformed)
 	}
@@ -244,9 +245,19 @@ func parseNestedCooccurrence(
 		if err != nil {
 			return nil, SparseMatrix{}, err
 		}
+
+		index, err = alignCouplingLabels(index, matrix, allowUnknown)
+		if err != nil {
+			return nil, SparseMatrix{}, err
+		}
+
 		return index, matrix, nil
 	}
 	if matrixData, ok := data["matrix"].([]interface{}); ok {
+		if allowUnknown && len(matrixData) == len(index)+1 {
+			index = append(index, "unknown")
+		}
+
 		matrix, err := parseSparseCooccurrenceRows(matrixData, len(index), limits)
 		if err != nil {
 			return nil, SparseMatrix{}, err
@@ -254,6 +265,44 @@ func parseNestedCooccurrence(
 		return index, matrix, nil
 	}
 	return nil, SparseMatrix{}, fmt.Errorf("%w: coupling matrix", ErrAnalysisMalformed)
+}
+
+func stringSlice(value any) ([]string, bool) {
+	switch values := value.(type) {
+	case []string:
+		return append([]string(nil), values...), true
+	case []any:
+		result := make([]string, len(values))
+		for index, value := range values {
+			text, ok := value.(string)
+			if !ok {
+				return nil, false
+			}
+
+			result[index] = text
+		}
+
+		return result, true
+	default:
+		return nil, false
+	}
+}
+
+func alignCouplingLabels(
+	labels []string, matrix SparseMatrix, allowUnknown bool,
+) ([]string, error) {
+	if matrix.Rows == len(labels) && matrix.Columns == len(labels) {
+		return labels, nil
+	}
+
+	if allowUnknown && matrix.Rows == len(labels)+1 && matrix.Columns == len(labels)+1 {
+		return append(labels, "unknown"), nil
+	}
+
+	return nil, fmt.Errorf(
+		"%w: coupling matrix is %dx%d for %d labels",
+		ErrAnalysisMalformed, matrix.Rows, matrix.Columns, len(labels),
+	)
 }
 
 func (r *YamlReader) GetShotnessCooccurrence() ([]string, SparseMatrix, error) {

@@ -161,6 +161,55 @@ func testMatrixFormatSelection(t *testing.T, testFile string) {
 	})
 }
 
+const (
+	yamlTestAlice = "alice"
+	yamlTestBob   = "bob"
+)
+
+func TestYamlReaderAcceptsGenericPeopleSequences(t *testing.T) {
+	reader := &YamlReader{data: map[string]any{
+		"Burndown": map[string]any{
+			"people_sequence": []any{yamlTestAlice, yamlTestBob},
+			"people": map[string]any{
+				yamlTestAlice: "1 0\n1 1",
+				yamlTestBob:   "0 1\n0 1",
+			},
+			"people_interaction": "1 0 0 0\n1 0 0 0",
+		},
+	}}
+
+	people, ownership, err := reader.GetOwnershipBurndown()
+	require.NoError(t, err)
+	assert.Equal(t, []string{yamlTestAlice, yamlTestBob}, people)
+	assert.Len(t, ownership, 2)
+
+	people, interaction, err := reader.GetPeopleInteraction()
+	require.NoError(t, err)
+	assert.Equal(t, []string{yamlTestAlice, yamlTestBob}, people)
+	assert.Len(t, interaction, 2)
+}
+
+func TestYamlReaderLabelsUnknownPeopleCouplingRow(t *testing.T) {
+	reader := &YamlReader{data: map[string]any{
+		"Couples": map[string]any{
+			"people_coocc": map[string]any{
+				"index": []any{yamlTestAlice},
+				"matrix": []any{
+					map[string]any{"0": 3, "1": 2},
+					map[string]any{"0": 2, "1": 4},
+				},
+			},
+		},
+	}}
+
+	people, matrix, err := reader.GetPeopleCooccurrence()
+	require.NoError(t, err)
+	assert.Equal(t, []string{yamlTestAlice, "unknown"}, people)
+	assert.Equal(t, 2, matrix.Rows)
+	assert.Equal(t, 2, matrix.Columns)
+	assert.Equal(t, 4, matrix.At(1, 1))
+}
+
 // verifyBurndownFormatSelection checks that burndown data uses correct matrix format
 func verifyBurndownFormatSelection(t *testing.T, data []byte) {
 	var burndownData pb.BurndownAnalysisResults

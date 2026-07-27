@@ -97,8 +97,8 @@ report REPO OUTPUT="./report": hercules
 # currently have no effect anyway, because BurndownAnalysis.Initialize() forces
 # both back to the default of 30 — which is what this chart wants, so the recipe
 # is reproducible as it stands. The giant docs/linux.svg example is excluded
-# because it dwarfs the real history. The chart title is blanked out when
-# ImageMagick is available, since the page embedding it carries its own caption.
+# because it dwarfs the real history. The title is suppressed because the page
+# embedding the chart carries its own caption.
 #
 # Regenerate the self-analysis burndown chart (hercules replaying its own history)
 burndown-chart RESAMPLE="3M" GRANULARITY="30" SAMPLING="30" OUTPUT="self-analysis/hercules-burndown.png": hercules labours
@@ -109,15 +109,7 @@ burndown-chart RESAMPLE="3M" GRANULARITY="30" SAMPLING="30" OUTPUT="self-analysi
     ./hercules{{exe}} --burndown --granularity {{GRANULARITY}} --sampling {{SAMPLING}} \
         --skip-blacklist --blacklisted-prefixes docs/linux.svg --pb . > "$dir/burndown.pb"
     ./labours{{exe}} -i "$dir/burndown.pb" -m burndown-project \
-        --resample "{{RESAMPLE}}" -q -o "{{OUTPUT}}"
-    if command -v convert >/dev/null 2>&1; then
-        # Blank out the centred chart title only. Do NOT crop the top band away:
-        # it also carries the y-axis magnitude ("1e4"), whose loss made the
-        # published chart read as single-digit line counts. See PLAN.md DOC-02.
-        convert "{{OUTPUT}}" -fill white -draw "rectangle 300,0 1350,35" "{{OUTPUT}}"
-    else
-        echo "note: ImageMagick 'convert' not found, chart title left in place"
-    fi
+        --resample "{{RESAMPLE}}" --no-burndown-title -q -o "{{OUTPUT}}"
     echo "chart written to {{OUTPUT}}"
 
 # The per-developer counterpart to burndown-chart: the same surviving lines of

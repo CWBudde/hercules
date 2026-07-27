@@ -389,7 +389,7 @@ func plotOwnershipBurndown(
 		),
 	)
 	// The padding is a fraction of the figure, so it has to leave room for the
-	// widest y tick label ("80000") and for rotated date labels at the smallest
+	// widest y tick label ("100000") and for rotated date labels at the smallest
 	// figure size anyone renders. The previous 0.032/0.033 left ~50px and ~33px:
 	// enough at no size, so y labels were cut to "0000" and the rotated x labels
 	// vanished entirely below the axes. The right edge needs slack too, because a
@@ -399,7 +399,9 @@ func plotOwnershipBurndown(
 		return fmt.Errorf("failed to create ownership axes")
 	}
 	ax := grid[0][0]
-	ax.SetTitle(ownershipChartTitle(repoName))
+	if !opts.Graphics.HideTitle {
+		ax.SetTitle(ownershipChartTitle(repoName))
+	}
 	colors := graphics.PythonLaboursColorPalette(len(matrix))
 	renderColors := make([]render.Color, len(colors))
 	for i, color := range colors {
@@ -419,7 +421,9 @@ func plotOwnershipBurndown(
 	if opts.Relative {
 		ax.SetYLim(0, 1)
 	} else {
-		ax.SetYLim(0, math.Max(maxOwnershipStackY(matrix)*1.05, 1))
+		yMax := math.Max(maxOwnershipStackY(matrix)*1.05, 1)
+		ax.SetYLim(0, yMax)
+		graphics.ConfigureLineCountYAxis(ax, yMax)
 	}
 	configureOwnershipTimeAxis(ax, dateRange)
 	legend := ax.AddLegend()

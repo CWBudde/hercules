@@ -105,11 +105,8 @@ func TestPlotBurndownMatplotlibUsesBackends(t *testing.T) {
 	}
 }
 
-func TestBurndownYAxisTicksUseScientificScale(t *testing.T) {
-	ticks, labels, offset := burndownYAxisTicks(25800)
-	if offset != "1e4" {
-		t.Fatalf("offset = %q, want 1e4", offset)
-	}
+func TestLineCountYAxisTicksContainFullMagnitude(t *testing.T) {
+	ticks, labels := lineCountYAxisTicks(25800 * 1.05)
 	wantTicks := []float64{0, 5000, 10000, 15000, 20000, 25000}
 	if len(ticks) != len(wantTicks) {
 		t.Fatalf("ticks = %v, want %v", ticks, wantTicks)
@@ -119,20 +116,58 @@ func TestBurndownYAxisTicksUseScientificScale(t *testing.T) {
 			t.Fatalf("ticks = %v, want %v", ticks, wantTicks)
 		}
 	}
-	wantLabels := []string{"0", "0.5", "1", "1.5", "2", "2.5"}
+	wantLabels := []string{"0", "5000", "10000", "15000", "20000", "25000"}
 	if strings.Join(labels, ",") != strings.Join(wantLabels, ",") {
 		t.Fatalf("labels = %v, want %v", labels, wantLabels)
 	}
 
-	ticks, labels, offset = burndownYAxisTicks(6800)
-	if offset != "1e3" {
-		t.Fatalf("offset = %q, want 1e3", offset)
-	}
-	if got, want := ticks[len(ticks)-1], 7000.0; got != want {
+	ticks, labels = lineCountYAxisTicks(6800 * 1.05)
+	if got, want := ticks[len(ticks)-1], 6000.0; got != want {
 		t.Fatalf("last tick = %v, want %v", got, want)
 	}
-	if got, want := labels[len(labels)-1], "7"; got != want {
+	if got, want := labels[len(labels)-1], "6000"; got != want {
 		t.Fatalf("last label = %q, want %q", got, want)
+	}
+}
+
+func TestPlotBurndownLargeValuesKeepsMagnitudeOnAxis(t *testing.T) {
+	data := &burndown.ProcessedBurndown{
+		Name: "large",
+		Matrix: [][]float64{
+			{92000, 90000, 88000},
+			{4000, 5000, 6000},
+		},
+		DateRange: []time.Time{
+			time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+			time.Date(2024, 2, 1, 0, 0, 0, 0, time.UTC),
+			time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC),
+		},
+		Labels:       []string{"old", "new"},
+		Granularity:  30,
+		Sampling:     30,
+		ResampleMode: "month",
+	}
+
+	output := filepath.Join(t.TempDir(), "burndown.svg")
+	err := PlotBurndownMatplotlibWithOptions(
+		data, output, false, Options{Size: "16,10", HideTitle: true},
+	)
+	if err != nil {
+		t.Fatalf("plot large burndown: %v", err)
+	}
+	svgBytes, err := os.ReadFile(output) // #nosec G304 - test path is under t.TempDir.
+	if err != nil {
+		t.Fatalf("read large burndown SVG: %v", err)
+	}
+	svg := string(svgBytes)
+	if !strings.Contains(svg, ">80000</text>") {
+		t.Fatalf("large burndown SVG does not contain a full-magnitude y tick")
+	}
+	if strings.Contains(svg, ">1e5</text>") || strings.Contains(svg, ">1e4</text>") {
+		t.Fatalf("large burndown SVG contains detached scientific offset text")
+	}
+	if strings.Contains(svg, ">large 2 x 3 (granularity 30, sampling 30)</text>") {
+		t.Fatalf("large burndown SVG contains a title despite HideTitle")
 	}
 }
 

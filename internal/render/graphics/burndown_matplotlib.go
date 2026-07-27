@@ -66,15 +66,21 @@ func PlotStackedBurndownMatplotlibWithOptions(
 		yLabel = "Relative Fraction"
 	}
 
+	title := "Burndown Chart"
+	if opts.HideTitle {
+		title = ""
+	}
+
 	return PlotTimeAreasMatplotlib(dateRange, series, MatplotlibTimeAreaOptions{
-		Title:    "Burndown Chart",
-		XLabel:   "Time",
-		YLabel:   yLabel,
-		Output:   output,
-		Stacked:  true,
-		ShowGrid: true,
-		Legend:   true,
-		FontSize: opts.PlotFontSize(),
+		Title:            title,
+		XLabel:           "Time",
+		YLabel:           yLabel,
+		Output:           output,
+		Stacked:          true,
+		FullNumberYTicks: !relative,
+		ShowGrid:         true,
+		Legend:           true,
+		FontSize:         opts.PlotFontSize(),
 	})
 }
 
@@ -158,8 +164,11 @@ func PlotBurndownMatplotlibWithOptions(
 	if ax == nil {
 		return fmt.Errorf("failed to create burndown axes")
 	}
-	ax.SetTitle(fmt.Sprintf("%s %d x %d (granularity %d, sampling %d)",
-		data.Name, len(data.Matrix), len(data.DateRange), data.Granularity, data.Sampling))
+
+	if !opts.HideTitle {
+		ax.SetTitle(fmt.Sprintf("%s %d x %d (granularity %d, sampling %d)",
+			data.Name, len(data.Matrix), len(data.DateRange), data.Granularity, data.Sampling))
+	}
 	ax.SetXLabel("Time")
 	ax.SetYLabel("Lines of code")
 	plotMatrix := matrix
@@ -177,7 +186,7 @@ func PlotBurndownMatplotlibWithOptions(
 	if relative {
 		ax.SetYLim(0, 1)
 	} else {
-		configureMatplotlibBurndownYAxis(fig, ax, matrix, fontSize, foreground)
+		configureMatplotlibBurndownYAxis(ax, matrix)
 	}
 	configureMatplotlibBurndownTimeAxis(ax, data.DateRange, data.ResampleMode)
 
@@ -194,7 +203,10 @@ func pythonBurndownAxesPadding(matrix [][]float64, relative bool) (left, right, 
 	left = 0.036
 	if relative {
 		left = 0.045
-	} else if maxStackY(matrix) < 1000 {
+	} else if maxStackY(matrix) >= 1000 {
+		// Full line-count labels need more room than the old scaled labels.
+		left = 0.075
+	} else {
 		left = 0.041
 	}
 	return left, 0.991, 0.049, 0.968
@@ -232,77 +244,17 @@ func clippedStackMatrix(matrix [][]float64, minY, maxY float64) [][]float64 {
 	return clipped
 }
 
-func configureMatplotlibBurndownYAxis(fig *core.Figure, ax *core.Axes, matrix [][]float64, fontSize float64, foreground render.Color) {
+func configureMatplotlibBurndownYAxis(axes *core.Axes, matrix [][]float64) {
 	maxY := maxStackY(matrix)
 	if maxY <= 0 {
-		ax.SetYLim(0, 1)
+		axes.SetYLim(0, 1)
+
 		return
 	}
-	ax.SetYLim(0, maxY*1.05)
 
-	ticks, labels, offset := burndownYAxisTicks(maxY)
-	if len(ticks) == 0 {
-		return
-	}
-	ax.YAxis.Locator = core.FixedLocator{TicksList: ticks}
-	ax.YAxis.Formatter = core.FixedFormatter{Labels: labels}
-	clipOff := false
-	fig.Text(0.036, 0.985, offset, core.TextOptions{
-		FontSize: fontSize,
-		Color:    foreground,
-		ClipOn:   &clipOff,
-	})
-}
-
-func burndownYAxisTicks(maxY float64) ([]float64, []string, string) {
-	if maxY < 1000 {
-		return nil, nil, ""
-	}
-
-	exponent := int(math.Floor(math.Log10(maxY)))
-	scale := math.Pow10(exponent)
-	scaledTop := maxY * 1.05 / scale
-	step := niceBurndownTickStep(scaledTop)
-	if step <= 0 {
-		return nil, nil, ""
-	}
-	count := int(math.Floor(scaledTop/step + 1e-9))
-	if count < 1 {
-		count = 1
-	}
-
-	ticks := make([]float64, 0, count+1)
-	labels := make([]string, 0, count+1)
-	for i := 0; i <= count; i++ {
-		scaled := float64(i) * step
-		ticks = append(ticks, scaled*scale)
-		labels = append(labels, formatBurndownScaledTick(scaled))
-	}
-	return ticks, labels, fmt.Sprintf("1e%d", exponent)
-}
-
-func niceBurndownTickStep(scaledTop float64) float64 {
-	if scaledTop <= 0 {
-		return 0
-	}
-	raw := scaledTop / 8
-	base := math.Pow10(int(math.Floor(math.Log10(raw))))
-	for _, multiplier := range []float64{1, 2, 2.5, 5, 10} {
-		step := multiplier * base
-		if raw <= step {
-			return step
-		}
-	}
-	return 10 * base
-}
-
-func formatBurndownScaledTick(value float64) string {
-	if math.Abs(value-math.Round(value)) < 1e-9 {
-		return fmt.Sprintf("%.0f", math.Round(value))
-	}
-	label := fmt.Sprintf("%.3f", value)
-	label = strings.TrimRight(label, "0")
-	return strings.TrimRight(label, ".")
+	yMax := maxY * 1.05
+	axes.SetYLim(0, yMax)
+	ConfigureLineCountYAxis(axes, yMax)
 }
 
 func maxStackY(matrix [][]float64) float64 {

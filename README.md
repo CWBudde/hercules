@@ -803,11 +803,12 @@ parity matrix and how to re-run it are documented in
 `--relative` is effective in burndown charts only:
 
 ```
-labours [--font-size N] [--relative]
+labours [--font-size N] [--relative] [--no-burndown-title]
 ```
 
 `--font-size` changes label and legend size for all charts; `--relative` activates the stretched
-burndown layout.
+burndown layout; `--no-burndown-title` suppresses the title on burndown and ownership charts
+without cropping or post-processing the rendered image.
 
 ### Custom plotting backend
 

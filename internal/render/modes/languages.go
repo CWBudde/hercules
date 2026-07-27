@@ -13,6 +13,8 @@ import (
 	"github.com/cwbudde/hercules/internal/render/readers"
 )
 
+const timeAxisLabel = "Time"
+
 // Languages generates language statistics and visualization showing the distribution
 // of programming languages used in the repository.
 func Languages(reader readers.Reader, output string) error {
@@ -95,20 +97,21 @@ func plotLanguageEvolutionWithOptions(
 
 	for _, outputPath := range outputs {
 		if err := graphics.PlotTimeAreasMatplotlib(data.Dates, series, graphics.MatplotlibTimeAreaOptions{
-			Title:        fmt.Sprintf("Language Evolution Over Time\n(Total: %s lines)", formatFloatWithCommas(data.Total)),
-			XLabel:       "Time",
-			YLabel:       "Lines of Code",
-			Output:       outputPath,
-			WidthInches:  16,
-			HeightInches: 12,
-			Stacked:      true,
-			Legend:       true,
-			LegendLeft:   true,
-			LegendTop:    true,
-			YMin:         0,
-			YMax:         math.Max(data.Total*1.05, 1),
-			ShowGrid:     false,
-			FontSize:     opts.PlotFontSize(),
+			Title:            fmt.Sprintf("Language Evolution Over Time\n(Total: %s lines)", formatFloatWithCommas(data.Total)),
+			XLabel:           timeAxisLabel,
+			YLabel:           "Lines of Code",
+			Output:           outputPath,
+			WidthInches:      16,
+			HeightInches:     12,
+			Stacked:          true,
+			FullNumberYTicks: true,
+			Legend:           true,
+			LegendLeft:       true,
+			LegendTop:        true,
+			YMin:             0,
+			YMax:             math.Max(data.Total*1.05, 1),
+			ShowGrid:         false,
+			FontSize:         opts.PlotFontSize(),
 		}); err != nil {
 			return err
 		}

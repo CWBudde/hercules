@@ -40,6 +40,7 @@ func initializeFlags() {
 	rootCmd.PersistentFlags().String("backend", "", "Matplotlib backend")
 	rootCmd.PersistentFlags().String("background", "white", "Plot's general color scheme")
 	rootCmd.PersistentFlags().String("size", "", "Axes' size in inches, e.g. \"12,9\"")
+	rootCmd.PersistentFlags().Bool("no-burndown-title", false, "Suppress titles on burndown and ownership charts")
 	rootCmd.PersistentFlags().Bool("relative", false, "Occupy 100% height for every measurement")
 	rootCmd.PersistentFlags().String("tmpdir", "", "Temporary directory for intermediate files")
 	rootCmd.PersistentFlags().StringSliceP("modes", "m", []string{}, "What to plot, can be repeated")
@@ -225,6 +226,7 @@ func renderOptionsFromViper(themeName string) (render.Options, error) {
 	opts.FontSize = viper.GetInt("font-size")
 	opts.Size = viper.GetString("size")
 	opts.TempDir = viper.GetString("tmpdir")
+	opts.NoBurndownTitle = viper.GetBool("no-burndown-title")
 	opts.TemporalLegendThreshold = viper.GetInt("temporal-legend-threshold")
 	if opts.TemporalLegendThreshold == 0 {
 		opts.TemporalLegendThreshold = -1

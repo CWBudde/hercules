@@ -5,6 +5,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -484,6 +485,36 @@ func TestPlotOwnershipBurndownKeepsTickLabelsInsideCanvas(t *testing.T) {
 	}
 	if got := inked(0, height-2, width, height); got != 0 {
 		t.Errorf("%d dark pixels touch the bottom canvas edge: x tick labels are cut off", got)
+	}
+}
+
+func TestPlotOwnershipBurndownLargeValuesKeepsMagnitudeOnAxis(t *testing.T) {
+	start := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	dates := []time.Time{start, start.AddDate(0, 1, 0), start.AddDate(0, 2, 0)}
+	output := filepath.Join(t.TempDir(), "ownership.svg")
+	err := plotOwnershipBurndown(
+		".",
+		[]string{"Alice", "Bob"},
+		[][]float64{{92000, 91000, 90000}, {4000, 4500, 5000}},
+		dates,
+		dates[len(dates)-1],
+		output,
+		Options{Graphics: graphics.Options{Size: "16,10"}},
+	)
+	if err != nil {
+		t.Fatalf("plot large ownership burndown: %v", err)
+	}
+
+	svgBytes, err := os.ReadFile(output) // #nosec G304 - test path is under t.TempDir.
+	if err != nil {
+		t.Fatalf("read large ownership SVG: %v", err)
+	}
+	svg := string(svgBytes)
+	if !strings.Contains(svg, ">80000</text>") {
+		t.Fatalf("large ownership SVG does not contain a full-magnitude y tick")
+	}
+	if strings.Contains(svg, ">1e5</text>") || strings.Contains(svg, ">1e4</text>") {
+		t.Fatalf("large ownership SVG contains detached scientific offset text")
 	}
 }
 

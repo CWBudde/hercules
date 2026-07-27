@@ -48,6 +48,8 @@ type Options struct {
 	FontSize   int
 	Size       string
 	TempDir    string
+	// NoBurndownTitle suppresses titles on burndown and ownership charts.
+	NoBurndownTitle bool
 
 	TemporalLegendThreshold    int
 	TemporalLegendSingleColumn int
@@ -252,6 +254,7 @@ func (r *Renderer) modeOptions() modes.Options {
 			FontSize:   r.options.FontSize,
 			Background: r.options.Background,
 			Size:       r.options.Size,
+			HideTitle:  r.options.NoBurndownTitle,
 		},
 	}
 }

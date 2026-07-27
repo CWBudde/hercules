@@ -40,6 +40,7 @@ func TestParallelRenderersKeepOppositeOptionsIsolated(t *testing.T) {
 	first.Quiet = true
 	first.MaxPeople = 3
 	first.DevsParallelFallback = true
+	first.NoBurndownTitle = true
 	first.Theme = cloneTheme(graphics.DarkTheme)
 
 	second := DefaultOptions()
@@ -94,7 +95,7 @@ func TestParallelRenderersKeepOppositeOptionsIsolated(t *testing.T) {
 
 	svg := seen[".svg"]
 	if !svg.opts.DevsParallelFallback || svg.opts.MaxPeople != 3 ||
-		svg.opts.Graphics.Theme.Name != "dark" {
+		svg.opts.Graphics.Theme.Name != "dark" || !svg.opts.Graphics.HideTitle {
 		t.Fatalf("SVG renderer options leaked: %+v", svg.opts)
 	}
 	if svg.opts.Graphics.Theme.ColorPalette[0].R != expectedDarkRed {
@@ -103,7 +104,7 @@ func TestParallelRenderersKeepOppositeOptionsIsolated(t *testing.T) {
 
 	png := seen[".png"]
 	if png.opts.DevsParallelFallback || png.opts.MaxPeople != 91 ||
-		png.opts.Graphics.Theme.Name != "minimal" {
+		png.opts.Graphics.Theme.Name != "minimal" || png.opts.Graphics.HideTitle {
 		t.Fatalf("PNG renderer options leaked: %+v", png.opts)
 	}
 }

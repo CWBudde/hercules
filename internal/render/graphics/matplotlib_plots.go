@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image/color"
 	"math"
+	"strconv"
 	"time"
 
 	matcolor "github.com/cwbudde/matplotlib-go/color"
@@ -45,13 +46,16 @@ type MatplotlibTimeAreaOptions struct {
 	LegendTop    bool
 	HideFrame    bool
 	AutoXMargin  bool
-	LegendFace   color.Color
-	Alpha        float64
-	YMin         float64
-	YMax         float64
-	Baselines    [][]float64
-	TextLabels   []MatplotlibTextLabel
-	FontSize     float64
+	// FullNumberYTicks disables scientific/offset notation and renders the
+	// complete magnitude in every y-axis tick label.
+	FullNumberYTicks bool
+	LegendFace       color.Color
+	Alpha            float64
+	YMin             float64
+	YMax             float64
+	Baselines        [][]float64
+	TextLabels       []MatplotlibTextLabel
+	FontSize         float64
 }
 
 type MatplotlibBarOptions struct {
@@ -219,6 +223,16 @@ func PlotTimeAreasMatplotlib(dates []time.Time, series []MatplotlibTimeAreaSerie
 				Label:     item.Label,
 			})
 		}
+	}
+
+	if opts.FullNumberYTicks {
+		maxY := opts.YMax
+		if maxY <= opts.YMin && opts.Stacked {
+			maxY = stackedSumMax(matrix) * 1.05
+			ax.SetYLim(0, math.Max(maxY, 1))
+		}
+
+		ConfigureLineCountYAxis(ax, maxY)
 	}
 
 	for _, label := range opts.TextLabels {
@@ -824,9 +838,7 @@ func PlotDevsEffortsMatplotlib(dates []time.Time, cumLayers, instLayers [][]floa
 
 	// Python keeps only the non-negative y ticks (the mirrored lower half is
 	// unlabelled).
-	if ax.YAxis != nil {
-		ax.YAxis.Locator = core.FixedLocator{TicksList: nonNegativeNiceTicks(topMax)}
-	}
+	ConfigureLineCountYAxis(ax, topMax)
 
 	ticks, tlabels := timeAxisDateTicks(dates, "")
 	if len(ticks) > 0 {
@@ -1018,6 +1030,37 @@ func nonNegativeNiceTicks(maxValue float64) []float64 {
 		ticks = append(ticks, v)
 	}
 	return ticks
+}
+
+// ConfigureLineCountYAxis fixes both the tick locations and their complete
+// decimal labels. This keeps the magnitude attached to the axis instead of
+// relying on a detachable scientific-notation offset such as "1e4".
+func ConfigureLineCountYAxis(axes *core.Axes, maxValue float64) {
+	if axes == nil || axes.YAxis == nil {
+		return
+	}
+
+	ticks, labels := lineCountYAxisTicks(maxValue)
+	axes.YAxis.Locator = core.FixedLocator{TicksList: ticks}
+	axes.YAxis.Formatter = core.FixedFormatter{Labels: labels}
+}
+
+func lineCountYAxisTicks(maxValue float64) ([]float64, []string) {
+	ticks := nonNegativeNiceTicks(maxValue)
+
+	precision := 0
+	if len(ticks) > 1 {
+		for step := math.Abs(ticks[1] - ticks[0]); step > 0 && step < 1 && precision < 9; step *= 10 {
+			precision++
+		}
+	}
+
+	labels := make([]string, len(ticks))
+	for i, tick := range ticks {
+		labels[i] = strconv.FormatFloat(tick, 'f', precision, 64)
+	}
+
+	return ticks, labels
 }
 
 func pythonTransparentFigureOptions(fontSize float64) []style.Option {

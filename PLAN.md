@@ -585,48 +585,16 @@ a tested output-asset manifest. CLI end-to-end coverage validates documented com
 live help, exercises the local README analysis/render workflow, and smoke-tests root and subcommand
 help; the latter exposed and fixed a custom-usage panic on ordinary subcommands.
 
-- Remove or correct nonexistent/stale CLI flags.
-- Document warning versus failure exit semantics.
-- Document metric definitions and known compatibility changes.
-- Document cache replacement safety and schema-version behavior.
-- Update output manifests for every renderer mode.
-
-Acceptance criteria:
-
-- [x] automated help/README examples execute successfully in CI;
-- [x] each default analysis links to a precise metric definition.
-
 ### DOC-02: Make the burndown y-axis magnitude self-contained
 
-Burndown charts label the y-axis with bare numbers (`2`, `4`, `6`, `8`) and put the magnitude in a
-separate matplotlib-style offset text, `1e4`, in the top-left corner above the axes box. A reader
-who misses that corner reads the chart as single-digit line counts instead of tens of thousands.
+Status: completed 2026-07-27
 
-The offset text is also physically detached from the axis it belongs to, so it is trivially lost.
-`just burndown-chart` used to crop the top 40 px to drop the chart title, and that same band
-carries the `1e4`; the chart published on pcjv.de showed 2/4/6/8 with no magnitude anywhere until
-2026-07-25. The recipe now blanks out only the title's x-range (`rectangle 300,0 1350,35`, clear of
-the axes frame at y=38) and keeps the offset text, so the immediate symptom is gone — but the
-underlying fragility is the offset notation itself, and the next consumer will hit it again.
-
-The switch into offset notation is also sensitive to a rounding-level change in the data, which makes
-it unpredictable for anyone embedding a chart. `-m ownership` on this repository renders full `80000`
-tick labels when the stack peaks at ~92k, and flips to `1e5` with `0.0`-`1.0` labels when it peaks at
-~96k, because `maxOwnershipStackY(...)*1.05` crosses 1e5 and the formatter changes mode. Two
-regenerations of the same chart weeks apart can therefore disagree about how the y-axis is labelled.
-
-- Render the magnitude where it cannot be separated from the data: either format the ticks in full
-  (`20000`, `40000`) or fold the unit into the axis label (`Lines of code (x10^4)`), rather than
-  relying on detached offset text.
-- Apply the same treatment to every mode that stacks line counts, not just `burndown-project`.
-- Consider a flag to suppress the chart title, so downstream users stop cropping the figure by
-  hand to remove it and taking the offset text with it.
-
-Acceptance criteria:
-
-- [ ] a rendered burndown chart states its magnitude within the axes box, verifiable by cropping the
-      figure to the plot area alone;
-- [ ] a visual test covers a data set large enough to trigger offset notation.
+Burndown, ownership, language-evolution, and developer-effort line-count axes now use fixed full
+decimal labels such as `80000`, with no detached scientific offset or threshold-dependent formatter
+switch. Burndown layouts reserve room for the wider labels, `--no-burndown-title` removes burndown
+and ownership titles without image cropping, and `just burndown-chart` uses that option instead of
+ImageMagick post-processing. Large-value SVG regressions verify that the magnitude remains on the
+axis and that no `1e4`/`1e5` offset text is emitted.
 
 ### DOC-03: People-based charts leak raw identity strings into labels
 

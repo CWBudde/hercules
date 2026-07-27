@@ -8,6 +8,7 @@ type Options struct {
 	FontSize   int
 	Background string
 	Size       string
+	HideTitle  bool
 }
 
 // DefaultOptions returns Python-compatible visual defaults.

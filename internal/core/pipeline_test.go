@@ -487,6 +487,66 @@ func TestPipelineDisposesEveryUniqueBranchItemOnce(t *testing.T) {
 	}
 }
 
+func TestPipelineRepeatedInitializeDisposesPreviousResources(t *testing.T) {
+	pipeline := NewPipeline(test.FixtureRepository())
+	item := newDisposalTrackingItem()
+	pipeline.AddItem(item)
+
+	require.NoError(t, pipeline.Initialize(map[string]any{}))
+	assert.Zero(t, item.disposeCounts[item])
+
+	require.NoError(t, pipeline.Initialize(map[string]any{}))
+	assert.Equal(t, 1, item.disposeCounts[item])
+}
+
+func TestPipelineReplacementFailureDisposesPreviousResources(t *testing.T) {
+	pipeline := NewPipeline(test.FixtureRepository())
+	item := newDisposalTrackingItem()
+	pipeline.AddItem(item)
+
+	require.NoError(t, pipeline.Initialize(map[string]any{}))
+	err := pipeline.Initialize(map[string]any{
+		ConfigPipelineHibernationDistance: -1,
+	})
+
+	require.ErrorIs(t, err, errNegativeHibernationDistance)
+	assert.Equal(t, 1, item.disposeCounts[item])
+}
+
+func TestPipelineInitializeFailureDisposesResources(t *testing.T) {
+	pipeline := NewPipeline(test.FixtureRepository())
+	item := newDisposalTrackingItem()
+	item.InitializeRaises = true
+	pipeline.AddItem(item)
+
+	err := pipeline.Initialize(map[string]any{})
+	require.ErrorIs(t, err, errTestInitialize)
+	assert.Equal(t, 1, item.disposeCounts[item])
+}
+
+func TestPipelineConfigureFailureDisposesResources(t *testing.T) {
+	pipeline := NewPipeline(test.FixtureRepository())
+	item := newDisposalTrackingItem()
+	item.ConfigureRaises = true
+	pipeline.AddItem(item)
+
+	err := pipeline.Initialize(map[string]any{})
+	require.ErrorIs(t, err, errTestConfigure)
+	assert.Equal(t, 1, item.disposeCounts[item])
+}
+
+func TestPipelineInitializePanicDisposesResources(t *testing.T) {
+	pipeline := NewPipeline(test.FixtureRepository())
+	item := newDisposalTrackingItem()
+	item.InitializePanics = true
+	pipeline.AddItem(item)
+
+	assert.Panics(t, func() {
+		_ = pipeline.Initialize(map[string]any{})
+	})
+	assert.Equal(t, 1, item.disposeCounts[item])
+}
+
 func TestPipelineFailureDisposesItemsAndRestoresGCPercent(t *testing.T) {
 	originalGCPercent := debug.SetGCPercent(137)
 	t.Cleanup(func() {

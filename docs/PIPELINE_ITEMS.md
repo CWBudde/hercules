@@ -1,90 +1,103 @@
 # Pipeline items
 
-### PipelineItem lifecycle
+Pipeline items are reusable objects with a strict lifecycle. Configuration and run state have
+different ownership: configuration survives until the next `Configure` call, while `Initialize`
+starts a fresh run and must discard all state produced by an earlier run.
+
+## Lifecycle contract
+
+| Operation | Configuration | Per-run state and resources |
+| --- | --- | --- |
+| `Configure` | Reads immutable inputs from `facts`; may publish shared facts. Replaces previously configured values. | Must not depend on state from an earlier run. |
+| `ConfigureUpstream` | Reads facts after downstream configuration has completed. | Must not allocate branch-local run state. |
+| `Initialize` | Preserves the values established by `Configure`. | Idempotently discards the previous run, then creates empty state for the supplied repository. |
+| `Consume` | Read-only. | Advances exactly one branch with one commit and returns every declared output. |
+| `Fork(n)` | Shared or copied, but never changed. | Returns `n` branch instances representing the same state as the receiver at the fork point. |
+| `Merge(branches)` | Unchanged. | Combines the supplied fork state into the receiver and synchronizes branches which may continue. |
+| `Hibernate` | Unchanged. | Compacts or externalizes state without changing its logical value. Repeated calls must be safe. |
+| `Boot` | Unchanged. | Restores the exact pre-hibernation value. Repeated calls must be safe. |
+| `Finalize` | Read-only. | Produces a result without transferring ownership of item resources. |
+| `Dispose` | Unchanged, so another `Initialize` is valid. | Idempotently releases files, allocators, workers, and other resources. No `Consume` is valid until re-initialization. |
+
+The pipeline calls `Dispose` once for every unique disposable item and branch clone after both
+successful and failed execution. It also disposes initialized resources when initialization fails,
+panics, or is replaced by another initialization. Implementations still make `Dispose` idempotent:
+cleanup may be requested for a partially initialized item.
+
+The pipeline's execution plan and active resource list are per-cycle state. They are kept apart from
+the pipeline topology, feature selection, callbacks, and user options. Item implementations should
+follow the same separation, even where compatibility requires configuration and run fields to remain
+in one Go struct.
+
+The registry-wide `TestRegisteredDefaultItemsConformToLifecycle` fixture is the reusable
+conformance gate. Every registered item in the default Git execution path is initialized twice
+before use, run twice across a branch and merge, and checked for equivalent results. Optional
+build-time integrations must fail repeatedly with the same capability error. Resource-specific
+tests additionally verify cleanup after initialization errors, panics, consume errors, hibernation,
+and repeated disposal.
+
+## `PipelineItem`
 
 ```go
-// PipelineItem is the interface for all the units in the Git commits analysis pipeline.
 type PipelineItem interface {
-	// Name returns the name of the analysis.
 	Name() string
-	// Provides returns the list of keys of reusable calculated entities.
-	// Other items may depend on them.
 	Provides() []string
-	// Requires returns the list of keys of needed entities which must be supplied in Consume().
 	Requires() []string
-	// ListConfigurationOptions returns the list of available options which can be consumed by Configure().
 	ListConfigurationOptions() []ConfigurationOption
-	// Configure performs the initial setup of the object by applying parameters from facts.
-	// It allows to create PipelineItems in a universal way.
-	Configure(facts map[string]interface{})
-	// Initialize prepares and resets the item. Consume() requires Initialize()
-	// to be called at least once beforehand.
-	Initialize(*git.Repository)
-	// Consume processes the next commit.
-	// deps contains the required entities which match Depends(). Besides, it always includes
-	// "commit" and "index".
-	// Returns the calculated entities which match Provides().
-	Consume(deps map[string]interface{}) (map[string]interface{}, error)
-	// Fork clones the item the requested number of times. The data links between the clones
-	// are up to the implementation. Needed to handle Git branches. See also Merge().
-	// Returns a slice with `n` fresh clones. In other words, it does not include the original item.
+	Configure(facts map[string]any) error
+	ConfigureUpstream(facts map[string]any) error
+	Initialize(repository *git.Repository) error
+	Consume(deps map[string]any) (map[string]any, error)
 	Fork(n int) []PipelineItem
-	// Merge combines several branches together. Each is supposed to have been created with Fork().
-	// The result is stored in the called item, thus this function returns nothing.
-	// Merge() must update all the branches, not only self. When several branches merge, some of
-	// them may continue to live, hence this requirement.
 	Merge(branches []PipelineItem)
 }
 ```
 
 ![PipelineItem](pipeline_item.png)
 
-### LeafPipelineItem lifecycle
+## Optional lifecycle interfaces
+
+Items with unmanaged resources implement:
 
 ```go
-// LeafPipelineItem corresponds to the top level pipeline items which produce the end results.
+type DisposablePipelineItem interface {
+	PipelineItem
+	Dispose()
+}
+```
+
+Items which support branch-state compaction implement:
+
+```go
+type HibernateablePipelineItem interface {
+	PipelineItem
+	Hibernate() error
+	Boot() error
+}
+```
+
+See [hibernation](HIBERNATION.md) for the storage behavior.
+
+## Leaf and result interfaces
+
+```go
 type LeafPipelineItem interface {
 	PipelineItem
-	// Flag returns the cmdline name of the item.
 	Flag() string
-	// Finalize returns the result of the analysis.
-	Finalize() interface{}
-	// Serialize encodes the object returned by Finalize() to Text or Protocol Buffers.
-	Serialize(result interface{}, binary bool, writer io.Writer) error
+	Description() string
+	Finalize() any
+	Serialize(result any, binary bool, writer io.Writer) error
 }
 ```
 
 ![LeafPipelineItem](leaf_pipeline_item.png)
 
-### MergeablePipelineItem ability (optional for LeafPipelineItem-s)
-
 ```go
-// ResultMergeablePipelineItem specifies the methods to combine several analysis results together.
 type ResultMergeablePipelineItem interface {
 	LeafPipelineItem
-	// Deserialize loads the result from Protocol Buffers blob.
-	Deserialize(pbmessage []byte) (interface{}, error)
-	// MergeResults joins two results together. Common-s are specified as the global state.
-	MergeResults(r1, r2 interface{}, c1, c2 *CommonAnalysisResult) interface{}
+	Deserialize(message []byte) (any, error)
+	MergeResults(r1, r2 any, c1, c2 *CommonAnalysisResult) any
 }
 ```
 
 ![ResultMergeablePipelineItem](result_mergeable_pipeline_item.png)
-
-### HibernateablePipelineItem (optional)
-
-See [what is hibernation](HIBERNATION.md).
-
-```go
-// HibernateablePipelineItem is the interface to allow pipeline items to be frozen (compacted, unloaded)
-// while they are not needed in the hosting branch.
-type HibernateablePipelineItem interface {
-	PipelineItem
-	// Hibernate signals that the item is temporarily not needed and it's memory can be optimized.
-	Hibernate() error
-	// Boot signals that the item is needed again and must be de-hibernate-d.
-	Boot() error
-}
-```
-
-![HibernateablePipelineItem](hibernateable_pipeline_item.png)

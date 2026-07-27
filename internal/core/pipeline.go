@@ -8,9 +8,6 @@ import (
 	"maps"
 	"math"
 	"os"
-	"path/filepath"
-	"runtime/debug"
-	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -23,7 +20,6 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/cwbudde/hercules/internal/pb"
-	"github.com/cwbudde/hercules/internal/toposort"
 )
 
 // ConfigurationOptionType represents the possible types of a ConfigurationOption's value.
@@ -144,12 +140,14 @@ type PipelineItem interface {
 	Requires() []string
 	// ListConfigurationOptions returns the list of available options which can be consumed by Configure().
 	ListConfigurationOptions() []ConfigurationOption
-	// Configure performs the initial setup of the object by applying parameters from facts in downstream directio.
+	// Configure replaces immutable configuration from facts in downstream direction.
+	// It must not rely on state produced by an earlier run.
 	Configure(facts map[string]any) error
-	// ConfigureUpstream performs the initial setup of the object by applying parameters from facts in upstream direction.
+	// ConfigureUpstream applies configuration facts in upstream direction after downstream
+	// configuration has finished. It must not allocate branch-local run state.
 	ConfigureUpstream(facts map[string]any) error
-	// Initialize prepares and resets the item. Consume() requires Initialize()
-	// to be called at least once beforehand.
+	// Initialize idempotently discards state from the previous run and prepares empty run state.
+	// Configuration set by Configure survives. Consume requires a successful Initialize.
 	Initialize(repository *git.Repository) error
 	// Consume processes the next commit.
 	// deps contains the required entities which match Depends(). Besides, it always includes
@@ -158,12 +156,13 @@ type PipelineItem interface {
 	Consume(deps map[string]any) (map[string]any, error)
 	// Fork clones the item the requested number of times. The data links between the clones
 	// are up to the implementation. Needed to handle Git branches. See also Merge().
-	// Returns a slice with `n` fresh clones. In other words, it does not include the original item.
+	// Returns a slice with `n` branch instances. It does not include the original item.
+	// Immutable configuration must remain unchanged.
 	Fork(n int) []PipelineItem
 	// Merge combines several branches together. Each is supposed to have been created with Fork().
 	// The result is stored in the called item, thus this function returns nothing.
-	// Merge() must update all the branches, not only self. When several branches merge, some of
-	// them may continue to live, hence this requirement.
+	// Merge must update all the branches, not only self. When several branches merge, some of
+	// them may continue to live, hence this requirement. Configuration remains unchanged.
 	Merge(branches []PipelineItem)
 }
 
@@ -178,8 +177,8 @@ type FeaturedPipelineItem interface {
 // DisposablePipelineItem enables resources cleanup after finishing running the pipeline.
 type DisposablePipelineItem interface {
 	PipelineItem
-	// Dispose frees any previously allocated unmanaged resources. No Consume() calls are possible
-	// afterwards. The item needs to be Initialize()-d again.
+	// Dispose idempotently frees any previously allocated unmanaged resources without changing
+	// configuration. No Consume calls are valid afterwards until another Initialize.
 	// This method is invoked once for every unique instance created for a run, including branch
 	// clones, on both successful and failed runs.
 	Dispose()
@@ -213,9 +212,10 @@ type ResultMergeablePipelineItem interface {
 // while they are not needed in the hosting branch.
 type HibernateablePipelineItem interface {
 	PipelineItem
-	// Hibernate signals that the item is temporarily not needed and it's memory can be optimized.
+	// Hibernate signals that the item is temporarily not needed and its run state can be compacted.
+	// It must preserve configuration and logical run state, and repeated calls must be safe.
 	Hibernate() error
-	// Boot signals that the item is needed again and must be de-hibernate-d.
+	// Boot restores the exact pre-hibernation run state. Repeated calls must be safe.
 	Boot() error
 }
 
@@ -337,12 +337,19 @@ type Pipeline struct {
 	// Feature flags which enable the corresponding items.
 	features map[string]bool
 
-	preparedRun *preparedRun
+	// lifecycle contains state owned by one initialization/execution cycle.
+	// It is deliberately separate from the pipeline topology and options above.
+	lifecycle pipelineLifecycleState
 
 	// The logger for printing output.
 	l Logger
 
 	output io.Writer
+}
+
+type pipelineLifecycleState struct {
+	preparedRun          *preparedRun
+	initializedResources []DisposablePipelineItem
 }
 
 type preparedRun struct {
@@ -626,6 +633,11 @@ func (pipeline *Pipeline) InitializeExt(facts map[string]any,
 	cleanReturn := false
 	defer pipeline.logInitializationFailure(&cleanReturn)
 
+	// Beginning a new cycle invalidates resources owned by the previous one,
+	// even if validation or DAG resolution for the replacement later fails.
+	pipeline.disposeInitializedResources()
+	pipeline.lifecycle.preparedRun = nil
+
 	err := prepareInitialization(pipeline, facts, priorityFn, preparePlan)
 	if err != nil {
 		return err
@@ -636,13 +648,20 @@ func (pipeline *Pipeline) InitializeExt(facts map[string]any,
 		return nil
 	}
 
+	initialized := false
+	defer func() {
+		if !initialized {
+			pipeline.disposeItems(pipeline.items)
+		}
+	}()
+
 	err = pipeline.configureItems(facts)
 	if err != nil {
 		cleanReturn = true
 		return err
 	}
 
-	if preparePlan && pipeline.preparedRun == nil {
+	if preparePlan && pipeline.lifecycle.preparedRun == nil {
 		mergeTracks, _ := pipeline.GetFeature(FeatureMergeTracks)
 
 		err = pipeline.prepareRun(facts, mergeTracks)
@@ -658,6 +677,7 @@ func (pipeline *Pipeline) InitializeExt(facts map[string]any,
 		return err
 	}
 
+	initialized = true
 	cleanReturn = true
 
 	return nil
@@ -690,7 +710,7 @@ func prepareInitialization(
 	}
 
 	if preparePlan {
-		pipeline.preparedRun = nil
+		pipeline.lifecycle.preparedRun = nil
 		if _, exists := facts[ConfigPipelineCommits]; exists {
 			return pipeline.prepareRun(facts, mergeTracks)
 		}
@@ -727,8 +747,8 @@ func (pipeline *Pipeline) Run(commits []*object.Commit) (map[LeafPipelineItem]an
 }
 
 func (pipeline *Pipeline) RunPreparedPlan() (map[LeafPipelineItem]any, error) {
-	prepared := pipeline.preparedRun
-	pipeline.preparedRun = nil
+	prepared := pipeline.lifecycle.preparedRun
+	pipeline.lifecycle.preparedRun = nil
 
 	if prepared == nil {
 		return nil, errors.New("run plan was not prepared")
@@ -807,844 +827,6 @@ func (pipeline *Pipeline) itemFeaturesEnabled(item PipelineItem) bool {
 	}
 
 	return true
-}
-
-func (pipeline *Pipeline) resolve(dumpPath string, priorityFn DependencyPriorityFunc) error {
-	sort.Sort(sortablePipelineItems(pipeline.items))
-
-	graph, name2item, dataKeys, err := pipeline.dependencyGraph()
-	if err != nil {
-		return err
-	}
-
-	ambiguousDataKeys, err := pipeline.validateDependencies(graph, dataKeys)
-	if err != nil {
-		return err
-	}
-
-	if len(ambiguousDataKeys) > 0 {
-		err = pipeline.resolveAmbiguous(ambiguousDataKeys, graph, name2item, priorityFn)
-		if err != nil {
-			return err
-		}
-	}
-
-	pipelinePlan, ok := graph.Toposort()
-	if !ok {
-		_, _ = fmt.Fprint(os.Stderr, graph.DebugDump())
-
-		pipeline.l.Critical("Failed to resolve pipeline dependencies: unable to topologically sort the items.")
-
-		return errors.New("topological sort failure")
-	}
-
-	pipeline.items = pipeline.items[:0]
-
-	for _, key := range pipelinePlan {
-		if item, ok := name2item[key]; ok {
-			pipeline.items = append(pipeline.items, item)
-		}
-	}
-
-	pipeline.dumpDependencyGraph(graph, pipelinePlan, dumpPath)
-
-	return nil
-}
-
-func (pipeline *Pipeline) dependencyGraph() (
-	*toposort.Graph, map[string]PipelineItem, map[string]struct{}, error,
-) {
-	graph := toposort.NewGraphWithInsertionOrder()
-	items := make(map[string]PipelineItem, len(pipeline.items))
-	dataKeys := make(map[string]struct{})
-
-	itemUsages := make(map[string]int, len(pipeline.items))
-	for _, item := range pipeline.items {
-		itemUsages[item.Name()]++
-		name := fmt.Sprintf("%s_%d", item.Name(), itemUsages[item.Name()])
-		items[name] = item
-		graph.AddNode(name)
-
-		for _, key := range item.Requires() {
-			dataKey := "[" + key + "]"
-			dataKeys[dataKey] = struct{}{}
-			graph.AddNode(dataKey)
-
-			err := addGraphEdge(graph, dataKey, name)
-			if err != nil {
-				return nil, nil, nil, err
-			}
-		}
-
-		for _, key := range item.Provides() {
-			dataKey := "[" + key + "]"
-			dataKeys[dataKey] = struct{}{}
-			graph.AddNode(dataKey)
-
-			err := addGraphEdge(graph, name, dataKey)
-			if err != nil {
-				return nil, nil, nil, err
-			}
-		}
-	}
-
-	return graph, items, dataKeys, nil
-}
-
-func (pipeline *Pipeline) validateDependencies(
-	graph *toposort.Graph, dataKeys map[string]struct{},
-) ([]string, error) {
-	var ambiguous []string
-
-	for name := range dataKeys {
-		parentCount, _ := graph.InputCount(name)
-		if parentCount == 0 {
-			children := graph.FindChildren(name)
-			sort.Strings(children)
-			pipeline.l.Criticalf("Unsatisfied dependency: %s -> %s", name, children)
-
-			return nil, errors.New("unsatisfied dependency")
-		}
-
-		if parentCount > 1 {
-			ambiguous = append(ambiguous, name)
-		}
-	}
-
-	return ambiguous, nil
-}
-
-func (pipeline *Pipeline) dumpDependencyGraph(
-	graph *toposort.Graph, plan []string, dumpPath string,
-) {
-	if dumpPath == "" {
-		return
-	}
-
-	serialized := graph.Serialize(plan)
-	if dumpPath == "-" {
-		_, _ = fmt.Fprint(os.Stderr, serialized)
-		return
-	}
-
-	_ = os.WriteFile(dumpPath, []byte(serialized), 0o600)
-	absPath, _ := filepath.Abs(dumpPath)
-	pipeline.l.Infof("Wrote the DAG to %s\n", absPath)
-}
-
-// break cycles - unwinds sequential processing of same facts.
-func (pipeline *Pipeline) resolveAmbiguous(ambiguousDataKeys []string,
-	graph *toposort.Graph, name2item map[string]PipelineItem, priorityFn DependencyPriorityFunc,
-) error {
-	graph.Sort(ambiguousDataKeys)
-	bfsIndex := graph.BreadthSort()
-
-	for _, key := range ambiguousDataKeys {
-		err := pipeline.resolveAmbiguousKey(key, graph, name2item, priorityFn, bfsIndex)
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (pipeline *Pipeline) resolveAmbiguousKey(
-	key string,
-	graph *toposort.Graph,
-	name2item map[string]PipelineItem,
-	priorityFn DependencyPriorityFunc,
-	bfsIndex map[string]toposort.NodePosition,
-) error {
-	inputs := graph.FindParents(key)
-	toposort.SortByNodeIndex(inputs, bfsIndex)
-
-	inputs = pipeline.removeEquivalentInputs(inputs, graph, name2item, priorityFn, bfsIndex)
-	if len(inputs) < 2 {
-		return nil
-	}
-
-	for _, input := range inputs {
-		err := removeGraphEdge(graph, input, key)
-		if err != nil {
-			return err
-		}
-	}
-
-	replacements, err := wireAmbiguousInputs(key, inputs, graph)
-	if err != nil {
-		return err
-	}
-
-	return repairAmbiguousChildren(key, replacements, graph)
-}
-
-func (pipeline *Pipeline) removeEquivalentInputs(
-	inputs []string,
-	graph *toposort.Graph,
-	name2item map[string]PipelineItem,
-	priorityFn DependencyPriorityFunc,
-	bfsIndex map[string]toposort.NodePosition,
-) []string {
-	excludes := map[string]struct{}{}
-
-	last, lastLevel := len(inputs), 0
-	for inputIndex := last - 1; inputIndex >= -1; inputIndex-- {
-		level := -1
-		if inputIndex >= 0 {
-			level = bfsIndex[inputs[inputIndex]].Level
-		}
-
-		if level != lastLevel {
-			if alternatives := inputs[inputIndex+1 : last]; len(alternatives) > 1 {
-				graph.Sort(alternatives)
-				pipeline.resolveAlternatives(graph, alternatives, name2item, priorityFn, excludes)
-			}
-
-			lastLevel, last = level, inputIndex+1
-		}
-	}
-
-	kept := inputs[:0]
-	for _, input := range inputs {
-		if _, excluded := excludes[input]; excluded {
-			graph.RemoveNode(input)
-		} else {
-			kept = append(kept, input)
-		}
-	}
-
-	return kept
-}
-
-func (pipeline *Pipeline) logInitializationFailure(cleanReturn *bool) {
-	if *cleanReturn {
-		return
-	}
-
-	remotes, _ := pipeline.repository.Remotes()
-	if len(remotes) > 0 {
-		pipeline.l.Errorf("Failed to initialize the pipeline on %s", remotes[0].Config().URLs)
-	}
-}
-
-func (pipeline *Pipeline) validateConfigurationFactTypes(facts map[string]any) error {
-	for _, validate := range []func(map[string]any) error{
-		validateOptionalFactType[Logger](ConfigLogger),
-		validateOptionalFactType[string](ConfigPipelineDAGPath),
-		validateOptionalFactType[bool](ConfigPipelineDryRun),
-		validateOptionalFactType[[]*object.Commit](ConfigPipelineCommits),
-		validateOptionalFactType[bool](ConfigPipelineDumpPlan),
-		validateOptionalFactType[int](ConfigPipelineHibernationDistance),
-		validateOptionalFactType[bool](ConfigPipelinePrintActions),
-	} {
-		err := validate(facts)
-		if err != nil {
-			return err
-		}
-	}
-
-	for _, item := range pipeline.items {
-		for _, option := range item.ListConfigurationOptions() {
-			err := validateConfigurationOptionFact(facts, option)
-			if err != nil {
-				return fmt.Errorf("%s configuration: %w", item.Name(), err)
-			}
-		}
-	}
-
-	return validateSharedFactTypes(facts)
-}
-
-func validateConfigurationOptionFact(
-	facts map[string]any, option ConfigurationOption,
-) error {
-	if option.Name == "TicksSinceStart.TickSize" {
-		return validateTickSizeFact(facts, option.Name)
-	}
-
-	switch option.Type {
-	case BoolConfigurationOption:
-		return validateOptionalFact[bool](facts, option.Name)
-	case IntConfigurationOption:
-		return validateOptionalFact[int](facts, option.Name)
-	case StringConfigurationOption, PathConfigurationOption:
-		return validateOptionalFact[string](facts, option.Name)
-	case FloatConfigurationOption:
-		return validateOptionalFact[float32](facts, option.Name)
-	case StringsConfigurationOption:
-		return validateOptionalFact[[]string](facts, option.Name)
-	default:
-		return fmt.Errorf(
-			"%w: configuration option %q has unknown declared type %d",
-			ErrInvalidFactType, option.Name, option.Type,
-		)
-	}
-}
-
-func validateOptionalFactType[T any](key string) func(map[string]any) error {
-	return func(facts map[string]any) error {
-		return validateOptionalFact[T](facts, key)
-	}
-}
-
-func validateOptionalFact[T any](facts map[string]any, key string) error {
-	_, _, err := FactValue[T](facts, key)
-
-	return err
-}
-
-func validateSharedFactTypes(facts map[string]any) error {
-	for _, validate := range []func(map[string]any) error{
-		validateOptionalFactType[IdentityResolver](FactIdentityResolver),
-		validateOptionalFactType[FileIdResolver](FactLineHistoryResolver),
-		validateOptionalFactType[[]string]("IdentityDetector.ReversedPeopleDict"),
-		validateOptionalFactType[map[int][]plumbing.Hash]("TicksSinceStart.Commits"),
-		validateOptionalFactType[int](FactMergeHashCount),
-	} {
-		err := validate(facts)
-		if err != nil {
-			return err
-		}
-	}
-
-	return validateTickSizeFact(facts, "TicksSinceStart.TickSize")
-}
-
-func validateTickSizeFact(facts map[string]any, key string) error {
-	value, exists := facts[key]
-	if !exists {
-		return nil
-	}
-
-	switch value.(type) {
-	case int, time.Duration:
-		return nil
-	default:
-		return fmt.Errorf(
-			"%w: %q expects int hours or time.Duration, got %T",
-			ErrInvalidFactType, key, value,
-		)
-	}
-}
-
-func (pipeline *Pipeline) applyConfigurationFacts(facts map[string]any) error {
-	logger, exists, err := FactValue[Logger](facts, ConfigLogger)
-	if err != nil {
-		return err
-	}
-
-	if exists {
-		pipeline.l = logger
-	} else {
-		facts[ConfigLogger] = pipeline.l
-	}
-
-	pipeline.PrintActions, _, err = FactValue[bool](facts, ConfigPipelinePrintActions)
-	if err != nil {
-		return err
-	}
-
-	pipeline.DumpPlan, _, err = FactValue[bool](facts, ConfigPipelineDumpPlan)
-	if err != nil {
-		return err
-	}
-
-	pipeline.DryRun, _, err = FactValue[bool](facts, ConfigPipelineDryRun)
-	if err != nil {
-		return err
-	}
-
-	distance, exists, err := FactValue[int](facts, ConfigPipelineHibernationDistance)
-	if err != nil {
-		return err
-	}
-
-	if exists {
-		if distance < 0 {
-			err := fmt.Errorf("%w (got %d)", errNegativeHibernationDistance, distance)
-			pipeline.l.Error(err)
-
-			return err
-		}
-
-		pipeline.HibernationDistance = distance
-	}
-
-	return nil
-}
-
-func (pipeline *Pipeline) prepareRun(facts map[string]any, mergeTracks bool) error {
-	commits, ok := facts[ConfigPipelineCommits].([]*object.Commit)
-	if !ok {
-		pipeline.preparedRun = nil
-		return fmt.Errorf("%w: %s is not available", ErrNoCommits, ConfigPipelineCommits)
-	}
-
-	prepared := &preparedRun{commitCount: len(commits)}
-
-	var err error
-
-	prepared.plan, prepared.mergeHashCount, err = prepareRunPlan(
-		commits, pipeline.HibernationDistance, mergeTracks,
-	)
-	if err != nil {
-		pipeline.preparedRun = nil
-		return err
-	}
-
-	if mergeTracks {
-		facts[FactMergeHashCount] = prepared.mergeHashCount
-	}
-
-	pipeline.preparedRun = prepared
-
-	return nil
-}
-
-func (pipeline *Pipeline) configureItems(facts map[string]any) error {
-	err := validateSharedFactTypes(facts)
-	if err != nil {
-		return err
-	}
-
-	for _, item := range pipeline.items {
-		err = item.Configure(facts)
-		if err != nil {
-			return errors.Wrapf(err, "%s failed to configure", item.Name())
-		}
-
-		err = validateSharedFactTypes(facts)
-		if err != nil {
-			return errors.Wrapf(err, "%s produced an invalid fact", item.Name())
-		}
-	}
-
-	return nil
-}
-
-func (pipeline *Pipeline) initializeItems(facts map[string]any) error {
-	for _, item := range slices.Backward(pipeline.items) {
-		err := item.ConfigureUpstream(facts)
-		if err != nil {
-			return errors.Wrapf(err, "%s failed to configure upstream", item.Name())
-		}
-	}
-
-	for _, item := range pipeline.items {
-		err := item.Initialize(pipeline.repository)
-		if err != nil {
-			return errors.Wrapf(err, "%s failed to initialize", item.Name())
-		}
-	}
-
-	return nil
-}
-
-func (pipeline *Pipeline) runPlan(plan []runAction, commitCount, mergeHashCount int) (map[LeafPipelineItem]any, error) {
-	if len(plan) == 0 {
-		return nil, ErrNoCommits
-	}
-
-	if pipeline.HibernationDistance > 0 {
-		gcPercentMu.Lock()
-
-		previousGCPercent := debug.SetGCPercent(20)
-		defer func() {
-			debug.SetGCPercent(previousGCPercent)
-			gcPercentMu.Unlock()
-		}()
-	}
-
-	startRunTime := time.Now()
-
-	cleanReturn := false
-	defer pipeline.reportRunFailure(&cleanReturn)
-
-	onProgress := pipeline.progressCallback()
-	pipeline.dumpRunPlan(plan)
-	progressSteps := len(plan) + 2
-
-	state := pipeline.newRunState(mergeHashCount)
-	defer state.dispose()
-
-	err := state.executePlan(plan, progressSteps, onProgress)
-	if err != nil {
-		return nil, err
-	}
-
-	if !pipeline.DryRun && state.commitIndex != commitCount {
-		return nil, fmt.Errorf("%w: consumed %d commits, expected %d",
-			errPlanCommitCountMismatch, state.commitIndex, commitCount)
-	}
-
-	onProgress(len(plan)+1, progressSteps, MessageFinalize)
-
-	result := state.finalize()
-
-	onProgress(progressSteps, progressSteps, "")
-
-	consumedCommits := state.commitIndex
-	if pipeline.DryRun {
-		consumedCommits = commitCount
-	}
-	result[nil] = &CommonAnalysisResult{
-		BeginTime:      plan[0].Commit.Committer.When.Unix(),
-		EndTime:        state.newestTime,
-		CommitsNumber:  consumedCommits,
-		RunTime:        time.Since(startRunTime),
-		RunTimePerItem: state.runTimePerItem,
-	}
-	cleanReturn = true
-
-	return result, nil
-}
-
-func (pipeline *Pipeline) reportRunFailure(cleanReturn *bool) {
-	if *cleanReturn {
-		return
-	}
-
-	remotes, _ := pipeline.repository.Remotes()
-	if len(remotes) > 0 {
-		pipeline.l.Errorf("Failed to run the pipeline on %s", remotes[0].Config().URLs)
-	}
-}
-
-func (pipeline *Pipeline) progressCallback() func(int, int, string) {
-	if pipeline.OnProgress != nil {
-		return pipeline.OnProgress
-	}
-
-	return func(int, int, string) {}
-}
-
-func (pipeline *Pipeline) dumpRunPlan(plan []runAction) {
-	if !pipeline.DumpPlan {
-		return
-	}
-
-	for _, action := range plan {
-		printAction(pipeline.output, action)
-	}
-}
-
-func (pipeline *Pipeline) newRunState(mergeHashCount int) pipelineRunState {
-	state := pipelineRunState{
-		pipeline:       pipeline,
-		branches:       map[int][]PipelineItem{},
-		runTimePerItem: map[string]float64{},
-		mergeHashCount: mergeHashCount,
-		seenDisposable: map[DisposablePipelineItem]struct{}{},
-	}
-	state.trackItems(pipeline.items)
-
-	if !pipeline.DryRun {
-		// We will need rootClone if there is more than one root branch.
-		state.rootClone = cloneItems(pipeline.items, 1)[0]
-		state.trackItems(state.rootClone)
-	}
-
-	return state
-}
-
-func (state *pipelineRunState) executePlan(plan []runAction, progressSteps int,
-	onProgress func(int, int, string),
-) error {
-	for index, step := range plan {
-		onProgress(index+1, progressSteps, step.String())
-
-		if state.pipeline.DryRun {
-			continue
-		}
-
-		if state.pipeline.PrintActions {
-			printAction(state.pipeline.output, step)
-		}
-
-		if index > 0 && index%100 == 0 && state.pipeline.HibernationDistance > 0 {
-			debug.FreeOSMemory()
-		}
-
-		err := state.executeStep(plan, index, step)
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (state *pipelineRunState) finalize() map[LeafPipelineItem]any {
-	result := map[LeafPipelineItem]any{}
-	if state.pipeline.DryRun {
-		return result
-	}
-
-	for index, item := range getMasterBranch(state.branches) {
-		if leaf, ok := item.(LeafPipelineItem); ok {
-			registeredLeaf, registered := state.pipeline.items[index].(LeafPipelineItem)
-			if registered {
-				result[registeredLeaf] = leaf.Finalize()
-			}
-		}
-	}
-
-	return result
-}
-
-func (state *pipelineRunState) executeStep(plan []runAction, index int, step runAction) error {
-	firstItem := step.Items[0]
-	switch step.Action {
-	case runActionCommit:
-		return state.consumeCommit(plan, index, firstItem, step)
-	case runActionFork:
-		state.fork(firstItem, step.Items)
-	case runActionMerge:
-		state.merge(step.Items)
-	case runActionEmerge:
-		state.emerge(firstItem)
-	case runActionDelete:
-		delete(state.branches, firstItem)
-	case runActionHibernate:
-		return state.changeHibernation(step.Items, false)
-	case runActionBoot:
-		return state.changeHibernation(step.Items, true)
-	}
-
-	return nil
-}
-
-func (state *pipelineRunState) consumeCommit(plan []runAction, index, firstItem int, step runAction) error {
-	dependencies := map[string]any{
-		DependencyCommit:  step.Commit,
-		DependencyIndex:   state.commitIndex,
-		DependencyIsMerge: isMergeAction(plan, index, step.Commit.Hash),
-	}
-	if state.mergeHashCount >= 0 {
-		dependencies[DependencyNextMerge] = step.NextMerge
-	}
-
-	for _, item := range state.branches[firstItem] {
-		startTime := time.Now()
-		update, err := item.Consume(dependencies)
-
-		state.runTimePerItem[item.Name()] += time.Since(startTime).Seconds()
-		if err != nil {
-			state.pipeline.l.Errorf("%s failed on commit #%d (%d) %s: %v\n",
-				item.Name(), state.commitIndex+1, index+1, step.Commit.Hash.String(), err)
-
-			return fmt.Errorf("%s failed to consume commit: %w", item.Name(), err)
-		}
-
-		for _, key := range item.Provides() {
-			value, ok := update[key]
-			if !ok {
-				err := fmt.Errorf("%s did not return %s: %w",
-					item.Name(), key, errors.New("consume output missing"))
-				state.pipeline.l.Critical(err)
-
-				return err
-			}
-
-			dependencies[key] = value
-		}
-	}
-
-	commitTime := step.Commit.Committer.When.Unix()
-	if commitTime > state.newestTime {
-		state.newestTime = commitTime
-	}
-
-	state.commitIndex++
-
-	return nil
-}
-
-func isMergeAction(plan []runAction, index int, commit plumbing.Hash) bool {
-	for i := index + 1; i < len(plan); i++ {
-		switch plan[i].Action {
-		case runActionHibernate, runActionBoot:
-			continue
-		case runActionMerge:
-			return plan[i].Commit.Hash == commit
-		default:
-			return false
-		}
-	}
-
-	return false
-}
-
-func (state *pipelineRunState) fork(firstItem int, items []int) {
-	startTime := time.Now()
-
-	for i, clone := range cloneItems(state.branches[firstItem], len(items)-1) {
-		state.branches[items[i+1]] = clone
-		state.trackItems(clone)
-	}
-
-	state.runTimePerItem["*.Fork"] += time.Since(startTime).Seconds()
-}
-
-func (state *pipelineRunState) merge(items []int) {
-	startTime := time.Now()
-
-	merged := make([][]PipelineItem, len(items))
-	for i, branch := range items {
-		merged[i] = state.branches[branch]
-	}
-
-	mergeItems(merged)
-
-	state.runTimePerItem["*.Merge"] += time.Since(startTime).Seconds()
-}
-
-func (state *pipelineRunState) emerge(firstItem int) {
-	if firstItem == rootBranchIndex {
-		state.branches[firstItem] = state.pipeline.items
-		return
-	}
-
-	state.branches[firstItem] = cloneItems(state.rootClone, 1)[0]
-	state.trackItems(state.branches[firstItem])
-}
-
-func (state *pipelineRunState) trackItems(items []PipelineItem) {
-	for _, item := range items {
-		if disposable, ok := item.(DisposablePipelineItem); ok {
-			if _, seen := state.seenDisposable[disposable]; seen {
-				continue
-			}
-
-			state.seenDisposable[disposable] = struct{}{}
-			state.disposables = append(state.disposables, disposable)
-		}
-	}
-}
-
-func (state *pipelineRunState) dispose() {
-	if state.disposed {
-		return
-	}
-
-	state.disposed = true
-	for _, disposable := range state.disposables {
-		disposable.Dispose()
-	}
-}
-
-func (state *pipelineRunState) changeHibernation(items []int, boot bool) error {
-	for _, branch := range items {
-		for _, item := range state.branches[branch] {
-			hibernatable, ok := item.(HibernateablePipelineItem)
-			if !ok {
-				continue
-			}
-
-			startTime := time.Now()
-
-			var err error
-			if boot {
-				err = hibernatable.Boot()
-			} else {
-				err = hibernatable.Hibernate()
-			}
-
-			if err != nil {
-				state.pipeline.l.Errorf("Failed to change hibernation state for %s: %v\n", item.Name(), err)
-				return fmt.Errorf("change hibernation state for %s: %w", item.Name(), err)
-			}
-
-			state.runTimePerItem[item.Name()+".Hibernation"] += time.Since(startTime).Seconds()
-		}
-	}
-
-	return nil
-}
-
-func (pipeline *Pipeline) resolveAlternatives(graph *toposort.Graph, nodes []string, itemMap map[string]PipelineItem,
-	priorityFn DependencyPriorityFunc, excludes map[string]struct{},
-) {
-	dataKeys := groupAlternativeNodes(graph, nodes, itemMap)
-	for _, altNodes := range dataKeys {
-		if len(altNodes) >= 2 {
-			resolveAlternativeGroup(altNodes, itemMap, priorityFn, excludes)
-		}
-	}
-}
-
-func groupAlternativeNodes(
-	graph *toposort.Graph,
-	nodes []string,
-	itemMap map[string]PipelineItem,
-) map[string][]string {
-	dataKeys := make(map[string][]string, len(nodes))
-	for _, node := range nodes {
-		item := itemMap[node]
-		key := strings.Join(item.Requires(), ",") + " => " + alternativeChildren(graph, node)
-		dataKeys[key] = append(dataKeys[key], node)
-	}
-
-	return dataKeys
-}
-
-func alternativeChildren(graph *toposort.Graph, node string) string {
-	childList := strings.Builder{}
-
-	for _, child := range graph.FindChildren(node) {
-		if !graph.HasChildren(child) {
-			continue
-		}
-
-		if childList.Len() != 0 {
-			childList.WriteString(",")
-		}
-
-		childList.WriteString(child)
-	}
-
-	return childList.String()
-}
-
-func resolveAlternativeGroup(
-	nodes []string,
-	itemMap map[string]PipelineItem,
-	priorityFn DependencyPriorityFunc,
-	excludes map[string]struct{},
-) {
-	items := make([]PipelineItem, 0, len(nodes))
-
-	for _, node := range nodes {
-		items = append(items, itemMap[node])
-	}
-
-	priorityItem := priorityFn(items)
-	if priorityItem == nil {
-		panic("unexpected")
-	}
-
-	priorityNode := ""
-
-	for _, node := range nodes {
-		if priorityItem == itemMap[node] {
-			priorityNode = setPriorityNode(priorityNode, node)
-		} else {
-			excludes[node] = struct{}{}
-		}
-	}
-
-	if priorityNode == "" {
-		panic("unexpected")
-	}
-}
-
-func setPriorityNode(current, selected string) string {
-	if current != "" {
-		panic("unexpected")
-	}
-
-	return selected
 }
 
 // LoadCommitsFromFile reads the file by the specified FS path and generates the sequence of commits

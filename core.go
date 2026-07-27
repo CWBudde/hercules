@@ -44,6 +44,12 @@ type PipelineItem = core.PipelineItem
 // FeaturedPipelineItem enables switching the automatic insertion of pipeline items on or off.
 type FeaturedPipelineItem = core.FeaturedPipelineItem
 
+// DisposablePipelineItem owns resources which are released after a pipeline run.
+type DisposablePipelineItem = core.DisposablePipelineItem
+
+// HibernateablePipelineItem can compact and restore branch-local run state.
+type HibernateablePipelineItem = core.HibernateablePipelineItem
+
 // LeafPipelineItem corresponds to the top level pipeline items which produce the end results.
 type LeafPipelineItem = core.LeafPipelineItem
 

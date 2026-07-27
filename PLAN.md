@@ -514,18 +514,16 @@ output-path types before configuration can silently fall back.
 
 ### ARCH-03: Make lifecycle and cleanup contracts explicit
 
-- Document which fields survive `Configure`, `Initialize`, `Fork`, `Merge`, `Hibernate`, `Boot`,
-  and `Dispose`.
-- Add reusable lifecycle conformance tests for pipeline items.
-- Separate immutable configuration from per-run state.
-- Split the largest multi-purpose files after behavior is covered, especially renderer report
-  metrics, core pipeline resolution/execution, and legacy burndown.
+Status: completed 2026-07-27
 
-Acceptance criteria:
-
-- [ ] repeated initialization is idempotent and clears only run state;
-- [ ] every item with resources is disposed on success and failure;
-- [ ] lifecycle tests cover all registered default items.
+The pipeline-item contract now defines configuration and run-state ownership across configuration,
+initialization, branching, hibernation, finalization, and idempotent disposal. Pipeline cycle state
+tracks prepared plans and active resources separately, cleans replaced or partially initialized
+items on validation errors and panics, and retains the existing success/failure branch-clone cleanup.
+A reusable registry-wide fixture initializes and executes every default Git item twice across a real
+branch and merge; it exposed and fixed stale `TreeDiff` commit state and Line History abandonment
+metadata. Pipeline lifecycle/configuration, DAG resolution, execution, renderer JSON extraction,
+and legacy Burndown lifecycle/results/change processing now have focused source files.
 
 ## Phase 7 — Strengthen CI, release, and documentation
 

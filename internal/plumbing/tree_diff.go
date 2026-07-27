@@ -194,6 +194,7 @@ func (*TreeDiff) ConfigureUpstream(map[string]any) error {
 func (treediff *TreeDiff) Initialize(repository *git.Repository) error {
 	treediff.l = core.NewLogger()
 	treediff.previousTree = nil
+	treediff.previousCommit = plumbing.ZeroHash
 
 	treediff.repository = repository
 	if treediff.Languages == nil {

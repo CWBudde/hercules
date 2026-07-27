@@ -316,6 +316,8 @@ func (analyser *LineHistoryAnalyser) Initialize(repository *git.Repository) erro
 	analyser.repository = repository
 	analyser.fileNames = map[FileId]string{}
 	analyser.fileIdCounter = &counterHolder{}
+	analyser.fileAbandonedNames = nil
+	analyser.fileAbandonedNamesOfParent = nil
 	analyser.files = map[string]*File{}
 	analyser.fileAllocator = rbtree.NewAllocator()
 	analyser.fileAllocator.HibernationThreshold = analyser.HibernationThreshold

@@ -416,10 +416,10 @@ func TestPipelineRun(t *testing.T) {
 	assert.Equal(t, int64(1481719198), common.BeginTime)
 	assert.Equal(t, int64(1481719198), common.EndTime)
 	assert.Equal(t, 1, common.CommitsNumber)
-	assert.Less(t, common.RunTime.Nanoseconds()/1e6, 100)
+	assert.Less(t, common.RunTime.Nanoseconds()/1e6, int64(100))
 	assert.Len(t, common.RunTimePerItem, 1)
 	for key, val := range common.RunTimePerItem {
-		assert.GreaterOrEqual(t, val, 0, key)
+		assert.GreaterOrEqual(t, val, 0.0, key)
 	}
 	assert.True(t, item.DepsConsumed)
 	assert.True(t, item.Disposed)

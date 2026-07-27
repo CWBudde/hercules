@@ -133,19 +133,31 @@ func (pipeline *Pipeline) applyConfigurationFacts(facts map[string]any) error {
 		facts[ConfigLogger] = pipeline.l
 	}
 
-	pipeline.PrintActions, _, err = FactValue[bool](facts, ConfigPipelinePrintActions)
+	printActions, exists, err := FactValue[bool](facts, ConfigPipelinePrintActions)
 	if err != nil {
 		return err
 	}
 
-	pipeline.DumpPlan, _, err = FactValue[bool](facts, ConfigPipelineDumpPlan)
+	if exists {
+		pipeline.PrintActions = printActions
+	}
+
+	dumpPlan, exists, err := FactValue[bool](facts, ConfigPipelineDumpPlan)
 	if err != nil {
 		return err
 	}
 
-	pipeline.DryRun, _, err = FactValue[bool](facts, ConfigPipelineDryRun)
+	if exists {
+		pipeline.DumpPlan = dumpPlan
+	}
+
+	dryRun, exists, err := FactValue[bool](facts, ConfigPipelineDryRun)
 	if err != nil {
 		return err
+	}
+
+	if exists {
+		pipeline.DryRun = dryRun
 	}
 
 	distance, exists, err := FactValue[int](facts, ConfigPipelineHibernationDistance)

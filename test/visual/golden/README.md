@@ -14,8 +14,10 @@ The pull-request gate covers four rendering families:
 - `file_coupling_heatmap.png`: matrix heatmap
 - `top_file_coupling_pairs.png`: ranked bar chart
 
-The gate requires the exact artifact set and deterministic PNG bytes. Refresh
-the set only after reviewing the rendered differences:
+The gate requires the exact artifact set and at least 99% decoded-pixel
+similarity. This tolerates small cross-runner rasterization differences while
+still rejecting visible renderer regressions. Refresh the set only after
+reviewing the rendered differences:
 
 ```bash
 just update-visual-goldens

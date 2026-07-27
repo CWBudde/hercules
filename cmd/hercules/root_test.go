@@ -180,10 +180,7 @@ func TestFailedRemoteCloneLeavesManagedCacheIntact(t *testing.T) {
 	require.NoError(t, writeRemoteCacheMarker(cachePath))
 	sentinelPath := filepath.Join(cachePath, "sentinel")
 	require.NoError(t, os.WriteFile(sentinelPath, []byte("original"), 0o600))
-	missingURI := (&url.URL{
-		Scheme: testFileScheme,
-		Path:   filepath.ToSlash(filepath.Join(t.TempDir(), "missing-origin")),
-	}).String()
+	missingURI := localFileURI(filepath.Join(t.TempDir(), "missing-origin"))
 
 	_, _, err := cloneRemoteRepositoryWithPolicy(missingURI, cachePath, true, "", true)
 
@@ -261,10 +258,7 @@ func TestLoadFileRepository(t *testing.T) {
 	origin, head := createTestRepository(t)
 	worktree, err := origin.Worktree()
 	require.NoError(t, err)
-	uri := (&url.URL{
-		Scheme: testFileScheme,
-		Path:   filepath.ToSlash(worktree.Filesystem.Root()),
-	}).String()
+	uri := localFileURI(worktree.Filesystem.Root())
 
 	repo, repoURI, repoFeature, err := loadRepositoryWithError(uri, "", true, "")
 
@@ -425,9 +419,18 @@ func testRepositoryURI(t *testing.T, repository *git.Repository) string {
 
 	worktree, err := repository.Worktree()
 	require.NoError(t, err)
+	return localFileURI(worktree.Filesystem.Root())
+}
+
+func localFileURI(path string) string {
+	urlPath := filepath.ToSlash(path)
+	if filepath.VolumeName(path) != "" {
+		urlPath = "/" + urlPath
+	}
+
 	return (&url.URL{
 		Scheme: testFileScheme,
-		Path:   filepath.ToSlash(worktree.Filesystem.Root()),
+		Path:   urlPath,
 	}).String()
 }
 

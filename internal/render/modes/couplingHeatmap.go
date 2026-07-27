@@ -60,6 +60,7 @@ func topCouplingHeatmapEntries(
 	}
 
 	totals := make([]int, len(names))
+
 	matrix.ForEachNonZero(func(row, _, value int) bool {
 		if row < len(totals) {
 			totals[row] += value

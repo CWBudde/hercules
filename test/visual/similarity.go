@@ -21,7 +21,7 @@ type SimilarityMetrics struct {
 type ValidationLevel string
 
 const (
-	ValidationStrict   ValidationLevel = "strict"   // >95% similarity
+	ValidationStrict   ValidationLevel = "strict"   // >99% similarity
 	ValidationStandard ValidationLevel = "standard" // >90% similarity
 	ValidationLenient  ValidationLevel = "lenient"  // >85% similarity
 )
@@ -29,7 +29,7 @@ const (
 func similarityThreshold(level ValidationLevel) float64 {
 	switch level {
 	case ValidationStrict:
-		return 0.95
+		return 0.99
 	case ValidationLenient:
 		return 0.85
 	default:

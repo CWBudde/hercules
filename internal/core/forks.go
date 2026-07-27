@@ -1146,8 +1146,8 @@ func tracebackMerges(plan []runAction) int {
 	lastMerges := map[int]*object.Commit{}
 	uniqueMerges := 0
 
-	for _, v := range slices.Backward(plan) {
-		step := &v
+	for index := range slices.Backward(plan) {
+		step := &plan[index]
 		if tracebackMergeStep(step, lastMerges) {
 			uniqueMerges++
 		}

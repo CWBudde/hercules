@@ -55,7 +55,7 @@ The visual validation framework provides:
 ### 2. Validation Levels
 
 ```go
-ValidationStrict   // >95% similarity - for regression testing
+ValidationStrict   // >99% similarity - for regression testing
 ValidationStandard // >90% similarity - for development
 ValidationLenient  // >85% similarity - for cross-platform testing
 ```
@@ -74,7 +74,7 @@ Auto-detects input formats (YAML/Protobuf) and uses appropriate readers.
 ### 4. Test Framework (`regression_test.go`)
 
 **Chart Structure Tests**: Validate that generated images exist, decode, are non-empty, and have sane dimensions. These run by default.
-**Visual Regression Tests**: Require the exact expected artifact set and compare deterministic PNG bytes with the committed goldens. CI and `just test-visual-gate` enable these with `LABOURS_GO_VISUAL_PARITY=1`; absent references fail.
+**Visual Regression Tests**: Require the exact expected artifact set and compare decoded pixels with the committed goldens at the strict 99% threshold. CI and `just test-visual-gate` enable these with `LABOURS_GO_VISUAL_PARITY=1`; absent references fail.
 **Python Compatibility Tests**: Validate functional similarity with historical Python labours references. `just test-visual-extended` enables these with `LABOURS_GO_PYTHON_PARITY=1`; absent references fail.
 
 ## 🚀 Usage
@@ -210,16 +210,16 @@ Supports both hercules output formats:
 
 ### Current Mode Thresholds
 
-| Test                 | Mode                          | Threshold |
-| -------------------- | ----------------------------- | --------- |
-| Go golden regression | `burndown-project`            | Exact PNG |
-| Go golden regression | `devs`                        | Exact PNG |
-| Go golden regression | `couples-files` heatmap       | Exact PNG |
-| Go golden regression | `couples-files` ranked pairs  | Exact PNG |
-| Python compatibility | `burndown-project`            | Lenient   |
-| Python compatibility | `burndown-project --relative` | Lenient   |
+| Test                 | Mode                          | Threshold     |
+| -------------------- | ----------------------------- | ------------- |
+| Go golden regression | `burndown-project`            | Strict (99%+) |
+| Go golden regression | `devs`                        | Strict (99%+) |
+| Go golden regression | `couples-files` heatmap       | Strict (99%+) |
+| Go golden regression | `couples-files` ranked pairs  | Strict (99%+) |
+| Python compatibility | `burndown-project`            | Lenient       |
+| Python compatibility | `burndown-project --relative` | Lenient       |
 
-### Strict (95%+)
+### Strict (99%+)
 
 - For critical regression testing
 - Ensures minimal visual changes

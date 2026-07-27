@@ -1,32 +1,63 @@
 # Hibernation
 
-Hercules supports signalling pipeline items when they are not going to be needed for some period
-n the future and when they are going to be used after that period.
-Pipeline items which support hibernation are expected to compress and decompress their data
-corresponding to the described signals.
-This mechanism is called _hibernation_. It can be used in the cases when there many parallel
-branches and the free operating memory runs too small.
-Hibernation is a special analysis mode and is disabled by default. It can be enabled with
+Hercules can compact branch-local analysis state when the execution plan will not use that branch
+again for a while. This reduces peak memory on histories with many long-lived branches at the cost
+of compression, serialization, and restoration work.
 
-```
-hercules --burndown-distance N
+Hibernation scheduling is disabled by default. Enable it with:
+
+```bash
+hercules --hibernation-distance 10 <analysis flags> <repository>
 ```
 
-where N is the minimum distance between two sequential usages of a branch to hibernate it.
-The distance is measured in the number of commits, forks, merges. etc. in the linear execution plan.
-Usually 10 is a good default; the bigger N, the less hibernation operations,
-the faster the analysis but the bigger memory pressure.
+`--hibernation-distance N` is the minimum number of execution-plan actions between two uses of a
+branch before Hercules inserts a hibernate/boot pair. The distance counts commit, fork, and merge
+actions rather than wall-clock time. `0` disables scheduling; a larger value hibernates less often.
+Start around `10` and measure both memory and runtime for the target repository.
 
-There is also `--hibernate-disk` flag which maintains
+## Line history and modern burndown
 
-## Burndown
+The default `--burndown` analysis consumes the shared line-history stage. For large repositories,
+configure both stages:
 
-The burndown analysis' hibernation compresses the blame information about files with LZ4 algorithm.
-It works very effectively and is actually better than zlib according to the tests.
-There are some further defined flags:
+```bash
+hercules --burndown \
+  --hibernation-distance 10 \
+  --lines-hibernation-threshold 200000 \
+  --lines-hibernation-disk \
+  --burndown-hibernation-disk \
+  <repository>
+```
 
-`--burndown-hibernation-threshold N` is the minimum number of files registered in a branch to start hibernating.
+- `--lines-hibernation-threshold N` sets the minimum allocated line-history state to compress in
+  each branch. `0` disables line-history allocator compression. Lower positive values save memory
+  sooner but use more CPU.
+- `--lines-hibernation-disk` stores hibernated line-history allocators in temporary files instead
+  of retaining their compressed bytes in memory.
+- `--lines-hibernation-dir PATH` selects the temporary directory for those files.
+- `--burndown-hibernation-disk` stores the modern Burndown leaf's hibernated state in a temporary
+  file instead of memory.
+- `--burndown-hibernation-dir PATH` selects the temporary directory for Burndown state.
 
-`--burndown-hibernation-disk` dumps the compressed blame info on disk instead of keeping them in memory.
+The disk flags do not schedule hibernation by themselves; `--hibernation-distance` must be positive.
+Temporary files are removed during boot and disposal, including failure paths.
 
-`--burndown-hibernation-dir` sets the path for the previous feature.
+The `--preset large-repo` preset selects the supported starting values
+`--lines-hibernation-threshold=200000` and `--lines-hibernation-disk`, together with first-parent
+traversal and coarser output sampling. It does not choose the scheduling tradeoff for you; pass a
+positive `--hibernation-distance` as well.
+
+## Legacy burndown
+
+`--legacy-burndown` has its own allocator and therefore uses namespaced flags:
+
+```bash
+hercules --legacy-burndown \
+  --hibernation-distance 10 \
+  --legacy-burndown-hibernation-threshold 200000 \
+  --legacy-burndown-hibernation-disk \
+  <repository>
+```
+
+The optional directory flag is `--legacy-burndown-hibernation-dir`. The legacy disk option requires
+a positive legacy threshold. These flags do not apply to the default `--burndown` implementation.

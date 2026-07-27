@@ -148,6 +148,14 @@ the initial tree.
 
 ### Burndown (`--burndown`)
 
+The project matrix has one row per recorded sample and one column per last-edit cohort. A cell is
+the number of lines alive at that sample whose most recent edit tick belongs to that cohort.
+Samples are `sampling * tick_size` apart; cohorts are `granularity * tick_size` wide. Rows may
+omit trailing zero cohorts. `--burndown-files` records the same matrix per surviving file and
+`--burndown-people` records it per resolved line owner, plus the owner-interaction matrix. A line
+which is edited moves from its previous last-edit cohort to the current one; a deleted line leaves
+the living balance. Binary content contributes no text lines.
+
 YAML fields:
 
 - `granularity` int
@@ -324,6 +332,17 @@ CommitsStat:
 
 ### Couples (`--couples`)
 
+For each commit with at most 1,000 included destination paths, the file matrix increments every
+ordered pair of paths present in that commit, including the diagonal. Deleted paths are not part of
+that commit's file context; insertions and modifications are. Rename history is propagated to the
+final path before output. Thus an off-diagonal file cell is the number of qualifying commits in
+which both paths occurred, while a diagonal is the path's qualifying commit count.
+
+For developers, Hercules first counts how often each author changed each surviving file. The
+developer cell `(a, b)` is then `sum_file min(changes(a, file), changes(b, file))`; its diagonal is
+the author's retained per-file change count. The extra unknown-author row is internal compatibility
+state and is not assigned a public identity. Both matrices are symmetric.
+
 YAML fields:
 
 - `files_coocc.index` list
@@ -368,6 +387,12 @@ Couples:
 ```
 
 ### Devs (`--devs`)
+
+Each non-empty analysed commit increments its resolved author's commit count in the commit tick.
+`--empty-commits` includes commits whose filtered tree diff is empty. Line statistics use the text
+diff after repository filters: a replacement pairs deleted and inserted lines as `changed`; any
+unpaired insertion is `added` and any unpaired deletion is `removed`. Counts are summed per author,
+tick, and detected language. Binary files do not contribute line counts.
 
 YAML fields:
 
@@ -513,6 +538,14 @@ ImportsPerDeveloper:
 ```
 
 ### Knowledge Diffusion (`--knowledge-diffusion`)
+
+An editor is a resolved commit author who inserted or modified a surviving file. Deletion alone
+does not add an editor; a rename carries the old path's editor history to the new path and records
+the rename author there. `unique_editors` is the lifetime distinct-editor count and
+`editors_over_time` is its cumulative value at each first-edit tick. `recent_editors` counts
+authors whose last edit tick is at or after `last_analysis_tick - window_ticks`, inclusive, where
+`window_ticks = floor(window_months * 30.44 days / tick_size)`. The distribution is a histogram
+from lifetime editor count to number of retained paths.
 
 YAML fields:
 
@@ -673,6 +706,11 @@ OwnershipConcentration:
 
 ### Refactoring Proxy (`--refactoring-proxy`)
 
+For each occupied tick, `total_changes` counts included insertions, modifications, deletions, and
+renames. A change is a rename when both old and new paths are non-empty and differ.
+`rename_ratio = renames / total_changes`; `is_refactoring` is true only when that ratio is strictly
+greater than the configured threshold. Empty ticks are omitted.
+
 YAML fields:
 
 - `refactoring_proxy.threshold`
@@ -756,6 +794,13 @@ Shotness:
 ```
 
 ### Temporal Activity (`--temporal-activity`)
+
+Every analysed commit increments exactly one weekday, local hour, calendar month, and ISO-week
+bucket for its resolved author, using the commit author's timestamp and its recorded UTC offset.
+Weekday indices are Sunday `0` through Saturday `6`; month indices are January `0` through December
+`11`; ISO week `N` is stored at index `N-1`. The corresponding line value is `added + removed`
+text lines for that commit; the separate paired-replacement (`changed`) count is not included.
+Per-tick records retain the same counts for renderer date filtering.
 
 YAML fields:
 

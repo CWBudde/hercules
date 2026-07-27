@@ -576,6 +576,15 @@ developer binary, treefmt v2.1.1, is selected per platform and verified against 
 
 ### DOC-01: Correct user-visible contracts
 
+Status: completed 2026-07-27
+
+README and hibernation guidance now name only supported flags and describe cache replacement,
+schema compatibility, semantic changes, and warning versus hard-failure exit behavior. Every
+default report analysis links to a precise metric definition, and every concrete renderer mode has
+a tested output-asset manifest. CLI end-to-end coverage validates documented command flags against
+live help, exercises the local README analysis/render workflow, and smoke-tests root and subcommand
+help; the latter exposed and fixed a custom-usage panic on ordinary subcommands.
+
 - Remove or correct nonexistent/stale CLI flags.
 - Document warning versus failure exit semantics.
 - Document metric definitions and known compatibility changes.
@@ -584,8 +593,8 @@ developer binary, treefmt v2.1.1, is selected per platform and verified against 
 
 Acceptance criteria:
 
-- [ ] automated help/README examples execute successfully in CI;
-- [ ] each default analysis links to a precise metric definition.
+- [x] automated help/README examples execute successfully in CI;
+- [x] each default analysis links to a precise metric definition.
 
 ### DOC-02: Make the burndown y-axis magnitude self-contained
 

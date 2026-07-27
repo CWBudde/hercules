@@ -220,13 +220,20 @@ tags, and migration notes from the old upstream.
 
 The most useful and reliably up-to-date command line reference:
 
-```
+```bash
 hercules --help
+labours --help
 ```
 
-Some examples:
+The [CLI outcome contract](#exit-status-warnings-and-failures), the
+[analysis schema and metric definitions](docs/SCHEMAS.md), and the
+[renderer output manifest](docs/RENDERER_OUTPUTS.md) describe stable
+user-visible behavior which is not practical to fit in `--help`.
 
-```
+Some examples (the local equivalent of the first workflow is exercised by the
+CLI end-to-end test in CI):
+
+```bash
 # Use "memory" go-git backend and display the burndown plot. "memory" is the fastest but the repository's git data must fit into RAM.
 hercules --burndown https://github.com/go-git/go-git | labours -m burndown-project --resample month
 # Use "file system" go-git backend and print some basic information about the repository.
@@ -262,13 +269,14 @@ Two presets ship today:
   ```
 
 - `--preset large-repo` — for repositories where a default run would otherwise OOM or
-  take hours. Enables first-parent traversal (`--first-parent`), turns on RBTree
+  take hours. Enables first-parent traversal (`--first-parent`), configures RBTree
   hibernation with a 200 000-allocation threshold and disk spill
   (`--lines-hibernation-threshold=200000 --lines-hibernation-disk`), and reduces output
-  resolution to 30-day buckets (`--granularity=30 --sampling=30`):
+  resolution to 30-day buckets (`--granularity=30 --sampling=30`). Add a positive
+  `--hibernation-distance` to schedule hibernation:
 
   ```
-  hercules --preset large-repo --burndown /path/to/big/repo > burndown.yml
+  hercules --preset large-repo --hibernation-distance=10 --burndown /path/to/big/repo > burndown.yml
   labours -i burndown.yml -m burndown-project
   ```
 
@@ -289,7 +297,7 @@ corresponding directory instead of cloning from scratch:
 hercules https://github.com/git/git /tmp/repo-cache
 
 # Second time - use the cache
-hercules --some-analysis /tmp/repo-cache
+hercules --commits-stat /tmp/repo-cache
 ```
 
 Hercules clones into a temporary sibling and moves the completed clone into place, so a failed
@@ -304,6 +312,21 @@ hercules --force-cache-replace https://github.com/git/git /tmp/repo-cache
 The force flag never permits replacing an unrelated directory, a symbolic link, a filesystem
 root, the current working directory, or the user's home directory. On a platform or filesystem
 without atomic directory exchange, replacement fails and the existing cache remains untouched.
+
+### Exit status, warnings, and failures
+
+Both CLIs return `0` only when command parsing, input, analysis, rendering, and output publication
+complete without a hard error. Invalid arguments, malformed or unsupported input, analysis
+failures, unknown or unimplemented renderer modes, and output write failures return nonzero and
+write a diagnostic to stderr.
+
+Labours treats only a requested mode whose analysis was not collected as a warning. It prints the
+missing-analysis warning to stderr, continues other requested modes, and still returns `0` if
+there are no hard failures. `hercules report` records the same warnings in `manifest.json` and
+`index.html`; warnings do not make the command fail. In non-strict report mode, hard rendering
+failures are recorded and the completed report is published before the command returns nonzero.
+With `--strict`, the first hard rendering failure aborts publication and leaves an existing report
+untouched. A broken output pipe is always a hard failure.
 
 ### GitHub Action
 
@@ -469,7 +492,7 @@ how many lines are alive at the sampled moments in time for each identified deve
 
 ```
 hercules --couples [--people-dict=/path/to/identities]
-labours -m couples -o <name> [--couples-tmp-dir=/tmp]
+labours -m couples -o <output-directory> [--tmpdir=/tmp]
 ```
 
 The files are coupled if they are changed in the same commit. The developers are coupled if they
@@ -694,6 +717,24 @@ bus factor, knowledge diffusion, hotspot risk, and refactoring proxy
 views without requiring separate `labours` flags. An external drop-in renderer can
 be substituted with `--labours-cmd`.
 
+Every analysis enabled by the default report links to its precise metric and wire contract:
+
+| Default analysis flag                                 | Definition                                                                                        |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `--burndown`, `--burndown-files`, `--burndown-people` | [Line-age cohorts and snapshot semantics](docs/SCHEMAS.md#burndown---burndown)                    |
+| `--couples`                                           | [File and developer co-occurrence](docs/SCHEMAS.md#couples---couples)                             |
+| `--devs`                                              | [Per-developer commit and line-change statistics](docs/SCHEMAS.md#devs---devs)                    |
+| `--temporal-activity`                                 | [Author-time activity dimensions](docs/SCHEMAS.md#temporal-activity---temporal-activity)          |
+| `--bus-factor`                                        | [Exact ownership threshold and snapshot semantics](docs/SCHEMAS.md#bus-factor---bus-factor)       |
+| `--ownership-concentration`                           | [Gini/HHI ownership snapshots](docs/SCHEMAS.md#ownership-concentration---ownership-concentration) |
+| `--knowledge-diffusion`                               | [Lifetime and recent file editors](docs/SCHEMAS.md#knowledge-diffusion---knowledge-diffusion)     |
+| `--onboarding`                                        | [First-commit cohorts and duration windows](docs/SCHEMAS.md#onboarding---onboarding)              |
+| `--hotspot-risk`                                      | [Weighted normalized risk factors](docs/SCHEMAS.md#hotspot-risk---hotspot-risk)                   |
+| `--refactoring-proxy`                                 | [Per-tick rename ratio](docs/SCHEMAS.md#refactoring-proxy---refactoring-proxy)                    |
+
+The exact files emitted by each mode, including fan-out and companion assets, are listed in the
+[renderer output manifest](docs/RENDERER_OUTPUTS.md).
+
 From a source checkout, the same report can be generated with:
 
 ```
@@ -731,7 +772,10 @@ tree with `CGO_ENABLED=1`. The compatibility of this path is verified by
 
 ### Merging
 
-`hercules combine` is the command which joins several analysis results in Protocol Buffers format together.
+`hercules combine` joins several analysis results in Protocol Buffers format. Readers and
+`combine` enforce the [schema-version compatibility matrix](docs/SCHEMAS.md#reader-compatibility);
+the [schema changelog](docs/SCHEMA_CHANGELOG.md) records wire-compatible and semantic compatibility
+changes which may require regenerating stored results.
 
 ```
 hercules --burndown --pb https://github.com/go-git/go-git > go-git.pb
@@ -756,13 +800,14 @@ The Go renderer aims for visual parity with the original matplotlib output; the 
 parity matrix and how to re-run it are documented in
 [docs/RENDER_PARITY.md](docs/RENDER_PARITY.md).
 
-These options are effective in burndown charts only:
+`--relative` is effective in burndown charts only:
 
 ```
-labours [--text-size] [--relative]
+labours [--font-size N] [--relative]
 ```
 
-`--text-size` changes the font size, `--relative` activate the stretched burndown layout.
+`--font-size` changes label and legend size for all charts; `--relative` activates the stretched
+burndown layout.
 
 ### Custom plotting backend
 
@@ -788,7 +833,7 @@ If the analyzed repository is big and extensively uses branching, the burndown s
 fail with an OOM. You should try the following:
 
 1. Read the repo from disk instead of cloning into memory.
-2. Use `--skip-blacklist` to avoid analyzing the unwanted files. It is also possible to constrain the `--language`.
-3. Use the [hibernation](docs/HIBERNATION.md) feature: `--hibernation-distance 10 --burndown-hibernation-threshold=1000`. Play with those two numbers to start hibernating right before the OOM.
-4. Hibernate on disk: `--burndown-hibernation-disk --burndown-hibernation-dir /path`.
+2. Use `--skip-blacklist` to avoid analyzing unwanted files. It is also possible to constrain `--languages`.
+3. Use the [hibernation](docs/HIBERNATION.md) feature: `--hibernation-distance 10 --lines-hibernation-threshold=200000`. Tune the values to start hibernating before the OOM.
+4. Hibernate both line history and burndown state on disk: `--lines-hibernation-disk --burndown-hibernation-disk`; their optional directories are configured with `--lines-hibernation-dir` and `--burndown-hibernation-dir`.
 5. `--first-parent`, you win.

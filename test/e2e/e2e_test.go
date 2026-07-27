@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"testing"
@@ -60,6 +61,104 @@ func TestCLIExitCodes(t *testing.T) {
 	if len(bytes.TrimSpace(result.stderr)) == 0 {
 		t.Fatal("labours input failure did not write a diagnostic to stderr")
 	}
+}
+
+func TestDocumentedHelpAndREADMEExamples(t *testing.T) {
+	hercules := requiredBinary(t, herculesBinaryEnvironment)
+	labours := requiredBinary(t, laboursBinaryEnvironment)
+
+	herculesHelp := runCommand(t, hercules, "--help")
+	requireSuccess(t, herculesHelp)
+	laboursHelp := runCommand(t, labours, "--help")
+	requireSuccess(t, laboursHelp)
+	var knownHerculesFlags strings.Builder
+	knownHerculesFlags.Write(herculesHelp.stdout)
+	for _, command := range []string{"report", "combine", "generate-plugin", "completion"} {
+		result := runCommand(t, hercules, command, "--help")
+		requireSuccess(t, result)
+		knownHerculesFlags.Write(result.stdout)
+	}
+
+	readmePath := repositoryPath("README.md")
+	readme, err := os.ReadFile(readmePath)
+	if err != nil {
+		t.Fatalf("read README examples: %v", err)
+	}
+	for _, test := range []struct {
+		name  string
+		help  string
+		flags []string
+	}{
+		{
+			name:  "hercules",
+			help:  knownHerculesFlags.String(),
+			flags: documentedCommandFlags(string(readme), "hercules"),
+		},
+		{
+			name:  "labours",
+			help:  string(laboursHelp.stdout),
+			flags: documentedCommandFlags(string(readme), "labours"),
+		},
+	} {
+		t.Run(test.name+" flags", func(t *testing.T) {
+			for _, flag := range test.flags {
+				if !strings.Contains(test.help, flag) {
+					t.Errorf("README command uses %s %s, but it is absent from CLI help", test.name, flag)
+				}
+			}
+		})
+	}
+
+	// Exercise the README's basic Hercules -> Labours workflow without network access.
+	repository := createRepository(t)
+	analysis := runCommand(
+		t, hercules, "--preset", "quick", "--burndown", "--pb", "--quiet", repository,
+	)
+	requireSuccess(t, analysis)
+	analysisPath := filepath.Join(t.TempDir(), "burndown.pb")
+	err = os.WriteFile(analysisPath, analysis.stdout, 0o600)
+	if err != nil {
+		t.Fatalf("write documented workflow output: %v", err)
+	}
+	chartPath := filepath.Join(t.TempDir(), "burndown.png")
+	rendered := runCommand(
+		t, labours, "--quiet", "--input", analysisPath, "--input-format", "pb",
+		"--mode", "burndown-project", "--resample", "month", "--output", chartPath,
+	)
+	requireSuccess(t, rendered)
+	requireRegularFile(t, chartPath)
+}
+
+var documentedFlagPattern = regexp.MustCompile(`--[a-z][a-z0-9-]*`)
+
+func documentedCommandFlags(markdown, binary string) []string {
+	flags := map[string]struct{}{}
+	inFence := false
+	for line := range strings.Lines(markdown) {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "```") {
+			inFence = !inFence
+			continue
+		}
+		if !inFence || strings.Contains(line, "docker ") {
+			continue
+		}
+		_, command, found := strings.Cut(line, binary)
+		if !found {
+			continue
+		}
+		if beforePipe, _, hasPipe := strings.Cut(command, "|"); hasPipe {
+			command = beforePipe
+		}
+		for _, flag := range documentedFlagPattern.FindAllString(command, -1) {
+			flags[flag] = struct{}{}
+		}
+	}
+	result := make([]string, 0, len(flags))
+	for flag := range flags {
+		result = append(result, flag)
+	}
+	return result
 }
 
 func TestRemoteCacheSafety(t *testing.T) {

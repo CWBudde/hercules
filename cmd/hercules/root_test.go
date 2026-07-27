@@ -22,6 +22,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport/client"
 	"github.com/go-git/go-git/v5/plumbing/transport/server"
 	gitssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -30,6 +31,19 @@ import (
 )
 
 const testFileScheme = "file"
+
+func TestFormatUsageHandlesOrdinarySubcommand(t *testing.T) {
+	command := &cobra.Command{Use: "example"}
+	command.Flags().String("example-flag", "", "Example flag.")
+	var output bytes.Buffer
+	command.SetOut(&output)
+	command.SetErr(&output)
+
+	require.NoError(t, formatUsage(command))
+	assert.Contains(t, output.String(), "--example-flag")
+	assert.NotContains(t, output.String(), "Analysis Targets:")
+	assert.NotContains(t, output.String(), "Plumbing Options:")
+}
 
 func TestLoadRemoteRepositories(t *testing.T) {
 	origin, head := createTestRepository(t)

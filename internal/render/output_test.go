@@ -1,7 +1,9 @@
 package render
 
 import (
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -156,6 +158,45 @@ func TestModeOutputConventionsCoverImplementedModes(t *testing.T) {
 	for mode := range modeOutputConventions {
 		if _, ok := modeHandlers[mode]; !ok {
 			t.Fatalf("output convention exists for non-implemented mode %q", mode)
+		}
+	}
+}
+
+func TestRendererOutputDocumentationMatchesManifest(t *testing.T) {
+	path := filepath.Join("..", "..", "docs", "RENDERER_OUTPUTS.md")
+	payload, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read renderer output documentation: %v", err)
+	}
+	document := string(payload)
+	documented := map[string]string{}
+	for line := range strings.Lines(document) {
+		if !strings.HasPrefix(line, "| `") {
+			continue
+		}
+		rest := strings.TrimPrefix(line, "| `")
+		mode, _, found := strings.Cut(rest, "`")
+		if !found {
+			continue
+		}
+		documented[mode] = line
+	}
+
+	for mode, convention := range modeOutputConventions {
+		row := documented[mode]
+		if row == "" {
+			t.Errorf("renderer output documentation is missing mode %q", mode)
+			continue
+		}
+		for _, asset := range convention.Assets {
+			if !strings.Contains(row, "`"+asset+"`") {
+				t.Errorf("renderer output documentation for %q is missing asset %q", mode, asset)
+			}
+		}
+	}
+	for mode := range documented {
+		if _, exists := modeOutputConventions[mode]; !exists {
+			t.Errorf("renderer output documentation contains unknown concrete mode %q", mode)
 		}
 	}
 }

@@ -1325,7 +1325,7 @@ Flags:
 	`{{cat "!" $desc | wrap $wrap | indent $indent | substr $indent -1 | substr 2 -1}}
 {{end}}{{end}}
 
-Analysis Targets:{{range .leaves}}
+{{if .showPipeline}}Analysis Targets:{{range .leaves}}
       --{{rpad .Flag 40}}Runs {{.Name}} analysis.` +
 	`{{wrap 72 .Description | nindent 48}}{{range .ListConfigurationOptions}}
           --{{if .Type.String}}{{rpad (print .Flag " " .Type.String) 40}}{{else}}{{rpad .Flag 40}}{{end}}
@@ -1347,7 +1347,7 @@ Plumbing Options:{{range .plumbing}}{{$name := .Name}}{{range .ListConfiguration
 
 --feature:{{range $key, $value := .features}}
       {{rpad $key 42}}Enables {{range $index, $item := $value}}{{if $index}}, {{end}}` +
-	`{{$item.Name}}{{end}}.{{end}}{{if .c.HasAvailableInheritedFlags}}
+	`{{$item.Name}}{{end}}.{{end}}{{end}}{{if .c.HasAvailableInheritedFlags}}
 
 Global Flags:
 {{.c.InheritedFlags.FlagUsages | trimTrailingWhitespaces}}{{end}}{{if .c.HasHelpSubCommands}}
@@ -1366,33 +1366,43 @@ func formatUsage(command *cobra.Command) error {
 	plumbing := hercules.Registry.GetPlumbingItems()
 	features := hercules.Registry.GetFeaturedItems()
 	hercules.EnablePathFlagTypeMasquerade()
+	showPipeline := command == rootCmd
 	filter := map[string]bool{}
-	for _, l := range leaves {
-		filter[l.Flag()] = true
-		for _, cfg := range l.ListConfigurationOptions() {
-			filter[cfg.Flag] = true
+	if showPipeline {
+		for _, l := range leaves {
+			filter[l.Flag()] = true
+			for _, cfg := range l.ListConfigurationOptions() {
+				filter[cfg.Flag] = true
+			}
 		}
-	}
-	for _, i := range plumbing {
-		for _, cfg := range i.ListConfigurationOptions() {
-			filter[cfg.Flag] = true
+		for _, i := range plumbing {
+			for _, cfg := range i.ListConfigurationOptions() {
+				filter[cfg.Flag] = true
+			}
 		}
 	}
 
+	hidden := map[*pflag.Flag]bool{}
 	for key := range filter {
-		localFlags.Lookup(key).Hidden = true
+		if flag := localFlags.Lookup(key); flag != nil {
+			hidden[flag] = flag.Hidden
+			flag.Hidden = true
+		}
 	}
+	defer func() {
+		for flag, wasHidden := range hidden {
+			flag.Hidden = wasHidden
+		}
+	}()
 	args := map[string]any{
-		"c":        command,
-		"leaves":   leaves,
-		"plumbing": plumbing,
-		"features": features,
+		"c":            command,
+		"leaves":       leaves,
+		"plumbing":     plumbing,
+		"features":     features,
+		"showPipeline": showPipeline,
 	}
 
 	err := tmpl(command.OutOrStderr(), helpTemplate, args)
-	for key := range filter {
-		localFlags.Lookup(key).Hidden = false
-	}
 	if err != nil {
 		command.Println(err)
 	}

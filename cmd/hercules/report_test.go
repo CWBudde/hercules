@@ -44,6 +44,34 @@ func TestSelectReportAnalysisFlagsDefault(t *testing.T) {
 	}
 }
 
+func TestDefaultReportAnalysesLinkToMetricDefinitions(t *testing.T) {
+	payload, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
+	if err != nil {
+		t.Fatalf("read README: %v", err)
+	}
+	readme := string(payload)
+	start := strings.Index(readme, "Every analysis enabled by the default report")
+	end := strings.Index(readme, "The exact files emitted by each mode")
+	if start < 0 || end <= start {
+		t.Fatal("README default-analysis metric table is missing")
+	}
+	table := readme[start:end]
+
+	for _, analysis := range reportDefaultAnalysisFlags {
+		flag := "`--" + analysis + "`"
+		var linked bool
+		for line := range strings.Lines(table) {
+			if strings.Contains(line, flag) && strings.Contains(line, "](docs/SCHEMAS.md#") {
+				linked = true
+				break
+			}
+		}
+		if !linked {
+			t.Errorf("default report analysis %s does not link to a metric definition", flag)
+		}
+	}
+}
+
 func TestSelectReportModesDefaultIncludesMilestoneFourEasyPath(t *testing.T) {
 	modes, err := selectReportModes(nil, false)
 	if err != nil {

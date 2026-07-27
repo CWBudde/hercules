@@ -318,7 +318,7 @@ Its builder image is pinned by multi-architecture digest. Docker Buildx can buil
 Linux architectures as one image index:
 
 ```
-docker buildx build --platform linux/amd64,linux/arm64 \
+SOURCE_DATE_EPOCH=0 docker buildx build --platform linux/amd64,linux/arm64 \
   --output type=oci,dest=hercules-multiarch.tar .
 ```
 
@@ -328,7 +328,7 @@ CI executes that command and verifies both target builds. To publish an image in
 For a local image on the current architecture:
 
 ```
-docker build -t hercules .
+SOURCE_DATE_EPOCH=0 docker build -t hercules .
 docker run --rm hercules hercules --preset quick --burndown --pb https://github.com/git/git | \
   docker run --rm -i -v "$(pwd):/io" hercules labours -f pb -m burndown-project -o /io/git_git.png
 ```

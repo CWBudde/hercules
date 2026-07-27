@@ -427,6 +427,13 @@ Rendered people-based charts use only each identity's canonical name, so their l
 the email aliases stored in analysis reports. Raw JSON output retains the complete identity strings.
 `--people-anonymity` remains available when names must also be hidden.
 
+`burndown-person` is a fan-out mode: `labours -m burndown-person -o chart.png` writes one
+`chart_<canonical-name>-<identity-hash>.png` sibling per contributor instead of `chart.png`.
+The names are safe filename slugs and do not contain email aliases. Each chart omits age bands the
+contributor never occupied and limits its timeline to that contributor's activity. For the common
+single-chart view of every developer's living code through time, use
+`labours -m ownership -o ownership.png`.
+
 Identity discovery can be audited before running people-sensitive analyses:
 
 ```

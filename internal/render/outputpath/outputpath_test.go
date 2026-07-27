@@ -61,3 +61,31 @@ func TestFanoutPathsKeepCollidingAndUnicodeIdentitiesUnique(t *testing.T) {
 		}
 	}
 }
+
+func TestFanoutLabeledPathsKeepPrivateIdentityOutOfFilename(t *testing.T) {
+	output := filepath.Join(t.TempDir(), "people.svg")
+	identity := "vadim markovtsev|gmarkhor@gmail.com|vadim@athenian.co"
+	paths, err := FanoutLabeledPaths(
+		output,
+		"burndown_person",
+		[]string{"vadim markovtsev"},
+		[]string{identity},
+	)
+	if err != nil {
+		t.Fatalf("FanoutLabeledPaths() failed: %v", err)
+	}
+	name := filepath.Base(paths[0])
+	if strings.Contains(name, "@") || strings.Contains(name, "gmail") || strings.Contains(name, "athenian") {
+		t.Fatalf("planned path exposes private identity aliases: %q", name)
+	}
+	if !strings.HasPrefix(name, "people_vadim-markovtsev-") {
+		t.Fatalf("planned path %q does not use the public label", name)
+	}
+}
+
+func TestFanoutLabeledPathsRejectMismatchedInputs(t *testing.T) {
+	_, err := FanoutLabeledPaths("people.svg", "burndown_person", []string{"Alice"}, nil)
+	if err == nil {
+		t.Fatal("FanoutLabeledPaths() accepted mismatched labels and identities")
+	}
+}

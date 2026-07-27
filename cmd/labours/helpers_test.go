@@ -15,6 +15,11 @@ import (
 	"github.com/cwbudde/hercules/internal/render/readers"
 )
 
+const (
+	helpBurndownPersonMode = "burndown-person"
+	helpOwnershipMode      = "ownership"
+)
+
 func TestParseFlexibleDateAcceptsCommonPythonCompatibleForms(t *testing.T) {
 	for _, date := range []string{
 		"2024-01-02",
@@ -39,6 +44,28 @@ func TestPythonCompatibleFlagsAreRegistered(t *testing.T) {
 	} {
 		if rootCmd.PersistentFlags().Lookup(name) == nil {
 			t.Fatalf("expected flag %q to be registered", name)
+		}
+	}
+}
+
+func TestHelpExplainsPeopleBurndownFanoutAndCombinedView(t *testing.T) {
+	output := rootCmd.PersistentFlags().Lookup("output")
+	if output == nil {
+		t.Fatal("expected output flag to be registered")
+	}
+	for _, text := range []string{helpBurndownPersonMode, "fan-out", "safe hashed suffixes"} {
+		if !strings.Contains(output.Usage, text) {
+			t.Errorf("output help %q does not mention %q", output.Usage, text)
+		}
+	}
+
+	modes := rootCmd.PersistentFlags().Lookup("modes")
+	if modes == nil {
+		t.Fatal("expected modes flag to be registered")
+	}
+	for _, text := range []string{helpBurndownPersonMode, helpOwnershipMode, "combined"} {
+		if !strings.Contains(modes.Usage, text) {
+			t.Errorf("modes help %q does not mention %q", modes.Usage, text)
 		}
 	}
 }
@@ -71,11 +98,11 @@ func TestRepositoryModeRequirementsCoverConcreteModes(t *testing.T) {
 	concreteModes := []string{
 		"burndown-project",
 		"burndown-file",
-		"burndown-person",
+		helpBurndownPersonMode,
 		"burndown-repository",
 		"burndown-repos-combined",
 		"overwrites-matrix",
-		"ownership",
+		helpOwnershipMode,
 		"couples-files",
 		"couples-people",
 		"couples-shotness",
@@ -118,7 +145,7 @@ func TestRequiredAnalysesForModesReturnsSortedUnion(t *testing.T) {
 		"burndown-file",
 		"devs-parallel",
 		"temporal-activity",
-		"burndown-person",
+		helpBurndownPersonMode,
 	})
 	if err != nil {
 		t.Fatalf("requiredAnalysesForModes() unexpected error: %v", err)

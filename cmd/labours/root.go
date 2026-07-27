@@ -32,7 +32,11 @@ func init() {
 }
 
 func initializeFlags() {
-	rootCmd.PersistentFlags().StringP("output", "o", "", "Path to output file/directory. JSON extension saves data instead of image")
+	rootCmd.PersistentFlags().StringP(
+		"output", "o", "",
+		"Path to output file/directory; burndown-file and burndown-person use a file path "+
+			"as a fan-out basename with safe hashed suffixes. JSON extension saves data instead of images",
+	)
 	rootCmd.PersistentFlags().StringP("input", "i", "-", "Path to input file")
 	rootCmd.PersistentFlags().StringP("input-format", "f", "auto", "Input format")
 	rootCmd.PersistentFlags().Int("font-size", 12, "Size of labels and legend")
@@ -43,8 +47,15 @@ func initializeFlags() {
 	rootCmd.PersistentFlags().Bool("no-burndown-title", false, "Suppress titles on burndown and ownership charts")
 	rootCmd.PersistentFlags().Bool("relative", false, "Occupy 100% height for every measurement")
 	rootCmd.PersistentFlags().String("tmpdir", "", "Temporary directory for intermediate files")
-	rootCmd.PersistentFlags().StringSliceP("modes", "m", []string{}, "What to plot, can be repeated")
-	rootCmd.PersistentFlags().StringSlice("mode", []string{}, "What to plot; Python-compatible alias for --modes")
+	rootCmd.PersistentFlags().StringSliceP(
+		"modes", "m", []string{},
+		"What to plot, can be repeated; burndown-person fans out per contributor, "+
+			"while ownership writes one combined developer stack",
+	)
+	rootCmd.PersistentFlags().StringSlice(
+		"mode", []string{},
+		"What to plot; Python-compatible alias for --modes (burndown-person fans out, ownership combines developers)",
+	)
 	rootCmd.PersistentFlags().String("resample", "year", "Resample time series method")
 	rootCmd.PersistentFlags().String("start-date", "", "Start date for time-based plots")
 	rootCmd.PersistentFlags().String("end-date", "", "End date for time-based plots")

@@ -4,6 +4,7 @@ package outputpath
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -15,13 +16,24 @@ const (
 	hashLength   = 10
 )
 
+var errFanoutInputLength = errors.New("fan-out labels and identities differ in length")
+
 // StableSlug returns a filesystem-safe, rune-aware label with a stable hash
 // derived from the complete, unmodified identity. The hash prevents distinct
 // identities which sanitize to the same label from overwriting each other.
 func StableSlug(identity string) string {
+	return StableLabeledSlug(identity, identity)
+}
+
+// StableLabeledSlug returns a filesystem-safe, rune-aware public label with a
+// stable hash derived from the complete, unmodified identity. This allows
+// callers to keep private identity aliases out of filenames without losing the
+// collision resistance of the complete identity.
+func StableLabeledSlug(publicLabel, identity string) string {
 	var builder strings.Builder
 	lastSeparator := false
-	for _, character := range identity {
+
+	for _, character := range publicLabel {
 		switch {
 		case unicode.IsLetter(character), unicode.IsNumber(character):
 			builder.WriteRune(character)
@@ -49,11 +61,29 @@ func StableSlug(identity string) string {
 // requested basename. When baseOutput is empty, defaultBase and .png are used.
 // Duplicate planned paths are rejected before a renderer writes any files.
 func FanoutPaths(baseOutput, defaultBase string, identities []string) ([]string, error) {
+	return FanoutLabeledPaths(baseOutput, defaultBase, identities, identities)
+}
+
+// FanoutLabeledPaths plans one sibling output per identity using a public label
+// for the readable slug and the full identity only for its stable hash.
+func FanoutLabeledPaths(
+	baseOutput, defaultBase string,
+	labels, identities []string,
+) ([]string, error) {
+	if len(labels) != len(identities) {
+		return nil, fmt.Errorf(
+			"%w: %d != %d",
+			errFanoutInputLength,
+			len(labels), len(identities),
+		)
+	}
+
 	directory, base, extension := splitOutput(baseOutput, defaultBase)
 	paths := make([]string, len(identities))
 	for index, identity := range identities {
 		paths[index] = filepath.Join(
-			directory, fmt.Sprintf("%s_%s%s", base, StableSlug(identity), extension),
+			directory,
+			fmt.Sprintf("%s_%s%s", base, StableLabeledSlug(labels[index], identity), extension),
 		)
 	}
 	if err := RejectDuplicates(paths); err != nil {

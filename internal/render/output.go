@@ -86,9 +86,10 @@ var modeOutputConventions = map[string]outputConvention{
 		Assets:      []string{"<base>_<rune-safe-file-slug>-<hash><ext>"},
 	},
 	"burndown-person": {
-		Kind:        outputFileFanout,
-		Description: "uses the requested file path as a basename and writes one chart per person with a stable identity hash",
-		Assets:      []string{"<base>_<rune-safe-person-slug>-<hash><ext>"},
+		Kind: outputFileFanout,
+		Description: "uses the requested file path as a basename and writes one chart per person " +
+			"with a public canonical-name slug and stable identity hash",
+		Assets: []string{"<base>_<canonical-person-slug>-<identity-hash><ext>"},
 	},
 	"burndown-repository": {
 		Kind:        outputAssetDir,

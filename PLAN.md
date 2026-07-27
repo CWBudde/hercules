@@ -620,19 +620,15 @@ checked-in Hercules history fixture that previously produced large negative spik
 
 ### DOC-05: burndown-person emits one figure per developer with an unreadable legend
 
-`labours -m burndown-person -o chart.png` does not write `chart.png`; it writes one file per
-contributor (`chart_vadim markovtsev_gmarkhor@gmail_com.png`, 29 files for this repository), with
-spaces and mangled addresses in the filenames. Each figure carries the full 40-band quarterly legend
-whether or not that developer touched those quarters, so a contributor with a few hundred surviving
-lines gets a chart that is roughly 80% legend and 20% data, on an axis spanning the whole project
-history rather than their own.
+Status: completed 2026-07-28
 
-- Document the fan-out in `--help` (the single `-o` path reads as a single output file), and derive
-  filenames that are safe to serve.
-- Drop empty bands from the per-person legend, and consider defaulting the x range to the
-  developer's own activity window.
-- Offer a combined per-developer view for the common case of "who owns what": a single figure
-  stacking developers, which is what `-m ownership` already approximates.
+`burndown-person` now documents its file fan-out in CLI help and emits bounded, rune-safe filenames
+whose readable slug contains only the canonical contributor name while the complete identity
+contributes a stable collision-resistant hash. Each person chart removes age bands that contributor
+never occupied and trims the default x-axis to their own activity window. Help and the People guide
+also direct the common “who owns what” use case to the existing single-file `ownership` developer
+stack. Regression coverage protects private filenames, compacted bands and dates, and the
+fan-out/combined-view help contract.
 
 Acceptance criteria:
 

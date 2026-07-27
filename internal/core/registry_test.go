@@ -252,6 +252,72 @@ func TestRegistryAddFlags(t *testing.T) {
 	testCmd.UsageString() // to test that nothing is broken
 }
 
+func TestRegistryAddFlagsCompatibilityFactsFollowParsing(t *testing.T) {
+	reg := getRegistry()
+	reg.Register(&testPipelineItem{})
+	reg.Register(&dummyPipelineItem{})
+	flags := pflag.NewFlagSet(t.Name(), pflag.ContinueOnError)
+
+	facts, _, _ := reg.AddFlags(flags)
+	require.NoError(t, flags.Parse([]string{
+		"--test-option=42",
+		"--dummy-option",
+		"--dump-dag=graph.dot",
+		"--dry-run",
+	}))
+
+	assert.Equal(t, 42, facts["TestOption"])
+	assert.Equal(t, true, facts["DummyOption"])
+	assert.Equal(t, "graph.dot", facts[ConfigPipelineDAGPath])
+	assert.Equal(t, true, facts[ConfigPipelineDryRun])
+}
+
+func TestFlagConfigurationSnapshotCopiesTypedValues(t *testing.T) {
+	const (
+		intKey   = "int"
+		pathKey  = "path"
+		floatKey = "float"
+	)
+
+	flags := pflag.NewFlagSet(t.Name(), pflag.ContinueOnError)
+	configuration := &FlagConfiguration{}
+	options := []ConfigurationOption{
+		{Name: "bool", Flag: "bool", Type: BoolConfigurationOption, Default: false},
+		{Name: intKey, Flag: intKey, Type: IntConfigurationOption, Default: 1},
+		{Name: "string", Flag: "string", Type: StringConfigurationOption, Default: "old"},
+		{Name: pathKey, Flag: pathKey, Type: PathConfigurationOption, Default: ""},
+		{Name: floatKey, Flag: floatKey, Type: FloatConfigurationOption, Default: float32(0.5)},
+		{Name: "strings", Flag: "strings", Type: StringsConfigurationOption, Default: []string{"old"}},
+	}
+	for _, option := range options {
+		configuration.bindings = append(
+			configuration.bindings,
+			addConfigurationFlag(flags, "Test", option),
+		)
+	}
+
+	require.NoError(t, flags.Parse([]string{
+		"--bool",
+		"--int=7",
+		"--string=new",
+		"--path=output.json",
+		"--float=1.25",
+		"--strings=one,two",
+	}))
+	first := configuration.Snapshot()
+
+	assert.Equal(t, true, first["bool"])
+	assert.Equal(t, 7, first[intKey])
+	assert.Equal(t, "new", first["string"])
+	assert.Equal(t, "output.json", first[pathKey])
+	assert.InDelta(t, 1.25, first[floatKey], 0.0001)
+	assert.Equal(t, []string{"one", "two"}, first["strings"])
+
+	first["strings"].([]string)[0] = "mutated"
+	second := configuration.Snapshot()
+	assert.Equal(t, []string{"one", "two"}, second["strings"])
+}
+
 func TestRegistryFeatures(t *testing.T) {
 	reg := getRegistry()
 	reg.Register(&dummyPipelineItem{})

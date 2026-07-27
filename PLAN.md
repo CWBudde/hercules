@@ -503,24 +503,14 @@ regression test and remain isolated under the race detector.
 
 ### ARCH-02: Replace unsafe flag fact aliasing
 
-Affected code:
+Status: completed 2026-07-27.
 
-- `internal/core/registry.go`
-- public flag/fact facade
-
-Work:
-
-- Retain normal typed flag pointers.
-- After parsing, build a plain typed configuration snapshot without rewriting interface data
-  words via `unsafe.Pointer`.
-- Introduce typed getters or configuration structs for frequently shared facts such as tick size,
-  identities, repository metadata, and output paths.
-- Migrate incrementally; do not break external plugins without a compatibility adapter.
-
-Acceptance criteria:
-
-- [ ] registry code contains no interface-layout pointer arithmetic;
-- [ ] invalid fact types fail configuration with a descriptive error rather than silently falling back.
+Registry flags now retain ordinary typed pflag pointers and produce detached facts through an
+explicit post-parse `FlagConfiguration.Snapshot`. The legacy `AddFlags` API remains source- and
+behavior-compatible through safe value synchronization, without interface-layout pointer
+arithmetic. Public typed fact getters and centralized configuration/shared-fact validation report
+descriptive `FactTypeError` failures for invalid option, tick, identity, repository metadata, and
+output-path types before configuration can silently fall back.
 
 ### ARCH-03: Make lifecycle and cleanup contracts explicit
 

@@ -1529,6 +1529,33 @@ func TestPipelineInitializeWithCommitsFact(t *testing.T) {
 	assert.True(t, item.Initialized)
 }
 
+func TestPipelineInitializeRejectsInvalidConfigurationFactType(t *testing.T) {
+	pipeline := NewPipeline(test.FixtureRepository())
+	pipeline.AddItem(&testPipelineItem{})
+
+	err := pipeline.Initialize(map[string]any{
+		"TestOption": "not-an-int",
+	})
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrInvalidFactType)
+	assert.Contains(t, err.Error(), `"TestOption" expects int, got string`)
+}
+
+func TestPipelineInitializeRejectsInvalidSharedFactType(t *testing.T) {
+	pipeline := NewPipeline(test.FixtureRepository())
+	pipeline.AddItem(&testPipelineItem{})
+
+	err := pipeline.Initialize(map[string]any{
+		FactIdentityResolver: []string{"not", "a", "resolver"},
+	})
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrInvalidFactType)
+	assert.Contains(t, err.Error(), `"Identity.Resolver"`)
+	assert.Contains(t, err.Error(), "got []string")
+}
+
 func TestPipelineInitializeExtMergeTracksWithPreparePlan(t *testing.T) {
 	pipeline := NewPipeline(test.FixtureRepository())
 	pipeline.SetFeature(FeatureMergeTracks)

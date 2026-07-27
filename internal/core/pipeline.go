@@ -667,7 +667,12 @@ func prepareInitialization(
 	pipeline *Pipeline,
 	facts map[string]any, priorityFn DependencyPriorityFunc, preparePlan bool,
 ) error {
-	err := pipeline.applyConfigurationFacts(facts)
+	err := pipeline.validateConfigurationFactTypes(facts)
+	if err != nil {
+		return err
+	}
+
+	err = pipeline.applyConfigurationFacts(facts)
 	if err != nil {
 		return err
 	}
@@ -1023,18 +1028,139 @@ func (pipeline *Pipeline) logInitializationFailure(cleanReturn *bool) {
 	}
 }
 
+func (pipeline *Pipeline) validateConfigurationFactTypes(facts map[string]any) error {
+	for _, validate := range []func(map[string]any) error{
+		validateOptionalFactType[Logger](ConfigLogger),
+		validateOptionalFactType[string](ConfigPipelineDAGPath),
+		validateOptionalFactType[bool](ConfigPipelineDryRun),
+		validateOptionalFactType[[]*object.Commit](ConfigPipelineCommits),
+		validateOptionalFactType[bool](ConfigPipelineDumpPlan),
+		validateOptionalFactType[int](ConfigPipelineHibernationDistance),
+		validateOptionalFactType[bool](ConfigPipelinePrintActions),
+	} {
+		err := validate(facts)
+		if err != nil {
+			return err
+		}
+	}
+
+	for _, item := range pipeline.items {
+		for _, option := range item.ListConfigurationOptions() {
+			err := validateConfigurationOptionFact(facts, option)
+			if err != nil {
+				return fmt.Errorf("%s configuration: %w", item.Name(), err)
+			}
+		}
+	}
+
+	return validateSharedFactTypes(facts)
+}
+
+func validateConfigurationOptionFact(
+	facts map[string]any, option ConfigurationOption,
+) error {
+	if option.Name == "TicksSinceStart.TickSize" {
+		return validateTickSizeFact(facts, option.Name)
+	}
+
+	switch option.Type {
+	case BoolConfigurationOption:
+		return validateOptionalFact[bool](facts, option.Name)
+	case IntConfigurationOption:
+		return validateOptionalFact[int](facts, option.Name)
+	case StringConfigurationOption, PathConfigurationOption:
+		return validateOptionalFact[string](facts, option.Name)
+	case FloatConfigurationOption:
+		return validateOptionalFact[float32](facts, option.Name)
+	case StringsConfigurationOption:
+		return validateOptionalFact[[]string](facts, option.Name)
+	default:
+		return fmt.Errorf(
+			"%w: configuration option %q has unknown declared type %d",
+			ErrInvalidFactType, option.Name, option.Type,
+		)
+	}
+}
+
+func validateOptionalFactType[T any](key string) func(map[string]any) error {
+	return func(facts map[string]any) error {
+		return validateOptionalFact[T](facts, key)
+	}
+}
+
+func validateOptionalFact[T any](facts map[string]any, key string) error {
+	_, _, err := FactValue[T](facts, key)
+
+	return err
+}
+
+func validateSharedFactTypes(facts map[string]any) error {
+	for _, validate := range []func(map[string]any) error{
+		validateOptionalFactType[IdentityResolver](FactIdentityResolver),
+		validateOptionalFactType[FileIdResolver](FactLineHistoryResolver),
+		validateOptionalFactType[[]string]("IdentityDetector.ReversedPeopleDict"),
+		validateOptionalFactType[map[int][]plumbing.Hash]("TicksSinceStart.Commits"),
+		validateOptionalFactType[int](FactMergeHashCount),
+	} {
+		err := validate(facts)
+		if err != nil {
+			return err
+		}
+	}
+
+	return validateTickSizeFact(facts, "TicksSinceStart.TickSize")
+}
+
+func validateTickSizeFact(facts map[string]any, key string) error {
+	value, exists := facts[key]
+	if !exists {
+		return nil
+	}
+
+	switch value.(type) {
+	case int, time.Duration:
+		return nil
+	default:
+		return fmt.Errorf(
+			"%w: %q expects int hours or time.Duration, got %T",
+			ErrInvalidFactType, key, value,
+		)
+	}
+}
+
 func (pipeline *Pipeline) applyConfigurationFacts(facts map[string]any) error {
-	if logger, exists := facts[ConfigLogger].(Logger); exists {
+	logger, exists, err := FactValue[Logger](facts, ConfigLogger)
+	if err != nil {
+		return err
+	}
+
+	if exists {
 		pipeline.l = logger
 	} else {
 		facts[ConfigLogger] = pipeline.l
 	}
 
-	pipeline.PrintActions, _ = facts[ConfigPipelinePrintActions].(bool)
-	pipeline.DumpPlan, _ = facts[ConfigPipelineDumpPlan].(bool)
+	pipeline.PrintActions, _, err = FactValue[bool](facts, ConfigPipelinePrintActions)
+	if err != nil {
+		return err
+	}
 
-	pipeline.DryRun, _ = facts[ConfigPipelineDryRun].(bool)
-	if distance, exists := facts[ConfigPipelineHibernationDistance].(int); exists {
+	pipeline.DumpPlan, _, err = FactValue[bool](facts, ConfigPipelineDumpPlan)
+	if err != nil {
+		return err
+	}
+
+	pipeline.DryRun, _, err = FactValue[bool](facts, ConfigPipelineDryRun)
+	if err != nil {
+		return err
+	}
+
+	distance, exists, err := FactValue[int](facts, ConfigPipelineHibernationDistance)
+	if err != nil {
+		return err
+	}
+
+	if exists {
 		if distance < 0 {
 			err := fmt.Errorf("%w (got %d)", errNegativeHibernationDistance, distance)
 			pipeline.l.Error(err)
@@ -1077,10 +1203,20 @@ func (pipeline *Pipeline) prepareRun(facts map[string]any, mergeTracks bool) err
 }
 
 func (pipeline *Pipeline) configureItems(facts map[string]any) error {
+	err := validateSharedFactTypes(facts)
+	if err != nil {
+		return err
+	}
+
 	for _, item := range pipeline.items {
-		err := item.Configure(facts)
+		err = item.Configure(facts)
 		if err != nil {
 			return errors.Wrapf(err, "%s failed to configure", item.Name())
+		}
+
+		err = validateSharedFactTypes(facts)
+		if err != nil {
+			return errors.Wrapf(err, "%s produced an invalid fact", item.Name())
 		}
 	}
 

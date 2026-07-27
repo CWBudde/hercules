@@ -1,8 +1,11 @@
 package core
 
 import (
+	"errors"
+	"fmt"
 	"maps"
 	"math"
+	"reflect"
 )
 
 type (
@@ -15,6 +18,78 @@ const (
 	FactIdentityResolver    = "Identity.Resolver"
 	FactLineHistoryResolver = "LineHistory.Resolver"
 )
+
+var (
+	// ErrInvalidFactType indicates that a configuration or shared fact has a
+	// different type from the one declared by its consumer.
+	ErrInvalidFactType = errors.New("invalid fact type")
+	// ErrFactMissing indicates that a required fact is absent.
+	ErrFactMissing = errors.New("required fact is missing")
+)
+
+// FactTypeError describes a type mismatch in the mutable facts map.
+type FactTypeError struct {
+	Key      string
+	Expected reflect.Type
+	Actual   reflect.Type
+}
+
+func (err *FactTypeError) Error() string {
+	actual := "<nil>"
+	if err.Actual != nil {
+		actual = err.Actual.String()
+	}
+
+	return fmt.Sprintf(
+		"%s: %q expects %s, got %s",
+		ErrInvalidFactType, err.Key, err.Expected, actual,
+	)
+}
+
+func (err *FactTypeError) Unwrap() error {
+	return ErrInvalidFactType
+}
+
+// FactValue reads an optional fact with an exact type check. Missing facts are
+// reported with exists=false; present facts of the wrong type return a
+// descriptive FactTypeError.
+func FactValue[T any](facts map[string]any, key string) (T, bool, error) {
+	var zero T
+
+	raw, exists := facts[key]
+	if !exists {
+		return zero, false, nil
+	}
+
+	value, ok := raw.(T)
+	if !ok {
+		return zero, true, newFactTypeError[T](key, raw)
+	}
+
+	return value, true, nil
+}
+
+// RequiredFactValue reads a required typed fact.
+func RequiredFactValue[T any](facts map[string]any, key string) (T, error) {
+	value, exists, err := FactValue[T](facts, key)
+	if err != nil {
+		return value, err
+	}
+
+	if !exists {
+		return value, fmt.Errorf("%w: %q", ErrFactMissing, key)
+	}
+
+	return value, nil
+}
+
+func newFactTypeError[T any](key string, actual any) *FactTypeError {
+	return &FactTypeError{
+		Key:      key,
+		Expected: reflect.TypeFor[T](),
+		Actual:   reflect.TypeOf(actual),
+	}
+}
 
 const (
 	// AuthorMissing is the internal author index which denotes any unmatched identities

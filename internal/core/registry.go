@@ -7,7 +7,6 @@ import (
 	"reflect"
 	"sort"
 	"strings"
-	"unsafe"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -279,16 +278,65 @@ func (acf *arrayFeatureFlags) Type() string {
 	return configurationStringType
 }
 
+type flagBinding struct {
+	name     string
+	flag     *pflag.Flag
+	snapshot func() any
+}
+
+// FlagConfiguration owns the typed pointers registered with a pflag set.
+// Snapshot must be called after flag parsing to obtain a plain configuration
+// map suitable for Pipeline.Initialize.
+type FlagConfiguration struct {
+	bindings []flagBinding
+}
+
+// Snapshot copies the current values of all registered configuration flags.
+// The returned map does not alias pflag's typed storage.
+func (configuration *FlagConfiguration) Snapshot() map[string]any {
+	facts := make(map[string]any, len(configuration.bindings))
+	for _, binding := range configuration.bindings {
+		facts[binding.name] = cloneConfigurationValue(binding.snapshot())
+	}
+
+	return facts
+}
+
+func cloneConfigurationValue(value any) any {
+	if stringsValue, ok := value.([]string); ok {
+		return append([]string(nil), stringsValue...)
+	}
+
+	return value
+}
+
 // AddFlags inserts the cmdline options from PipelineItem.ListConfigurationOptions(),
 // FeaturedPipelineItem().Features() and LeafPipelineItem.Flag() into the global "flag" parser
 // built into the Go runtime.
 // Returns the "facts" which can be fed into PipelineItem.Configure() and the dictionary of
 // runnable analysis (LeafPipelineItem) choices. E.g. if "BurndownAnalysis" was activated
 // through "-burndown" cmdline argument, this mapping would contain ["BurndownAnalysis"] = *true.
+//
+// Deprecated: use AddFlagsWithConfiguration and call FlagConfiguration.Snapshot
+// after parsing. This compatibility adapter keeps the returned facts synchronized
+// without relying on the runtime representation of interface values.
 func (registry *PipelineItemRegistry) AddFlags(
 	flagSet *pflag.FlagSet,
 ) (map[string]any, map[string]*bool, map[string][]string) {
-	flags := map[string]any{}
+	configuration, deployed, activations := registry.AddFlagsWithConfiguration(flagSet)
+	facts := configuration.Snapshot()
+	configuration.synchronizeCompatibilityFacts(facts)
+
+	return facts, deployed, activations
+}
+
+// AddFlagsWithConfiguration registers all pipeline flags and retains their
+// normal typed pflag pointers. Call Snapshot after parsing to build the facts
+// passed to Pipeline.Initialize.
+func (registry *PipelineItemRegistry) AddFlagsWithConfiguration(
+	flagSet *pflag.FlagSet,
+) (*FlagConfiguration, map[string]*bool, map[string][]string) {
+	configuration := &FlagConfiguration{}
 	deployed := map[string]*bool{}
 	activations := map[string][]string{}
 	reusableOptions := map[string]ConfigurationOption{}
@@ -296,14 +344,14 @@ func (registry *PipelineItemRegistry) AddFlags(
 	for name, it := range registry.registered {
 		itemIface := reflect.New(it.Elem()).Interface()
 		registry.addItemFlags(
-			flagSet, name, itemIface, flags, deployed, activations, reusableOptions,
+			flagSet, name, itemIface, configuration, deployed, activations, reusableOptions,
 		)
 	}
 
-	addPipelineFlags(flagSet, flags)
+	addPipelineFlags(flagSet, configuration)
 	registry.addFeatureFlag(flagSet)
 
-	return flags, deployed, activations
+	return configuration, deployed, activations
 }
 
 func (registry *PipelineItemRegistry) addFeatureFlag(flagSet *pflag.FlagSet) {
@@ -324,7 +372,7 @@ func (registry *PipelineItemRegistry) addItemFlags(
 	flagSet *pflag.FlagSet,
 	name string,
 	itemIface any,
-	flags map[string]any,
+	configuration *FlagConfiguration,
 	deployed map[string]*bool,
 	activations map[string][]string,
 	reusableOptions map[string]ConfigurationOption,
@@ -345,7 +393,10 @@ func (registry *PipelineItemRegistry) addItemFlags(
 			continue
 		}
 
-		flags[option.Name] = addConfigurationFlag(flagSet, name, option)
+		configuration.bindings = append(
+			configuration.bindings,
+			addConfigurationFlag(flagSet, name, option),
+		)
 		addActivation(option.Flag)
 	}
 }
@@ -414,24 +465,20 @@ func (registry *PipelineItemRegistry) reuseOption(
 	panic(message)
 }
 
-func addConfigurationFlag(flagSet *pflag.FlagSet, itemName string, option ConfigurationOption) any {
+func addConfigurationFlag(
+	flagSet *pflag.FlagSet, itemName string, option ConfigurationOption,
+) flagBinding {
 	help := fmt.Sprintf("%s [%s]", option.Description, itemName)
-	var value any
-	valuePointer := func() unsafe.Pointer {
-		return unsafe.Add(unsafe.Pointer(&value), unsafe.Sizeof(&value))
-	}
 
 	switch option.Type {
 	case BoolConfigurationOption:
-		value = any(true)
-		*(**bool)(valuePointer()) = flagSet.Bool(option.Flag, configurationDefault[bool](option), help)
+		value := flagSet.Bool(option.Flag, configurationDefault[bool](option), help)
+		return newFlagBinding(option.Name, flagSet.Lookup(option.Flag), value)
 	case IntConfigurationOption:
-		value = any(0)
-		*(**int)(valuePointer()) = flagSet.Int(option.Flag, configurationDefault[int](option), help)
+		value := flagSet.Int(option.Flag, configurationDefault[int](option), help)
+		return newFlagBinding(option.Name, flagSet.Lookup(option.Flag), value)
 	case StringConfigurationOption, PathConfigurationOption:
-		value = any("")
-
-		*(**string)(valuePointer()) = flagSet.String(option.Flag, configurationDefault[string](option), help)
+		value := flagSet.String(option.Flag, configurationDefault[string](option), help)
 		if option.Type == PathConfigurationOption {
 			err := cobra.MarkFlagFilename(flagSet, option.Flag)
 			if err != nil {
@@ -440,65 +487,168 @@ func addConfigurationFlag(flagSet *pflag.FlagSet, itemName string, option Config
 
 			PathifyFlagValue(flagSet.Lookup(option.Flag))
 		}
+
+		return newFlagBinding(option.Name, flagSet.Lookup(option.Flag), value)
 	case FloatConfigurationOption:
-		value = any(float32(0))
-		*(**float32)(valuePointer()) = flagSet.Float32(
+		value := flagSet.Float32(
 			option.Flag, configurationDefault[float32](option), help,
 		)
+
+		return newFlagBinding(option.Name, flagSet.Lookup(option.Flag), value)
 	case StringsConfigurationOption:
-		value = any([]string{})
-		*(**[]string)(valuePointer()) = flagSet.StringSlice(
+		value := flagSet.StringSlice(
 			option.Flag, configurationDefault[[]string](option), help,
 		)
+
+		return newFlagBinding(option.Name, flagSet.Lookup(option.Flag), value)
 	}
 
-	return value
+	panic(fmt.Sprintf("invalid configuration option type %d", option.Type))
 }
 
-func addPipelineFlags(flagSet *pflag.FlagSet, flags map[string]any) {
+func newFlagBinding[T any](name string, flag *pflag.Flag, value *T) flagBinding {
+	return flagBinding{
+		name: name,
+		flag: flag,
+		snapshot: func() any {
+			return *value
+		},
+	}
+}
+
+func addPipelineFlags(flagSet *pflag.FlagSet, configuration *FlagConfiguration) {
 	addPipelineStringFlag(
-		flagSet, flags, ConfigPipelineDAGPath, "dump-dag", "Write the pipeline DAG to a Graphviz file.",
+		flagSet, configuration, ConfigPipelineDAGPath, "dump-dag",
+		"Write the pipeline DAG to a Graphviz file.",
 	)
 	PathifyFlagValue(flagSet.Lookup("dump-dag"))
 	addPipelineBoolFlag(
-		flagSet, flags, ConfigPipelineDryRun, "dry-run",
+		flagSet, configuration, ConfigPipelineDryRun, "dry-run",
 		"Do not run any analyses - only resolve the DAG. Useful for --dump-dag or --dump-plan.",
 	)
 	addPipelineBoolFlag(
-		flagSet, flags, ConfigPipelineDumpPlan, "dump-plan", "Print the pipeline execution plan to stderr.",
+		flagSet, configuration, ConfigPipelineDumpPlan, "dump-plan",
+		"Print the pipeline execution plan to stderr.",
 	)
 	addPipelineIntFlag(
-		flagSet, flags, ConfigPipelineHibernationDistance, "hibernation-distance",
+		flagSet, configuration, ConfigPipelineHibernationDistance, "hibernation-distance",
 		"Minimum number of actions between two sequential usages of a branch to activate "+
 			"the hibernation optimization (cpu-memory trade-off). 0 disables.",
 	)
 	addPipelineBoolFlag(
-		flagSet, flags, ConfigPipelinePrintActions, "print-actions", "Print the executed actions to stderr.",
+		flagSet, configuration, ConfigPipelinePrintActions, "print-actions",
+		"Print the executed actions to stderr.",
 	)
 }
 
 func addPipelineStringFlag(
-	flagSet *pflag.FlagSet, flags map[string]any, key, name, help string,
+	flagSet *pflag.FlagSet, configuration *FlagConfiguration, key, name, help string,
 ) {
-	value := any("")
-	*(**string)(unsafe.Add(unsafe.Pointer(&value), unsafe.Sizeof(&value))) = flagSet.String(name, "", help)
-	flags[key] = value
+	value := flagSet.String(name, "", help)
+	configuration.bindings = append(
+		configuration.bindings,
+		newFlagBinding(key, flagSet.Lookup(name), value),
+	)
 }
 
 func addPipelineBoolFlag(
-	flagSet *pflag.FlagSet, flags map[string]any, key, name, help string,
+	flagSet *pflag.FlagSet, configuration *FlagConfiguration, key, name, help string,
 ) {
-	value := any(true)
-	*(**bool)(unsafe.Add(unsafe.Pointer(&value), unsafe.Sizeof(&value))) = flagSet.Bool(name, false, help)
-	flags[key] = value
+	value := flagSet.Bool(name, false, help)
+	configuration.bindings = append(
+		configuration.bindings,
+		newFlagBinding(key, flagSet.Lookup(name), value),
+	)
 }
 
 func addPipelineIntFlag(
-	flagSet *pflag.FlagSet, flags map[string]any, key, name, help string,
+	flagSet *pflag.FlagSet, configuration *FlagConfiguration, key, name, help string,
 ) {
-	value := any(0)
-	*(**int)(unsafe.Add(unsafe.Pointer(&value), unsafe.Sizeof(&value))) = flagSet.Int(name, 0, help)
-	flags[key] = value
+	value := flagSet.Int(name, 0, help)
+	configuration.bindings = append(
+		configuration.bindings,
+		newFlagBinding(key, flagSet.Lookup(name), value),
+	)
+}
+
+func (configuration *FlagConfiguration) synchronizeCompatibilityFacts(facts map[string]any) {
+	for index := range configuration.bindings {
+		binding := &configuration.bindings[index]
+		synchronize := func() {
+			facts[binding.name] = cloneConfigurationValue(binding.snapshot())
+		}
+
+		if sliceValue, ok := binding.flag.Value.(pflag.SliceValue); ok {
+			binding.flag.Value = &synchronizedSliceValue{
+				synchronizedValue: synchronizedValue{
+					origin:      binding.flag.Value,
+					synchronize: synchronize,
+				},
+				slice: sliceValue,
+			}
+		} else {
+			binding.flag.Value = &synchronizedValue{
+				origin:      binding.flag.Value,
+				synchronize: synchronize,
+			}
+		}
+	}
+}
+
+type synchronizedValue struct {
+	origin      pflag.Value
+	synchronize func()
+}
+
+func (value *synchronizedValue) Set(raw string) error {
+	err := value.origin.Set(raw)
+	if err != nil {
+		return fmt.Errorf("set synchronized flag: %w", err)
+	}
+
+	value.synchronize()
+
+	return nil
+}
+
+func (value *synchronizedValue) Type() string {
+	return value.origin.Type()
+}
+
+func (value *synchronizedValue) String() string {
+	return value.origin.String()
+}
+
+type synchronizedSliceValue struct {
+	synchronizedValue
+
+	slice pflag.SliceValue
+}
+
+func (value *synchronizedSliceValue) Append(raw string) error {
+	err := value.slice.Append(raw)
+	if err != nil {
+		return fmt.Errorf("append synchronized flag value: %w", err)
+	}
+
+	value.synchronize()
+
+	return nil
+}
+
+func (value *synchronizedSliceValue) Replace(raw []string) error {
+	err := value.slice.Replace(raw)
+	if err != nil {
+		return fmt.Errorf("replace synchronized flag value: %w", err)
+	}
+
+	value.synchronize()
+
+	return nil
+}
+
+func (value *synchronizedSliceValue) GetSlice() []string {
+	return value.slice.GetSlice()
 }
 
 // Registry contains all known pipeline item types.

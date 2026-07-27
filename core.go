@@ -29,6 +29,8 @@ const (
 	FloatConfigurationOption = core.FloatConfigurationOption
 	// StringsConfigurationOption reflects the array of strings value type.
 	StringsConfigurationOption = core.StringsConfigurationOption
+	// PathConfigurationOption reflects a filesystem path value type.
+	PathConfigurationOption = core.PathConfigurationOption
 	// MessageFinalize is the status text reported before calling LeafPipelineItem.Finalize()-s.
 	MessageFinalize = core.MessageFinalize
 )
@@ -77,6 +79,10 @@ var (
 	ErrDuplicateCommits = core.ErrDuplicateCommits
 	// ErrDisconnectedCommits indicates that explicit input has disconnected components.
 	ErrDisconnectedCommits = core.ErrDisconnectedCommits
+	// ErrInvalidFactType indicates that a configuration or shared fact has an unexpected type.
+	ErrInvalidFactType = core.ErrInvalidFactType
+	// ErrFactMissing indicates that a required fact is absent.
+	ErrFactMissing = core.ErrFactMissing
 )
 
 // MetadataToCommonAnalysisResult copies the data from a Protobuf message.
@@ -138,8 +144,20 @@ func ForkCopyPipelineItem(origin PipelineItem, n int) []PipelineItem {
 // PipelineItemRegistry contains all the known PipelineItem-s.
 type PipelineItemRegistry = core.PipelineItemRegistry
 
+// FlagConfiguration retains typed flag storage until it is snapshotted after parsing.
+type FlagConfiguration = core.FlagConfiguration
+
 // Registry contains all known pipeline item types.
 var Registry = core.Registry
+
+// FactTypeError describes a type mismatch in a configuration or shared fact.
+type FactTypeError = core.FactTypeError
+
+// IdentityResolver provides typed access to configured author identities.
+type IdentityResolver = core.IdentityResolver
+
+// FileIdResolver provides typed access to configured file identities.
+type FileIdResolver = core.FileIdResolver
 
 const (
 	// DependencyCommit is the name of one of the three items in `deps` supplied to PipelineItem.Consume()
@@ -169,7 +187,21 @@ const (
 	// identity.PeopleDetector.Configure(). It corresponds to identity.PeopleDetector.ReversedPeopleDict -
 	// the mapping from the author indices to the main signature.
 	FactIdentityDetectorReversedPeopleDict = identity.FactIdentityDetectorReversedPeopleDict
+	// FactIdentityResolver identifies the typed author identity resolver.
+	FactIdentityResolver = core.FactIdentityResolver
+	// FactLineHistoryResolver identifies the typed file identity resolver.
+	FactLineHistoryResolver = core.FactLineHistoryResolver
 )
+
+// FactValue reads an optional fact with an exact type check.
+func FactValue[T any](facts map[string]any, key string) (T, bool, error) {
+	return core.FactValue[T](facts, key)
+}
+
+// RequiredFactValue reads a required fact with an exact type check.
+func RequiredFactValue[T any](facts map[string]any, key string) (T, error) {
+	return core.RequiredFactValue[T](facts, key)
+}
 
 // FileDiffData is the type of the dependency provided by plumbing.FileDiff.
 type FileDiffData = plumbing.FileDiffData

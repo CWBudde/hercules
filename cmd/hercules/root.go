@@ -636,6 +636,7 @@ type rootOptions struct {
 	uri                string
 	cachePath          string
 	forceCacheReplace  bool
+	facts              map[string]any
 }
 
 type commandFlagReader struct {
@@ -682,6 +683,7 @@ func (reader *commandFlagReader) stringArray(name string) []string {
 func readRootOptions(cmd *cobra.Command, args []string) (rootOptions, error) {
 	flags := cmd.Flags()
 	applyPreset(flags)
+	facts := cmdlineConfiguration.Snapshot()
 	reader := commandFlagReader{flags: flags}
 	firstParent := reader.bool("first-parent")
 	commitsFile := reader.string("commits")
@@ -728,6 +730,7 @@ func readRootOptions(cmd *cobra.Command, args []string) (rootOptions, error) {
 		uri:                args[0],
 		cachePath:          cachePath,
 		forceCacheReplace:  forceCacheReplace,
+		facts:              facts,
 	}, nil
 }
 
@@ -768,9 +771,9 @@ func runRoot(cmd *cobra.Command, args []string) error {
 	}
 
 	priorityFn := pipelinePriority(cmd.Flags(), pipeline)
-	pipeline.DryRun, _ = cmdlineFacts[hercules.ConfigPipelineDryRun].(bool)
+	pipeline.DryRun, _ = options.facts[hercules.ConfigPipelineDryRun].(bool)
 	deployedLeafs := deployItemsToPipeline(pipeline, cmd.Flags(), priorityFn)
-	if err := pipeline.InitializeExt(cmdlineFacts, priorityFn, true); err != nil {
+	if err := pipeline.InitializeExt(options.facts, priorityFn, true); err != nil {
 		return err
 	}
 	reporter.emit(progressEvent{Event: "pipeline-initialized", Repo: repoURI})
@@ -921,7 +924,7 @@ func loadRootCommits(
 	if err != nil {
 		return fmt.Errorf("list commits: %w", err)
 	}
-	cmdlineFacts[hercules.ConfigPipelineCommits] = commits
+	options.facts[hercules.ConfigPipelineCommits] = commits
 	return nil
 }
 
@@ -952,13 +955,13 @@ func runRequestedIdentityWorkflow(options rootOptions) (bool, error) {
 	if !options.identityAudit && options.peopleDictTemplate == "" {
 		return false, nil
 	}
-	commits, ok := cmdlineFacts[hercules.ConfigPipelineCommits].([]*object.Commit)
+	commits, ok := options.facts[hercules.ConfigPipelineCommits].([]*object.Commit)
 	if !ok {
 		return true, errors.New("identity audit requires a Git commit repository")
 	}
 	err := runIdentityWorkflow(identityWorkflowOptions{
 		Commits:      commits,
-		Facts:        cmdlineFacts,
+		Facts:        options.facts,
 		Audit:        options.identityAudit,
 		TemplatePath: options.peopleDictTemplate,
 		Out:          os.Stdout,
@@ -1411,9 +1414,9 @@ func runVersion(cmd *cobra.Command, _ []string) {
 }
 
 var (
-	cmdlineFacts      map[string]any
-	cmdlineDeployed   map[string]*bool
-	activationByFlags map[string][]string
+	cmdlineConfiguration *hercules.FlagConfiguration
+	cmdlineDeployed      map[string]*bool
+	activationByFlags    map[string][]string
 )
 
 func init() {
@@ -1460,7 +1463,7 @@ func init() {
 		panic(err)
 	}
 	hercules.PathifyFlagValue(rootFlags.Lookup("people-dict-template"))
-	cmdlineFacts, cmdlineDeployed, activationByFlags = hercules.Registry.AddFlags(rootFlags)
+	cmdlineConfiguration, cmdlineDeployed, activationByFlags = hercules.Registry.AddFlagsWithConfiguration(rootFlags)
 	rootCmd.SetUsageFunc(formatUsage)
 	rootCmd.AddCommand(versionCmd)
 	versionCmd.SetUsageFunc(versionCmd.UsageFunc())

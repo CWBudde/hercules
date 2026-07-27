@@ -39,12 +39,12 @@ must bump it. CI enforces this via `cmd/schema-guard`
 Readers require a metadata header and an explicit, integral schema version. The
 accepted inputs and migrations are:
 
-| Format | Input version | Behavior |
-| ------ | ------------- | -------- |
-| PB | `2` | Validate the envelope and all recognized payloads as the current schema. |
-| PB | `1` | Decode and validate every legacy content entry, migrate it to schema 2, then expose it to consumers. |
-| YAML | `2` | Validate the header and complete document as the current schema. |
-| YAML | `0` | Accept the known module-rename emitter bug, validate the complete document as the schema-2 shape, then normalize the in-memory header to 2. |
+| Format | Input version | Behavior                                                                                                                                    |
+| ------ | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| PB     | `2`           | Validate the envelope and all recognized payloads as the current schema.                                                                    |
+| PB     | `1`           | Decode and validate every legacy content entry, migrate it to schema 2, then expose it to consumers.                                        |
+| YAML   | `2`           | Validate the header and complete document as the current schema.                                                                            |
+| YAML   | `0`           | Accept the known module-rename emitter bug, validate the complete document as the schema-2 shape, then normalize the in-memory header to 2. |
 
 PB schema 1 migration clears metadata field 2 because it was a command line,
 not a Git hash; metadata fields which did not yet exist remain unset.

@@ -65,7 +65,8 @@ func TestPeopleIdentitiesMapsTransitiveOverlap(t *testing.T) {
 	mapping, merged := PeopleIdentities(first, second)
 
 	assert.Equal(t, IdentityMapping{First: []int{0, 0}, Second: []int{0}}, mapping)
-	assert.Equal(t,
+	assert.Equal(
+		t,
 		[]string{"alice|ally|bob|alice@example.com|bob@example.com"},
 		merged,
 	)
@@ -88,7 +89,8 @@ func TestPeopleIdentitiesDoesNotCollideUnrelatedRecords(t *testing.T) {
 	mapping, merged := PeopleIdentities(first, second)
 
 	assert.Equal(t, IdentityMapping{First: []int{0, 1}, Second: []int{2, 3}}, mapping)
-	assert.Equal(t,
+	assert.Equal(
+		t,
 		[]string{"same-name@example.com", "same-name", "other", "other@example.com"},
 		merged,
 	)

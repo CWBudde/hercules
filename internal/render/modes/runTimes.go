@@ -7,13 +7,14 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/cwbudde/hercules/internal/render/graphics"
-	"github.com/cwbudde/hercules/internal/render/progress"
-	"github.com/cwbudde/hercules/internal/render/readers"
 	"github.com/cwbudde/matplotlib-go/backends"
 	"github.com/cwbudde/matplotlib-go/core"
 	"github.com/cwbudde/matplotlib-go/render"
 	"github.com/cwbudde/matplotlib-go/style"
+
+	"github.com/cwbudde/hercules/internal/render/graphics"
+	"github.com/cwbudde/hercules/internal/render/progress"
+	"github.com/cwbudde/hercules/internal/render/readers"
 )
 
 // RunTimes generates runtime analysis. Python labours is text-only for this

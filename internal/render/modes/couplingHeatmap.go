@@ -60,7 +60,7 @@ func topCouplingHeatmapEntries(
 	}
 
 	totals := make([]int, len(names))
-	matrix.ForEachNonZero(func(row, _ int, value int) bool {
+	matrix.ForEachNonZero(func(row, _, value int) bool {
 		if row < len(totals) {
 			totals[row] += value
 		}
@@ -106,6 +106,7 @@ func (entries couplingIndexHeap) Swap(i, j int) { entries[i], entries[j] = entri
 func (entries *couplingIndexHeap) Push(value any) {
 	*entries = append(*entries, value.(rankedCouplingIndex))
 }
+
 func (entries *couplingIndexHeap) Pop() any {
 	old := *entries
 	last := len(old) - 1

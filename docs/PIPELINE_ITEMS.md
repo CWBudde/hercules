@@ -6,18 +6,18 @@ starts a fresh run and must discard all state produced by an earlier run.
 
 ## Lifecycle contract
 
-| Operation | Configuration | Per-run state and resources |
-| --- | --- | --- |
-| `Configure` | Reads immutable inputs from `facts`; may publish shared facts. Replaces previously configured values. | Must not depend on state from an earlier run. |
-| `ConfigureUpstream` | Reads facts after downstream configuration has completed. | Must not allocate branch-local run state. |
-| `Initialize` | Preserves the values established by `Configure`. | Idempotently discards the previous run, then creates empty state for the supplied repository. |
-| `Consume` | Read-only. | Advances exactly one branch with one commit and returns every declared output. |
-| `Fork(n)` | Shared or copied, but never changed. | Returns `n` branch instances representing the same state as the receiver at the fork point. |
-| `Merge(branches)` | Unchanged. | Combines the supplied fork state into the receiver and synchronizes branches which may continue. |
-| `Hibernate` | Unchanged. | Compacts or externalizes state without changing its logical value. Repeated calls must be safe. |
-| `Boot` | Unchanged. | Restores the exact pre-hibernation value. Repeated calls must be safe. |
-| `Finalize` | Read-only. | Produces a result without transferring ownership of item resources. |
-| `Dispose` | Unchanged, so another `Initialize` is valid. | Idempotently releases files, allocators, workers, and other resources. No `Consume` is valid until re-initialization. |
+| Operation           | Configuration                                                                                         | Per-run state and resources                                                                                           |
+| ------------------- | ----------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `Configure`         | Reads immutable inputs from `facts`; may publish shared facts. Replaces previously configured values. | Must not depend on state from an earlier run.                                                                         |
+| `ConfigureUpstream` | Reads facts after downstream configuration has completed.                                             | Must not allocate branch-local run state.                                                                             |
+| `Initialize`        | Preserves the values established by `Configure`.                                                      | Idempotently discards the previous run, then creates empty state for the supplied repository.                         |
+| `Consume`           | Read-only.                                                                                            | Advances exactly one branch with one commit and returns every declared output.                                        |
+| `Fork(n)`           | Shared or copied, but never changed.                                                                  | Returns `n` branch instances representing the same state as the receiver at the fork point.                           |
+| `Merge(branches)`   | Unchanged.                                                                                            | Combines the supplied fork state into the receiver and synchronizes branches which may continue.                      |
+| `Hibernate`         | Unchanged.                                                                                            | Compacts or externalizes state without changing its logical value. Repeated calls must be safe.                       |
+| `Boot`              | Unchanged.                                                                                            | Restores the exact pre-hibernation value. Repeated calls must be safe.                                                |
+| `Finalize`          | Read-only.                                                                                            | Produces a result without transferring ownership of item resources.                                                   |
+| `Dispose`           | Unchanged, so another `Initialize` is valid.                                                          | Idempotently releases files, allocators, workers, and other resources. No `Consume` is valid until re-initialization. |
 
 The pipeline calls `Dispose` once for every unique disposable item and branch clone after both
 successful and failed execution. It also disposes initialized resources when initialization fails,

@@ -142,11 +142,13 @@ func readPluginGenerationOptions(cmd *cobra.Command) (pluginGenerationOptions, e
 	}
 	if !isGoIdentifier(varName) {
 		return pluginGenerationOptions{}, fmt.Errorf(
-			"invalid plugin variable name %q: expected a Go identifier", varName)
+			"invalid plugin variable name %q: expected a Go identifier", varName,
+		)
 	}
 	if !isGoIdentifier(pkg) {
 		return pluginGenerationOptions{}, fmt.Errorf(
-			"invalid plugin package %q: expected a Go identifier", pkg)
+			"invalid plugin package %q: expected a Go identifier", pkg,
+		)
 	}
 	if err := validatePluginFlag(flag); err != nil {
 		return pluginGenerationOptions{}, err

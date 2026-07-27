@@ -225,8 +225,9 @@ func (stream *burndownBandStream) decay(startIndex int, startValue float32) {
 	for bandIndex := columnStart; bandIndex < columnEnd; bandIndex++ {
 		initial := stream.at(startIndex-1, bandIndex)
 		for tickIndex := startIndex; tickIndex < stream.rowEnd(); tickIndex++ {
-			stream.set(tickIndex, bandIndex, initial*
-				(1+(decayRatio-1)*float32(tickIndex-startIndex+1)/scale),
+			stream.set(
+				tickIndex, bandIndex, initial*
+					(1+(decayRatio-1)*float32(tickIndex-startIndex+1)/scale),
 			)
 		}
 	}

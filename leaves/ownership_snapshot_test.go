@@ -119,16 +119,19 @@ func TestOwnershipAnalysesSnapshotBeforeNextTick(t *testing.T) {
 	require.NoError(t, concentration.Initialize(test.Repository))
 
 	// Two commits in tick 0 establish 4 Alice lines and 1 Bob line.
-	consumeOwnershipAnalyses(t, snapshotter, busFactor, concentration, 0, resolver,
+	consumeOwnershipAnalyses(
+		t, snapshotter, busFactor, concentration, 0, resolver,
 		ownershipChange(1, 4, 0, 0, 0),
 	)
-	consumeOwnershipAnalyses(t, snapshotter, busFactor, concentration, 0, resolver,
+	consumeOwnershipAnalyses(
+		t, snapshotter, busFactor, concentration, 0, resolver,
 		ownershipChange(2, 1, 1, 1, 0),
 	)
 
 	// The first tick-1 commit transfers two lines from Alice to Bob and replaces them with
 	// three Bob lines. Tick 0 must be closed before these changes are applied.
-	consumeOwnershipAnalyses(t, snapshotter, busFactor, concentration, 1, resolver,
+	consumeOwnershipAnalyses(
+		t, snapshotter, busFactor, concentration, 1, resolver,
 		ownershipChange(1, -2, 0, 1, 1),
 		ownershipChange(1, 3, 1, 1, 1),
 	)
@@ -145,7 +148,8 @@ func TestOwnershipAnalysesSnapshotBeforeNextTick(t *testing.T) {
 	assert.InDelta(t, 0.68, concentration.snapshots[0].HHI, 1e-9)
 
 	// A second commit in tick 1 grows the file. The immutable tick-0 snapshot must not move.
-	consumeOwnershipAnalyses(t, snapshotter, busFactor, concentration, 1, resolver,
+	consumeOwnershipAnalyses(
+		t, snapshotter, busFactor, concentration, 1, resolver,
 		ownershipChange(1, 1, 1, 1, 1),
 	)
 	assert.Equal(t, map[int]int64{0: 4, 1: 1}, busFactor.snapshots[0].AuthorLines)
@@ -303,7 +307,8 @@ func TestOwnershipAnalysesEmptyAndSingleAuthorRepositories(t *testing.T) {
 		require.NoError(t, busFactor.Initialize(test.Repository))
 		require.NoError(t, concentration.Initialize(test.Repository))
 
-		consumeOwnershipAnalyses(t, snapshotter, busFactor, concentration, 7, resolver,
+		consumeOwnershipAnalyses(
+			t, snapshotter, busFactor, concentration, 7, resolver,
 			ownershipChange(1, 3, 0, 0, 7),
 		)
 

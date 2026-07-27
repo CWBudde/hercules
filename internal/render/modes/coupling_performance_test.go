@@ -87,7 +87,8 @@ func benchmarkSparseCoupling(entities, degree int) readers.SparseMatrix {
 		for offset := 1; offset <= degree && row+offset < entities; offset++ {
 			column := row + offset
 			value := 1 + (row+column)%100
-			entries = append(entries,
+			entries = append(
+				entries,
 				readers.SparseEntry{Row: row, Column: column, Value: value},
 				readers.SparseEntry{Row: column, Column: row, Value: value},
 			)

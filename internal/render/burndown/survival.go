@@ -8,11 +8,9 @@ import (
 	"strings"
 )
 
-var (
-	// ErrInvalidSurvivalMatrix indicates that survival input is ragged or
-	// contains values which cannot represent line counts.
-	ErrInvalidSurvivalMatrix = errors.New("invalid burndown survival matrix")
-)
+// ErrInvalidSurvivalMatrix indicates that survival input is ragged or
+// contains values which cannot represent line counts.
+var ErrInvalidSurvivalMatrix = errors.New("invalid burndown survival matrix")
 
 const survivalColumnTitle = "Ratio of survived lines"
 

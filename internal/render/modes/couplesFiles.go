@@ -216,6 +216,7 @@ func (pairs couplingPairHeap) Swap(i, j int) { pairs[i], pairs[j] = pairs[j], pa
 func (pairs *couplingPairHeap) Push(value any) {
 	*pairs = append(*pairs, value.(rankedCouplingPair))
 }
+
 func (pairs *couplingPairHeap) Pop() any {
 	old := *pairs
 	last := len(old) - 1

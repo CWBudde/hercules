@@ -564,18 +564,15 @@ renderer compatibility helpers.
 
 ### OPS-01: Align build documentation and actual build behavior
 
-- Make the pure-Go renderer selection independent of ambient cgo where feasible.
-- Otherwise include `CGO_ENABLED=0` consistently in README, release, and developer commands.
-- Test every documented build command in CI.
-- Pin container base images and downloaded tools by version/digest and checksum.
-- Remove `apt-get upgrade`, unpinned install scripts, obsolete ports/environment variables, and
-  root runtime where unnecessary.
-- Add multi-architecture Docker builds.
+Status: completed 2026-07-27
 
-Acceptance criteria:
-
-- [ ] a clean supported machine can follow documentation verbatim;
-- [ ] container builds are reproducible and architecture-correct.
+Supported source, release, Action, and developer builds now select the pure-Go renderer explicitly
+with `CGO_ENABLED=0`; intentional cgo profiles pair their feature tag with `purego`. CI executes the
+documented `just` and direct builds and builds a Linux amd64/arm64 OCI index. The container uses a
+Go 1.26.5 multi-architecture digest, checksum-locked modules, deterministic build metadata defaults,
+and a scratch non-root runtime with only both binaries and CA roots. Package upgrades, install
+scripts, obsolete server settings, and root runtime were removed. The remaining downloaded
+developer binary, treefmt v2.1.1, is selected per platform and verified against its pinned SHA-256.
 
 ### DOC-01: Correct user-visible contracts
 

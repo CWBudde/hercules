@@ -3,9 +3,9 @@
 # Set environment variables
 export GO111MODULE := "on"
 
-# The in-repo Go renderer (matplotlib-go) only supports the non-cgo build path
-# (the cgo path needs a vendored FreeType; see PLAN.md Phase 1). Override with
-# CGO_ENABLED=1 in the environment if you really need cgo.
+# The supported in-repo renderer is pure Go. matplotlib-go selects its native
+# FreeType implementation from ambient cgo, so cgo-only builds must also pass
+# TAGS=purego unless a native FreeType installation is deliberately provided.
 export CGO_ENABLED := env_var_or_default("CGO_ENABLED", "0")
 
 # Detect OS and set executable extension
@@ -25,11 +25,11 @@ default: hercules labours
 
 # Build the hercules binary
 hercules: vendor pb-go
-    go build -tags "{{tags}}" -ldflags "-X github.com/cwbudde/hercules.BinaryGitHash=`git rev-parse HEAD`" github.com/cwbudde/hercules/cmd/hercules
+    go build -o "{{gobin}}/hercules{{exe}}" -tags "{{tags}}" -ldflags "-X github.com/cwbudde/hercules.BinaryGitHash=`git rev-parse HEAD`" github.com/cwbudde/hercules/cmd/hercules
 
 # Build the labours binary (Go renderer)
 labours: vendor pb-go
-    go build -tags "{{tags}}" -ldflags "-X main.version=`git describe --tags --always` -X main.commit=`git rev-parse HEAD` -X main.date=`date -u +%Y-%m-%dT%H:%M:%SZ`" github.com/cwbudde/hercules/cmd/labours
+    go build -o "{{gobin}}/labours{{exe}}" -tags "{{tags}}" -ldflags "-X main.version=`git describe --tags --always` -X main.commit=`git rev-parse HEAD` -X main.date=`date -u +%Y-%m-%dT%H:%M:%SZ`" github.com/cwbudde/hercules/cmd/labours
 
 # Run all tests for the default build
 test: hercules labours
@@ -221,8 +221,9 @@ setup-deps:
     set -euo pipefail
     echo "Installing development dependencies..."
 
-    # Install treefmt (required for formatting)
-    command -v treefmt >/dev/null 2>&1 || { echo "Installing treefmt..."; curl -fsSL https://github.com/numtide/treefmt/releases/download/v2.1.1/treefmt_2.1.1_linux_amd64.tar.gz | sudo tar -C /usr/local/bin -xz treefmt; }
+    # Install treefmt (required for formatting). The helper selects a supported
+    # OS/architecture and verifies the pinned release asset before extraction.
+    command -v treefmt >/dev/null 2>&1 || scripts/install-treefmt.sh
 
     # Formatter versions are pinned so `just fmt` / `check-formatted` are
     # reproducible: unpinned `@latest`/`npm -g` installs drifted between local

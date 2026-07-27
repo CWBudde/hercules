@@ -48,3 +48,6 @@ jobs:
 
   test-crosscompile:
     uses: ./.github/workflows/test-crosscompile.yaml
+
+  test-build:
+    uses: ./.github/workflows/test-build.yaml

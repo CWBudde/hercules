@@ -1,33 +1,56 @@
-FROM golang:1.25 AS builder
-ENV PROTOBUF_VERSION 21.12
-ENV ARCH linux-x86_64
-COPY . /root/src
-RUN apt-get update && \
-    apt-get install -y unzip wget && \
-    curl -SLo protoc.zip https://github.com/google/protobuf/releases/download/v$PROTOBUF_VERSION/protoc-$PROTOBUF_VERSION-$ARCH.zip && \
-    unzip -d /usr/local protoc.zip && \
-    rm protoc.zip && \
-    curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -- --to /usr/local/bin && \
-    cd /root/src && \
-    just
+FROM --platform=${BUILDPLATFORM} golang:1.26.5-bookworm@sha256:1ecb7edf62a0408027bd5729dfd6b1b8766e578e8df93995b225dfd0944eb651 AS builder
 
-# Rendering happens in-process in `hercules report` (or via the Go `labours`
-# binary); fonts are embedded, so no Python or extra runtime deps are needed.
-# The former Python labours package was removed from the repo (Phase 9); the
-# Go `labours` binary is its drop-in replacement.
-FROM ubuntu:22.04
-COPY --from=builder /root/src/hercules /usr/local/bin
-COPY --from=builder /root/src/labours /usr/local/bin
-ENV LC_ALL C.UTF-8
-RUN apt-get update && \
-    apt-get upgrade -y && \
-    apt-get install -y --no-install-suggests --no-install-recommends ca-certificates && \
-    printf '#!/bin/bash\n\necho\necho "\t$@"\necho\n' > /browser && \
-    chmod +x /browser && \
-    rm -rf /usr/share/doc /usr/share/man && \
-    rm -rf /var/lib/apt/lists/* && \
-    apt-get clean
+ARG TARGETOS
+ARG TARGETARCH
+ARG VERSION=dev
+ARG COMMIT=unknown
+ARG BUILD_DATE=unknown
 
-EXPOSE 8000
-ENV BROWSER /browser
-ENV COUPLES_SERVER_TIME 7200
+WORKDIR /src
+
+# The renderer's supported default is pure Go. Building with the target
+# variables supplied by BuildKit makes one Dockerfile work for every platform
+# in the multi-architecture image.
+ENV CGO_ENABLED=0
+ENV GOFLAGS=-mod=mod
+
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+
+RUN GOOS="${TARGETOS}" GOARCH="${TARGETARCH}" \
+    go build -trimpath -buildvcs=false \
+    -ldflags="-s -w -X github.com/cwbudde/hercules.BinaryGitHash=${COMMIT}" \
+    -o /out/hercules ./cmd/hercules
+RUN GOOS="${TARGETOS}" GOARCH="${TARGETARCH}" \
+    go build -trimpath -buildvcs=false \
+    -ldflags="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${BUILD_DATE}" \
+    -o /out/labours ./cmd/labours
+RUN install -d -m 0755 -o 65532 -g 65532 /runtime-tmp && \
+    touch --date=@0 /out/hercules /out/labours /runtime-tmp
+
+# A cgo-free binary needs only CA roots at runtime. Scratch removes mutable
+# package-manager state and avoids a root-capable shell in the release image.
+FROM scratch
+
+ARG VERSION=dev
+ARG COMMIT=unknown
+ARG BUILD_DATE=unknown
+
+LABEL org.opencontainers.image.title="Hercules" \
+      org.opencontainers.image.description="Git repository analysis and visualization" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${COMMIT}" \
+      org.opencontainers.image.created="${BUILD_DATE}" \
+      org.opencontainers.image.source="https://github.com/cwbudde/hercules"
+
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+COPY --from=builder /out/hercules /usr/local/bin/hercules
+COPY --from=builder /out/labours /usr/local/bin/labours
+COPY --from=builder --chown=65532:65532 /runtime-tmp /tmp
+
+ENV HOME=/tmp
+WORKDIR /tmp
+USER 65532:65532
+
+CMD ["hercules", "--help"]

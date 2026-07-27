@@ -1,0 +1,73 @@
+name: test-build
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  documented-builds:
+    name: documented source builds
+    runs-on: ubuntu-latest
+    env:
+      CGO_ENABLED: "0"
+      GOFLAGS: -mod=mod
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Setup just
+        uses: extractions/setup-just@v2
+
+      # Keep these commands identical to README.md and docs/RELEASE.md. This is
+      # deliberately not hidden behind a helper script: documentation drift is
+      # visible in review and each advertised command must work independently.
+      - name: Build both binaries with the developer recipe
+        run: CGO_ENABLED=0 just
+
+      - name: Build Hercules directly
+        run: CGO_ENABLED=0 go build ./cmd/hercules
+
+      - name: Build Labours directly
+        run: CGO_ENABLED=0 go build ./cmd/labours
+
+      - name: Build optional cgo LZ4 profile
+        run: CGO_ENABLED=1 go build -tags "cgo_lz4 purego" ./cmd/hercules
+
+      - name: Smoke-test built binaries
+        run: |
+          ./hercules version
+          ./labours --version
+
+  container:
+    name: multi-architecture container
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build documented local image
+        run: docker build -t hercules:ci .
+
+      - name: Smoke-test non-root runtime
+        run: |
+          test "$(docker image inspect --format '{{.Config.User}}' hercules:ci)" = "65532:65532"
+          docker run --rm hercules:ci hercules version
+          docker run --rm hercules:ci labours --version
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build linux/amd64 and linux/arm64 image index
+        run: >-
+          docker buildx build
+          --platform linux/amd64,linux/arm64
+          --output type=oci,dest=hercules-multiarch.tar
+          .

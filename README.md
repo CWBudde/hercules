@@ -105,32 +105,37 @@ in-process.
 
 ### Build from source
 
-You need Go 1.25 or newer. The exact minimum is declared in [`go.mod`](go.mod).
+You need Go 1.26.5 or newer. The exact minimum is declared in [`go.mod`](go.mod).
 For development workflows that regenerate protobuf files or use repo recipes, install
 [`protoc`](https://github.com/google/protobuf/releases) and [`just`](https://github.com/casey/just).
 
 ```
 git clone https://github.com/cwbudde/hercules && cd hercules
 # builds both binaries (hercules and labours) plus generated assets
-just
+CGO_ENABLED=0 just
 # or build them directly
-go build ./cmd/hercules
-go build ./cmd/labours
+CGO_ENABLED=0 go build ./cmd/hercules
+CGO_ENABLED=0 go build ./cmd/labours
 ```
+
+These exact commands run in CI. `CGO_ENABLED=0` is intentional even on machines where Go enables
+cgo by default: the renderer dependency's native FreeType implementation is selected by cgo and
+requires a separately prepared native library, while the supported renderer embeds its fonts and
+is pure Go.
 
 ### Build tags and optional dependencies
 
 Default build:
 
 ```
-go build ./cmd/hercules
+CGO_ENABLED=0 go build ./cmd/hercules
 ```
 
 - No external parser service dependency.
 - No TensorFlow dependency.
 - `--shotness` and `--typos-dataset` use tree-sitter by default.
 - Tree-sitter is the only structural parsing backend.
-- The default build is fully cgo-free. `CGO_ENABLED=0 go build ./cmd/hercules`
+- The supported default build is fully cgo-free. `CGO_ENABLED=0 go build ./cmd/hercules`
   produces a statically linked binary and cross-compiles cleanly to
   linux/{amd64,arm64}, windows/amd64, and darwin/arm64.
   - LZ4 compression (used for hibernation) is pure-Go via
@@ -143,7 +148,7 @@ go build ./cmd/hercules
 Optional TensorFlow build:
 
 ```
-TAGS=tensorflow just
+CGO_ENABLED=1 TAGS="tensorflow purego" just hercules
 ```
 
 - Enables `--sentiment` (experimental).
@@ -153,7 +158,7 @@ TAGS=tensorflow just
 Optional cgo LZ4 build:
 
 ```
-go build -tags cgo_lz4 ./cmd/hercules
+CGO_ENABLED=1 go build -tags "cgo_lz4 purego" ./cmd/hercules
 ```
 
 - Restores the legacy cgo-backed LZ4 path for RBTree hibernation.
@@ -194,6 +199,7 @@ cgo-only dependencies. The supported release build is:
 
 ```
 CGO_ENABLED=0 go build ./cmd/hercules
+CGO_ENABLED=0 go build ./cmd/labours
 ```
 
 `hercules version` prints the API version derived from the Go module path plus the Git hash embedded
@@ -306,6 +312,20 @@ The action produces the artifact named
 charts are packed in the inner tar archive.
 
 ### Docker image
+
+The runtime image is cgo-free, contains both binaries and CA roots, and runs as a non-root user.
+Its builder image is pinned by multi-architecture digest. Docker Buildx can build the two supported
+Linux architectures as one image index:
+
+```
+docker buildx build --platform linux/amd64,linux/arm64 \
+  --output type=oci,dest=hercules-multiarch.tar .
+```
+
+CI executes that command and verifies both target builds. To publish an image index, replace the
+`--output` option with your registry tag and `--push`.
+
+For a local image on the current architecture:
 
 ```
 docker build -t hercules .
@@ -582,7 +602,7 @@ general purpose and the code comments have different nature, so there is no magi
 Hercules must be built with the `tensorflow` tag - it is not enabled by default:
 
 ```
-TAGS=tensorflow just
+CGO_ENABLED=1 TAGS="tensorflow purego" just hercules
 ```
 
 Such a build requires [`libtensorflow`](https://www.tensorflow.org/install/install_go).

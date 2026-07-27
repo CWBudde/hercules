@@ -8,15 +8,16 @@ Default release artifacts are cgo-free and do not require TensorFlow or legacy p
 
 ```bash
 CGO_ENABLED=0 go build ./cmd/hercules
+CGO_ENABLED=0 go build ./cmd/labours
 ```
 
 The `just` default recipe is also supported for local release preparation:
 
 ```bash
-just
+CGO_ENABLED=0 just
 ```
 
-The project requires Go 1.25 or newer, matching `go.mod`.
+The project requires Go 1.26.5 or newer, matching `go.mod`.
 
 ## Optional Build Tags
 
@@ -24,6 +25,8 @@ The project requires Go 1.25 or newer, matching `go.mod`.
 - `cgo_lz4`: restores the legacy cgo-backed LZ4 hibernation path. Default releases use pure-Go LZ4.
 
 Optional builds are not the default release artifacts unless a release note explicitly says so.
+When enabling either cgo-only option, also use the `purego` tag so the renderer does not select its
+separately provisioned native FreeType backend.
 
 ## Version Policy
 
@@ -65,10 +68,12 @@ hercules --preset large-repo --burndown /path/to/large/repo
 Run these commands before creating a release tag:
 
 ```bash
+export CGO_ENABLED=0
 go fmt ./...
 go vet ./...
 go build ./cmd/hercules
-go test ./internal/plumbing ./leaves ./cmd/hercules
+go build ./cmd/labours
+go test ./internal/plumbing ./leaves ./cmd/hercules ./cmd/labours
 ./hercules --dry-run .
 ./hercules --preset quick .
 ```

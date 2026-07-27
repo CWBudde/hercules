@@ -424,6 +424,10 @@ func TestBlobsAreCloseBug2(t *testing.T) {
 	blob1.Size = int64(len(data1))
 	blob2.Size = int64(len(data2))
 	ra := fixtureRenameAnalysis()
+	// This large fixture protects the similarity result, not the deadline
+	// behavior covered by the focused context tests. Leave enough headroom for
+	// package-parallel and repeated test runs on loaded builders.
+	ra.Timeout = 2 * time.Minute
 	result, err := ra.blobsAreClose(blob1, blob2)
 	assert.NoError(t, err)
 	assert.False(t, result)

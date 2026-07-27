@@ -412,6 +412,12 @@ func TestRegistryFeaturedItems(t *testing.T) {
 }
 
 func TestRegistryPathMasquerade(t *testing.T) {
+	previousMasquerade := Registry.pathFlagTypeMasquerade
+	Registry.pathFlagTypeMasquerade = false
+	t.Cleanup(func() {
+		Registry.pathFlagTypeMasquerade = previousMasquerade
+	})
+
 	fs := pflag.NewFlagSet(os.Args[0], pflag.ContinueOnError)
 	var value string
 	fs.StringVar(&value, testFeatureName, "", "usage")

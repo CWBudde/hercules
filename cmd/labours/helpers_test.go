@@ -77,13 +77,15 @@ func TestFallbackFlagsAreBoundToViper(t *testing.T) {
 			t.Fatalf("expected flag %q to be registered", name)
 		}
 		previousFlag := flag.Value.String()
-		previousViper := viper.GetBool(name)
-		defer func(name, previousFlag string, previousViper bool) {
+		defer func(name, previousFlag string) {
 			if err := rootCmd.PersistentFlags().Set(name, previousFlag); err != nil {
 				t.Fatalf("failed to restore flag %q: %v", name, err)
 			}
-			viper.Set(name, previousViper)
-		}(name, previousFlag, previousViper)
+			// A nil override lets the bound flag provide the value again. Restoring
+			// through viper.Set(name, false) would shadow the flag in later
+			// repetitions of this test process.
+			viper.Set(name, nil)
+		}(name, previousFlag)
 
 		if err := rootCmd.PersistentFlags().Set(name, "true"); err != nil {
 			t.Fatalf("failed to set flag %q: %v", name, err)

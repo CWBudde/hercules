@@ -130,6 +130,7 @@ func plotDevsPythonStyle(
 	baselines := make([][]float64, len(rows))
 	labels := make([]graphics.MatplotlibTextLabel, 0, len(rows)*2+1)
 	for i, row := range rows {
+		displayName := peopleChartLabel(row.Name)
 		offset := float64(len(rows)-1-i) * rowHeight
 		top := make([]float64, len(row.Series))
 		baseline := make([]float64, len(row.Series))
@@ -138,7 +139,7 @@ func plotDevsPythonStyle(
 			top[j] = offset + value
 		}
 		series[i] = graphics.MatplotlibTimeAreaSeries{
-			Label:  row.Name,
+			Label:  displayName,
 			Values: top,
 			Color:  colors[i%len(colors)],
 		}
@@ -157,7 +158,7 @@ func plotDevsPythonStyle(
 			graphics.MatplotlibTextLabel{
 				X:      float64(dates[0].Unix()),
 				Y:      labelY,
-				Text:   shortenDeveloperName(row.Name),
+				Text:   shortenDeveloperName(displayName),
 				HAlign: core.TextAlignLeft,
 			},
 			graphics.MatplotlibTextLabel{
@@ -347,7 +348,7 @@ func plotDevs(
 			values = append(values, make([]float64, length-len(values))...)
 		}
 		series = append(series, graphics.MatplotlibTimeAreaSeries{
-			Label:  dev.Name,
+			Label:  peopleChartLabel(dev.Name),
 			Values: values,
 			Color:  colors[i%len(colors)],
 		})

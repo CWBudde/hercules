@@ -86,12 +86,6 @@ func processOverwritesMatrix(people []string, matrix [][]int, maxPeople int, nor
 		}
 	}
 
-	for i, name := range people {
-		if len(name) > 40 {
-			people[i] = name[:37] + "..."
-		}
-	}
-
 	colLabels := append([]string{"Unidentified"}, people...)
 	return people, colLabels, normalizedMatrix
 }
@@ -106,6 +100,21 @@ func plotOverwritesMatrixWithOptions(
 	output string,
 	opts graphics.Options,
 ) error {
+	people = peopleChartLabels(people)
+	colLabels = peopleChartLabels(colLabels)
+
+	for i, name := range people {
+		if len(name) > 40 {
+			people[i] = name[:37] + "..."
+		}
+	}
+
+	for i, name := range colLabels {
+		if len(name) > 40 {
+			colLabels[i] = name[:37] + "..."
+		}
+	}
+
 	if err := graphics.ValidateHeatMap(matrix, people, colLabels); err != nil {
 		return err
 	}

@@ -49,16 +49,25 @@ func BurndownPersonWithOptions(reader readers.Reader, output string, startDate, 
 	// Generate a chart for each person
 	for index, person := range peopleBurndowns {
 		outputFile := outputFiles[index]
+		displayName := peopleChartLabel(person.Person)
+
 		if usePythonRenderer {
-			processedData, err := burndown.LoadBurndown(header, person.Person, person.Matrix, opts.Resample, false, false)
+			processedData, err := burndown.LoadBurndown(header, displayName, person.Matrix, opts.Resample, false, false)
 			if err != nil {
 				return fmt.Errorf("failed to process burndown for person %s: %w", person.Person, err)
 			}
 			if err := graphics.PlotBurndownMatplotlibWithOptions(processedData, outputFile, opts.Relative, opts.Graphics); err != nil {
 				return fmt.Errorf("failed to generate burndown for person %s: %w", person.Person, err)
 			}
-		} else if err := generateBurndownPlotWithOptions(person.Person, person.Matrix, outputFile, startDate, endDate, opts); err != nil {
-			return fmt.Errorf("failed to generate burndown for person %s: %w", person.Person, err)
+
+			continue
+		}
+
+		renderErr := generateBurndownPlotWithOptions(
+			displayName, person.Matrix, outputFile, startDate, endDate, opts,
+		)
+		if renderErr != nil {
+			return fmt.Errorf("failed to generate burndown for person %s: %w", person.Person, renderErr)
 		}
 	}
 

@@ -161,7 +161,7 @@ func plotCommitsVsLines(metrics []EffortMetric, output string, visuals graphics.
 			Y: float64(metric.LinesAdded + metric.LinesRemoved + metric.LinesModified),
 		}
 		if i < 10 { // Only label top 10 to avoid clutter
-			point.Label = metric.Name
+			point.Label = peopleChartLabel(metric.Name)
 		}
 		points[i] = point
 	}
@@ -374,7 +374,7 @@ func plotDevEffortsTimeSeries(data devEffortsMatrix, output string, visuals grap
 	err := graphics.PlotDevsEffortsMatplotlib(
 		data.Dates,
 		data.CumLayers,
-		data.Names,
+		peopleChartLabels(data.Names),
 		graphics.MatplotlibDevsEffortsOptions{
 			Title:        "Efforts through time (changed lines of code)",
 			Output:       output,

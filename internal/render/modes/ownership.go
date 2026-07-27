@@ -349,7 +349,7 @@ func plotOwnershipBurndown(
 		}
 		label := fmt.Sprintf("Developer %d", i+1)
 		if i < len(names) {
-			label = names[i]
+			label = peopleChartLabel(names[i])
 		}
 		label = truncateOwnershipLabel(label)
 		matrix = append(matrix, values)

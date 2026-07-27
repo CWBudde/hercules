@@ -423,6 +423,10 @@ Vadim Markovtsev|vadim@sourced.tech|another@one.com
 If `--people-dict` is not specified a [`.mailmap`](https://git-scm.com/docs/git-check-mailmap) file
 will be used if it exists in the latest commit.
 
+Rendered people-based charts use only each identity's canonical name, so their labels do not expose
+the email aliases stored in analysis reports. Raw JSON output retains the complete identity strings.
+`--people-anonymity` remains available when names must also be hidden.
+
 Identity discovery can be audited before running people-sensitive analyses:
 
 ```

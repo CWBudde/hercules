@@ -598,24 +598,14 @@ axis and that no `1e4`/`1e5` offset text is emitted.
 
 ### DOC-03: People-based charts leak raw identity strings into labels
 
-`devs`, `devs-efforts`, `burndown-person`, `ownership` and `overwrites-matrix` label each series with
-the identity string as the detector built it — `vadim markovtsev|gmarkhor@gmail.com|vadim@athenian.co`
-— so every rendered chart publishes its contributors' email addresses. On the hercules self-analysis
-that is 29 addresses, and the same person appears several times over when their commits span more
-than one address, which also splits their totals.
+Status: completed 2026-07-28
 
-`--people-dict` is the existing escape hatch (`scripts/self-analysis-people.txt` is the merged dict
-that `just devs-chart` passes), but it has to be maintained by hand, and the leak is the default
-behaviour rather than an opt-in.
-
-- Label series with the canonical name only; keep the full identity string for tooltips/JSON output.
-- Consider making `--people-anonymity` composable with rendering, so a chart can be published
-  without maintaining a dict at all.
-
-Acceptance criteria:
-
-- [ ] rendering a people-based mode without `--people-dict` produces labels containing no `@`;
-- [ ] a test asserts the label for a multi-address identity is a single name.
+All people-based renderers now pass raw identity records through a shared public-label boundary:
+`devs`, `devs-efforts`, `burndown-person`, `ownership`, and `overwrites-matrix` display only the
+canonical non-email name, including exact-signature `Name <email>` inputs, while email-only records
+fall back to `Contributor`. Full identity strings remain available to analysis and JSON output, and
+`--people-anonymity` labels pass through unchanged. Regression coverage verifies that a multi-address
+identity renders as one name with no `@` and that JSON retains the complete identity record.
 
 ### DOC-04: devs-efforts wastes ~40% of the canvas and dips below zero
 

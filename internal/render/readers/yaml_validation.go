@@ -320,7 +320,7 @@ func parseSparseMatrixTextChecked(
 	}
 	matrix, err := NewSparseMatrix(rows, columns, entries)
 	if err != nil {
-		return SparseMatrix{}, fmt.Errorf("%w: %s: %v", ErrAnalysisMalformed, name, err)
+		return SparseMatrix{}, fmt.Errorf("%w: %s: %w", ErrAnalysisMalformed, name, err)
 	}
 	return matrix, nil
 }

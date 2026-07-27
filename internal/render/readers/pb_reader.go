@@ -38,7 +38,7 @@ func (r *ProtobufReader) Read(file io.Reader) error {
 	var results pb.AnalysisResults
 	if err := proto.Unmarshal(allBytes, &results); err != nil {
 		progEstimator.FinishOperation()
-		return fmt.Errorf("%w: unmarshal protobuf envelope: %v", ErrAnalysisMalformed, err)
+		return fmt.Errorf("%w: unmarshal protobuf envelope: %w", ErrAnalysisMalformed, err)
 	}
 	if err := analysisio.ValidateAndMigrateAnalysisResults(&results, r.Limits); err != nil {
 		progEstimator.FinishOperation()
@@ -211,7 +211,7 @@ func (r *ProtobufReader) GetFileCooccurrence() ([]string, SparseMatrix, error) {
 
 	matrix, err := parseCompressedSparseCouplingMatrix(couplesData.FileCouples.Matrix)
 	if err != nil {
-		return nil, SparseMatrix{}, fmt.Errorf("%w: file coupling: %v", ErrAnalysisMalformed, err)
+		return nil, SparseMatrix{}, fmt.Errorf("%w: file coupling: %w", ErrAnalysisMalformed, err)
 	}
 	return couplesData.FileCouples.Index, matrix, nil
 }
@@ -228,7 +228,7 @@ func (r *ProtobufReader) GetPeopleCooccurrence() ([]string, SparseMatrix, error)
 
 	matrix, err := parseCompressedSparseCouplingMatrix(couplesData.PeopleCouples.Matrix)
 	if err != nil {
-		return nil, SparseMatrix{}, fmt.Errorf("%w: people coupling: %v", ErrAnalysisMalformed, err)
+		return nil, SparseMatrix{}, fmt.Errorf("%w: people coupling: %w", ErrAnalysisMalformed, err)
 	}
 	return couplesData.PeopleCouples.Index, matrix, nil
 }

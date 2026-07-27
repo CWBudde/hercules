@@ -94,15 +94,15 @@ func SentimentWithOptions(reader readers.Reader, output string, opts Options) er
 	if len(collectedTicks) > 0 {
 		start, _ := reader.GetHeader()
 		if err := plotCollectedSentimentTimelineWithOptions(reader.GetName(), start, collectedTicks, output, opts.Graphics); err != nil {
-			return fmt.Errorf("failed to generate collected sentiment timeline: %v", err)
+			return fmt.Errorf("failed to generate collected sentiment timeline: %w", err)
 		}
 	} else {
 		if err := plotSentimentOverviewWithOptions(sentimentResults, output, opts.Graphics); err != nil {
-			return fmt.Errorf("failed to generate sentiment overview: %v", err)
+			return fmt.Errorf("failed to generate sentiment overview: %w", err)
 		}
 
 		if err := plotSentimentByTypeWithOptions(sentimentResults, output, opts.Graphics); err != nil {
-			return fmt.Errorf("failed to plot sentiment by type: %v", err)
+			return fmt.Errorf("failed to plot sentiment by type: %w", err)
 		}
 	}
 
@@ -166,7 +166,7 @@ func plotCollectedSentimentTimelineWithOptions(
 		output = "."
 	}
 	if err := os.MkdirAll(output, 0o750); err != nil {
-		return fmt.Errorf("failed to create output directory %s: %v", output, err)
+		return fmt.Errorf("failed to create output directory %s: %w", output, err)
 	}
 
 	maxTick := 0
@@ -512,13 +512,13 @@ func plotSentimentOverviewWithOptions(results []SentimentResult, output string, 
 	outputFile := filepath.Join(output, "sentiment-overview.png")
 	opts.Output = outputFile
 	if err := graphics.PlotStackedBarChartMatplotlib(entities, series, opts); err != nil {
-		return fmt.Errorf("failed to save sentiment overview: %v", err)
+		return fmt.Errorf("failed to save sentiment overview: %w", err)
 	}
 
 	svgFile := filepath.Join(output, "sentiment-overview.svg")
 	opts.Output = svgFile
 	if err := graphics.PlotStackedBarChartMatplotlib(entities, series, opts); err != nil {
-		return fmt.Errorf("failed to save sentiment overview SVG: %v", err)
+		return fmt.Errorf("failed to save sentiment overview SVG: %w", err)
 	}
 
 	fmt.Printf("Sentiment overview charts saved to %s and %s\n", outputFile, svgFile)
@@ -545,14 +545,14 @@ func plotSentimentByTypeWithOptions(results []SentimentResult, output string, vi
 	// Plot developer sentiment if available
 	if len(developers) > 0 {
 		if err := plotSentimentForTypeWithOptions(developers, "Developer Sentiment Analysis", output, "sentiment-developers", visuals); err != nil {
-			return fmt.Errorf("failed to plot developer sentiment: %v", err)
+			return fmt.Errorf("failed to plot developer sentiment: %w", err)
 		}
 	}
 
 	// Plot language sentiment if available
 	if len(languages) > 0 {
 		if err := plotSentimentForTypeWithOptions(languages, "Language Sentiment Analysis", output, "sentiment-languages", visuals); err != nil {
-			return fmt.Errorf("failed to plot language sentiment: %v", err)
+			return fmt.Errorf("failed to plot language sentiment: %w", err)
 		}
 	}
 
@@ -603,13 +603,13 @@ func plotSentimentForTypeWithOptions(
 	outputFile := filepath.Join(output, filename+".png")
 	opts.Output = outputFile
 	if err := graphics.PlotScatterMatplotlib(series, opts); err != nil {
-		return fmt.Errorf("failed to save %s: %v", filename, err)
+		return fmt.Errorf("failed to save %s: %w", filename, err)
 	}
 
 	svgFile := filepath.Join(output, filename+".svg")
 	opts.Output = svgFile
 	if err := graphics.PlotScatterMatplotlib(series, opts); err != nil {
-		return fmt.Errorf("failed to save %s SVG: %v", filename, err)
+		return fmt.Errorf("failed to save %s SVG: %w", filename, err)
 	}
 
 	fmt.Printf("%s charts saved to %s and %s\n", title, outputFile, svgFile)

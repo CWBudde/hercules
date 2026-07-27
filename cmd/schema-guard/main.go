@@ -40,27 +40,29 @@ func main() {
 
 	result := schema.Evaluate(oldSnapshot, newSnapshot, *changelogUpdated)
 
+	// This process writes only to the inherited stdout stream; if the consumer
+	// closes it, there is no secondary output channel on which to report that.
 	if len(result.Changes) == 0 {
-		fmt.Fprintln(os.Stdout, "schema-guard: no PB schema changes")
+		_, _ = fmt.Fprintln(os.Stdout, "schema-guard: no PB schema changes")
 		return
 	}
 
-	fmt.Fprintf(os.Stdout, "schema-guard: %d PB schema change(s) vs baseline (schema version %d -> %d):\n",
+	_, _ = fmt.Fprintf(os.Stdout, "schema-guard: %d PB schema change(s) vs baseline (schema version %d -> %d):\n",
 		len(result.Changes), oldSnapshot.Version, newSnapshot.Version)
 	for _, change := range result.Changes {
 		kind := "compatible"
 		if change.Breaking {
 			kind = "BREAKING"
 		}
-		fmt.Fprintf(os.Stdout, "  [%-10s] %s\n", kind, change.Description)
+		_, _ = fmt.Fprintf(os.Stdout, "  [%-10s] %s\n", kind, change.Description)
 	}
 
 	if len(result.Errors) > 0 {
-		fmt.Fprintln(os.Stdout, "\nschema-guard: policy violations (see docs/SCHEMAS.md \"PB Schema Change Policy\"):")
+		_, _ = fmt.Fprintln(os.Stdout, "\nschema-guard: policy violations (see docs/SCHEMAS.md \"PB Schema Change Policy\"):")
 		for _, msg := range result.Errors {
-			fmt.Fprintf(os.Stdout, "  - %s\n", msg)
+			_, _ = fmt.Fprintf(os.Stdout, "  - %s\n", msg)
 		}
 		os.Exit(1)
 	}
-	fmt.Fprintln(os.Stdout, "schema-guard: OK (changes are recorded per policy)")
+	_, _ = fmt.Fprintln(os.Stdout, "schema-guard: OK (changes are recorded per policy)")
 }

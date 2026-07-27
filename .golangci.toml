@@ -19,6 +19,11 @@ disable = [
 enable = ['gomodguard_v2', 'wsl_v5', "revive"]
 
 [linters.settings]
+[linters.settings.errcheck]
+# Blank assignments are the required call-site marker for intentionally
+# discarded errors; unassigned error returns remain repository-wide failures.
+check-blank = false
+
 [linters.settings.testpackage]
 # Unit tests deliberately exercise package-private implementation details.
 skip-regexp = '.*_test\.go$'
@@ -67,16 +72,22 @@ skip-comments = false
 skip-blank-lines = false
 [linters.exclusions]
 generated = 'lax'
-presets = ['comments', 'common-false-positives', 'legacy', 'std-error-handling']
-# internal/render and cmd/labours are the Go renderer moved verbatim from
-# labours-go (PLAN.md Part A); excluded wholesale until brought up to house style.
+presets = ['comments', 'common-false-positives', 'legacy']
 # internal/test is shared test scaffolding (a fixture-repository helper), not
 # production code, so it is exempt from the strict `default = all` house style.
-paths = ['third_party$', 'builtin$', 'examples$', 'internal/render/', 'cmd/labours/', 'internal/test/']
+paths = ['third_party$', 'builtin$', 'examples$', 'internal/test/']
 
 [[linters.exclusions.rules]]
 linters = ['gosec']
 text = 'G601:'
+
+# Reviewed CI-03 baseline: these exact unexported helpers are dormant
+# compatibility/reference implementations retained from the renderer migration.
+# Keep the symbol list explicit so newly unused production code still fails CI.
+[[linters.exclusions.rules]]
+linters = ['unused']
+path = '^internal/render/'
+text = 'func (runAllModes|plotFileCoupling|plotShotnessCoupling|calculateParallelismMetrics|plotLanguageEvolution|plotIntBars|plotFloatBars|plotRuntimePercentageMatplotlib|saveRuntimeFigure|plotCollectedSentimentTimeline|plotSentimentOverview|plotSentimentByType|plotSentimentForType|createReader) is unused'
 
 [[linters.exclusions.rules]]
 linters = ['gochecknoglobals', 'gochecknoinits']

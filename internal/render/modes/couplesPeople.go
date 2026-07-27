@@ -46,7 +46,7 @@ func CouplesPeopleWithOptions(reader readers.Reader, output string, opts Options
 		"people", output, peopleNames, couplingMatrix, outlierThreshold, opts,
 	); err != nil {
 		progEstimator.FinishMultiOperation()
-		return fmt.Errorf("failed to write people embeddings: %v", err)
+		return fmt.Errorf("failed to write people embeddings: %w", err)
 	}
 
 	progEstimator.FinishMultiOperation()
@@ -99,16 +99,16 @@ func writeSparseEmbeddings(
 		return fmt.Errorf("empty matrix or index")
 	}
 	if err := os.MkdirAll(outputDir, 0o750); err != nil {
-		return fmt.Errorf("failed to create output directory: %v", err)
+		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 
 	vocabFile := filepath.Join(outputDir, prefix+"_vocabulary.tsv")
 	if err := writeSparseVocabularyFile(vocabFile, index); err != nil {
-		return fmt.Errorf("failed to write vocabulary file: %v", err)
+		return fmt.Errorf("failed to write vocabulary file: %w", err)
 	}
 	vectorFile := filepath.Join(outputDir, prefix+"_vectors.tsv")
 	if err := writeSparseVectorFile(vectorFile, index, matrix, outlierThreshold); err != nil {
-		return fmt.Errorf("failed to write vector file: %v", err)
+		return fmt.Errorf("failed to write vector file: %w", err)
 	}
 
 	disableProjector := opts.DisableProjector
@@ -117,7 +117,7 @@ func writeSparseEmbeddings(
 		if err := writeSparseMetadataFile(
 			metadataFile, index, matrix, outlierThreshold,
 		); err != nil {
-			return fmt.Errorf("failed to write metadata file: %v", err)
+			return fmt.Errorf("failed to write metadata file: %w", err)
 		}
 		fmt.Printf("Embeddings written to:\n")
 		fmt.Printf("  Vocabulary: %s\n", vocabFile)

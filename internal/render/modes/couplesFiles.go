@@ -59,7 +59,7 @@ func runCouplingMode(
 	progEstimator.NextOperation("Generating visualization")
 	if err := plot(names, matrix, output); err != nil {
 		progEstimator.FinishMultiOperation()
-		return fmt.Errorf("failed to generate %s plots: %v", label, err)
+		return fmt.Errorf("failed to generate %s plots: %w", label, err)
 	}
 	progEstimator.FinishMultiOperation()
 	if !quiet {
@@ -272,7 +272,7 @@ func plotCouplingHeatmap(
 		"Reds",
 		optionValues...,
 	); err != nil {
-		return fmt.Errorf("failed to save heatmap: %v", err)
+		return fmt.Errorf("failed to save heatmap: %w", err)
 	}
 
 	fmt.Printf("Saved file coupling heatmap to %s\n", outputFile)
@@ -323,7 +323,7 @@ func plotTopCouplingPairsWithOptions(analysis FileCouplingAnalysis, output strin
 		BarLabelAngle: 70,
 		FontSize:      opts.PlotFontSize(),
 	}); err != nil {
-		return fmt.Errorf("failed to save coupling pairs plot: %v", err)
+		return fmt.Errorf("failed to save coupling pairs plot: %w", err)
 	}
 
 	fmt.Printf("Saved top coupling pairs plot to %s\n", outputFile)

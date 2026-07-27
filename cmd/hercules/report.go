@@ -1060,8 +1060,10 @@ func writeReportIndex(path string, data reportIndexData) error {
 	if err != nil {
 		return err
 	}
-	defer file.Close()
-	return tmpl.Execute(file, data)
+	executeErr := tmpl.Execute(file, data)
+	closeErr := file.Close()
+
+	return errors.Join(executeErr, closeErr)
 }
 
 func collectReportManifestFiles(root string) ([]string, error) {

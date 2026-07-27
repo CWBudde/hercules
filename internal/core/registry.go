@@ -461,7 +461,8 @@ func (registry *PipelineItemRegistry) reuseOption(
 	message := fmt.Sprintf(
 		"Param conflict of the option %s from: %s, %s", option.Flag, reused.Description, itemName,
 	)
-	fmt.Fprintln(os.Stdout, message)
+	// Registry warnings have no caller error channel; stdout is best effort.
+	_, _ = fmt.Fprintln(os.Stdout, message)
 	panic(message)
 }
 

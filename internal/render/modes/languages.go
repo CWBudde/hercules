@@ -45,7 +45,7 @@ func LanguagesWithOptions(reader readers.Reader, output string, opts Options) er
 		err = plotLanguages(languageStats, output, opts.Graphics)
 	}
 	if err != nil {
-		return fmt.Errorf("failed to generate language plot: %v", err)
+		return fmt.Errorf("failed to generate language plot: %w", err)
 	}
 
 	fmt.Printf("Language analysis completed. Found %d languages.\n", len(languageStats))
@@ -293,12 +293,13 @@ func formatFloatWithCommas(v float64) string {
 	s := fmt.Sprintf("%.1f", v)
 	parts := strings.SplitN(s, ".", 2)
 	intPart := parts[0]
-	var out []byte
+	var out []rune
 	for i, r := range reverseString(intPart) {
 		if i > 0 && i%3 == 0 {
 			out = append(out, ',')
 		}
-		out = append(out, byte(r))
+
+		out = append(out, r)
 	}
 	formatted := reverseString(string(out))
 	if len(parts) == 2 {
@@ -382,14 +383,14 @@ func languageOutputPaths(output string) ([]string, error) {
 	if ext != "" {
 		if dir := filepath.Dir(output); dir != "." {
 			if err := os.MkdirAll(dir, 0o750); err != nil {
-				return nil, fmt.Errorf("failed to create output directory %s: %v", dir, err)
+				return nil, fmt.Errorf("failed to create output directory %s: %w", dir, err)
 			}
 		}
 		return []string{output}, nil
 	}
 
 	if err := os.MkdirAll(output, 0o750); err != nil {
-		return nil, fmt.Errorf("failed to create output directory %s: %v", output, err)
+		return nil, fmt.Errorf("failed to create output directory %s: %w", output, err)
 	}
 	return []string{
 		filepath.Join(output, "languages.png"),

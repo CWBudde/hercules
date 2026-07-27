@@ -707,8 +707,8 @@ func TestLoadCommitsFromFile(t *testing.T) {
 	require.NoError(t, err)
 	_, err = tmp.WriteString("cce947b98a050c6d356bc6ba95030254914027b1\n6db8065cdb9bb0758f36a7e75fc72ab95f9e8145")
 	require.NoError(t, err)
-	tmp.Close()
-	defer os.Remove(tmp.Name())
+	_ = tmp.Close()
+	defer func() { _ = os.Remove(tmp.Name()) }()
 	commits, err := LoadCommitsFromFile(tmp.Name(), test.FixtureRepository())
 	require.NoError(t, err)
 	assert.Len(t, commits, 2)
@@ -725,8 +725,8 @@ func TestLoadCommitsFromFile(t *testing.T) {
 	require.NoError(t, err)
 	_, err = tmp.WriteString("WAT")
 	require.NoError(t, err)
-	tmp.Close()
-	defer os.Remove(tmp.Name())
+	_ = tmp.Close()
+	defer func() { _ = os.Remove(tmp.Name()) }()
 	commits, err = LoadCommitsFromFile(tmp.Name(), test.FixtureRepository())
 	assert.Nil(t, commits)
 	require.Error(t, err)
@@ -734,8 +734,8 @@ func TestLoadCommitsFromFile(t *testing.T) {
 	require.NoError(t, err)
 	_, err = tmp.WriteString("ffffffffffffffffffffffffffffffffffffffff")
 	require.NoError(t, err)
-	tmp.Close()
-	defer os.Remove(tmp.Name())
+	_ = tmp.Close()
+	defer func() { _ = os.Remove(tmp.Name()) }()
 	commits, err = LoadCommitsFromFile(tmp.Name(), test.FixtureRepository())
 	assert.Nil(t, commits)
 	require.Error(t, err)
@@ -1393,8 +1393,8 @@ func TestPipelineDAGDumpToFile(t *testing.T) {
 
 	tmpFile, err := os.CreateTemp(t.TempDir(), "hercules-dag-test-")
 	require.NoError(t, err)
-	tmpFile.Close()
-	defer os.Remove(tmpFile.Name())
+	_ = tmpFile.Close()
+	defer func() { _ = os.Remove(tmpFile.Name()) }()
 
 	err = pipeline.Initialize(map[string]any{
 		ConfigPipelineDAGPath: tmpFile.Name(),
@@ -1418,13 +1418,13 @@ func TestPipelineDAGDumpToStderr(t *testing.T) {
 		ConfigPipelineDAGPath: "-",
 	})
 
-	w.Close()
+	_ = w.Close()
 	os.Stderr = oldStderr
 
 	var buf bytes.Buffer
 	_, copyErr := io.Copy(&buf, r)
 	require.NoError(t, copyErr)
-	r.Close()
+	_ = r.Close()
 
 	require.NoError(t, initErr)
 	assert.NotEmpty(t, buf.String())

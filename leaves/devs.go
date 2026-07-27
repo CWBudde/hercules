@@ -416,10 +416,10 @@ func mergeDevTick(target map[int]*DevTick, developer int, source *DevTick) {
 }
 
 func (devs *DevsAnalysis) serializeText(result *DevsResult, writer io.Writer) {
-	fmt.Fprintln(writer, "  ticks:")
+	_, _ = fmt.Fprintln(writer, "  ticks:")
 
 	for _, tick := range sortedDevTickKeys(result.Ticks) {
-		fmt.Fprintf(writer, "    %d:\n", tick)
+		_, _ = fmt.Fprintf(writer, "    %d:\n", tick)
 
 		tickStats := result.Ticks[tick]
 		for _, developer := range sortedDeveloperKeys(tickStats) {
@@ -428,19 +428,19 @@ func (devs *DevsAnalysis) serializeText(result *DevsResult, writer io.Writer) {
 				developer = -1
 			}
 
-			fmt.Fprintf(writer, "      %d: [%d, %d, %d, %d, {%s}]\n",
+			_, _ = fmt.Fprintf(writer, "      %d: [%d, %d, %d, %d, {%s}]\n",
 				developer, stats.Commits, stats.Added, stats.Removed, stats.Changed,
 				strings.Join(formatLanguageStats(stats.Languages), ", "))
 		}
 	}
 
-	fmt.Fprintln(writer, "  people:")
+	_, _ = fmt.Fprintln(writer, "  people:")
 
 	for _, person := range result.reversedPeopleDict {
-		fmt.Fprintf(writer, "  - %s\n", yaml.SafeString(person))
+		_, _ = fmt.Fprintf(writer, "  - %s\n", yaml.SafeString(person))
 	}
 
-	fmt.Fprintln(writer, "  tick_size:", int(result.tickSize.Seconds()))
+	_, _ = fmt.Fprintln(writer, "  tick_size:", int(result.tickSize.Seconds()))
 }
 
 func sortedDevTickKeys(ticks map[int]map[int]*DevTick) []int {

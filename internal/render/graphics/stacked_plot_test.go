@@ -338,14 +338,15 @@ func calculateStackedValues(data [][]float64) [][]float64 {
 	}
 
 	stacked := make([][]float64, len(data))
-	for i := range stacked {
-		stacked[i] = make([]float64, len(data[i]))
-		copy(stacked[i], data[i])
+	for i, series := range data {
+		stacked[i] = append([]float64(nil), series...)
 
 		// Add values from previous series
-		for j := 0; j < i; j++ {
+		for _, previous := range data[:i] {
 			for k := range stacked[i] {
-				stacked[i][k] += data[j][k]
+				if k < len(previous) {
+					stacked[i][k] += previous[k]
+				}
 			}
 		}
 	}

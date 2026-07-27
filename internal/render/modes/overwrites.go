@@ -42,7 +42,7 @@ func OverwritesMatrixWithOptions(reader readers.Reader, output string, opts Opti
 
 	// Step 4: Visualize the matrix
 	if err := plotOverwritesMatrixWithOptions(people, colLabels, normalizedMatrix, output, opts.Graphics); err != nil {
-		return fmt.Errorf("failed to plot overwrites matrix: %v", err)
+		return fmt.Errorf("failed to plot overwrites matrix: %w", err)
 	}
 
 	fmt.Println("Overwrites matrix generated successfully.")
@@ -148,7 +148,7 @@ func plotOverwritesMatrixWithOptions(
 	configureOverwritesMatrixAxes(ax, people, colLabels, foreground)
 
 	if err := saveOverwritesMatplotlibFigure(fig, output, width, height, background); err != nil {
-		return fmt.Errorf("failed to save plot: %v", err)
+		return fmt.Errorf("failed to save plot: %w", err)
 	}
 	return nil
 }
@@ -229,7 +229,7 @@ func saveOverwritesMatplotlibFigure(fig *core.Figure, output string, width, heig
 		output = "overwrites.png"
 	}
 	if err := os.MkdirAll(filepath.Dir(output), 0o750); err != nil {
-		return fmt.Errorf("failed to create output directory for %s: %v", output, err)
+		return fmt.Errorf("failed to create output directory for %s: %w", output, err)
 	}
 
 	transparentBackground := background
@@ -245,13 +245,13 @@ func saveOverwritesMatplotlibFigure(fig *core.Figure, output string, width, heig
 	case ".svg":
 		renderer, _, err := backends.NewRenderer("svg", config, nil)
 		if err != nil {
-			return fmt.Errorf("failed to create SVG renderer: %v", err)
+			return fmt.Errorf("failed to create SVG renderer: %w", err)
 		}
 		return core.SaveSVG(fig, renderer, output)
 	default:
 		renderer, _, err := backends.NewRenderer("agg", config, backends.TextCapabilities)
 		if err != nil {
-			return fmt.Errorf("failed to create AGG renderer: %v", err)
+			return fmt.Errorf("failed to create AGG renderer: %w", err)
 		}
 		if err := core.SavePNG(fig, renderer, output); err != nil {
 			return err
@@ -294,7 +294,7 @@ func saveMatrixAsJSON(output string, people []string, matrix [][]float64) error 
 
 	file, err := os.Create(output) // #nosec G304 - output path is explicitly requested by caller.
 	if err != nil {
-		return fmt.Errorf("failed to create JSON output file: %v", err)
+		return fmt.Errorf("failed to create JSON output file: %w", err)
 	}
 	defer func() { _ = file.Close() }()
 

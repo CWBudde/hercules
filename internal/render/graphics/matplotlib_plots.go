@@ -935,7 +935,9 @@ func parallelSplinePolyline(values []float64, perGap int) (xs, ys []float64) {
 }
 
 func solveSplineEquations(x1, y1, x2, y2 float64) (a, b, c, d float64) {
-	xcube := math.Pow(x1-x2, 3)
+	delta := x1 - x2
+	xcube := delta * delta * delta
+
 	if xcube == 0 {
 		return 0, 0, 0, y1
 	}

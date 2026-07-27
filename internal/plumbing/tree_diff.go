@@ -416,13 +416,20 @@ func (treediff *TreeDiff) checkLanguage(name string, blobHash plumbing.Hash) (bo
 	if err != nil {
 		return false, fmt.Errorf("open blob %s to detect language of %q: %w", blobHash, name, err)
 	}
-	defer reader.Close()
 
 	buffer := make([]byte, 1024)
 
-	bytesRead, err := reader.Read(buffer)
-	if err != nil && (blob.Size != 0 || !errors.Is(err, io.EOF)) {
-		return false, fmt.Errorf("read blob %s to detect language of %q: %w", blobHash, name, err)
+	bytesRead, readErr := reader.Read(buffer)
+	closeErr := reader.Close()
+
+	if readErr != nil && (blob.Size != 0 || !errors.Is(readErr, io.EOF)) {
+		readErr = fmt.Errorf("read blob %s to detect language of %q: %w", blobHash, name, readErr)
+	} else {
+		readErr = nil
+	}
+
+	if readErr != nil || closeErr != nil {
+		return false, errors.Join(readErr, closeErr)
 	}
 
 	if bytesRead < len(buffer) {

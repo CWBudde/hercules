@@ -548,7 +548,7 @@ func saveMatplotlibFigureWithLayout(fig *core.Figure, output string, width, heig
 		output = "burndown_project_python.png"
 	}
 	if err := os.MkdirAll(filepath.Dir(output), 0o750); err != nil {
-		return fmt.Errorf("failed to create output directory for %s: %v", output, err)
+		return fmt.Errorf("failed to create output directory for %s: %w", output, err)
 	}
 
 	if tight {
@@ -563,13 +563,13 @@ func saveMatplotlibFigureWithLayout(fig *core.Figure, output string, width, heig
 	case ".svg":
 		renderer, _, err := backends.NewRenderer("svg", config, nil)
 		if err != nil {
-			return fmt.Errorf("failed to create SVG renderer: %v", err)
+			return fmt.Errorf("failed to create SVG renderer: %w", err)
 		}
 		return core.SaveSVG(fig, renderer, output)
 	default:
 		renderer, _, err := backends.NewRenderer("agg", config, backends.TextCapabilities)
 		if err != nil {
-			return fmt.Errorf("failed to create AGG renderer: %v", err)
+			return fmt.Errorf("failed to create AGG renderer: %w", err)
 		}
 		if err := core.SavePNG(fig, renderer, output); err != nil {
 			return err

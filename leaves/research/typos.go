@@ -411,12 +411,13 @@ func (tdb *TyposDatasetBuilder) identifiersForTypo(
 }
 
 func (tdb *TyposDatasetBuilder) serializeText(result *TyposResult, writer io.Writer) {
+	// Serialize's legacy text path has no error channel.
 	for _, t := range result.Typos {
-		fmt.Fprintf(writer, "  - wrong: %s\n", yaml.SafeString(t.Wrong))
-		fmt.Fprintf(writer, "    correct: %s\n", yaml.SafeString(t.Correct))
-		fmt.Fprintf(writer, "    commit: %s\n", t.Commit.String())
-		fmt.Fprintf(writer, "    file: %s\n", yaml.SafeString(t.File))
-		fmt.Fprintf(writer, "    line: %d\n", t.Line)
+		_, _ = fmt.Fprintf(writer, "  - wrong: %s\n", yaml.SafeString(t.Wrong))
+		_, _ = fmt.Fprintf(writer, "    correct: %s\n", yaml.SafeString(t.Correct))
+		_, _ = fmt.Fprintf(writer, "    commit: %s\n", t.Commit.String())
+		_, _ = fmt.Fprintf(writer, "    file: %s\n", yaml.SafeString(t.File))
+		_, _ = fmt.Fprintf(writer, "    line: %d\n", t.Line)
 	}
 }
 

@@ -134,7 +134,7 @@ func plotShotnessCouplingHeatmap(
 		"Shotness Coupling Heatmap", pngFile, analysis.EntityNames,
 		analysis.CouplingMatrix, "Greens", optionValues...,
 	); err != nil {
-		return fmt.Errorf("failed to save heatmap: %v", err)
+		return fmt.Errorf("failed to save heatmap: %w", err)
 	}
 
 	svgFile := filepath.Join(output, "shotness_coupling_heatmap.svg")
@@ -142,7 +142,7 @@ func plotShotnessCouplingHeatmap(
 		"Shotness Coupling Heatmap", svgFile, analysis.EntityNames,
 		analysis.CouplingMatrix, "Greens", optionValues...,
 	); err != nil {
-		return fmt.Errorf("failed to save heatmap: %v", err)
+		return fmt.Errorf("failed to save heatmap: %w", err)
 	}
 
 	fmt.Printf("Saved shotness coupling heatmap to %s and %s\n", pngFile, svgFile)
@@ -185,7 +185,7 @@ func plotTopShotnessCouplingPairs(
 		output = "."
 	}
 	if err := os.MkdirAll(output, 0o750); err != nil {
-		return fmt.Errorf("failed to create output directory %s: %v", output, err)
+		return fmt.Errorf("failed to create output directory %s: %w", output, err)
 	}
 	opts := graphics.MatplotlibBarOptions{
 		Title:         "Top Shotness Coupling Pairs",
@@ -203,12 +203,12 @@ func plotTopShotnessCouplingPairs(
 	pngFile := filepath.Join(output, "top_shotness_coupling_pairs.png")
 	opts.Output = pngFile
 	if err := graphics.PlotBarChartMatplotlib(rankLabels, values, opts); err != nil {
-		return fmt.Errorf("failed to save coupling pairs plot: %v", err)
+		return fmt.Errorf("failed to save coupling pairs plot: %w", err)
 	}
 	svgFile := filepath.Join(output, "top_shotness_coupling_pairs.svg")
 	opts.Output = svgFile
 	if err := graphics.PlotBarChartMatplotlib(rankLabels, values, opts); err != nil {
-		return fmt.Errorf("failed to save coupling pairs plot: %v", err)
+		return fmt.Errorf("failed to save coupling pairs plot: %w", err)
 	}
 
 	fmt.Printf("Saved top shotness coupling pairs plots to %s and %s\n", pngFile, svgFile)

@@ -426,7 +426,7 @@ func (oc *OwnershipConcentrationAnalysis) computeSubsystemConcentration() map[st
 }
 
 func (oc *OwnershipConcentrationAnalysis) serializeText(result *OwnershipConcentrationResult, writer io.Writer) {
-	fmt.Fprintln(writer, "  ownership_concentration:")
+	_, _ = fmt.Fprintln(writer, "  ownership_concentration:")
 
 	ticks := make([]int, 0, len(result.Snapshots))
 	for tick := range result.Snapshots {
@@ -435,16 +435,16 @@ func (oc *OwnershipConcentrationAnalysis) serializeText(result *OwnershipConcent
 
 	sort.Ints(ticks)
 
-	fmt.Fprintln(writer, "    per_tick:")
+	_, _ = fmt.Fprintln(writer, "    per_tick:")
 
 	for _, tick := range ticks {
 		snapshot := result.Snapshots[tick]
-		fmt.Fprintf(writer, "      %d: {gini: %.4f, hhi: %.4f, total_lines: %d}\n",
+		_, _ = fmt.Fprintf(writer, "      %d: {gini: %.4f, hhi: %.4f, total_lines: %d}\n",
 			tick, snapshot.Gini, snapshot.HHI, snapshot.TotalLines)
 	}
 
 	if len(result.SubsystemConcentration) > 0 {
-		fmt.Fprintln(writer, "    per_subsystem:")
+		_, _ = fmt.Fprintln(writer, "    per_subsystem:")
 
 		dirs := make([]string, 0, len(result.SubsystemConcentration))
 		for dir := range result.SubsystemConcentration {
@@ -455,17 +455,17 @@ func (oc *OwnershipConcentrationAnalysis) serializeText(result *OwnershipConcent
 
 		for _, dir := range dirs {
 			sc := result.SubsystemConcentration[dir]
-			fmt.Fprintf(writer, "      %s: {gini: %.4f, hhi: %.4f}\n", yaml.SafeString(dir), sc.Gini, sc.HHI)
+			_, _ = fmt.Fprintf(writer, "      %s: {gini: %.4f, hhi: %.4f}\n", yaml.SafeString(dir), sc.Gini, sc.HHI)
 		}
 	}
 
-	fmt.Fprintln(writer, "    people:")
+	_, _ = fmt.Fprintln(writer, "    people:")
 
 	for _, person := range result.reversedPeopleDict {
-		fmt.Fprintf(writer, "    - %s\n", yaml.SafeString(person))
+		_, _ = fmt.Fprintf(writer, "    - %s\n", yaml.SafeString(person))
 	}
 
-	fmt.Fprintln(writer, "    tick_size:", int(result.tickSize.Seconds()))
+	_, _ = fmt.Fprintln(writer, "    tick_size:", int(result.tickSize.Seconds()))
 }
 
 var _ = core.RegisterPipelineItem(&OwnershipConcentrationAnalysis{})

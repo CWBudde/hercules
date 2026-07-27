@@ -480,13 +480,18 @@ func (analyser *BurndownAnalysis) Boot() error {
 	}
 
 	fr := flate.NewReader(bytes.NewReader(data))
-	defer fr.Close()
 
 	var state burndownState
 
-	err := gob.NewDecoder(fr).Decode(&state)
-	if err != nil {
-		return fmt.Errorf("decode burndown hibernation state: %w", err)
+	decodeErr := gob.NewDecoder(fr).Decode(&state)
+	closeErr := fr.Close()
+
+	if decodeErr != nil {
+		decodeErr = fmt.Errorf("decode burndown hibernation state: %w", decodeErr)
+	}
+
+	if decodeErr != nil || closeErr != nil {
+		return errors.Join(decodeErr, closeErr)
 	}
 
 	analyser.globalHistory = mapToSparseHistory(state.GlobalHistory)

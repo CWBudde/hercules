@@ -476,7 +476,7 @@ func (shotness *ShotnessAnalysis) extractNodes(
 
 func (shotness *ShotnessAnalysis) serializeText(result *ShotnessResult, writer io.Writer) {
 	for nodeIndex, summary := range result.Nodes {
-		fmt.Fprintf(writer, "  - name: %s\n    file: %s\n    internal_role: %s\n    counters: {",
+		_, _ = fmt.Fprintf(writer, "  - name: %s\n    file: %s\n    internal_role: %s\n    counters: {",
 			summary.Name, summary.File, summary.Type)
 
 		keys := make([]int, len(result.Counters[nodeIndex]))
@@ -490,7 +490,7 @@ func (shotness *ShotnessAnalysis) serializeText(result *ShotnessResult, writer i
 		sort.Ints(keys)
 
 		if len(keys) == 0 {
-			fmt.Fprintln(writer, "}")
+			_, _ = fmt.Fprintln(writer, "}")
 
 			continue
 		}
@@ -500,9 +500,9 @@ func (shotness *ShotnessAnalysis) serializeText(result *ShotnessResult, writer i
 		for _, key := range keys {
 			val := result.Counters[nodeIndex][key]
 			if counterIndex < len(result.Counters[nodeIndex])-1 {
-				fmt.Fprintf(writer, "\"%d\":%d,", key, val)
+				_, _ = fmt.Fprintf(writer, "\"%d\":%d,", key, val)
 			} else {
-				fmt.Fprintf(writer, "\"%d\":%d}\n", key, val)
+				_, _ = fmt.Fprintf(writer, "\"%d\":%d}\n", key, val)
 			}
 
 			counterIndex++

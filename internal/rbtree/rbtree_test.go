@@ -653,7 +653,7 @@ func TestAllocatorSerializeDeserialize(t *testing.T) {
 	file, err := os.CreateTemp(t.TempDir(), "")
 	assert.NoError(t, err)
 	name := file.Name()
-	defer os.Remove(name)
+	defer func() { _ = os.Remove(name) }()
 
 	assert.NoError(t, file.Close())
 	assert.Error(t, alloc.Serialize("/tmp/xxx/yyy"))

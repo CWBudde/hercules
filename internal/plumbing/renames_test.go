@@ -392,7 +392,7 @@ func loadData(t *testing.T, name string) []byte {
 	if err != nil {
 		t.Errorf("open ../test_data/%s: %v", name, err)
 	}
-	defer gzsource.Close()
+	defer func() { _ = gzsource.Close() }()
 	gzreader, err := gzip.NewReader(gzsource)
 	if err != nil {
 		t.Errorf("gzip ../test_data/%s: %v", name, err)

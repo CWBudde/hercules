@@ -159,6 +159,13 @@ lint:
     # Force module mode because vendor/ is ignored and may be stale locally.
     CGO_ENABLED=0 GOFLAGS=-mod=mod golangci-lint run --config ./.golangci.toml --timeout 2m --modules-download-mode=mod --new
 
+# Run CI-03's repository-wide correctness and security gate.
+lint-high-signal:
+    CGO_ENABLED=0 GOFLAGS=-mod=mod golangci-lint run --config ./.golangci.toml --timeout 5m \
+        --modules-download-mode=mod \
+        --enable-only nilerr,nilnesserr,errcheck,errorlint,staticcheck,govet,gosec,unused \
+        --uniq-by-line=false ./...
+
 # Run the same reachable-vulnerability audit as CI.
 vuln:
     CGO_ENABLED=0 GOFLAGS=-mod=mod go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...

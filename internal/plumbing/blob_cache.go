@@ -61,11 +61,12 @@ func (b *CachedBlob) CacheWithLimit(maxBytes int64) error {
 	if err != nil {
 		return fmt.Errorf("open blob %s for caching: %w", b.Hash.String(), err)
 	}
-	defer reader.Close()
 
-	data, err := readExactBlob(reader, size, b.Hash)
-	if err != nil {
-		return err
+	data, readErr := readExactBlob(reader, size, b.Hash)
+	closeErr := reader.Close()
+
+	if readErr != nil || closeErr != nil {
+		return errors.Join(readErr, closeErr)
 	}
 
 	b.Data = data

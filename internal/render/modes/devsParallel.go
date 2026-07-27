@@ -67,7 +67,7 @@ func DevsParallelWithOptions(reader readers.Reader, output string, opts Options)
 
 	// Primary output: the Python-parity parallel-coordinates "Developers" chart.
 	if err := plotDevsParallelCoordinates(parallelData, output, opts.Graphics); err != nil {
-		return fmt.Errorf("failed to create parallel coordinates plot: %v", err)
+		return fmt.Errorf("failed to create parallel coordinates plot: %w", err)
 	}
 
 	metrics := calculateParallelismMetricsFromParallelData(parallelData, timeSeries)
@@ -77,7 +77,7 @@ func DevsParallelWithOptions(reader readers.Reader, output string, opts Options)
 	if opts.DevsParallelDetail {
 		timelineOutput := siblingOutputPath(output, "devs-parallel.png", "concurrency_timeline")
 		if err := plotParallelActivity(metrics, timelineOutput, opts.Graphics); err != nil {
-			return fmt.Errorf("failed to create parallel activity plot: %v", err)
+			return fmt.Errorf("failed to create parallel activity plot: %w", err)
 		}
 	}
 
@@ -734,7 +734,7 @@ func generateSyntheticParallelAnalysis(
 
 	if detail {
 		if err := plotParallelActivity(metrics, output, optionValues...); err != nil {
-			return fmt.Errorf("failed to create parallel activity plot: %v", err)
+			return fmt.Errorf("failed to create parallel activity plot: %w", err)
 		}
 	}
 

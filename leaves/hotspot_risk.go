@@ -807,21 +807,21 @@ func normalizedLinearFactor(value int, maximum float64) float64 {
 }
 
 func (hra *HotspotRiskAnalysis) serializeText(result *HotspotRiskResult, writer io.Writer) {
-	fmt.Fprintln(writer, "  window_days:", result.WindowDays)
-	fmt.Fprintln(writer, "  files:")
+	_, _ = fmt.Fprintln(writer, "  window_days:", result.WindowDays)
+	_, _ = fmt.Fprintln(writer, "  files:")
 
 	for _, file := range result.Files {
-		fmt.Fprintf(writer, "    - path: %s\n", yaml.SafeString(file.Path))
-		fmt.Fprintf(writer, "      risk_score: %.6f\n", file.RiskScore)
-		fmt.Fprintf(writer, "      size: %d\n", file.Size)
-		fmt.Fprintf(writer, "      churn: %d\n", file.Churn)
-		fmt.Fprintf(writer, "      coupling_degree: %d\n", file.CouplingDegree)
-		fmt.Fprintf(writer, "      ownership_gini: %.6f\n", file.OwnershipGini)
-		fmt.Fprintf(writer, "      normalized:\n")
-		fmt.Fprintf(writer, "        size: %.6f\n", file.SizeNormalized)
-		fmt.Fprintf(writer, "        churn: %.6f\n", file.ChurnNormalized)
-		fmt.Fprintf(writer, "        coupling: %.6f\n", file.CouplingNormalized)
-		fmt.Fprintf(writer, "        ownership: %.6f\n", file.OwnershipNormalized)
+		_, _ = fmt.Fprintf(writer, "    - path: %s\n", yaml.SafeString(file.Path))
+		_, _ = fmt.Fprintf(writer, "      risk_score: %.6f\n", file.RiskScore)
+		_, _ = fmt.Fprintf(writer, "      size: %d\n", file.Size)
+		_, _ = fmt.Fprintf(writer, "      churn: %d\n", file.Churn)
+		_, _ = fmt.Fprintf(writer, "      coupling_degree: %d\n", file.CouplingDegree)
+		_, _ = fmt.Fprintf(writer, "      ownership_gini: %.6f\n", file.OwnershipGini)
+		_, _ = fmt.Fprintf(writer, "      normalized:\n")
+		_, _ = fmt.Fprintf(writer, "        size: %.6f\n", file.SizeNormalized)
+		_, _ = fmt.Fprintf(writer, "        churn: %.6f\n", file.ChurnNormalized)
+		_, _ = fmt.Fprintf(writer, "        coupling: %.6f\n", file.CouplingNormalized)
+		_, _ = fmt.Fprintf(writer, "        ownership: %.6f\n", file.OwnershipNormalized)
 	}
 }
 

@@ -346,17 +346,17 @@ func writeTemporalDimension(writer io.Writer, name string, dimension TemporalDim
 }
 
 func writeTemporalValues(writer io.Writer, name string, values []int) {
-	fmt.Fprintf(writer, "        %s: [", name)
+	_, _ = fmt.Fprintf(writer, "        %s: [", name)
 
 	for i, value := range values {
 		if i > 0 {
-			fmt.Fprint(writer, ", ")
+			_, _ = fmt.Fprint(writer, ", ")
 		}
 
-		fmt.Fprintf(writer, "%d", value)
+		_, _ = fmt.Fprintf(writer, "%d", value)
 	}
 
-	fmt.Fprintln(writer, "]")
+	_, _ = fmt.Fprintln(writer, "]")
 }
 
 func protobufAuthorID(author int) int32 {
@@ -554,8 +554,8 @@ func (ta *TemporalActivityAnalysis) activityFor(author int) *DeveloperTemporalAc
 }
 
 func (ta *TemporalActivityAnalysis) serializeText(result *TemporalActivityResult, writer io.Writer) {
-	fmt.Fprintln(writer, "  temporal_activity:")
-	fmt.Fprintln(writer, "    activities:")
+	_, _ = fmt.Fprintln(writer, "  temporal_activity:")
+	_, _ = fmt.Fprintln(writer, "    activities:")
 
 	// Sort developers for consistent output
 	devs := make([]int, 0, len(result.Activities))
@@ -573,7 +573,7 @@ func (ta *TemporalActivityAnalysis) serializeText(result *TemporalActivityResult
 			devID = -1
 		}
 
-		fmt.Fprintf(writer, "      %d:\n", devID)
+		_, _ = fmt.Fprintf(writer, "      %d:\n", devID)
 
 		writeTemporalDimension(writer, "weekdays", activity.Weekdays)
 		writeTemporalDimension(writer, "hours", activity.Hours)
@@ -582,10 +582,10 @@ func (ta *TemporalActivityAnalysis) serializeText(result *TemporalActivityResult
 	}
 
 	// Output people dictionary
-	fmt.Fprintln(writer, "    people:")
+	_, _ = fmt.Fprintln(writer, "    people:")
 
 	for _, person := range result.reversedPeopleDict {
-		fmt.Fprintf(writer, "    - %s\n", yaml.SafeString(person))
+		_, _ = fmt.Fprintf(writer, "    - %s\n", yaml.SafeString(person))
 	}
 }
 

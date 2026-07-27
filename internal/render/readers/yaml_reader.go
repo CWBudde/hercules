@@ -33,7 +33,7 @@ func (r *YamlReader) Read(file io.Reader) error {
 	var data map[string]interface{}
 	if err := yaml.Unmarshal(input, &data); err != nil {
 		progEstimator.FinishOperation()
-		return fmt.Errorf("%w: decode YAML: %v", ErrAnalysisMalformed, err)
+		return fmt.Errorf("%w: decode YAML: %w", ErrAnalysisMalformed, err)
 	}
 	if err := validateYAMLAnalysis(data, r.Limits); err != nil {
 		progEstimator.FinishOperation()
@@ -649,7 +649,7 @@ func parseSparseCooccurrenceRows(
 	matrix, err := NewSparseMatrix(size, size, entries)
 	if err != nil {
 		return SparseMatrix{}, fmt.Errorf(
-			"%w: YAML co-occurrence matrix: %v", ErrAnalysisMalformed, err,
+			"%w: YAML co-occurrence matrix: %w", ErrAnalysisMalformed, err,
 		)
 	}
 	return matrix, nil

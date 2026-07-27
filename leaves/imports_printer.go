@@ -241,8 +241,9 @@ func (ipd *ImportsPerDeveloper) serializeText(result *ImportsPerDeveloperResult,
 	}
 
 	sort.Ints(devs)
-	fmt.Fprintln(writer, "  tick_size:", int(result.tickSize.Seconds()))
-	fmt.Fprintln(writer, "  imports:")
+
+	_, _ = fmt.Fprintln(writer, "  tick_size:", int(result.tickSize.Seconds()))
+	_, _ = fmt.Fprintln(writer, "  imports:")
 
 	for _, dev := range devs {
 		imps := result.Imports[dev]
@@ -252,7 +253,7 @@ func (ipd *ImportsPerDeveloper) serializeText(result *ImportsPerDeveloperResult,
 			log.Panicf("Could not serialize %v: %v", imps, err)
 		}
 
-		fmt.Fprintf(writer, "    %s: %s\n", yaml.SafeString(result.reversedPeopleDict[dev]), string(obj))
+		_, _ = fmt.Fprintf(writer, "    %s: %s\n", yaml.SafeString(result.reversedPeopleDict[dev]), string(obj))
 	}
 }
 

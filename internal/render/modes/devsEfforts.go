@@ -61,7 +61,7 @@ func DevsEffortsWithOptions(reader readers.Reader, output string, opts Options) 
 	if effortsTimeSeries != nil {
 		if err := plotDevEffortsTimeSeries(*effortsTimeSeries, output, opts.Graphics); err != nil {
 			progEstimator.FinishMultiOperation()
-			return fmt.Errorf("failed to generate developer efforts plot: %v", err)
+			return fmt.Errorf("failed to generate developer efforts plot: %w", err)
 		}
 	} else {
 		if len(developerStats) > maxPeople {
@@ -71,7 +71,7 @@ func DevsEffortsWithOptions(reader readers.Reader, output string, opts Options) 
 		}
 		if err := plotDevEfforts(effortMetricsForRanking(developerStats, maxPeople), output, opts.Graphics); err != nil {
 			progEstimator.FinishMultiOperation()
-			return fmt.Errorf("failed to generate developer efforts plots: %v", err)
+			return fmt.Errorf("failed to generate developer efforts plots: %w", err)
 		}
 	}
 
@@ -79,7 +79,7 @@ func DevsEffortsWithOptions(reader readers.Reader, output string, opts Options) 
 		rankingOutput := siblingOutputPath(output, "devs-efforts.png", "productivity_ranking")
 		if err := plotProductivityRanking(effortMetricsForRanking(developerStats, maxPeople), rankingOutput, opts.Graphics); err != nil {
 			progEstimator.FinishMultiOperation()
-			return fmt.Errorf("failed to generate developer productivity ranking: %v", err)
+			return fmt.Errorf("failed to generate developer productivity ranking: %w", err)
 		}
 	}
 
@@ -181,7 +181,7 @@ func plotCommitsVsLines(metrics []EffortMetric, output string, visuals graphics.
 		AnnotateLabels: true,
 		FontSize:       visuals.PlotFontSize(),
 	}); err != nil {
-		return fmt.Errorf("failed to save devs-efforts plot %s: %v", output, err)
+		return fmt.Errorf("failed to save devs-efforts plot %s: %w", output, err)
 	}
 
 	fmt.Printf("Saved devs-efforts plot to %s\n", output)
@@ -226,7 +226,7 @@ func plotProductivityRanking(metrics []EffortMetric, output string, visuals grap
 		XMax:         float64(maxDev) - 0.36,
 		FontSize:     visuals.PlotFontSize(),
 	}); err != nil {
-		return fmt.Errorf("failed to save productivity ranking plot: %v", err)
+		return fmt.Errorf("failed to save productivity ranking plot: %w", err)
 	}
 
 	fmt.Printf("Saved developer productivity ranking plot to %s\n", output)

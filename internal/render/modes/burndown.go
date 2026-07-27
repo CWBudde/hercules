@@ -44,7 +44,7 @@ func generateBurndownPlotWithOptions(name string, matrix [][]int, output string,
 	outputDir := filepath.Dir(output)
 	if err := os.MkdirAll(outputDir, 0o750); err != nil {
 		progEstimator.FinishMultiOperation()
-		return fmt.Errorf("failed to create output directory %s: %v", outputDir, err)
+		return fmt.Errorf("failed to create output directory %s: %w", outputDir, err)
 	}
 
 	// Phase 2: Resampling setup
@@ -102,7 +102,7 @@ func generateBurndownPlotWithOptions(name string, matrix [][]int, output string,
 	// Create plot
 	if err := graphics.PlotStackedBurndownMatplotlibWithOptions(interpolatedMatrix, dateRange, output, opts.Relative, opts.Graphics); err != nil {
 		progEstimator.FinishMultiOperation()
-		return fmt.Errorf("error creating burndown plot: %v", err)
+		return fmt.Errorf("error creating burndown plot: %w", err)
 	}
 
 	progEstimator.FinishMultiOperation()

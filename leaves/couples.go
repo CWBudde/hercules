@@ -814,39 +814,41 @@ func mergedCouplesIndex(
 }
 
 func (couples *CouplesAnalysis) serializeText(result *CouplesResult, writer io.Writer) {
-	fmt.Fprintln(writer, "  files_coocc:")
-	fmt.Fprintln(writer, "    index:")
+	// Pipeline text serialization has no error channel; explicit blank
+	// assignments document every intentionally discarded writer error.
+	_, _ = fmt.Fprintln(writer, "  files_coocc:")
+	_, _ = fmt.Fprintln(writer, "    index:")
 	writeCouplesIndex(writer, result.Files)
 
-	fmt.Fprintln(writer, "    lines:")
+	_, _ = fmt.Fprintln(writer, "    lines:")
 
 	for _, l := range result.FilesLines {
-		fmt.Fprintf(writer, "      - %d\n", l)
+		_, _ = fmt.Fprintf(writer, "      - %d\n", l)
 	}
 
-	fmt.Fprintln(writer, "    matrix:")
+	_, _ = fmt.Fprintln(writer, "    matrix:")
 	writeCouplesMatrix(writer, result.FilesMatrix)
 
-	fmt.Fprintln(writer, "  people_coocc:")
-	fmt.Fprintln(writer, "    index:")
+	_, _ = fmt.Fprintln(writer, "  people_coocc:")
+	_, _ = fmt.Fprintln(writer, "    index:")
 	writeCouplesIndex(writer, result.reversedPeopleDict)
 
-	fmt.Fprintln(writer, "    matrix:")
+	_, _ = fmt.Fprintln(writer, "    matrix:")
 	writeCouplesMatrix(writer, result.PeopleMatrix)
 
-	fmt.Fprintln(writer, "    author_files:") // sorted by number of files each author changed
+	_, _ = fmt.Fprintln(writer, "    author_files:") // sorted by number of files each author changed
 	writeAuthorFiles(writer, result)
 }
 
 func writeCouplesIndex(writer io.Writer, values []string) {
 	for _, value := range values {
-		fmt.Fprintf(writer, "      - %s\n", yaml.SafeString(value))
+		_, _ = fmt.Fprintf(writer, "      - %s\n", yaml.SafeString(value))
 	}
 }
 
 func writeCouplesMatrix(writer io.Writer, matrix []map[int]int64) {
 	for _, row := range matrix {
-		fmt.Fprint(writer, "      - {")
+		_, _ = fmt.Fprint(writer, "      - {")
 
 		indices := make([]int, 0, len(row))
 		for index := range row {
@@ -856,25 +858,25 @@ func writeCouplesMatrix(writer io.Writer, matrix []map[int]int64) {
 		sort.Ints(indices)
 
 		for i, index := range indices {
-			fmt.Fprintf(writer, "%d: %d", index, row[index])
+			_, _ = fmt.Fprintf(writer, "%d: %d", index, row[index])
 
 			if i < len(indices)-1 {
-				fmt.Fprint(writer, ", ")
+				_, _ = fmt.Fprint(writer, ", ")
 			}
 		}
 
-		fmt.Fprintln(writer, "}")
+		_, _ = fmt.Fprintln(writer, "}")
 	}
 }
 
 func writeAuthorFiles(writer io.Writer, result *CouplesResult) {
 	peopleFiles := sortByNumberOfFiles(result.PeopleFiles, result.reversedPeopleDict, result.Files)
 	for _, authorFiles := range peopleFiles {
-		fmt.Fprintf(writer, "      - %s:\n", yaml.SafeString(authorFiles.Author))
+		_, _ = fmt.Fprintf(writer, "      - %s:\n", yaml.SafeString(authorFiles.Author))
 		sort.Strings(authorFiles.Files)
 
 		for _, file := range authorFiles.Files {
-			fmt.Fprintf(writer, "        - %s\n", yaml.SafeString(file)) // sorted by path
+			_, _ = fmt.Fprintf(writer, "        - %s\n", yaml.SafeString(file)) // sorted by path
 		}
 	}
 }

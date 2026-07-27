@@ -58,7 +58,7 @@ func plotRefactoringProxy(repoName string, data *readers.RefactoringProxyData, o
 		LineWidth: &lineWidth,
 		Label:     "Refactoring Rate",
 	}); err != nil {
-		return fmt.Errorf("failed to plot refactoring rate: %v", err)
+		return fmt.Errorf("failed to plot refactoring rate: %w", err)
 	}
 
 	threshold := float64(data.Threshold)
@@ -93,7 +93,7 @@ func plotRefactoringProxy(repoName string, data *readers.RefactoringProxyData, o
 	legend.Location = core.LegendUpperRight
 
 	if err := saveReportFigureWithoutTightLayout(fig, output, width, height); err != nil {
-		return fmt.Errorf("failed to save refactoring proxy chart: %v", err)
+		return fmt.Errorf("failed to save refactoring proxy chart: %w", err)
 	}
 	fmt.Printf("Saved refactoring proxy chart to %s\n", output)
 	return nil

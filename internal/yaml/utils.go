@@ -27,7 +27,9 @@ func PrintMatrix(writer io.Writer, matrix [][]int64, indent int, name string, fi
 	last := len(matrix[len(matrix)-1])
 
 	if name != "" {
-		fmt.Fprintf(writer, "%s%s: |-\n", strings.Repeat(" ", indent), SafeString(name))
+		// PrintMatrix predates error-returning serializers; the explicit blank
+		// assignment keeps the unavoidable writer limitation visible.
+		_, _ = fmt.Fprintf(writer, "%s%s: |-\n", strings.Repeat(" ", indent), SafeString(name))
 		indent += 2
 	}
 
@@ -70,7 +72,7 @@ func printMatrixRows(
 	first := true
 
 	for _, status := range matrix {
-		fmt.Fprint(writer, strings.Repeat(" ", indent-1))
+		_, _ = fmt.Fprint(writer, strings.Repeat(" ", indent-1))
 
 		for i := range last {
 			val := printableMatrixValue(status, i, fixNegative)
@@ -82,10 +84,10 @@ func printMatrixRows(
 				continue
 			}
 
-			fmt.Fprintf(writer, " %[1]*[2]d", width, val)
+			_, _ = fmt.Fprintf(writer, " %[1]*[2]d", width, val)
 		}
 
-		fmt.Fprintln(writer)
+		_, _ = fmt.Fprintln(writer)
 	}
 }
 
@@ -103,5 +105,5 @@ func printableMatrixValue(status []int64, index int, fixNegative bool) int64 {
 }
 
 func printFirstMatrixValue(writer io.Writer, val int64, width int) {
-	fmt.Fprintf(writer, " %d%s", val, strings.Repeat(" ", width-len(strconv.FormatInt(val, 10))))
+	_, _ = fmt.Fprintf(writer, " %d%s", val, strings.Repeat(" ", width-len(strconv.FormatInt(val, 10))))
 }

@@ -24,7 +24,7 @@ func DetectAndReadInputWithOptions(input, format string, quiet bool) (Reader, er
 	} else {
 		f, err := os.Open(input) // #nosec G304 - CLI input path is intentionally user-provided.
 		if err != nil {
-			return nil, fmt.Errorf("error opening file %s: %v", input, err)
+			return nil, fmt.Errorf("error opening file %s: %w", input, err)
 		}
 		defer func() { _ = f.Close() }()
 		file = f
@@ -58,7 +58,7 @@ func detectFormat(file io.Reader) (string, io.Reader, error) {
 	buffer := make([]byte, 16)
 	_, err := file.Read(buffer)
 	if err != nil && err != io.EOF {
-		return "", nil, fmt.Errorf("error reading input for format detection: %v", err)
+		return "", nil, fmt.Errorf("error reading input for format detection: %w", err)
 	}
 
 	// Rewind the file for further reading

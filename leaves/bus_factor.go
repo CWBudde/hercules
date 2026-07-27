@@ -406,8 +406,9 @@ func (bf *BusFactorAnalysis) computeSubsystemBusFactor() map[string]int {
 }
 
 func (bf *BusFactorAnalysis) serializeText(result *BusFactorResult, writer io.Writer) {
-	fmt.Fprintln(writer, "  bus_factor:")
-	fmt.Fprintf(writer, "    threshold: %.2f\n", result.Threshold)
+	// Serialize's legacy text path has no error channel.
+	_, _ = fmt.Fprintln(writer, "  bus_factor:")
+	_, _ = fmt.Fprintf(writer, "    threshold: %.2f\n", result.Threshold)
 
 	// Sort ticks for deterministic output
 	ticks := make([]int, 0, len(result.Snapshots))
@@ -417,16 +418,16 @@ func (bf *BusFactorAnalysis) serializeText(result *BusFactorResult, writer io.Wr
 
 	sort.Ints(ticks)
 
-	fmt.Fprintln(writer, "    per_tick:")
+	_, _ = fmt.Fprintln(writer, "    per_tick:")
 
 	for _, tick := range ticks {
 		snapshot := result.Snapshots[tick]
-		fmt.Fprintf(writer, "      %d: {bus_factor: %d, total_lines: %d}\n",
+		_, _ = fmt.Fprintf(writer, "      %d: {bus_factor: %d, total_lines: %d}\n",
 			tick, snapshot.BusFactor, snapshot.TotalLines)
 	}
 
 	if len(result.SubsystemBusFactor) > 0 {
-		fmt.Fprintln(writer, "    per_subsystem:")
+		_, _ = fmt.Fprintln(writer, "    per_subsystem:")
 
 		dirs := make([]string, 0, len(result.SubsystemBusFactor))
 		for dir := range result.SubsystemBusFactor {
@@ -436,17 +437,17 @@ func (bf *BusFactorAnalysis) serializeText(result *BusFactorResult, writer io.Wr
 		sort.Strings(dirs)
 
 		for _, dir := range dirs {
-			fmt.Fprintf(writer, "      %s: %d\n", yaml.SafeString(dir), result.SubsystemBusFactor[dir])
+			_, _ = fmt.Fprintf(writer, "      %s: %d\n", yaml.SafeString(dir), result.SubsystemBusFactor[dir])
 		}
 	}
 
-	fmt.Fprintln(writer, "    people:")
+	_, _ = fmt.Fprintln(writer, "    people:")
 
 	for _, person := range result.reversedPeopleDict {
-		fmt.Fprintf(writer, "    - %s\n", yaml.SafeString(person))
+		_, _ = fmt.Fprintf(writer, "    - %s\n", yaml.SafeString(person))
 	}
 
-	fmt.Fprintln(writer, "    tick_size:", int(result.tickSize.Seconds()))
+	_, _ = fmt.Fprintln(writer, "    tick_size:", int(result.tickSize.Seconds()))
 }
 
 func (bf *BusFactorAnalysis) serializeBinary(result *BusFactorResult, writer io.Writer) error {

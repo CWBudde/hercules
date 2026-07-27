@@ -16,6 +16,8 @@ import (
 	"github.com/cwbudde/hercules/internal/render/readers"
 )
 
+var errNoRepositoryData = errors.New("no repository data available")
+
 // GenerateBurndownProjectPython creates a Python-compatible burndown chart
 func GenerateBurndownProjectPython(reader readers.Reader, output string, relative bool, resample string) error {
 	opts := defaultOptions()
@@ -45,7 +47,7 @@ func GenerateBurndownProjectPythonWithOptions(reader readers.Reader, output stri
 	outputDir := filepath.Dir(output)
 	if err := os.MkdirAll(outputDir, 0o750); err != nil {
 		progEstimator.FinishMultiOperation()
-		return fmt.Errorf("failed to create output directory %s: %v", outputDir, err)
+		return fmt.Errorf("failed to create output directory %s: %w", outputDir, err)
 	}
 
 	// Phase 2: Load burndown data with Python-compatible header
@@ -77,7 +79,7 @@ func GenerateBurndownProjectPythonWithOptions(reader readers.Reader, output stri
 	processedData, err := burndown.LoadBurndown(header, titleName, matrix, opts.Resample, true, true)
 	if err != nil {
 		progEstimator.FinishMultiOperation()
-		return fmt.Errorf("failed to process burndown data: %v", err)
+		return fmt.Errorf("failed to process burndown data: %w", err)
 	}
 
 	if !quiet {
@@ -96,7 +98,7 @@ func GenerateBurndownProjectPythonWithOptions(reader readers.Reader, output stri
 	progEstimator.NextOperation("Generating Python-style visualization")
 	if err := graphics.PlotBurndownMatplotlibWithOptions(processedData, output, opts.Relative, opts.Graphics); err != nil {
 		progEstimator.FinishMultiOperation()
-		return fmt.Errorf("error creating Python-style burndown plot: %v", err)
+		return fmt.Errorf("error creating Python-style burndown plot: %w", err)
 	}
 
 	progEstimator.FinishMultiOperation()
@@ -270,7 +272,7 @@ func GenerateBurndownReposCombinedPythonWithOptions(reader readers.Reader, outpu
 	repoReader, ok := reader.(readers.RepositoryBurndownReader)
 	if !ok {
 		// Match Python labours: ValueError("No repository data available").
-		return fmt.Errorf("No repository data available")
+		return errNoRepositoryData
 	}
 
 	repositories, err := repoReader.GetRepositoriesBurndown()
@@ -278,7 +280,7 @@ func GenerateBurndownReposCombinedPythonWithOptions(reader readers.Reader, outpu
 		return fmt.Errorf("failed to get repositories burndown data: %w", err)
 	}
 	if len(repositories) == 0 {
-		return fmt.Errorf("No repository data available")
+		return errNoRepositoryData
 	}
 
 	header, _, _, err := reader.GetProjectBurndownWithHeader()
@@ -315,7 +317,7 @@ func GenerateBurndownReposCombinedPythonWithOptions(reader readers.Reader, outpu
 	}
 	if dir := filepath.Dir(output); dir != "" && dir != "." {
 		if err := os.MkdirAll(dir, 0o750); err != nil {
-			return fmt.Errorf("failed to create output directory %s: %v", dir, err)
+			return fmt.Errorf("failed to create output directory %s: %w", dir, err)
 		}
 	}
 
@@ -330,7 +332,7 @@ func GenerateBurndownReposCombinedPythonWithOptions(reader readers.Reader, outpu
 	}
 
 	if err := graphics.PlotBurndownMatplotlibWithOptions(processedData, output, opts.Relative, opts.Graphics); err != nil {
-		return fmt.Errorf("error creating combined repository burndown plot: %v", err)
+		return fmt.Errorf("error creating combined repository burndown plot: %w", err)
 	}
 
 	if !opts.Quiet {

@@ -268,7 +268,7 @@ func generateOldVsNewPlot(
 		Alpha:        1,
 		FontSize:     visuals.PlotFontSize(),
 	}); err != nil {
-		return fmt.Errorf("failed to save old-vs-new plot: %v", err)
+		return fmt.Errorf("failed to save old-vs-new plot: %w", err)
 	}
 
 	fmt.Printf("Old vs New analysis plot saved to %s\n", output)

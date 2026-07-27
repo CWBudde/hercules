@@ -554,16 +554,13 @@ making external assets part of the fork-safe pull-request gate.
 
 ### CI-03: Pay down and enforce lint debt
 
-- Save a reviewed lint baseline or fix high-signal existing findings first:
-  `nilerr`, `nilnesserr`, `errcheck`, `errorlint`, `staticcheck`, `govet`, `gosec`, and `unused`.
-- Stop excluding all of `internal/render` and `cmd/labours`; replace broad exclusions with narrow,
-  justified rules.
-- Keep style-only cleanup in separate pull requests.
+Status: completed 2026-07-27
 
-Acceptance criteria:
-
-- [ ] high-signal correctness/security linters run repository-wide;
-- [ ] no production error return is silently ignored without an explicit justification.
+CI now runs `nilerr`, `nilnesserr`, `errcheck`, `errorlint`, `staticcheck`, `govet`, `gosec`,
+and `unused` across the full repository before the separate new-issue style gate. The renderer
+directory exclusions were removed, hidden correctness findings and ignored error returns were
+fixed or made explicit, and the reviewed `unused` baseline names only the retained dormant
+renderer compatibility helpers.
 
 ### OPS-01: Align build documentation and actual build behavior
 

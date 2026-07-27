@@ -29,13 +29,25 @@ jobs:
         run: |
           just check-tidy
 
-      - name: Run linter
+      - name: Run repository-wide correctness and security linters
+        uses: golangci/golangci-lint-action@v8
+        env:
+          CGO_ENABLED: "0"
+          GOFLAGS: -mod=mod
+        with:
+          version: v2.12.2
+          args: >-
+            --config ./.golangci.toml
+            --timeout 5m
+            --enable-only nilerr,nilnesserr,errcheck,errorlint,staticcheck,govet,gosec,unused
+            --uniq-by-line=false
+
+      - name: Run new-issue style lint
         uses: golangci/golangci-lint-action@v8
         # CGO_ENABLED=0 matches the project's cgo-free build: with cgo, linting
         # tries to compile matplotlib-go's FreeType backend (ft2build.h) and
-        # fails to typecheck. v2.12.2 provides gomodguard_v2 and is built with a
-        # Go version new enough to analyze this module. only-new-issues keeps the
-        # pre-existing `default = all` debt from blocking while flagging regressions.
+        # fails to typecheck. Correctness/security debt is enforced in full
+        # above; only style-oriented legacy debt remains on a new-issues gate.
         env:
           CGO_ENABLED: "0"
           GOFLAGS: -mod=mod

@@ -23,7 +23,7 @@ import (
 func parseFlexibleDate(dateStr string) (time.Time, error) {
 	parsedDate, err := dateparse.ParseAny(dateStr)
 	if err != nil {
-		return time.Time{}, fmt.Errorf("invalid date format: %v", err)
+		return time.Time{}, fmt.Errorf("invalid date format: %w", err)
 	}
 	return parsedDate, nil
 }

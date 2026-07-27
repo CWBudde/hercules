@@ -274,61 +274,62 @@ func (rp *RefactoringProxy) getOrCreateTickMetrics(tick int) *tickChangeMetrics 
 
 // serializeText outputs YAML format.
 func (rp *RefactoringProxy) serializeText(result *RefactoringProxyResult, writer io.Writer) {
-	fmt.Fprintln(writer, "  refactoring_proxy:")
-	fmt.Fprintf(writer, "    threshold: %.2f\n", result.Threshold)
-	fmt.Fprintf(writer, "    tick_size: %d\n", int(result.tickSize.Seconds()))
+	_, _ = fmt.Fprintln(writer, "  refactoring_proxy:")
+	_, _ = fmt.Fprintf(writer, "    threshold: %.2f\n", result.Threshold)
+	_, _ = fmt.Fprintf(writer, "    tick_size: %d\n", int(result.tickSize.Seconds()))
 
 	// Ticks array
-	fmt.Fprint(writer, "    ticks: [")
+	// Serialize's legacy text path has no error channel.
+	_, _ = fmt.Fprint(writer, "    ticks: [")
 
 	for i, tick := range result.Ticks {
 		if i > 0 {
-			fmt.Fprint(writer, ", ")
+			_, _ = fmt.Fprint(writer, ", ")
 		}
 
-		fmt.Fprintf(writer, "%d", tick)
+		_, _ = fmt.Fprintf(writer, "%d", tick)
 	}
 
-	fmt.Fprintln(writer, "]")
+	_, _ = fmt.Fprintln(writer, "]")
 
 	// Rename ratios array
-	fmt.Fprint(writer, "    rename_ratios: [")
+	_, _ = fmt.Fprint(writer, "    rename_ratios: [")
 
 	for i, ratio := range result.RenameRatios {
 		if i > 0 {
-			fmt.Fprint(writer, ", ")
+			_, _ = fmt.Fprint(writer, ", ")
 		}
 
-		fmt.Fprintf(writer, "%.4f", ratio)
+		_, _ = fmt.Fprintf(writer, "%.4f", ratio)
 	}
 
-	fmt.Fprintln(writer, "]")
+	_, _ = fmt.Fprintln(writer, "]")
 
 	// Is refactoring array
-	fmt.Fprint(writer, "    is_refactoring: [")
+	_, _ = fmt.Fprint(writer, "    is_refactoring: [")
 
 	for i, isRef := range result.IsRefactoring {
 		if i > 0 {
-			fmt.Fprint(writer, ", ")
+			_, _ = fmt.Fprint(writer, ", ")
 		}
 
-		fmt.Fprintf(writer, "%t", isRef)
+		_, _ = fmt.Fprintf(writer, "%t", isRef)
 	}
 
-	fmt.Fprintln(writer, "]")
+	_, _ = fmt.Fprintln(writer, "]")
 
 	// Total changes array
-	fmt.Fprint(writer, "    total_changes: [")
+	_, _ = fmt.Fprint(writer, "    total_changes: [")
 
 	for i, total := range result.TotalChanges {
 		if i > 0 {
-			fmt.Fprint(writer, ", ")
+			_, _ = fmt.Fprint(writer, ", ")
 		}
 
-		fmt.Fprintf(writer, "%d", total)
+		_, _ = fmt.Fprintf(writer, "%d", total)
 	}
 
-	fmt.Fprintln(writer, "]")
+	_, _ = fmt.Fprintln(writer, "]")
 }
 
 // serializeBinary outputs Protocol Buffers format.

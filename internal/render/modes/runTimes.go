@@ -38,7 +38,7 @@ func RunTimesWithOptions(reader readers.Reader, output string, opts Options) err
 	runtimeStats, err := reader.GetRuntimeStats()
 	if err != nil {
 		progEstimator.FinishMultiOperation()
-		return fmt.Errorf("failed to get runtime stats: %v", err)
+		return fmt.Errorf("failed to get runtime stats: %w", err)
 	}
 
 	if len(runtimeStats) == 0 {
@@ -58,7 +58,7 @@ func RunTimesWithOptions(reader readers.Reader, output string, opts Options) err
 	if detail {
 		if err := plotRuntimeBreakdown(runtimeAnalysis, runtimeOutputPath(output), opts.Graphics); err != nil {
 			progEstimator.FinishMultiOperation()
-			return fmt.Errorf("failed to generate runtime plots: %v", err)
+			return fmt.Errorf("failed to generate runtime plots: %w", err)
 		}
 	}
 	printRuntimeSummary(runtimeAnalysis)
@@ -216,7 +216,7 @@ func plotRuntimeBreakdown(analysis RuntimeAnalysis, output string, visuals graph
 		XMax:         float64(maxOps) - 0.6 + xMargin,
 		FontSize:     visuals.PlotFontSize(),
 	}); err != nil {
-		return fmt.Errorf("failed to save runtime breakdown plot: %v", err)
+		return fmt.Errorf("failed to save runtime breakdown plot: %w", err)
 	}
 
 	fmt.Printf("Saved runtime breakdown plot to %s\n", output)
@@ -253,12 +253,12 @@ func plotRuntimePieChart(analysis RuntimeAnalysis, output string) error {
 
 	pngFile := filepath.Join(output, "runtime_percentage.png")
 	if err := plotRuntimePercentageMatplotlib(labels, values, pngFile); err != nil {
-		return fmt.Errorf("failed to save runtime percentage PNG plot: %v", err)
+		return fmt.Errorf("failed to save runtime percentage PNG plot: %w", err)
 	}
 
 	svgFile := filepath.Join(output, "runtime_percentage.svg")
 	if err := plotRuntimePercentageMatplotlib(labels, values, svgFile); err != nil {
-		return fmt.Errorf("failed to save runtime percentage SVG plot: %v", err)
+		return fmt.Errorf("failed to save runtime percentage SVG plot: %w", err)
 	}
 
 	fmt.Printf("Saved runtime percentage plots to %s and %s\n", pngFile, svgFile)
@@ -335,13 +335,13 @@ func saveRuntimeFigure(fig *core.Figure, output string, width, height int) error
 	case ".svg":
 		renderer, _, err := backends.NewRenderer("svg", config, nil)
 		if err != nil {
-			return fmt.Errorf("failed to create SVG renderer: %v", err)
+			return fmt.Errorf("failed to create SVG renderer: %w", err)
 		}
 		return core.SaveSVG(fig, renderer, output)
 	default:
 		renderer, _, err := backends.NewRenderer("agg", config, backends.TextCapabilities)
 		if err != nil {
-			return fmt.Errorf("failed to create AGG renderer: %v", err)
+			return fmt.Errorf("failed to create AGG renderer: %w", err)
 		}
 		return core.SavePNG(fig, renderer, output)
 	}

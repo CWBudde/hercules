@@ -181,7 +181,9 @@ func (allocator *Allocator) Serialize(path string) error {
 	if err != nil {
 		return fmt.Errorf("create serialized allocator %q: %w", path, err)
 	}
-	defer file.Close()
+	// The explicit close below reports flush failures. This deferred close only
+	// covers earlier validation/write errors, which remain the primary error.
+	defer func() { _ = file.Close() }()
 
 	header := make([]byte, serializedAllocatorHeaderSize)
 	copy(header, serializedAllocatorMagic)
@@ -218,6 +220,11 @@ func (allocator *Allocator) Serialize(path string) error {
 		allocator.hibernatedData[bufferIndex] = nil
 	}
 
+	err = file.Close()
+	if err != nil {
+		return fmt.Errorf("close serialized allocator %q: %w", path, err)
+	}
+
 	return nil
 }
 
@@ -231,7 +238,9 @@ func (allocator *Allocator) Deserialize(path string) error {
 	if err != nil {
 		return fmt.Errorf("open serialized allocator %q: %w", path, err)
 	}
-	defer file.Close()
+	// Closing a read-only regular file cannot change the validated in-memory
+	// result, so the close error is intentionally discarded.
+	defer func() { _ = file.Close() }()
 
 	fileInfo, err := file.Stat()
 	if err != nil {

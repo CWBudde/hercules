@@ -308,7 +308,7 @@ func (history *FileHistoryAnalysis) serializeText(result *FileHistoryResult, wri
 	sort.Strings(keys)
 
 	for _, key := range keys {
-		fmt.Fprintf(writer, "  - %s:\n", key)
+		_, _ = fmt.Fprintf(writer, "  - %s:\n", key)
 		file := result.Files[key]
 		hashes := file.Hashes
 
@@ -318,7 +318,7 @@ func (history *FileHistoryAnalysis) serializeText(result *FileHistoryResult, wri
 		}
 
 		sort.Strings(strhashes)
-		fmt.Fprintf(writer, "    commits: [%s]\n", strings.Join(strhashes, ","))
+		_, _ = fmt.Fprintf(writer, "    commits: [%s]\n", strings.Join(strhashes, ","))
 
 		strpeople := make([]string, 0, len(file.People))
 		for key, val := range file.People {
@@ -326,7 +326,7 @@ func (history *FileHistoryAnalysis) serializeText(result *FileHistoryResult, wri
 		}
 
 		sort.Strings(strpeople)
-		fmt.Fprintf(writer, "    people: {%s}\n", strings.Join(strpeople, ","))
+		_, _ = fmt.Fprintf(writer, "    people: {%s}\n", strings.Join(strpeople, ","))
 	}
 }
 

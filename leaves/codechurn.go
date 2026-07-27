@@ -305,7 +305,7 @@ func (analyser *CodeChurnAnalysis) Finalize() any {
 		granularity: analyser.Granularity,
 	}
 
-	fmt.Fprintln(os.Stderr)
+	_, _ = fmt.Fprintln(os.Stderr)
 
 	for pId, person := range analyser.codeChurns {
 		inserted := int32(0)
@@ -337,11 +337,11 @@ func (analyser *CodeChurnAnalysis) Finalize() any {
 		result.Authors[pId] = CodeChurnAuthorResult{Files: authorFiles}
 
 		name := analyser.peopleResolver.FriendlyNameOf(core.AuthorId(pId))
-		fmt.Fprintf(os.Stderr, "%s (%d):\t\t%d\t%d\t%d = %d\n", name, pId, inserted, deletedBySelf, deletedByOthers,
+		_, _ = fmt.Fprintf(os.Stderr, "%s (%d):\t\t%d\t%d\t%d = %d\n", name, pId, inserted, deletedBySelf, deletedByOthers,
 			inserted+deletedBySelf+deletedByOthers)
 	}
 
-	fmt.Fprintln(os.Stderr)
+	_, _ = fmt.Fprintln(os.Stderr)
 
 	return result
 }
@@ -580,16 +580,16 @@ func mergeCodeChurnAuthors(
 }
 
 func (analyser *CodeChurnAnalysis) serializeText(result *CodeChurnResult, writer io.Writer) {
-	fmt.Fprintln(writer, "  people:")
+	_, _ = fmt.Fprintln(writer, "  people:")
 
 	for _, person := range result.people {
-		fmt.Fprintf(writer, "    - %s\n", yaml.SafeString(person))
+		_, _ = fmt.Fprintf(writer, "    - %s\n", yaml.SafeString(person))
 	}
 
-	fmt.Fprintln(writer, "  tick_size:", int(result.tickSize.Seconds()))
-	fmt.Fprintln(writer, "  granularity:", result.granularity)
-	fmt.Fprintln(writer, "  sampling:", result.sampling)
-	fmt.Fprintln(writer, "  authors:")
+	_, _ = fmt.Fprintln(writer, "  tick_size:", int(result.tickSize.Seconds()))
+	_, _ = fmt.Fprintln(writer, "  granularity:", result.granularity)
+	_, _ = fmt.Fprintln(writer, "  sampling:", result.sampling)
+	_, _ = fmt.Fprintln(writer, "  authors:")
 
 	for authorID, author := range result.Authors {
 		name := core.AuthorMissingName
@@ -597,18 +597,18 @@ func (analyser *CodeChurnAnalysis) serializeText(result *CodeChurnResult, writer
 			name = result.people[authorID]
 		}
 
-		fmt.Fprintf(writer, "    %d:\n", authorID)
-		fmt.Fprintf(writer, "      name: %s\n", yaml.SafeString(name))
-		fmt.Fprintln(writer, "      files:")
+		_, _ = fmt.Fprintf(writer, "    %d:\n", authorID)
+		_, _ = fmt.Fprintf(writer, "      name: %s\n", yaml.SafeString(name))
+		_, _ = fmt.Fprintln(writer, "      files:")
 
 		fileNames := sortedCodeChurnFiles(author.Files)
 		for _, fileName := range fileNames {
 			stats := author.Files[fileName]
-			fmt.Fprintf(writer, "        %s:\n", yaml.SafeString(fileName))
-			fmt.Fprintf(writer, "          inserted_lines: %d\n", stats.InsertedLines)
-			fmt.Fprintf(writer, "          owned_lines: %d\n", stats.OwnedLines)
-			fmt.Fprintf(writer, "          memorability: %.6f\n", stats.Memorability)
-			fmt.Fprintf(writer, "          awareness: %.6f\n", stats.Awareness)
+			_, _ = fmt.Fprintf(writer, "        %s:\n", yaml.SafeString(fileName))
+			_, _ = fmt.Fprintf(writer, "          inserted_lines: %d\n", stats.InsertedLines)
+			_, _ = fmt.Fprintf(writer, "          owned_lines: %d\n", stats.OwnedLines)
+			_, _ = fmt.Fprintf(writer, "          memorability: %.6f\n", stats.Memorability)
+			_, _ = fmt.Fprintf(writer, "          awareness: %.6f\n", stats.Awareness)
 			serializeCodeChurnDeleteHistoryText(stats.DeleteHistory, writer)
 		}
 	}
@@ -616,21 +616,21 @@ func (analyser *CodeChurnAnalysis) serializeText(result *CodeChurnResult, writer
 
 func serializeCodeChurnDeleteHistoryText(history map[int]sparseHistory, writer io.Writer) {
 	if len(history) == 0 {
-		fmt.Fprintln(writer, "          delete_history: {}")
+		_, _ = fmt.Fprintln(writer, "          delete_history: {}")
 
 		return
 	}
 
-	fmt.Fprintln(writer, "          delete_history:")
+	_, _ = fmt.Fprintln(writer, "          delete_history:")
 
 	for _, author := range sortedCodeChurnIntKeys(history) {
-		fmt.Fprintf(writer, "            %d:\n", author)
+		_, _ = fmt.Fprintf(writer, "            %d:\n", author)
 
 		for _, currentTick := range sortedCodeChurnIntKeys(history[author]) {
-			fmt.Fprintf(writer, "              %d:\n", currentTick)
+			_, _ = fmt.Fprintf(writer, "              %d:\n", currentTick)
 
 			for _, previousTick := range sortedCodeChurnIntKeys(history[author][currentTick].deltas) {
-				fmt.Fprintf(
+				_, _ = fmt.Fprintf(
 					writer,
 					"                %d: %d\n",
 					previousTick,

@@ -423,14 +423,15 @@ func writeOnboardingAuthors(writer io.Writer, authors map[int]*AuthorOnboardingD
 	}
 
 	sort.Ints(authorIDs)
-	fmt.Fprintln(writer, "    authors:")
+
+	_, _ = fmt.Fprintln(writer, "    authors:")
 
 	for _, authorID := range authorIDs {
 		author := authors[authorID]
-		fmt.Fprintf(writer, "      %d:\n", int(protobufAuthorID(authorID)))
-		fmt.Fprintf(writer, "        first_commit_tick: %d\n", author.FirstCommitTick)
-		fmt.Fprintf(writer, "        join_cohort: %s\n", yaml.SafeString(author.JoinCohort))
-		fmt.Fprintln(writer, "        snapshots:")
+		_, _ = fmt.Fprintf(writer, "      %d:\n", int(protobufAuthorID(authorID)))
+		_, _ = fmt.Fprintf(writer, "        first_commit_tick: %d\n", author.FirstCommitTick)
+		_, _ = fmt.Fprintf(writer, "        join_cohort: %s\n", yaml.SafeString(author.JoinCohort))
+		_, _ = fmt.Fprintln(writer, "        snapshots:")
 		writeOnboardingSnapshots(writer, author.Snapshots)
 	}
 }
@@ -442,13 +443,14 @@ func writeOnboardingCohorts(writer io.Writer, cohorts map[string]*CohortStats) {
 	}
 
 	sort.Strings(cohortNames)
-	fmt.Fprintln(writer, "    cohorts:")
+
+	_, _ = fmt.Fprintln(writer, "    cohorts:")
 
 	for _, name := range cohortNames {
 		cohort := cohorts[name]
-		fmt.Fprintf(writer, "      %s:\n", yaml.SafeString(name))
-		fmt.Fprintf(writer, "        author_count: %d\n", cohort.AuthorCount)
-		fmt.Fprintln(writer, "        average_snapshots:")
+		_, _ = fmt.Fprintf(writer, "      %s:\n", yaml.SafeString(name))
+		_, _ = fmt.Fprintf(writer, "        author_count: %d\n", cohort.AuthorCount)
+		_, _ = fmt.Fprintln(writer, "        average_snapshots:")
 		writeOnboardingSnapshots(writer, cohort.AverageSnapshots)
 	}
 }
@@ -463,7 +465,7 @@ func writeOnboardingSnapshots(writer io.Writer, snapshots map[int]*OnboardingSna
 
 	for _, days := range windowDays {
 		snapshot := snapshots[days]
-		fmt.Fprintf(
+		_, _ = fmt.Fprintf(
 			writer,
 			"          %d: {days: %d, commits: %d, files: %d, lines: %d, "+
 				"meaningful_commits: %d, meaningful_files: %d, meaningful_lines: %d}\n",
@@ -750,7 +752,7 @@ func (oa *OnboardingAnalysis) finalizeCohorts(
 
 // serializeText outputs YAML format.
 func (oa *OnboardingAnalysis) serializeText(result *OnboardingResult, writer io.Writer) {
-	fmt.Fprintln(writer, "  onboarding:")
+	_, _ = fmt.Fprintln(writer, "  onboarding:")
 
 	// Configuration
 	windowStrs := make([]string, len(result.WindowDays))
@@ -758,18 +760,18 @@ func (oa *OnboardingAnalysis) serializeText(result *OnboardingResult, writer io.
 		windowStrs[i] = strconv.Itoa(days)
 	}
 
-	fmt.Fprintf(writer, "    window_days: [%s]\n", strings.Join(windowStrs, ", "))
-	fmt.Fprintf(writer, "    meaningful_threshold: %d\n", result.MeaningfulThreshold)
+	_, _ = fmt.Fprintf(writer, "    window_days: [%s]\n", strings.Join(windowStrs, ", "))
+	_, _ = fmt.Fprintf(writer, "    meaningful_threshold: %d\n", result.MeaningfulThreshold)
 	writeOnboardingAuthors(writer, result.Authors)
 	writeOnboardingCohorts(writer, result.Cohorts)
 
-	fmt.Fprintln(writer, "    people:")
+	_, _ = fmt.Fprintln(writer, "    people:")
 
 	for _, person := range result.reversedPeopleDict {
-		fmt.Fprintf(writer, "    - %s\n", yaml.SafeString(person))
+		_, _ = fmt.Fprintf(writer, "    - %s\n", yaml.SafeString(person))
 	}
 
-	fmt.Fprintln(writer, "    tick_size:", int(result.tickSize.Seconds()))
+	_, _ = fmt.Fprintln(writer, "    tick_size:", int(result.tickSize.Seconds()))
 }
 
 // serializeBinary outputs Protocol Buffers format.

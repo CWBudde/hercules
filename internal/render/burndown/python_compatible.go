@@ -227,7 +227,7 @@ func LoadBurndown(header BurndownHeader, name string, matrix [][]int, resample s
 		// Interpolate the day x day matrix
 		daily, err := InterpolateBurndownMatrix(matrix, header.Granularity, header.Sampling, interpolationProgress)
 		if err != nil {
-			return nil, fmt.Errorf("interpolation failed: %v", err)
+			return nil, fmt.Errorf("interpolation failed: %w", err)
 		}
 
 		// Zero out rows after 'last' like Python's daily[(last - start).days :] = 0.

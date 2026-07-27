@@ -170,7 +170,7 @@ func plotShotness(
 		YMax:       maxValue * 1.05,
 		FontSize:   visuals.PlotFontSize(),
 	}); err != nil {
-		return fmt.Errorf("failed to save shotness plot: %v", err)
+		return fmt.Errorf("failed to save shotness plot: %w", err)
 	}
 
 	fmt.Printf("Shotness chart saved to %s\n", outputFile)

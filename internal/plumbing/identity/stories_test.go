@@ -104,7 +104,7 @@ func TestStoryDetectorConfigureWithDictPath(t *testing.T) {
 	// Create temp file with merge dict
 	tmpf, err := os.CreateTemp(t.TempDir(), "hercules-story-test-*.txt")
 	require.NoError(t, err)
-	defer os.Remove(tmpf.Name())
+	defer func() { _ = os.Remove(tmpf.Name()) }()
 
 	content := `1111111111111111111111111111111111111111|2222222222222222222222222222222222222222|Story One
 3333333333333333333333333333333333333333|Story Two
@@ -340,7 +340,7 @@ func TestStoryDetectorLoadMergeDict(t *testing.T) {
 
 	tmpf, err := os.CreateTemp(t.TempDir(), "hercules-story-load-*.txt")
 	require.NoError(t, err)
-	defer os.Remove(tmpf.Name())
+	defer func() { _ = os.Remove(tmpf.Name()) }()
 
 	content := `1111111111111111111111111111111111111111|2222222222222222222222222222222222222222|Story Alpha
 3333333333333333333333333333333333333333|Story Beta
@@ -378,7 +378,7 @@ func TestStoryDetectorLoadMergeDictInvalidHash(t *testing.T) {
 
 	tmpf, err := os.CreateTemp(t.TempDir(), "hercules-story-invalid-*.txt")
 	require.NoError(t, err)
-	defer os.Remove(tmpf.Name())
+	defer func() { _ = os.Remove(tmpf.Name()) }()
 
 	// Invalid hex
 	content := `ZZZZ|Story Invalid`
@@ -395,7 +395,7 @@ func TestStoryDetectorLoadMergeDictShortHash(t *testing.T) {
 
 	tmpf, err := os.CreateTemp(t.TempDir(), "hercules-story-short-*.txt")
 	require.NoError(t, err)
-	defer os.Remove(tmpf.Name())
+	defer func() { _ = os.Remove(tmpf.Name()) }()
 
 	// Too short hash
 	content := `1111111111|Story Short`
@@ -413,7 +413,7 @@ func TestStoryDetectorLoadMergeDictDuplicateHash(t *testing.T) {
 
 	tmpf, err := os.CreateTemp(t.TempDir(), "hercules-story-dup-*.txt")
 	require.NoError(t, err)
-	defer os.Remove(tmpf.Name())
+	defer func() { _ = os.Remove(tmpf.Name()) }()
 
 	// Duplicate hash in different lines
 	content := `1111111111111111111111111111111111111111|Story One
@@ -718,7 +718,7 @@ func TestStoryDetectorIntegration(t *testing.T) {
 	// Create merge dict file
 	tmpf, err := os.CreateTemp(t.TempDir(), "hercules-story-integration-*.txt")
 	require.NoError(t, err)
-	defer os.Remove(tmpf.Name())
+	defer func() { _ = os.Remove(tmpf.Name()) }()
 
 	hash1 := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	hash2 := "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"

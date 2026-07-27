@@ -320,7 +320,7 @@ func (sent *CommentSentimentAnalysis) Serialize(result interface{}, binary bool,
 }
 
 func (sent *CommentSentimentAnalysis) serializeText(result *CommentSentimentResult, writer io.Writer) {
-	fmt.Fprintln(writer, "  # [EXPERIMENTAL] Sentiment analysis is experimental and may be inaccurate.")
+	_, _ = fmt.Fprintln(writer, "  # [EXPERIMENTAL] Sentiment analysis is experimental and may be inaccurate.")
 	ticks := make([]int, 0, len(result.EmotionsByTick))
 	for tick := range result.EmotionsByTick {
 		ticks = append(ticks, tick)
@@ -332,7 +332,7 @@ func (sent *CommentSentimentAnalysis) serializeText(result *CommentSentimentResu
 		for i, hash := range commits {
 			hashes[i] = hash.String()
 		}
-		fmt.Fprintf(writer, "  %d: [%.4f, [%s], \"%s\"]\n",
+		_, _ = fmt.Fprintf(writer, "  %d: [%.4f, [%s], \"%s\"]\n",
 			tick, result.EmotionsByTick[tick], strings.Join(hashes, ","),
 			strings.Join(result.CommentsByTick[tick], "|"))
 	}

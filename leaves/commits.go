@@ -199,25 +199,25 @@ func (ca *CommitsAnalysis) Serialize(result any, binary bool, writer io.Writer) 
 }
 
 func (ca *CommitsAnalysis) serializeText(result *CommitsResult, writer io.Writer) {
-	fmt.Fprintln(writer, "  commits:")
+	_, _ = fmt.Fprintln(writer, "  commits:")
 
 	for _, commit := range result.Commits {
-		fmt.Fprintf(writer, "    - hash: %s\n", commit.Hash)
-		fmt.Fprintf(writer, "      when: %d\n", commit.When)
-		fmt.Fprintf(writer, "      author: %d\n", commit.Author)
-		fmt.Fprintf(writer, "      files:\n")
+		_, _ = fmt.Fprintf(writer, "    - hash: %s\n", commit.Hash)
+		_, _ = fmt.Fprintf(writer, "      when: %d\n", commit.When)
+		_, _ = fmt.Fprintf(writer, "      author: %d\n", commit.Author)
+		_, _ = fmt.Fprintf(writer, "      files:\n")
 
 		for _, file := range sortedFileStats(commit.Files) {
-			fmt.Fprintf(writer, "       - name: %s\n", file.Name)
-			fmt.Fprintf(writer, "         language: %s\n", file.Language)
-			fmt.Fprintf(writer, "         stat: [%d, %d, %d]\n", file.Added, file.Changed, file.Removed)
+			_, _ = fmt.Fprintf(writer, "       - name: %s\n", file.Name)
+			_, _ = fmt.Fprintf(writer, "         language: %s\n", file.Language)
+			_, _ = fmt.Fprintf(writer, "         stat: [%d, %d, %d]\n", file.Added, file.Changed, file.Removed)
 		}
 	}
 
-	fmt.Fprintln(writer, "  people:")
+	_, _ = fmt.Fprintln(writer, "  people:")
 
 	for _, person := range result.reversedPeopleDict {
-		fmt.Fprintf(writer, "  - %s\n", yaml.SafeString(person))
+		_, _ = fmt.Fprintf(writer, "  - %s\n", yaml.SafeString(person))
 	}
 }
 

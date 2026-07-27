@@ -379,8 +379,8 @@ func (kd *KnowledgeDiffusionAnalysis) windowTicks() int {
 }
 
 func (kd *KnowledgeDiffusionAnalysis) serializeText(result *KnowledgeDiffusionResult, writer io.Writer) {
-	fmt.Fprintln(writer, "  knowledge_diffusion:")
-	fmt.Fprintf(writer, "    window_months: %d\n", result.WindowMonths)
+	_, _ = fmt.Fprintln(writer, "  knowledge_diffusion:")
+	_, _ = fmt.Fprintf(writer, "    window_months: %d\n", result.WindowMonths)
 
 	// Sort files for deterministic output.
 	fileNames := make([]string, 0, len(result.Files))
@@ -390,13 +390,13 @@ func (kd *KnowledgeDiffusionAnalysis) serializeText(result *KnowledgeDiffusionRe
 
 	sort.Strings(fileNames)
 
-	fmt.Fprintln(writer, "    files:")
+	_, _ = fmt.Fprintln(writer, "    files:")
 
 	for _, name := range fileNames {
 		fileData := result.Files[name]
-		fmt.Fprintf(writer, "      %s:\n", yaml.SafeString(name))
-		fmt.Fprintf(writer, "        unique_editors: %d\n", fileData.UniqueEditorsCount)
-		fmt.Fprintf(writer, "        recent_editors: %d\n", fileData.RecentEditorsCount)
+		_, _ = fmt.Fprintf(writer, "      %s:\n", yaml.SafeString(name))
+		_, _ = fmt.Fprintf(writer, "        unique_editors: %d\n", fileData.UniqueEditorsCount)
+		_, _ = fmt.Fprintf(writer, "        recent_editors: %d\n", fileData.RecentEditorsCount)
 
 		// Timeline: sort ticks.
 		ticks := make([]int, 0, len(fileData.UniqueEditorsOverTime))
@@ -405,21 +405,22 @@ func (kd *KnowledgeDiffusionAnalysis) serializeText(result *KnowledgeDiffusionRe
 		}
 
 		sort.Ints(ticks)
-		fmt.Fprint(writer, "        editors_over_time: {")
+		// Serialize's legacy text path has no error channel.
+		_, _ = fmt.Fprint(writer, "        editors_over_time: {")
 
 		for i, tick := range ticks {
 			if i > 0 {
-				fmt.Fprint(writer, ", ")
+				_, _ = fmt.Fprint(writer, ", ")
 			}
 
-			fmt.Fprintf(writer, "%d: %d", tick, fileData.UniqueEditorsOverTime[tick])
+			_, _ = fmt.Fprintf(writer, "%d: %d", tick, fileData.UniqueEditorsOverTime[tick])
 		}
 
-		fmt.Fprintln(writer, "}")
+		_, _ = fmt.Fprintln(writer, "}")
 	}
 
 	// Distribution histogram.
-	fmt.Fprintln(writer, "    distribution:")
+	_, _ = fmt.Fprintln(writer, "    distribution:")
 
 	editorCounts := make([]int, 0, len(result.Distribution))
 	for count := range result.Distribution {
@@ -429,16 +430,16 @@ func (kd *KnowledgeDiffusionAnalysis) serializeText(result *KnowledgeDiffusionRe
 	sort.Ints(editorCounts)
 
 	for _, count := range editorCounts {
-		fmt.Fprintf(writer, "      %d: %d\n", count, result.Distribution[count])
+		_, _ = fmt.Fprintf(writer, "      %d: %d\n", count, result.Distribution[count])
 	}
 
-	fmt.Fprintln(writer, "    people:")
+	_, _ = fmt.Fprintln(writer, "    people:")
 
 	for _, person := range result.reversedPeopleDict {
-		fmt.Fprintf(writer, "    - %s\n", yaml.SafeString(person))
+		_, _ = fmt.Fprintf(writer, "    - %s\n", yaml.SafeString(person))
 	}
 
-	fmt.Fprintln(writer, "    tick_size:", int(result.tickSize.Seconds()))
+	_, _ = fmt.Fprintln(writer, "    tick_size:", int(result.tickSize.Seconds()))
 }
 
 func (kd *KnowledgeDiffusionAnalysis) serializeBinary(result *KnowledgeDiffusionResult, writer io.Writer) error {

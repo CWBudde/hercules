@@ -54,7 +54,7 @@ func renderActualOldVsNew(
 	if timeSeriesErr != nil && !errors.Is(timeSeriesErr, readers.ErrAnalysisMissing) {
 		return false, fmt.Errorf("get developer time series: %w", timeSeriesErr)
 	}
-	if timeSeriesErr != nil || len(timeSeries.Days) == 0 {
+	if errors.Is(timeSeriesErr, readers.ErrAnalysisMissing) || len(timeSeries.Days) == 0 {
 		return false, nil
 	}
 	startUnix, endUnix := reader.GetHeader()

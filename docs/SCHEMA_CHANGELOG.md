@@ -16,6 +16,10 @@ Each entry should include:
 
 ## Unreleased
 
+No changes yet.
+
+## 0.2.0 - 2026-07-28
+
 - PB and YAML: readers now require a valid metadata header and enforce the
   documented schema compatibility matrix. PB schema 1 is migrated
   content-by-content to schema 2; legacy YAML `version: 0` is normalized only

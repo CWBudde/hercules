@@ -1,6 +1,7 @@
 package modes
 
 import (
+	"errors"
 	"fmt"
 	"image/color"
 	"sort"
@@ -66,7 +67,13 @@ func DevsWithOptions(reader readers.Reader, output string, opts Options) error {
 
 func plotDeveloperTimeSeries(reader readers.Reader, output string, opts Options) (bool, error) {
 	timeSeries, err := reader.GetDeveloperTimeSeriesData()
-	if err != nil || len(timeSeries.Days) == 0 {
+	if err != nil {
+		if errors.Is(err, readers.ErrAnalysisMissing) {
+			return false, nil
+		}
+		return false, fmt.Errorf("get developer time series: %w", err)
+	}
+	if len(timeSeries.Days) == 0 {
 		return false, nil
 	}
 	startUnix, endUnix := reader.GetHeader()

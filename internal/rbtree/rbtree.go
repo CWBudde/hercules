@@ -254,7 +254,7 @@ func (allocator *Allocator) Deserialize(path string) error {
 	if err != nil {
 		return err
 	}
-	allocator.hibernatedStorageLen = int(metadata.storageLength)
+	allocator.hibernatedStorageLen = int(metadata.storageLength) //nolint:gosec // validated against maxIntValue above
 	allocator.hibernatedData = hibernatedData
 	return nil
 }

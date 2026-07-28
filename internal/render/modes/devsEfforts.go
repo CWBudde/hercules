@@ -31,61 +31,77 @@ func DevsEffortsWithOptions(reader readers.Reader, output string, opts Options) 
 
 	totalPhases := 4 // data extraction, time series, analysis, plotting
 	progEstimator.StartMultiOperation(totalPhases, "Developer Efforts Analysis")
+	defer progEstimator.FinishMultiOperation()
 
 	// Phase 1: Extract developer statistics (drives the optional ranking chart
 	// and the scatter fallback).
 	progEstimator.NextOperation("Extracting developer statistics")
 	developerStats, err := reader.GetDeveloperStats()
 	if err != nil {
-		progEstimator.FinishMultiOperation()
 		return fmt.Errorf("failed to get developer stats: %w", err)
 	}
 
 	// Phase 2: Build the per-day efforts time series when available.
 	progEstimator.NextOperation("Building effort time series")
-	timeSeries, tsErr := reader.GetDeveloperTimeSeriesData()
-	startUnix, endUnix := reader.GetHeader()
-
 	progEstimator.NextOperation("Analyzing developer efforts")
-	var effortsTimeSeries *devEffortsMatrix
-	if tsErr == nil && timeSeries != nil && len(timeSeries.Days) > 0 && endUnix > startUnix {
-		if built, buildErr := buildDevEffortsMatrix(timeSeries, startUnix, endUnix, maxPeople, quiet); buildErr == nil {
-			effortsTimeSeries = &built
-		} else if !quiet {
-			fmt.Printf("Falling back to commits-vs-lines scatter: %v\n", buildErr)
-		}
-	}
+	effortsTimeSeries := loadDevEffortsTimeSeries(reader, maxPeople, quiet)
 
 	// Phase 4: Generate the primary plot.
 	progEstimator.NextOperation("Generating visualization")
-	if effortsTimeSeries != nil {
-		if err := plotDevEffortsTimeSeries(*effortsTimeSeries, output, opts.Graphics); err != nil {
-			progEstimator.FinishMultiOperation()
-			return fmt.Errorf("failed to generate developer efforts plot: %w", err)
-		}
-	} else {
-		if len(developerStats) > maxPeople {
-			if !quiet {
-				fmt.Printf("Picking top %d developers by commit count.\n", maxPeople)
-			}
-		}
-		if err := plotDevEfforts(effortMetricsForRanking(developerStats, maxPeople), output, opts.Graphics); err != nil {
-			progEstimator.FinishMultiOperation()
-			return fmt.Errorf("failed to generate developer efforts plots: %w", err)
-		}
+	if err := renderDevEffortsPrimary(effortsTimeSeries, developerStats, output, maxPeople, quiet, opts.Graphics); err != nil {
+		return err
 	}
 
 	if detail {
 		rankingOutput := siblingOutputPath(output, "devs-efforts.png", "productivity_ranking")
 		if err := plotProductivityRanking(effortMetricsForRanking(developerStats, maxPeople), rankingOutput, opts.Graphics); err != nil {
-			progEstimator.FinishMultiOperation()
 			return fmt.Errorf("failed to generate developer productivity ranking: %w", err)
 		}
 	}
 
-	progEstimator.FinishMultiOperation()
 	if !quiet {
 		fmt.Println("Developer efforts analysis completed successfully.")
+	}
+	return nil
+}
+
+func loadDevEffortsTimeSeries(reader readers.Reader, maxPeople int, quiet bool) *devEffortsMatrix {
+	timeSeries, err := reader.GetDeveloperTimeSeriesData()
+	startUnix, endUnix := reader.GetHeader()
+	if err != nil || timeSeries == nil || len(timeSeries.Days) == 0 || endUnix <= startUnix {
+		return nil
+	}
+
+	built, err := buildDevEffortsMatrix(timeSeries, startUnix, endUnix, maxPeople, quiet)
+	if err != nil {
+		if !quiet {
+			fmt.Printf("Falling back to commits-vs-lines scatter: %v\n", err)
+		}
+		return nil
+	}
+	return &built
+}
+
+func renderDevEffortsPrimary(
+	timeSeries *devEffortsMatrix,
+	stats []readers.DeveloperStat,
+	output string,
+	maxPeople int,
+	quiet bool,
+	visuals graphics.Options,
+) error {
+	if timeSeries != nil {
+		if err := plotDevEffortsTimeSeries(*timeSeries, output, visuals); err != nil {
+			return fmt.Errorf("failed to generate developer efforts plot: %w", err)
+		}
+		return nil
+	}
+
+	if maxPeople > 0 && len(stats) > maxPeople && !quiet {
+		fmt.Printf("Picking top %d developers by commit count.\n", maxPeople)
+	}
+	if err := plotDevEfforts(effortMetricsForRanking(stats, maxPeople), output, visuals); err != nil {
+		return fmt.Errorf("failed to generate developer efforts plots: %w", err)
 	}
 	return nil
 }
@@ -241,34 +257,48 @@ type devEffortsMatrix struct {
 	CumLayers [][]float64 // smoothed cumulative efforts (stacked upward)
 }
 
+type rankedDevEffort struct {
+	effort int
+	dev    int
+}
+
 // buildDevEffortsMatrix builds per-day changed-lines per developer, selects the
 // top contributors by total effort with an aggregated "others" row, computes
 // cumulative sums, and applies Slepian/DPSS smoothing.
 func buildDevEffortsMatrix(ts *readers.DeveloperTimeSeriesData, startUnix, endUnix int64, maxPeople int, quiet bool) (devEffortsMatrix, error) {
 	start := dateOnly(time.Unix(startUnix, 0))
-	end := dateOnly(time.Unix(endUnix, 0))
-	numDays := calendarDayCount(start, end)
+	numDays := calendarDayCount(start, dateOnly(time.Unix(endUnix, 0)))
 	if numDays < 2 {
 		return devEffortsMatrix{}, fmt.Errorf("not enough days for an effort time series")
 	}
 
+	ranked := rankDeveloperEfforts(ts.Days)
+	if len(ranked) == 0 {
+		return devEffortsMatrix{}, fmt.Errorf("no developer effort data")
+	}
+	chosen := chooseDeveloperEfforts(ranked, maxPeople, quiet)
+	efforts := collectDailyDeveloperEfforts(ts.Days, chosen, numDays)
+	cumulative := cumulativeEfforts(efforts)
+	smoothRowsPreserveTail(cumulative, normalizedSlepianWindow(10, 0.5))
+
+	return devEffortsMatrix{
+		Dates:     consecutiveDates(start, numDays),
+		Names:     developerEffortNames(chosen, ts.People),
+		CumLayers: cumulative,
+	}, nil
+}
+
+func rankDeveloperEfforts(days map[int]map[int]readers.DevDay) []rankedDevEffort {
 	effortsByDev := make(map[int]int)
-	for _, devs := range ts.Days {
+	for _, devs := range days {
 		for dev, stats := range devs {
 			effortsByDev[dev] += nonNegativeDevEffort(stats)
 		}
 	}
-	if len(effortsByDev) == 0 {
-		return devEffortsMatrix{}, fmt.Errorf("no developer effort data")
-	}
 
-	type devEffort struct {
-		effort int
-		dev    int
-	}
-	ranked := make([]devEffort, 0, len(effortsByDev))
+	ranked := make([]rankedDevEffort, 0, len(effortsByDev))
 	for dev, effort := range effortsByDev {
-		ranked = append(ranked, devEffort{effort: effort, dev: dev})
+		ranked = append(ranked, rankedDevEffort{effort: effort, dev: dev})
 	}
 	sort.Slice(ranked, func(i, j int) bool {
 		if ranked[i].effort == ranked[j].effort {
@@ -276,7 +306,10 @@ func buildDevEffortsMatrix(ts *readers.DeveloperTimeSeriesData, startUnix, endUn
 		}
 		return ranked[i].effort > ranked[j].effort
 	})
+	return ranked
+}
 
+func chooseDeveloperEfforts(ranked []rankedDevEffort, maxPeople int, quiet bool) []rankedDevEffort {
 	chosenCount := len(ranked)
 	if maxPeople > 0 && chosenCount > maxPeople {
 		chosenCount = maxPeople
@@ -284,7 +317,15 @@ func buildDevEffortsMatrix(ts *readers.DeveloperTimeSeriesData, startUnix, endUn
 			fmt.Fprintf(os.Stderr, "Warning: truncated people to the most active %d\n", maxPeople)
 		}
 	}
-	chosen := ranked[:chosenCount]
+	return ranked[:chosenCount]
+}
+
+func collectDailyDeveloperEfforts(
+	days map[int]map[int]readers.DevDay,
+	chosen []rankedDevEffort,
+	numDays int,
+) [][]float64 {
+	chosenCount := len(chosen)
 	chosenOrder := make(map[int]int, chosenCount)
 	for i, item := range chosen {
 		chosenOrder[item.dev] = i
@@ -296,7 +337,7 @@ func buildDevEffortsMatrix(ts *readers.DeveloperTimeSeriesData, startUnix, endUn
 	for i := range efforts {
 		efforts[i] = make([]float64, numDays)
 	}
-	for day, devs := range ts.Days {
+	for day, devs := range days {
 		if day < 0 || day >= numDays {
 			continue
 		}
@@ -309,51 +350,64 @@ func buildDevEffortsMatrix(ts *readers.DeveloperTimeSeriesData, startUnix, endUn
 			efforts[row][day] += float64(nonNegativeDevEffort(stats))
 		}
 	}
+	return efforts
+}
 
-	cumulative := make([][]float64, rows)
+func cumulativeEfforts(efforts [][]float64) [][]float64 {
+	cumulative := make([][]float64, len(efforts))
 	for i := range efforts {
-		cumulative[i] = make([]float64, numDays)
+		cumulative[i] = make([]float64, len(efforts[i]))
 		running := 0.0
-		for d := 0; d < numDays; d++ {
-			running += efforts[i][d]
-			cumulative[i][d] = running
+		for day, effort := range efforts[i] {
+			running += effort
+			cumulative[i][day] = running
 		}
 	}
+	return cumulative
+}
 
-	window := slepianWindow(10, 0.5)
+func normalizedSlepianWindow(m int, bw float64) []float64 {
+	window := slepianWindow(m, bw)
 	if sum := sumFloat64(window); sum != 0 {
 		for i := range window {
 			window[i] /= sum
 		}
 	}
-	smoothRowsPreserveTail(cumulative, window)
+	return window
+}
 
-	names := make([]string, 0, rows)
+func developerEffortNames(chosen []rankedDevEffort, people []string) []string {
+	names := make([]string, 0, len(chosen)+1)
 	for _, item := range chosen {
-		name := ""
-		if item.dev >= 0 && item.dev < len(ts.People) {
-			name = ts.People[item.dev]
-		} else if item.dev < 0 {
-			// Hercules uses a negative sentinel index for commits whose author
-			// could not be identified (Python labours labels it "Unidentified").
-			name = "Unidentified"
-		}
-		if name == "" {
-			name = fmt.Sprintf("developer %d", item.dev)
-		}
-		if len(name) > 40 {
-			name = name[:37] + "..."
-		}
-		names = append(names, name)
+		names = append(names, developerEffortName(item.dev, people))
 	}
-	names = append(names, "others")
+	return append(names, "others")
+}
 
+func developerEffortName(dev int, people []string) string {
+	name := ""
+	if dev >= 0 && dev < len(people) {
+		name = people[dev]
+	} else if dev < 0 {
+		// Hercules uses a negative sentinel index for commits whose author
+		// could not be identified (Python labours labels it "Unidentified").
+		name = "Unidentified"
+	}
+	if name == "" {
+		name = fmt.Sprintf("developer %d", dev)
+	}
+	if len(name) > 40 {
+		return name[:37] + "..."
+	}
+	return name
+}
+
+func consecutiveDates(start time.Time, numDays int) []time.Time {
 	dates := make([]time.Time, numDays)
 	for i := 0; i < numDays; i++ {
 		dates[i] = start.AddDate(0, 0, i)
 	}
-
-	return devEffortsMatrix{Dates: dates, Names: names, CumLayers: cumulative}, nil
+	return dates
 }
 
 func nonNegativeDevEffort(stats readers.DevDay) int {
@@ -403,74 +457,8 @@ func slepianWindow(m int, bw float64) []float64 {
 		return []float64{1}
 	}
 
-	nw := bw * float64(m) / 4
-	w := nw / float64(m)
-	cos2piW := math.Cos(2 * math.Pi * w)
-
-	diag := make([]float64, m)
-	for n := 0; n < m; n++ {
-		t := float64(m-1-2*n) / 2
-		diag[n] = t * t * cos2piW
-	}
-	off := make([]float64, m) // off[n] couples rows n-1 and n (n = 1..m-1)
-	for n := 1; n < m; n++ {
-		off[n] = float64(n) * float64(m-n) / 2
-	}
-
-	// Shift by a Gershgorin lower bound so the matrix is positive definite and
-	// the dominant eigenvalue is also the largest in magnitude.
-	minBound := math.Inf(1)
-	for n := 0; n < m; n++ {
-		radius := 0.0
-		if n >= 1 {
-			radius += math.Abs(off[n])
-		}
-		if n+1 < m {
-			radius += math.Abs(off[n+1])
-		}
-		if diag[n]-radius < minBound {
-			minBound = diag[n] - radius
-		}
-	}
-	shift := 0.0
-	if minBound < 0 {
-		shift = -minBound + 1
-	}
-
-	v := make([]float64, m)
-	for i := range v {
-		v[i] = 1
-	}
-	next := make([]float64, m)
-	for iter := 0; iter < 2000; iter++ {
-		for n := 0; n < m; n++ {
-			sum := (diag[n] + shift) * v[n]
-			if n >= 1 {
-				sum += off[n] * v[n-1]
-			}
-			if n+1 < m {
-				sum += off[n+1] * v[n+1]
-			}
-			next[n] = sum
-		}
-		norm := 0.0
-		for _, x := range next {
-			norm += x * x
-		}
-		norm = math.Sqrt(norm)
-		if norm == 0 {
-			break
-		}
-		diff := 0.0
-		for n := range next {
-			scaled := next[n] / norm
-			diff += math.Abs(scaled - v[n])
-			v[n] = scaled
-		}
-		if diff < 1e-12 {
-			break
-		}
-	}
+	diag, off := slepianTridiagonal(m, bw)
+	v := dominantTridiagonalEigenvector(diag, off, positiveDefiniteShift(diag, off))
 
 	// The zeroth DPSS is single-signed; orient it positive.
 	if sumFloat64(v) < 0 {
@@ -479,6 +467,89 @@ func slepianWindow(m int, bw float64) []float64 {
 		}
 	}
 	return v
+}
+
+func slepianTridiagonal(m int, bw float64) ([]float64, []float64) {
+	cos2piW := math.Cos(2 * math.Pi * bw / 4)
+	diag := make([]float64, m)
+	off := make([]float64, m) // off[n] couples rows n-1 and n (n = 1..m-1)
+	for n := 0; n < m; n++ {
+		t := float64(m-1-2*n) / 2
+		diag[n] = t * t * cos2piW
+	}
+	for n := 1; n < m; n++ {
+		off[n] = float64(n) * float64(m-n) / 2
+	}
+	return diag, off
+}
+
+func positiveDefiniteShift(diag, off []float64) float64 {
+	minBound := math.Inf(1)
+	for n := range diag {
+		radius := adjacentOffDiagonalSum(off, n)
+		minBound = math.Min(minBound, diag[n]-radius)
+	}
+	if minBound < 0 {
+		return -minBound + 1
+	}
+	return 0
+}
+
+func adjacentOffDiagonalSum(off []float64, n int) float64 {
+	radius := 0.0
+	if n >= 1 {
+		radius += math.Abs(off[n])
+	}
+	if n+1 < len(off) {
+		radius += math.Abs(off[n+1])
+	}
+	return radius
+}
+
+func dominantTridiagonalEigenvector(diag, off []float64, shift float64) []float64 {
+	vector := make([]float64, len(diag))
+	for i := range vector {
+		vector[i] = 1
+	}
+	next := make([]float64, len(diag))
+	for range 2000 {
+		multiplyShiftedTridiagonal(next, vector, diag, off, shift)
+		norm := vectorNorm(next)
+		if norm == 0 || normalizeEigenvector(vector, next, norm) < 1e-12 {
+			break
+		}
+	}
+	return vector
+}
+
+func multiplyShiftedTridiagonal(dst, vector, diag, off []float64, shift float64) {
+	for n := range diag {
+		dst[n] = (diag[n] + shift) * vector[n]
+		if n >= 1 {
+			dst[n] += off[n] * vector[n-1]
+		}
+		if n+1 < len(diag) {
+			dst[n] += off[n+1] * vector[n+1]
+		}
+	}
+}
+
+func vectorNorm(vector []float64) float64 {
+	squared := 0.0
+	for _, value := range vector {
+		squared += value * value
+	}
+	return math.Sqrt(squared)
+}
+
+func normalizeEigenvector(vector, next []float64, norm float64) float64 {
+	diff := 0.0
+	for n := range next {
+		scaled := next[n] / norm
+		diff += math.Abs(scaled - vector[n])
+		vector[n] = scaled
+	}
+	return diff
 }
 
 // smoothRowsPreserveTail convolves each row with window ("same" mode) while

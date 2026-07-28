@@ -449,83 +449,79 @@ func compressBurndownState(state burndownState) ([]byte, error) {
 
 // Boot restores the burndown analysis state from hibernation.
 func (analyser *BurndownAnalysis) Boot() error {
-	var data []byte
-
-	if analyser.hibernatedFileName != "" {
-		hibernatedFileName := analyser.hibernatedFileName
-		readData, readErr := os.ReadFile(hibernatedFileName)
-		removeErr := removeBurndownHibernationFile(analyser)
-
-		if readErr != nil || removeErr != nil {
-			if readErr != nil {
-				readErr = fmt.Errorf(
-					"read burndown hibernation file %q: %w", hibernatedFileName, readErr,
-				)
-			}
-
-			return errors.Join(
-				readErr,
-				removeErr,
-			)
-		}
-
-		data = readData
-	} else {
-		data = analyser.hibernatedData
-		analyser.hibernatedData = nil
+	data, err := analyser.loadBurndownHibernationData()
+	if err != nil {
+		return err
 	}
-
 	if len(data) == 0 {
 		return errBurndownNotHibernated
 	}
 
+	state, err := decodeBurndownState(data)
+	if err != nil {
+		return err
+	}
+	analyser.restoreBurndownState(state)
+	return nil
+}
+
+func (analyser *BurndownAnalysis) loadBurndownHibernationData() ([]byte, error) {
+	if analyser.hibernatedFileName == "" {
+		data := analyser.hibernatedData
+		analyser.hibernatedData = nil
+		return data, nil
+	}
+
+	hibernatedFileName := analyser.hibernatedFileName
+	data, readErr := os.ReadFile(hibernatedFileName)
+	removeErr := removeBurndownHibernationFile(analyser)
+	if readErr != nil {
+		readErr = fmt.Errorf(
+			"read burndown hibernation file %q: %w", hibernatedFileName, readErr,
+		)
+	}
+	return data, errors.Join(readErr, removeErr)
+}
+
+func decodeBurndownState(data []byte) (burndownState, error) {
 	fr := flate.NewReader(bytes.NewReader(data))
-
 	var state burndownState
-
 	decodeErr := gob.NewDecoder(fr).Decode(&state)
 	closeErr := fr.Close()
-
 	if decodeErr != nil {
 		decodeErr = fmt.Errorf("decode burndown hibernation state: %w", decodeErr)
 	}
-
 	if decodeErr != nil || closeErr != nil {
-		return errors.Join(decodeErr, closeErr)
+		return burndownState{}, errors.Join(decodeErr, closeErr)
 	}
+	return state, nil
+}
 
+func (analyser *BurndownAnalysis) restoreBurndownState(state burndownState) {
 	analyser.globalHistory = mapToSparseHistory(state.GlobalHistory)
 	analyser.matrix = state.Matrix
-
-	if state.FileHistories != nil {
-		analyser.fileHistories = make(map[core.FileId]sparseHistory, len(state.FileHistories))
-		for k, v := range state.FileHistories {
-			analyser.fileHistories[k] = mapToSparseHistory(v)
-		}
-	}
-
-	if state.DeletedFileHistories != nil {
-		analyser.deletedFileHistories = make(
-			map[core.FileId]sparseHistory,
-			len(state.DeletedFileHistories),
-		)
-		for k, v := range state.DeletedFileHistories {
-			analyser.deletedFileHistories[k] = mapToSparseHistory(v)
-		}
-	}
-
+	analyser.fileHistories = restoreSparseHistories(state.FileHistories)
+	analyser.deletedFileHistories = restoreSparseHistories(state.DeletedFileHistories)
 	if analyser.deletedFileHistories == nil {
 		analyser.deletedFileHistories = map[core.FileId]sparseHistory{}
 	}
-
 	if state.PeopleHistories != nil {
 		analyser.peopleHistories = make([]sparseHistory, len(state.PeopleHistories))
 		for i, v := range state.PeopleHistories {
 			analyser.peopleHistories[i] = mapToSparseHistory(v)
 		}
 	}
+}
 
-	return nil
+func restoreSparseHistories(source map[core.FileId]map[int]map[int]int64) map[core.FileId]sparseHistory {
+	if source == nil {
+		return nil
+	}
+	histories := make(map[core.FileId]sparseHistory, len(source))
+	for key, value := range source {
+		histories[key] = mapToSparseHistory(value)
+	}
+	return histories
 }
 
 // Dispose removes temporary hibernation state left by a completed or failed run.
@@ -707,27 +703,11 @@ func (analyser *BurndownAnalysis) MergeResults(
 		return fmt.Errorf("%w: second result has type %T", errUnexpectedBurndownResult, secondResult)
 	}
 
-	if bar1.tickSize != bar2.tickSize {
-		return fmt.Errorf("%w (r1: %d, r2: %d) received",
-			errBurndownMismatchingTickSizes, bar1.tickSize, bar2.tickSize)
-	}
-
-	err := validateBurndownResultBalances(&bar1, "merge input 1")
-	if err != nil {
+	if err := validateBurndownMergeInputs(&bar1, &bar2); err != nil {
 		return err
 	}
 
-	err = validateBurndownResultBalances(&bar2, "merge input 2")
-	if err != nil {
-		return err
-	}
-
-	merged := BurndownResult{
-		tickSize: bar1.tickSize,
-	}
-	merged.sampling = min(bar1.sampling, bar2.sampling)
-
-	merged.granularity = min(bar1.granularity, bar2.granularity)
+	merged := newMergedBurndownResult(bar1, bar2)
 	var people join.IdentityMapping
 	people, merged.reversedPeopleDict = join.PeopleIdentities(
 		bar1.reversedPeopleDict, bar2.reversedPeopleDict,
@@ -752,12 +732,30 @@ func (analyser *BurndownAnalysis) MergeResults(
 
 	coordinator.wg.Wait()
 
-	err = validateBurndownResultBalances(&merged, "merge")
-	if err != nil {
+	if err := validateBurndownResultBalances(&merged, "merge"); err != nil {
 		return err
 	}
 
 	return merged
+}
+
+func validateBurndownMergeInputs(first, second *BurndownResult) error {
+	if first.tickSize != second.tickSize {
+		return fmt.Errorf("%w (r1: %d, r2: %d) received",
+			errBurndownMismatchingTickSizes, first.tickSize, second.tickSize)
+	}
+	if err := validateBurndownResultBalances(first, "merge input 1"); err != nil {
+		return err
+	}
+	return validateBurndownResultBalances(second, "merge input 2")
+}
+
+func newMergedBurndownResult(first, second BurndownResult) BurndownResult {
+	return BurndownResult{
+		tickSize:    first.tickSize,
+		sampling:    min(first.sampling, second.sampling),
+		granularity: min(first.granularity, second.granularity),
+	}
 }
 
 func (analyser *BurndownAnalysis) hibernationState() burndownState {

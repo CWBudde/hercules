@@ -59,35 +59,32 @@ func processOverwritesMatrix(people []string, matrix [][]int, maxPeople int, nor
 		fmt.Fprintf(os.Stderr, "Warning: truncated people to most productive %d\n", maxPeople)
 	}
 
-	var normalizedMatrix [][]float64
-	if normalize {
-		normalizedMatrix = make([][]float64, len(matrix))
-		for i := range matrix {
-			total := 0
-			if len(matrix[i]) > 0 {
-				total = matrix[i][0]
-			}
-			valueCols := max(len(matrix[i])-1, 0)
-			normalizedMatrix[i] = make([]float64, valueCols)
-			for j := 1; j < len(matrix[i]); j++ {
-				if total != 0 {
-					normalizedMatrix[i][j-1] = -float64(matrix[i][j]) / float64(total)
-				}
-			}
-		}
-	} else {
-		normalizedMatrix = make([][]float64, len(matrix))
-		for i := range matrix {
-			valueCols := max(len(matrix[i])-1, 0)
-			normalizedMatrix[i] = make([]float64, valueCols)
-			for j := 1; j < len(matrix[i]); j++ {
-				normalizedMatrix[i][j-1] = -float64(matrix[i][j])
-			}
-		}
+	normalizedMatrix := make([][]float64, len(matrix))
+	for i, row := range matrix {
+		normalizedMatrix[i] = overwriteValues(row, normalize)
 	}
 
 	colLabels := append([]string{"Unidentified"}, people...)
 	return people, colLabels, normalizedMatrix
+}
+
+func overwriteValues(row []int, normalize bool) []float64 {
+	values := make([]float64, max(len(row)-1, 0))
+	total := overwriteRowTotal(row)
+	for column := 1; column < len(row); column++ {
+		values[column-1] = -float64(row[column])
+		if normalize && total != 0 {
+			values[column-1] /= float64(total)
+		}
+	}
+	return values
+}
+
+func overwriteRowTotal(row []int) int {
+	if len(row) == 0 {
+		return 0
+	}
+	return row[0]
 }
 
 func plotOverwritesMatrix(people, colLabels []string, matrix [][]float64, output string) error {
@@ -100,20 +97,8 @@ func plotOverwritesMatrixWithOptions(
 	output string,
 	opts graphics.Options,
 ) error {
-	people = peopleChartLabels(people)
-	colLabels = peopleChartLabels(colLabels)
-
-	for i, name := range people {
-		if len(name) > 40 {
-			people[i] = name[:37] + "..."
-		}
-	}
-
-	for i, name := range colLabels {
-		if len(name) > 40 {
-			colLabels[i] = name[:37] + "..."
-		}
-	}
+	people = truncateOverwriteLabels(peopleChartLabels(people))
+	colLabels = truncateOverwriteLabels(peopleChartLabels(colLabels))
 
 	if err := graphics.ValidateHeatMap(matrix, people, colLabels); err != nil {
 		return err
@@ -128,20 +113,7 @@ func plotOverwritesMatrixWithOptions(
 	)
 	background, foreground := graphics.LaboursPlotColors(opts.Background)
 	graphics.RegisterPythonLaboursHeatmapColormaps()
-	fig := core.NewFigure(
-		width,
-		height,
-		style.WithFont(graphics.PythonPlotFontFamily, opts.PlotFontSize()),
-		style.WithBackground(background.R, background.G, background.B, 0),
-		style.WithAxesBackground(render.Color{R: background.R, G: background.G, B: background.B, A: 0}),
-		style.WithAxesEdgeColor(foreground),
-		style.WithTextColor(foreground.R, foreground.G, foreground.B, foreground.A),
-	)
-	ax := fig.GridSpec(
-		1,
-		1,
-		core.WithGridSpecPadding(0.105, 0.99, 0.01, 0.89),
-	).Cell(0, 0).AddAxes()
+	fig, ax := newOverwritesFigure(width, height, background, foreground, opts.PlotFontSize())
 	if ax == nil {
 		return fmt.Errorf("failed to create overwrites axes")
 	}
@@ -160,6 +132,37 @@ func plotOverwritesMatrixWithOptions(
 		return fmt.Errorf("failed to save plot: %w", err)
 	}
 	return nil
+}
+
+func truncateOverwriteLabels(labels []string) []string {
+	for i, label := range labels {
+		if len(label) > 40 {
+			labels[i] = label[:37] + "..."
+		}
+	}
+	return labels
+}
+
+func newOverwritesFigure(
+	width, height int,
+	background, foreground render.Color,
+	fontSize float64,
+) (*core.Figure, *core.Axes) {
+	fig := core.NewFigure(
+		width,
+		height,
+		style.WithFont(graphics.PythonPlotFontFamily, fontSize),
+		style.WithBackground(background.R, background.G, background.B, 0),
+		style.WithAxesBackground(render.Color{R: background.R, G: background.G, B: background.B, A: 0}),
+		style.WithAxesEdgeColor(foreground),
+		style.WithTextColor(foreground.R, foreground.G, foreground.B, foreground.A),
+	)
+	ax := fig.GridSpec(
+		1,
+		1,
+		core.WithGridSpecPadding(0.105, 0.99, 0.01, 0.89),
+	).Cell(0, 0).AddAxes()
+	return fig, ax
 }
 
 func configureOverwritesMatrixAxes(ax *core.Axes, people, colLabels []string, foreground render.Color) {

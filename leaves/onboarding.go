@@ -162,30 +162,11 @@ func (oa *OnboardingAnalysis) Configure(facts map[string]any) error {
 	}
 
 	if val, exists := facts[ConfigOnboardingWindows].(string); exists {
-		// Parse comma-separated window days
-		parts := strings.Split(val, ",")
-
-		oa.WindowDays = make([]int, 0, len(parts))
-		for _, part := range parts {
-			part = strings.TrimSpace(part)
-			if part == "" {
-				continue
-			}
-
-			days, err := strconv.Atoi(part)
-			if err != nil {
-				return fmt.Errorf("invalid window days value '%s': %w", part, err)
-			}
-
-			_, err = onboardingWindowDuration(days)
-			if err != nil {
-				return err
-			}
-
-			oa.WindowDays = append(oa.WindowDays, days)
+		windows, err := parseOnboardingWindows(val)
+		if err != nil {
+			return err
 		}
-
-		sort.Ints(oa.WindowDays)
+		oa.WindowDays = windows
 	}
 
 	if val, exists := facts[ConfigOnboardingMeaningfulThreshold].(int); exists {
@@ -208,6 +189,27 @@ func (oa *OnboardingAnalysis) Configure(facts map[string]any) error {
 	}
 
 	return nil
+}
+
+func parseOnboardingWindows(value string) ([]int, error) {
+	parts := strings.Split(value, ",")
+	windows := make([]int, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		days, err := strconv.Atoi(part)
+		if err != nil {
+			return nil, fmt.Errorf("invalid window days value '%s': %w", part, err)
+		}
+		if _, err := onboardingWindowDuration(days); err != nil {
+			return nil, err
+		}
+		windows = append(windows, days)
+	}
+	sort.Ints(windows)
+	return windows, nil
 }
 
 // ConfigureUpstream configures the upstream dependencies.

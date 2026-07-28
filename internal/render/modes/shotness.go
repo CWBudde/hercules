@@ -60,60 +60,64 @@ func ShotnessWithOptions(reader readers.Reader, output string, opts Options) err
 // processShotnessRecords processes raw shotness records and calculates aggregate statistics
 func processShotnessRecords(records []readers.ShotnessRecord) []ShotnessResult {
 	results := make([]ShotnessResult, len(records))
-
 	for i, record := range records {
-		var totalHits int32
-		var firstHit, lastHit int32 = -1, -1
-
-		// Calculate statistics from counters
-		for timePoint, count := range record.Counters {
-			totalHits += count
-
-			if firstHit == -1 || timePoint < firstHit {
-				firstHit = timePoint
-			}
-			if lastHit == -1 || timePoint > lastHit {
-				lastHit = timePoint
-			}
-		}
-
-		timeSpan := safeInt32(len(record.Counters))
-		var avgHits float64
-		if timeSpan > 0 {
-			avgHits = float64(totalHits) / float64(timeSpan)
-		}
-
-		results[i] = ShotnessResult{
-			Type:           record.Type,
-			Name:           record.Name,
-			File:           record.File,
-			TotalHits:      totalHits,
-			AvgHitsPerTime: avgHits,
-			TimeSpan:       timeSpan,
-			FirstHit:       firstHit,
-			LastHit:        lastHit,
-			OriginalIndex:  i,
-		}
+		results[i] = processShotnessRecord(record, i)
 	}
 
 	// Sort by total hits (descending) to identify the hottest spots
-	sort.Slice(results, func(i, j int) bool {
-		if results[i].TotalHits == results[j].TotalHits {
-			if results[i].File != results[j].File {
-				return results[i].File > results[j].File
-			}
-			if results[i].Name != results[j].Name {
-				return results[i].Name > results[j].Name
-			}
-			if results[i].Type != results[j].Type {
-				return results[i].Type > results[j].Type
-			}
-			return results[i].OriginalIndex > results[j].OriginalIndex
-		}
-		return results[i].TotalHits > results[j].TotalHits
-	})
+	sort.Slice(results, func(i, j int) bool { return shotnessResultGreater(results[i], results[j]) })
 
 	return results
+}
+
+func processShotnessRecord(record readers.ShotnessRecord, index int) ShotnessResult {
+	var totalHits int32
+	firstHit, lastHit := int32(-1), int32(-1)
+	for timePoint, count := range record.Counters {
+		totalHits += count
+		if firstHit == -1 || timePoint < firstHit {
+			firstHit = timePoint
+		}
+		if lastHit == -1 || timePoint > lastHit {
+			lastHit = timePoint
+		}
+	}
+
+	timeSpan := safeInt32(len(record.Counters))
+	return ShotnessResult{
+		Type:           record.Type,
+		Name:           record.Name,
+		File:           record.File,
+		TotalHits:      totalHits,
+		AvgHitsPerTime: averageShotnessHits(totalHits, timeSpan),
+		TimeSpan:       timeSpan,
+		FirstHit:       firstHit,
+		LastHit:        lastHit,
+		OriginalIndex:  index,
+	}
+}
+
+func averageShotnessHits(total, span int32) float64 {
+	if span == 0 {
+		return 0
+	}
+	return float64(total) / float64(span)
+}
+
+func shotnessResultGreater(left, right ShotnessResult) bool {
+	if left.TotalHits != right.TotalHits {
+		return left.TotalHits > right.TotalHits
+	}
+	if left.File != right.File {
+		return left.File > right.File
+	}
+	if left.Name != right.Name {
+		return left.Name > right.Name
+	}
+	if left.Type != right.Type {
+		return left.Type > right.Type
+	}
+	return left.OriginalIndex > right.OriginalIndex
 }
 
 func safeInt32(value int) int32 {
@@ -224,14 +228,7 @@ func printShotnessSummary(results []ShotnessResult) {
 		return
 	}
 
-	totalModifications := int32(0)
-	typeCount := make(map[string]int)
-
-	for _, result := range results {
-		totalModifications += result.TotalHits
-		typeCount[result.Type]++
-	}
-
+	totalModifications, typeCount := summarizeShotnessResults(results)
 	fmt.Printf("Total structural units analyzed: %d\n", len(results))
 	fmt.Printf("Total modifications tracked: %d\n", totalModifications)
 	fmt.Println("\nStructural unit types:")
@@ -243,48 +240,47 @@ func printShotnessSummary(results []ShotnessResult) {
 	fmt.Println("Rank | Type       | Name                    | File                     | Hits | Avg/Time | Span")
 	fmt.Println("-----|------------|-------------------------|--------------------------|------|----------|-----")
 
-	maxDisplay := 15
-	if len(results) < maxDisplay {
-		maxDisplay = len(results)
+	maxDisplay := min(15, len(results))
+	printShotnessRows(results[:maxDisplay])
+	if len(results) > maxDisplay {
+		fmt.Printf("\n... and %d more hotspots\n", len(results)-maxDisplay)
 	}
 
-	for i := 0; i < maxDisplay; i++ {
-		result := results[i]
+	hottest := results[0]
+	fmt.Printf("\nHottest spot: %s '%s' in %s (%d modifications)\n",
+		hottest.Type, hottest.Name, filepath.Base(hottest.File), hottest.TotalHits)
+	fmt.Printf("Average modifications per unit: %.1f\n",
+		float64(totalModifications)/float64(len(results)))
+}
 
-		// Truncate long names and file paths for display
-		name := result.Name
-		if len(name) > 23 {
-			name = name[:20] + "..."
-		}
+func summarizeShotnessResults(results []ShotnessResult) (int32, map[string]int) {
+	total := int32(0)
+	types := make(map[string]int)
+	for _, result := range results {
+		total += result.TotalHits
+		types[result.Type]++
+	}
+	return total, types
+}
 
-		file := filepath.Base(result.File)
-		if len(file) > 24 {
-			file = file[:21] + "..."
-		}
-
+func printShotnessRows(results []ShotnessResult) {
+	for i, result := range results {
 		fmt.Printf(
 			"%4d | %-10s | %-23s | %-24s | %4d | %8.1f | %4d\n",
 			i+1,
 			result.Type,
-			name,
-			file,
+			compactEndEllipsis(result.Name, 23),
+			compactEndEllipsis(filepath.Base(result.File), 24),
 			result.TotalHits,
 			result.AvgHitsPerTime,
 			result.TimeSpan,
 		)
 	}
+}
 
-	if len(results) > maxDisplay {
-		fmt.Printf("\n... and %d more hotspots\n", len(results)-maxDisplay)
+func compactEndEllipsis(value string, limit int) string {
+	if len(value) <= limit {
+		return value
 	}
-
-	// Summary statistics
-	if len(results) > 0 {
-		hottest := results[0]
-		fmt.Printf("\nHottest spot: %s '%s' in %s (%d modifications)\n",
-			hottest.Type, hottest.Name, filepath.Base(hottest.File), hottest.TotalHits)
-
-		avgModifications := float64(totalModifications) / float64(len(results))
-		fmt.Printf("Average modifications per unit: %.1f\n", avgModifications)
-	}
+	return value[:limit-3] + "..."
 }

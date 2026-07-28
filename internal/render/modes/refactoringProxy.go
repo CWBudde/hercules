@@ -80,23 +80,26 @@ func plotRefactoringProxy(repoName string, data *readers.RefactoringProxyData, o
 		})
 	}
 
-	ax.SetXLabel("Date")
-	ax.SetYLabel("Refactoring Rate (Renames/Moves per Commit)")
-	if repoName != "" {
-		ax.SetTitle(fmt.Sprintf("%s - Refactoring Proxy Timeline", repoName))
-	} else {
-		ax.SetTitle("Refactoring Proxy Timeline")
-	}
-	ax.YAxis.Formatter = core.PercentFormatter{XMax: 1, Decimals: 0}
-	ax.SetYLim(0, math.Max(maxRate, threshold)*1.08)
-	legend := ax.AddLegend()
-	legend.Location = core.LegendUpperRight
+	configureRefactoringProxyAxes(ax, repoName, maxRate, threshold)
 
 	if err := saveReportFigureWithoutTightLayout(fig, output, width, height); err != nil {
 		return fmt.Errorf("failed to save refactoring proxy chart: %w", err)
 	}
 	fmt.Printf("Saved refactoring proxy chart to %s\n", output)
 	return nil
+}
+
+func configureRefactoringProxyAxes(ax *core.Axes, repoName string, maxRate, threshold float64) {
+	ax.SetXLabel("Date")
+	ax.SetYLabel("Refactoring Rate (Renames/Moves per Commit)")
+	title := "Refactoring Proxy Timeline"
+	if repoName != "" {
+		title = fmt.Sprintf("%s - %s", repoName, title)
+	}
+	ax.SetTitle(title)
+	ax.YAxis.Formatter = core.PercentFormatter{XMax: 1, Decimals: 0}
+	ax.SetYLim(0, math.Max(maxRate, threshold)*1.08)
+	ax.AddLegend().Location = core.LegendUpperRight
 }
 
 type refactoringProxyRegion struct {

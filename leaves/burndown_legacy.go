@@ -329,26 +329,33 @@ func (analyser *LegacyBurndownAnalysis) Consume(deps map[string]any) (map[string
 	}
 
 	for _, change := range treeDiffs {
-		action, _ := change.Action()
-		var changeErr error
-
-		switch action {
-		case merkletrie.Insert:
-			changeErr = analyser.handleInsertion(change, author, cache)
-		case merkletrie.Delete:
-			changeErr = analyser.handleDeletion(change, author, cache)
-		case merkletrie.Modify:
-			changeErr = analyser.handleModification(change, author, cache, fileDiffs)
-		}
-
-		if changeErr != nil {
-			return nil, changeErr
+		if err := analyser.consumeLegacyTreeChange(change, author, cache, fileDiffs); err != nil {
+			return nil, err
 		}
 	}
 	// in case there is a merge analyser.tick equals to TreeMergeMark
 	analyser.tick = tick
 
 	return noDependencies(), nil
+}
+
+func (analyser *LegacyBurndownAnalysis) consumeLegacyTreeChange(
+	change *object.Change,
+	author int,
+	cache map[plumbing.Hash]*items.CachedBlob,
+	fileDiffs map[string]items.FileDiffData,
+) error {
+	action, _ := change.Action()
+	switch action {
+	case merkletrie.Insert:
+		return analyser.handleInsertion(change, author, cache)
+	case merkletrie.Delete:
+		return analyser.handleDeletion(change, author, cache)
+	case merkletrie.Modify:
+		return analyser.handleModification(change, author, cache, fileDiffs)
+	default:
+		return nil
+	}
 }
 
 func legacyBurndownDependencies(

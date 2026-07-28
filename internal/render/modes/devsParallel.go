@@ -168,57 +168,31 @@ func calculateParallelDeveloperData(
 		return nil
 	}
 
-	nameByDevIndex := timeSeries.People
-	if len(people) > 0 {
-		nameByDevIndex = people
-	}
-
-	commitsByName := make(map[string]int)
-	linesByName := make(map[string]int)
-	activeDaysByName := make(map[string]map[int]bool)
-	for day, devs := range timeSeries.Days {
-		for devIndex, stats := range devs {
-			if devIndex < 0 || devIndex >= len(nameByDevIndex) {
-				continue
-			}
-			name := nameByDevIndex[devIndex]
-			commitsByName[name] += stats.Commits
-			linesByName[name] += stats.LinesAdded + stats.LinesRemoved + stats.LinesModified
-			if stats.Commits > 0 || stats.LinesAdded > 0 || stats.LinesRemoved > 0 || stats.LinesModified > 0 {
-				if activeDaysByName[name] == nil {
-					activeDaysByName[name] = make(map[int]bool)
-				}
-				activeDaysByName[name][day] = true
-			}
-		}
-	}
-
-	chosen := topNamesByValue(commitsByName, maxPeople)
+	names := parallelDeveloperNames(people, timeSeries.People)
+	commits, lines, activeDays := aggregateParallelDeveloperActivity(timeSeries.Days, names)
+	chosen := topNamesByValue(commits, maxPeople)
 	if len(chosen) == 0 {
 		return nil
 	}
 
-	ownershipByName := make(map[string]int)
-	for _, name := range chosen {
-		ownershipByName[name] = finalOwnershipTotal(ownership[name])
-	}
-	commitsRank := rankNamesByValue(commitsByName, chosen)
-	linesRank := rankNamesByValue(linesByName, chosen)
-	ownershipRank := rankNamesByValue(ownershipByName, chosen)
+	ownershipTotals := ownershipTotalsForNames(ownership, chosen)
+	commitsRank := rankNamesByValue(commits, chosen)
+	linesRank := rankNamesByValue(lines, chosen)
+	ownershipRank := rankNamesByValue(ownershipTotals, chosen)
 	couplesOrder := orderNamesByCoupling(chosen, couplingPeople, couplingMatrix)
-	commitOrder := orderNamesByActiveDayOverlap(chosen, activeDaysByName)
-	averageOverlap := averageOverlapScores(chosen, activeDaysByName)
+	commitOrder := orderNamesByActiveDayOverlap(chosen, activeDays)
+	averageOverlap := averageOverlapScores(chosen, activeDays)
 
 	result := make([]ParallelDeveloperData, 0, len(chosen))
 	for _, name := range chosen {
 		result = append(result, ParallelDeveloperData{
 			Name:                name,
 			CommitsRank:         commitsRank[name],
-			Commits:             commitsByName[name],
+			Commits:             commits[name],
 			LinesRank:           linesRank[name],
-			Lines:               linesByName[name],
+			Lines:               lines[name],
 			OwnershipRank:       ownershipRank[name],
-			Ownership:           ownershipByName[name],
+			Ownership:           ownershipTotals[name],
 			CouplesIndex:        couplesOrder[name],
 			CouplesCluster:      0,
 			CommitCooccIndex:    commitOrder[name],
@@ -227,6 +201,57 @@ func calculateParallelDeveloperData(
 		})
 	}
 	return result
+}
+
+func parallelDeveloperNames(ownershipPeople, timeSeriesPeople []string) []string {
+	if len(ownershipPeople) > 0 {
+		return ownershipPeople
+	}
+	return timeSeriesPeople
+}
+
+func aggregateParallelDeveloperActivity(
+	days map[int]map[int]readers.DevDay,
+	names []string,
+) (map[string]int, map[string]int, map[string]map[int]bool) {
+	commits := make(map[string]int)
+	lines := make(map[string]int)
+	activeDays := make(map[string]map[int]bool)
+	for day, devs := range days {
+		aggregateParallelDeveloperDay(day, devs, names, commits, lines, activeDays)
+	}
+	return commits, lines, activeDays
+}
+
+func aggregateParallelDeveloperDay(
+	day int,
+	devs map[int]readers.DevDay,
+	names []string,
+	commits, lines map[string]int,
+	activeDays map[string]map[int]bool,
+) {
+	for devIndex, stats := range devs {
+		if devIndex < 0 || devIndex >= len(names) {
+			continue
+		}
+		name := names[devIndex]
+		commits[name] += stats.Commits
+		lines[name] += stats.LinesAdded + stats.LinesRemoved + stats.LinesModified
+		if hasDeveloperActivity(stats) {
+			if activeDays[name] == nil {
+				activeDays[name] = make(map[int]bool)
+			}
+			activeDays[name][day] = true
+		}
+	}
+}
+
+func ownershipTotalsForNames(ownership map[string][][]int, names []string) map[string]int {
+	totals := make(map[string]int, len(names))
+	for _, name := range names {
+		totals[name] = finalOwnershipTotal(ownership[name])
+	}
+	return totals
 }
 
 func filterPeopleBurndownByActivity(peopleBurndown []readers.PeopleBurndown, maxPeople int) []readers.PeopleBurndown {
@@ -507,124 +532,106 @@ func calculateParallelismMetrics(peopleBurndown []readers.PeopleBurndown) Parall
 		return ParallelismMetrics{}
 	}
 
-	// Find the maximum time period across all developers
-	maxPeriods := 0
-	for _, person := range peopleBurndown {
-		if len(person.Matrix) > maxPeriods {
-			maxPeriods = len(person.Matrix)
-		}
-	}
-
+	maxPeriods := maxPeopleBurndownPeriods(peopleBurndown)
 	if maxPeriods == 0 {
 		return ParallelismMetrics{}
 	}
 
-	// Create a matrix of developer activity over time
-	developers := make([]string, len(peopleBurndown))
-	activityMatrix := make([][]bool, len(peopleBurndown))
-
-	for i, person := range peopleBurndown {
-		developers[i] = person.Person
-		activityMatrix[i] = make([]bool, maxPeriods)
-
-		// Mark periods where developer was active (had any commits/changes)
-		for j, period := range person.Matrix {
-			if j >= maxPeriods {
-				break
-			}
-			// Consider active if there's any value in the period (sum > 0)
-			active := false
-			for _, val := range period {
-				if val > 0 {
-					active = true
-					break
-				}
-			}
-			activityMatrix[i][j] = active
-		}
-	}
-
-	// Calculate concurrency for each time period
-	periodConcurrency := make([]int, maxPeriods)
-	parallelPeriods := 0
-	totalConcurrency := 0
-	peakConcurrency := 0
-
-	for period := 0; period < maxPeriods; period++ {
-		concurrent := 0
-		for dev := 0; dev < len(developers); dev++ {
-			if activityMatrix[dev][period] {
-				concurrent++
-			}
-		}
-		periodConcurrency[period] = concurrent
-		totalConcurrency += concurrent
-
-		if concurrent > 1 {
-			parallelPeriods++
-		}
-		if concurrent > peakConcurrency {
-			peakConcurrency = concurrent
-		}
-	}
-
-	// Calculate developer overlap coefficients
-	developerOverlaps := make(map[string]map[string]float64)
-	for i, dev1 := range developers {
-		developerOverlaps[dev1] = make(map[string]float64)
-		for j, dev2 := range developers {
-			if i == j {
-				developerOverlaps[dev1][dev2] = 1.0
-				continue
-			}
-
-			// Count periods where both developers were active
-			overlap := 0
-			dev1Active := 0
-			dev2Active := 0
-
-			for period := 0; period < maxPeriods; period++ {
-				if activityMatrix[i][period] {
-					dev1Active++
-				}
-				if activityMatrix[j][period] {
-					dev2Active++
-				}
-				if activityMatrix[i][period] && activityMatrix[j][period] {
-					overlap++
-				}
-			}
-
-			// Calculate Jaccard similarity coefficient
-			union := dev1Active + dev2Active - overlap
-			if union > 0 {
-				developerOverlaps[dev1][dev2] = float64(overlap) / float64(union)
-			} else {
-				developerOverlaps[dev1][dev2] = 0.0
-			}
-		}
-	}
-
-	parallelismIndex := 0.0
-	if maxPeriods > 0 {
-		parallelismIndex = float64(parallelPeriods) / float64(maxPeriods) * 100
-	}
-
-	averageConcurrency := 0.0
-	if maxPeriods > 0 {
-		averageConcurrency = float64(totalConcurrency) / float64(maxPeriods)
-	}
+	developers, activity := peopleBurndownActivityMatrix(peopleBurndown, maxPeriods)
+	concurrency, parallelPeriods, totalConcurrency, peakConcurrency := burndownConcurrency(activity, maxPeriods)
 
 	return ParallelismMetrics{
 		TotalPeriods:       maxPeriods,
 		ParallelPeriods:    parallelPeriods,
-		ParallelismIndex:   parallelismIndex,
+		ParallelismIndex:   float64(parallelPeriods) / float64(maxPeriods) * 100,
 		PeakConcurrency:    peakConcurrency,
-		AverageConcurrency: averageConcurrency,
-		DeveloperOverlaps:  developerOverlaps,
-		PeriodConcurrency:  periodConcurrency,
+		AverageConcurrency: float64(totalConcurrency) / float64(maxPeriods),
+		DeveloperOverlaps:  burndownDeveloperOverlaps(developers, activity),
+		PeriodConcurrency:  concurrency,
 		ActiveDevelopers:   developers,
 	}
+}
+
+func maxPeopleBurndownPeriods(people []readers.PeopleBurndown) int {
+	maxPeriods := 0
+	for _, person := range people {
+		maxPeriods = max(maxPeriods, len(person.Matrix))
+	}
+	return maxPeriods
+}
+
+func peopleBurndownActivityMatrix(
+	people []readers.PeopleBurndown,
+	maxPeriods int,
+) ([]string, [][]bool) {
+	developers := make([]string, len(people))
+	activity := make([][]bool, len(people))
+	for i, person := range people {
+		developers[i] = person.Person
+		activity[i] = make([]bool, maxPeriods)
+		for period, values := range person.Matrix {
+			activity[i][period] = hasPositiveValue(values)
+		}
+	}
+	return developers, activity
+}
+
+func hasPositiveValue(values []int) bool {
+	for _, value := range values {
+		if value > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func burndownConcurrency(activity [][]bool, periods int) ([]int, int, int, int) {
+	concurrency := make([]int, periods)
+	parallelPeriods, totalConcurrency, peakConcurrency := 0, 0, 0
+	for period := range periods {
+		for developer := range activity {
+			if activity[developer][period] {
+				concurrency[period]++
+			}
+		}
+		totalConcurrency += concurrency[period]
+		if concurrency[period] > 1 {
+			parallelPeriods++
+		}
+		peakConcurrency = max(peakConcurrency, concurrency[period])
+	}
+	return concurrency, parallelPeriods, totalConcurrency, peakConcurrency
+}
+
+func burndownDeveloperOverlaps(developers []string, activity [][]bool) map[string]map[string]float64 {
+	overlaps := make(map[string]map[string]float64, len(developers))
+	for left, developer := range developers {
+		overlaps[developer] = make(map[string]float64, len(developers))
+		for right, other := range developers {
+			if left == right {
+				overlaps[developer][other] = 1
+				continue
+			}
+			overlaps[developer][other] = booleanActivityJaccard(activity[left], activity[right])
+		}
+	}
+	return overlaps
+}
+
+func booleanActivityJaccard(left, right []bool) float64 {
+	intersection, union := 0, 0
+	for period := range left {
+		if left[period] || right[period] {
+			union++
+		}
+		if left[period] && right[period] {
+			intersection++
+		}
+	}
+	if union == 0 {
+		return 0
+	}
+	return float64(intersection) / float64(union)
 }
 
 // plotParallelActivity creates a timeline showing concurrent developer activity
@@ -782,44 +789,43 @@ func printParallelismSummary(metrics ParallelismMetrics) {
 	fmt.Printf("Average Concurrent Developers: %.2f\n", metrics.AverageConcurrency)
 	fmt.Printf("Active Developers: %d\n", len(metrics.ActiveDevelopers))
 
-	if len(metrics.ActiveDevelopers) > 1 {
-		fmt.Println("\nTop Developer Collaborations:")
+	if len(metrics.ActiveDevelopers) <= 1 {
+		return
+	}
 
-		type overlap struct {
-			pair    string
-			overlap float64
-		}
+	fmt.Println("\nTop Developer Collaborations:")
+	overlaps := uniqueDeveloperOverlaps(metrics.DeveloperOverlaps)
+	sort.Slice(overlaps, func(i, j int) bool {
+		return overlaps[i].overlap > overlaps[j].overlap
+	})
+	for _, item := range overlaps[:min(5, len(overlaps))] {
+		fmt.Printf("  %s: %.3f\n", item.pair, item.overlap)
+	}
+}
 
-		var overlaps []overlap
-		processed := make(map[string]bool)
+type developerOverlapSummary struct {
+	pair    string
+	overlap float64
+}
 
-		for dev1, others := range metrics.DeveloperOverlaps {
-			for dev2, ovr := range others {
-				if dev1 != dev2 {
-					pairKey := dev1 + "-" + dev2
-					reversePairKey := dev2 + "-" + dev1
-
-					if !processed[pairKey] && !processed[reversePairKey] {
-						overlaps = append(overlaps, overlap{
-							pair:    fmt.Sprintf("%s ↔ %s", dev1, dev2),
-							overlap: ovr,
-						})
-						processed[pairKey] = true
-						processed[reversePairKey] = true
-					}
-				}
+func uniqueDeveloperOverlaps(overlaps map[string]map[string]float64) []developerOverlapSummary {
+	result := make([]developerOverlapSummary, 0)
+	processed := make(map[string]bool)
+	for developer, others := range overlaps {
+		for other, overlap := range others {
+			pairKey, reverseKey := developer+"-"+other, other+"-"+developer
+			if developer == other || processed[pairKey] || processed[reverseKey] {
+				continue
 			}
-		}
-
-		sort.Slice(overlaps, func(i, j int) bool {
-			return overlaps[i].overlap > overlaps[j].overlap
-		})
-
-		maxDisplay := min(5, len(overlaps))
-		for i := 0; i < maxDisplay; i++ {
-			fmt.Printf("  %s: %.3f\n", overlaps[i].pair, overlaps[i].overlap)
+			result = append(result, developerOverlapSummary{
+				pair:    fmt.Sprintf("%s ↔ %s", developer, other),
+				overlap: overlap,
+			})
+			processed[pairKey] = true
+			processed[reverseKey] = true
 		}
 	}
+	return result
 }
 
 // Helper functions

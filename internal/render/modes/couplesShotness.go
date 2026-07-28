@@ -163,23 +163,7 @@ func plotTopShotnessCouplingPairs(
 		return fmt.Errorf("no coupling pairs data available")
 	}
 
-	// Prepare data for bar chart
-	maxPairs := len(analysis.TopCoupling)
-	if maxPairs > 20 {
-		maxPairs = 20 // Show top 20 pairs
-	}
-
-	values := make([]float64, maxPairs)
-	rankLabels := make([]string, maxPairs)
-	barLabels := make([]string, maxPairs)
-	for i := 0; i < maxPairs; i++ {
-		pair := analysis.TopCoupling[i]
-		values[i] = pair.CouplingScore
-		rankLabels[i] = strconv.Itoa(i + 1)
-		if i < 10 {
-			barLabels[i] = compactCouplingPairLabel(filepath.Base(pair.Entity1)+"-"+filepath.Base(pair.Entity2), 28)
-		}
-	}
+	values, rankLabels, barLabels := shotnessCouplingBarData(analysis.TopCoupling)
 
 	if output == "" {
 		output = "."
@@ -200,25 +184,43 @@ func plotTopShotnessCouplingPairs(
 		BarLabelAngle: 70,
 		FontSize:      visuals.PlotFontSize(),
 	}
-	pngFile := filepath.Join(output, "top_shotness_coupling_pairs.png")
-	opts.Output = pngFile
-	if err := graphics.PlotBarChartMatplotlib(rankLabels, values, opts); err != nil {
-		return fmt.Errorf("failed to save coupling pairs plot: %w", err)
+	outputs := []string{
+		filepath.Join(output, "top_shotness_coupling_pairs.png"),
+		filepath.Join(output, "top_shotness_coupling_pairs.svg"),
 	}
-	svgFile := filepath.Join(output, "top_shotness_coupling_pairs.svg")
-	opts.Output = svgFile
-	if err := graphics.PlotBarChartMatplotlib(rankLabels, values, opts); err != nil {
-		return fmt.Errorf("failed to save coupling pairs plot: %w", err)
+	for _, outputPath := range outputs {
+		opts.Output = outputPath
+		if err := graphics.PlotBarChartMatplotlib(rankLabels, values, opts); err != nil {
+			return fmt.Errorf("failed to save coupling pairs plot: %w", err)
+		}
 	}
 
-	fmt.Printf("Saved top shotness coupling pairs plots to %s and %s\n", pngFile, svgFile)
+	fmt.Printf("Saved top shotness coupling pairs plots to %s and %s\n", outputs[0], outputs[1])
+	printShotnessCouplingSummary(analysis)
+	return nil
+}
 
-	// Print summary information
-	fmt.Printf("Shotness Coupling Analysis Summary:\n")
+func shotnessCouplingBarData(pairs []ShotnessCouplingPair) ([]float64, []string, []string) {
+	maxPairs := min(len(pairs), 20)
+	values := make([]float64, maxPairs)
+	rankLabels := make([]string, maxPairs)
+	barLabels := make([]string, maxPairs)
+	for i, pair := range pairs[:maxPairs] {
+		values[i] = pair.CouplingScore
+		rankLabels[i] = strconv.Itoa(i + 1)
+		if i < 10 {
+			barLabels[i] = compactCouplingPairLabel(
+				filepath.Base(pair.Entity1)+"-"+filepath.Base(pair.Entity2), 28,
+			)
+		}
+	}
+	return values, rankLabels, barLabels
+}
+
+func printShotnessCouplingSummary(analysis ShotnessCouplingAnalysis) {
+	fmt.Println("Shotness Coupling Analysis Summary:")
 	fmt.Printf("  Total entities: %d\n", analysis.Statistics.TotalEntities)
 	fmt.Printf("  Total coupling relationships: %d\n", len(analysis.TopCoupling))
 	fmt.Printf("  Average coupling score: %.2f\n", analysis.Statistics.AverageCoupling)
 	fmt.Printf("  Max coupling score: %d\n", analysis.Statistics.MaxCoupling)
-
-	return nil
 }

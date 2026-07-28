@@ -176,60 +176,56 @@ func (hra *HotspotRiskAnalysis) Configure(facts map[string]any) error {
 	if l, exists := facts[core.ConfigLogger].(core.Logger); exists {
 		hra.l = l
 	}
+	if err := hra.configureHotspotLimits(facts); err != nil {
+		return err
+	}
+	if err := hra.configureHotspotWeights(facts); err != nil {
+		return err
+	}
+	return hra.configureHotspotTickSize(facts)
+}
 
+func (hra *HotspotRiskAnalysis) configureHotspotLimits(facts map[string]any) error {
 	if val, exists := facts[ConfigHotspotRiskTopN].(int); exists {
 		hra.TopN = val
 	}
-
 	if val, exists := facts[ConfigHotspotRiskWindow].(int); exists {
-		_, err := hotspotRiskWindowDuration(val)
-		if err != nil {
+		if _, err := hotspotRiskWindowDuration(val); err != nil {
 			return err
 		}
-
 		hra.WindowDays = val
 	}
+	return nil
+}
 
+func (hra *HotspotRiskAnalysis) configureHotspotWeights(facts map[string]any) error {
 	if val, exists := facts[ConfigHotspotRiskWeightSize].(float32); exists {
-		err := validateHotspotRiskWeight(ConfigHotspotRiskWeightSize, val)
-		if err != nil {
+		if err := hra.configureWeight(0, ConfigHotspotRiskWeightSize, val); err != nil {
 			return err
 		}
-
-		hra.WeightSize = val
-		hra.weightsConfigured[0] = true
 	}
 
 	if val, exists := facts[ConfigHotspotRiskWeightChurn].(float32); exists {
-		err := validateHotspotRiskWeight(ConfigHotspotRiskWeightChurn, val)
-		if err != nil {
+		if err := hra.configureWeight(1, ConfigHotspotRiskWeightChurn, val); err != nil {
 			return err
 		}
-
-		hra.WeightChurn = val
-		hra.weightsConfigured[1] = true
 	}
 
 	if val, exists := facts[ConfigHotspotRiskWeightCoupling].(float32); exists {
-		err := validateHotspotRiskWeight(ConfigHotspotRiskWeightCoupling, val)
-		if err != nil {
+		if err := hra.configureWeight(2, ConfigHotspotRiskWeightCoupling, val); err != nil {
 			return err
 		}
-
-		hra.WeightCoupling = val
-		hra.weightsConfigured[2] = true
 	}
 
 	if val, exists := facts[ConfigHotspotRiskWeightOwnership].(float32); exists {
-		err := validateHotspotRiskWeight(ConfigHotspotRiskWeightOwnership, val)
-		if err != nil {
+		if err := hra.configureWeight(3, ConfigHotspotRiskWeightOwnership, val); err != nil {
 			return err
 		}
-
-		hra.WeightOwnership = val
-		hra.weightsConfigured[3] = true
 	}
+	return nil
+}
 
+func (hra *HotspotRiskAnalysis) configureHotspotTickSize(facts map[string]any) error {
 	if val, exists := facts[items.FactTickSize].(time.Duration); exists {
 		if val <= 0 {
 			return fmt.Errorf("%w: %s got %s", errHotspotRiskTickSize, items.FactTickSize, val)
@@ -237,7 +233,21 @@ func (hra *HotspotRiskAnalysis) Configure(facts map[string]any) error {
 
 		hra.tickSize = val
 	}
+	return nil
+}
 
+func (hra *HotspotRiskAnalysis) configureWeight(index int, name string, weight float32) error {
+	if err := validateHotspotRiskWeight(name, weight); err != nil {
+		return err
+	}
+	weights := []*float32{
+		&hra.WeightSize,
+		&hra.WeightChurn,
+		&hra.WeightCoupling,
+		&hra.WeightOwnership,
+	}
+	*weights[index] = weight
+	hra.weightsConfigured[index] = true
 	return nil
 }
 
@@ -305,21 +315,7 @@ func (hra *HotspotRiskAnalysis) Initialize(repository *git.Repository) error {
 
 	hra.windowDuration = windowDuration
 
-	if !hra.weightsConfigured[0] && hra.WeightSize == 0 {
-		hra.WeightSize = DefaultWeight
-	}
-
-	if !hra.weightsConfigured[1] && hra.WeightChurn == 0 {
-		hra.WeightChurn = DefaultWeight
-	}
-
-	if !hra.weightsConfigured[2] && hra.WeightCoupling == 0 {
-		hra.WeightCoupling = DefaultWeight
-	}
-
-	if !hra.weightsConfigured[3] && hra.WeightOwnership == 0 {
-		hra.WeightOwnership = DefaultWeight
-	}
+	hra.applyDefaultWeights()
 
 	hra.fileMetrics = make(map[string]*fileRiskMetrics)
 	hra.lineHistoryResolver = nil
@@ -328,6 +324,20 @@ func (hra *HotspotRiskAnalysis) Initialize(repository *git.Repository) error {
 	hra.OneShotMergeProcessor.Initialize()
 
 	return nil
+}
+
+func (hra *HotspotRiskAnalysis) applyDefaultWeights() {
+	weights := []*float32{
+		&hra.WeightSize,
+		&hra.WeightChurn,
+		&hra.WeightCoupling,
+		&hra.WeightOwnership,
+	}
+	for index, weight := range weights {
+		if !hra.weightsConfigured[index] && *weight == 0 {
+			*weight = DefaultWeight
+		}
+	}
 }
 
 // Consume processes the next commit.

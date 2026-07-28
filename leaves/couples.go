@@ -400,24 +400,9 @@ func (couples *CouplesAnalysis) Deserialize(pbmessage []byte) (any, error) {
 func (couples *CouplesAnalysis) MergeResults(
 	result1, result2 any, common1, common2 *core.CommonAnalysisResult,
 ) any {
-	cr1, err := requiredResult[CouplesResult](result1)
+	cr1, cr2, err := couplesMergeInputs(result1, result2)
 	if err != nil {
-		return fmt.Errorf("merge couples first result: %w", err)
-	}
-
-	cr2, err := requiredResult[CouplesResult](result2)
-	if err != nil {
-		return fmt.Errorf("merge couples second result: %w", err)
-	}
-
-	err = validateCouplesMergeResult(cr1)
-	if err != nil {
-		return fmt.Errorf("merge couples first result: %w", err)
-	}
-
-	err = validateCouplesMergeResult(cr2)
-	if err != nil {
-		return fmt.Errorf("merge couples second result: %w", err)
+		return err
 	}
 
 	merged := CouplesResult{}
@@ -431,60 +416,79 @@ func (couples *CouplesAnalysis) MergeResults(
 	addMergedFileLines(merged.FilesLines, cr1.FilesLines, files.First)
 	addMergedFileLines(merged.FilesLines, cr2.FilesLines, files.Second)
 
-	merged.PeopleFiles = make([][]int, len(merged.reversedPeopleDict))
-	peopleFilesDicts := make([]map[int]bool, len(merged.reversedPeopleDict))
-
-	err = addMergedPeopleFiles(
-		peopleFilesDicts, cr1, people.First, files.First, len(merged.Files),
-	)
-	if err != nil {
-		return fmt.Errorf("merge couples first people files: %w", err)
+	if err := mergeCouplesPeopleFiles(&merged, cr1, cr2, people, files); err != nil {
+		return err
+	}
+	if err := mergeCouplesMatrices(&merged, cr1, cr2, people, files); err != nil {
+		return err
 	}
 
-	err = addMergedPeopleFiles(
-		peopleFilesDicts, cr2, people.Second, files.Second, len(merged.Files),
-	)
+	return merged
+}
+
+func couplesMergeInputs(result1, result2 any) (CouplesResult, CouplesResult, error) {
+	first, err := requiredResult[CouplesResult](result1)
 	if err != nil {
+		return CouplesResult{}, CouplesResult{}, fmt.Errorf("merge couples first result: %w", err)
+	}
+	second, err := requiredResult[CouplesResult](result2)
+	if err != nil {
+		return CouplesResult{}, CouplesResult{}, fmt.Errorf("merge couples second result: %w", err)
+	}
+	if err := validateCouplesMergeResult(first); err != nil {
+		return CouplesResult{}, CouplesResult{}, fmt.Errorf("merge couples first result: %w", err)
+	}
+	if err := validateCouplesMergeResult(second); err != nil {
+		return CouplesResult{}, CouplesResult{}, fmt.Errorf("merge couples second result: %w", err)
+	}
+	return first, second, nil
+}
+
+func mergeCouplesPeopleFiles(
+	merged *CouplesResult,
+	first, second CouplesResult,
+	people, files join.IdentityMapping,
+) error {
+	dicts := make([]map[int]bool, len(merged.reversedPeopleDict))
+	if err := addMergedPeopleFiles(dicts, first, people.First, files.First, len(merged.Files)); err != nil {
+		return fmt.Errorf("merge couples first people files: %w", err)
+	}
+	if err := addMergedPeopleFiles(dicts, second, people.Second, files.Second, len(merged.Files)); err != nil {
 		return fmt.Errorf("merge couples second people files: %w", err)
 	}
 
-	for personIndex, personFiles := range peopleFilesDicts {
-		merged.PeopleFiles[personIndex] = make([]int, len(personFiles))
-
-		fileIndex := 0
+	merged.PeopleFiles = make([][]int, len(dicts))
+	for person, personFiles := range dicts {
+		merged.PeopleFiles[person] = make([]int, 0, len(personFiles))
 		for file := range personFiles {
-			merged.PeopleFiles[personIndex][fileIndex] = file
-			fileIndex++
+			merged.PeopleFiles[person] = append(merged.PeopleFiles[person], file)
 		}
-
-		sort.Ints(merged.PeopleFiles[personIndex])
+		sort.Ints(merged.PeopleFiles[person])
 	}
+	return nil
+}
 
+func mergeCouplesMatrices(
+	merged *CouplesResult,
+	first, second CouplesResult,
+	people, files join.IdentityMapping,
+) error {
 	merged.PeopleMatrix = make([]map[int]int64, len(merged.reversedPeopleDict)+1)
-
-	err = addMergedPeopleMatrix(merged.PeopleMatrix, cr1, people.First)
-	if err != nil {
+	if err := addMergedPeopleMatrix(merged.PeopleMatrix, first, people.First); err != nil {
 		return fmt.Errorf("merge couples first people matrix: %w", err)
 	}
-
-	err = addMergedPeopleMatrix(merged.PeopleMatrix, cr2, people.Second)
-	if err != nil {
+	if err := addMergedPeopleMatrix(merged.PeopleMatrix, second, people.Second); err != nil {
 		return fmt.Errorf("merge couples second people matrix: %w", err)
 	}
 
 	merged.FilesMatrix = make([]map[int]int64, len(merged.Files))
-
-	err = addMergedFilesMatrix(merged.FilesMatrix, cr1, files.First)
-	if err != nil {
+	if err := addMergedFilesMatrix(merged.FilesMatrix, first, files.First); err != nil {
 		return fmt.Errorf("merge couples first files matrix: %w", err)
 	}
-
-	err = addMergedFilesMatrix(merged.FilesMatrix, cr2, files.Second)
-	if err != nil {
+	if err := addMergedFilesMatrix(merged.FilesMatrix, second, files.Second); err != nil {
 		return fmt.Errorf("merge couples second files matrix: %w", err)
 	}
-
-	return merged
+	return nil
 }
 
 func addMergedFileLines(target, source, destinations []int) {
@@ -668,33 +672,42 @@ func addMergedPeopleFiles(
 		if person >= len(source.reversedPeopleDict) {
 			continue
 		}
+		if err := addMergedPersonFiles(
+			target, sourceFiles, source.Files, people, files, person, fileTargetLength,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
-		targetPerson, err := mergedCouplesIndex(people, person, len(target), "person")
+func addMergedPersonFiles(
+	target []map[int]bool,
+	sourceFiles []int,
+	sourceFileNames []string,
+	people, files []int,
+	person, fileTargetLength int,
+) error {
+	targetPerson, err := mergedCouplesIndex(people, person, len(target), "person")
+	if err != nil {
+		return err
+	}
+	if target[targetPerson] == nil {
+		target[targetPerson] = map[int]bool{}
+	}
+	for _, file := range sourceFiles {
+		if file < 0 || file >= len(sourceFileNames) {
+			return fmt.Errorf(
+				"%w: people-files source index %d is outside [0, %d)",
+				errCouplesMergeIntegrity, file, len(sourceFileNames),
+			)
+		}
+		targetFile, err := mergedCouplesIndex(files, file, fileTargetLength, "file")
 		if err != nil {
 			return err
 		}
-
-		if target[targetPerson] == nil {
-			target[targetPerson] = map[int]bool{}
-		}
-
-		for _, file := range sourceFiles {
-			if file < 0 || file >= len(source.Files) {
-				return fmt.Errorf(
-					"%w: people-files source index %d is outside [0, %d)",
-					errCouplesMergeIntegrity, file, len(source.Files),
-				)
-			}
-
-			targetFile, err := mergedCouplesIndex(files, file, fileTargetLength, "file")
-			if err != nil {
-				return err
-			}
-
-			target[targetPerson][targetFile] = true
-		}
+		target[targetPerson][targetFile] = true
 	}
-
 	return nil
 }
 
@@ -732,39 +745,46 @@ func addMergedFilesMatrix(
 	target []map[int]int64, source CouplesResult, files []int,
 ) error {
 	for file, couplings := range source.FilesMatrix {
-		if file < 0 || file >= len(source.Files) {
+		if err := addMergedFileCouplings(target, couplings, source.Files, files, file); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func addMergedFileCouplings(
+	target []map[int]int64,
+	couplings map[int]int64,
+	sourceFiles []string,
+	files []int,
+	file int,
+) error {
+	if file < 0 || file >= len(sourceFiles) {
+		return fmt.Errorf(
+			"%w: file matrix source row %d is outside [0, %d)",
+			errCouplesMergeIntegrity, file, len(sourceFiles),
+		)
+	}
+	targetFile, err := mergedCouplesIndex(files, file, len(target), "file")
+	if err != nil {
+		return err
+	}
+	if target[targetFile] == nil {
+		target[targetFile] = map[int]int64{}
+	}
+	for other, value := range couplings {
+		if other < 0 || other >= len(sourceFiles) {
 			return fmt.Errorf(
-				"%w: file matrix source row %d is outside [0, %d)",
-				errCouplesMergeIntegrity, file, len(source.Files),
+				"%w: file matrix source column %d is outside [0, %d)",
+				errCouplesMergeIntegrity, other, len(sourceFiles),
 			)
 		}
-
-		targetFile, err := mergedCouplesIndex(files, file, len(target), "file")
+		targetOther, err := mergedCouplesIndex(files, other, len(target), "file")
 		if err != nil {
 			return err
 		}
-
-		if target[targetFile] == nil {
-			target[targetFile] = map[int]int64{}
-		}
-
-		for other, value := range couplings {
-			if other < 0 || other >= len(source.Files) {
-				return fmt.Errorf(
-					"%w: file matrix source column %d is outside [0, %d)",
-					errCouplesMergeIntegrity, other, len(source.Files),
-				)
-			}
-
-			targetOther, err := mergedCouplesIndex(files, other, len(target), "file")
-			if err != nil {
-				return err
-			}
-
-			target[targetFile][targetOther] += value
-		}
+		target[targetFile][targetOther] += value
 	}
-
 	return nil
 }
 

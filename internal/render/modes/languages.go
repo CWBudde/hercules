@@ -61,6 +61,17 @@ type languageEvolution struct {
 	Total     float64
 }
 
+type languageTotal struct {
+	Name  string
+	Total int
+}
+
+type languageSelection struct {
+	languages []string
+	top       map[string]bool
+	index     map[string]int
+}
+
 func plotLanguageEvolution(timeSeries *readers.DeveloperTimeSeriesData, startUnix, endUnix int64, resample, output string) error {
 	return plotLanguageEvolutionWithOptions(timeSeries, startUnix, endUnix, resample, output, graphics.DefaultOptions())
 }
@@ -126,166 +137,226 @@ func buildLanguageEvolution(timeSeries *readers.DeveloperTimeSeriesData, startUn
 		return languageEvolution{}, fmt.Errorf("no temporal data to plot")
 	}
 
-	totalLangs := make(map[string]int)
-	for _, devs := range timeSeries.Days {
-		for _, stats := range devs {
-			for lang, vals := range stats.Languages {
-				if lang == "" {
-					continue
-				}
-				for _, v := range vals {
-					totalLangs[lang] += v
-				}
-			}
-		}
-	}
-	if len(totalLangs) == 0 {
+	totals := totalLanguageActivity(timeSeries.Days)
+	if len(totals) == 0 {
 		return languageEvolution{}, fmt.Errorf("no language data to plot")
 	}
 
-	type langTotal struct {
-		Name  string
-		Total int
-	}
-	sortedLangs := make([]langTotal, 0, len(totalLangs))
-	for lang, total := range totalLangs {
-		sortedLangs = append(sortedLangs, langTotal{Name: lang, Total: total})
-	}
-	sort.Slice(sortedLangs, func(i, j int) bool {
-		if sortedLangs[i].Total == sortedLangs[j].Total {
-			return sortedLangs[i].Name < sortedLangs[j].Name
+	selection := selectEvolutionLanguages(totals, 10)
+	daily := dailyLanguageEvolution(timeSeries.Days, totalDays, selection)
+	dates, matrix := resampleLanguageMatrix(daily, start, end, resample)
+	return languageEvolution{
+		Languages: selection.languages,
+		Dates:     dates,
+		Matrix:    matrix,
+		Total:     maximumLanguageTotal(matrix),
+	}, nil
+}
+
+func totalLanguageActivity(days map[int]map[int]readers.DevDay) map[string]int {
+	totals := make(map[string]int)
+	for _, developers := range days {
+		for _, stats := range developers {
+			for language, values := range stats.Languages {
+				if language == "" {
+					continue
+				}
+				for _, value := range values {
+					totals[language] += value
+				}
+			}
 		}
-		return sortedLangs[i].Total > sortedLangs[j].Total
+	}
+	return totals
+}
+
+func selectEvolutionLanguages(totals map[string]int, limit int) languageSelection {
+	ranked := make([]languageTotal, 0, len(totals))
+	for language, total := range totals {
+		ranked = append(ranked, languageTotal{Name: language, Total: total})
+	}
+	sort.Slice(ranked, func(i, j int) bool {
+		if ranked[i].Total == ranked[j].Total {
+			return ranked[i].Name < ranked[j].Name
+		}
+		return ranked[i].Total > ranked[j].Total
 	})
 
-	topCount := min(len(sortedLangs), 10)
-	topLanguages := make(map[string]bool, topCount)
-	for _, item := range sortedLangs[:topCount] {
-		topLanguages[item.Name] = true
+	topCount := min(len(ranked), limit)
+	selection := languageSelection{
+		languages: make([]string, 0, topCount+1),
+		top:       make(map[string]bool, topCount),
 	}
-	languages := make([]string, 0, topCount+1)
-	for lang := range topLanguages {
-		languages = append(languages, lang)
+	for _, item := range ranked[:topCount] {
+		selection.top[item.Name] = true
+		selection.languages = append(selection.languages, item.Name)
 	}
-	sort.Strings(languages)
-	if len(sortedLangs) > topCount {
-		languages = append(languages, "Other")
+	sort.Strings(selection.languages)
+	if len(ranked) > topCount {
+		selection.languages = append(selection.languages, "Other")
 	}
-	langIndex := make(map[string]int, len(languages))
-	for i, lang := range languages {
-		langIndex[lang] = i
+	selection.index = make(map[string]int, len(selection.languages))
+	for i, language := range selection.languages {
+		selection.index[language] = i
+	}
+	return selection
+}
+
+func dailyLanguageEvolution(
+	days map[int]map[int]readers.DevDay,
+	totalDays int,
+	selection languageSelection,
+) [][]float64 {
+	daily := make([][]float64, totalDays)
+	for day := range daily {
+		daily[day] = make([]float64, len(selection.languages))
 	}
 
-	daily := make([][]float64, totalDays)
 	cumulative := make(map[string]int)
-	for i := range daily {
-		daily[i] = make([]float64, len(languages))
-	}
-	days := make([]int, 0, len(timeSeries.Days))
-	for day := range timeSeries.Days {
-		days = append(days, day)
-	}
-	sort.Ints(days)
-	for _, day := range days {
+	for _, day := range sortedDeveloperDays(days) {
 		if day < 0 || day >= totalDays {
 			continue
 		}
-		for _, stats := range timeSeries.Days[day] {
-			for lang, vals := range stats.Languages {
-				if lang == "" || len(vals) < 2 {
-					continue
-				}
-				target := lang
-				if !topLanguages[lang] {
-					if _, ok := langIndex["Other"]; !ok {
-						continue
-					}
-					target = "Other"
-				}
-				cumulative[target] += vals[0] - vals[1]
-			}
-		}
-		for i, lang := range languages {
-			daily[day][i] = math.Max(0, float64(cumulative[lang]))
-		}
+		addDailyLanguageChanges(cumulative, days[day], selection)
+		writeDailyLanguageTotals(daily[day], cumulative, selection.languages)
 	}
-	for day := 1; day < totalDays; day++ {
-		for i := range languages {
-			if daily[day][i] == 0 && daily[day-1][i] > 0 {
-				daily[day][i] = daily[day-1][i]
-			}
-		}
-	}
+	carryLanguageTotalsForward(daily)
+	return daily
+}
 
-	dates, matrix := resampleLanguageMatrix(daily, start, end, resample)
+func sortedDeveloperDays(days map[int]map[int]readers.DevDay) []int {
+	result := make([]int, 0, len(days))
+	for day := range days {
+		result = append(result, day)
+	}
+	sort.Ints(result)
+	return result
+}
+
+func addDailyLanguageChanges(
+	cumulative map[string]int,
+	developers map[int]readers.DevDay,
+	selection languageSelection,
+) {
+	for _, stats := range developers {
+		for language, values := range stats.Languages {
+			if language == "" || len(values) < 2 {
+				continue
+			}
+			target, ok := selectedLanguageTarget(language, selection)
+			if ok {
+				cumulative[target] += values[0] - values[1]
+			}
+		}
+	}
+}
+
+func selectedLanguageTarget(language string, selection languageSelection) (string, bool) {
+	if selection.top[language] {
+		return language, true
+	}
+	_, hasOther := selection.index["Other"]
+	return "Other", hasOther
+}
+
+func writeDailyLanguageTotals(row []float64, cumulative map[string]int, languages []string) {
+	for i, language := range languages {
+		row[i] = math.Max(0, float64(cumulative[language]))
+	}
+}
+
+func carryLanguageTotalsForward(daily [][]float64) {
+	for day := 1; day < len(daily); day++ {
+		for language := range daily[day] {
+			if daily[day][language] == 0 && daily[day-1][language] > 0 {
+				daily[day][language] = daily[day-1][language]
+			}
+		}
+	}
+}
+
+func maximumLanguageTotal(matrix [][]float64) float64 {
 	total := 0.0
 	for _, row := range matrix {
-		rowTotal := 0.0
-		for _, value := range row {
-			rowTotal += value
-		}
-		if rowTotal > total {
-			total = rowTotal
-		}
+		total = math.Max(total, sumFloat64(row))
 	}
-	return languageEvolution{Languages: languages, Dates: dates, Matrix: matrix, Total: total}, nil
+	return total
 }
 
 func resampleLanguageMatrix(daily [][]float64, start, end time.Time, resample string) ([]time.Time, [][]float64) {
-	freq := resample
-	switch freq {
-	case "", "year":
-		freq = "YE"
-	case "month":
-		freq = "ME"
-	case "day", "raw", "no":
-		freq = "D"
-	case "week":
-		freq = "W"
-	}
-
-	var dates []time.Time
-	switch freq {
-	case "YE", "A":
-		for year := start.Year(); year <= end.Year(); year++ {
-			dt := time.Date(year, time.December, 31, start.Hour(), start.Minute(), start.Second(), start.Nanosecond(), start.Location())
-			if !dt.Before(start) && !dt.After(end) {
-				dates = append(dates, dt)
-			}
-		}
-	case "ME", "M":
-		for current := languageMonthEnd(start.Year(), start.Month(), start); !current.After(end); {
-			if !current.Before(start) {
-				dates = append(dates, current)
-			}
-			next := current.AddDate(0, 1, 0)
-			current = languageMonthEnd(next.Year(), next.Month(), start)
-		}
-	case "W":
-		for current := start; !current.After(end); current = current.AddDate(0, 0, 7) {
-			dates = append(dates, current)
-		}
-	default:
-		for i := range daily {
-			dates = append(dates, start.AddDate(0, 0, i))
-		}
-	}
+	dates := languageSampleDates(daily, start, end, normalizeLanguageFrequency(resample))
 	if len(dates) == 0 {
 		dates = []time.Time{start}
 	}
+	return dates, sampleLanguageMatrix(daily, start, dates)
+}
 
+func normalizeLanguageFrequency(frequency string) string {
+	switch frequency {
+	case "", "year":
+		return "YE"
+	case "month":
+		return "ME"
+	case "day", "raw", "no":
+		return "D"
+	case "week":
+		return "W"
+	default:
+		return frequency
+	}
+}
+
+func languageSampleDates(daily [][]float64, start, end time.Time, frequency string) []time.Time {
+	switch frequency {
+	case "YE", "A":
+		return languageYearEndDates(start, end)
+	case "ME", "M":
+		return languageMonthEndDates(start, end)
+	case "W":
+		return languageWeeklyDates(start, end)
+	default:
+		return consecutiveDates(start, len(daily))
+	}
+}
+
+func languageYearEndDates(start, end time.Time) []time.Time {
+	dates := make([]time.Time, 0, end.Year()-start.Year()+1)
+	for year := start.Year(); year <= end.Year(); year++ {
+		date := time.Date(year, time.December, 31, start.Hour(), start.Minute(), start.Second(), start.Nanosecond(), start.Location())
+		if !date.Before(start) && !date.After(end) {
+			dates = append(dates, date)
+		}
+	}
+	return dates
+}
+
+func languageMonthEndDates(start, end time.Time) []time.Time {
+	var dates []time.Time
+	for current := languageMonthEnd(start.Year(), start.Month(), start); !current.After(end); {
+		if !current.Before(start) {
+			dates = append(dates, current)
+		}
+		next := current.AddDate(0, 1, 0)
+		current = languageMonthEnd(next.Year(), next.Month(), start)
+	}
+	return dates
+}
+
+func languageWeeklyDates(start, end time.Time) []time.Time {
+	var dates []time.Time
+	for current := start; !current.After(end); current = current.AddDate(0, 0, 7) {
+		dates = append(dates, current)
+	}
+	return dates
+}
+
+func sampleLanguageMatrix(daily [][]float64, start time.Time, dates []time.Time) [][]float64 {
 	matrix := make([][]float64, len(dates))
-	for i, dt := range dates {
-		day := calendarDayIndex(start, dt)
-		if day < 0 {
-			day = 0
-		}
-		if day >= len(daily) {
-			day = len(daily) - 1
-		}
+	for i, date := range dates {
+		day := min(max(calendarDayIndex(start, date), 0), len(daily)-1)
 		matrix[i] = append([]float64(nil), daily[day]...)
 	}
-	return dates, matrix
+	return matrix
 }
 
 func languageMonthEnd(year int, month time.Month, ref time.Time) time.Time {

@@ -238,41 +238,42 @@ func (analyser *CodeChurnAnalysis) Consume(deps map[string]any) (map[string]any,
 	peopleCount := analyser.peopleResolver.MaxCount()
 
 	for _, change := range changes.Changes {
-		// File-deletion sentinels do not affect ownership, but their tick still
-		// advances the repository-wide decay horizon used by Finalize.
-		analyser.observeTick(change.CurrTick)
-
-		if change.IsDelete() {
-			continue
-		}
-
-		lineDelta, err := intToProtoInt32(change.Delta, "code churn line delta")
-		if err != nil {
-			return nil, err
-		}
-
-		if lineDelta == math.MinInt32 {
-			return nil, fmt.Errorf(
-				"%w: deletion magnitude %d cannot be represented",
-				errCodeChurnCounterOverflow, change.Delta,
-			)
-		}
-
-		if int(change.PrevAuthor) >= peopleCount && change.PrevAuthor != core.AuthorMissing {
-			change.PrevAuthor = core.AuthorMissing
-		}
-
-		if int(change.CurrAuthor) >= peopleCount && change.CurrAuthor != core.AuthorMissing {
-			change.CurrAuthor = core.AuthorMissing
-		}
-
-		err = analyser.updateAuthor(change, lineDelta)
-		if err != nil {
+		if err := analyser.consumeCodeChurnChange(change, peopleCount); err != nil {
 			return nil, err
 		}
 	}
 
 	return noDependencies(), nil
+}
+
+func (analyser *CodeChurnAnalysis) consumeCodeChurnChange(
+	change core.LineHistoryChange,
+	peopleCount int,
+) error {
+	// File-deletion sentinels do not affect ownership, but their tick still
+	// advances the repository-wide decay horizon used by Finalize.
+	analyser.observeTick(change.CurrTick)
+	if change.IsDelete() {
+		return nil
+	}
+
+	lineDelta, err := intToProtoInt32(change.Delta, "code churn line delta")
+	if err != nil {
+		return err
+	}
+	if lineDelta == math.MinInt32 {
+		return fmt.Errorf(
+			"%w: deletion magnitude %d cannot be represented",
+			errCodeChurnCounterOverflow, change.Delta,
+		)
+	}
+	if int(change.PrevAuthor) >= peopleCount && change.PrevAuthor != core.AuthorMissing {
+		change.PrevAuthor = core.AuthorMissing
+	}
+	if int(change.CurrAuthor) >= peopleCount && change.CurrAuthor != core.AuthorMissing {
+		change.CurrAuthor = core.AuthorMissing
+	}
+	return analyser.updateAuthor(change, lineDelta)
 }
 
 type churnLines struct {

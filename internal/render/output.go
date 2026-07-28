@@ -15,22 +15,11 @@ func DetectOutputFormat(outputPath string) string {
 }
 
 func detectOutputFormat(outputPath, backend string) string {
-	if backend != "" {
-		switch strings.ToLower(backend) {
-		case "pdf":
-			return "pdf"
-		case "png":
-			return "png"
-		case "svg":
-			return "svg"
-		case "auto":
-			// Fall through to extension detection
-		default:
-			// For unknown backends, fall through to extension detection
-		}
+	normalizedBackend := strings.ToLower(backend)
+	if normalizedBackend == "pdf" || normalizedBackend == "png" || normalizedBackend == "svg" {
+		return normalizedBackend
 	}
 
-	// Detect from file extension
 	ext := strings.ToLower(filepath.Ext(outputPath))
 	switch ext {
 	case ".pdf":

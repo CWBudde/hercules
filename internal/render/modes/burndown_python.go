@@ -387,13 +387,22 @@ func limitRepositoryBands(matrix [][]float64, labels []string, maxRepos int) ([]
 	if maxRepos <= 0 || len(matrix) <= maxRepos {
 		return matrix, labels
 	}
-	cols := len(matrix[0])
-
-	type sized struct {
-		idx  int
-		peak float64
+	sizes := repositoryBandSizes(matrix)
+	sort.SliceStable(sizes, func(a, b int) bool { return sizes[a].peak > sizes[b].peak })
+	keep := make(map[int]bool, maxRepos)
+	for i := 0; i < maxRepos; i++ {
+		keep[sizes[i].idx] = true
 	}
-	sizes := make([]sized, len(matrix))
+	return combineRepositoryBands(matrix, labels, keep)
+}
+
+type repositoryBandSize struct {
+	idx  int
+	peak float64
+}
+
+func repositoryBandSizes(matrix [][]float64) []repositoryBandSize {
+	sizes := make([]repositoryBandSize, len(matrix))
 	for i, row := range matrix {
 		var peak float64
 		for _, v := range row {
@@ -401,17 +410,15 @@ func limitRepositoryBands(matrix [][]float64, labels []string, maxRepos int) ([]
 				peak = v
 			}
 		}
-		sizes[i] = sized{idx: i, peak: peak}
+		sizes[i] = repositoryBandSize{idx: i, peak: peak}
 	}
-	sort.SliceStable(sizes, func(a, b int) bool { return sizes[a].peak > sizes[b].peak })
+	return sizes
+}
 
-	keep := make(map[int]bool, maxRepos)
-	for i := 0; i < maxRepos; i++ {
-		keep[sizes[i].idx] = true
-	}
-
-	newMatrix := make([][]float64, 0, maxRepos+1)
-	newLabels := make([]string, 0, maxRepos+1)
+func combineRepositoryBands(matrix [][]float64, labels []string, keep map[int]bool) ([][]float64, []string) {
+	newMatrix := make([][]float64, 0, len(keep)+1)
+	newLabels := make([]string, 0, len(keep)+1)
+	cols := len(matrix[0])
 	other := make([]float64, cols)
 	otherCount := 0
 	for i := range matrix {

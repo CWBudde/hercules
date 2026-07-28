@@ -45,32 +45,25 @@ func FitKaplanMeier(matrix [][]int) ([]SurvivalPoint, error) {
 	if columns == 0 {
 		return nil, nil
 	}
+	observations, survivors := collectSurvivalObservations(matrix, columns)
+	if len(observations) == 0 {
+		return nil, nil
+	}
+	if survivors == 0 {
+		for index := range observations {
+			observations[index].observed = false
+		}
+	}
+	return buildSurvivalCurve(observations), nil
+}
 
+func collectSurvivalObservations(matrix [][]int, columns int) ([]survivalObservation, int) {
 	entries := make([]int, len(matrix))
 	dead := make([]bool, len(matrix))
 	observations := make([]survivalObservation, 0)
 	for column := 1; column < columns; column++ {
-		for rowIndex, row := range matrix {
-			difference := int64(row[column-1]) - int64(row[column])
-			switch {
-			case difference < 0:
-				entries[rowIndex] = column
-			case difference > 0:
-				observations = append(observations, survivalObservation{
-					duration: column - entries[rowIndex],
-					weight:   float64(difference),
-					observed: true,
-				})
-			}
-		}
-		for rowIndex, row := range matrix {
-			entered := entries[rowIndex] > 0 || rowIndex == 0
-			if entered && row[column] == 0 {
-				dead[rowIndex] = true
-			}
-		}
+		observations = collectSurvivalDeaths(matrix, column, entries, dead, observations)
 	}
-
 	survivors := 0
 	for rowIndex, row := range matrix {
 		entered := entries[rowIndex] != 0 || rowIndex == 0
@@ -83,18 +76,38 @@ func FitKaplanMeier(matrix [][]int) ([]SurvivalPoint, error) {
 			survivors++
 		}
 	}
-	if len(observations) == 0 {
-		return nil, nil
-	}
+	return observations, survivors
+}
 
-	// Preserve a corner case in the historical NumPy implementation:
-	// E[-0:] = 0 censors every observation when no final survivor exists.
-	if survivors == 0 {
-		for index := range observations {
-			observations[index].observed = false
+func collectSurvivalDeaths(
+	matrix [][]int,
+	column int,
+	entries []int,
+	dead []bool,
+	observations []survivalObservation,
+) []survivalObservation {
+	for rowIndex, row := range matrix {
+		difference := int64(row[column-1]) - int64(row[column])
+		if difference < 0 {
+			entries[rowIndex] = column
+		} else if difference > 0 {
+			observations = append(observations, survivalObservation{
+				duration: column - entries[rowIndex],
+				weight:   float64(difference),
+				observed: true,
+			})
 		}
 	}
+	for rowIndex, row := range matrix {
+		entered := entries[rowIndex] > 0 || rowIndex == 0
+		if entered && row[column] == 0 {
+			dead[rowIndex] = true
+		}
+	}
+	return observations
+}
 
+func buildSurvivalCurve(observations []survivalObservation) []SurvivalPoint {
 	totalWeight := 0.0
 	timelineSet := map[int]struct{}{0: {}}
 	removedByDuration := make(map[int]float64, len(observations))
@@ -108,9 +121,8 @@ func FitKaplanMeier(matrix [][]int) ([]SurvivalPoint, error) {
 		}
 	}
 	if totalWeight == 0 {
-		return nil, nil
+		return nil
 	}
-
 	timeline := make([]int, 0, len(timelineSet))
 	for duration := range timelineSet {
 		timeline = append(timeline, duration)
@@ -127,7 +139,7 @@ func FitKaplanMeier(matrix [][]int) ([]SurvivalPoint, error) {
 		curve = append(curve, SurvivalPoint{Duration: duration, Ratio: ratio})
 		atRisk -= removedByDuration[duration]
 	}
-	return curve, nil
+	return curve
 }
 
 func validateSurvivalMatrix(matrix [][]int) (int, error) {

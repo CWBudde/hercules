@@ -246,87 +246,104 @@ func (allocator *Allocator) Deserialize(path string) error {
 	if err != nil {
 		return fmt.Errorf("stat serialized allocator %q: %w", path, err)
 	}
-
-	if fileInfo.Size() < serializedAllocatorHeaderSize {
-		return fmt.Errorf("%w: allocator header: got %d bytes, need %d",
-			errIncompleteRead, fileInfo.Size(), serializedAllocatorHeaderSize)
-	}
-
-	header := make([]byte, serializedAllocatorHeaderSize)
-
-	_, err = io.ReadFull(file, header)
+	metadata, err := readSerializedAllocatorMetadata(file, fileInfo.Size())
 	if err != nil {
-		return fmt.Errorf("%w: allocator header: %w", errIncompleteRead, err)
+		return err
 	}
+	hibernatedData, err := readSerializedAllocatorBuffers(file, metadata)
+	if err != nil {
+		return err
+	}
+	allocator.hibernatedStorageLen = int(metadata.storageLength)
+	allocator.hibernatedData = hibernatedData
+	return nil
+}
 
+type serializedAllocatorMetadata struct {
+	storageLength uint64
+	bufferLengths [serializedAllocatorBufferCount]uint64
+	checksums     [serializedAllocatorBufferCount]uint32
+}
+
+func readSerializedAllocatorMetadata(reader io.Reader, fileSize int64) (serializedAllocatorMetadata, error) {
+	if fileSize < serializedAllocatorHeaderSize {
+		return serializedAllocatorMetadata{}, fmt.Errorf("%w: allocator header: got %d bytes, need %d",
+			errIncompleteRead, fileSize, serializedAllocatorHeaderSize)
+	}
+	header := make([]byte, serializedAllocatorHeaderSize)
+	if _, err := io.ReadFull(reader, header); err != nil {
+		return serializedAllocatorMetadata{}, fmt.Errorf("%w: allocator header: %w", errIncompleteRead, err)
+	}
 	if string(header[:8]) != serializedAllocatorMagic {
-		return fmt.Errorf("%w: unexpected format magic", errInvalidSerializedAllocator)
+		return serializedAllocatorMetadata{}, fmt.Errorf("%w: unexpected format magic", errInvalidSerializedAllocator)
 	}
-
 	version := binary.BigEndian.Uint32(header[8:12])
 	if version != serializedAllocatorVersion {
-		return fmt.Errorf("%w: unsupported version %d", errInvalidSerializedAllocator, version)
+		return serializedAllocatorMetadata{}, fmt.Errorf("%w: unsupported version %d", errInvalidSerializedAllocator, version)
 	}
-
 	storageLength := binary.BigEndian.Uint64(header[12:20])
 	if storageLength > uint64(negativeLimitNode) || storageLength > maxIntValue() {
-		return fmt.Errorf("%w: storage length %d exceeds the supported limit",
+		return serializedAllocatorMetadata{}, fmt.Errorf("%w: storage length %d exceeds the supported limit",
 			errInvalidSerializedAllocator, storageLength)
 	}
+	metadata := serializedAllocatorMetadata{storageLength: storageLength}
+	payloadLength, err := parseSerializedAllocatorBufferMetadata(header, &metadata)
+	if err != nil {
+		return serializedAllocatorMetadata{}, err
+	}
+	actualPayloadLength := fileSize - serializedAllocatorHeaderSize
+	if payloadLength != uint64(actualPayloadLength) {
+		return serializedAllocatorMetadata{}, fmt.Errorf(
+			"%w: allocator payload: got %d bytes, expected %d",
+			errIncompleteRead, actualPayloadLength, payloadLength,
+		)
+	}
+	return metadata, nil
+}
 
-	var bufferLengths [serializedAllocatorBufferCount]uint64
-	var checksums [serializedAllocatorBufferCount]uint32
+func parseSerializedAllocatorBufferMetadata(
+	header []byte,
+	metadata *serializedAllocatorMetadata,
+) (uint64, error) {
 	var payloadLength uint64
-	maxBufferLength := maxSerializedBufferLength(storageLength)
-
+	maxBufferLength := maxSerializedBufferLength(metadata.storageLength)
 	offset := 20
-	for bufferIndex := range bufferLengths {
+	for bufferIndex := range metadata.bufferLengths {
 		bufferLength := binary.BigEndian.Uint64(header[offset : offset+8])
-		checksums[bufferIndex] = binary.BigEndian.Uint32(header[offset+8 : offset+12])
+		metadata.checksums[bufferIndex] = binary.BigEndian.Uint32(header[offset+8 : offset+12])
 		offset += 12
-
 		if bufferLength > maxIntValue() || bufferLength > maxBufferLength {
-			return fmt.Errorf("%w: buffer %d length %d exceeds the supported limit %d",
+			return 0, fmt.Errorf("%w: buffer %d length %d exceeds the supported limit %d",
 				errInvalidSerializedAllocator, bufferIndex, bufferLength, maxBufferLength)
 		}
-
 		if math.MaxUint64-payloadLength < bufferLength {
-			return fmt.Errorf("%w: allocator payload length overflow", errInvalidSerializedAllocator)
+			return 0, fmt.Errorf("%w: allocator payload length overflow", errInvalidSerializedAllocator)
 		}
-
-		bufferLengths[bufferIndex] = bufferLength
+		metadata.bufferLengths[bufferIndex] = bufferLength
 		payloadLength += bufferLength
 	}
+	return payloadLength, nil
+}
 
-	actualPayloadLength := fileInfo.Size() - serializedAllocatorHeaderSize
-
-	actualPayloadLengthUint := uint64(actualPayloadLength) //nolint:gosec // header-size check proves non-negative
-	if payloadLength != actualPayloadLengthUint {
-		return fmt.Errorf("%w: allocator payload: got %d bytes, expected %d",
-			errIncompleteRead, actualPayloadLength, payloadLength)
-	}
-
+func readSerializedAllocatorBuffers(
+	reader io.Reader,
+	metadata serializedAllocatorMetadata,
+) ([serializedAllocatorBufferCount][]byte, error) {
 	var hibernatedData [serializedAllocatorBufferCount][]byte
-
-	for bufferIndex, bufferLength := range bufferLengths {
+	for bufferIndex, bufferLength := range metadata.bufferLengths {
 		bufferLengthInt := int(bufferLength) //nolint:gosec // validated against maxIntValue above
 		hibernatedData[bufferIndex] = make([]byte, bufferLengthInt)
-
-		_, err = io.ReadFull(file, hibernatedData[bufferIndex])
-		if err != nil {
-			return fmt.Errorf("%w: allocator buffer %d: %w",
+		if _, err := io.ReadFull(reader, hibernatedData[bufferIndex]); err != nil {
+			return [serializedAllocatorBufferCount][]byte{}, fmt.Errorf("%w: allocator buffer %d: %w",
 				errIncompleteRead, bufferIndex, err)
 		}
-
-		if crc32.ChecksumIEEE(hibernatedData[bufferIndex]) != checksums[bufferIndex] {
-			return fmt.Errorf("%w: buffer %d", errAllocatorIntegrity, bufferIndex)
+		if crc32.ChecksumIEEE(hibernatedData[bufferIndex]) != metadata.checksums[bufferIndex] {
+			return [serializedAllocatorBufferCount][]byte{}, fmt.Errorf(
+				"%w: buffer %d", errAllocatorIntegrity, bufferIndex,
+			)
 		}
 	}
-
-	allocator.hibernatedStorageLen = int(storageLength)
-	allocator.hibernatedData = hibernatedData
-
-	return nil
+	return hibernatedData, nil
 }
 
 func writeFull(writer io.Writer, data []byte) error {

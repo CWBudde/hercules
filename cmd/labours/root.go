@@ -119,34 +119,52 @@ func initConfig() {
 }
 
 func runLaboursCommand(cmd *cobra.Command, args []string) error {
-	// --version short-circuits everything else, matching common CLI conventions.
+	handled, err := handleImmediateLaboursCommand(cmd, args)
+	if err != nil || handled {
+		return err
+	}
+
+	themeName, err := configureLaboursTheme()
+	if err != nil {
+		return err
+	}
+	rendererOptions, err := renderOptionsFromViper(themeName)
+	if err != nil {
+		return err
+	}
+	rendererOptions.SentimentFallback = commandBoolFlag(cmd, "sentiment-fallback")
+	rendererOptions.DevsParallelFallback = commandBoolFlag(cmd, "devs-parallel-fallback")
+
+	if repoPath := viper.GetString("from-repo"); repoPath != "" {
+		return handleHerculesIntegration(repoPath, rendererOptions)
+	}
+	return renderLaboursInput(rendererOptions)
+}
+
+func handleImmediateLaboursCommand(cmd *cobra.Command, args []string) (bool, error) {
 	if viper.GetBool("version") {
 		versionCmd.Run(cmd, args)
-		return nil
+		return true, nil
 	}
-
-	// Handle theme-specific commands first
 	if viper.GetBool("list-themes") {
 		listThemes()
-		return nil
+		return true, nil
 	}
-
 	if exportTheme := viper.GetString("export-theme"); exportTheme != "" {
-		return handleExportTheme(exportTheme)
+		return true, handleExportTheme(exportTheme)
 	}
+	return false, nil
+}
 
-	// Load custom theme if specified
+func configureLaboursTheme() (string, error) {
 	if loadTheme := viper.GetString("load-theme"); loadTheme != "" {
 		if err := graphics.GlobalThemeManager.LoadThemeFromFile(loadTheme); err != nil {
-			return fmt.Errorf("load custom theme: %w", err)
+			return "", fmt.Errorf("load custom theme: %w", err)
 		}
 	}
 
-	// Set the selected theme, with style-to-theme mapping
 	themeName := viper.GetString("theme")
 	styleName := viper.GetString("style")
-
-	// Map matplotlib styles to themes for compatibility
 	if styleName != "ggplot" && styleName != "" {
 		mappedTheme := mapStyleToTheme(styleName)
 		if mappedTheme != "" {
@@ -156,36 +174,24 @@ func runLaboursCommand(cmd *cobra.Command, args []string) error {
 			}
 		}
 	}
-
 	if _, err := graphics.GetTheme(themeName); err != nil {
-		return fmt.Errorf(
+		return "", fmt.Errorf(
 			"set theme %q (available: %v): %w",
 			themeName, graphics.ListThemes(), err,
 		)
 	}
-
-	// Handle matplotlib colors flag - force matplotlib theme if requested
 	if viper.GetBool("matplotlib-colors") {
 		themeName = "matplotlib"
 		if !viper.GetBool("quiet") {
 			fmt.Printf("Using matplotlib color scheme (Red #d62728 bottom, Blue #1f77b4 top)\n")
 		}
 	}
+	return themeName, nil
+}
 
-	rendererOptions, err := renderOptionsFromViper(themeName)
-	if err != nil {
-		return err
-	}
-	rendererOptions.SentimentFallback = commandBoolFlag(cmd, "sentiment-fallback")
-	rendererOptions.DevsParallelFallback = commandBoolFlag(cmd, "devs-parallel-fallback")
-
-	// Handle hercules integration if --from-repo is specified
-	if repoPath := viper.GetString("from-repo"); repoPath != "" {
-		return handleHerculesIntegration(repoPath, rendererOptions)
-	}
-
+func renderLaboursInput(rendererOptions render.Options) error {
 	input, inputFormat := viper.GetString("input"), viper.GetString("input-format")
-	inputFormat, err = render.NormalizeInputFormat(inputFormat)
+	inputFormat, err := render.NormalizeInputFormat(inputFormat)
 	if err != nil {
 		return err
 	}
@@ -196,26 +202,21 @@ func runLaboursCommand(cmd *cobra.Command, args []string) error {
 	if err := validateDateRange(startDate, endDate); err != nil {
 		return err
 	}
-
 	modes, err := resolveModes()
 	if err != nil {
 		return err
 	}
-
-	// Handle Python compatibility: if --sentiment flag is set, add sentiment mode
 	if viper.GetBool("sentiment") {
 		modes = append(modes, "sentiment")
 		fmt.Println("Added sentiment analysis mode (--sentiment flag)")
 	}
-
 	reader, err := detectAndReadInput(input, inputFormat)
 	if err != nil {
 		return err
 	}
 	rendererOptions.Output = viper.GetString("output")
 	rendererOptions.StartTime, rendererOptions.EndTime = startDate, endDate
-	result := render.Run(reader, modes, rendererOptions)
-	return result.Err()
+	return render.Run(reader, modes, rendererOptions).Err()
 }
 
 func renderOptionsFromViper(themeName string) (render.Options, error) {

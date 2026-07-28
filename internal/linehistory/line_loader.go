@@ -318,25 +318,45 @@ func (analyser *LineHistoryLoader) loadChangesFrom(name string) error {
 var regexSplitBySpace = regexp.MustCompile(`\s+`)
 
 func (analyser *LineHistoryLoader) loadChangesFromYaml(decoder *yaml.Decoder) error {
-	var document yaml.MapSlice
-
-	err := decoder.Decode(&document)
+	document, err := decodeLineHistoryDocument(decoder)
 	if err != nil {
-		return fmt.Errorf("%w: decode YAML: %w", ErrLineHistoryMalformed, err)
+		return err
 	}
 
+	loadedAuthors, loadedFiles, loadedCommits, err := loadLineHistoryDocument(document)
+	if err != nil {
+		return err
+	}
+	if err := reconstructFileStates(loadedFiles, loadedCommits); err != nil {
+		return err
+	}
+
+	analyser.authors = loadedAuthors
+	analyser.files = loadedFiles
+	analyser.commits = loadedCommits
+	return nil
+}
+
+func decodeLineHistoryDocument(decoder *yaml.Decoder) (yaml.MapSlice, error) {
+	var document yaml.MapSlice
+	if err := decoder.Decode(&document); err != nil {
+		return nil, fmt.Errorf("%w: decode YAML: %w", ErrLineHistoryMalformed, err)
+	}
 	var trailing any
-	switch err = decoder.Decode(&trailing); {
+	switch err := decoder.Decode(&trailing); {
 	case errors.Is(err, io.EOF):
 	case err != nil:
-		return fmt.Errorf("%w: decode trailing YAML: %w", ErrLineHistoryMalformed, err)
+		return nil, fmt.Errorf("%w: decode trailing YAML: %w", ErrLineHistoryMalformed, err)
 	default:
-		return fmt.Errorf("%w: multiple YAML documents", ErrLineHistoryMalformed)
+		return nil, fmt.Errorf("%w: multiple YAML documents", ErrLineHistoryMalformed)
 	}
+	return document, nil
+}
 
+func loadLineHistoryDocument(document yaml.MapSlice) ([]string, map[FileId]fileInfo, []commitInfo, error) {
 	dumper, ok := yamlMapValue(document, "LineDumper").(yaml.MapSlice)
 	if !ok {
-		return ErrLineHistoryMalformed
+		return nil, nil, nil, ErrLineHistoryMalformed
 	}
 
 	commits, commitsOK := yamlMapValue(dumper, "commits").(yaml.MapSlice)
@@ -344,34 +364,25 @@ func (analyser *LineHistoryLoader) loadChangesFromYaml(decoder *yaml.Decoder) er
 
 	files, filesOK := yamlMapValue(dumper, "file_sequence").(yaml.MapSlice)
 	if !commitsOK || !authorsOK || !filesOK {
-		return ErrLineHistoryMalformed
+		return nil, nil, nil, ErrLineHistoryMalformed
 	}
 
 	loadedAuthors, err := loadAuthors(authors)
 	if err != nil {
-		return err
+		return nil, nil, nil, err
 	}
 
 	loadedFiles, err := loadFiles(files)
 	if err != nil {
-		return err
+		return nil, nil, nil, err
 	}
 
 	loadedCommits, err := loadCommits(commits, loadedAuthors)
 	if err != nil {
-		return err
+		return nil, nil, nil, err
 	}
 
-	err = reconstructFileStates(loadedFiles, loadedCommits)
-	if err != nil {
-		return err
-	}
-
-	analyser.authors = loadedAuthors
-	analyser.files = loadedFiles
-	analyser.commits = loadedCommits
-
-	return nil
+	return loadedAuthors, loadedFiles, loadedCommits, nil
 }
 
 func loadAuthors(authors []any) ([]string, error) {

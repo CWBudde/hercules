@@ -53,113 +53,97 @@ func executeModes(modeNames []string, reader readers.Reader, output string, star
 }
 
 func (r *Renderer) executeModes(modeNames []string, reader readers.Reader) Result {
-	output := r.options.Output
-	startTime, endTime := r.options.StartTime, r.options.EndTime
-	modesConfig := r.modeOptions()
 	if len(modeNames) == 0 {
 		return Result{}
 	}
-	if err := r.validateModeOutputPlan(output, modeNames); err != nil {
+	if err := r.validateModeOutputPlan(r.options.Output, modeNames); err != nil {
 		return Result{OutputError: fmt.Errorf("plan renderer outputs: %w", err)}
 	}
+	if strings.HasSuffix(strings.ToLower(r.options.Output), ".json") {
+		return r.executeJSONModes(modeNames, reader)
+	}
+	return r.executeImageModes(modeNames, reader)
+}
+
+func (r *Renderer) executeJSONModes(modeNames []string, reader readers.Reader) Result {
+	results := make(map[string]interface{}, len(modeNames))
 	modeResults := make([]ModeResult, 0, len(modeNames))
-
-	// Check if JSON output is requested
-	jsonOutput := strings.HasSuffix(strings.ToLower(output), ".json")
-
-	// Initialize progress tracking for multiple modes
-	quiet := r.options.Quiet
-	progEstimator := progress.NewProgressEstimator(!quiet)
-
-	// If JSON output, collect all results and save as JSON
-	if jsonOutput {
-		results := make(map[string]interface{}, len(modeNames))
-
-		if len(modeNames) > 1 {
-			progEstimator.StartMultiOperation(len(modeNames), "Analysis Modes")
-		}
-
-		for _, mode := range modeNames {
-			if len(modeNames) > 1 {
-				progEstimator.NextOperation(fmt.Sprintf("Running %s", mode))
-			}
-
-			if !quiet {
-				fmt.Printf("Running: %s\n", mode)
-			}
-
-			if _, ok := modeHandlers[mode]; !ok {
-				printModeUnavailable(mode)
-				modeResults = append(modeResults, ModeResult{
-					Mode: mode,
-					Err:  errors.New(modeUnavailableMessage(mode)),
-				})
-				results[mode] = map[string]interface{}{
-					"error": "mode not implemented",
-				}
-				continue
-			}
-
-			data, err := extractModeDataForJSON(reader, mode)
-			if err != nil {
-				result := handleModeError(mode, err)
-				modeResults = append(modeResults, result)
-				key := "error"
-				message := err.Error()
-				if result.Warning != "" {
-					key = "warning"
-					message = result.Warning
-				}
-				results[mode] = map[string]interface{}{
-					key: message,
-				}
-				continue
-			}
-			modeResults = append(modeResults, ModeResult{Mode: mode})
-			results[mode] = data
-		}
-
-		if len(modeNames) > 1 {
-			progEstimator.FinishMultiOperation()
-		}
-
-		// Save results as JSON
-		if err := saveJSONResults(results, output); err != nil {
-			fmt.Fprintf(os.Stderr, "Error saving JSON results: %v\n", err)
-			return Result{Modes: modeResults, OutputError: err}
-		} else if !quiet {
-			fmt.Printf("Results saved as JSON to: %s\n", output)
-		}
-		return Result{Modes: modeResults}
-	} else {
-		// Regular image output
-		if len(modeNames) > 1 {
-			// Start multi-mode progress tracking
-			progEstimator.StartMultiOperation(len(modeNames), "Analysis Modes")
-
-			for _, mode := range modeNames {
-				progEstimator.NextOperation(fmt.Sprintf("Running %s", mode))
-
-				if !quiet {
-					fmt.Printf("Running: %s\n", mode)
-				}
-
-				modeResults = append(modeResults, r.runSingleMode(mode, reader, output, len(modeNames), startTime, endTime, modesConfig))
-			}
-
-			progEstimator.FinishMultiOperation()
-		} else {
-			// Single mode - let the individual mode handle its own progress
-			for _, mode := range modeNames {
-				if !quiet {
-					fmt.Printf("Running: %s\n", mode)
-				}
-
-				modeResults = append(modeResults, r.runSingleMode(mode, reader, output, len(modeNames), startTime, endTime, modesConfig))
-			}
-		}
+	estimator := progress.NewProgressEstimator(!r.options.Quiet)
+	startMultiModeProgress(estimator, modeNames)
+	for _, mode := range modeNames {
+		nextModeProgress(estimator, mode, len(modeNames))
+		r.printRunningMode(mode)
+		modeResult, data := runJSONMode(reader, mode)
+		modeResults = append(modeResults, modeResult)
+		results[mode] = data
+	}
+	finishMultiModeProgress(estimator, modeNames)
+	if err := saveJSONResults(results, r.options.Output); err != nil {
+		fmt.Fprintf(os.Stderr, "Error saving JSON results: %v\n", err)
+		return Result{Modes: modeResults, OutputError: err}
+	}
+	if !r.options.Quiet {
+		fmt.Printf("Results saved as JSON to: %s\n", r.options.Output)
 	}
 	return Result{Modes: modeResults}
+}
+
+func runJSONMode(reader readers.Reader, mode string) (ModeResult, interface{}) {
+	if _, ok := modeHandlers[mode]; !ok {
+		printModeUnavailable(mode)
+		return ModeResult{Mode: mode, Err: errors.New(modeUnavailableMessage(mode))},
+			map[string]interface{}{"error": "mode not implemented"}
+	}
+	data, err := extractModeDataForJSON(reader, mode)
+	if err == nil {
+		return ModeResult{Mode: mode}, data
+	}
+	result := handleModeError(mode, err)
+	key, message := "error", err.Error()
+	if result.Warning != "" {
+		key, message = "warning", result.Warning
+	}
+	return result, map[string]interface{}{key: message}
+}
+
+func (r *Renderer) executeImageModes(modeNames []string, reader readers.Reader) Result {
+	modeResults := make([]ModeResult, 0, len(modeNames))
+	estimator := progress.NewProgressEstimator(!r.options.Quiet)
+	startMultiModeProgress(estimator, modeNames)
+	for _, mode := range modeNames {
+		nextModeProgress(estimator, mode, len(modeNames))
+		r.printRunningMode(mode)
+		modeResults = append(modeResults, r.runSingleMode(
+			mode, reader, r.options.Output, len(modeNames),
+			r.options.StartTime, r.options.EndTime, r.modeOptions(),
+		))
+	}
+	finishMultiModeProgress(estimator, modeNames)
+	return Result{Modes: modeResults}
+}
+
+func startMultiModeProgress(estimator *progress.ProgressEstimator, modeNames []string) {
+	if len(modeNames) > 1 {
+		estimator.StartMultiOperation(len(modeNames), "Analysis Modes")
+	}
+}
+
+func nextModeProgress(estimator *progress.ProgressEstimator, mode string, modeCount int) {
+	if modeCount > 1 {
+		estimator.NextOperation(fmt.Sprintf("Running %s", mode))
+	}
+}
+
+func finishMultiModeProgress(estimator *progress.ProgressEstimator, modeNames []string) {
+	if len(modeNames) > 1 {
+		estimator.FinishMultiOperation()
+	}
+}
+
+func (r *Renderer) printRunningMode(mode string) {
+	if !r.options.Quiet {
+		fmt.Printf("Running: %s\n", mode)
+	}
 }
 
 func (r *Renderer) runSingleMode(
@@ -209,62 +193,57 @@ func missingAnalysisWarning(mode string, err error) (string, bool) {
 	if !isMissingAnalysisError(err) {
 		return "", false
 	}
-
-	burndownWarning := "Burndown stats were not collected. Re-run hercules with --burndown."
-	burndownFilesWarning := "Burndown stats for files were not collected. Re-run hercules with --burndown --burndown-files."
-	burndownPeopleWarning := "Burndown stats for people were not collected. Re-run hercules with --burndown --burndown-people."
-	couplesWarning := "Coupling stats were not collected. Re-run hercules with --couples."
-	shotnessWarning := "Structural hotness stats were not collected. Re-run hercules with --shotness. Also check --languages - the output may be empty."
-	devsWarning := "Devs stats were not collected. Re-run hercules with --devs."
-
-	switch mode {
-	case "burndown-project":
-		return "project: " + burndownWarning, true
-	case "burndown-file":
-		return "files: " + burndownFilesWarning, true
-	case "burndown-person", "ownership", "overwrites-matrix":
-		prefix := map[string]string{
-			"burndown-person":   "people",
-			"ownership":         "ownership",
-			"overwrites-matrix": "overwrites_matrix",
-		}[mode]
-		return prefix + ": " + burndownPeopleWarning, true
-	case "burndown-repository":
-		return "repositories: burndown data not available or repositories not tracked", true
-	case "burndown-repos-combined":
-		return "repositories-combined: burndown data not available or repositories not tracked", true
-	case "couples-files", "couples-people":
-		return couplesWarning, true
-	case "couples-shotness", "shotness":
-		return shotnessWarning, true
-	case "sentiment":
-		return "Sentiment stats were not collected. Re-run hercules with --sentiment.", true
-	case "devs-parallel":
-		msg := strings.ToLower(err.Error())
-		if strings.Contains(msg, "people cooccurrence") {
-			return couplesWarning, true
-		}
-		if strings.Contains(msg, "devs time series") {
-			return devsWarning, true
-		}
-		return "devs-parallel: " + burndownPeopleWarning, true
-	case "devs", "devs-efforts", "old-vs-new", "languages":
-		return devsWarning, true
-	case "temporal-activity":
-		return "Temporal activity stats were not collected. Re-run hercules with --temporal-activity.", true
-	case "bus-factor":
-		return "Bus factor stats were not collected. Re-run hercules with --bus-factor.", true
-	case "ownership-concentration":
-		return "Ownership concentration stats were not collected. Re-run hercules with --ownership-concentration.", true
-	case "knowledge-diffusion":
-		return "Knowledge diffusion stats were not collected. Re-run hercules with --knowledge-diffusion.", true
-	case "hotspot-risk":
-		return "Hotspot risk scores were not collected. Re-run hercules with --hotspot-risk.", true
-	case "refactoring-proxy":
-		return "Refactoring proxy data was not collected. Re-run hercules with --refactoring-proxy.", true
+	if mode == "devs-parallel" {
+		return devsParallelMissingAnalysisWarning(err), true
 	}
+	warning, ok := standardMissingAnalysisWarnings()[mode]
+	return warning, ok
+}
 
-	return "", false
+func standardMissingAnalysisWarnings() map[string]string {
+	const (
+		burndown       = "Burndown stats were not collected. Re-run hercules with --burndown."
+		burndownFiles  = "Burndown stats for files were not collected. Re-run hercules with --burndown --burndown-files."
+		burndownPeople = "Burndown stats for people were not collected. Re-run hercules with --burndown --burndown-people."
+		couples        = "Coupling stats were not collected. Re-run hercules with --couples."
+		shotness       = "Structural hotness stats were not collected. Re-run hercules with --shotness. Also check --languages - the output may be empty."
+		devs           = "Devs stats were not collected. Re-run hercules with --devs."
+	)
+	return map[string]string{
+		"burndown-project":        "project: " + burndown,
+		"burndown-file":           "files: " + burndownFiles,
+		"burndown-person":         "people: " + burndownPeople,
+		"ownership":               "ownership: " + burndownPeople,
+		"overwrites-matrix":       "overwrites_matrix: " + burndownPeople,
+		"burndown-repository":     "repositories: burndown data not available or repositories not tracked",
+		"burndown-repos-combined": "repositories-combined: burndown data not available or repositories not tracked",
+		"couples-files":           couples,
+		"couples-people":          couples,
+		"couples-shotness":        shotness,
+		"shotness":                shotness,
+		"sentiment":               "Sentiment stats were not collected. Re-run hercules with --sentiment.",
+		"devs":                    devs,
+		"devs-efforts":            devs,
+		"old-vs-new":              devs,
+		"languages":               devs,
+		"temporal-activity":       "Temporal activity stats were not collected. Re-run hercules with --temporal-activity.",
+		"bus-factor":              "Bus factor stats were not collected. Re-run hercules with --bus-factor.",
+		"ownership-concentration": "Ownership concentration stats were not collected. Re-run hercules with --ownership-concentration.",
+		"knowledge-diffusion":     "Knowledge diffusion stats were not collected. Re-run hercules with --knowledge-diffusion.",
+		"hotspot-risk":            "Hotspot risk scores were not collected. Re-run hercules with --hotspot-risk.",
+		"refactoring-proxy":       "Refactoring proxy data was not collected. Re-run hercules with --refactoring-proxy.",
+	}
+}
+
+func devsParallelMissingAnalysisWarning(err error) string {
+	message := strings.ToLower(err.Error())
+	if strings.Contains(message, "people cooccurrence") {
+		return "Coupling stats were not collected. Re-run hercules with --couples."
+	}
+	if strings.Contains(message, "devs time series") {
+		return "Devs stats were not collected. Re-run hercules with --devs."
+	}
+	return "devs-parallel: Burndown stats for people were not collected. Re-run hercules with --burndown --burndown-people."
 }
 
 func isMissingAnalysisError(err error) bool {

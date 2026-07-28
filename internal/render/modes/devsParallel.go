@@ -400,6 +400,17 @@ func calculateParallelismMetricsFromParallelData(data []ParallelDeveloperData, t
 		ActiveDevelopers:  make([]string, 0, len(data)),
 	}
 
+	populateConcurrencyMetrics(&metrics, data, allDays, activeDaysByName)
+	populateDeveloperOverlaps(&metrics, data, activeDaysByName)
+	return metrics
+}
+
+func populateConcurrencyMetrics(
+	metrics *ParallelismMetrics,
+	data []ParallelDeveloperData,
+	allDays []int,
+	activeDaysByName map[string]map[int]bool,
+) {
 	totalConcurrency := 0
 	for i, day := range allDays {
 		concurrent := 0
@@ -417,23 +428,31 @@ func calculateParallelismMetricsFromParallelData(data []ParallelDeveloperData, t
 			metrics.PeakConcurrency = concurrent
 		}
 	}
-	if len(metrics.PeriodConcurrency) > 0 {
-		metrics.AverageConcurrency = float64(totalConcurrency) / float64(len(metrics.PeriodConcurrency))
-		metrics.ParallelismIndex = float64(metrics.ParallelPeriods) / float64(len(metrics.PeriodConcurrency)) * 100
-	}
+	metrics.AverageConcurrency = float64(totalConcurrency) / float64(len(metrics.PeriodConcurrency))
+	metrics.ParallelismIndex = float64(metrics.ParallelPeriods) / float64(len(metrics.PeriodConcurrency)) * 100
+}
 
+func populateDeveloperOverlaps(
+	metrics *ParallelismMetrics,
+	data []ParallelDeveloperData,
+	activeDaysByName map[string]map[int]bool,
+) {
 	for _, dev := range data {
 		metrics.ActiveDevelopers = append(metrics.ActiveDevelopers, dev.Name)
 		metrics.DeveloperOverlaps[dev.Name] = make(map[string]float64, len(data))
 		for _, other := range data {
-			if dev.Name == other.Name {
-				metrics.DeveloperOverlaps[dev.Name][other.Name] = 1
-			} else {
-				metrics.DeveloperOverlaps[dev.Name][other.Name] = activeDayJaccard(activeDaysByName[dev.Name], activeDaysByName[other.Name])
-			}
+			metrics.DeveloperOverlaps[dev.Name][other.Name] = developerOverlap(
+				dev.Name, other.Name, activeDaysByName,
+			)
 		}
 	}
-	return metrics
+}
+
+func developerOverlap(left, right string, activeDaysByName map[string]map[int]bool) float64 {
+	if left == right {
+		return 1
+	}
+	return activeDayJaccard(activeDaysByName[left], activeDaysByName[right])
 }
 
 func activeDaysForParallelDevelopers(data []ParallelDeveloperData, timeSeries *readers.DeveloperTimeSeriesData) map[string]map[int]bool {
@@ -454,12 +473,17 @@ func activeDaysForParallelDevelopers(data []ParallelDeveloperData, timeSeries *r
 			if !ok {
 				continue
 			}
-			if stats.Commits > 0 || stats.LinesAdded > 0 || stats.LinesRemoved > 0 || stats.LinesModified > 0 {
+			if hasDeveloperActivity(stats) {
 				days[day] = true
 			}
 		}
 	}
 	return active
+}
+
+func hasDeveloperActivity(stats readers.DevDay) bool {
+	return stats.Commits > 0 || stats.LinesAdded > 0 ||
+		stats.LinesRemoved > 0 || stats.LinesModified > 0
 }
 
 func sortedActiveDays(data []ParallelDeveloperData, activeDaysByName map[string]map[int]bool) []int {
@@ -689,49 +713,7 @@ func generateSyntheticParallelAnalysis(
 		return fmt.Errorf("%w: developer stats", readers.ErrAnalysisMissing)
 	}
 
-	// Create synthetic parallel activity data
-	numPeriods := 52 // 52 weeks
-	metrics := ParallelismMetrics{
-		TotalPeriods:       numPeriods,
-		ParallelPeriods:    int(float64(numPeriods) * 0.6), // Assume 60% parallel activity
-		ParallelismIndex:   60.0,
-		PeakConcurrency:    min(len(developerStats), 4),
-		AverageConcurrency: math.Min(float64(len(developerStats))*0.7, 3.0),
-		ActiveDevelopers:   make([]string, 0, len(developerStats)),
-		PeriodConcurrency:  make([]int, numPeriods),
-		DeveloperOverlaps:  make(map[string]map[string]float64),
-	}
-
-	// Generate synthetic data based on developer stats
-	for i, dev := range developerStats {
-		metrics.ActiveDevelopers = append(metrics.ActiveDevelopers, dev.Name)
-
-		// Initialize overlaps
-		metrics.DeveloperOverlaps[dev.Name] = make(map[string]float64)
-		for j, otherDev := range developerStats {
-			if i == j {
-				metrics.DeveloperOverlaps[dev.Name][otherDev.Name] = 1.0
-			} else {
-				// Synthetic overlap based on relative activity
-				ratio := 0.0
-				if max(dev.Commits, otherDev.Commits) > 0 {
-					ratio = float64(min(dev.Commits, otherDev.Commits)) / float64(max(dev.Commits, otherDev.Commits))
-				}
-				overlap := ratio * (0.3 + 0.4*math.Sin(float64(i+j)*0.5)) // Add some variation
-				metrics.DeveloperOverlaps[dev.Name][otherDev.Name] = math.Max(0, math.Min(1, overlap))
-			}
-		}
-	}
-
-	// Generate synthetic period concurrency
-	for i := 0; i < numPeriods; i++ {
-		// Simulate realistic parallel activity patterns
-		baseActivity := 1 + int(metrics.AverageConcurrency*math.Sin(float64(i)*0.3)+0.5)
-		variation := int(math.Sin(float64(i)*0.1) * 2)
-		concurrency := max(1, min(len(developerStats), baseActivity+variation))
-		metrics.PeriodConcurrency[i] = concurrency
-	}
-
+	metrics := syntheticParallelismMetrics(developerStats)
 	if detail {
 		if err := plotParallelActivity(metrics, output, optionValues...); err != nil {
 			return fmt.Errorf("failed to create parallel activity plot: %w", err)
@@ -745,6 +727,49 @@ func generateSyntheticParallelAnalysis(
 
 	fmt.Println("Synthetic parallel development analysis completed.")
 	return nil
+}
+
+func syntheticParallelismMetrics(developerStats []readers.DeveloperStat) ParallelismMetrics {
+	numPeriods := 52
+	metrics := ParallelismMetrics{
+		TotalPeriods:       numPeriods,
+		ParallelPeriods:    int(float64(numPeriods) * 0.6), // Assume 60% parallel activity
+		ParallelismIndex:   60.0,
+		PeakConcurrency:    min(len(developerStats), 4),
+		AverageConcurrency: math.Min(float64(len(developerStats))*0.7, 3.0),
+		ActiveDevelopers:   make([]string, 0, len(developerStats)),
+		PeriodConcurrency:  make([]int, numPeriods),
+		DeveloperOverlaps:  make(map[string]map[string]float64),
+	}
+
+	for i, dev := range developerStats {
+		metrics.ActiveDevelopers = append(metrics.ActiveDevelopers, dev.Name)
+		metrics.DeveloperOverlaps[dev.Name] = make(map[string]float64)
+		for j, otherDev := range developerStats {
+			metrics.DeveloperOverlaps[dev.Name][otherDev.Name] = syntheticDeveloperOverlap(i, j, dev, otherDev)
+		}
+	}
+
+	for i := 0; i < numPeriods; i++ {
+		baseActivity := 1 + int(metrics.AverageConcurrency*math.Sin(float64(i)*0.3)+0.5)
+		variation := int(math.Sin(float64(i)*0.1) * 2)
+		concurrency := max(1, min(len(developerStats), baseActivity+variation))
+		metrics.PeriodConcurrency[i] = concurrency
+	}
+	return metrics
+}
+
+func syntheticDeveloperOverlap(i, j int, dev, otherDev readers.DeveloperStat) float64 {
+	if i == j {
+		return 1
+	}
+	largerCommitCount := max(dev.Commits, otherDev.Commits)
+	if largerCommitCount == 0 {
+		return 0
+	}
+	ratio := float64(min(dev.Commits, otherDev.Commits)) / float64(largerCommitCount)
+	overlap := ratio * (0.3 + 0.4*math.Sin(float64(i+j)*0.5))
+	return math.Max(0, math.Min(1, overlap))
 }
 
 // printParallelismSummary displays key metrics about parallel development

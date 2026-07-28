@@ -214,50 +214,56 @@ func serializeCombinedContents(contents map[string][]byte, results map[string]an
 func loadMessage(fileName string) (
 	map[string]any, *hercules.CommonAnalysisResult, string, []string,
 ) {
-	var errs []string
+	message, loadErr := readAnalysisMessage(fileName)
+	if loadErr != "" {
+		return nil, nil, "", []string{loadErr}
+	}
+
+	results, errs := deserializeAnalysisContents(fileName, message.GetContents())
+	return results, hercules.MetadataToCommonAnalysisResult(message.GetHeader()),
+		message.GetHeader().GetRepository(), errs
+}
+
+func readAnalysisMessage(fileName string) (*pb.AnalysisResults, string) {
 	fi, err := os.Stat(fileName)
 	if err != nil {
-		errs = append(errs, "Cannot access "+fileName+": "+err.Error())
-		return nil, nil, "", errs
+		return nil, "Cannot access " + fileName + ": " + err.Error()
 	}
 	if fi.Size() == 0 {
-		errs = append(errs, "Cannot parse "+fileName+": file size is 0")
-		return nil, nil, "", errs
+		return nil, "Cannot parse " + fileName + ": file size is 0"
 	}
 	file, err := os.Open(fileName)
 	if err != nil {
-		errs = append(errs, "Cannot read "+fileName+": "+err.Error())
-		return nil, nil, "", errs
+		return nil, "Cannot read " + fileName + ": " + err.Error()
 	}
 	buffer, err := analysisio.ReadAll(file, analysisio.DefaultLimits())
 	if err != nil {
 		_ = file.Close()
-		errs = append(errs, "Cannot read "+fileName+": "+err.Error())
-		return nil, nil, "", errs
+		return nil, "Cannot read " + fileName + ": " + err.Error()
 	}
 	if err := file.Close(); err != nil {
-		errs = append(errs, "Cannot close "+fileName+": "+err.Error())
-		return nil, nil, "", errs
+		return nil, "Cannot close " + fileName + ": " + err.Error()
 	}
 	message := pb.AnalysisResults{}
-	err = proto.Unmarshal(buffer, &message)
-	if err != nil {
-		errs = append(errs, "Cannot parse "+fileName+": "+err.Error())
-		return nil, nil, "", errs
+	if err := proto.Unmarshal(buffer, &message); err != nil {
+		return nil, "Cannot parse " + fileName + ": " + err.Error()
 	}
 	if message.GetHeader() == nil {
-		errs = append(errs, "Cannot parse "+fileName+": corrupted header")
-		return nil, nil, "", errs
+		return nil, "Cannot parse " + fileName + ": corrupted header"
 	}
 	if err := analysisio.ValidateAndMigrateAnalysisResults(
 		&message, analysisio.DefaultLimits(),
 	); err != nil {
-		errs = append(errs, "Cannot parse "+fileName+": "+err.Error())
-		return nil, nil, "", errs
+		return nil, "Cannot parse " + fileName + ": " + err.Error()
 	}
-	repoName := message.GetHeader().GetRepository()
+
+	return &message, ""
+}
+
+func deserializeAnalysisContents(fileName string, contents map[string][]byte) (map[string]any, []string) {
 	results := map[string]any{}
-	for key, val := range message.GetContents() {
+	var errs []string
+	for key, val := range contents {
 		summoned := hercules.Registry.Summon(key)
 		if len(summoned) == 0 {
 			errs = append(errs, fileName+": item not found: "+key)
@@ -275,7 +281,7 @@ func loadMessage(fileName string) (
 		}
 		results[key] = msg
 	}
-	return results, hercules.MetadataToCommonAnalysisResult(message.GetHeader()), repoName, errs
+	return results, errs
 }
 
 func printErrors(allErrors map[string][]string) {
@@ -318,27 +324,9 @@ func mergeResults(mergedResults map[string]any,
 		if only != "" && key != only {
 			continue
 		}
-		mergedResult, exists := mergedResults[key]
-		if !exists {
-			mergedResults[key] = val
-			merged++
-			continue
-		}
-		summoned := hercules.Registry.Summon(key)
-		if len(summoned) == 0 {
-			errors = append(errors, fmt.Errorf("could not merge %s: analysis is not registered", key))
-			continue
-		}
-		item, ok := summoned[0].(hercules.ResultMergeablePipelineItem)
-		if !ok {
-			errors = append(errors, fmt.Errorf("could not merge %s: analysis does not support merging", key))
-			continue
-		}
-		mergedResult = item.MergeResults(mergedResult, val, mergedCommons, anotherCommons)
-		if err, isErr := mergedResult.(error); isErr {
-			errors = append(errors, fmt.Errorf("could not merge %s: %w", item.Name(), err))
+		if err := mergeResult(mergedResults, key, val, mergedCommons, anotherCommons); err != nil {
+			errors = append(errors, err)
 		} else {
-			mergedResults[key] = mergedResult
 			merged++
 		}
 	}
@@ -350,6 +338,33 @@ func mergeResults(mergedResults map[string]any,
 		}
 	}
 	return merged, errors
+}
+
+func mergeResult(
+	mergedResults map[string]any,
+	key string,
+	value any,
+	mergedCommons, anotherCommons *hercules.CommonAnalysisResult,
+) error {
+	mergedResult, exists := mergedResults[key]
+	if !exists {
+		mergedResults[key] = value
+		return nil
+	}
+	summoned := hercules.Registry.Summon(key)
+	if len(summoned) == 0 {
+		return fmt.Errorf("could not merge %s: analysis is not registered", key)
+	}
+	item, ok := summoned[0].(hercules.ResultMergeablePipelineItem)
+	if !ok {
+		return fmt.Errorf("could not merge %s: analysis does not support merging", key)
+	}
+	mergedResult = item.MergeResults(mergedResult, value, mergedCommons, anotherCommons)
+	if err, isErr := mergedResult.(error); isErr {
+		return fmt.Errorf("could not merge %s: %w", item.Name(), err)
+	}
+	mergedResults[key] = mergedResult
+	return nil
 }
 
 func getOptionsString() string {

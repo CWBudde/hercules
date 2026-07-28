@@ -30,15 +30,9 @@ func NewSparseMatrix(rows, columns int, entries []SparseEntry) (SparseMatrix, er
 	if rows < 0 || columns < 0 {
 		return SparseMatrix{}, fmt.Errorf("negative sparse matrix dimensions %dx%d", rows, columns)
 	}
-
 	sorted := append([]SparseEntry(nil), entries...)
-	for _, entry := range sorted {
-		if entry.Row < 0 || entry.Row >= rows || entry.Column < 0 || entry.Column >= columns {
-			return SparseMatrix{}, fmt.Errorf(
-				"sparse matrix cell (%d, %d) is outside %dx%d",
-				entry.Row, entry.Column, rows, columns,
-			)
-		}
+	if err := validateSparseEntries(rows, columns, sorted); err != nil {
+		return SparseMatrix{}, err
 	}
 	sort.Slice(sorted, func(i, j int) bool {
 		if sorted[i].Row == sorted[j].Row {
@@ -52,24 +46,38 @@ func NewSparseMatrix(rows, columns int, entries []SparseEntry) (SparseMatrix, er
 		Columns:    columns,
 		RowOffsets: make([]int, rows+1),
 	}
+	if err := appendCanonicalSparseEntries(&matrix, sorted); err != nil {
+		return SparseMatrix{}, err
+	}
+	for row := 0; row < rows; row++ {
+		matrix.RowOffsets[row+1] += matrix.RowOffsets[row]
+	}
+	return matrix, nil
+}
+
+func validateSparseEntries(rows, columns int, entries []SparseEntry) error {
+	for _, entry := range entries {
+		if entry.Row < 0 || entry.Row >= rows || entry.Column < 0 || entry.Column >= columns {
+			return fmt.Errorf(
+				"sparse matrix cell (%d, %d) is outside %dx%d",
+				entry.Row, entry.Column, rows, columns,
+			)
+		}
+	}
+	return nil
+}
+
+func appendCanonicalSparseEntries(matrix *SparseMatrix, sorted []SparseEntry) error {
 	for index := 0; index < len(sorted); {
 		entry := sorted[index]
 		value := entry.Value
 		index++
-		for index < len(sorted) &&
-			sorted[index].Row == entry.Row &&
-			sorted[index].Column == entry.Column {
-			maxInt := int(^uint(0) >> 1)
-			minInt := -maxInt - 1
-			addend := sorted[index].Value
-			if (addend > 0 && value > maxInt-addend) ||
-				(addend < 0 && value < minInt-addend) {
-				return SparseMatrix{}, fmt.Errorf(
-					"sparse matrix cell (%d, %d) overflows int",
-					entry.Row, entry.Column,
-				)
+		for index < len(sorted) && sameSparseCell(entry, sorted[index]) {
+			var err error
+			value, err = addSparseValues(value, sorted[index].Value)
+			if err != nil {
+				return fmt.Errorf("sparse matrix cell (%d, %d) overflows int", entry.Row, entry.Column)
 			}
-			value += addend
 			index++
 		}
 		if value == 0 {
@@ -79,10 +87,23 @@ func NewSparseMatrix(rows, columns int, entries []SparseEntry) (SparseMatrix, er
 		matrix.Values = append(matrix.Values, value)
 		matrix.RowOffsets[entry.Row+1]++
 	}
-	for row := 0; row < rows; row++ {
-		matrix.RowOffsets[row+1] += matrix.RowOffsets[row]
+	return nil
+}
+
+func sameSparseCell(left, right SparseEntry) bool {
+	return left.Row == right.Row && left.Column == right.Column
+}
+
+func addSparseValues(value, addend int) (int, error) {
+	maxInt := int(^uint(0) >> 1)
+	minInt := -maxInt - 1
+	if addend > 0 && value > maxInt-addend {
+		return 0, fmt.Errorf("positive overflow")
 	}
-	return matrix, nil
+	if addend < 0 && value < minInt-addend {
+		return 0, fmt.Errorf("negative overflow")
+	}
+	return value + addend, nil
 }
 
 // SparseMatrixFromDense converts a dense matrix. It is intended for small

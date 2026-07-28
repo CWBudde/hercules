@@ -798,27 +798,31 @@ func parseCompressedSparseCouplingMatrix(
 	}
 	entries := make([]SparseEntry, 0, len(matrix.Data))
 	for row := 0; row < rows; row++ {
-		start, end := int(matrix.Indptr[row]), int(matrix.Indptr[row+1])
-		if start < 0 || end < start || end > len(matrix.Data) || end > len(matrix.Indices) {
-			return SparseMatrix{}, fmt.Errorf(
-				"invalid CSR offsets [%d:%d] for row %d", start, end, row,
-			)
+		rowEntries, err := parseCompressedSparseRow(matrix, row)
+		if err != nil {
+			return SparseMatrix{}, err
 		}
-		for index := start; index < end; index++ {
-			value := int(matrix.Data[index])
-			if int64(value) != matrix.Data[index] {
-				return SparseMatrix{}, fmt.Errorf(
-					"CSR value at index %d overflows int", index,
-				)
-			}
-			entries = append(entries, SparseEntry{
-				Row:    row,
-				Column: int(matrix.Indices[index]),
-				Value:  value,
-			})
-		}
+		entries = append(entries, rowEntries...)
 	}
 	return NewSparseMatrix(rows, columns, entries)
+}
+
+func parseCompressedSparseRow(matrix *pb.CompressedSparseRowMatrix, row int) ([]SparseEntry, error) {
+	start, end := int(matrix.Indptr[row]), int(matrix.Indptr[row+1])
+	if start < 0 || end < start || end > len(matrix.Data) || end > len(matrix.Indices) {
+		return nil, fmt.Errorf("invalid CSR offsets [%d:%d] for row %d", start, end, row)
+	}
+	entries := make([]SparseEntry, 0, end-start)
+	for index := start; index < end; index++ {
+		value := int(matrix.Data[index])
+		if int64(value) != matrix.Data[index] {
+			return nil, fmt.Errorf("CSR value at index %d overflows int", index)
+		}
+		entries = append(entries, SparseEntry{
+			Row: row, Column: int(matrix.Indices[index]), Value: value,
+		})
+	}
+	return entries, nil
 }
 
 // parseBurndownAnalysisResults extracts and parses burndown data from the Contents map

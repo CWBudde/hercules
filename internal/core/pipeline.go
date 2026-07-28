@@ -540,44 +540,10 @@ func (pipeline *Pipeline) HeadCommit() ([]*object.Commit, error) {
 
 	head, err := repository.Head()
 	if errors.Is(err, plumbing.ErrReferenceNotFound) {
-		refs, errr := repository.References()
-		if errr != nil {
-			return nil, errors.Wrap(errr, "unable to list the references")
-		}
-		defer refs.Close()
-
-		var refnames []string
-		refByName := map[string]*plumbing.Reference{}
-		err = refs.ForEach(func(ref *plumbing.Reference) error {
-			if ref.Hash() == plumbing.ZeroHash {
-				return nil
-			}
-
-			refname := ref.Name().String()
-			refnames = append(refnames, refname)
-
-			refByName[refname] = ref
-			if strings.HasPrefix(refname, "refs/heads/HEAD/") {
-				head = ref
-				return storer.ErrStop
-			}
-
-			return nil
-		})
-		if err != nil && !errors.Is(err, storer.ErrStop) {
-			return nil, errors.Wrap(err, "unable to iterate the references")
-		}
-
-		if head == nil {
-			if len(refnames) == 0 {
-				return nil, ErrNoReferences
-			}
-
-			sort.Strings(refnames)
-			headName := refnames[len(refnames)-1]
-			pipeline.l.Warnf("could not determine the HEAD, falling back to %s", headName)
-			head = refByName[headName]
-		}
+		head, err = pipeline.fallbackHeadReference()
+	}
+	if err != nil {
+		return nil, errors.Wrap(err, "unable to find the head reference")
 	}
 
 	if head == nil {
@@ -590,6 +556,44 @@ func (pipeline *Pipeline) HeadCommit() ([]*object.Commit, error) {
 	}
 
 	return []*object.Commit{commit}, nil
+}
+
+func (pipeline *Pipeline) fallbackHeadReference() (*plumbing.Reference, error) {
+	refs, err := pipeline.repository.References()
+	if err != nil {
+		return nil, errors.Wrap(err, "unable to list the references")
+	}
+	defer refs.Close()
+
+	var preferred *plumbing.Reference
+	var refnames []string
+	refByName := map[string]*plumbing.Reference{}
+	err = refs.ForEach(func(ref *plumbing.Reference) error {
+		if ref.Hash() == plumbing.ZeroHash {
+			return nil
+		}
+		refname := ref.Name().String()
+		refnames = append(refnames, refname)
+		refByName[refname] = ref
+		if strings.HasPrefix(refname, "refs/heads/HEAD/") {
+			preferred = ref
+			return storer.ErrStop
+		}
+		return nil
+	})
+	if err != nil && !errors.Is(err, storer.ErrStop) {
+		return nil, errors.Wrap(err, "unable to iterate the references")
+	}
+	if preferred != nil {
+		return preferred, nil
+	}
+	if len(refnames) == 0 {
+		return nil, ErrNoReferences
+	}
+	sort.Strings(refnames)
+	headName := refnames[len(refnames)-1]
+	pipeline.l.Warnf("could not determine the HEAD, falling back to %s", headName)
+	return refByName[headName], nil
 }
 
 type sortablePipelineItems []PipelineItem

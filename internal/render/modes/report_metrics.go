@@ -1199,11 +1199,34 @@ func plotBusFactorSubsystemsMatplotlib(repoName string, labels []string, values 
 	}
 	width, height := busFactorSubsystemPlotPixels(len(labels))
 	fig := newReportFigure(width, height)
-	grid := fig.Subplots(1, 1)
-	if len(grid) == 0 || len(grid[0]) == 0 || grid[0][0] == nil {
+	ax, err := reportFigureAxes(fig)
+	if err != nil {
 		return fmt.Errorf("failed to create bus factor subsystem axes")
 	}
-	ax := grid[0][0]
+	configureBusFactorSubsystemAxes(ax, repoName, labels, values, threshold)
+
+	if err := saveReportFigure(fig, output, width, height); err != nil { // TightLayout ~ Python tight_layout
+		return err
+	}
+	fmt.Printf("Saved %s\n", output)
+	return nil
+}
+
+func reportFigureAxes(fig *core.Figure) (*core.Axes, error) {
+	grid := fig.Subplots(1, 1)
+	if len(grid) == 0 || len(grid[0]) == 0 || grid[0][0] == nil {
+		return nil, fmt.Errorf("figure has no axes")
+	}
+	return grid[0][0], nil
+}
+
+func configureBusFactorSubsystemAxes(
+	ax *core.Axes,
+	repoName string,
+	labels []string,
+	values []int,
+	threshold float64,
+) {
 	if repoName != "" {
 		ax.SetTitle(fmt.Sprintf("%s - Bus Factor by Subsystem (threshold: %.0f%%)", repoName, threshold*100))
 	} else {
@@ -1261,12 +1284,6 @@ func plotBusFactorSubsystemsMatplotlib(repoName string, labels []string, values 
 	yLabelStyle := ax.YAxis.MajorLabelStyle
 	yLabelStyle.FontSize = 9.6 // Python: fontsize=font_size*0.8
 	ax.YAxis.MajorLabelStyle = yLabelStyle
-
-	if err := saveReportFigure(fig, output, width, height); err != nil { // TightLayout ~ Python tight_layout
-		return err
-	}
-	fmt.Printf("Saved %s\n", output)
-	return nil
 }
 
 func busFactorSubsystemPlotPixels(subsystemCount int) (int, int) {

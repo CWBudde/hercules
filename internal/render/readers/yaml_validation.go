@@ -11,7 +11,6 @@ import (
 	"github.com/cwbudde/hercules/internal/pb"
 )
 
-//nolint:cyclop,gocognit,noinlineerr // YAML analyses contain several independent optional sections.
 func validateYAMLAnalysis(data map[string]interface{}, limits analysisio.Limits) error {
 	header, sourceVersion, err := validateYAMLHeader(data)
 	if err != nil {
@@ -22,52 +21,73 @@ func validateYAMLAnalysis(data map[string]interface{}, limits analysisio.Limits)
 	if err := validateYAMLRecords(data, &total, limits); err != nil {
 		return err
 	}
+	if err := validateYAMLBurndown(data, limits); err != nil {
+		return err
+	}
+	if err := validateYAMLCouples(data, limits); err != nil {
+		return err
+	}
+	if sourceVersion != pb.SchemaVersion {
+		header["version"] = int(pb.SchemaVersion)
+	}
+	return nil
+}
 
+func validateYAMLBurndown(data map[string]interface{}, limits analysisio.Limits) error {
 	burndown, exists := data["Burndown"]
-	if exists {
-		values, ok := burndown.(map[string]interface{})
-		if !ok {
-			return fmt.Errorf("%w: Burndown must be a mapping", ErrAnalysisMalformed)
-		}
-		if err := validateYAMLMatrixField(values, "project", "burndown project", limits); err != nil {
+	if !exists {
+		return nil
+	}
+	values, ok := burndown.(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("%w: Burndown must be a mapping", ErrAnalysisMalformed)
+	}
+	if err := validateYAMLMatrixField(values, "project", "burndown project", limits); err != nil {
+		return err
+	}
+	for _, field := range []string{"files", "people"} {
+		if err := validateYAMLBurndownCollection(values, field, limits); err != nil {
 			return err
 		}
-		for _, field := range []string{"files", "people"} {
-			raw, present := values[field]
-			if !present {
-				continue
-			}
-			matrices, ok := raw.(map[string]interface{})
-			if !ok {
-				return fmt.Errorf("%w: Burndown.%s must be a mapping", ErrAnalysisMalformed, field)
-			}
-			for name, matrix := range matrices {
-				text, ok := matrix.(string)
-				if !ok {
-					return fmt.Errorf(
-						"%w: Burndown.%s[%q] must be a matrix string",
-						ErrAnalysisMalformed, field, name,
-					)
-				}
-				if _, err := parseBurndownMatrixChecked(
-					fmt.Sprintf("Burndown.%s[%q]", field, name), text, limits,
-				); err != nil {
-					return err
-				}
-			}
+	}
+	return validateYAMLMatrixField(
+		values, "people_interaction", "burndown people interaction", limits,
+	)
+}
+
+func validateYAMLBurndownCollection(
+	values map[string]interface{},
+	field string,
+	limits analysisio.Limits,
+) error {
+	raw, present := values[field]
+	if !present {
+		return nil
+	}
+	matrices, ok := raw.(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("%w: Burndown.%s must be a mapping", ErrAnalysisMalformed, field)
+	}
+	for name, matrix := range matrices {
+		text, ok := matrix.(string)
+		if !ok {
+			return fmt.Errorf(
+				"%w: Burndown.%s[%q] must be a matrix string",
+				ErrAnalysisMalformed, field, name,
+			)
 		}
-		if err := validateYAMLMatrixField(
-			values, "people_interaction", "burndown people interaction", limits,
+		if _, err := parseBurndownMatrixChecked(
+			fmt.Sprintf("Burndown.%s[%q]", field, name), text, limits,
 		); err != nil {
 			return err
 		}
 	}
+	return nil
+}
 
+func validateYAMLCouples(data map[string]interface{}, limits analysisio.Limits) error {
 	couples, exists := data["Couples"]
 	if !exists {
-		if sourceVersion != pb.SchemaVersion {
-			header["version"] = int(pb.SchemaVersion)
-		}
 		return nil
 	}
 	values, ok := couples.(map[string]interface{})
@@ -75,56 +95,65 @@ func validateYAMLAnalysis(data map[string]interface{}, limits analysisio.Limits)
 		return fmt.Errorf("%w: Couples must be a mapping", ErrAnalysisMalformed)
 	}
 	for _, field := range []string{"file_couples_matrix", "people_couples_matrix"} {
-		raw, present := values[field]
-		if !present {
-			continue
-		}
-		text, ok := raw.(string)
-		if !ok {
-			return fmt.Errorf(
-				"%w: Couples.%s must be a matrix string",
-				ErrAnalysisMalformed, field,
-			)
-		}
-		if _, err := parseSparseMatrixTextChecked(
-			"Couples."+field, text, limits,
-		); err != nil {
+		if err := validateYAMLCouplingMatrix(values, field, limits); err != nil {
 			return err
 		}
 	}
 	for _, field := range []string{"files_coocc", "people_coocc"} {
-		raw, present := values[field]
-		if !present {
-			continue
+		if err := validateYAMLNestedCouplingMatrix(values, field, limits); err != nil {
+			return err
 		}
-		nested, ok := raw.(map[string]interface{})
-		if !ok {
-			return fmt.Errorf("%w: Couples.%s must be a mapping", ErrAnalysisMalformed, field)
-		}
-		matrix, present := nested["matrix"]
-		if !present {
-			continue
-		}
-		switch typed := matrix.(type) {
-		case string:
-			if _, err := parseSparseMatrixTextChecked("Couples."+field+".matrix", typed, limits); err != nil {
-				return err
-			}
-		case []interface{}:
-			if err := validateYAMLSparseRows("Couples."+field+".matrix", typed, limits); err != nil {
-				return err
-			}
-		default:
-			return fmt.Errorf(
-				"%w: Couples.%s.matrix has unsupported type %T",
-				ErrAnalysisMalformed, field, matrix,
-			)
-		}
-	}
-	if sourceVersion != pb.SchemaVersion {
-		header["version"] = int(pb.SchemaVersion)
 	}
 	return nil
+}
+
+func validateYAMLCouplingMatrix(
+	values map[string]interface{},
+	field string,
+	limits analysisio.Limits,
+) error {
+	raw, present := values[field]
+	if !present {
+		return nil
+	}
+	text, ok := raw.(string)
+	if !ok {
+		return fmt.Errorf("%w: Couples.%s must be a matrix string", ErrAnalysisMalformed, field)
+	}
+	_, err := parseSparseMatrixTextChecked("Couples."+field, text, limits)
+	return err
+}
+
+func validateYAMLNestedCouplingMatrix(
+	values map[string]interface{},
+	field string,
+	limits analysisio.Limits,
+) error {
+	raw, present := values[field]
+	if !present {
+		return nil
+	}
+	nested, ok := raw.(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("%w: Couples.%s must be a mapping", ErrAnalysisMalformed, field)
+	}
+	matrix, present := nested["matrix"]
+	if !present {
+		return nil
+	}
+	name := "Couples." + field + ".matrix"
+	switch typed := matrix.(type) {
+	case string:
+		_, err := parseSparseMatrixTextChecked(name, typed, limits)
+		return err
+	case []interface{}:
+		return validateYAMLSparseRows(name, typed, limits)
+	default:
+		return fmt.Errorf(
+			"%w: Couples.%s.matrix has unsupported type %T",
+			ErrAnalysisMalformed, field, matrix,
+		)
+	}
 }
 
 func validateYAMLHeader(data map[string]interface{}) (map[string]interface{}, int32, error) {
@@ -197,7 +226,6 @@ func validateYAMLMatrixField(
 	return err
 }
 
-//nolint:noinlineerr // Parsing stops at the first malformed row or cell.
 func parseBurndownMatrixChecked(
 	name, data string, limits analysisio.Limits,
 ) ([][]int, error) {
@@ -210,41 +238,23 @@ func parseBurndownMatrixChecked(
 	columns := -1
 	lineIndex := 0
 	for line := range strings.Lines(data) {
-		fieldCount := countFields(line)
-		if fieldCount > limits.MaxColumns {
-			return nil, fmt.Errorf(
-				"%w: %s row %d has %d columns, limit is %d",
-				ErrAnalysisTooLarge, name, lineIndex, fieldCount, limits.MaxColumns,
-			)
+		numbers, nextColumns, err := checkedMatrixLineFields(name, line, lineIndex, columns, limits)
+		if err != nil {
+			return nil, err
 		}
-		numbers := strings.Fields(line)
+		columns = nextColumns
 		if len(numbers) == 0 {
 			lineIndex++
 			continue
-		}
-		if columns < 0 {
-			columns = len(numbers)
-		} else if len(numbers) != columns {
-			return nil, fmt.Errorf(
-				"%w: %s row %d has %d columns, expected %d",
-				ErrAnalysisMalformed, name, lineIndex, len(numbers), columns,
-			)
 		}
 		if err := analysisio.ValidateDimensions(
 			name, int64(len(matrix)+1), int64(columns), limits,
 		); err != nil {
 			return nil, err
 		}
-		row := make([]int, len(numbers))
-		for column, number := range numbers {
-			value, err := strconv.Atoi(number)
-			if err != nil {
-				return nil, fmt.Errorf(
-					"%w: %s row %d column %d is not an integer",
-					ErrAnalysisMalformed, name, lineIndex, column,
-				)
-			}
-			row[column] = value
+		row, err := parseCheckedMatrixRow(name, numbers, lineIndex)
+		if err != nil {
+			return nil, err
 		}
 		matrix = append(matrix, row)
 		lineIndex++
@@ -256,6 +266,49 @@ func parseBurndownMatrixChecked(
 		return nil, err
 	}
 	return matrix, nil
+}
+
+func checkedMatrixLineFields(
+	name, line string,
+	lineIndex, columns int,
+	limits analysisio.Limits,
+) ([]string, int, error) {
+	fieldCount := countFields(line)
+	if fieldCount > limits.MaxColumns {
+		return nil, columns, fmt.Errorf(
+			"%w: %s row %d has %d columns, limit is %d",
+			ErrAnalysisTooLarge, name, lineIndex, fieldCount, limits.MaxColumns,
+		)
+	}
+	numbers := strings.Fields(line)
+	if len(numbers) == 0 {
+		return nil, columns, nil
+	}
+	if columns < 0 {
+		return numbers, len(numbers), nil
+	}
+	if len(numbers) != columns {
+		return nil, columns, fmt.Errorf(
+			"%w: %s row %d has %d columns, expected %d",
+			ErrAnalysisMalformed, name, lineIndex, len(numbers), columns,
+		)
+	}
+	return numbers, columns, nil
+}
+
+func parseCheckedMatrixRow(name string, numbers []string, rowIndex int) ([]int, error) {
+	row := make([]int, len(numbers))
+	for column, number := range numbers {
+		value, err := strconv.Atoi(number)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"%w: %s row %d column %d is not an integer",
+				ErrAnalysisMalformed, name, rowIndex, column,
+			)
+		}
+		row[column] = value
+	}
+	return row, nil
 }
 
 // parseSparseMatrixTextChecked parses the historical whitespace-delimited
@@ -273,45 +326,25 @@ func parseSparseMatrixTextChecked(
 	rows, columns := 0, -1
 	lineIndex := 0
 	for line := range strings.Lines(data) {
-		fieldCount := countFields(line)
-		if fieldCount > limits.MaxColumns {
-			return SparseMatrix{}, fmt.Errorf(
-				"%w: %s row %d has %d columns, limit is %d",
-				ErrAnalysisTooLarge, name, lineIndex, fieldCount, limits.MaxColumns,
-			)
+		numbers, nextColumns, err := checkedMatrixLineFields(name, line, lineIndex, columns, limits)
+		if err != nil {
+			return SparseMatrix{}, err
 		}
-		numbers := strings.Fields(line)
+		columns = nextColumns
 		if len(numbers) == 0 {
 			lineIndex++
 			continue
-		}
-		if columns < 0 {
-			columns = len(numbers)
-		} else if len(numbers) != columns {
-			return SparseMatrix{}, fmt.Errorf(
-				"%w: %s row %d has %d columns, expected %d",
-				ErrAnalysisMalformed, name, lineIndex, len(numbers), columns,
-			)
 		}
 		if err := analysisio.ValidateDimensions(
 			name, int64(rows+1), int64(columns), limits,
 		); err != nil {
 			return SparseMatrix{}, err
 		}
-		for column, number := range numbers {
-			value, err := strconv.Atoi(number)
-			if err != nil {
-				return SparseMatrix{}, fmt.Errorf(
-					"%w: %s row %d column %d is not an integer",
-					ErrAnalysisMalformed, name, lineIndex, column,
-				)
-			}
-			if value != 0 {
-				entries = append(entries, SparseEntry{
-					Row: rows, Column: column, Value: value,
-				})
-			}
+		rowEntries, err := parseCheckedSparseRow(name, numbers, lineIndex, rows)
+		if err != nil {
+			return SparseMatrix{}, err
 		}
+		entries = append(entries, rowEntries...)
 		rows++
 		lineIndex++
 	}
@@ -323,6 +356,27 @@ func parseSparseMatrixTextChecked(
 		return SparseMatrix{}, fmt.Errorf("%w: %s: %w", ErrAnalysisMalformed, name, err)
 	}
 	return matrix, nil
+}
+
+func parseCheckedSparseRow(
+	name string,
+	numbers []string,
+	lineIndex, row int,
+) ([]SparseEntry, error) {
+	entries := make([]SparseEntry, 0)
+	for column, number := range numbers {
+		value, err := strconv.Atoi(number)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"%w: %s row %d column %d is not an integer",
+				ErrAnalysisMalformed, name, lineIndex, column,
+			)
+		}
+		if value != 0 {
+			entries = append(entries, SparseEntry{Row: row, Column: column, Value: value})
+		}
+	}
+	return entries, nil
 }
 
 func countFields(value string) int {

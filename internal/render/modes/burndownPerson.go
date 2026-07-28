@@ -31,70 +31,105 @@ func BurndownPersonWithOptions(reader readers.Reader, output string, startDate, 
 	if err != nil {
 		return fmt.Errorf("failed to get people burndown data: %w", err)
 	}
-
-	header, _, _, headerErr := reader.GetProjectBurndownWithHeader()
-	usePythonRenderer := headerErr == nil
-	if headerErr != nil && !errors.Is(headerErr, readers.ErrAnalysisMissing) {
-		return fmt.Errorf("get burndown header: %w", headerErr)
-	}
-	if !usePythonRenderer && !opts.Quiet {
-		fmt.Fprintf(os.Stderr, "Warning: falling back to legacy person burndown renderer: %v\n", headerErr)
+	header, usePythonRenderer, err := personBurndownHeader(reader, opts.Quiet)
+	if err != nil {
+		return err
 	}
 	if opts.Resample == "" {
 		opts.Resample = "year"
 	}
-
-	identities := make([]string, len(peopleBurndowns))
-
-	displayNames := make([]string, len(peopleBurndowns))
+	displayNames, outputFiles, err := personBurndownOutputPaths(peopleBurndowns, output)
+	if err != nil {
+		return err
+	}
 	for index, person := range peopleBurndowns {
+		if err := renderPersonBurndown(
+			person, displayNames[index], outputFiles[index], header,
+			usePythonRenderer, startDate, endDate, opts,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func personBurndownHeader(
+	reader readers.Reader,
+	quiet bool,
+) (burndown.BurndownHeader, bool, error) {
+	header, _, _, err := reader.GetProjectBurndownWithHeader()
+	if err != nil && !errors.Is(err, readers.ErrAnalysisMissing) {
+		return burndown.BurndownHeader{}, false, fmt.Errorf("get burndown header: %w", err)
+	}
+	usePythonRenderer := err == nil
+	if !usePythonRenderer && !quiet {
+		fmt.Fprintf(os.Stderr, "Warning: falling back to legacy person burndown renderer: %v\n", err)
+	}
+	return header, usePythonRenderer, nil
+}
+
+func personBurndownOutputPaths(
+	people []readers.PeopleBurndown,
+	output string,
+) ([]string, []string, error) {
+	identities := make([]string, len(people))
+	displayNames := make([]string, len(people))
+	for index, person := range people {
 		identities[index] = person.Person
 		displayNames[index] = peopleChartLabel(person.Person)
 	}
-
 	outputFiles, err := outputpath.FanoutLabeledPaths(
 		output, "burndown_person", displayNames, identities,
 	)
 	if err != nil {
-		return fmt.Errorf("plan person burndown outputs: %w", err)
+		return nil, nil, fmt.Errorf("plan person burndown outputs: %w", err)
 	}
+	return displayNames, outputFiles, nil
+}
 
-	// Generate a chart for each person
-	for index, person := range peopleBurndowns {
-		outputFile := outputFiles[index]
-		displayName := displayNames[index]
-
-		if usePythonRenderer {
-			processedData, err := burndown.LoadBurndown(header, displayName, person.Matrix, opts.Resample, false, false)
-			if err != nil {
-				return fmt.Errorf("failed to process burndown for person %s: %w", person.Person, err)
-			}
-
-			compactErr := compactPersonBurndown(processedData)
-			if compactErr != nil {
-				return fmt.Errorf("compact burndown for person %s: %w", person.Person, compactErr)
-			}
-
-			if err := graphics.PlotBurndownMatplotlibWithOptions(processedData, outputFile, opts.Relative, opts.Graphics); err != nil {
-				return fmt.Errorf("failed to generate burndown for person %s: %w", person.Person, err)
-			}
-
-			continue
-		}
-
-		compactedMatrix, compactErr := compactRawPersonBurndown(person.Matrix)
-		if compactErr != nil {
-			return fmt.Errorf("compact burndown for person %s: %w", person.Person, compactErr)
-		}
-
-		renderErr := generateBurndownPlotWithOptions(
-			displayName, compactedMatrix, outputFile, startDate, endDate, opts,
-		)
-		if renderErr != nil {
-			return fmt.Errorf("failed to generate burndown for person %s: %w", person.Person, renderErr)
-		}
+func renderPersonBurndown(
+	person readers.PeopleBurndown,
+	displayName, outputFile string,
+	header burndown.BurndownHeader,
+	usePythonRenderer bool,
+	startDate, endDate *time.Time,
+	opts Options,
+) error {
+	if !usePythonRenderer {
+		return renderLegacyPersonBurndown(person, displayName, outputFile, startDate, endDate, opts)
 	}
+	processedData, err := burndown.LoadBurndown(
+		header, displayName, person.Matrix, opts.Resample, false, false,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to process burndown for person %s: %w", person.Person, err)
+	}
+	if err := compactPersonBurndown(processedData); err != nil {
+		return fmt.Errorf("compact burndown for person %s: %w", person.Person, err)
+	}
+	if err := graphics.PlotBurndownMatplotlibWithOptions(
+		processedData, outputFile, opts.Relative, opts.Graphics,
+	); err != nil {
+		return fmt.Errorf("failed to generate burndown for person %s: %w", person.Person, err)
+	}
+	return nil
+}
 
+func renderLegacyPersonBurndown(
+	person readers.PeopleBurndown,
+	displayName, outputFile string,
+	startDate, endDate *time.Time,
+	opts Options,
+) error {
+	compactedMatrix, err := compactRawPersonBurndown(person.Matrix)
+	if err != nil {
+		return fmt.Errorf("compact burndown for person %s: %w", person.Person, err)
+	}
+	if err := generateBurndownPlotWithOptions(
+		displayName, compactedMatrix, outputFile, startDate, endDate, opts,
+	); err != nil {
+		return fmt.Errorf("failed to generate burndown for person %s: %w", person.Person, err)
+	}
 	return nil
 }
 

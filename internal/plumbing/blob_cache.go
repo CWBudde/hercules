@@ -434,21 +434,7 @@ func (blobCache *BlobCache) cacheFrom(
 
 	blob, err := blobCache.getBlob(&entry, commit.File)
 	if err != nil && dummyWhenMissing && errors.Is(err, plumbing.ErrObjectNotFound) {
-		blob, err = internal.CreateDummyBlob(entry.TreeEntry.Hash)
-		if err == nil {
-			budgetErr := blobCache.validateAndReserve(blob, budget)
-			if budgetErr != nil {
-				return budgetErr
-			}
-
-			cache[entry.TreeEntry.Hash] = &CachedBlob{Blob: *blob}
-		}
-
-		if err != nil {
-			return fmt.Errorf("create placeholder for missing blob %s: %w", entry.TreeEntry.Hash, err)
-		}
-
-		return nil
+		return blobCache.cacheDummyBlob(entry.TreeEntry.Hash, cache, budget)
 	}
 
 	if err != nil {
@@ -456,21 +442,32 @@ func (blobCache *BlobCache) cacheFrom(
 		return fmt.Errorf("load previous blob %q (%s): %w", entry.Name, entry.TreeEntry.Hash, err)
 	}
 
-	err = blobCache.validateAndReserve(blob, budget)
-	if err != nil {
+	if err := blobCache.validateAndReserve(blob, budget); err != nil {
 		return fmt.Errorf("cache previous blob %q (%s): %w", entry.Name, entry.TreeEntry.Hash, err)
 	}
 
 	cached := &CachedBlob{Blob: *blob}
-
-	err = cached.CacheWithLimit(blobCache.MaxBlobSize)
-	if err != nil {
+	if err := cached.CacheWithLimit(blobCache.MaxBlobSize); err != nil {
 		blobCache.l.Errorf("file from %s %s: %v\n", entry.Name, entry.TreeEntry.Hash, err)
 		return err
 	}
-
 	cache[entry.TreeEntry.Hash] = cached
+	return nil
+}
 
+func (blobCache *BlobCache) cacheDummyBlob(
+	hash plumbing.Hash,
+	cache map[plumbing.Hash]*CachedBlob,
+	budget *commitBlobBudget,
+) error {
+	blob, err := internal.CreateDummyBlob(hash)
+	if err != nil {
+		return fmt.Errorf("create placeholder for missing blob %s: %w", hash, err)
+	}
+	if err := blobCache.validateAndReserve(blob, budget); err != nil {
+		return err
+	}
+	cache[hash] = &CachedBlob{Blob: *blob}
 	return nil
 }
 

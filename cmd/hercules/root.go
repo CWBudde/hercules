@@ -1367,33 +1367,10 @@ func formatUsage(command *cobra.Command) error {
 	features := hercules.Registry.GetFeaturedItems()
 	hercules.EnablePathFlagTypeMasquerade()
 	showPipeline := command == rootCmd
-	filter := map[string]bool{}
-	if showPipeline {
-		for _, l := range leaves {
-			filter[l.Flag()] = true
-			for _, cfg := range l.ListConfigurationOptions() {
-				filter[cfg.Flag] = true
-			}
-		}
-		for _, i := range plumbing {
-			for _, cfg := range i.ListConfigurationOptions() {
-				filter[cfg.Flag] = true
-			}
-		}
-	}
+	filter := pipelineUsageFlags(showPipeline, leaves, plumbing)
+	hidden := hideUsageFlags(localFlags, filter)
+	defer restoreUsageFlags(hidden)
 
-	hidden := map[*pflag.Flag]bool{}
-	for key := range filter {
-		if flag := localFlags.Lookup(key); flag != nil {
-			hidden[flag] = flag.Hidden
-			flag.Hidden = true
-		}
-	}
-	defer func() {
-		for flag, wasHidden := range hidden {
-			flag.Hidden = wasHidden
-		}
-	}()
 	args := map[string]any{
 		"c":            command,
 		"leaves":       leaves,
@@ -1407,6 +1384,42 @@ func formatUsage(command *cobra.Command) error {
 		command.Println(err)
 	}
 	return err
+}
+
+func pipelineUsageFlags(showPipeline bool, leaves []hercules.LeafPipelineItem, plumbing []hercules.PipelineItem) map[string]bool {
+	filter := map[string]bool{}
+	if !showPipeline {
+		return filter
+	}
+	for _, leaf := range leaves {
+		filter[leaf.Flag()] = true
+		for _, cfg := range leaf.ListConfigurationOptions() {
+			filter[cfg.Flag] = true
+		}
+	}
+	for _, item := range plumbing {
+		for _, cfg := range item.ListConfigurationOptions() {
+			filter[cfg.Flag] = true
+		}
+	}
+	return filter
+}
+
+func hideUsageFlags(localFlags *pflag.FlagSet, filter map[string]bool) map[*pflag.Flag]bool {
+	hidden := map[*pflag.Flag]bool{}
+	for key := range filter {
+		if flag := localFlags.Lookup(key); flag != nil {
+			hidden[flag] = flag.Hidden
+			flag.Hidden = true
+		}
+	}
+	return hidden
+}
+
+func restoreUsageFlags(hidden map[*pflag.Flag]bool) {
+	for flag, wasHidden := range hidden {
+		flag.Hidden = wasHidden
+	}
 }
 
 // versionCmd prints the API version and the Git commit hash.

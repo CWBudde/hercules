@@ -101,46 +101,52 @@ func PlotBurndownMatplotlibWithOptions(
 	}
 
 	numSeries := len(data.Matrix)
-	numPoints := len(data.DateRange)
-
-	// Ensure matrix dimensions are consistent
 	if numSeries == 0 {
 		return fmt.Errorf("empty matrix")
 	}
-
-	// Convert dates to float64 for plotting (Unix timestamps)
-	timeValues := make([]float64, numPoints)
-	for i, date := range data.DateRange {
-		timeValues[i] = float64(date.Unix())
-	}
-
-	// Python mutates the matrix after stackplot(), so the rendered reference
-	// remains unnormalized and is only clipped by ylim(0, 1).
 	matrix := data.Matrix
-
-	colors := PythonLaboursColorPalette(numSeries)
-	renderColors := make([]render.Color, len(colors))
-	for i, c := range colors {
-		renderColors[i] = renderColor(c)
+	timeValues, renderColors, labels := prepareBurndownStackData(data)
+	width, height := pythonPlotPixelSize(PythonPlotDefaultWidthInches, PythonPlotDefaultHeightInches, opts.Size)
+	background, foreground := LaboursPlotColors(opts.Background)
+	transparentBackground := background
+	transparentBackground.A = 0
+	fig, ax := newPythonBurndownFigure(
+		width, height, opts.PlotFontSize(), background, foreground, transparentBackground,
+		matrix, relative,
+	)
+	if ax == nil {
+		return fmt.Errorf("failed to create burndown axes")
 	}
-	labels := make([]string, numSeries)
+	configureBurndownStackAxes(ax, data, matrix, timeValues, renderColors, labels, relative, opts)
+	return saveMatplotlibFigureWithoutTightLayout(fig, output, width, height, transparentBackground)
+}
+
+func prepareBurndownStackData(
+	data *burndown.ProcessedBurndown,
+) ([]float64, []render.Color, []string) {
+	timeValues := unixTimeValues(data.DateRange)
+	colors := PythonLaboursColorPalette(len(data.Matrix))
+	renderColors := make([]render.Color, len(colors))
+	for i, itemColor := range colors {
+		renderColors[i] = renderColor(itemColor)
+	}
+	labels := make([]string, len(data.Matrix))
 	for i := range labels {
 		labels[i] = fmt.Sprintf("Layer %d", i)
 		if i < len(data.Labels) {
 			labels[i] = data.Labels[i]
 		}
 	}
+	return timeValues, renderColors, labels
+}
 
-	width, height := pythonPlotPixelSize(PythonPlotDefaultWidthInches, PythonPlotDefaultHeightInches, opts.Size)
-	fontSize := opts.PlotFontSize()
-	background, foreground := LaboursPlotColors(opts.Background)
-	transparentBackground := background
-	transparentBackground.A = 0
-	// Python labours forces the legend frame fully opaque in `apply_plot_style`
-	// (`frame.set_facecolor(background)` / `frame.set_edgecolor(background)`),
-	// so the legend stays consistent regardless of how the saved PNG is later
-	// composited. Leaving the legend at alpha < 1 made it render dark in
-	// viewers that composite against a non-white background.
+func newPythonBurndownFigure(
+	width, height int,
+	fontSize float64,
+	background, foreground, transparentBackground render.Color,
+	matrix [][]float64,
+	relative bool,
+) (*core.Figure, *core.Axes) {
 	fig := core.NewFigure(
 		width,
 		height,
@@ -150,21 +156,24 @@ func PlotBurndownMatplotlibWithOptions(
 		style.WithAxesBackground(transparentBackground),
 		style.WithAxesEdgeColor(foreground),
 		style.WithTextColor(foreground.R, foreground.G, foreground.B, foreground.A),
-		style.WithLegendColors(
-			background,
-			background,
-			foreground,
-		),
+		style.WithLegendColors(background, background, foreground),
 	)
 	ax := fig.GridSpec(
-		1,
-		1,
-		core.WithGridSpecPadding(pythonBurndownAxesPadding(matrix, relative)),
+		1, 1, core.WithGridSpecPadding(pythonBurndownAxesPadding(matrix, relative)),
 	).Cell(0, 0).AddAxes()
-	if ax == nil {
-		return fmt.Errorf("failed to create burndown axes")
-	}
+	return fig, ax
+}
 
+func configureBurndownStackAxes(
+	ax *core.Axes,
+	data *burndown.ProcessedBurndown,
+	matrix [][]float64,
+	timeValues []float64,
+	colors []render.Color,
+	labels []string,
+	relative bool,
+	opts Options,
+) {
 	if !opts.HideTitle {
 		ax.SetTitle(fmt.Sprintf("%s %d x %d (granularity %d, sampling %d)",
 			data.Name, len(data.Matrix), len(data.DateRange), data.Granularity, data.Sampling))
@@ -179,7 +188,7 @@ func PlotBurndownMatplotlibWithOptions(
 		plotMatrix = clippedStackMatrix(matrix, 0, 1)
 	}
 	ax.StackPlot(timeValues, plotMatrix, core.StackPlotOptions{
-		Colors: renderColors,
+		Colors: colors,
 		Labels: labels,
 	})
 	ax.SetXLim(timeValues[0], timeValues[len(timeValues)-1])
@@ -195,8 +204,6 @@ func PlotBurndownMatplotlibWithOptions(
 	if relative {
 		legend.Location = core.LegendLowerLeft
 	}
-
-	return saveMatplotlibFigureWithoutTightLayout(fig, output, width, height, transparentBackground)
 }
 
 func pythonBurndownAxesPadding(matrix [][]float64, relative bool) (left, right, bottom, top float64) {
@@ -506,11 +513,25 @@ func saveMatplotlibFigureWithLayout(fig *core.Figure, output string, width, heig
 	if tight {
 		fig.TightLayout()
 	}
-	background := render.Color{R: 1, G: 1, B: 1, A: 0}
-	if len(backgrounds) > 0 {
-		background = backgrounds[0]
+	background := matplotlibBackground(backgrounds)
+	config := backends.Config{
+		Width:       width,
+		Height:      height,
+		Background:  background,
+		DPI:         100,
+		Transparent: background.A == 0,
 	}
-	config := backends.Config{Width: width, Height: height, Background: background, DPI: 100, Transparent: background.A == 0}
+	return saveMatplotlibFigureWithConfig(fig, output, config)
+}
+
+func matplotlibBackground(backgrounds []render.Color) render.Color {
+	if len(backgrounds) > 0 {
+		return backgrounds[0]
+	}
+	return render.Color{R: 1, G: 1, B: 1, A: 0}
+}
+
+func saveMatplotlibFigureWithConfig(fig *core.Figure, output string, config backends.Config) error {
 	switch strings.ToLower(filepath.Ext(output)) {
 	case ".svg":
 		renderer, _, err := backends.NewRenderer("svg", config, nil)
@@ -526,8 +547,8 @@ func saveMatplotlibFigureWithLayout(fig *core.Figure, output string, width, heig
 		if err := core.SavePNG(fig, renderer, output); err != nil {
 			return err
 		}
-		if background.A == 0 {
-			return setTransparentPNGRGB(output, background)
+		if config.Background.A == 0 {
+			return setTransparentPNGRGB(output, config.Background)
 		}
 		return nil
 	}

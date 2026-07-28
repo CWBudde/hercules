@@ -103,64 +103,93 @@ type pluginGenerationOptions struct {
 	makefile  bool
 }
 
-func readPluginGenerationOptions(cmd *cobra.Command) (pluginGenerationOptions, error) {
+type pluginGenerationFlagValues struct {
+	name            string
+	outputDir       string
+	varName         string
+	flag            string
+	pkg             string
+	disableMakefile bool
+}
+
+func readPluginGenerationFlagValues(cmd *cobra.Command) (pluginGenerationFlagValues, error) {
 	flags := cmd.Flags()
 	name, err := flags.GetString("name")
 	if err != nil {
-		return pluginGenerationOptions{}, err
+		return pluginGenerationFlagValues{}, err
 	}
 	outputDir, err := flags.GetString("output")
 	if err != nil {
-		return pluginGenerationOptions{}, err
+		return pluginGenerationFlagValues{}, err
 	}
 	varName, err := flags.GetString("varname")
 	if err != nil {
-		return pluginGenerationOptions{}, err
+		return pluginGenerationFlagValues{}, err
 	}
 	flag, err := flags.GetString("flag")
 	if err != nil {
-		return pluginGenerationOptions{}, err
+		return pluginGenerationFlagValues{}, err
 	}
 	disableMakefile, err := flags.GetBool("no-makefile")
 	if err != nil {
-		return pluginGenerationOptions{}, err
+		return pluginGenerationFlagValues{}, err
 	}
 	pkg, err := flags.GetString(pluginPackageOption)
+	if err != nil {
+		return pluginGenerationFlagValues{}, err
+	}
+
+	return pluginGenerationFlagValues{
+		name:            name,
+		outputDir:       outputDir,
+		varName:         varName,
+		flag:            flag,
+		pkg:             pkg,
+		disableMakefile: disableMakefile,
+	}, nil
+}
+
+func readPluginGenerationOptions(cmd *cobra.Command) (pluginGenerationOptions, error) {
+	values, err := readPluginGenerationFlagValues(cmd)
 	if err != nil {
 		return pluginGenerationOptions{}, err
 	}
 
-	if err := validatePluginName(name); err != nil {
+	return normalizePluginGenerationOptions(values)
+}
+
+func normalizePluginGenerationOptions(values pluginGenerationFlagValues) (pluginGenerationOptions, error) {
+	if err := validatePluginName(values.name); err != nil {
 		return pluginGenerationOptions{}, err
 	}
-	nameParts := camelcase.Split(name)
-	if varName == "" {
-		varName = strings.ToLower(nameParts[0])
+	nameParts := camelcase.Split(values.name)
+	if values.varName == "" {
+		values.varName = strings.ToLower(nameParts[0])
 	}
-	if flag == "" {
-		flag = strings.ToLower(strings.Join(nameParts, "-"))
+	if values.flag == "" {
+		values.flag = strings.ToLower(strings.Join(nameParts, "-"))
 	}
-	if !isGoIdentifier(varName) {
+	if !isGoIdentifier(values.varName) {
 		return pluginGenerationOptions{}, fmt.Errorf(
-			"invalid plugin variable name %q: expected a Go identifier", varName,
+			"invalid plugin variable name %q: expected a Go identifier", values.varName,
 		)
 	}
-	if !isGoIdentifier(pkg) {
+	if !isGoIdentifier(values.pkg) {
 		return pluginGenerationOptions{}, fmt.Errorf(
-			"invalid plugin package %q: expected a Go identifier", pkg,
+			"invalid plugin package %q: expected a Go identifier", values.pkg,
 		)
 	}
-	if err := validatePluginFlag(flag); err != nil {
+	if err := validatePluginFlag(values.flag); err != nil {
 		return pluginGenerationOptions{}, err
 	}
 
 	return pluginGenerationOptions{
-		name:      name,
-		outputDir: filepath.Clean(outputDir),
-		varName:   varName,
-		flag:      flag,
-		pkg:       pkg,
-		makefile:  !disableMakefile,
+		name:      values.name,
+		outputDir: filepath.Clean(values.outputDir),
+		varName:   values.varName,
+		flag:      values.flag,
+		pkg:       values.pkg,
+		makefile:  !values.disableMakefile,
 	}, nil
 }
 

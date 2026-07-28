@@ -122,6 +122,16 @@ func validateTickSizeFact(facts map[string]any, key string) error {
 }
 
 func (pipeline *Pipeline) applyConfigurationFacts(facts map[string]any) error {
+	if err := pipeline.applyLoggerFact(facts); err != nil {
+		return err
+	}
+	if err := pipeline.applyBoolConfigurationFacts(facts); err != nil {
+		return err
+	}
+	return pipeline.applyHibernationDistanceFact(facts)
+}
+
+func (pipeline *Pipeline) applyLoggerFact(facts map[string]any) error {
 	logger, exists, err := FactValue[Logger](facts, ConfigLogger)
 	if err != nil {
 		return err
@@ -132,50 +142,44 @@ func (pipeline *Pipeline) applyConfigurationFacts(facts map[string]any) error {
 	} else {
 		facts[ConfigLogger] = pipeline.l
 	}
+	return nil
+}
 
-	printActions, exists, err := FactValue[bool](facts, ConfigPipelinePrintActions)
-	if err != nil {
-		return err
+func (pipeline *Pipeline) applyBoolConfigurationFacts(facts map[string]any) error {
+	configurations := []struct {
+		key    string
+		target *bool
+	}{
+		{ConfigPipelinePrintActions, &pipeline.PrintActions},
+		{ConfigPipelineDumpPlan, &pipeline.DumpPlan},
+		{ConfigPipelineDryRun, &pipeline.DryRun},
 	}
-
-	if exists {
-		pipeline.PrintActions = printActions
+	for _, configuration := range configurations {
+		value, exists, err := FactValue[bool](facts, configuration.key)
+		if err != nil {
+			return err
+		}
+		if exists {
+			*configuration.target = value
+		}
 	}
+	return nil
+}
 
-	dumpPlan, exists, err := FactValue[bool](facts, ConfigPipelineDumpPlan)
-	if err != nil {
-		return err
-	}
-
-	if exists {
-		pipeline.DumpPlan = dumpPlan
-	}
-
-	dryRun, exists, err := FactValue[bool](facts, ConfigPipelineDryRun)
-	if err != nil {
-		return err
-	}
-
-	if exists {
-		pipeline.DryRun = dryRun
-	}
-
+func (pipeline *Pipeline) applyHibernationDistanceFact(facts map[string]any) error {
 	distance, exists, err := FactValue[int](facts, ConfigPipelineHibernationDistance)
 	if err != nil {
 		return err
 	}
-
-	if exists {
-		if distance < 0 {
-			err := fmt.Errorf("%w (got %d)", errNegativeHibernationDistance, distance)
-			pipeline.l.Error(err)
-
-			return err
-		}
-
-		pipeline.HibernationDistance = distance
+	if !exists {
+		return nil
 	}
-
+	if distance < 0 {
+		err := fmt.Errorf("%w (got %d)", errNegativeHibernationDistance, distance)
+		pipeline.l.Error(err)
+		return err
+	}
+	pipeline.HibernationDistance = distance
 	return nil
 }
 

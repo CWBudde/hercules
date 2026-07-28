@@ -126,24 +126,42 @@ func aggregateLanguageStats(timeSeries *DeveloperTimeSeriesData) ([]LanguageStat
 		return nil, fmt.Errorf("%w: developer time series", ErrAnalysisMissing)
 	}
 
+	totals := languageTotals(timeSeries.Days)
+	if len(totals) == 0 {
+		return nil, fmt.Errorf("%w: language stats", ErrAnalysisMissing)
+	}
+
+	return sortedLanguageStats(totals), nil
+}
+
+func languageTotals(days map[int]map[int]DevDay) map[string]int {
 	totals := make(map[string]int)
-	for _, dayStats := range timeSeries.Days {
+
+	for _, dayStats := range days {
 		for _, stats := range dayStats {
 			for language, values := range stats.Languages {
 				if language == "" {
 					continue
 				}
-				for _, value := range values {
-					totals[language] += value
-				}
+
+				totals[language] += sumInts(values)
 			}
 		}
 	}
 
-	if len(totals) == 0 {
-		return nil, fmt.Errorf("%w: language stats", ErrAnalysisMissing)
+	return totals
+}
+
+func sumInts(values []int) int {
+	total := 0
+	for _, value := range values {
+		total += value
 	}
 
+	return total
+}
+
+func sortedLanguageStats(totals map[string]int) []LanguageStat {
 	languages := make([]LanguageStat, 0, len(totals))
 	for language, lines := range totals {
 		languages = append(languages, LanguageStat{
@@ -158,5 +176,5 @@ func aggregateLanguageStats(timeSeries *DeveloperTimeSeriesData) ([]LanguageStat
 		return languages[i].Lines > languages[j].Lines
 	})
 
-	return languages, nil
+	return languages
 }

@@ -609,115 +609,138 @@ func (r *ProtobufReader) GetFileHistory() (*FileHistoryData, error) {
 // GetDeveloperTimeSeriesData returns Python-compatible time series data for protobuf files
 // This now parses real temporal data from DevsAnalysisResults.Ticks (matches Python's approach)
 func (r *ProtobufReader) GetDeveloperTimeSeriesData() (*DeveloperTimeSeriesData, error) {
-	// Parse real developer time series data from protobuf (like Python does)
 	devsData, err := r.parseDevsAnalysisResults()
 	if err != nil {
 		return nil, err
 	}
 
-	// Extract people list from dev_index (matches Python's people = list(self.contents["Devs"].dev_index))
-	people := make([]string, len(devsData.DevIndex))
-	copy(people, devsData.DevIndex)
+	return &DeveloperTimeSeriesData{
+		People: append([]string(nil), devsData.GetDevIndex()...),
+		Days:   protobufDeveloperDays(devsData),
+	}, nil
+}
 
-	// Parse real time series data from ticks (matches Python's self.contents["Devs"].ticks.items())
-	days := make(map[int]map[int]DevDay)
+func protobufDeveloperDays(devsData *pb.DevsAnalysisResults) map[int]map[int]DevDay {
+	ticks := devsData.GetTicks()
 
-	// Iterate through all time ticks
-	for tickKey, tickDevs := range devsData.Ticks {
+	days := make(map[int]map[int]DevDay, len(ticks))
+	for tickKey, tickDevs := range ticks {
 		if tickDevs == nil {
 			continue
 		}
 
-		// Create developer map for this time tick
-		dayDevs := make(map[int]DevDay)
-
-		// Iterate through all developers in this tick
-		for devIndex, devTick := range tickDevs.Devs {
-			if devTick == nil {
-				continue
-			}
-
-			// Convert languages map from protobuf format to DevDay format
-			languages := make(map[string][]int)
-			if devTick.Languages != nil {
-				for lang, langStats := range devTick.Languages {
-					if langStats != nil {
-						// Python format: {lang: [added, removed, changed]}
-						languages[lang] = []int{
-							int(langStats.Added),
-							int(langStats.Removed),
-							int(langStats.Changed),
-						}
-					}
-				}
-			}
-
-			// Convert protobuf DevTick to Go DevDay format (matches Python's DevDay structure)
-			dayDevs[int(devIndex)] = DevDay{
-				Commits:   int(devTick.Commits),
-				Languages: languages,
-			}
-			if devTick.Stats != nil {
-				devDay := dayDevs[int(devIndex)]
-				devDay.LinesAdded = int(devTick.Stats.Added)
-				devDay.LinesRemoved = int(devTick.Stats.Removed)
-				devDay.LinesModified = int(devTick.Stats.Changed)
-				dayDevs[int(devIndex)] = devDay
-			}
-		}
-
-		// Store this day's data using the real time tick key
-		days[int(tickKey)] = dayDevs
+		days[int(tickKey)] = protobufDeveloperDay(tickDevs)
 	}
 
-	// Return the same format as Python: (people, days)
-	return &DeveloperTimeSeriesData{
-		People: people,
-		Days:   days,
-	}, nil
+	return days
+}
+
+func protobufDeveloperDay(tickDevs *pb.TickDevs) map[int]DevDay {
+	devs := tickDevs.GetDevs()
+
+	day := make(map[int]DevDay, len(devs))
+	for devIndex, devTick := range devs {
+		if devTick != nil {
+			day[int(devIndex)] = protobufDevDay(devTick)
+		}
+	}
+
+	return day
+}
+
+func protobufDevDay(devTick *pb.DevTick) DevDay {
+	day := DevDay{
+		Commits:   int(devTick.GetCommits()),
+		Languages: protobufLanguages(devTick.GetLanguages()),
+	}
+
+	stats := devTick.GetStats()
+	if stats != nil {
+		day.LinesAdded = int(stats.GetAdded())
+		day.LinesRemoved = int(stats.GetRemoved())
+		day.LinesModified = int(stats.GetChanged())
+	}
+
+	return day
+}
+
+func protobufLanguages(stats map[string]*pb.LineStats) map[string][]int {
+	languages := make(map[string][]int, len(stats))
+	for language, values := range stats {
+		if values != nil {
+			languages[language] = []int{
+				int(values.GetAdded()),
+				int(values.GetRemoved()),
+				int(values.GetChanged()),
+			}
+		}
+	}
+
+	return languages
 }
 
 func aggregateDeveloperStats(timeSeries *DeveloperTimeSeriesData) []DeveloperStat {
-	statsByDev := make(map[int]*DeveloperStat)
-	for devIndex, devName := range timeSeries.People {
-		statsByDev[devIndex] = &DeveloperStat{
-			Name:      devName,
-			Languages: make(map[string]int),
-		}
-	}
-
+	statsByDev := initialDeveloperStats(timeSeries.People)
 	for _, dayStats := range timeSeries.Days {
 		for devIndex, day := range dayStats {
-			stat, ok := statsByDev[devIndex]
-			if !ok {
-				stat = &DeveloperStat{
-					Name:      fmt.Sprintf("developer-%d", devIndex),
-					Languages: make(map[string]int),
-				}
-				statsByDev[devIndex] = stat
-			}
-			stat.Commits += day.Commits
-			stat.LinesAdded += day.LinesAdded
-			stat.LinesRemoved += day.LinesRemoved
-			stat.LinesModified += day.LinesModified
-			for language, values := range day.Languages {
-				for _, value := range values {
-					stat.Languages[language] += value
-				}
-			}
+			addDeveloperDay(developerStat(statsByDev, devIndex), day)
 		}
 	}
 
+	return sortedDeveloperStats(statsByDev)
+}
+
+func initialDeveloperStats(people []string) map[int]*DeveloperStat {
+	stats := make(map[int]*DeveloperStat, len(people))
+	for devIndex, devName := range people {
+		stats[devIndex] = newDeveloperStat(devName)
+	}
+
+	return stats
+}
+
+func developerStat(stats map[int]*DeveloperStat, devIndex int) *DeveloperStat {
+	if stat, ok := stats[devIndex]; ok {
+		return stat
+	}
+
+	stat := newDeveloperStat(fmt.Sprintf("developer-%d", devIndex))
+	stats[devIndex] = stat
+
+	return stat
+}
+
+func newDeveloperStat(name string) *DeveloperStat {
+	return &DeveloperStat{
+		Name:      name,
+		Languages: make(map[string]int),
+	}
+}
+
+func addDeveloperDay(stat *DeveloperStat, day DevDay) {
+	stat.Commits += day.Commits
+	stat.LinesAdded += day.LinesAdded
+	stat.LinesRemoved += day.LinesRemoved
+
+	stat.LinesModified += day.LinesModified
+	for language, values := range day.Languages {
+		stat.Languages[language] += sumInts(values)
+	}
+}
+
+func sortedDeveloperStats(statsByDev map[int]*DeveloperStat) []DeveloperStat {
 	indexes := make([]int, 0, len(statsByDev))
 	for devIndex := range statsByDev {
 		indexes = append(indexes, devIndex)
 	}
+
 	sort.Ints(indexes)
 
 	stats := make([]DeveloperStat, 0, len(indexes))
 	for _, devIndex := range indexes {
 		stats = append(stats, *statsByDev[devIndex])
 	}
+
 	return stats
 }
 

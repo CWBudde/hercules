@@ -323,80 +323,167 @@ func (r *YamlReader) GetShotnessCooccurrence() ([]string, SparseMatrix, error) {
 // is the entity's squared profile magnitude (sum_k counters_i[k]^2); it is
 // useful as a self-similarity baseline, but is excluded from ranked pairs.
 func shotnessCouplingMatrix(records []ShotnessRecord) ([]string, SparseMatrix, error) {
-	index := make([]string, len(records))
+	index, byDimension, err := buildShotnessProfiles(records)
+	if err != nil {
+		return nil, SparseMatrix{}, err
+	}
+
+	upper, err := accumulateShotnessProducts(index, byDimension)
+	if err != nil {
+		return nil, SparseMatrix{}, err
+	}
+
+	entries, err := shotnessSparseEntries(index, upper)
+	if err != nil {
+		return nil, SparseMatrix{}, err
+	}
+
+	matrix, err := NewSparseMatrix(len(records), len(records), entries)
+	if err != nil {
+		return nil, SparseMatrix{}, err
+	}
+
+	return index, matrix, nil
+}
+
+func buildShotnessProfiles(
+	records []ShotnessRecord,
+) ([]string, [][]shotnessDimensionValue, error) {
 	baseLabelCounts := make(map[string]int, len(records))
 	for _, record := range records {
 		baseLabelCounts[fmt.Sprintf("%s:%s", record.File, record.Name)]++
 	}
 
+	index := make([]string, len(records))
 	stableLabels := make(map[string]struct{}, len(records))
 	byDimension := make([][]shotnessDimensionValue, len(records))
 	for i, record := range records {
-		baseLabel := fmt.Sprintf("%s:%s", record.File, record.Name)
-		index[i] = baseLabel
-		if baseLabelCounts[baseLabel] > 1 {
-			index[i] = fmt.Sprintf("%s [%s]", baseLabel, record.Type)
-		}
+		index[i] = shotnessLabel(record, baseLabelCounts)
 		if _, exists := stableLabels[index[i]]; exists {
-			return nil, SparseMatrix{}, fmt.Errorf("duplicate shotness entity identity %q", index[i])
+			return nil, nil, fmt.Errorf(
+				"%w: duplicate shotness entity identity %q",
+				ErrAnalysisMalformed, index[i],
+			)
 		}
 		stableLabels[index[i]] = struct{}{}
 
-		for dimension, count := range record.Counters {
-			if dimension < 0 || int64(dimension) >= int64(len(records)) {
-				return nil, SparseMatrix{}, fmt.Errorf(
-					"shotness entity %q has out-of-range counter dimension %d for %d entities",
-					index[i], dimension, len(records),
-				)
-			}
-			if count < 0 {
-				return nil, SparseMatrix{}, fmt.Errorf(
-					"shotness entity %q has negative co-occurrence %d at dimension %d",
-					index[i], count, dimension,
-				)
-			}
-			if count > 0 {
-				byDimension[dimension] = append(
-					byDimension[dimension],
-					shotnessDimensionValue{entity: i, value: int64(count)},
-				)
-			}
+		err := appendShotnessCounters(byDimension, i, index[i], record.Counters)
+		if err != nil {
+			return nil, nil, err
 		}
 	}
 
-	maxInt := int64(^uint(0) >> 1)
-	upper := make([]map[int]int64, len(records))
+	return index, byDimension, nil
+}
+
+func shotnessLabel(record ShotnessRecord, counts map[string]int) string {
+	label := fmt.Sprintf("%s:%s", record.File, record.Name)
+	if counts[label] > 1 {
+		return fmt.Sprintf("%s [%s]", label, record.Type)
+	}
+
+	return label
+}
+
+func appendShotnessCounters(
+	byDimension [][]shotnessDimensionValue,
+	entity int,
+	label string,
+	counters map[int32]int32,
+) error {
+	for dimension, count := range counters {
+		if dimension < 0 || int64(dimension) >= int64(len(byDimension)) {
+			return fmt.Errorf(
+				"%w: shotness entity %q has out-of-range counter dimension %d for %d entities",
+				ErrAnalysisMalformed, label, dimension, len(byDimension),
+			)
+		}
+
+		if count < 0 {
+			return fmt.Errorf(
+				"%w: shotness entity %q has negative co-occurrence %d at dimension %d",
+				ErrAnalysisMalformed, label, count, dimension,
+			)
+		}
+
+		if count > 0 {
+			byDimension[dimension] = append(
+				byDimension[dimension],
+				shotnessDimensionValue{entity: entity, value: int64(count)},
+			)
+		}
+	}
+
+	return nil
+}
+
+func accumulateShotnessProducts(
+	index []string,
+	byDimension [][]shotnessDimensionValue,
+) ([]map[int]int64, error) {
+	upper := make([]map[int]int64, len(index))
 	for _, values := range byDimension {
-		for leftIndex, left := range values {
-			for _, right := range values[leftIndex:] {
-				row, column := left.entity, right.entity
-				if row > column {
-					row, column = column, row
-				}
-				if upper[row] == nil {
-					upper[row] = make(map[int]int64)
-				}
-				product := left.value * right.value
-				if product > maxInt-upper[row][column] {
-					return nil, SparseMatrix{}, fmt.Errorf(
-						"shotness coupling score overflows int for %q and %q",
-						index[row], index[column],
-					)
-				}
-				upper[row][column] += product
+		err := accumulateShotnessDimension(index, upper, values)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return upper, nil
+}
+
+func accumulateShotnessDimension(
+	index []string,
+	upper []map[int]int64,
+	values []shotnessDimensionValue,
+) error {
+	for leftIndex, left := range values {
+		for _, right := range values[leftIndex:] {
+			err := addShotnessProduct(index, upper, left, right)
+			if err != nil {
+				return err
 			}
 		}
 	}
 
+	return nil
+}
+
+func addShotnessProduct(
+	index []string,
+	upper []map[int]int64,
+	left, right shotnessDimensionValue,
+) error {
+	row, column := left.entity, right.entity
+	if row > column {
+		row, column = column, row
+	}
+
+	if upper[row] == nil {
+		upper[row] = make(map[int]int64)
+	}
+
+	product := left.value * right.value
+	maxInt := int64(^uint(0) >> 1)
+
+	if product > maxInt-upper[row][column] {
+		return fmt.Errorf(
+			"%w: shotness coupling score overflows int for %q and %q",
+			ErrAnalysisMalformed, index[row], index[column],
+		)
+	}
+
+	upper[row][column] += product
+
+	return nil
+}
+
+func shotnessSparseEntries(index []string, upper []map[int]int64) ([]SparseEntry, error) {
+	maxInt := int64(^uint(0) >> 1)
 	entries := make([]SparseEntry, 0)
 	var pairTotal int64
 	for row, values := range upper {
-		columns := make([]int, 0, len(values))
-		for column := range values {
-			columns = append(columns, column)
-		}
-		sort.Ints(columns)
-		for _, column := range columns {
+		for _, column := range sortedShotnessColumns(values) {
 			score := values[column]
 			if score == 0 {
 				continue
@@ -406,9 +493,9 @@ func shotnessCouplingMatrix(records []ShotnessRecord) ([]string, SparseMatrix, e
 			})
 			if row != column {
 				if score > maxInt-pairTotal {
-					return nil, SparseMatrix{}, fmt.Errorf(
-						"total shotness coupling score overflows int while adding %q and %q",
-						index[row], index[column],
+					return nil, fmt.Errorf(
+						"%w: total shotness coupling score overflows int while adding %q and %q",
+						ErrAnalysisMalformed, index[row], index[column],
 					)
 				}
 				pairTotal += score
@@ -418,11 +505,19 @@ func shotnessCouplingMatrix(records []ShotnessRecord) ([]string, SparseMatrix, e
 			}
 		}
 	}
-	matrix, err := NewSparseMatrix(len(records), len(records), entries)
-	if err != nil {
-		return nil, SparseMatrix{}, err
+
+	return entries, nil
+}
+
+func sortedShotnessColumns(values map[int]int64) []int {
+	columns := make([]int, 0, len(values))
+	for column := range values {
+		columns = append(columns, column)
 	}
-	return index, matrix, nil
+
+	sort.Ints(columns)
+
+	return columns
 }
 
 type shotnessDimensionValue struct {
@@ -570,32 +665,44 @@ func (r *YamlReader) GetDeveloperTimeSeriesData() (*DeveloperTimeSeriesData, err
 		return nil, fmt.Errorf("%w: Devs", ErrAnalysisMissing)
 	}
 
-	// Get people list (dev names)
-	var people []string
-	if peopleData, ok := devsData["people"].([]interface{}); ok {
-		for _, p := range peopleData {
-			if str, ok := p.(string); ok {
-				people = append(people, str)
-			}
-		}
-	} else if devIndex, ok := devsData["dev_index"].([]interface{}); ok {
-		for _, p := range devIndex {
-			if str, ok := p.(string); ok {
-				people = append(people, str)
-			}
-		}
-	} else {
-		return nil, fmt.Errorf("%w: Devs people index", ErrAnalysisMissing)
+	people, err := yamlDeveloperPeople(devsData)
+	if err != nil {
+		return nil, err
 	}
 
-	// Get ticks (time series data)
 	ticks, ok := asMap(devsData["ticks"])
 	if !ok {
 		return nil, fmt.Errorf("%w: Devs ticks", ErrAnalysisMissing)
 	}
 
-	days := make(map[int]map[int]DevDay)
+	return &DeveloperTimeSeriesData{
+		People: people,
+		Days:   yamlDeveloperDays(ticks),
+	}, nil
+}
 
+func yamlDeveloperPeople(devsData map[string]any) ([]string, error) {
+	rawPeople, ok := devsData["people"].([]any)
+	if !ok {
+		rawPeople, ok = devsData["dev_index"].([]any)
+	}
+
+	if !ok {
+		return nil, fmt.Errorf("%w: Devs people index", ErrAnalysisMissing)
+	}
+
+	people := make([]string, 0, len(rawPeople))
+	for _, person := range rawPeople {
+		if name, ok := person.(string); ok {
+			people = append(people, name)
+		}
+	}
+
+	return people, nil
+}
+
+func yamlDeveloperDays(ticks map[any]any) map[int]map[int]DevDay {
+	days := make(map[int]map[int]DevDay)
 	for dayKey, dayData := range ticks {
 		dayInt, ok := convertToInt(dayKey)
 		if !ok {
@@ -612,28 +719,28 @@ func (r *YamlReader) GetDeveloperTimeSeriesData() (*DeveloperTimeSeriesData, err
 			devs = nestedDevs
 		}
 
-		dayDevs := make(map[int]DevDay)
-
-		for devKey, devData := range devs {
-			devInt, ok := convertToInt(devKey)
-			if !ok {
-				continue
-			}
-
-			devDay, ok := parseYamlDevDay(devData)
-			if !ok {
-				continue
-			}
-			dayDevs[devInt] = devDay
-		}
-
-		days[dayInt] = dayDevs
+		days[dayInt] = yamlDeveloperDay(devs)
 	}
 
-	return &DeveloperTimeSeriesData{
-		People: people,
-		Days:   days,
-	}, nil
+	return days
+}
+
+func yamlDeveloperDay(devs map[any]any) map[int]DevDay {
+	day := make(map[int]DevDay)
+
+	for devKey, devData := range devs {
+		devIndex, ok := convertToInt(devKey)
+		if !ok {
+			continue
+		}
+
+		devDay, ok := parseYamlDevDay(devData)
+		if ok {
+			day[devIndex] = devDay
+		}
+	}
+
+	return day
 }
 
 func (r *YamlReader) GetLanguageStats() ([]LanguageStat, error) {

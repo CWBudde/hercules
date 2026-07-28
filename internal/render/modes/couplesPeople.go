@@ -2,6 +2,7 @@ package modes
 
 import (
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"path/filepath"
@@ -163,36 +164,55 @@ func writeSparseVectorFile(
 
 	for row := range index {
 		columns, values := matrix.Row(row)
-		normSquared := 0.0
-		for _, value := range values {
-			capped := cappedCouplingValue(value, threshold)
-			normSquared += capped * capped
-		}
-		norm := math.Sqrt(normSquared)
-		position := 0
-		for column := range index {
-			value := 0.0
-			if position < len(columns) && columns[position] == column {
-				value = cappedCouplingValue(values[position], threshold)
-				position++
-			}
-			if norm > 0 {
-				value /= norm
-			}
-			if column > 0 {
-				if _, err := file.WriteString("\t"); err != nil {
-					return err
-				}
-			}
-			if _, err := fmt.Fprintf(file, "%.6f", value); err != nil {
-				return err
-			}
-		}
-		if _, err := file.WriteString("\n"); err != nil {
+		if err := writeNormalizedSparseRow(file, len(index), columns, values, threshold); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func writeNormalizedSparseRow(
+	writer io.Writer,
+	width int,
+	columns, values []int,
+	threshold int,
+) error {
+	norm := sparseRowNorm(values, threshold)
+	position := 0
+	for column := range width {
+		value := 0.0
+		if position < len(columns) && columns[position] == column {
+			value = cappedCouplingValue(values[position], threshold)
+			position++
+		}
+		if norm > 0 {
+			value /= norm
+		}
+		if err := writeSparseRowValue(writer, column, value); err != nil {
+			return err
+		}
+	}
+	_, err := fmt.Fprintln(writer)
+	return err
+}
+
+func sparseRowNorm(values []int, threshold int) float64 {
+	normSquared := 0.0
+	for _, value := range values {
+		capped := cappedCouplingValue(value, threshold)
+		normSquared += capped * capped
+	}
+	return math.Sqrt(normSquared)
+}
+
+func writeSparseRowValue(writer io.Writer, column int, value float64) error {
+	if column > 0 {
+		if _, err := fmt.Fprint(writer, "\t"); err != nil {
+			return err
+		}
+	}
+	_, err := fmt.Fprintf(writer, "%.6f", value)
+	return err
 }
 
 func writeSparseMetadataFile(

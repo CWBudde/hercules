@@ -26,66 +26,84 @@ func OldVsNewWithOptions(
 	startTime, endTime *time.Time,
 	opts Options,
 ) error {
-	timeSeries, timeSeriesErr := reader.GetDeveloperTimeSeriesData()
-	if timeSeriesErr != nil && !errors.Is(timeSeriesErr, readers.ErrAnalysisMissing) {
-		return fmt.Errorf("get developer time series: %w", timeSeriesErr)
+	rendered, err := renderActualOldVsNew(reader, output, opts.Graphics)
+	if err != nil {
+		return err
 	}
-	if timeSeriesErr == nil && len(timeSeries.Days) > 0 {
-		startUnix, endUnix := reader.GetHeader()
-		if startUnix > 0 && endUnix > startUnix {
-			newLines, oldLines, dates := oldVsNewDailySeries(timeSeries, startUnix, endUnix)
-			return generateOldVsNewPlot(newLines, oldLines, dates, output, opts.Graphics)
-		}
+	if rendered {
+		return nil
 	}
 
-	// Try to get developer statistics first
-	developerStats, err := reader.GetDeveloperStats()
-	if err != nil && !errors.Is(err, readers.ErrAnalysisMissing) {
-		return fmt.Errorf("get developer stats: %w", err)
+	totalLinesAdded, totalLinesModified, err := oldVsNewTotals(reader)
+	if err != nil {
+		return err
 	}
-
-	var totalLinesAdded, totalLinesModified int
-
-	if err != nil || len(developerStats) == 0 {
-		// If developer stats are not available, try to derive data from project burndown
-		fmt.Println("Developer stats not available, using synthetic data based on project burndown...")
-
-		_, _, burndownMatrix, burndownErr := reader.GetProjectBurndownWithHeader()
-		if burndownErr != nil {
-			return fmt.Errorf("get project burndown fallback: %w", burndownErr)
-		}
-		if len(burndownMatrix) == 0 {
-			return fmt.Errorf("%w: old-vs-new", readers.ErrAnalysisMissing)
-		}
-		// Estimate total lines from burndown data - use the final value as a proxy
-		if len(burndownMatrix[len(burndownMatrix)-1]) > 0 {
-			finalLines := 0
-			for _, val := range burndownMatrix[len(burndownMatrix)-1] {
-				finalLines += val
-			}
-			// Rough estimation: assume 60% new code, 40% modified code for a typical project
-			totalLinesAdded = int(float64(finalLines) * 0.6)
-			totalLinesModified = int(float64(finalLines) * 0.4)
-		}
-	} else {
-		// Aggregate the data across all developers
-		for _, stat := range developerStats {
-			totalLinesAdded += stat.LinesAdded
-			totalLinesModified += stat.LinesModified
-		}
-	}
-
-	// Create time series data (simplified approach - in a full implementation this would use temporal data)
-	timeSeriesLength := 52 // 52 weeks for demonstration
+	const timeSeriesLength = 52
 	newCodeSeries := generateOldVsNewTimeSeries(totalLinesAdded, timeSeriesLength, "new")
 	modifiedCodeSeries := generateOldVsNewTimeSeries(totalLinesModified, timeSeriesLength, "modified")
+	dates := syntheticOldVsNewDates(timeSeriesLength)
+	return generateOldVsNewPlot(newCodeSeries, modifiedCodeSeries, dates, output, opts.Graphics)
+}
 
-	dates := make([]time.Time, timeSeriesLength)
+func renderActualOldVsNew(
+	reader readers.Reader,
+	output string,
+	visuals graphics.Options,
+) (bool, error) {
+	timeSeries, timeSeriesErr := reader.GetDeveloperTimeSeriesData()
+	if timeSeriesErr != nil && !errors.Is(timeSeriesErr, readers.ErrAnalysisMissing) {
+		return false, fmt.Errorf("get developer time series: %w", timeSeriesErr)
+	}
+	if timeSeriesErr != nil || len(timeSeries.Days) == 0 {
+		return false, nil
+	}
+	startUnix, endUnix := reader.GetHeader()
+	if startUnix <= 0 || endUnix <= startUnix {
+		return false, nil
+	}
+	newLines, oldLines, dates := oldVsNewDailySeries(timeSeries, startUnix, endUnix)
+	return true, generateOldVsNewPlot(newLines, oldLines, dates, output, visuals)
+}
+
+func oldVsNewTotals(reader readers.Reader) (int, int, error) {
+	developerStats, err := reader.GetDeveloperStats()
+	if err != nil && !errors.Is(err, readers.ErrAnalysisMissing) {
+		return 0, 0, fmt.Errorf("get developer stats: %w", err)
+	}
+	if err != nil || len(developerStats) == 0 {
+		return oldVsNewBurndownTotals(reader)
+	}
+
+	totalLinesAdded, totalLinesModified := 0, 0
+	for _, stat := range developerStats {
+		totalLinesAdded += stat.LinesAdded
+		totalLinesModified += stat.LinesModified
+	}
+	return totalLinesAdded, totalLinesModified, nil
+}
+
+func oldVsNewBurndownTotals(reader readers.Reader) (int, int, error) {
+	fmt.Println("Developer stats not available, using synthetic data based on project burndown...")
+	_, _, matrix, err := reader.GetProjectBurndownWithHeader()
+	if err != nil {
+		return 0, 0, fmt.Errorf("get project burndown fallback: %w", err)
+	}
+	if len(matrix) == 0 {
+		return 0, 0, fmt.Errorf("%w: old-vs-new", readers.ErrAnalysisMissing)
+	}
+	finalLines := 0
+	for _, value := range matrix[len(matrix)-1] {
+		finalLines += value
+	}
+	return int(float64(finalLines) * 0.6), int(float64(finalLines) * 0.4), nil
+}
+
+func syntheticOldVsNewDates(length int) []time.Time {
+	dates := make([]time.Time, length)
 	for i := range dates {
 		dates[i] = time.Unix(0, 0).AddDate(0, 0, i)
 	}
-
-	return generateOldVsNewPlot(newCodeSeries, modifiedCodeSeries, dates, output, opts.Graphics)
+	return dates
 }
 
 // generateOldVsNewTimeSeries creates a time series showing the evolution of code changes over time.

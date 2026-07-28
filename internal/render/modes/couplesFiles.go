@@ -141,61 +141,82 @@ type commonCouplingStats struct {
 func analyzeCouplingPairs(
 	names []string, matrix readers.SparseMatrix, limit int,
 ) ([]commonCouplingPair, commonCouplingStats) {
-	pairs := &couplingPairHeap{}
-	if limit > 0 {
-		heap.Init(pairs)
+	analysis := couplingPairAnalysis{
+		names: names,
+		limit: limit,
+		pairs: &couplingPairHeap{},
 	}
-	totalCoupling := 0
-	maxCoupling := 0
-	minCoupling := 0
-	positivePairs := 0
+	if limit > 0 {
+		heap.Init(analysis.pairs)
+	}
 
 	matrix.ForEachNonZero(func(row, column, coupling int) bool {
-		if row >= len(names) || column >= len(names) || row >= column || coupling <= 0 {
-			return true
-		}
-		totalCoupling += coupling
-		positivePairs++
-		if coupling > maxCoupling {
-			maxCoupling = coupling
-		}
-		if minCoupling == 0 || coupling < minCoupling {
-			minCoupling = coupling
-		}
-		if limit <= 0 {
-			return true
-		}
-		pair := rankedCouplingPair{
-			commonCouplingPair: commonCouplingPair{
-				Name1: names[row],
-				Name2: names[column],
-				Score: float64(coupling),
-				Count: coupling,
-			},
-			row: row, column: column,
-		}
-		if pairs.Len() < limit {
-			heap.Push(pairs, pair)
-		} else if betterCouplingPair(pair, (*pairs)[0]) {
-			heap.Pop(pairs)
-			heap.Push(pairs, pair)
-		}
+		analysis.observe(row, column, coupling)
 		return true
 	})
 
-	avgCoupling := 0.0
-	if positivePairs > 0 {
-		avgCoupling = float64(totalCoupling) / float64(positivePairs)
+	return analysis.result()
+}
+
+type couplingPairAnalysis struct {
+	names         []string
+	limit         int
+	pairs         *couplingPairHeap
+	total         int
+	max           int
+	min           int
+	positivePairs int
+}
+
+func (analysis *couplingPairAnalysis) observe(row, column, coupling int) {
+	if row >= len(analysis.names) || column >= len(analysis.names) || row >= column || coupling <= 0 {
+		return
 	}
-	ranked := make([]commonCouplingPair, pairs.Len())
+	analysis.total += coupling
+	analysis.positivePairs++
+	analysis.max = max(analysis.max, coupling)
+	if analysis.min == 0 || coupling < analysis.min {
+		analysis.min = coupling
+	}
+	if analysis.limit <= 0 {
+		return
+	}
+	analysis.retain(rankedCouplingPair{
+		commonCouplingPair: commonCouplingPair{
+			Name1: analysis.names[row],
+			Name2: analysis.names[column],
+			Score: float64(coupling),
+			Count: coupling,
+		},
+		row: row, column: column,
+	})
+}
+
+func (analysis *couplingPairAnalysis) retain(pair rankedCouplingPair) {
+	if analysis.pairs.Len() < analysis.limit {
+		heap.Push(analysis.pairs, pair)
+		return
+	}
+	if betterCouplingPair(pair, (*analysis.pairs)[0]) {
+		heap.Pop(analysis.pairs)
+		heap.Push(analysis.pairs, pair)
+	}
+}
+
+func (analysis *couplingPairAnalysis) result() ([]commonCouplingPair, commonCouplingStats) {
+	average := 0.0
+	if analysis.positivePairs > 0 {
+		average = float64(analysis.total) / float64(analysis.positivePairs)
+	}
+	ranked := make([]commonCouplingPair, analysis.pairs.Len())
 	for index := len(ranked) - 1; index >= 0; index-- {
-		ranked[index] = heap.Pop(pairs).(rankedCouplingPair).commonCouplingPair
+		ranked[index] = heap.Pop(analysis.pairs).(rankedCouplingPair).commonCouplingPair
 	}
 	return ranked, commonCouplingStats{
-		Total:   totalCoupling,
-		Average: avgCoupling,
-		Max:     maxCoupling,
-		Min:     minCoupling,
+		Total:   analysis.total,
+		Average: average,
+		Max:     analysis.max,
+		Min:     analysis.min,
 	}
 }
 

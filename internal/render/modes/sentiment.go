@@ -20,6 +20,9 @@ import (
 // its scores may be inaccurate).
 const experimentalSentimentSubtitle = "[EXPERIMENTAL] Sentiment analysis is experimental and may be inaccurate."
 
+const heuristicSentimentNotice = "Collected sentiment data is missing; using heuristic fallback " +
+	"because --sentiment-fallback is enabled."
+
 // SentimentResult represents sentiment analysis for a developer or file
 type SentimentResult struct {
 	Entity   string
@@ -42,74 +45,142 @@ func Sentiment(reader readers.Reader, output string, allowHeuristicFallback bool
 func SentimentWithOptions(reader readers.Reader, output string, opts Options) error {
 	fmt.Println("Analyzing repository sentiment patterns...")
 
-	var sentimentResults []SentimentResult
-	var collectedTicks map[int]readers.SentimentTick
-	if sentimentReader, ok := reader.(readers.SentimentReader); ok {
-		ticks, err := sentimentReader.GetSentimentByTick()
-		if err == nil && len(ticks) > 0 {
-			collectedTicks = ticks
-			sentimentResults = append(sentimentResults, sentimentResultsFromTicks(ticks)...)
-		} else if err != nil && !errors.Is(err, readers.ErrAnalysisMissing) {
-			return fmt.Errorf("could not read collected sentiment data: %w", err)
-		}
+	sentimentResults, collectedTicks, err := loadSentimentData(reader, opts.SentimentFallback)
+	if err != nil {
+		return err
 	}
 
-	if len(sentimentResults) == 0 && !opts.SentimentFallback {
-		return fmt.Errorf("%w: Sentiment", readers.ErrAnalysisMissing)
+	err = plotSentimentResults(reader, sentimentResults, collectedTicks, output, opts.Graphics)
+	if err != nil {
+		return err
 	}
 
-	if len(sentimentResults) == 0 {
-		fmt.Println("Collected sentiment data is missing; using heuristic fallback because --sentiment-fallback is enabled.")
-		var fallbackFailures []error
-		devResults, err := analyzeDeveloperSentiment(reader)
-		if err != nil {
-			if errors.Is(err, readers.ErrAnalysisMissing) {
-				fmt.Fprintf(os.Stderr, "Warning: Could not analyze developer sentiment: %v\n", err)
-			} else {
-				fallbackFailures = append(fallbackFailures, err)
-			}
-		} else {
-			sentimentResults = append(sentimentResults, devResults...)
-		}
+	printSentimentSummary(sentimentResults)
+	_, _ = fmt.Fprintf(os.Stdout, "Sentiment analysis completed. Analyzed %d entities.\n", len(sentimentResults))
 
-		langResults, err := analyzeLanguageSentiment(reader)
-		if err != nil {
-			if errors.Is(err, readers.ErrAnalysisMissing) {
-				fmt.Fprintf(os.Stderr, "Warning: Could not analyze language sentiment: %v\n", err)
-			} else {
-				fallbackFailures = append(fallbackFailures, err)
-			}
-		} else {
-			sentimentResults = append(sentimentResults, langResults...)
-		}
-		if err := errors.Join(fallbackFailures...); err != nil {
-			return fmt.Errorf("sentiment fallback failed: %w", err)
-		}
+	return nil
+}
+
+func loadSentimentData(
+	reader readers.Reader,
+	allowHeuristicFallback bool,
+) ([]SentimentResult, map[int]readers.SentimentTick, error) {
+	results, ticks, err := collectedSentimentData(reader)
+	if err != nil {
+		return nil, nil, err
 	}
 
-	if len(sentimentResults) == 0 {
-		return fmt.Errorf("%w: sentiment fallback inputs", readers.ErrAnalysisMissing)
+	if len(results) > 0 {
+		return results, ticks, nil
 	}
 
-	if len(collectedTicks) > 0 {
+	if !allowHeuristicFallback {
+		return nil, nil, fmt.Errorf("%w: Sentiment", readers.ErrAnalysisMissing)
+	}
+
+	_, _ = fmt.Fprintln(os.Stdout, heuristicSentimentNotice)
+
+	results, err = heuristicSentimentData(reader)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if len(results) == 0 {
+		return nil, nil, fmt.Errorf("%w: sentiment fallback inputs", readers.ErrAnalysisMissing)
+	}
+
+	return results, nil, nil
+}
+
+func collectedSentimentData(
+	reader readers.Reader,
+) ([]SentimentResult, map[int]readers.SentimentTick, error) {
+	sentimentReader, ok := reader.(readers.SentimentReader)
+	if !ok {
+		return nil, nil, nil
+	}
+
+	ticks, err := sentimentReader.GetSentimentByTick()
+	if errors.Is(err, readers.ErrAnalysisMissing) {
+		return nil, nil, nil
+	}
+
+	if err != nil {
+		return nil, nil, fmt.Errorf("could not read collected sentiment data: %w", err)
+	}
+
+	if len(ticks) == 0 {
+		return nil, nil, nil
+	}
+
+	return sentimentResultsFromTicks(ticks), ticks, nil
+}
+
+func heuristicSentimentData(reader readers.Reader) ([]SentimentResult, error) {
+	var results []SentimentResult
+	var failures []error
+
+	developers, err := analyzeDeveloperSentiment(reader)
+	results, failures = addSentimentFallback(results, failures, "developer", developers, err)
+
+	languages, err := analyzeLanguageSentiment(reader)
+	results, failures = addSentimentFallback(results, failures, "language", languages, err)
+
+	joinedErr := errors.Join(failures...)
+	if joinedErr != nil {
+		return nil, fmt.Errorf("sentiment fallback failed: %w", joinedErr)
+	}
+
+	return results, nil
+}
+
+func addSentimentFallback(
+	results []SentimentResult,
+	failures []error,
+	name string,
+	fallback []SentimentResult,
+	err error,
+) ([]SentimentResult, []error) {
+	if err == nil {
+		return append(results, fallback...), failures
+	}
+
+	if errors.Is(err, readers.ErrAnalysisMissing) {
+		fmt.Fprintf(os.Stderr, "Warning: Could not analyze %s sentiment: %v\n", name, err)
+		return results, failures
+	}
+
+	return results, append(failures, err)
+}
+
+func plotSentimentResults(
+	reader readers.Reader,
+	results []SentimentResult,
+	ticks map[int]readers.SentimentTick,
+	output string,
+	visuals graphics.Options,
+) error {
+	if len(ticks) > 0 {
 		start, _ := reader.GetHeader()
-		if err := plotCollectedSentimentTimelineWithOptions(reader.GetName(), start, collectedTicks, output, opts.Graphics); err != nil {
+
+		err := plotCollectedSentimentTimelineWithOptions(reader.GetName(), start, ticks, output, visuals)
+		if err != nil {
 			return fmt.Errorf("failed to generate collected sentiment timeline: %w", err)
 		}
-	} else {
-		if err := plotSentimentOverviewWithOptions(sentimentResults, output, opts.Graphics); err != nil {
-			return fmt.Errorf("failed to generate sentiment overview: %w", err)
-		}
 
-		if err := plotSentimentByTypeWithOptions(sentimentResults, output, opts.Graphics); err != nil {
-			return fmt.Errorf("failed to plot sentiment by type: %w", err)
-		}
+		return nil
 	}
 
-	// Print summary
-	printSentimentSummary(sentimentResults)
+	err := plotSentimentOverviewWithOptions(results, output, visuals)
+	if err != nil {
+		return fmt.Errorf("failed to generate sentiment overview: %w", err)
+	}
 
-	fmt.Printf("Sentiment analysis completed. Analyzed %d entities.\n", len(sentimentResults))
+	err = plotSentimentByTypeWithOptions(results, output, visuals)
+	if err != nil {
+		return fmt.Errorf("failed to plot sentiment by type: %w", err)
+	}
+
 	return nil
 }
 
@@ -162,38 +233,76 @@ func plotCollectedSentimentTimelineWithOptions(
 	if len(ticks) == 0 {
 		return fmt.Errorf("no collected sentiment ticks")
 	}
+
+	output, err := prepareSentimentOutput(output)
+	if err != nil {
+		return err
+	}
+
+	dates, mood := collectedSentimentTimeline(startUnix, ticks)
+	smoothed := movingAverage(mood, max(1, len(mood)/32))
+	positive, negative := splitSentimentMood(smoothed)
+	series := collectedSentimentSeries(positive, negative)
+	opts := collectedSentimentOptions(name, visuals)
+
+	pngFile, svgFile, err := plotCollectedSentimentFiles(dates, series, opts, output)
+	if err != nil {
+		return err
+	}
+
+	_, _ = fmt.Fprintf(os.Stdout, "Sentiment overview charts saved to %s and %s\n", pngFile, svgFile)
+
+	return nil
+}
+
+func prepareSentimentOutput(output string) (string, error) {
 	if output == "" {
 		output = "."
 	}
 	if err := os.MkdirAll(output, 0o750); err != nil {
-		return fmt.Errorf("failed to create output directory %s: %w", output, err)
+		return "", fmt.Errorf("failed to create output directory %s: %w", output, err)
 	}
 
-	maxTick := 0
-	for tick := range ticks {
-		if tick > maxTick {
-			maxTick = tick
-		}
-	}
-	start := time.Unix(startUnix, 0)
-	if startUnix == 0 {
-		start = time.Unix(0, 0)
-	}
-	dates := make([]time.Time, maxTick+1)
-	mood := make([]float64, maxTick+1)
-	for i := range dates {
-		dates[i] = start.AddDate(0, 0, i)
-	}
+	return output, nil
+}
+
+func collectedSentimentTimeline(
+	startUnix int64,
+	ticks map[int]readers.SentimentTick,
+) ([]time.Time, []float64) {
+	mood := make([]float64, lastSentimentTick(ticks)+1)
 	for tick, value := range ticks {
 		if tick >= 0 && tick < len(mood) {
 			mood[tick] = clamp((0.5-float64(value.Value))*2, -1, 1)
 		}
 	}
 
-	smoothed := movingAverage(mood, max(1, len(mood)/32))
-	positive := make([]float64, len(smoothed))
-	negative := make([]float64, len(smoothed))
-	for i, value := range smoothed {
+	start := time.Unix(startUnix, 0)
+
+	dates := make([]time.Time, len(mood))
+	for day := range dates {
+		dates[day] = start.AddDate(0, 0, day)
+	}
+
+	return dates, mood
+}
+
+func lastSentimentTick(ticks map[int]readers.SentimentTick) int {
+	last := 0
+	for tick := range ticks {
+		if tick > last {
+			last = tick
+		}
+	}
+
+	return last
+}
+
+func splitSentimentMood(mood []float64) ([]float64, []float64) {
+	positive := make([]float64, len(mood))
+
+	negative := make([]float64, len(mood))
+	for i, value := range mood {
 		if value > 0 {
 			positive[i] = value
 		} else {
@@ -201,15 +310,25 @@ func plotCollectedSentimentTimelineWithOptions(
 		}
 	}
 
+	return positive, negative
+}
+
+func collectedSentimentSeries(
+	positive, negative []float64,
+) []graphics.MatplotlibTimeAreaSeries {
+	return []graphics.MatplotlibTimeAreaSeries{
+		{Label: "Positive", Values: positive, Color: sentimentColor(0x8d, 0xb8, 0x43)},
+		{Label: "Negative", Values: negative, Color: sentimentColor(0xe1, 0x4c, 0x35)},
+	}
+}
+
+func collectedSentimentOptions(name string, visuals graphics.Options) graphics.MatplotlibTimeAreaOptions {
 	titleName := strings.TrimSpace(name)
 	if titleName == "" {
 		titleName = "Repository"
 	}
-	series := []graphics.MatplotlibTimeAreaSeries{
-		{Label: "Positive", Values: positive, Color: sentimentColor(0x8d, 0xb8, 0x43)},
-		{Label: "Negative", Values: negative, Color: sentimentColor(0xe1, 0x4c, 0x35)},
-	}
-	opts := graphics.MatplotlibTimeAreaOptions{
+
+	return graphics.MatplotlibTimeAreaOptions{
 		Title:        titleName + " sentiment",
 		Subtitle:     experimentalSentimentSubtitle,
 		XLabel:       "Time",
@@ -225,19 +344,31 @@ func plotCollectedSentimentTimelineWithOptions(
 		YMax:         1,
 		FontSize:     visuals.PlotFontSize(),
 	}
+}
 
+func plotCollectedSentimentFiles(
+	dates []time.Time,
+	series []graphics.MatplotlibTimeAreaSeries,
+	opts graphics.MatplotlibTimeAreaOptions,
+	output string,
+) (string, string, error) {
 	pngFile := filepath.Join(output, "sentiment-overview.png")
 	opts.Output = pngFile
-	if err := graphics.PlotTimeAreasMatplotlib(dates, series, opts); err != nil {
-		return err
+
+	err := graphics.PlotTimeAreasMatplotlib(dates, series, opts)
+	if err != nil {
+		return "", "", fmt.Errorf("plot collected sentiment PNG: %w", err)
 	}
+
 	svgFile := filepath.Join(output, "sentiment-overview.svg")
 	opts.Output = svgFile
-	if err := graphics.PlotTimeAreasMatplotlib(dates, series, opts); err != nil {
-		return err
+
+	err = graphics.PlotTimeAreasMatplotlib(dates, series, opts)
+	if err != nil {
+		return "", "", fmt.Errorf("plot collected sentiment SVG: %w", err)
 	}
-	fmt.Printf("Sentiment overview charts saved to %s and %s\n", pngFile, svgFile)
-	return nil
+
+	return pngFile, svgFile, nil
 }
 
 func movingAverage(values []float64, window int) []float64 {

@@ -2,6 +2,7 @@ package modes
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
@@ -26,97 +27,178 @@ import (
 	"github.com/cwbudde/hercules/internal/render/readers"
 )
 
+var (
+	errNoOwnershipData = errors.New("no ownership burndown data found")
+	errNoOwnershipPlot = errors.New("no ownership burndown data to plot")
+	errOwnershipAxes   = errors.New("failed to create ownership axes")
+)
+
 func OwnershipBurndown(reader readers.Reader, output string) error {
 	return OwnershipBurndownWithOptions(reader, output, defaultOptions())
 }
 
 func OwnershipBurndownWithOptions(reader readers.Reader, output string, opts Options) error {
-	// Initialize progress tracking
-	quiet := opts.Quiet
-	progEstimator := progress.NewProgressEstimator(!quiet)
+	progEstimator := progress.NewProgressEstimator(!opts.Quiet)
+	progEstimator.StartMultiOperation(4, "Ownership Burndown Analysis")
 
-	// Start multi-phase operation for ownership analysis
-	totalPhases := 4 // validation, data extraction, processing, visualization
-	progEstimator.StartMultiOperation(totalPhases, "Ownership Burndown Analysis")
+	defer progEstimator.FinishMultiOperation()
 
-	// Phase 1: Validate output path
 	progEstimator.NextOperation("Validating output path")
-	if output == "" {
-		output = "ownership.png"
-		if !quiet {
-			fmt.Printf("Output not provided, using default: %s\n", output)
-		}
+
+	output = ownershipOutputPath(output, opts.Quiet)
+
+	err := createOwnershipOutputDirectory(output)
+	if err != nil {
+		return err
 	}
 
+	progEstimator.NextOperation("Extracting ownership data")
+
+	input, err := loadOwnershipBurndown(reader)
+	if err != nil {
+		return err
+	}
+
+	progEstimator.NextOperation("Processing ownership data")
+	names, peopleMatrix, dateRange := processOwnershipBurndownWithProgress(
+		input.startTime,
+		input.lastTime,
+		input.sampling,
+		input.tickSize,
+		input.people,
+		input.ownership,
+		ownershipMaxPeople(opts.MaxPeople),
+		opts.OrderOwnershipByTime,
+		progEstimator,
+	)
+
+	progEstimator.NextOperation("Generating visualization")
+	if filepath.Ext(output) == ".json" {
+		return saveOwnershipBurndownAsJSON(output, names, peopleMatrix, dateRange, input.lastTime)
+	}
+
+	err = plotOwnershipBurndown(
+		reader.GetName(), names, peopleMatrix, dateRange, input.lastTime, output, opts,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to plot ownership burndown: %w", err)
+	}
+
+	err = reportOwnershipSuccess(opts.Quiet)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+type ownershipBurndownInput struct {
+	people    []string
+	ownership map[string][][]int
+	startTime time.Time
+	lastTime  time.Time
+	sampling  int
+	tickSize  float64
+}
+
+func ownershipOutputPath(output string, quiet bool) string {
+	if output != "" {
+		return output
+	}
+
+	output = "ownership.png"
+	if !quiet {
+		_, _ = fmt.Fprintf(os.Stdout, "Output not provided, using default: %s\n", output)
+	}
+
+	return output
+}
+
+func createOwnershipOutputDirectory(output string) error {
 	outputDir := filepath.Dir(output)
-	if err := os.MkdirAll(outputDir, 0o750); err != nil {
-		progEstimator.FinishMultiOperation()
+
+	err := os.MkdirAll(outputDir, 0o750)
+	if err != nil {
 		return fmt.Errorf("failed to create output directory %s: %w", outputDir, err)
 	}
 
-	// Phase 2: Extract data from the reader
-	progEstimator.NextOperation("Extracting ownership data")
-	peopleSequence, ownershipData, err := reader.GetOwnershipBurndown()
-	if err != nil {
-		progEstimator.FinishMultiOperation()
-		return fmt.Errorf("failed to get ownership burndown data: %w", err)
+	return nil
+}
+
+func reportOwnershipSuccess(quiet bool) error {
+	if quiet {
+		return nil
 	}
-	if len(peopleSequence) == 0 {
-		progEstimator.FinishMultiOperation()
-		return fmt.Errorf("no ownership burndown data found")
+
+	_, err := fmt.Fprintln(os.Stdout, "Ownership burndown chart generated successfully.")
+	if err != nil {
+		return fmt.Errorf("failed to report ownership output: %w", err)
+	}
+
+	return nil
+}
+
+func loadOwnershipBurndown(reader readers.Reader) (ownershipBurndownInput, error) {
+	people, ownership, err := reader.GetOwnershipBurndown()
+	if err != nil {
+		return ownershipBurndownInput{}, fmt.Errorf("failed to get ownership burndown data: %w", err)
+	}
+
+	if len(people) == 0 {
+		return ownershipBurndownInput{}, errNoOwnershipData
 	}
 
 	params, err := reader.GetBurndownParameters()
 	if err != nil {
-		progEstimator.FinishMultiOperation()
-		return fmt.Errorf("failed to get burndown parameters: %w", err)
+		return ownershipBurndownInput{}, fmt.Errorf("failed to get burndown parameters: %w", err)
 	}
+
 	startUnix, lastUnix := reader.GetHeader()
-	tickSize := params.TickSize
+	tickSize := ownershipTickSize(params.TickSize)
+	sampling := ownershipSampling(params.Sampling)
+	startTime := floorTimeBySeconds(time.Unix(startUnix, 0), tickSize).
+		Add(secondsDuration(float64(sampling) * tickSize))
+
+	return ownershipBurndownInput{
+		people:    people,
+		ownership: ownership,
+		startTime: startTime,
+		lastTime:  ownershipLastTime(startTime, lastUnix),
+		sampling:  sampling,
+		tickSize:  tickSize,
+	}, nil
+}
+
+func ownershipTickSize(tickSize float64) float64 {
 	if tickSize <= 0 {
-		tickSize = 24 * 60 * 60
+		return 24 * 60 * 60
 	}
-	sampling := params.Sampling
+
+	return tickSize
+}
+
+func ownershipSampling(sampling int) int {
 	if sampling <= 0 {
-		sampling = 1
+		return 1
 	}
-	startTime := floorTimeBySeconds(time.Unix(startUnix, 0), tickSize).Add(secondsDuration(float64(sampling) * tickSize))
-	lastTime := time.Unix(lastUnix, 0)
+
+	return sampling
+}
+
+func ownershipLastTime(startTime time.Time, lastUnix int64) time.Time {
 	if lastUnix == 0 {
-		lastTime = startTime
+		return startTime
 	}
 
-	// Phase 3: Process the data
-	progEstimator.NextOperation("Processing ownership data")
-	maxPeople := opts.MaxPeople
+	return time.Unix(lastUnix, 0)
+}
+
+func ownershipMaxPeople(maxPeople int) int {
 	if maxPeople <= 0 {
-		maxPeople = 20
-	}
-	orderByTime := opts.OrderOwnershipByTime
-	names, peopleMatrix, dateRange := processOwnershipBurndownWithProgress(
-		startTime, lastTime, sampling, tickSize, peopleSequence, ownershipData, maxPeople, orderByTime, progEstimator,
-	)
-
-	// Phase 4: Generate output
-	progEstimator.NextOperation("Generating visualization")
-
-	// Check if JSON output is required
-	if filepath.Ext(output) == ".json" {
-		progEstimator.FinishMultiOperation()
-		return saveOwnershipBurndownAsJSON(output, names, peopleMatrix, dateRange, lastTime)
+		return 20
 	}
 
-	// Visualize the data
-	if err := plotOwnershipBurndown(reader.GetName(), names, peopleMatrix, dateRange, lastTime, output, opts); err != nil {
-		progEstimator.FinishMultiOperation()
-		return fmt.Errorf("failed to plot ownership burndown: %w", err)
-	}
-
-	progEstimator.FinishMultiOperation()
-	if !quiet {
-		fmt.Println("Ownership burndown chart generated successfully.")
-	}
-	return nil
+	return maxPeople
 }
 
 func processOwnershipBurndown(
@@ -124,90 +206,7 @@ func processOwnershipBurndown(
 	sequence []string, data map[string][][]int,
 	maxPeople int, orderByTime bool,
 ) ([]string, [][]float64, []time.Time) {
-	// Aggregate the ownership data
-	people := make([][]float64, len(sequence))
-	for i, name := range sequence {
-		rows := data[name]
-		if len(rows) == 0 {
-			continue
-		}
-		total := make([]float64, len(rows))
-		for rowIndex, row := range rows {
-			for _, val := range row {
-				total[rowIndex] += float64(val)
-			}
-		}
-		people[i] = total
-	}
-	pointCount := ownershipPointCount(people)
-	if pointCount == 0 {
-		return sequence, people, nil
-	}
-
-	// Create a date range based on sampling
-	dateRange := make([]time.Time, pointCount)
-	step := ownershipSamplingDuration(sampling, tickSize)
-	for i := 0; i < len(dateRange); i++ {
-		dateRange[i] = start.Add(time.Duration(i) * step)
-	}
-
-	// Truncate to maxPeople
-	if len(people) > maxPeople {
-		sums := make([]float64, len(people))
-		for i, row := range people {
-			for _, val := range row {
-				sums[i] += val
-			}
-		}
-
-		indices := argsortDescending(sums)
-		chosen := indices[:maxPeople]
-		others := indices[maxPeople:]
-
-		// Aggregate "others"
-		othersTotal := make([]float64, len(people[0]))
-		for _, idx := range others {
-			for j, val := range people[idx] {
-				othersTotal[j] += val
-			}
-		}
-
-		// Update people and sequence
-		truncatedPeople := make([][]float64, maxPeople+1)
-		truncatedNames := make([]string, maxPeople+1)
-		for i, idx := range chosen {
-			truncatedPeople[i] = people[idx]
-			truncatedNames[i] = sequence[idx]
-		}
-		truncatedPeople[maxPeople] = othersTotal
-		truncatedNames[maxPeople] = "others"
-
-		people = truncatedPeople
-		sequence = truncatedNames
-	}
-
-	// Sort by first appearance or total ownership
-	if orderByTime {
-		appearances := make([]int, len(people))
-		for i, row := range people {
-			appearances[i] = findFirstNonZero(row)
-		}
-		indices := argsortAscending(appearances)
-		people = reorder(people, indices)
-		sequence = reorderStrings(sequence, indices)
-	} else {
-		totalOwnership := make([]float64, len(people))
-		for i, row := range people {
-			for _, val := range row {
-				totalOwnership[i] += val
-			}
-		}
-		indices := argsortDescending(totalOwnership)
-		people = reorder(people, indices)
-		sequence = reorderStrings(sequence, indices)
-	}
-
-	return sequence, people, dateRange
+	return processOwnershipData(start, sampling, tickSize, sequence, data, maxPeople, orderByTime, nil)
 }
 
 // processOwnershipBurndownWithProgress processes ownership data with progress tracking
@@ -217,99 +216,157 @@ func processOwnershipBurndownWithProgress(
 	maxPeople int, orderByTime bool,
 	progEstimator *progress.ProgressEstimator,
 ) ([]string, [][]float64, []time.Time) {
-	// Start detailed progress for data processing
-	totalSteps := len(sequence) + 2 // aggregation steps + sorting + date range creation
-	progEstimator.StartOperation("Aggregating ownership data", totalSteps)
+	progEstimator.StartOperation("Aggregating ownership data", len(sequence)+2)
+	defer progEstimator.FinishOperation()
 
-	// Aggregate the ownership data
-	people := make([][]float64, len(sequence))
-	for i, name := range sequence {
+	updateProgress := func() {
 		progEstimator.UpdateProgress(1)
-		rows := data[name]
-		if len(rows) == 0 {
-			continue
-		}
-		total := make([]float64, len(rows))
-		for rowIndex, row := range rows {
-			for _, val := range row {
-				total[rowIndex] += float64(val)
-			}
-		}
-		people[i] = total
 	}
+
+	return processOwnershipData(
+		start, sampling, tickSize, sequence, data, maxPeople, orderByTime, updateProgress,
+	)
+}
+
+func processOwnershipData(
+	start time.Time,
+	sampling int,
+	tickSize float64,
+	sequence []string,
+	data map[string][][]int,
+	maxPeople int,
+	orderByTime bool,
+	updateProgress func(),
+) ([]string, [][]float64, []time.Time) {
+	people := aggregateOwnership(sequence, data, updateProgress)
 	pointCount := ownershipPointCount(people)
 	if pointCount == 0 {
-		progEstimator.FinishOperation()
 		return sequence, people, nil
 	}
 
-	// Create a date range based on sampling
-	progEstimator.UpdateProgress(1)
+	reportOwnershipProgress(updateProgress)
+
+	dateRange := ownershipDateRange(start, pointCount, sampling, tickSize)
+	sequence, people = truncateOwnershipPeople(sequence, people, maxPeople)
+
+	reportOwnershipProgress(updateProgress)
+
+	sequence, people = sortOwnershipPeople(sequence, people, orderByTime)
+
+	return sequence, people, dateRange
+}
+
+func aggregateOwnership(
+	sequence []string,
+	data map[string][][]int,
+	updateProgress func(),
+) [][]float64 {
+	people := make([][]float64, len(sequence))
+	for index, name := range sequence {
+		reportOwnershipProgress(updateProgress)
+
+		people[index] = sumOwnershipRows(data[name])
+	}
+
+	return people
+}
+
+func reportOwnershipProgress(updateProgress func()) {
+	if updateProgress != nil {
+		updateProgress()
+	}
+}
+
+func sumOwnershipRows(rows [][]int) []float64 {
+	if len(rows) == 0 {
+		return nil
+	}
+
+	total := make([]float64, len(rows))
+	for rowIndex, row := range rows {
+		for _, value := range row {
+			total[rowIndex] += float64(value)
+		}
+	}
+
+	return total
+}
+
+func ownershipDateRange(start time.Time, pointCount, sampling int, tickSize float64) []time.Time {
 	dateRange := make([]time.Time, pointCount)
 	step := ownershipSamplingDuration(sampling, tickSize)
-	for i := 0; i < len(dateRange); i++ {
-		dateRange[i] = start.Add(time.Duration(i) * step)
+
+	for index := range dateRange {
+		dateRange[index] = start.Add(time.Duration(index) * step)
 	}
 
-	// Truncate to maxPeople
-	if len(people) > maxPeople {
-		sums := make([]float64, len(people))
-		for i, row := range people {
-			for _, val := range row {
-				sums[i] += val
-			}
-		}
+	return dateRange
+}
 
-		indices := argsortDescending(sums)
-		chosen := indices[:maxPeople]
-		others := indices[maxPeople:]
-
-		// Aggregate "others"
-		othersTotal := make([]float64, len(people[0]))
-		for _, idx := range others {
-			for j, val := range people[idx] {
-				othersTotal[j] += val
-			}
-		}
-
-		// Update people and sequence
-		truncatedPeople := make([][]float64, maxPeople+1)
-		truncatedNames := make([]string, maxPeople+1)
-		for i, idx := range chosen {
-			truncatedPeople[i] = people[idx]
-			truncatedNames[i] = sequence[idx]
-		}
-		truncatedPeople[maxPeople] = othersTotal
-		truncatedNames[maxPeople] = "others"
-
-		people = truncatedPeople
-		sequence = truncatedNames
+func truncateOwnershipPeople(
+	sequence []string,
+	people [][]float64,
+	maxPeople int,
+) ([]string, [][]float64) {
+	if maxPeople < 0 || len(people) <= maxPeople {
+		return sequence, people
 	}
 
-	// Sort by first appearance or total ownership
-	progEstimator.UpdateProgress(1)
+	indices := argsortDescending(ownershipTotals(people))
+	chosen := indices[:maxPeople]
+	truncatedPeople := reorder(people, chosen)
+	truncatedNames := reorderStrings(sequence, chosen)
+
+	truncatedPeople = append(truncatedPeople, aggregateOwnershipRows(people, indices[maxPeople:]))
+	truncatedNames = append(truncatedNames, "others")
+
+	return truncatedNames, truncatedPeople
+}
+
+func ownershipTotals(people [][]float64) []float64 {
+	totals := make([]float64, len(people))
+	for index, row := range people {
+		for _, value := range row {
+			totals[index] += value
+		}
+	}
+
+	return totals
+}
+
+func aggregateOwnershipRows(people [][]float64, indices []int) []float64 {
+	total := make([]float64, ownershipPointCount(people))
+	for _, index := range indices {
+		for point, value := range people[index] {
+			total[point] += value
+		}
+	}
+
+	return total
+}
+
+func sortOwnershipPeople(
+	sequence []string,
+	people [][]float64,
+	orderByTime bool,
+) ([]string, [][]float64) {
+	var indices []int
 	if orderByTime {
-		appearances := make([]int, len(people))
-		for i, row := range people {
-			appearances[i] = findFirstNonZero(row)
-		}
-		indices := argsortAscending(appearances)
-		people = reorder(people, indices)
-		sequence = reorderStrings(sequence, indices)
+		indices = argsortAscending(ownershipFirstAppearances(people))
 	} else {
-		totalOwnership := make([]float64, len(people))
-		for i, row := range people {
-			for _, val := range row {
-				totalOwnership[i] += val
-			}
-		}
-		indices := argsortDescending(totalOwnership)
-		people = reorder(people, indices)
-		sequence = reorderStrings(sequence, indices)
+		indices = argsortDescending(ownershipTotals(people))
 	}
 
-	progEstimator.FinishOperation()
-	return sequence, people, dateRange
+	return reorderStrings(sequence, indices), reorder(people, indices)
+}
+
+func ownershipFirstAppearances(people [][]float64) []int {
+	appearances := make([]int, len(people))
+	for index, row := range people {
+		appearances[index] = findFirstNonZero(row)
+	}
+
+	return appearances
 }
 
 func plotOwnershipBurndown(
@@ -321,53 +378,122 @@ func plotOwnershipBurndown(
 	output string,
 	optionValues ...Options,
 ) error {
-	opts := defaultOptions()
-	if len(optionValues) > 0 {
-		opts = optionValues[0]
+	opts := ownershipOptions(optionValues)
+
+	series, err := prepareOwnershipSeries(names, people, dateRange, lastTime)
+	if err != nil {
+		return err
 	}
+
+	if opts.Relative {
+		normalizeOwnershipColumns(series.matrix)
+	}
+
+	plot, err := newOwnershipPlot(opts)
+	if err != nil {
+		return err
+	}
+
+	configureOwnershipPlot(plot, repoName, series, opts)
+
+	return saveOwnershipMatplotlibFigure(
+		plot.figure, output, plot.width, plot.height, plot.transparentBackground,
+	)
+}
+
+type ownershipSeries struct {
+	x         []float64
+	matrix    [][]float64
+	labels    []string
+	dateRange []time.Time
+	lastTime  time.Time
+}
+
+type ownershipPlot struct {
+	figure                *core.Figure
+	axes                  *core.Axes
+	width                 int
+	height                int
+	foreground            render.Color
+	legendBackground      render.Color
+	transparentBackground render.Color
+}
+
+func ownershipOptions(optionValues []Options) Options {
+	if len(optionValues) > 0 {
+		return optionValues[0]
+	}
+
+	return defaultOptions()
+}
+
+func prepareOwnershipSeries(
+	names []string,
+	people [][]float64,
+	dateRange []time.Time,
+	lastTime time.Time,
+) (ownershipSeries, error) {
 	if len(people) == 0 || len(dateRange) == 0 {
-		return fmt.Errorf("no ownership burndown data to plot")
+		return ownershipSeries{}, errNoOwnershipPlot
 	}
 	if lastTime.Before(dateRange[len(dateRange)-1]) {
 		lastTime = dateRange[len(dateRange)-1]
 	}
-	x := make([]float64, len(dateRange))
-	for i, date := range dateRange {
-		x[i] = float64(date.Unix())
+
+	series := ownershipSeries{
+		x:         ownershipTimestamps(dateRange),
+		matrix:    make([][]float64, 0, len(people)),
+		labels:    make([]string, 0, len(people)),
+		dateRange: dateRange,
+		lastTime:  lastTime,
 	}
-	matrix := make([][]float64, 0, len(people))
-	labels := make([]string, 0, len(people))
-	for i, row := range people {
+	for index, row := range people {
 		if len(row) == 0 {
 			continue
 		}
-		values := make([]float64, len(dateRange))
-		for j := range values {
-			if j < len(row) {
-				values[j] = row[j]
-			}
-		}
-		label := fmt.Sprintf("Developer %d", i+1)
-		if i < len(names) {
-			label = peopleChartLabel(names[i])
-		}
-		label = truncateOwnershipLabel(label)
-		matrix = append(matrix, values)
-		labels = append(labels, label)
-	}
-	if len(matrix) == 0 {
-		return fmt.Errorf("no ownership burndown data to plot")
-	}
-	if opts.Relative {
-		normalizeOwnershipColumns(matrix)
+
+		series.matrix = append(series.matrix, ownershipValues(row, len(dateRange)))
+		series.labels = append(series.labels, ownershipLabel(names, index))
 	}
 
+	if len(series.matrix) == 0 {
+		return ownershipSeries{}, errNoOwnershipPlot
+	}
+
+	return series, nil
+}
+
+func ownershipTimestamps(dateRange []time.Time) []float64 {
+	timestamps := make([]float64, len(dateRange))
+	for index, date := range dateRange {
+		timestamps[index] = float64(date.Unix())
+	}
+
+	return timestamps
+}
+
+func ownershipValues(row []float64, pointCount int) []float64 {
+	values := make([]float64, pointCount)
+	copy(values, row)
+
+	return values
+}
+
+func ownershipLabel(names []string, index int) string {
+	label := fmt.Sprintf("Developer %d", index+1)
+	if index < len(names) {
+		label = peopleChartLabel(names[index])
+	}
+
+	return truncateOwnershipLabel(label)
+}
+
+func newOwnershipPlot(opts Options) (ownershipPlot, error) {
 	width, height := ownershipPlotPixelSize(
 		graphics.PythonPlotDefaultWidthInches,
 		graphics.PythonPlotDefaultHeightInches,
 		opts.Graphics.Size,
 	)
-	fontSize := opts.Graphics.PlotFontSize()
 	background, foreground := graphics.LaboursPlotColors(opts.Graphics.Background)
 	transparentBackground := background
 	transparentBackground.A = 0
@@ -377,7 +503,7 @@ func plotOwnershipBurndown(
 		width,
 		height,
 		style.WithTheme(style.ThemeGGPlot),
-		style.WithFont(graphics.PythonPlotFontFamily, fontSize),
+		style.WithFont(graphics.PythonPlotFontFamily, opts.Graphics.PlotFontSize()),
 		style.WithBackground(background.R, background.G, background.B, 0),
 		style.WithAxesBackground(transparentBackground),
 		style.WithAxesEdgeColor(foreground),
@@ -388,54 +514,79 @@ func plotOwnershipBurndown(
 			foreground,
 		),
 	)
-	// The padding is a fraction of the figure, so it has to leave room for the
-	// widest y tick label ("100000") and for rotated date labels at the smallest
-	// figure size anyone renders. The previous 0.032/0.033 left ~50px and ~33px:
-	// enough at no size, so y labels were cut to "0000" and the rotated x labels
-	// vanished entirely below the axes. The right edge needs slack too, because a
-	// rotated label on the last tick extends past the end of the axis.
 	grid := fig.Subplots(1, 1, core.WithSubplotPadding(0.075, 0.965, 0.11, 0.968))
 	if len(grid) == 0 || len(grid[0]) == 0 || grid[0][0] == nil {
-		return fmt.Errorf("failed to create ownership axes")
+		return ownershipPlot{}, errOwnershipAxes
 	}
-	ax := grid[0][0]
+
+	return ownershipPlot{
+		figure:                fig,
+		axes:                  grid[0][0],
+		width:                 width,
+		height:                height,
+		foreground:            foreground,
+		legendBackground:      legendBackground,
+		transparentBackground: transparentBackground,
+	}, nil
+}
+
+func configureOwnershipPlot(plot ownershipPlot, repoName string, series ownershipSeries, opts Options) {
 	if !opts.Graphics.HideTitle {
-		ax.SetTitle(ownershipChartTitle(repoName))
+		plot.axes.SetTitle(ownershipChartTitle(repoName))
 	}
-	colors := graphics.PythonLaboursColorPalette(len(matrix))
-	renderColors := make([]render.Color, len(colors))
-	for i, color := range colors {
-		renderColors[i] = ownershipRenderColor(color)
-	}
-	ax.StackPlot(x, matrix, core.StackPlotOptions{
-		Colors: renderColors,
-		Labels: labels,
+
+	plot.axes.StackPlot(series.x, series.matrix, core.StackPlotOptions{
+		Colors: ownershipColors(len(series.matrix)),
+		Labels: series.labels,
 	})
+	configureOwnershipXRange(plot.axes, series.dateRange, series.lastTime)
+	configureOwnershipYRange(plot.axes, series.matrix, opts.Relative)
+	configureOwnershipTimeAxis(plot.axes, series.dateRange)
+	configureOwnershipLegend(plot, opts.Relative)
+}
+
+func ownershipColors(count int) []render.Color {
+	colors := graphics.PythonLaboursColorPalette(count)
+	renderColors := make([]render.Color, len(colors))
+	for index, paletteColor := range colors {
+		renderColors[index] = ownershipRenderColor(paletteColor)
+	}
+
+	return renderColors
+}
+
+func configureOwnershipXRange(axes *core.Axes, dateRange []time.Time, lastTime time.Time) {
 	xMin := float64(dateRange[0].Unix())
 	xMax := float64(lastTime.Unix())
 	if xMin == xMax {
 		xMin = float64(dateRange[0].AddDate(-2, 0, 0).Unix())
 		xMax = float64(dateRange[0].AddDate(2, 0, 0).Unix())
 	}
-	ax.SetXLim(xMin, xMax)
-	if opts.Relative {
-		ax.SetYLim(0, 1)
-	} else {
-		yMax := math.Max(maxOwnershipStackY(matrix)*1.05, 1)
-		ax.SetYLim(0, yMax)
-		graphics.ConfigureLineCountYAxis(ax, yMax)
-	}
-	configureOwnershipTimeAxis(ax, dateRange)
-	legend := ax.AddLegend()
-	legend.Location = core.LegendUpperLeft
-	legend.BackgroundColor = legendBackground
-	legend.BorderColor = legendBackground
-	legend.TextColor = foreground
-	if opts.Relative {
-		legend.Location = core.LegendLowerLeft
+
+	axes.SetXLim(xMin, xMax)
+}
+
+func configureOwnershipYRange(axes *core.Axes, matrix [][]float64, relative bool) {
+	if relative {
+		axes.SetYLim(0, 1)
+		return
 	}
 
-	return saveOwnershipMatplotlibFigure(fig, output, width, height, transparentBackground)
+	yMax := math.Max(maxOwnershipStackY(matrix)*1.05, 1)
+	axes.SetYLim(0, yMax)
+	graphics.ConfigureLineCountYAxis(axes, yMax)
+}
+
+func configureOwnershipLegend(plot ownershipPlot, relative bool) {
+	legend := plot.axes.AddLegend()
+	legend.Location = core.LegendUpperLeft
+	legend.BackgroundColor = plot.legendBackground
+	legend.BorderColor = plot.legendBackground
+	legend.TextColor = plot.foreground
+
+	if relative {
+		legend.Location = core.LegendLowerLeft
+	}
 }
 
 // ownershipChartTitle builds the chart title, tolerating the repository names
@@ -613,76 +764,145 @@ func saveOwnershipMatplotlibFigure(fig *core.Figure, output string, width, heigh
 		return fmt.Errorf("failed to create output directory for %s: %w", output, err)
 	}
 
-	config := backends.Config{Width: width, Height: height, Background: background, DPI: 100, Transparent: background.A == 0}
+	config := backends.Config{
+		Width:       width,
+		Height:      height,
+		Background:  background,
+		DPI:         100,
+		Transparent: background.A == 0,
+	}
 	switch strings.ToLower(filepath.Ext(output)) {
 	case ".svg":
-		renderer, _, err := backends.NewRenderer("svg", config, nil)
-		if err != nil {
-			return fmt.Errorf("failed to create SVG renderer: %w", err)
-		}
-		return core.SaveSVG(fig, renderer, output)
+		return saveOwnershipSVG(fig, output, config)
 	default:
-		renderer, _, err := backends.NewRenderer("agg", config, backends.TextCapabilities)
-		if err != nil {
-			return fmt.Errorf("failed to create AGG renderer: %w", err)
-		}
-		if err := core.SavePNG(fig, renderer, output); err != nil {
-			return err
-		}
-		if background.A == 0 && background.R == 1 && background.G == 1 && background.B == 1 {
-			return normalizeOwnershipPNGMatte(output)
-		}
-		return nil
+		return saveOwnershipPNG(fig, output, config, background)
 	}
 }
 
-func normalizeOwnershipPNGMatte(path string) error {
-	file, err := os.Open(path) // #nosec G304 - path is generated by ownership plotting.
+func saveOwnershipSVG(fig *core.Figure, output string, config backends.Config) error {
+	renderer, _, err := backends.NewRenderer("svg", config, nil)
 	if err != nil {
-		return fmt.Errorf("failed to open ownership PNG for matte normalization: %w", err)
-	}
-	img, _, err := image.Decode(file)
-	closeErr := file.Close()
-	if err != nil {
-		return fmt.Errorf("failed to decode ownership PNG for matte normalization: %w", err)
-	}
-	if closeErr != nil {
-		return fmt.Errorf("failed to close ownership PNG for matte normalization: %w", closeErr)
+		return fmt.Errorf("failed to create SVG renderer: %w", err)
 	}
 
+	err = core.SaveSVG(fig, renderer, output)
+	if err != nil {
+		return fmt.Errorf("failed to save ownership SVG: %w", err)
+	}
+
+	return nil
+}
+
+func saveOwnershipPNG(
+	fig *core.Figure,
+	output string,
+	config backends.Config,
+	background render.Color,
+) error {
+	renderer, _, err := backends.NewRenderer("agg", config, backends.TextCapabilities)
+	if err != nil {
+		return fmt.Errorf("failed to create AGG renderer: %w", err)
+	}
+
+	err = core.SavePNG(fig, renderer, output)
+	if err != nil {
+		return fmt.Errorf("failed to save ownership PNG: %w", err)
+	}
+
+	if ownershipNeedsWhiteMatte(background) {
+		return normalizeOwnershipPNGMatte(output)
+	}
+
+	return nil
+}
+
+func ownershipNeedsWhiteMatte(background render.Color) bool {
+	return background.A == 0 && background.R == 1 && background.G == 1 && background.B == 1
+}
+
+func normalizeOwnershipPNGMatte(path string) error {
+	img, err := readOwnershipPNG(path)
+	if err != nil {
+		return err
+	}
+
+	out, changed := normalizedOwnershipImage(img)
+	if !changed {
+		return nil
+	}
+
+	return writeOwnershipPNG(path, out)
+}
+
+func readOwnershipPNG(path string) (image.Image, error) {
+	file, err := os.Open(path) // #nosec G304 - path is generated by ownership plotting.
+	if err != nil {
+		return nil, fmt.Errorf("failed to open ownership PNG for matte normalization: %w", err)
+	}
+
+	img, _, decodeErr := image.Decode(file)
+	closeErr := file.Close()
+
+	if decodeErr != nil {
+		return nil, fmt.Errorf("failed to decode ownership PNG for matte normalization: %w", decodeErr)
+	}
+	if closeErr != nil {
+		return nil, fmt.Errorf("failed to close ownership PNG for matte normalization: %w", closeErr)
+	}
+
+	return img, nil
+}
+
+func normalizedOwnershipImage(img image.Image) (*image.NRGBA, bool) {
 	bounds := img.Bounds()
 	out := image.NewNRGBA(bounds)
 	changed := false
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
 			pixel := color.NRGBAModel.Convert(img.At(x, y)).(color.NRGBA)
-			if pixel.A == 0 {
-				if pixel.R != 255 || pixel.G != 255 || pixel.B != 255 {
-					pixel.R = 255
-					pixel.G = 255
-					pixel.B = 255
-					changed = true
-				}
-			} else if pixel.A == 204 && similarRGB(pixel.R, pixel.G, pixel.B) && pixel.R < 128 {
-				pixel.R = 255
-				pixel.G = 255
-				pixel.B = 255
-				changed = true
-			}
+			pixel, pixelChanged := normalizeOwnershipPixel(pixel)
+			changed = changed || pixelChanged
 			out.SetNRGBA(x, y, pixel)
 		}
 	}
-	if !changed {
-		return nil
+
+	return out, changed
+}
+
+func normalizeOwnershipPixel(pixel color.NRGBA) (color.NRGBA, bool) {
+	if pixel.A == 0 {
+		if pixel.R == 255 && pixel.G == 255 && pixel.B == 255 {
+			return pixel, false
+		}
+
+		return whiteOwnershipPixel(pixel), true
 	}
 
-	file, err = os.Create(path) // #nosec G304 - path is generated by ownership plotting.
+	if pixel.A == 204 && similarRGB(pixel.R, pixel.G, pixel.B) && pixel.R < 128 {
+		return whiteOwnershipPixel(pixel), true
+	}
+
+	return pixel, false
+}
+
+func whiteOwnershipPixel(pixel color.NRGBA) color.NRGBA {
+	pixel.R = 255
+	pixel.G = 255
+	pixel.B = 255
+
+	return pixel
+}
+
+func writeOwnershipPNG(path string, img image.Image) error {
+	file, err := os.Create(path) // #nosec G304 - path is generated by ownership plotting.
 	if err != nil {
 		return fmt.Errorf("failed to rewrite ownership PNG matte: %w", err)
 	}
-	if err := png.Encode(file, out); err != nil {
+
+	err = png.Encode(file, img)
+	if err != nil {
 		_ = file.Close()
-		return err
+		return fmt.Errorf("failed to encode ownership PNG matte: %w", err)
 	}
 	if err := file.Close(); err != nil {
 		return fmt.Errorf("failed to close ownership PNG matte: %w", err)

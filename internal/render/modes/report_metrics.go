@@ -2,6 +2,7 @@ package modes
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
@@ -37,6 +38,17 @@ var temporalMonthLabels = []string{
 // temporalNanosecondsPerDay mirrors Python's NANOSECONDS_PER_DAY: hercules tick
 // sizes are reported in nanoseconds.
 const temporalNanosecondsPerDay = int64(24) * 60 * 60 * 1_000_000_000
+
+var (
+	errNoTemporalActivityValues  = errors.New("no temporal activity values found")
+	errTemporalActivityAxes      = errors.New("failed to create temporal activity axes")
+	errNoBusFactorSnapshots      = errors.New("no bus factor snapshots found")
+	errBusFactorGaugeAxes        = errors.New("failed to create bus factor gauge axes")
+	errOwnershipSubsystemAxes    = errors.New("failed to create ownership subsystem axes")
+	errKnowledgeDistributionAxes = errors.New("failed to create knowledge diffusion axes")
+	errKnowledgeSilosAxes        = errors.New("failed to create knowledge silos axes")
+	errHotspotRiskAxes           = errors.New("failed to create hotspot risk axes")
+)
 
 type temporalDimensionSpec struct {
 	Key      string
@@ -76,44 +88,96 @@ func temporalWeekLabels() []string {
 // weekday×hour heatmaps (commits/lines). Each is written as a sibling of the
 // requested output path using Python's underscore-suffix basenames.
 func TemporalActivity(reader readers.Reader, output string, legendThreshold, singleColumnThreshold int, startTime, endTime *time.Time) error {
-	temporalReader, ok := reader.(readers.TemporalActivityReader)
-	if !ok {
-		return fmt.Errorf("%w: temporal activity", readers.ErrAnalysisMissing)
-	}
-	data, err := temporalReader.GetTemporalActivity()
+	data, totalCommits, totalLines, err := loadTemporalActivity(reader, startTime, endTime)
 	if err != nil {
-		return fmt.Errorf("failed to get temporal activity data: %w", err)
-	}
-
-	if startTime != nil || endTime != nil {
-		if filtered, ok := filterTemporalActivitiesByDateRange(data, reader, startTime, endTime); ok {
-			data = filtered
-		}
-	}
-
-	totalCommits, totalLines := temporalActivityTotals(data)
-	if totalCommits == 0 && totalLines == 0 {
-		return fmt.Errorf("no temporal activity values found")
+		return err
 	}
 
 	legendNote := temporalLegendNote(len(data.Activities), legendThreshold, singleColumnThreshold)
-	fmt.Printf("Temporal activity: %d developers, %d commits, %d changed lines%s\n",
+	_, _ = fmt.Fprintf(os.Stdout, "Temporal activity: %d developers, %d commits, %d changed lines%s\n",
 		len(data.Activities), totalCommits, totalLines, legendNote)
 
-	repoName := reader.GetName()
+	return renderTemporalActivity(
+		reader.GetName(), data, output, legendThreshold, singleColumnThreshold,
+	)
+}
+
+func loadTemporalActivity(
+	reader readers.Reader,
+	startTime, endTime *time.Time,
+) (*readers.TemporalActivityData, int, int, error) {
+	temporalReader, ok := reader.(readers.TemporalActivityReader)
+	if !ok {
+		return nil, 0, 0, fmt.Errorf("%w: temporal activity", readers.ErrAnalysisMissing)
+	}
+	data, err := temporalReader.GetTemporalActivity()
+	if err != nil {
+		return nil, 0, 0, fmt.Errorf("failed to get temporal activity data: %w", err)
+	}
+
+	data = filteredTemporalActivity(data, reader, startTime, endTime)
+	totalCommits, totalLines := temporalActivityTotals(data)
+	if totalCommits == 0 && totalLines == 0 {
+		return nil, 0, 0, errNoTemporalActivityValues
+	}
+
+	return data, totalCommits, totalLines, nil
+}
+
+func filteredTemporalActivity(
+	data *readers.TemporalActivityData,
+	reader readers.Reader,
+	startTime, endTime *time.Time,
+) *readers.TemporalActivityData {
+	if startTime == nil && endTime == nil {
+		return data
+	}
+
+	filtered, ok := filterTemporalActivitiesByDateRange(data, reader, startTime, endTime)
+	if ok {
+		return filtered
+	}
+
+	return data
+}
+
+func renderTemporalActivity(
+	repoName string,
+	data *readers.TemporalActivityData,
+	output string,
+	legendThreshold, singleColumnThreshold int,
+) error {
 	for _, mode := range []string{"commits", "lines"} {
-		for _, spec := range temporalDimensionSpecs() {
-			out := siblingOutputPath(output, "temporal-activity.png", spec.Key+"_"+mode)
-			if err := plotTemporalDimension(repoName, data, spec, mode, out, legendThreshold, singleColumnThreshold); err != nil {
-				return err
-			}
-		}
-		out := siblingOutputPath(output, "temporal-activity.png", "heatmap_"+mode)
-		if err := plotTemporalHeatmap(repoName, data, mode, out); err != nil {
+		err := renderTemporalActivityMode(
+			repoName, data, mode, output, legendThreshold, singleColumnThreshold,
+		)
+		if err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func renderTemporalActivityMode(
+	repoName string,
+	data *readers.TemporalActivityData,
+	mode, output string,
+	legendThreshold, singleColumnThreshold int,
+) error {
+	for _, spec := range temporalDimensionSpecs() {
+		dimensionOutput := siblingOutputPath(output, "temporal-activity.png", spec.Key+"_"+mode)
+
+		err := plotTemporalDimension(
+			repoName, data, spec, mode, dimensionOutput, legendThreshold, singleColumnThreshold,
+		)
+		if err != nil {
+			return err
+		}
+	}
+
+	heatmapOutput := siblingOutputPath(output, "temporal-activity.png", "heatmap_"+mode)
+
+	return plotTemporalHeatmap(repoName, data, mode, heatmapOutput)
 }
 
 func temporalDimensionValues(activity readers.TemporalDeveloperActivity, dimKey, mode string) []int {
@@ -173,73 +237,131 @@ func plotTemporalDimension(repoName string, data *readers.TemporalActivityData, 
 	numBins := len(spec.Labels)
 	series := buildTemporalDimensionSeries(data, spec.Key, mode, numBins)
 	if len(series) == 0 {
-		return fmt.Errorf("no temporal activity values found")
+		return errNoTemporalActivityValues
 	}
 
+	plot, err := newTemporalDimensionPlot(repoName, spec, mode)
+	if err != nil {
+		return err
+	}
+
+	maxStack := plotTemporalBars(plot.axes, series, numBins)
+	configureTemporalDimensionAxes(plot.axes, spec, mode, maxStack)
+	addTemporalLegend(plot.axes, len(series), legendThreshold)
+
+	err = saveReportFigureWithoutTightLayout(plot.figure, output, plot.width, plot.height)
+	if err != nil {
+		return err
+	}
+
+	_, _ = fmt.Fprintf(os.Stdout, "Saved %s\n", output)
+
+	return nil
+}
+
+type temporalDimensionPlot struct {
+	figure *core.Figure
+	axes   *core.Axes
+	width  int
+	height int
+}
+
+func newTemporalDimensionPlot(
+	repoName string,
+	spec temporalDimensionSpec,
+	mode string,
+) (temporalDimensionPlot, error) {
 	width, height := reportPlotPixels("temporal-activity.png")
-	fig := newReportFigure(width, height)
-	grid := fig.Subplots(1, 1, core.WithSubplotPadding(0.060, 0.985, 0.110, 0.945))
+	figure := newReportFigure(width, height)
+
+	grid := figure.Subplots(1, 1, core.WithSubplotPadding(0.060, 0.985, 0.110, 0.945))
 	if len(grid) == 0 || len(grid[0]) == 0 || grid[0][0] == nil {
-		return fmt.Errorf("failed to create temporal activity axes")
+		return temporalDimensionPlot{}, errTemporalActivityAxes
 	}
-	ax := grid[0][0]
-	ax.SetTitle(fmt.Sprintf("%s - Activity by %s (%s)", repoName, spec.Title, mode))
-	ax.SetXLabel(spec.Title)
-	ax.SetYLabel(fmt.Sprintf("Number of %s", mode))
 
-	x := make([]float64, numBins)
+	axes := grid[0][0]
+	axes.SetTitle(fmt.Sprintf("%s - Activity by %s (%s)", repoName, spec.Title, mode))
+	axes.SetXLabel(spec.Title)
+	axes.SetYLabel("Number of " + mode)
+
+	return temporalDimensionPlot{figure: figure, axes: axes, width: width, height: height}, nil
+}
+
+func plotTemporalBars(axes *core.Axes, series []temporalHourCommitSeries, numBins int) float64 {
+	positions := temporalBarPositions(numBins)
 	bottom := make([]float64, numBins)
-	for i := range x {
-		x[i] = float64(i)
-	}
-
 	barWidth := 0.8
 	maxStack := 0.0
 	colors := sampledTab20Colors(len(series))
-	for i, item := range series {
-		values := make([]float64, numBins)
-		for bin, count := range item.Values {
-			if bin >= numBins {
-				break
-			}
-			values[bin] = float64(count)
-		}
-		barColor := colors[i]
-		ax.Bar(x, values, core.BarOptions{
+
+	for index, item := range series {
+		values := temporalBarValues(item.Values, numBins)
+		barColor := colors[index]
+		axes.Bar(positions, values, core.BarOptions{
 			Color:     &barColor,
 			Width:     &barWidth,
 			Baselines: append([]float64(nil), bottom...),
 			Label:     item.Name,
 		})
-		for bin := range bottom {
-			bottom[bin] += values[bin]
-			if bottom[bin] > maxStack {
-				maxStack = bottom[bin]
-			}
-		}
+		maxStack = addTemporalBarStack(bottom, values, maxStack)
 	}
 
+	return maxStack
+}
+
+func temporalBarPositions(numBins int) []float64 {
+	positions := make([]float64, numBins)
+	for index := range positions {
+		positions[index] = float64(index)
+	}
+
+	return positions
+}
+
+func temporalBarValues(counts []int, numBins int) []float64 {
+	values := make([]float64, numBins)
+	for index := 0; index < len(counts) && index < numBins; index++ {
+		values[index] = float64(counts[index])
+	}
+
+	return values
+}
+
+func addTemporalBarStack(bottom, values []float64, maxStack float64) float64 {
+	for index := range bottom {
+		bottom[index] += values[index]
+		maxStack = math.Max(maxStack, bottom[index])
+	}
+
+	return maxStack
+}
+
+func configureTemporalDimensionAxes(
+	axes *core.Axes,
+	spec temporalDimensionSpec,
+	mode string,
+	maxStack float64,
+) {
 	ticks, labels := temporalDimensionTicks(spec)
-	ax.SetXLim(-0.75, float64(numBins)-0.25)
-	ax.SetYLim(0, math.Max(maxStack, 1))
-	ax.XAxis.Locator = core.FixedLocator{TicksList: ticks}
-	ax.XAxis.Formatter = core.FixedFormatter{Labels: labels}
-	if spec.Rotate {
-		ax.XAxis.MajorLabelStyle = core.TickLabelStyle{
-			Rotation: 45,
-			HAlign:   core.TextAlignRight,
-			VAlign:   core.TextVAlignTop,
-		}
-	}
-	ax.YAxis.Locator = core.FixedLocator{TicksList: temporalActivityYTicks(maxStack)}
+	axes.SetXLim(-0.75, float64(len(spec.Labels))-0.25)
+	axes.SetYLim(0, math.Max(maxStack, 1))
+	axes.XAxis.Locator = core.FixedLocator{TicksList: ticks}
+	axes.XAxis.Formatter = core.FixedFormatter{Labels: labels}
+	configureTemporalTickLabels(axes, spec.Rotate)
+	axes.YAxis.Locator = core.FixedLocator{TicksList: temporalActivityYTicks(maxStack)}
+	axes.SetYLabel("Number of " + mode)
+}
 
-	addTemporalLegend(ax, len(series), legendThreshold)
-
-	if err := saveReportFigureWithoutTightLayout(fig, output, width, height); err != nil {
-		return err
+func configureTemporalTickLabels(axes *core.Axes, rotate bool) {
+	if !rotate {
+		return
 	}
-	fmt.Printf("Saved %s\n", output)
-	return nil
+
+	axes.XAxis.MajorLabelStyle = core.TickLabelStyle{
+		Rotation: 45,
+		HAlign:   core.TextAlignRight,
+		VAlign:   core.TextVAlignTop,
+	}
 }
 
 func temporalDimensionTicks(spec temporalDimensionSpec) ([]float64, []string) {
@@ -340,47 +462,19 @@ func plotTemporalHeatmap(repoName string, data *readers.TemporalActivityData, mo
 // the per-tick records, restricted to the requested window. Mirrors Python
 // labours' _filter_activities_by_date_range.
 func filterTemporalActivitiesByDateRange(data *readers.TemporalActivityData, reader readers.Reader, startTime, endTime *time.Time) (*readers.TemporalActivityData, bool) {
-	headerStart, headerEnd := reader.GetHeader()
-	if headerStart == 0 || data.TickSize <= 0 || len(data.Ticks) == 0 {
+	filterRange, ok := temporalActivityFilterRange(data, reader, startTime, endTime)
+	if !ok {
 		return nil, false
 	}
 
-	repoStart := time.Unix(headerStart, 0)
-	repoEnd := time.Unix(headerEnd, 0)
-	filterStart := repoStart
-	filterEnd := repoEnd
-	if startTime != nil {
-		filterStart = *startTime
-	}
-	if endTime != nil {
-		filterEnd = *endTime
-	}
-	if !filterStart.After(repoStart) && !filterEnd.Before(repoEnd) {
-		return nil, false
-	}
-
-	tickDays := float64(data.TickSize) / float64(temporalNanosecondsPerDay)
-	if tickDays <= 0 {
-		tickDays = 1
-	}
-	startTick := int(filterStart.Sub(repoStart).Hours() / 24 / tickDays)
-	endTick := int(filterEnd.Sub(repoStart).Hours() / 24 / tickDays)
-
-	activities := make(map[int]readers.TemporalDeveloperActivity)
-	for tickID, tickDevs := range data.Ticks {
-		if tickID < startTick || tickID > endTick {
-			continue
-		}
-		for devID, tick := range tickDevs {
-			activity := activities[devID]
-			ensureTemporalDimensionCapacity(&activity)
-			addTemporalTick(&activity, tick)
-			activities[devID] = activity
-		}
-	}
-
-	fmt.Printf("Filtering temporal activity to %s - %s\n",
-		filterStart.Format("2006-01-02"), filterEnd.Format("2006-01-02"))
+	startTick, endTick := temporalFilterTicks(filterRange, data.TickSize)
+	activities := temporalActivitiesInTickRange(data.Ticks, startTick, endTick)
+	_, _ = fmt.Fprintf(
+		os.Stdout,
+		"Filtering temporal activity to %s - %s\n",
+		filterRange.start.Format("2006-01-02"),
+		filterRange.end.Format("2006-01-02"),
+	)
 
 	return &readers.TemporalActivityData{
 		Activities: activities,
@@ -388,6 +482,91 @@ func filterTemporalActivitiesByDateRange(data *readers.TemporalActivityData, rea
 		Ticks:      data.Ticks,
 		TickSize:   data.TickSize,
 	}, true
+}
+
+type temporalFilterRange struct {
+	repositoryStart time.Time
+	start           time.Time
+	end             time.Time
+}
+
+func temporalActivityFilterRange(
+	data *readers.TemporalActivityData,
+	reader readers.Reader,
+	startTime, endTime *time.Time,
+) (temporalFilterRange, bool) {
+	headerStart, headerEnd := reader.GetHeader()
+	if headerStart == 0 || data.TickSize <= 0 || len(data.Ticks) == 0 {
+		return temporalFilterRange{}, false
+	}
+
+	repositoryStart := time.Unix(headerStart, 0)
+	repositoryEnd := time.Unix(headerEnd, 0)
+
+	filterRange := temporalFilterRange{
+		repositoryStart: repositoryStart,
+		start:           temporalFilterBoundary(startTime, repositoryStart),
+		end:             temporalFilterBoundary(endTime, repositoryEnd),
+	}
+	if !filterRange.start.After(repositoryStart) && !filterRange.end.Before(repositoryEnd) {
+		return temporalFilterRange{}, false
+	}
+
+	return filterRange, true
+}
+
+func temporalFilterBoundary(boundary *time.Time, fallback time.Time) time.Time {
+	if boundary != nil {
+		return *boundary
+	}
+
+	return fallback
+}
+
+func temporalFilterTicks(filterRange temporalFilterRange, tickSize int64) (int, int) {
+	tickDays := temporalTickDays(tickSize)
+	startTick := int(filterRange.start.Sub(filterRange.repositoryStart).Hours() / 24 / tickDays)
+	endTick := int(filterRange.end.Sub(filterRange.repositoryStart).Hours() / 24 / tickDays)
+
+	return startTick, endTick
+}
+
+func temporalTickDays(tickSize int64) float64 {
+	tickDays := float64(tickSize) / float64(temporalNanosecondsPerDay)
+	if tickDays <= 0 {
+		return 1
+	}
+
+	return tickDays
+}
+
+func temporalActivitiesInTickRange(
+	ticks map[int]map[int]readers.TemporalActivityTick,
+	startTick, endTick int,
+) map[int]readers.TemporalDeveloperActivity {
+	activities := make(map[int]readers.TemporalDeveloperActivity)
+
+	for tickID, tickDevelopers := range ticks {
+		if tickID < startTick || tickID > endTick {
+			continue
+		}
+
+		addTemporalTickActivities(activities, tickDevelopers)
+	}
+
+	return activities
+}
+
+func addTemporalTickActivities(
+	activities map[int]readers.TemporalDeveloperActivity,
+	tickDevelopers map[int]readers.TemporalActivityTick,
+) {
+	for developerID, tick := range tickDevelopers {
+		activity := activities[developerID]
+		ensureTemporalDimensionCapacity(&activity)
+		addTemporalTick(&activity, tick)
+		activities[developerID] = activity
+	}
 }
 
 func ensureTemporalDimensionCapacity(activity *readers.TemporalDeveloperActivity) {
@@ -429,57 +608,87 @@ func BusFactor(reader readers.Reader, output string) error {
 		return fmt.Errorf("failed to get bus factor data: %w", err)
 	}
 	if len(data.Snapshots) == 0 {
-		return fmt.Errorf("no bus factor snapshots found")
+		return errNoBusFactorSnapshots
 	}
 
 	ticks := sortedIntKeys(data.Snapshots)
-	series := make(xySeries, len(ticks))
-	for i, tick := range ticks {
-		series[i].X = float64(tick)
-		series[i].Y = float64(data.Snapshots[tick].BusFactor)
-	}
-
 	latest := data.Snapshots[ticks[len(ticks)-1]]
-	fmt.Printf("Bus factor: latest=%d, total lines=%d, threshold=%.2f\n",
+	_, _ = fmt.Fprintf(os.Stdout, "Bus factor: latest=%d, total lines=%d, threshold=%.2f\n",
 		latest.BusFactor, latest.TotalLines, data.Threshold)
 
-	timelineOutput := siblingOutputPath(output, "bus-factor.png", "timeline")
-	if err := plotLineSeries(
+	err = plotBusFactorTimeline(data, ticks, output)
+	if err != nil {
+		return err
+	}
+
+	err = plotBusFactorLatest(reader.GetName(), data, latest, output)
+	if err != nil {
+		return fmt.Errorf("failed to plot bus factor gauge: %w", err)
+	}
+
+	return plotBusFactorSubsystemSummary(reader.GetName(), data, output)
+}
+
+func plotBusFactorTimeline(data *readers.BusFactorData, ticks []int, output string) error {
+	series := make(xySeries, len(ticks))
+	for index, tick := range ticks {
+		series[index] = xyPoint{X: float64(tick), Y: float64(data.Snapshots[tick].BusFactor)}
+	}
+
+	return plotLineSeries(
 		"Bus Factor Over Time",
 		"Tick",
 		"Bus Factor",
 		[]namedSeries{{Name: "Bus factor", Points: series}},
-		timelineOutput,
+		siblingOutputPath(output, "bus-factor.png", "timeline"),
 		"bus-factor-timeline.png",
-	); err != nil {
-		return err
-	}
+	)
+}
 
-	if err := plotBusFactorGauge(
-		reader.GetName(),
+func plotBusFactorLatest(
+	repoName string,
+	data *readers.BusFactorData,
+	latest readers.BusFactorSnapshot,
+	output string,
+) error {
+	return plotBusFactorGauge(
+		repoName,
 		latest.BusFactor,
 		latest.TotalLines,
 		latest.AuthorLines,
 		data.People,
 		float64(data.Threshold),
 		siblingOutputPath(output, "bus-factor.png", "gauge"),
-	); err != nil {
-		return fmt.Errorf("failed to plot bus factor gauge: %w", err)
+	)
+}
+
+func plotBusFactorSubsystemSummary(
+	repoName string,
+	data *readers.BusFactorData,
+	output string,
+) error {
+	if len(data.SubsystemBusFactor) == 0 {
+		return nil
 	}
 
-	if len(data.SubsystemBusFactor) > 0 {
-		labels, values := busFactorSubsystemPairs(data.SubsystemBusFactor, 0)
-		if err := plotBusFactorSubsystemsMatplotlib(
-			reader.GetName(),
-			labels,
-			values,
-			float64(data.Threshold),
-			siblingOutputPath(output, "bus-factor.png", "subsystems"),
-		); err != nil {
-			return fmt.Errorf("failed to plot subsystem bus factor: %w", err)
-		}
-		fmt.Printf("Bus factor subsystem summary: %d subsystems\n", len(data.SubsystemBusFactor))
+	labels, values := busFactorSubsystemPairs(data.SubsystemBusFactor, 0)
+
+	err := plotBusFactorSubsystemsMatplotlib(
+		repoName,
+		labels,
+		values,
+		float64(data.Threshold),
+		siblingOutputPath(output, "bus-factor.png", "subsystems"),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to plot subsystem bus factor: %w", err)
 	}
+
+	_, _ = fmt.Fprintf(
+		os.Stdout,
+		"Bus factor subsystem summary: %d subsystems\n",
+		len(data.SubsystemBusFactor),
+	)
 	return nil
 }
 
@@ -574,88 +783,120 @@ func plotBusFactorGauge(repoName string, busFactor int, totalLines int64, author
 		return err
 	}
 
-	width, height := 1000, 600
-	fig := newReportFigure(width, height)
-	if repoName != "" {
-		fig.SetSuptitle(fmt.Sprintf("%s - Bus Factor Summary", repoName))
+	plot, err := newBusFactorGaugePlot(repoName)
+	if err != nil {
+		return err
 	}
-	gs := fig.GridSpec(
+
+	drawBusFactorStatus(plot.gaugeAxes, busFactor, totalLines, threshold)
+	drawBusFactorOwnership(plot.pieAxes, authorLines, people, totalLines)
+
+	err = saveReportFigure(plot.figure, output, plot.width, plot.height)
+	if err != nil {
+		return err
+	}
+
+	_, _ = fmt.Fprintf(os.Stdout, "Saved %s\n", output)
+
+	return nil
+}
+
+type busFactorGaugePlot struct {
+	figure    *core.Figure
+	gaugeAxes *core.Axes
+	pieAxes   *core.Axes
+	width     int
+	height    int
+}
+
+func newBusFactorGaugePlot(repoName string) (busFactorGaugePlot, error) {
+	const (
+		width  = 1000
+		height = 600
+	)
+
+	figure := newReportFigure(width, height)
+	if repoName != "" {
+		figure.SetSuptitle(repoName + " - Bus Factor Summary")
+	}
+
+	grid := figure.GridSpec(
 		1, 2,
 		core.WithGridSpecPadding(0.03, 0.97, 0.05, 0.90),
 		core.WithGridSpecSpacing(0.2, 0.1),
 	)
-	if gs == nil {
-		return fmt.Errorf("failed to create bus factor gauge axes")
-	}
-	axGauge := gs.Cell(0, 0).AddAxes()
-	axPie := gs.Cell(0, 1).AddAxes()
-	if axGauge == nil || axPie == nil {
-		return fmt.Errorf("failed to create bus factor gauge axes")
+	if grid == nil {
+		return busFactorGaugePlot{}, errBusFactorGaugeAxes
 	}
 
-	hideAxesContent(axGauge)
-	axGauge.SetXLim(0, 1)
-	axGauge.SetYLim(0, 1)
+	gaugeAxes := grid.Cell(0, 0).AddAxes()
+
+	pieAxes := grid.Cell(0, 1).AddAxes()
+	if gaugeAxes == nil || pieAxes == nil {
+		return busFactorGaugePlot{}, errBusFactorGaugeAxes
+	}
+
+	return busFactorGaugePlot{
+		figure: figure, gaugeAxes: gaugeAxes, pieAxes: pieAxes, width: width, height: height,
+	}, nil
+}
+
+func drawBusFactorStatus(axes *core.Axes, busFactor int, totalLines int64, threshold float64) {
+	hideAxesContent(axes)
+	axes.SetXLim(0, 1)
+	axes.SetYLim(0, 1)
 
 	statusColor, statusLabel := busFactorStatus(busFactor)
 	statusRenderColor := renderColor(statusColor)
 	gray := render.Color{R: 0.5, G: 0.5, B: 0.5, A: 1}
-	axesCoords := core.Coords(core.CoordAxes)
-	axGauge.Text(0.5, 0.6, strconv.Itoa(busFactor), core.TextOptions{
-		Coords:   axesCoords,
-		FontSize: 72,
-		Color:    statusRenderColor,
-		HAlign:   core.TextAlignCenter,
-		VAlign:   core.TextVAlignMiddle,
-	})
-	axGauge.Text(0.5, 0.35, statusLabel, core.TextOptions{
-		Coords:   axesCoords,
-		FontSize: 18,
-		Color:    statusRenderColor,
-		HAlign:   core.TextAlignCenter,
-		VAlign:   core.TextVAlignMiddle,
-	})
-	axGauge.Text(0.5, 0.2, fmt.Sprintf("Bus Factor @ %.0f%%", threshold*100), core.TextOptions{
-		Coords:   axesCoords,
-		FontSize: 12,
-		Color:    gray,
-		HAlign:   core.TextAlignCenter,
-		VAlign:   core.TextVAlignMiddle,
-	})
-	axGauge.Text(0.5, 0.1, fmt.Sprintf("%s total lines", humanizeInt(totalLines)), core.TextOptions{
-		Coords:   axesCoords,
-		FontSize: 10,
-		Color:    gray,
-		HAlign:   core.TextAlignCenter,
-		VAlign:   core.TextVAlignMiddle,
-	})
 
-	if len(authorLines) > 0 && totalLines > 0 {
-		labels, values := busFactorTopOwners(authorLines, people, 8)
-		axPie.Pie(values, core.PieOptions{
-			Labels:     labels,
-			AutoPct:    "%.1f%%",
-			Colors:     sampledTab20Colors(len(values)),
-			StartAngle: 90,
-		})
-		axPie.SetTitle("Line Ownership")
-	} else {
-		hideAxesContent(axPie)
-		axPie.SetXLim(0, 1)
-		axPie.SetYLim(0, 1)
-		axPie.Text(0.5, 0.5, "No ownership data", core.TextOptions{
-			Coords:   axesCoords,
-			FontSize: 14,
-			HAlign:   core.TextAlignCenter,
-			VAlign:   core.TextVAlignMiddle,
-		})
+	drawBusFactorText(axes, 0.6, strconv.Itoa(busFactor), 72, statusRenderColor)
+	drawBusFactorText(axes, 0.35, statusLabel, 18, statusRenderColor)
+	drawBusFactorText(axes, 0.2, fmt.Sprintf("Bus Factor @ %.0f%%", threshold*100), 12, gray)
+	drawBusFactorText(axes, 0.1, humanizeInt(totalLines)+" total lines", 10, gray)
+}
+
+func drawBusFactorText(axes *core.Axes, y float64, text string, fontSize float64, textColor render.Color) {
+	axes.Text(0.5, y, text, core.TextOptions{
+		Coords:   core.Coords(core.CoordAxes),
+		FontSize: fontSize,
+		Color:    textColor,
+		HAlign:   core.TextAlignCenter,
+		VAlign:   core.TextVAlignMiddle,
+	})
+}
+
+func drawBusFactorOwnership(
+	axes *core.Axes,
+	authorLines map[int]int64,
+	people []string,
+	totalLines int64,
+) {
+	if len(authorLines) == 0 || totalLines <= 0 {
+		drawMissingBusFactorOwnership(axes)
+		return
 	}
 
-	if err := saveReportFigure(fig, output, width, height); err != nil {
-		return err
-	}
-	fmt.Printf("Saved %s\n", output)
-	return nil
+	labels, values := busFactorTopOwners(authorLines, people, 8)
+	axes.Pie(values, core.PieOptions{
+		Labels:     labels,
+		AutoPct:    "%.1f%%",
+		Colors:     sampledTab20Colors(len(values)),
+		StartAngle: 90,
+	})
+	axes.SetTitle("Line Ownership")
+}
+
+func drawMissingBusFactorOwnership(axes *core.Axes) {
+	hideAxesContent(axes)
+	axes.SetXLim(0, 1)
+	axes.SetYLim(0, 1)
+	axes.Text(0.5, 0.5, "No ownership data", core.TextOptions{
+		Coords:   core.Coords(core.CoordAxes),
+		FontSize: 14,
+		HAlign:   core.TextAlignCenter,
+		VAlign:   core.TextVAlignMiddle,
+	})
 }
 
 // hideAxesContent removes spines, ticks, and labels from an axes, mirroring
@@ -739,81 +980,147 @@ func plotOwnershipSubsystemsBar(repoName string, giniByDir, hhiByDir map[string]
 		return err
 	}
 
-	dirs := make([]string, 0, len(giniByDir))
-	for dir := range giniByDir {
-		dirs = append(dirs, dir)
-	}
-	sort.Strings(dirs) // Python: sorted(subsystem_gini.keys())
-	n := len(dirs)
+	series := newOwnershipSubsystemSeries(giniByDir, hhiByDir)
 
-	heightInches := math.Max(4, float64(n)*0.5+2)
-	width, height := graphics.InchesToPixels(12), graphics.InchesToPixels(heightInches)
-	fig := newReportFigure(width, height)
-	grid := fig.Subplots(1, 1)
+	plot, err := newOwnershipSubsystemPlot(repoName, len(series.directories))
+	if err != nil {
+		return err
+	}
+
+	drawOwnershipSubsystemBars(plot.axes, series)
+	configureOwnershipSubsystemAxes(plot.axes, series)
+
+	return saveReportFigure(plot.figure, output, plot.width, plot.height)
+}
+
+const ownershipSubsystemBarHeight = 0.35
+
+type ownershipSubsystemSeries struct {
+	directories []string
+	giniY       []float64
+	hhiY        []float64
+	giniValues  []float64
+	hhiValues   []float64
+	ticks       []float64
+}
+
+type ownershipSubsystemPlot struct {
+	figure *core.Figure
+	axes   *core.Axes
+	width  int
+	height int
+}
+
+func newOwnershipSubsystemSeries(
+	giniByDirectory, hhiByDirectory map[string]float64,
+) ownershipSubsystemSeries {
+	directories := make([]string, 0, len(giniByDirectory))
+	for directory := range giniByDirectory {
+		directories = append(directories, directory)
+	}
+
+	sort.Strings(directories)
+
+	series := ownershipSubsystemSeries{
+		directories: directories,
+		giniY:       make([]float64, len(directories)),
+		hhiY:        make([]float64, len(directories)),
+		giniValues:  make([]float64, len(directories)),
+		hhiValues:   make([]float64, len(directories)),
+		ticks:       make([]float64, len(directories)),
+	}
+	for index, directory := range directories {
+		series.ticks[index] = float64(index)
+		series.giniY[index] = float64(index) - ownershipSubsystemBarHeight/2
+		series.hhiY[index] = float64(index) + ownershipSubsystemBarHeight/2
+		series.giniValues[index] = giniByDirectory[directory]
+		series.hhiValues[index] = hhiByDirectory[directory]
+	}
+
+	return series
+}
+
+func newOwnershipSubsystemPlot(repoName string, subsystemCount int) (ownershipSubsystemPlot, error) {
+	heightInches := math.Max(4, float64(subsystemCount)*0.5+2)
+	width := graphics.InchesToPixels(12)
+	height := graphics.InchesToPixels(heightInches)
+	figure := newReportFigure(width, height)
+
+	grid := figure.Subplots(1, 1)
 	if len(grid) == 0 || len(grid[0]) == 0 || grid[0][0] == nil {
-		return fmt.Errorf("failed to create ownership subsystem axes")
-	}
-	ax := grid[0][0]
-
-	title := "Ownership Concentration by Subsystem"
-	if repoName != "" {
-		title = fmt.Sprintf("%s - %s", repoName, title)
-	}
-	ax.SetTitle(title)
-	ax.SetXLabel("Concentration Index")
-
-	const barHeight = 0.35
-	yGini := make([]float64, n)
-	yHHI := make([]float64, n)
-	giniVals := make([]float64, n)
-	hhiVals := make([]float64, n)
-	ticks := make([]float64, n)
-	for i, dir := range dirs {
-		ticks[i] = float64(i)
-		yGini[i] = float64(i) - barHeight/2
-		yHHI[i] = float64(i) + barHeight/2
-		giniVals[i] = giniByDir[dir]
-		hhiVals[i] = hhiByDir[dir] // missing subsystem → 0, matching dict.get(d, 0)
+		return ownershipSubsystemPlot{}, errOwnershipSubsystemAxes
 	}
 
+	axes := grid[0][0]
+	axes.SetTitle(ownershipSubsystemTitle(repoName))
+	axes.SetXLabel("Concentration Index")
+
+	return ownershipSubsystemPlot{figure: figure, axes: axes, width: width, height: height}, nil
+}
+
+func ownershipSubsystemTitle(repoName string) string {
+	const title = "Ownership Concentration by Subsystem"
+	if repoName == "" {
+		return title
+	}
+
+	return fmt.Sprintf("%s - %s", repoName, title)
+}
+
+func drawOwnershipSubsystemBars(axes *core.Axes, series ownershipSubsystemSeries) {
 	orientation := core.BarHorizontal
-	bh := barHeight
-	// Matches Python's alpha=0.8. matplotlib-go's AGG backend lightens semi-
-	// transparent fills on the transparent report surface (PLAN Stage D5), so
-	// these read a bit pale until that renderer bug is fixed; alpha still beats
-	// opaque on RMSE here because bar position, not fill, dominates the diff.
-	giniColor := render.Color{R: 233.0 / 255, G: 30.0 / 255, B: 99.0 / 255, A: 0.8} // #E91E63
-	hhiColor := render.Color{R: 63.0 / 255, G: 81.0 / 255, B: 181.0 / 255, A: 0.8}  // #3F51B5
-	ax.Bar(yGini, giniVals, core.BarOptions{Color: &giniColor, Width: &bh, Orientation: &orientation, Label: "Gini"})
-	ax.Bar(yHHI, hhiVals, core.BarOptions{Color: &hhiColor, Width: &bh, Orientation: &orientation, Label: "HHI"})
+	barHeight := ownershipSubsystemBarHeight
+	giniColor := render.Color{R: 233.0 / 255, G: 30.0 / 255, B: 99.0 / 255, A: 0.8}
+	hhiColor := render.Color{R: 63.0 / 255, G: 81.0 / 255, B: 181.0 / 255, A: 0.8}
 
+	axes.Bar(series.giniY, series.giniValues, core.BarOptions{
+		Color: &giniColor, Width: &barHeight, Orientation: &orientation, Label: "Gini",
+	})
+	axes.Bar(series.hhiY, series.hhiValues, core.BarOptions{
+		Color: &hhiColor, Width: &barHeight, Orientation: &orientation, Label: "HHI",
+	})
+	drawOwnershipSubsystemLabels(axes, series)
+}
+
+func drawOwnershipSubsystemLabels(axes *core.Axes, series ownershipSubsystemSeries) {
 	clipOff := false
 	labelColor := render.Color{R: 0, G: 0, B: 0, A: 1}
-	for i := range dirs {
-		ax.Text(giniVals[i]+0.02, yGini[i], fmt.Sprintf("%.2f", giniVals[i]), core.TextOptions{
-			FontSize: 8.4, Color: labelColor, VAlign: core.TextVAlignMiddle, ClipOn: &clipOff,
-		})
-		ax.Text(hhiVals[i]+0.02, yHHI[i], fmt.Sprintf("%.2f", hhiVals[i]), core.TextOptions{
-			FontSize: 8.4, Color: labelColor, VAlign: core.TextVAlignMiddle, ClipOn: &clipOff,
-		})
+	for index := range series.directories {
+		axes.Text(
+			series.giniValues[index]+0.02,
+			series.giniY[index],
+			fmt.Sprintf("%.2f", series.giniValues[index]),
+			core.TextOptions{
+				FontSize: 8.4, Color: labelColor, VAlign: core.TextVAlignMiddle, ClipOn: &clipOff,
+			},
+		)
+		axes.Text(
+			series.hhiValues[index]+0.02,
+			series.hhiY[index],
+			fmt.Sprintf("%.2f", series.hhiValues[index]),
+			core.TextOptions{
+				FontSize: 8.4, Color: labelColor, VAlign: core.TextVAlignMiddle, ClipOn: &clipOff,
+			},
+		)
 	}
+}
 
-	ax.SetXLim(0, 1.1)
-	// Match matplotlib's default y-autoscale (5% margin) for the grouped bars.
-	dataMin := -barHeight
-	dataMax := float64(n-1) + barHeight
+func configureOwnershipSubsystemAxes(axes *core.Axes, series ownershipSubsystemSeries) {
+	axes.SetXLim(0, 1.1)
+
+	dataMin := -ownershipSubsystemBarHeight
+	dataMax := float64(len(series.directories)-1) + ownershipSubsystemBarHeight
 	margin := 0.05 * (dataMax - dataMin)
-	ax.SetYLim(dataMin-margin, dataMax+margin)
-	ax.YAxis.Locator = core.FixedLocator{TicksList: ticks}
-	ax.YAxis.Formatter = core.FixedFormatter{Labels: append([]string(nil), dirs...)}
-	yLabelStyle := ax.YAxis.MajorLabelStyle
-	yLabelStyle.FontSize = 9.6 // Python: fontsize=font_size*0.8
-	ax.YAxis.MajorLabelStyle = yLabelStyle
-
-	legend := ax.AddLegend() // default LegendBest mirrors Python's ax.legend()
+	axes.SetYLim(dataMin-margin, dataMax+margin)
+	axes.YAxis.Locator = core.FixedLocator{TicksList: series.ticks}
+	axes.YAxis.Formatter = core.FixedFormatter{
+		Labels: append([]string(nil), series.directories...),
+	}
+	labelStyle := axes.YAxis.MajorLabelStyle
+	labelStyle.FontSize = 9.6
+	axes.YAxis.MajorLabelStyle = labelStyle
+	legend := axes.AddLegend()
 	legend.FontSize = 9.6
-
-	return saveReportFigure(fig, output, width, height) // TightLayout ~ Python tight_layout
 }
 
 func KnowledgeDiffusion(reader readers.Reader, output string, detail bool) error {
@@ -935,15 +1242,21 @@ func HotspotRisk(reader readers.Reader, output string) error {
 		values[i] = file.RiskScore
 	}
 
-	fmt.Printf("Hotspot risk: %d files, window=%d days, top risk=%.3f (%s)\n",
+	_, _ = fmt.Fprintf(os.Stdout, "Hotspot risk: %d files, window=%d days, top risk=%.3f (%s)\n",
 		len(data.Files), data.WindowDays, files[0].RiskScore, files[0].Path)
-	if err := plotHotspotRiskRanked(reader.GetName(), files, labels, values, output); err != nil {
+
+	err = plotHotspotRiskRanked(reader.GetName(), files, labels, values, output)
+	if err != nil {
 		return err
 	}
-	if err := writeHotspotRiskTable(files, siblingOutputPath(output, "hotspot-risk.png", "table.tsv")); err != nil {
+
+	err = writeHotspotRiskTable(files, siblingOutputPath(output, "hotspot-risk.png", "table.tsv"))
+	if err != nil {
 		return err
 	}
+
 	printHotspotRiskTable(files, 10)
+
 	return nil
 }
 
@@ -952,61 +1265,135 @@ func plotKnowledgeDistribution(repoName string, labels []string, values []int, o
 	if err != nil {
 		return err
 	}
-	width, height := reportPlotPixels("knowledge-diffusion.png")
-	fig := newReportFigure(width, height)
-	grid := fig.Subplots(1, 1, core.WithSubplotPadding(0.064, 0.989, 0.100, 0.936))
-	if len(grid) == 0 || len(grid[0]) == 0 || grid[0][0] == nil {
-		return fmt.Errorf("failed to create knowledge diffusion axes")
-	}
-	ax := grid[0][0]
-	title := "Knowledge Diffusion Distribution"
-	if repoName != "" {
-		title = fmt.Sprintf("%s - Knowledge Diffusion Distribution", repoName)
-	}
-	ax.SetTitle(title)
-	ax.SetXLabel("Number of Unique Editors")
-	ax.SetYLabel("Number of Files")
 
-	y := make([]float64, len(values))
-	ticks := make([]float64, len(labels))
-	editorCounts := make([]float64, len(labels))
-	maxValue := 0.0
-	totalFiles := 0
-	singleEditorFiles := 0
-	for i, value := range values {
-		editorCount := float64(i)
-		if _, err := fmt.Sscanf(labels[i], "%f", &editorCount); err != nil {
-			editorCount = float64(i)
-		}
-		editorCounts[i] = editorCount
-		ticks[i] = editorCount
-		y[i] = float64(value)
-		totalFiles += value
-		if int(editorCount) == 1 {
-			singleEditorFiles += value
-		}
-		if y[i] > maxValue {
-			maxValue = y[i]
-		}
-		c := renderColor(knowledgeDistributionColor(int(editorCount)))
-		edgeColor := render.Color{R: 1, G: 1, B: 1, A: 1}
-		edgeWidth := 0.5
-		ax.Bar([]float64{editorCount}, []float64{y[i]}, core.BarOptions{
-			Color:     &c,
-			EdgeColor: &edgeColor,
-			EdgeWidth: &edgeWidth,
-		})
-		ax.Text(editorCount, y[i]+0.3, fmt.Sprintf("%d", value), core.TextOptions{
-			FontSize: 9.6,
-			HAlign:   core.TextAlignCenter,
-			VAlign:   core.TextVAlignBottom,
-		})
+	series := buildKnowledgeDistributionSeries(labels, values)
+
+	plot, err := newKnowledgeDistributionPlot(repoName)
+	if err != nil {
+		return err
 	}
-	if totalFiles > 0 {
-		pct := float64(singleEditorFiles) / float64(totalFiles) * 100
-		riskColor := renderColor(color.RGBA{R: 244, G: 67, B: 54, A: 255})
-		boxColor := render.Color{R: 1, G: 1, B: 1, A: 0.8}
-		ax.Text(0.98, 0.95, fmt.Sprintf("Single-editor files: %d (%.0f%%)", singleEditorFiles, pct), core.TextOptions{
+
+	drawKnowledgeDistribution(plot.axes, series)
+	configureKnowledgeDistributionAxes(plot.axes, series)
+
+	err = saveReportFigureWithoutTightLayout(plot.figure, output, plot.width, plot.height)
+	if err != nil {
+		return err
+	}
+
+	_, _ = fmt.Fprintf(os.Stdout, "Saved %s\n", output)
+
+	return nil
+}
+
+type knowledgeDistributionSeries struct {
+	editorCounts      []float64
+	fileCounts        []float64
+	totalFiles        int
+	singleEditorFiles int
+	maxValue          float64
+}
+
+type knowledgeDistributionPlot struct {
+	figure *core.Figure
+	axes   *core.Axes
+	width  int
+	height int
+}
+
+func buildKnowledgeDistributionSeries(labels []string, values []int) knowledgeDistributionSeries {
+	series := knowledgeDistributionSeries{
+		editorCounts: make([]float64, len(values)),
+		fileCounts:   make([]float64, len(values)),
+	}
+	for index, value := range values {
+		editorCount := parseKnowledgeEditorCount(labels, index)
+		series.editorCounts[index] = editorCount
+		series.fileCounts[index] = float64(value)
+		series.totalFiles += value
+
+		series.maxValue = math.Max(series.maxValue, float64(value))
+		if int(editorCount) == 1 {
+			series.singleEditorFiles += value
+		}
+	}
+
+	return series
+}
+
+func parseKnowledgeEditorCount(labels []string, index int) float64 {
+	if index >= len(labels) {
+		return float64(index)
+	}
+
+	editorCount := float64(index)
+
+	_, err := fmt.Sscanf(labels[index], "%f", &editorCount)
+	if err != nil {
+		return float64(index)
+	}
+
+	return editorCount
+}
+
+func newKnowledgeDistributionPlot(repoName string) (knowledgeDistributionPlot, error) {
+	width, height := reportPlotPixels("knowledge-diffusion.png")
+	figure := newReportFigure(width, height)
+
+	grid := figure.Subplots(1, 1, core.WithSubplotPadding(0.064, 0.989, 0.100, 0.936))
+	if len(grid) == 0 || len(grid[0]) == 0 || grid[0][0] == nil {
+		return knowledgeDistributionPlot{}, errKnowledgeDistributionAxes
+	}
+
+	axes := grid[0][0]
+	axes.SetTitle(knowledgeDistributionTitle(repoName))
+	axes.SetXLabel("Number of Unique Editors")
+	axes.SetYLabel("Number of Files")
+
+	return knowledgeDistributionPlot{figure: figure, axes: axes, width: width, height: height}, nil
+}
+
+func knowledgeDistributionTitle(repoName string) string {
+	if repoName == "" {
+		return "Knowledge Diffusion Distribution"
+	}
+
+	return repoName + " - Knowledge Diffusion Distribution"
+}
+
+func drawKnowledgeDistribution(axes *core.Axes, series knowledgeDistributionSeries) {
+	for index, editorCount := range series.editorCounts {
+		drawKnowledgeDistributionBar(axes, editorCount, series.fileCounts[index])
+	}
+
+	if series.totalFiles > 0 {
+		drawSingleEditorSummary(axes, series.totalFiles, series.singleEditorFiles)
+	}
+}
+
+func drawKnowledgeDistributionBar(axes *core.Axes, editorCount, fileCount float64) {
+	barColor := renderColor(knowledgeDistributionColor(int(editorCount)))
+	edgeColor := render.Color{R: 1, G: 1, B: 1, A: 1}
+	edgeWidth := 0.5
+	axes.Bar([]float64{editorCount}, []float64{fileCount}, core.BarOptions{
+		Color: &barColor, EdgeColor: &edgeColor, EdgeWidth: &edgeWidth,
+	})
+	axes.Text(editorCount, fileCount+0.3, fmt.Sprintf("%.0f", fileCount), core.TextOptions{
+		FontSize: 9.6,
+		HAlign:   core.TextAlignCenter,
+		VAlign:   core.TextVAlignBottom,
+	})
+}
+
+func drawSingleEditorSummary(axes *core.Axes, totalFiles, singleEditorFiles int) {
+	percentage := float64(singleEditorFiles) / float64(totalFiles) * 100
+	riskColor := renderColor(color.RGBA{R: 244, G: 67, B: 54, A: 255})
+	boxColor := render.Color{R: 1, G: 1, B: 1, A: 0.8}
+	axes.Text(
+		0.98,
+		0.95,
+		fmt.Sprintf("Single-editor files: %d (%.0f%%)", singleEditorFiles, percentage),
+		core.TextOptions{
 			Coords:   core.Coords(core.CoordAxes),
 			FontSize: 10.8,
 			Color:    riskColor,
@@ -1017,31 +1404,41 @@ func plotKnowledgeDistribution(repoName string, labels []string, values []int, o
 				EdgeColor: boxColor,
 				Padding:   3,
 			},
-		})
-	}
-	minX, maxX := rangeWithPadding(editorCounts, 0.5)
-	ax.SetXLim(minX, maxX)
-	yMax := math.Ceil(math.Max(maxValue, 1)/15) * 15
-	ax.SetYLim(0, yMax)
-	xTicks := make([]float64, 0, int(maxX-minX)+2)
-	xLabels := make([]string, 0, cap(xTicks))
-	for tick := math.Ceil(minX); tick <= math.Floor(maxX); tick++ {
-		xTicks = append(xTicks, tick)
-		xLabels = append(xLabels, fmt.Sprintf("%.0f", tick))
-	}
-	yTicks := make([]float64, 0, int(yMax/15)+1)
-	for tick := 0.0; tick <= yMax; tick += 15 {
-		yTicks = append(yTicks, tick)
-	}
-	ax.XAxis.Locator = core.FixedLocator{TicksList: xTicks}
-	ax.XAxis.Formatter = core.FixedFormatter{Labels: xLabels}
-	ax.YAxis.Locator = core.FixedLocator{TicksList: yTicks}
+		},
+	)
+}
 
-	if err := saveReportFigureWithoutTightLayout(fig, output, width, height); err != nil {
-		return err
+func configureKnowledgeDistributionAxes(axes *core.Axes, series knowledgeDistributionSeries) {
+	minimumX, maximumX := rangeWithPadding(series.editorCounts, 0.5)
+	maximumY := math.Ceil(math.Max(series.maxValue, 1)/15) * 15
+	xTicks, xLabels := knowledgeDistributionXTicks(minimumX, maximumX)
+
+	axes.SetXLim(minimumX, maximumX)
+	axes.SetYLim(0, maximumY)
+	axes.XAxis.Locator = core.FixedLocator{TicksList: xTicks}
+	axes.XAxis.Formatter = core.FixedFormatter{Labels: xLabels}
+	axes.YAxis.Locator = core.FixedLocator{TicksList: knowledgeDistributionYTicks(maximumY)}
+}
+
+func knowledgeDistributionXTicks(minimum, maximum float64) ([]float64, []string) {
+	ticks := make([]float64, 0, int(maximum-minimum)+2)
+
+	labels := make([]string, 0, cap(ticks))
+	for tick := math.Ceil(minimum); tick <= math.Floor(maximum); tick++ {
+		ticks = append(ticks, tick)
+		labels = append(labels, fmt.Sprintf("%.0f", tick))
 	}
-	fmt.Printf("Saved %s\n", output)
-	return nil
+
+	return ticks, labels
+}
+
+func knowledgeDistributionYTicks(maximum float64) []float64 {
+	ticks := make([]float64, 0, int(maximum/15)+1)
+	for tick := 0.0; tick <= maximum; tick += 15 {
+		ticks = append(ticks, tick)
+	}
+
+	return ticks
 }
 
 type xyPoint struct {
@@ -1334,76 +1731,159 @@ func plotKnowledgeSilosMatplotlib(repoName string, labels []string, uniqueValues
 	if err != nil {
 		return err
 	}
-	heightInches := math.Max(5, float64(len(labels))*0.35+2)
-	width, height := int(14*100), int(heightInches*100)
-	fig := newKnowledgeSilosFigure(width, height)
-	grid := fig.Subplots(1, 1, core.WithSubplotPadding(0.332, 0.947, 0.05, 0.97))
-	if len(grid) == 0 || len(grid[0]) == 0 || grid[0][0] == nil {
-		return fmt.Errorf("failed to create knowledge silos axes")
-	}
-	ax := grid[0][0]
-	title := "Knowledge Silos"
-	if repoName != "" {
-		title = fmt.Sprintf("%s - Knowledge Silos", repoName)
-	}
-	ax.SetTitle(title)
-	ax.SetXLabel("Number of Editors")
 
-	yTotal := make([]float64, len(labels))
-	yRecent := make([]float64, len(labels))
-	total := make([]float64, len(labels))
-	recent := make([]float64, len(labels))
-	ticks := make([]float64, len(labels))
-	maxValue := 0.0
-	for i := range labels {
-		yTotal[i] = float64(i) - 0.18
-		yRecent[i] = float64(i) + 0.18
-		ticks[i] = float64(i)
-		total[i] = float64(uniqueValues[i])
-		recent[i] = float64(recentValues[i])
-		maxValue = math.Max(maxValue, math.Max(total[i], recent[i]))
+	series := buildKnowledgeSiloSeries(labels, uniqueValues, recentValues)
+
+	plot, err := newKnowledgeSiloPlot(repoName, len(labels))
+	if err != nil {
+		return err
 	}
+
+	drawKnowledgeSiloBars(plot.axes, series, windowMonths)
+	configureKnowledgeSiloAxes(plot.axes, series)
+
+	err = saveReportFigureWithoutTightLayout(plot.figure, output, plot.width, plot.height)
+	if err != nil {
+		return err
+	}
+
+	_, _ = fmt.Fprintf(os.Stdout, "Saved %s\n", output)
+
+	return nil
+}
+
+type knowledgeSiloSeries struct {
+	labels       []string
+	totalY       []float64
+	recentY      []float64
+	totalValues  []float64
+	recentValues []float64
+	ticks        []float64
+	maxValue     float64
+}
+
+type knowledgeSiloPlot struct {
+	figure *core.Figure
+	axes   *core.Axes
+	width  int
+	height int
+}
+
+func buildKnowledgeSiloSeries(
+	labels []string,
+	uniqueValues, recentValues floatSeries,
+) knowledgeSiloSeries {
+	series := knowledgeSiloSeries{
+		labels:       labels,
+		totalY:       make([]float64, len(labels)),
+		recentY:      make([]float64, len(labels)),
+		totalValues:  make([]float64, len(labels)),
+		recentValues: make([]float64, len(labels)),
+		ticks:        make([]float64, len(labels)),
+	}
+	for index := range labels {
+		series.totalY[index] = float64(index) - 0.18
+		series.recentY[index] = float64(index) + 0.18
+		series.ticks[index] = float64(index)
+		series.totalValues[index] = float64(uniqueValues[index])
+		series.recentValues[index] = float64(recentValues[index])
+		series.maxValue = math.Max(
+			series.maxValue,
+			math.Max(series.totalValues[index], series.recentValues[index]),
+		)
+	}
+
+	return series
+}
+
+func newKnowledgeSiloPlot(repoName string, fileCount int) (knowledgeSiloPlot, error) {
+	heightInches := math.Max(5, float64(fileCount)*0.35+2)
+	width := 14 * 100
+	height := int(heightInches * 100)
+	figure := newKnowledgeSilosFigure(width, height)
+
+	grid := figure.Subplots(1, 1, core.WithSubplotPadding(0.332, 0.947, 0.05, 0.97))
+	if len(grid) == 0 || len(grid[0]) == 0 || grid[0][0] == nil {
+		return knowledgeSiloPlot{}, errKnowledgeSilosAxes
+	}
+
+	axes := grid[0][0]
+	axes.SetTitle(knowledgeSiloTitle(repoName))
+	axes.SetXLabel("Number of Editors")
+
+	return knowledgeSiloPlot{figure: figure, axes: axes, width: width, height: height}, nil
+}
+
+func knowledgeSiloTitle(repoName string) string {
+	if repoName == "" {
+		return "Knowledge Silos"
+	}
+
+	return repoName + " - Knowledge Silos"
+}
+
+func drawKnowledgeSiloBars(axes *core.Axes, series knowledgeSiloSeries, windowMonths int) {
 	orientation := core.BarHorizontal
 	barHeight := 0.35
 	totalColor := renderColor(color.RGBA{R: 144, G: 202, B: 249, A: 255})
 	recentColor := renderColor(color.RGBA{R: 21, G: 101, B: 192, A: 255})
-	ax.Bar(yTotal, total, core.BarOptions{
+
+	axes.Bar(series.totalY, series.totalValues, core.BarOptions{
 		Color:       &totalColor,
 		Width:       &barHeight,
 		Orientation: &orientation,
 		Label:       "Total unique editors",
 	})
-	ax.Bar(yRecent, recent, core.BarOptions{
+	axes.Bar(series.recentY, series.recentValues, core.BarOptions{
 		Color:       &recentColor,
 		Width:       &barHeight,
 		Orientation: &orientation,
 		Label:       fmt.Sprintf("Active in last %d months", windowMonths),
 	})
+	drawKnowledgeSiloLabels(axes, series)
+}
+
+func drawKnowledgeSiloLabels(axes *core.Axes, series knowledgeSiloSeries) {
 	clipOff := false
 	labelColor := render.Color{R: 0, G: 0, B: 0, A: 1}
-	for i := range labels {
-		ax.Text(total[i]+0.1, yTotal[i], fmt.Sprintf("%.0f", total[i]), core.TextOptions{
-			FontSize: 8.4,
-			Color:    labelColor,
-			VAlign:   core.TextVAlignMiddle,
-			ClipOn:   &clipOff,
-		})
-		ax.Text(recent[i]+0.1, yRecent[i], fmt.Sprintf("%.0f", recent[i]), core.TextOptions{
-			FontSize: 8.4,
-			Color:    labelColor,
-			VAlign:   core.TextVAlignMiddle,
-			ClipOn:   &clipOff,
-		})
+	for index := range series.labels {
+		drawKnowledgeSiloLabel(
+			axes, series.totalValues[index], series.totalY[index], labelColor, &clipOff,
+		)
+		drawKnowledgeSiloLabel(
+			axes, series.recentValues[index], series.recentY[index], labelColor, &clipOff,
+		)
 	}
-	ax.SetXLim(0, math.Max(maxValue*1.05, 1.05))
-	ax.SetYLim(-1.85, float64(len(labels))+0.85)
-	ax.InvertY()
-	ax.YAxis.Locator = core.FixedLocator{TicksList: ticks}
-	ax.YAxis.Formatter = core.FixedFormatter{Labels: append([]string(nil), labels...)}
-	yLabelStyle := ax.YAxis.MajorLabelStyle
-	yLabelStyle.FontKey = graphics.PythonPlotMonoFontFamily
-	ax.YAxis.MajorLabelStyle = yLabelStyle
-	legend := ax.AddLegend()
+}
+
+func drawKnowledgeSiloLabel(
+	axes *core.Axes,
+	value, y float64,
+	labelColor render.Color,
+	clipOff *bool,
+) {
+	axes.Text(value+0.1, y, fmt.Sprintf("%.0f", value), core.TextOptions{
+		FontSize: 8.4,
+		Color:    labelColor,
+		VAlign:   core.TextVAlignMiddle,
+		ClipOn:   clipOff,
+	})
+}
+
+func configureKnowledgeSiloAxes(axes *core.Axes, series knowledgeSiloSeries) {
+	axes.SetXLim(0, math.Max(series.maxValue*1.05, 1.05))
+	axes.SetYLim(-1.85, float64(len(series.labels))+0.85)
+	axes.InvertY()
+	axes.YAxis.Locator = core.FixedLocator{TicksList: series.ticks}
+	axes.YAxis.Formatter = core.FixedFormatter{Labels: append([]string(nil), series.labels...)}
+	labelStyle := axes.YAxis.MajorLabelStyle
+	labelStyle.FontKey = graphics.PythonPlotMonoFontFamily
+	axes.YAxis.MajorLabelStyle = labelStyle
+	configureKnowledgeSiloLegend(axes)
+}
+
+func configureKnowledgeSiloLegend(axes *core.Axes) {
+	legend := axes.AddLegend()
 	legend.Location = core.LegendLowerRight
 	legend.FontSize = 9.6
 	legend.Padding = 5
@@ -1411,12 +1891,6 @@ func plotKnowledgeSilosMatplotlib(repoName string, labels []string, uniqueValues
 	legend.BackgroundColor = render.Color{R: 0.9, G: 0.9, B: 0.9, A: 0.8}
 	legend.BorderColor = render.Color{R: 0.8, G: 0.8, B: 0.8, A: 0.8}
 	legend.TextColor = render.Color{R: 0, G: 0, B: 0, A: 1}
-
-	if err := saveReportFigureWithoutTightLayout(fig, output, width, height); err != nil {
-		return err
-	}
-	fmt.Printf("Saved %s\n", output)
-	return nil
 }
 
 // plotKnowledgeTrend renders a max-unique-editors-over-time chart. Go-only,
@@ -1506,111 +1980,199 @@ func plotHotspotRiskRanked(repoName string, files []readers.HotspotRiskFile, lab
 	if err != nil {
 		return err
 	}
+
+	series := buildHotspotRiskSeries(files, labels, values)
+
+	plot, err := newHotspotRiskPlot()
+	if err != nil {
+		return err
+	}
+
+	drawHotspotRiskBars(plot.riskAxes, series, repoName)
+
+	renderAlpha := hotspotComponentRenderAlpha(output)
+	drawHotspotRiskComponents(plot.componentAxes, series, renderAlpha)
+
+	err = saveReportFigure(plot.figure, output, plot.width, plot.height)
+	if err != nil {
+		return err
+	}
+
+	err = restoreHotspotComponentAlpha(output, renderAlpha)
+	if err != nil {
+		return err
+	}
+
+	_, _ = fmt.Fprintf(os.Stdout, "Saved %s\n", output)
+
+	return nil
+}
+
+type hotspotRiskSeries struct {
+	positions    []float64
+	risk         []float64
+	size         []float64
+	churn        []float64
+	coupling     []float64
+	ownership    []float64
+	ticks        []float64
+	displayNames []string
+	maxRisk      float64
+}
+
+type hotspotRiskPlot struct {
+	figure        *core.Figure
+	riskAxes      *core.Axes
+	componentAxes *core.Axes
+	width         int
+	height        int
+}
+
+func buildHotspotRiskSeries(
+	files []readers.HotspotRiskFile,
+	labels []string,
+	values floatSeries,
+) hotspotRiskSeries {
+	series := newHotspotRiskSeries(len(files))
+	maxSize, maxChurn, maxCoupling := hotspotMaxima(files)
+
+	for index, file := range files {
+		series.positions[index] = float64(index)
+		series.ticks[index] = float64(index)
+		series.risk[index] = float64(values[index])
+		series.maxRisk = math.Max(series.maxRisk, series.risk[index])
+		series.displayNames[index] = hotspotDisplayName(labels[index], file.Path)
+		series.size[index] = hotspotSizeNormalized(file, maxSize)
+		series.churn[index] = hotspotNormalized(file.ChurnNormalized, float64(file.Churn), maxChurn)
+		series.coupling[index] = hotspotNormalized(
+			file.CouplingNormalized, float64(file.CouplingDegree), maxCoupling,
+		)
+		series.ownership[index] = hotspotNormalized(
+			file.OwnershipNormalized, file.OwnershipGini, 1,
+		)
+	}
+
+	return series
+}
+
+func newHotspotRiskSeries(count int) hotspotRiskSeries {
+	return hotspotRiskSeries{
+		positions:    make([]float64, count),
+		risk:         make([]float64, count),
+		size:         make([]float64, count),
+		churn:        make([]float64, count),
+		coupling:     make([]float64, count),
+		ownership:    make([]float64, count),
+		ticks:        make([]float64, count),
+		displayNames: make([]string, count),
+	}
+}
+
+func newHotspotRiskPlot() (hotspotRiskPlot, error) {
 	width, height := reportPlotPixels("hotspot-risk.png")
-	fig := newHotspotRiskFigure(width, height)
-	gs := fig.GridSpec(
+	figure := newHotspotRiskFigure(width, height)
+
+	grid := figure.GridSpec(
 		1,
 		2,
 		core.WithGridSpecPadding(0.18, 0.95, 0.14, 0.88),
 		core.WithGridSpecSpacing(0.22, 0.1),
 		core.WithGridSpecWidthRatios(3, 2),
 	)
-	if gs == nil {
-		return fmt.Errorf("failed to create hotspot risk axes")
-	}
-	axRisk := gs.Cell(0, 0).AddAxes()
-	axComponents := gs.Cell(0, 1).AddAxes()
-	if axRisk == nil || axComponents == nil {
-		return fmt.Errorf("failed to create hotspot risk axes")
+	if grid == nil {
+		return hotspotRiskPlot{}, errHotspotRiskAxes
 	}
 
-	y := make([]float64, len(files))
-	risk := make([]float64, len(files))
-	sizeNorm := make([]float64, len(files))
-	churnNorm := make([]float64, len(files))
-	couplingNorm := make([]float64, len(files))
-	ownershipNorm := make([]float64, len(files))
-	ticks := make([]float64, len(files))
-	displayNames := make([]string, len(files))
-	maxRisk := 0.0
-	maxSize, maxChurn, maxCoupling := hotspotMaxima(files)
-	for i, file := range files {
-		y[i] = float64(i)
-		ticks[i] = float64(i)
-		risk[i] = float64(values[i])
-		maxRisk = math.Max(maxRisk, risk[i])
-		displayNames[i] = hotspotDisplayName(labels[i], file.Path)
-		sizeNorm[i] = hotspotSizeNormalized(file, maxSize)
-		churnNorm[i] = hotspotNormalized(file.ChurnNormalized, float64(file.Churn), maxChurn)
-		couplingNorm[i] = hotspotNormalized(file.CouplingNormalized, float64(file.CouplingDegree), maxCoupling)
-		ownershipNorm[i] = hotspotNormalized(file.OwnershipNormalized, file.OwnershipGini, 1)
+	riskAxes := grid.Cell(0, 0).AddAxes()
+
+	componentAxes := grid.Cell(0, 1).AddAxes()
+	if riskAxes == nil || componentAxes == nil {
+		return hotspotRiskPlot{}, errHotspotRiskAxes
 	}
 
+	return hotspotRiskPlot{
+		figure: figure, riskAxes: riskAxes, componentAxes: componentAxes, width: width, height: height,
+	}, nil
+}
+
+func drawHotspotRiskBars(axes *core.Axes, series hotspotRiskSeries, repoName string) {
 	orientation := core.BarHorizontal
 	barHeight := 0.8
-	riskBars := axRisk.Bar(y, risk, core.BarOptions{
-		Width:       &barHeight,
-		Orientation: &orientation,
+	bars := axes.Bar(series.positions, series.risk, core.BarOptions{
+		Width: &barHeight, Orientation: &orientation,
 	})
-	riskBars.Colors = hotspotRiskColors(risk, maxRisk)
-	riskBars.EdgeColor = render.Color{R: 0, G: 0, B: 0, A: 1}
-	riskBars.EdgeWidth = 0.5
-	axRisk.SetTitle(fmt.Sprintf("Top Risky Files - %s", repoName))
-	axRisk.SetXLabel("Composite Risk Score")
-	if maxRisk == 0 {
-		axRisk.SetXLim(-0.05, 0.05)
-		black := render.Color{R: 0, G: 0, B: 0, A: 1}
-		lineWidth := 0.5
-		axRisk.AxVLine(0, core.VLineOptions{Color: &black, LineWidth: &lineWidth})
-	} else {
-		axRisk.SetXLim(0, maxRisk*1.1)
-	}
-	axRisk.SetYLim(-0.5, float64(len(files))-0.5)
-	axRisk.InvertY()
-	axRisk.AddXGrid()
-	axRisk.YAxis.Locator = core.FixedLocator{TicksList: ticks}
-	axRisk.YAxis.Formatter = core.FixedFormatter{Labels: displayNames}
+	bars.Colors = hotspotRiskColors(series.risk, series.maxRisk)
+	bars.EdgeColor = render.Color{R: 0, G: 0, B: 0, A: 1}
+	bars.EdgeWidth = 0.5
 
-	componentAlpha := 0.8
-	renderComponentAlpha := componentAlpha
-	if !strings.EqualFold(filepath.Ext(output), ".svg") {
-		// The AGG clipped-path alpha path corrupts these fills, so render
-		// them opaque and restore the intended alpha in the saved PNG.
-		renderComponentAlpha = 1
+	axes.SetTitle("Top Risky Files - " + repoName)
+	axes.SetXLabel("Composite Risk Score")
+	configureHotspotRiskXRange(axes, series.maxRisk)
+	axes.SetYLim(-0.5, float64(len(series.risk))-0.5)
+	axes.InvertY()
+	axes.AddXGrid()
+	axes.YAxis.Locator = core.FixedLocator{TicksList: series.ticks}
+	axes.YAxis.Formatter = core.FixedFormatter{Labels: series.displayNames}
+}
+
+func configureHotspotRiskXRange(axes *core.Axes, maxRisk float64) {
+	if maxRisk != 0 {
+		axes.SetXLim(0, maxRisk*1.1)
+		return
 	}
 
-	addHotspotComponentBars(axComponents, y, sizeNorm, nil, "#3498db", "Size (log)", renderComponentAlpha)
-	left := append([]float64(nil), sizeNorm...)
-	addHotspotComponentBars(axComponents, y, churnNorm, left, "#e74c3c", "Churn", renderComponentAlpha)
-	for i := range left {
-		left[i] += churnNorm[i]
-	}
-	addHotspotComponentBars(axComponents, y, couplingNorm, left, "#f39c12", "Coupling", renderComponentAlpha)
-	for i := range left {
-		left[i] += couplingNorm[i]
-	}
-	addHotspotComponentBars(axComponents, y, ownershipNorm, left, "#9b59b6", "Ownership", renderComponentAlpha)
-	axComponents.SetTitle("Risk Components")
-	axComponents.SetXLabel("Normalized Factors")
-	axComponents.SetXLim(0, 4)
-	axComponents.SetYLim(-0.5, float64(len(files))-0.5)
-	axComponents.InvertY()
-	axComponents.YAxis.Locator = core.FixedLocator{TicksList: ticks}
-	axComponents.YAxis.Formatter = core.NullFormatter{}
-	axComponents.YAxis.ShowTicks = false
-	componentLegend := axComponents.AddLegend()
-	componentLegend.Location = core.LegendLowerRight
+	axes.SetXLim(-0.05, 0.05)
 
-	if err := saveReportFigure(fig, output, width, height); err != nil {
-		return err
+	black := render.Color{R: 0, G: 0, B: 0, A: 1}
+	lineWidth := 0.5
+	axes.AxVLine(0, core.VLineOptions{Color: &black, LineWidth: &lineWidth})
+}
+
+func hotspotComponentRenderAlpha(output string) float64 {
+	if strings.EqualFold(filepath.Ext(output), ".svg") {
+		return 0.8
 	}
-	if renderComponentAlpha != componentAlpha {
-		if err := applyHotspotComponentAlpha(output, componentAlpha); err != nil {
-			return err
-		}
+
+	return 1
+}
+
+func drawHotspotRiskComponents(axes *core.Axes, series hotspotRiskSeries, alpha float64) {
+	addHotspotComponentBars(axes, series.positions, series.size, nil, "#3498db", "Size (log)", alpha)
+	left := append([]float64(nil), series.size...)
+	addHotspotComponentBars(axes, series.positions, series.churn, left, "#e74c3c", "Churn", alpha)
+	addHotspotComponentValues(left, series.churn)
+	addHotspotComponentBars(axes, series.positions, series.coupling, left, "#f39c12", "Coupling", alpha)
+	addHotspotComponentValues(left, series.coupling)
+	addHotspotComponentBars(axes, series.positions, series.ownership, left, "#9b59b6", "Ownership", alpha)
+	configureHotspotComponentAxes(axes, series)
+}
+
+func addHotspotComponentValues(left, values []float64) {
+	for index := range left {
+		left[index] += values[index]
 	}
-	fmt.Printf("Saved %s\n", output)
-	return nil
+}
+
+func configureHotspotComponentAxes(axes *core.Axes, series hotspotRiskSeries) {
+	axes.SetTitle("Risk Components")
+	axes.SetXLabel("Normalized Factors")
+	axes.SetXLim(0, 4)
+	axes.SetYLim(-0.5, float64(len(series.risk))-0.5)
+	axes.InvertY()
+	axes.YAxis.Locator = core.FixedLocator{TicksList: series.ticks}
+	axes.YAxis.Formatter = core.NullFormatter{}
+	axes.YAxis.ShowTicks = false
+	legend := axes.AddLegend()
+	legend.Location = core.LegendLowerRight
+}
+
+func restoreHotspotComponentAlpha(output string, renderAlpha float64) error {
+	const componentAlpha = 0.8
+	if renderAlpha == componentAlpha {
+		return nil
+	}
+
+	return applyHotspotComponentAlpha(output, componentAlpha)
 }
 
 func addHotspotComponentBars(ax *core.Axes, y, values, left []float64, hex, label string, alpha float64) {
@@ -1634,53 +2196,93 @@ func addHotspotComponentBars(ax *core.Axes, y, values, left []float64, hex, labe
 }
 
 func applyHotspotComponentAlpha(path string, alpha float64) error {
-	file, err := os.Open(path) // #nosec G304 - path is generated by hotspot risk plotting.
+	img, err := readReportMetricPNG(path, "hotspot risk")
 	if err != nil {
-		return fmt.Errorf("failed to open hotspot risk PNG for alpha normalization: %w", err)
+		return err
 	}
-	img, _, err := image.Decode(file)
-	closeErr := file.Close()
-	if err != nil {
-		return fmt.Errorf("failed to decode hotspot risk PNG for alpha normalization: %w", err)
-	}
-	if closeErr != nil {
-		return fmt.Errorf("failed to close hotspot risk PNG: %w", closeErr)
+	targetAlpha := uint8(math.Round(math.Max(0, math.Min(1, alpha)) * 255))
+
+	out, changed := normalizeHotspotComponentImage(img, targetAlpha)
+	if !changed {
+		return nil
 	}
 
-	targetAlpha := uint8(math.Round(math.Max(0, math.Min(1, alpha)) * 255))
-	colors := map[[3]uint8]struct{}{
-		{0x34, 0x98, 0xdb}: {},
-		{0xe7, 0x4c, 0x3c}: {},
-		{0xf3, 0x9c, 0x12}: {},
-		{0x9b, 0x59, 0xb6}: {},
-	}
+	return writeReportMetricPNG(path, out, "hotspot risk alpha")
+}
+
+func normalizeHotspotComponentImage(img image.Image, targetAlpha uint8) (*image.NRGBA, bool) {
 	bounds := img.Bounds()
 	out := image.NewNRGBA(bounds)
 	changed := false
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
 			pixel := color.NRGBAModel.Convert(img.At(x, y)).(color.NRGBA)
-			if _, ok := colors[[3]uint8{pixel.R, pixel.G, pixel.B}]; ok && pixel.A != targetAlpha {
-				pixel.A = targetAlpha
-				changed = true
-			}
+			pixel, pixelChanged := normalizeHotspotComponentPixel(pixel, targetAlpha)
+			changed = changed || pixelChanged
 			out.SetNRGBA(x, y, pixel)
 		}
 	}
-	if !changed {
-		return nil
+
+	return out, changed
+}
+
+func normalizeHotspotComponentPixel(pixel color.NRGBA, targetAlpha uint8) (color.NRGBA, bool) {
+	if !isHotspotComponentColor(pixel) || pixel.A == targetAlpha {
+		return pixel, false
 	}
 
-	file, err = os.Create(path) // #nosec G304 - path is generated by hotspot risk plotting.
+	pixel.A = targetAlpha
+
+	return pixel, true
+}
+
+func isHotspotComponentColor(pixel color.NRGBA) bool {
+	switch [3]uint8{pixel.R, pixel.G, pixel.B} {
+	case [3]uint8{0x34, 0x98, 0xdb},
+		[3]uint8{0xe7, 0x4c, 0x3c},
+		[3]uint8{0xf3, 0x9c, 0x12},
+		[3]uint8{0x9b, 0x59, 0xb6}:
+		return true
+	default:
+		return false
+	}
+}
+
+func readReportMetricPNG(path, purpose string) (image.Image, error) {
+	file, err := os.Open(path) // #nosec G304 - path is generated by report plotting.
 	if err != nil {
-		return fmt.Errorf("failed to rewrite hotspot risk PNG alpha: %w", err)
+		return nil, fmt.Errorf("failed to open %s PNG for normalization: %w", purpose, err)
 	}
-	if err := png.Encode(file, out); err != nil {
+
+	img, _, decodeErr := image.Decode(file)
+	closeErr := file.Close()
+
+	if decodeErr != nil {
+		return nil, fmt.Errorf("failed to decode %s PNG for normalization: %w", purpose, decodeErr)
+	}
+
+	if closeErr != nil {
+		return nil, fmt.Errorf("failed to close %s PNG for normalization: %w", purpose, closeErr)
+	}
+
+	return img, nil
+}
+
+func writeReportMetricPNG(path string, img image.Image, purpose string) error {
+	file, err := os.Create(path) // #nosec G304 - path is generated by report plotting.
+	if err != nil {
+		return fmt.Errorf("failed to rewrite %s PNG: %w", purpose, err)
+	}
+
+	encodeErr := png.Encode(file, img)
+	if encodeErr != nil {
 		_ = file.Close()
-		return err
+		return fmt.Errorf("failed to encode %s PNG: %w", purpose, encodeErr)
 	}
-	if err := file.Close(); err != nil {
-		return fmt.Errorf("failed to close hotspot risk PNG alpha: %w", err)
+
+	closeErr := file.Close()
+	if closeErr != nil {
+		return fmt.Errorf("failed to close %s PNG: %w", purpose, closeErr)
 	}
 	return nil
 }
@@ -1933,50 +2535,45 @@ func saveReportFigureDirect(fig *core.Figure, output string, width, height int) 
 }
 
 func whitenTransparentPNGMatte(path string) error {
-	file, err := os.Open(path) // #nosec G304 - path is generated by report plotting.
+	img, err := readReportMetricPNG(path, "report")
 	if err != nil {
-		return fmt.Errorf("failed to open PNG for matte normalization: %w", err)
-	}
-	img, _, err := image.Decode(file)
-	closeErr := file.Close()
-	if err != nil {
-		return fmt.Errorf("failed to decode PNG for matte normalization: %w", err)
-	}
-	if closeErr != nil {
-		return fmt.Errorf("failed to close PNG for matte normalization: %w", closeErr)
+		return err
 	}
 
+	out, changed := whitenTransparentImage(img)
+	if !changed {
+		return nil
+	}
+
+	return writeReportMetricPNG(path, out, "normalized report")
+}
+
+func whitenTransparentImage(img image.Image) (*image.NRGBA, bool) {
 	bounds := img.Bounds()
 	out := image.NewNRGBA(bounds)
 	changed := false
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
 			pixel := color.NRGBAModel.Convert(img.At(x, y)).(color.NRGBA)
-			if pixel.A == 0 && (pixel.R != 255 || pixel.G != 255 || pixel.B != 255) {
-				pixel.R = 255
-				pixel.G = 255
-				pixel.B = 255
-				changed = true
-			}
+			pixel, pixelChanged := whitenTransparentPixel(pixel)
+			changed = changed || pixelChanged
 			out.SetNRGBA(x, y, pixel)
 		}
 	}
-	if !changed {
-		return nil
+
+	return out, changed
+}
+
+func whitenTransparentPixel(pixel color.NRGBA) (color.NRGBA, bool) {
+	if pixel.A != 0 || (pixel.R == 255 && pixel.G == 255 && pixel.B == 255) {
+		return pixel, false
 	}
 
-	file, err = os.Create(path) // #nosec G304 - path is generated by report plotting.
-	if err != nil {
-		return fmt.Errorf("failed to rewrite PNG for matte normalization: %w", err)
-	}
-	if err := png.Encode(file, out); err != nil {
-		_ = file.Close()
-		return fmt.Errorf("failed to encode PNG for matte normalization: %w", err)
-	}
-	if err := file.Close(); err != nil {
-		return fmt.Errorf("failed to close normalized PNG: %w", err)
-	}
-	return nil
+	pixel.R = 255
+	pixel.G = 255
+	pixel.B = 255
+
+	return pixel, true
 }
 
 func knowledgeDistributionColor(editors int) color.Color {

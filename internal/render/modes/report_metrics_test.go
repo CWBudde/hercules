@@ -242,6 +242,15 @@ func TestBuildTemporalHourCommitSeriesPreservesDeveloperStacks(t *testing.T) {
 	}
 }
 
+func TestTemporalTickDaysPreservesSubdayTicks(t *testing.T) {
+	if got := temporalTickDays(temporalNanosecondsPerDay / 2); got != 0.5 {
+		t.Fatalf("half-day tick = %v days, want 0.5", got)
+	}
+	if got := temporalTickDays(0); got != 1 {
+		t.Fatalf("non-positive tick = %v days, want 1", got)
+	}
+}
+
 func TestBusFactorSubsystemPairsMatchesPythonParityTieOrder(t *testing.T) {
 	labels, values := busFactorSubsystemPairs(map[string]int{
 		"/":                               1,

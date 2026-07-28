@@ -71,8 +71,10 @@ func plotDeveloperTimeSeries(reader readers.Reader, output string, opts Options)
 		if errors.Is(err, readers.ErrAnalysisMissing) {
 			return false, nil
 		}
+
 		return false, fmt.Errorf("get developer time series: %w", err)
 	}
+
 	if len(timeSeries.Days) == 0 {
 		return false, nil
 	}

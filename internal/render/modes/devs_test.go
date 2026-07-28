@@ -13,24 +13,26 @@ import (
 
 type developerTimeSeriesErrorReader struct {
 	readers.Reader
+
 	err error
 }
+
+var errDeveloperTimeSeriesRead = errors.New("read developer time series")
 
 func (reader developerTimeSeriesErrorReader) GetDeveloperTimeSeriesData() (*readers.DeveloperTimeSeriesData, error) {
 	return nil, reader.err
 }
 
 func TestDeveloperTimeSeriesRenderersPropagateReadErrors(t *testing.T) {
-	readErr := errors.New("read developer time series")
-	reader := developerTimeSeriesErrorReader{err: readErr}
+	reader := developerTimeSeriesErrorReader{err: errDeveloperTimeSeriesRead}
 
 	rendered, err := plotDeveloperTimeSeries(reader, filepath.Join(t.TempDir(), "devs.png"), Options{})
-	if rendered || !errors.Is(err, readErr) {
+	if rendered || !errors.Is(err, errDeveloperTimeSeriesRead) {
 		t.Fatalf("plotDeveloperTimeSeries() = (%v, %v), want (false, wrapped read error)", rendered, err)
 	}
 
 	rendered, err = renderActualOldVsNew(reader, filepath.Join(t.TempDir(), "old-vs-new.png"), graphics.Options{})
-	if rendered || !errors.Is(err, readErr) {
+	if rendered || !errors.Is(err, errDeveloperTimeSeriesRead) {
 		t.Fatalf("renderActualOldVsNew() = (%v, %v), want (false, wrapped read error)", rendered, err)
 	}
 }

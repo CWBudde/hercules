@@ -130,3 +130,42 @@ func TestBurndownStrictBalancesIsConfigurable(t *testing.T) {
 	require.NoError(t, legacy.Configure(facts))
 	assert.True(t, legacy.StrictBalances)
 }
+
+// residualBalanceResult separates the two populations PLAN.md B2 turns on. Column 2 dips
+// negative and recovers before the last row: that is the transient which divergent branches
+// feeding one shared accumulator can legitimately produce. Column 1 is still negative in the
+// last row, by which point every branch has merged, so nothing can explain it away.
+func residualBalanceResult() BurndownResult {
+	return BurndownResult{
+		GlobalHistory: burndown.DenseHistory{
+			{5, 4, 3},
+			{5, -2, -3},
+			{5, -1, 3},
+		},
+		PeopleMatrix:       burndown.DenseHistory{{5, 0, 0}},
+		reversedPeopleDict: []string{balanceTestPerson},
+		sampling:           5,
+		granularity:        7,
+	}
+}
+
+// TestBurndownBalancesSeparatesResidualFromTransient guards the invariant that is actually
+// checkable. Measured across the corpus, every negative cell is residual - not one recovers -
+// so the count is the honest measure of the defect rather than the raw cell total.
+func TestBurndownBalancesSeparatesResidualFromTransient(t *testing.T) {
+	report := auditBurndownResultBalances(&BurndownResult{}, "finalization")
+	assert.Zero(t, report.cells, "an empty result has nothing to report")
+
+	result := residualBalanceResult()
+	report = auditBurndownResultBalances(&result, "finalization")
+
+	assert.Equal(t, 3, report.cells, "all three negative cells are counted")
+	assert.Equal(t, 2, report.residual,
+		"only the cells in a band which stays negative to the end are residual")
+
+	logger := &recordingLogger{Logger: core.NewLogger()}
+	require.NoError(t, reportBurndownBalances(
+		logger, false, nil, &result, "finalization"))
+	require.Len(t, logger.warnings, 1)
+	assert.Contains(t, logger.warnings[0], "2 of them still negative in the final sampled row")
+}

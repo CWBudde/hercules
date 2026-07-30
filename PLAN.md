@@ -1,6 +1,6 @@
 # PLAN: correctness regressions blocking real-world use of 0.2.0
 
-**Status:** open
+**Status:** open — 8 of 13 items fixed; B1c carries the remaining accounting defect
 **Filed:** 2026-07-30, against `b330adf` (tag `0.2.0`)
 **Reference build for "worked before":** `082bf15` (the `Version: 0` binary still installed at `/usr/local/bin/hercules`)
 
@@ -19,9 +19,31 @@ opt-out). Those switches should be deleted again once the items below are fixed.
 Corpus used throughout: `/mnt/projekte/Code/MeKo/*`, the 38 repositories listed
 in `ewws-statistics/.core-repos`.
 
+## Status
+
+Checkbox = done / not done. The emoji is the severity of what is left.
+
+- [x] [**B1**](#b1--merge-resolution-deltas-were-discarded-corrupting-the-project-matrix--fixed) — merge-resolution deltas discarded, project matrix corrupted (`9e570a3`, `1be72df`)
+- [x] [**B1b**](#b1b--file-deletion-inside-a-merge-commit-emits-nothing--fixed) — file deletion inside a merge commit emits nothing (`1abecda`, `9c010ef`)
+- [ ] [**B1c**](#b1c--residual-negatives-the-same-lines-removed-twice-across-branches-) — residual negatives: the same lines removed twice across branches 🔴 (root cause found, fix open)
+- [ ] [**B1d**](#b1d--the-merge-commit-is-consumed-by-only-one-branch-) — merge commit is consumed by only one branch 🟠
+- [x] [**B2** (demotion)](#the-demotion-is-done---the-decision-is-not) — negative balances warn instead of aborting (`ebc8ded`, `a7c8cba`, `0ea3cc0`)
+- [x] [**B2** (decision)](#b2--person-burndown-matrices-have-always-contained-negatives--decided-a) — decided **(a)**: the accounting is wrong; the residual/transient split is now measured and reported
+- [x] [**B3**](#b3--ownershipsnapshot-underflows-killing---bus-factor----ownership-concentration--fixed) — `OwnershipSnapshot` underflow (`fafb754`, `c04d08c`)
+- [x] [**B4**](#b4--unmergeable-analyses-used-to-sink-the-whole-combine--mostly-fixed) — `--only` filters before the merge, unmergeable analyses skipped (`2f57e3d`)
+- [ ] **B4** (rest) — implement `ResultMergeablePipelineItem` for `RefactoringProxy`
+- [ ] [**B5**](#b5--hotspotrisk-merges-to-empty-) — `HotspotRisk` merges to empty 🟠
+- [ ] [**B6**](#b6----blob-cache-max-blob-size-is-fail-closed-and-that-is-a-trap-) — `--blob-cache-max-blob-size` is fail-closed 🟡
+- [ ] [**B7**](#b7----lines-hibernation-disk-panics-during-serialization-) — `--lines-hibernation-disk` panics during serialization 🟡
+- [x] [**B8**](#b8--person-burndown-aborted-on-contributors-with-no-activity--fixed) — person burndown aborted on contributors with no activity (`c04d08c`)
+- [ ] **B8** (rest) — regression test with a deliberately idle person in the fixture
+- [ ] [**B9**](#b9--yaml-burndown-serialization-panics-on-people-with-no-interactions-) — YAML burndown serialization panics on nil `PeopleMatrix` 🟡
+- [x] [**B10**](#b10--the-execution-plan-was-non-deterministic-and-a-merge-could-be-resolved-against-the-wrong-branch--fixed) — non-deterministic execution plan; merges resolved against the wrong branch (`5937149`)
+- [ ] [**Corpus regression test**](#regression-coverage-worth-adding) — opt-in `HERCULES_CORPUS_DIR` suite
+
 ---
 
-## B1 — merge-resolution deltas were discarded, corrupting the _project_ matrix ✅ FIXED (uncommitted)
+## B1 — merge-resolution deltas were discarded, corrupting the _project_ matrix ✅ FIXED
 
 **Two claims in the original filing were wrong; both were checked against builds.**
 
@@ -55,7 +77,7 @@ recovered them: `Merge` has no output channel into the pipeline, and
 Lines first owned at a merge were therefore never inserted into `globalHistory`, while
 their later removal still emitted a negative delta.
 
-**Fix** (uncommitted): buffer the deltas in `LineHistoryAnalyser.pendingChanges` and
+**Fix** (`9e570a3`, `1be72df`): buffer the deltas in `LineHistoryAnalyser.pendingChanges` and
 emit them with the next commit the branch consumes; `Fork` and
 `synchronizeLineHistoryBranch` clear the buffer so no clone re-emits it. For a history
 that _ends_ on a merge commit (20 of 288 repos under `/mnt/projekte/Code/MeKo`) there is
@@ -99,14 +121,14 @@ repositories failing. See B1c.
 
 ---
 
-## B1b — file deletion inside a merge commit emits nothing ✅ FIXED (uncommitted)
+## B1b — file deletion inside a merge commit emits nothing ✅ FIXED
 
 `handleDeletion` suppressed both the removal deltas (`file.Update` with `TreeMergeMark`,
 which makes `File.updateTime` return before running any updater) and the
 `NewLineHistoryDeletion` marker when `analyser.tick == TreeMergeMark`, yet dropped the
 file from `analyser.files` regardless. Its lines stayed in `globalHistory` forever.
 
-**Fix:** a removal has nothing for `Merge()` to resolve — every removed line already
+**Fix** (`1abecda`, `9c010ef`): a removal has nothing for `Merge()` to resolve — every removed line already
 carries its own owner, and the path is gone from this branch's tree either way — so it is
 charged to the real commit tick instead of the mark. `LineHistoryAnalyser.commitTick`
 holds that tick while `tick` carries `TreeMergeMark`; `deletionTick()` falls back to the
@@ -180,19 +202,54 @@ commits once per parent branch, as upstream does — so commit counts in `devs`,
 
 ---
 
-## B1c — project-scope negatives predating 0.2.0 🔴
+## B1c — residual negatives: the same lines removed twice across branches 🔴
 
-The residue from B1's table. Reproduces on `082bf15` once output clamping is disabled,
-so it is long-standing and was only ever hidden. Mechanically the same problem as B2 and
-should be decided together with it. It **no longer aborts** — see B2's demotion — but the
-accounting is still wrong.
+The residue from B1's table, and — now that B2 is decided — the item that carries the whole
+accounting defect. Reproduces on `082bf15` once output clamping is disabled, so it is
+long-standing and was only ever hidden. It **no longer aborts** (see B2's demotion), but the
+numbers are wrong.
 
-**Affected in the corpus:** `backend-for-microscope`, `meko-etl-tool`, `mekorp-backend`,
-`personio-ipoffice-sync`, `render-pdf`.
+**Root cause, traced on `render-pdf` change by change.** A file's lines are removed twice,
+once by each of two sibling branches, and nothing ever reconciles the duplicate:
+
+```
+TRACE 0090e98b file=395 prev=304 curr=304 delta= 7413  samples/Messbericht mit Bezeichner/data.json
+TRACE bc3aea9f file=395 prev=304 curr=416 delta=-7396  samples/other/…/data.json
+TRACE 52ca72b7 file=395 prev=304 curr=416 delta=-7388  samples/other/…/data.json
+TRACE bc3aea9f file=510 prev=416 curr=416 delta= 7412  samples/default/…/data.json
+```
+
+`bc3aea9f` and `52ca72b7` are **siblings** — both have parent `6e5bc06`, and
+`git merge-base --is-ancestor` confirms neither reaches the other.
+
+- `52ca72b7` genuinely truncates the file by 7620 lines. Legitimate.
+- `bc3aea9f` only **renames** `samples/other/… → samples/default/…`; `git show --stat` reports
+  zero content change. Rename detection did not carry the file identity across, so it is
+  accounted as delete file 395 (−7396 charged to age band 304) plus create file 510 (+7412
+  credited to age band 416).
+
+Both branches feed the one accumulator that `ForkSamePipelineItem` shares, so band 304 receives
++7413 −7396 −7388 = **−7371** and stays there. That is the −7386 cell the warning names.
+
+**This is what settles B2 as (a).** B3 assumed the merge would deliver the compensating
+positive, so the duplication would cancel. It does not: the merge sees both parents with the
+lines already gone and has nothing to re-add. The negative is permanent.
+
+The rename losing the file's age is a second, milder problem visible in the same trace: the
+lines are re-credited to band 416 instead of keeping band 304, so even the *positive* bands
+are wrong. Downstream sees that one without any warning at all, because
+`pb.ToBurndownSparseMatrix` clamps only the negatives.
+
+**Fix is open, and it is not small.** It means reconciling the two branches' line state at the
+merge rather than letting both removals stand — the same territory as B1d. Do not attempt it
+without the corpus regression suite in place first.
+
+**Affected in the corpus:** `backend-for-microscope` (183 cells), `meko-etl-tool` (514),
+`mekorp-backend` (2180), `personio-ipoffice-sync` (6), `render-pdf` (158).
 
 ---
 
-## B2 — person burndown matrices have _always_ contained negatives 🟠
+## B2 — person burndown matrices have _always_ contained negatives ✅ DECIDED (a)
 
 Distinct from B1, and important not to conflate with it: the **people** matrices
 went negative in `082bf15` too. 0.2.0 did not break this — it started checking.
@@ -221,7 +278,71 @@ bug and converting silently-wrong output into a fatal error.
 Whichever is chosen, **the validator must not abort a whole multi-hour run over
 a single `-1`.**
 
-### B3's trace answers most of this — (b), with a caveat 🔎
+### The decision: (a) ✅
+
+**(a) is right. The accounting is wrong.** The two options were never actually exclusive —
+they answer different questions:
+
+- **(b)** is a question of _policy_: should a negative cell kill the run? Answered "no", shipped.
+  See "The demotion is done" below. Nothing here reopens it.
+- **(a)** is a question of _accounting_: should those cells exist? Answered "no", and the
+  mechanism is now traced. See B1c.
+
+The reasoning below records how the earlier reading of (b) came about and what refuted it,
+because the argument for (b) was genuinely persuasive and someone will make it again.
+
+#### The discriminator: transient versus residual
+
+The burndown matrix is not a delta log. `groupSparseHistory` emits a **cumulative** matrix —
+one row per sample, each row a snapshot of alive lines per age band. That gives a test which
+separates the two candidate explanations cleanly:
+
+> By the final row every branch has merged. A negative which branch divergence produced must
+> have recovered by then. A negative still present in the final row cannot be explained that
+> way.
+
+Measured across the five affected repositories, over every project and person matrix:
+
+| repository | negative cells | still negative in the final row | recovered |
+| --- | ---: | ---: | ---: |
+| `mekorp-backend` | 2180 | 2180 | 0 |
+| `meko-etl-tool` | 514 | 514 | 0 |
+| `backend-for-microscope` | 183 | 183 | 0 |
+| `render-pdf` | 158 | 158 | 0 |
+| `personio-ipoffice-sync` | 6 | 6 | 0 |
+
+**Not one negative cell recovers.** The transient explanation accounts for none of them.
+
+`render-pdf`'s project matrix shows the shape plainly — a single sample step into the negative,
+then flat for three years:
+
+```
+col 10:  9449  9390  9306  -5576  -5577  -5577 … -6831  -6836
+col  9:  3795  3793  1980   -962  -1107  -1107 … -1109  -1117
+```
+
+Column 10 falls by 14 882 in one step when only ~9 306 lines were alive to remove. That is one
+removal counted roughly twice. B1c traces it to the individual commits.
+
+#### What was implemented
+
+`auditBurndownResultBalances` now classifies each negative cell as residual (its age band is
+still negative in the final sampled row) or transient, and the warning reports both:
+
+```
+… 158 cell(s) affected in total (person: 105, project: 53), 158 of them still negative in
+the final sampled row. …
+```
+
+Residual is the honest measure of the defect and the invariant worth regression-testing —
+it has no false positives from legitimate divergence, and empirically it loses nothing.
+Test: `TestBurndownBalancesSeparatesResidualFromTransient`.
+
+The remaining work — actually fixing the double count — lives in B1c.
+
+### Superseded: B3's trace looked like it answered this — (b), with a caveat 🔎
+
+_Kept for the record. The conclusion below is wrong; the measurement above refutes it._
 
 The `OwnershipSnapshot` investigation (see B3) traced an identical negative to its
 mechanism, on `ewws-render`, change by change. It is **structural, not an accounting
@@ -247,9 +368,18 @@ are not explained by this and remain open. So the honest split is: transient neg
 expected and must be tolerated; residual ones at the end are a real defect still to chase,
 and B1c is part of that.
 
-### The demotion is done ✅ (uncommitted) — the decision is not
+**Where this went wrong:** it assumed the merge delivers the compensating positive. It does
+not. When both branches have already removed the lines, the merged tree has them gone too and
+there is nothing to re-add. B1c shows this on `render-pdf`. The "caveat" in the last paragraph
+turned out to be the whole phenomenon, not an edge of it — every negative is residual.
 
-`validateBurndownResultBalances` was replaced by `auditBurndownResultBalances`, which scans
+B3's own fix is unaffected: keeping the accumulator signed and clamping at the reporting
+boundary is still correct, because clamping mid-run would corrupt the positive bands as well.
+
+### The demotion is done ✅ — the decision is not
+
+Committed in `ebc8ded`, `a7c8cba`, `0ea3cc0`. `validateBurndownResultBalances` was replaced by
+`auditBurndownResultBalances`, which scans
 the whole result instead of stopping at the first bad cell, and `reportBurndownBalances`,
 which applies the policy. Default: warn once and continue. `--strict-burndown-balances`
 (a shared option, so both `Burndown` and `LegacyBurndown` honour it) restores the abort and
@@ -290,7 +420,7 @@ was B1 after all.
 
 ---
 
-## B3 — `OwnershipSnapshot` underflows, killing `--bus-factor` / `--ownership-concentration` ✅ FIXED (uncommitted)
+## B3 — `OwnershipSnapshot` underflows, killing `--bus-factor` / `--ownership-concentration` ✅ FIXED
 
 Both flags share the accumulator added in `745f25b`, so either one aborts the run:
 
@@ -341,7 +471,7 @@ ordinary histories.
 `sparseHistory` simply tolerates the dip and carries a negative cell instead of
 erroring. See the note under B2.
 
-### Fix (uncommitted)
+### Fix (`fafb754`, `c04d08c`)
 
 - Internal totals stay **signed**. Clamping in `apply` would destroy the
   compensating positive the merge later delivers and inflate every subsequent
@@ -396,7 +526,7 @@ long after those failures had been collected. So the flag never restricted
 anything that mattered. Note the 0.2.0 aspect of the regression: `082bf15`
 printed the same messages but exited 0, whereas 0.2.0 returns them from `RunE`.
 
-### Fix (uncommitted)
+### Fix (`2f57e3d`)
 
 - `--only` now filters at deserialization, so an analysis nobody asked for cannot
   fail the run on its way in.
@@ -507,7 +637,7 @@ A panic is the wrong failure mode regardless: return an error.
 
 ---
 
-## B8 — person burndown aborted on contributors with no activity ✅ FIXED (uncommitted)
+## B8 — person burndown aborted on contributors with no activity ✅ FIXED
 
 `personBurndownActivity` returned `errNoPersonActivity` when a person's matrix
 was all zeros, and `BurndownPersonWithOptions` propagated it — so **one** idle
@@ -521,37 +651,11 @@ Fixed in `internal/render/modes/burndownPerson.go`: skip people with no activity
 `CGO_ENABLED=0 go test ./internal/render/...` passes. Result: 18 of 25 groups
 render, 7 skipped cleanly.
 
-**Left uncommitted for review.** Worth a regression test with a deliberately
-idle person in the fixture.
+Committed in `c04d08c`. Still open: a regression test with a deliberately idle
+person in the fixture — `internal/render/modes/burndownPerson_test.go` currently
+covers `compactPersonBurndown`, not the fan-out skip.
 
 ---
-
-## Suggested order
-
-0. ~~**B1.**~~ ~~**B1b.**~~ Done — merge-resolution deltas are delivered and merge-commit
-   deletions are accounted for; both covered by tests. Line totals now track the
-   `082bf15` baseline within 0.5 %. They must be read together: B1 alone overshoots,
-   B1b alone would deepen the undercount.
-1. ~~**B2's demotion.**~~ Done — negative balances warn once instead of aborting, behind
-   `--strict-burndown-balances`. Every burndown-scope failure in the corpus now completes.
-   **B2's actual decision — (a) fix the accounting or (b) declare the negatives legitimate —
-   is still open and still needs the user.** Note that whatever is chosen, the old binary's
-   clamped output is _not_ a correctness baseline to compare against.
-2. ~~**B4's `--only` fix.**~~ Done — `--only` filters before the merge, and an unmergeable
-   analysis is skipped with a report instead of taking the combine down. All combined charts
-   are unblocked. Only `RefactoringProxy`'s missing `ResultMergeablePipelineItem` remains,
-   and nothing fails on it any more.
-3. ~~**B3.**~~ Done — the underflow is a structural consequence of divergent branches sharing
-   one accumulator, not an accounting slip. Totals stay signed; only the snapshots handed to
-   the metrics clamp. `--bus-factor` and `--ownership-concentration` complete again. **Its
-   trace is the strongest evidence available for B2's open decision — read B2's
-   "B3's trace answers most of this" before choosing (a) or (b).**
-4. **B8 commit** + regression test.
-5. **B1d.** Nothing fails on it and totals are now right, but merged lines are still
-   credited to the merge author instead of their real one — so it must be settled before
-   anyone trusts `--burndown-people`, `--devs` or ownership output, and it may well be
-   feeding B2.
-6. **B5, B6, B7.** Lower frequency; B6 may be documentation only.
 
 ## B9 — YAML burndown serialization panics on people with no interactions 🟡
 
@@ -563,29 +667,143 @@ whenever `analyser.matrix` is empty, which is reachable with `--burndown-people`
 that records no author interactions at all. The `--pb` path is unaffected. Trivial guard;
 worth doing next time this file is open.
 
+---
+
+## B10 — the execution plan was non-deterministic, and a merge could be resolved against the wrong branch ✅ FIXED
+
+**The most consequential defect found so far, and it was not on the original list.**
+
+Running the same binary on the same repository twice produced different results, and
+sometimes a hard abort:
+
+```
+run pipeline: LineHistory failed to consume commit:
+  source line history integrity check failed for CHANGELOG.md: 267 != 253
+```
+
+`MKTools` (308 commits) failed on 2 of 6 identical runs; `mekorp-webclient` failed at
+commit #1161 in one run and reached #1828 before failing in another. Every failing run
+died at the same commit with the same numbers — the drift is deterministic once it
+happens, only _whether_ it happens was not.
+
+Ruled out: `--diff-timeout` and `--renames-timeout` (both wall-clock bounded, both
+irrelevant — 2/6 failures with either raised to 10 minutes), and goroutine scheduling
+(`GOMAXPROCS=1` still gave 3/6).
+
+### Root cause
+
+`--dump-plan` over six runs differs in exactly one line:
+
+```
+C 1 b07c5ef6…          <- the merge commit is consumed on branch 1
+M [1 14] b07c5ef6…     <- 4 runs: correct
+M [14 1] b07c5ef6…     <- 2 runs: branch 14 leads
+```
+
+`planBuilder.mergeBranches` (`internal/core/forks.go`) built the merge action's branch
+list by iterating `builder.parents[commit.Hash]`, **a map**. Go randomizes that, so the
+plan — and therefore the entire analysis — differed from run to run.
+
+Worse than the randomness: `LineHistoryAnalyser.Merge` treats `items[0]` as the branch
+which consumed the merge commit and lets it decide which paths exist in the merged tree.
+`mergeBranches` only guaranteed that in the `minBranch` case; when no parent qualified
+(all parents having more than one child), `items[0]` was whichever parent the map yielded
+first. **A merge could be resolved against a branch that never saw the commit.** The tree
+then disagreed with git, and the integrity check surfaced it 130+ commits later.
+
+### Fix (`5937149`)
+
+- Walk the parent set in sorted hash order (`sortedHashSet`).
+- Promote the consuming branch to `items[0]` in **every** case, not only when a
+  `minBranch` was found (`promoteMergeBranch`).
+
+Tests: `TestPrepareRunPlanIsDeterministic` and `TestMergeActionLeadsWithTheConsumingBranch`
+in `internal/core/forks_test.go`. Both fail without the fix.
+
+### Measured
+
+- The plan is now byte-identical across 8 runs, and equals the previously-correct variant.
+- `MKTools` and `mw_prod_planner`: 0/8 failures (were 2/6 and 1/3). Repeated YAML output
+  is identical except for `run_time`.
+- Every repository that hit the integrity check now completes, **including
+  `mekorp-webclient` (7 684 commits) and `mekorp-backend`** — the two PLAN.md opens by
+  naming as the most important.
+- It also removes real accounting damage: `render-pdf`'s negative burndown cells drop from
+  208 to 158 (person: 155 → 105; project: 53 unchanged).
+
+### What this means for the rest of the plan
+
+Every measurement in B1, B1b, B1c and B2 was taken while the plan could silently vary.
+The tables are still directionally right — the effects are far larger than this jitter —
+but any number close to a threshold should be re-measured before it is trusted.
+
+**Affected in the corpus:** every repository with merges is affected in principle. It was
+_observed_ to abort on `MKTools`, `mw_prod_planner` and `mekorp-webclient`.
+
+---
+
+## Suggested order
+
+- [x] **0. B1, B1b.** Done — merge-resolution deltas are delivered and merge-commit
+      deletions are accounted for; both covered by tests. Line totals now track the
+      `082bf15` baseline within 0.5 %. They must be read together: B1 alone overshoots,
+      B1b alone would deepen the undercount.
+- [x] **1. B2's demotion.** Done — negative balances warn once instead of aborting, behind
+      `--strict-burndown-balances`. Every burndown-scope failure in the corpus now completes.
+  - [x] **B2's actual decision is (a): the accounting is wrong.** Measured over five
+        repositories, not one negative cell recovers by the final sampled row, so branch
+        divergence explains none of them. The audit now separates residual from transient
+        cells and reports both. Note that the old binary's clamped output is _not_ a
+        correctness baseline to compare against.
+- [x] **2. B4's `--only` fix.** Done — `--only` filters before the merge, and an unmergeable
+      analysis is skipped with a report instead of taking the combine down. All combined charts
+      are unblocked.
+  - [ ] `RefactoringProxy`'s missing `ResultMergeablePipelineItem` remains, and nothing fails
+        on it any more.
+- [x] **3. B3.** Done — the underflow is a structural consequence of divergent branches sharing
+      one accumulator, not an accounting slip. Totals stay signed; only the snapshots handed to
+      the metrics clamp. `--bus-factor` and `--ownership-concentration` complete again. Its trace pointed
+      at (b) for B2; that reading has since been refuted — see B2's "The decision: (a)".
+- [x] **4. B10.** Done — the execution plan no longer depends on map iteration order, and a merge
+      action now always leads with the branch that consumed the merge commit. This was not on the
+      original list and outranks everything that was: it made results irreproducible and
+      intermittently aborted whole runs. **Re-measure anything marginal in B1/B1b/B1c/B2 — those
+      numbers were taken while the plan could vary.**
+- [x] **5. B2's decision.** Done — **(a)**. The residual/transient split is measured (not one
+      negative cell recovers, across five repositories) and now reported by the audit. The
+      accounting defect itself moves to B1c, whose root cause is traced to the individual
+      commits.
+- [ ] **6. The corpus regression test**, below. It is now a prerequisite rather than a
+      nice-to-have: B1c and B1d both change merge accounting, and there is no way to tell a
+      real improvement from a new leak without one.
+- [ ] **7. B1c, then B1d.** Take them together — both are about reconciling branch state at a
+      merge, and B1d's mis-attribution is plausibly the same code path. B1c is the larger
+      defect (2180 bad cells in `mekorp-backend` alone) and also the better-understood one.
+- [ ] **8. B8's regression test.** The fix itself is committed (`c04d08c`); what is left is a
+      fixture with a deliberately idle person.
+- [ ] **9. B5, B6, B7, B9.** Lower frequency; B6 may be documentation only and B9 is a
+      one-line guard.
+
 ## Regression coverage worth adding
 
 None of B1–B7 were caught by the existing suite, and all of them reproduce on
 ordinary repositories. The gap is that the tests use synthetic fixtures with
-clean histories. Suggested: an opt-in corpus test
-(`HERCULES_CORPUS_DIR=/path/to/repos go test ./test/corpus`) that runs the full
-analysis flag set over a handful of real repositories with a `--people-dict`,
-asserts exit 0, and asserts no negative values in any serialized matrix. The
-13 failing repositories named above are a ready-made fixture list.
+clean histories.
+
+- [ ] An opt-in corpus test (`HERCULES_CORPUS_DIR=/path/to/repos go test ./test/corpus`)
+      that runs the full analysis flag set over a handful of real repositories with a
+      `--people-dict`, asserts exit 0, and asserts no negative values in any serialized
+      matrix. The 13 failing repositories named above are a ready-made fixture list.
+      (`test/` currently holds `e2e`, `plugin_smoke` and `visual` only.)
 
 ## Verification
 
 The downstream pipeline is the acceptance test. From `MeKo/ewws-statistics`:
 
-```bash
-just tools-check                                   # confirm the 0.2.0 binaries resolve
-./ewws-stats analyze hercules --include-file .core-repos
-# today: Processed: 22, Failed: 14
-# target: Processed: 38, Failed: 0
-./ewws-stats combine --include-file .core-repos --include-data-exports
-```
-
-Then re-enable `burndown_files`, `ownership_analyses` and `refactoring_proxy` in
-`ewws-stats.yaml` and confirm the run still completes — those three switches
-exist only because of B2/B3/B4 and should be deleted, not left as permanent
-configuration.
+- [ ] `just tools-check` — confirm the 0.2.0 binaries resolve
+- [ ] `./ewws-stats analyze hercules --include-file .core-repos` — today 22 processed /
+      14 failed; target 38 processed / 0 failed
+- [ ] `./ewws-stats combine --include-file .core-repos --include-data-exports`
+- [ ] Re-enable `burndown_files`, `ownership_analyses` and `refactoring_proxy` in
+      `ewws-stats.yaml` and confirm the run still completes — those three switches exist
+      only because of B2/B3/B4 and should be deleted, not left as permanent configuration.

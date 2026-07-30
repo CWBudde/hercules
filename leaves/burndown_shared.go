@@ -47,6 +47,8 @@ type negativeBurndownBalanceError struct {
 	Row       int
 	Column    int
 	Value     int64
+	// Residual is true when this cell's age band is still negative in the final sampled row.
+	Residual bool
 }
 
 func (err *negativeBurndownBalanceError) Error() string {
@@ -77,13 +79,22 @@ type burndownBalanceReport struct {
 	// message stays stable regardless of how many other cells are affected.
 	first *negativeBurndownBalanceError
 	// worst is the most negative cell, which says far more about the scale of the problem.
-	worst  *negativeBurndownBalanceError
-	cells  int
-	scopes map[string]int
+	worst *negativeBurndownBalanceError
+	cells int
+	// residual counts the cells whose age band is *still* negative in the final sampled row.
+	// By the final row every branch has merged, so a band which stays negative there cannot be
+	// explained by branch divergence and is unambiguously an accounting defect. A cell which
+	// recovers before the end is a transient and far less interesting. See PLAN.md B2.
+	residual int
+	scopes   map[string]int
 }
 
 func (report *burndownBalanceReport) add(err *negativeBurndownBalanceError) {
 	report.cells++
+
+	if err.Residual {
+		report.residual++
+	}
 
 	if report.scopes == nil {
 		report.scopes = map[string]int{}
@@ -104,9 +115,10 @@ func (report *burndownBalanceReport) add(err *negativeBurndownBalanceError) {
 // non-strict run emits.
 func (report *burndownBalanceReport) summary() string {
 	return fmt.Sprintf(
-		"%s; %d cell(s) affected in total (%s). The matrix is reported as computed - "+
-			"pass --strict-burndown-balances to fail the run instead.",
-		report.worst, report.cells, report.breakdown(),
+		"%s; %d cell(s) affected in total (%s), %d of them still negative in the final "+
+			"sampled row. The matrix is reported as computed - pass "+
+			"--strict-burndown-balances to fail the run instead.",
+		report.worst, report.cells, report.breakdown(), report.residual,
 	)
 }
 
@@ -186,6 +198,12 @@ func auditBurndownHistory(
 	result *BurndownResult,
 	operation, scope, name string,
 ) {
+	if len(history) == 0 {
+		return
+	}
+
+	final := history[len(history)-1]
+
 	for row, values := range history {
 		for column, value := range values {
 			if value >= 0 {
@@ -201,6 +219,7 @@ func auditBurndownHistory(
 				Row:       row,
 				Column:    column,
 				Value:     value,
+				Residual:  column < len(final) && final[column] < 0,
 			})
 		}
 	}

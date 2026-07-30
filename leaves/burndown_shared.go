@@ -121,11 +121,19 @@ func (report *burndownBalanceReport) breakdown() string {
 
 // reportBurndownBalances applies the configured policy to a result which may contain negative
 // balances. Aborting a multi-hour run over a single -1 throws away every other analysis it
-// produced, so by default the run continues and warns once; --strict-burndown-balances restores
-// the hard failure for anyone bisecting the accounting itself.
+// produced, so by default the run continues and warns; --strict-burndown-balances restores the
+// hard failure for anyone bisecting the accounting itself.
+//
+// reported, when not nil, limits the warning to once per analyser. The same result passes through
+// several checks (finalization, then serialization, then any merge it takes part in), and
+// repeating an identical diagnostic at each one is noise.
 func reportBurndownBalances(
-	logger core.Logger, strict bool, result *BurndownResult, operation string,
+	logger core.Logger, strict bool, reported *bool, result *BurndownResult, operation string,
 ) error {
+	if !strict && reported != nil && *reported {
+		return nil
+	}
+
 	report := auditBurndownResultBalances(result, operation)
 	if report.cells == 0 {
 		return nil
@@ -137,6 +145,10 @@ func reportBurndownBalances(
 
 	if logger == nil {
 		logger = core.NewLogger()
+	}
+
+	if reported != nil {
+		*reported = true
 	}
 
 	logger.Warn(report.summary())

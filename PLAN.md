@@ -184,8 +184,8 @@ commits once per parent branch, as upstream does — so commit counts in `devs`,
 
 The residue from B1's table. Reproduces on `082bf15` once output clamping is disabled,
 so it is long-standing and was only ever hidden. Mechanically the same problem as B2 and
-should be decided together with it — either way the validator must not abort a
-multi-hour run over it.
+should be decided together with it. It **no longer aborts** — see B2's demotion — but the
+accounting is still wrong.
 
 **Affected in the corpus:** `backend-for-microscope`, `meko-etl-tool`, `mekorp-backend`,
 `personio-ipoffice-sync`, `render-pdf`.
@@ -219,13 +219,48 @@ bug and converting silently-wrong output into a fatal error.
   warning per run instead of aborting.
 
 Whichever is chosen, **the validator must not abort a whole multi-hour run over
-a single `-1`.** Even under (a), demote it to a warning behind a
-`--strict-burndown-balances` flag while the accounting is being fixed. That
-single change would take the corpus from 14 failures to 1.
+a single `-1`.**
 
-**Affected in the corpus:** 6 repositories fail at `person` scope
+### The demotion is done ✅ (uncommitted) — the decision is not
+
+`validateBurndownResultBalances` was replaced by `auditBurndownResultBalances`, which scans
+the whole result instead of stopping at the first bad cell, and `reportBurndownBalances`,
+which applies the policy. Default: warn once and continue. `--strict-burndown-balances`
+(a shared option, so both `Burndown` and `LegacyBurndown` honour it) restores the abort and
+reports the first offending cell in scan order, so the strict message stays stable.
+
+The warning names the _worst_ cell plus the extent, which is far more useful than the first:
+
+```
+[WARN] negative burndown balance: person "clausbissinger|…" became -7386 at tick 1230
+       (row 41), age band 300 (column 10) during finalization; 208 cell(s) affected in
+       total (person: 155, project: 53). The matrix is reported as computed - pass
+       --strict-burndown-balances to fail the run instead.
+```
+
+It is emitted at most once per analyser (`balancesReported`), because the same result passes
+finalization, serialization and any merge it joins — three copies of one diagnostic is noise.
+
+**What reaches the output.** `pb.ToBurndownSparseMatrix` already clamps (`max(value, 0)`), so
+the `.pb` that `ewws-statistics` consumes is unchanged by this — it never sees a negative.
+The YAML serializer does not clamp, so `-o -` output now shows the raw negatives. That is a
+diagnostic format, and hiding the defect there again would be a step backwards.
+
+**Measured:** all eight repositories that aborted at project or person scope now exit 0 and
+write their `.pb` (`ewws-wiki`, `render-pdf`, `personio-ipoffice-sync`, `meko-etl-tool`,
+`backend-for-microscope`, `mekorp-personio-sync`), with `process-manager` and
+`ShelfStockScanner` now clean of negatives entirely thanks to B1/B1b. Tests:
+`leaves/burndown_balances_test.go`.
+
+This changes nothing about the accounting. The choice between (a) and (b) above is still
+open, and is now purely about whether those cells should exist — not about whether they
+should kill the run.
+
+**Affected in the corpus:** 6 repositories were failing at `person` scope
 (`ShelfStockScanner` −947 "Tobias", `backend-for-mekorp`, `meko-dms-to-yuuvis`,
-`mekorp-personio-sync` −110 "Claus", `mekorp-tablet-client`, `ms-graph-to-mekorp`).
+`mekorp-personio-sync` −110 "Claus", `mekorp-tablet-client`, `ms-graph-to-mekorp`). They now
+complete; `ShelfStockScanner` has no negative cells left at all after B1/B1b, so part of this
+was B1 after all.
 
 ---
 
@@ -243,6 +278,11 @@ hercules --burndown --bus-factor --pb --skip-blacklist \
 
 Also reproduces on `go-clients` (`file 35 author 1 … -20`). `ewws-tailscale`
 passes, so it is repository-dependent.
+
+**Re-measured after B1/B1b** (which changed what the shared line-history dependency delivers):
+unchanged. `ewws-render` still fails on `file 39 author 5 … -12 after delta -32`, `go-clients`
+still on `file 35 … -20 after delta -34` (author index moved 1 → 3, magnitudes identical),
+`ewws-tailscale` still passes. The merge-delta fix did not touch this.
 
 **One confirmed defect, and it is not the whole story.**
 `ownershipSnapshotAccumulator.apply` (`leaves/ownership_snapshot.go:166`) skips
@@ -392,23 +432,31 @@ idle person in the fixture.
    deletions are accounted for; both covered by tests. Line totals now track the
    `082bf15` baseline within 0.5 %. They must be read together: B1 alone overshoots,
    B1b alone would deepen the undercount.
-1. **B2's decision, then the demotion.** Now also covers B1c, since project-scope
-   negatives turn out to be the same long-standing bug and predate 0.2.0. Turning
-   `validateBurndownResultBalances` into a warning (or clamping) is a few lines and
-   takes the corpus from 14 failures to 1. Everything else is easier to measure once
-   runs complete. Note that whatever is chosen, the old binary's clamped output is
-   _not_ a correctness baseline to compare against.
-2. **B4's `--only` fix.** Unblocks all combined charts and is likely small.
-3. **B3.** Two suspected causes, one already confirmed wrong-and-fixed-nowhere. May
-   have shifted: `ownership_snapshot` consumes the same line-history dependency, so the
-   B1 fix now delivers it the merge deltas it was previously missing — re-measure
-   before digging.
+1. ~~**B2's demotion.**~~ Done — negative balances warn once instead of aborting, behind
+   `--strict-burndown-balances`. Every burndown-scope failure in the corpus now completes.
+   **B2's actual decision — (a) fix the accounting or (b) declare the negatives legitimate —
+   is still open and still needs the user.** Note that whatever is chosen, the old binary's
+   clamped output is _not_ a correctness baseline to compare against.
+2. **B4's `--only` fix.** Unblocks all combined charts and is likely small. This is now the
+   only thing left that fails a whole run outright, apart from B3's opt-in flags.
+3. **B3.** Two suspected causes, one already confirmed wrong-and-fixed-nowhere.
+   Re-measured after B1/B1b: unchanged, so the line-history fixes did not touch it.
 4. **B8 commit** + regression test.
 5. **B1d.** Nothing fails on it and totals are now right, but merged lines are still
    credited to the merge author instead of their real one — so it must be settled before
    anyone trusts `--burndown-people`, `--devs` or ownership output, and it may well be
    feeding B2.
 6. **B5, B6, B7.** Lower frequency; B6 may be documentation only.
+
+## B9 — YAML burndown serialization panics on people with no interactions 🟡
+
+Found while writing B2's tests, not yet filed as a run failure. `writeBurndownPeople`
+(`leaves/burndown.go:1257`) prints `result.PeopleMatrix` unconditionally, and
+`yaml.PrintMatrix` indexes `matrix[len(matrix)-1]` — so a result with `PeopleHistories` but a
+nil `PeopleMatrix` panics with `index out of range [-1]`. `finalizePeopleMatrix` returns nil
+whenever `analyser.matrix` is empty, which is reachable with `--burndown-people` on a history
+that records no author interactions at all. The `--pb` path is unaffected. Trivial guard;
+worth doing next time this file is open.
 
 ## Regression coverage worth adding
 

@@ -1178,7 +1178,7 @@ func TestBurndownLifecycleTransitionsRemainNonNegative(t *testing.T) {
 			result, ok := finalized.(BurndownResult)
 			require.Truef(t, ok, "finalization returned %T: %v", finalized, finalized)
 			require.NoError(t, reportBurndownBalances(
-				nil, true, &result, "lifecycle transition test",
+				nil, true, nil, &result, "lifecycle transition test",
 			))
 
 			require.NotEmpty(t, result.GlobalHistory)

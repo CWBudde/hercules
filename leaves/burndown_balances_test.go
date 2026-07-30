@@ -56,6 +56,10 @@ func TestBurndownSerializeWarnsOnNegativeBalancesByDefault(t *testing.T) {
 		assert.Contains(t, logger.warnings[0], "2 cell(s) affected in total")
 		assert.Contains(t, logger.warnings[0], "person: 1, project: 1")
 		assert.Contains(t, logger.warnings[0], "--strict-burndown-balances")
+
+		require.NoError(t, analyser.Serialize(negativeBalanceResult(), binary, buffer))
+		assert.Len(t, logger.warnings, 1,
+			"the same diagnostic must not repeat for every check the result passes through")
 	}
 }
 

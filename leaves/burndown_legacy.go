@@ -55,6 +55,9 @@ type LegacyBurndownAnalysis struct {
 	// single warning. See ConfigBurndownStrictBalances.
 	StrictBalances bool
 
+	// balancesReported keeps the non-strict warning to one per analyser.
+	balancesReported bool
+
 	// PeopleNumber is the number of developers for which to collect the burndown stats. 0 disables it.
 	PeopleNumber int
 

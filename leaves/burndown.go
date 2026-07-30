@@ -57,6 +57,9 @@ type BurndownAnalysis struct {
 	// single warning. See ConfigBurndownStrictBalances.
 	StrictBalances bool
 
+	// balancesReported keeps the non-strict warning to one per analyser.
+	balancesReported bool
+
 	// Repository points to the analysed Git repository struct from go-git.
 	repository *git.Repository
 	// repositoryName is the name/path of the repository from metadata.
@@ -768,7 +771,9 @@ func (analyser *BurndownAnalysis) MergeResults(
 
 // checkBalances reports negative alive-line counts according to the configured policy.
 func (analyser *BurndownAnalysis) checkBalances(result *BurndownResult, operation string) error {
-	return reportBurndownBalances(analyser.l, analyser.StrictBalances, result, operation)
+	return reportBurndownBalances(
+		analyser.l, analyser.StrictBalances, &analyser.balancesReported, result, operation,
+	)
 }
 
 func (analyser *BurndownAnalysis) validateBurndownMergeInputs(first, second *BurndownResult) error {

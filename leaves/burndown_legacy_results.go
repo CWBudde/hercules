@@ -39,7 +39,9 @@ func (analyser *LegacyBurndownAnalysis) Finalize() any {
 func (analyser *LegacyBurndownAnalysis) checkBalances(
 	result *BurndownResult, operation string,
 ) error {
-	return reportBurndownBalances(analyser.l, analyser.StrictBalances, result, operation)
+	return reportBurndownBalances(
+		analyser.l, analyser.StrictBalances, &analyser.balancesReported, result, operation,
+	)
 }
 
 // Serialize converts the analysis result as returned by Finalize() to text or bytes.

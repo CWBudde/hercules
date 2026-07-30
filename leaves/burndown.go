@@ -613,11 +613,6 @@ func (analyser *BurndownAnalysis) Finalize() any {
 	return result
 }
 
-// checkBalances reports negative alive-line counts according to the configured policy.
-func (analyser *BurndownAnalysis) checkBalances(result *BurndownResult, operation string) error {
-	return reportBurndownBalances(analyser.l, analyser.StrictBalances, result, operation)
-}
-
 // Serialize converts the analysis result as returned by Finalize() to text or bytes.
 // The text format is YAML and the bytes format is Protocol Buffers.
 func (analyser *BurndownAnalysis) Serialize(result any, binary bool, writer io.Writer) error {
@@ -769,6 +764,11 @@ func (analyser *BurndownAnalysis) MergeResults(
 	}
 
 	return merged
+}
+
+// checkBalances reports negative alive-line counts according to the configured policy.
+func (analyser *BurndownAnalysis) checkBalances(result *BurndownResult, operation string) error {
+	return reportBurndownBalances(analyser.l, analyser.StrictBalances, result, operation)
 }
 
 func (analyser *BurndownAnalysis) validateBurndownMergeInputs(first, second *BurndownResult) error {

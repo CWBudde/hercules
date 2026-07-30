@@ -40,7 +40,8 @@ func TestLegacyBurndownMeta(t *testing.T) {
 	for _, opt := range opts {
 		switch opt.Name {
 		case ConfigBurndownGranularity, ConfigBurndownSampling, ConfigBurndownTrackFiles,
-			ConfigBurndownTrackPeople, ConfigLegacyBurndownHibernationThreshold,
+			ConfigBurndownTrackPeople, ConfigBurndownStrictBalances,
+			ConfigLegacyBurndownHibernationThreshold,
 			ConfigLegacyBurndownHibernationToDisk, ConfigLegacyBurndownHibernationDirectory,
 			ConfigLegacyBurndownDebug:
 			matches++

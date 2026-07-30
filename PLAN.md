@@ -7,7 +7,7 @@
 ## Why this exists
 
 Repointing `MeKo/ewws-statistics` from the old `082bf15` binary to 0.2.0 took the
-pipeline from *all repositories analysed* to **14 of 38 failing outright**,
+pipeline from _all repositories analysed_ to **14 of 38 failing outright**,
 including the two most important ones (`mekorp-webclient`, 11 275 commits;
 `mekorp-backend`, 8 172 commits). Every failure is a hard abort, not a degraded
 chart — one bad invariant kills the whole run and its `.pb` is never written.
@@ -21,7 +21,7 @@ in `ewws-statistics/.core-repos`.
 
 ---
 
-## B1 — `--burndown-people` corrupts the *project* burndown matrix 🔴
+## B1 — `--burndown-people` corrupts the _project_ burndown matrix 🔴
 
 **The main regression.** Enabling people tracking makes the global history go
 negative. The project matrix is fine without it.
@@ -51,7 +51,7 @@ off-by-one leak, not a structural error — good for bisecting). Larger ones:
 **Where to look.** People tracking must be double-subtracting from, or otherwise
 writing through to, `GlobalHistory`. Start at `leaves/burndown.go` where the
 per-person deltas are applied, and at the `updateFileDelete` / merge paths — the
-error surfaces in `validateBurndownResultBalances` during *finalization*, so the
+error surfaces in `validateBurndownResultBalances` during _finalization_, so the
 corruption happens while accumulating, not while serialising.
 
 **Affected in the corpus:** 6 repositories fail at `project` scope
@@ -60,7 +60,7 @@ corruption happens while accumulating, not while serialising.
 
 ---
 
-## B2 — person burndown matrices have *always* contained negatives 🟠
+## B2 — person burndown matrices have _always_ contained negatives 🟠
 
 Distinct from B1, and important not to conflate with it: the **people** matrices
 went negative in `082bf15` too. 0.2.0 did not break this — it started checking.
@@ -114,7 +114,7 @@ passes, so it is repository-dependent.
 
 **One confirmed defect, and it is not the whole story.**
 `ownershipSnapshotAccumulator.apply` (`leaves/ownership_snapshot.go:166`) skips
-`change.IsDelete()` entirely. A deletion sentinel means *drop the whole file*, so
+`change.IsDelete()` entirely. A deletion sentinel means _drop the whole file_, so
 its per-author lines stay in `authorLines`/`totalLines` forever — every later
 snapshot is inflated, and a reused `FileId` starts from stale state. Compare
 `leaves/burndown.go:336`, which correctly calls `updateFileDelete`.
@@ -124,7 +124,7 @@ was tried and **did not** fix the underflow (the error moved but persisted), so
 there is a second cause. Two candidates, both visible in the same function:
 
 1. Line 167 also skips every change with `PrevAuthor == core.AuthorMissing`,
-   including positive deltas. If lines can be *added* under `AuthorMissing` and
+   including positive deltas. If lines can be _added_ under `AuthorMissing` and
    later removed under a resolved author, removals are counted while the matching
    insertions never were — which is exactly this underflow signature.
 2. `burndown.go:344-348` clamps `PrevAuthor >= peopleCount` back to
@@ -138,7 +138,7 @@ sign error.
 
 ## B4 — four analyses are unmergeable, and `combine --only` does not help them 🟠
 
-`hercules combine` fails outright if *any* input `.pb` contains one of:
+`hercules combine` fails outright if _any_ input `.pb` contains one of:
 
 ```
 CommitsStat   FileHistoryAnalysis   ImportsPerDeveloper   RefactoringProxy
@@ -155,11 +155,12 @@ hercules combine --only Burndown output/data/hercules-pb/*.pb > /dev/null
 # → FileHistoryAnalysis: ResultMergeablePipelineItem is not implemented
 ```
 
-Tested with all 13 analysis names — every single one fails on some *other*
+Tested with all 13 analysis names — every single one fails on some _other_
 analysis in the file. Either `--only` should filter inputs before merging (which
 is what the help text implies), or the docs should stop implying it.
 
 Actions:
+
 - Make `--only` actually restrict the merge set. This alone makes the four
   unmergeable analyses harmless.
 - Implement `ResultMergeablePipelineItem` for `RefactoringProxy` (the only one of
@@ -206,7 +207,7 @@ constrained environments" invites.
 
 This may be deliberate (SCALING.md does say "returns an explicit error … Hercules
 does not substitute empty content"), but then it is misfiled as a tuning knob.
-Suggested: skip-and-warn for the *cache* (the blob is still readable, it just
+Suggested: skip-and-warn for the _cache_ (the blob is still readable, it just
 isn't retained), and reserve hard failure for the case where correctness truly
 depends on it. At minimum, say plainly in the flag help that this aborts.
 
@@ -244,7 +245,7 @@ people than any single repository set does, so this fires constantly: our
 charts.
 
 Fixed in `internal/render/modes/burndownPerson.go`: skip people with no activity
-(logging unless `--quiet`), and only error if *every* person is empty.
+(logging unless `--quiet`), and only error if _every_ person is empty.
 `CGO_ENABLED=0 go test ./internal/render/...` passes. Result: 18 of 25 groups
 render, 7 skipped cleanly.
 

@@ -66,12 +66,14 @@ func plotRefactoringProxy(repoName string, data *readers.RefactoringProxyData, o
 	threshold := float64(data.Threshold)
 	thresholdColor := render.Color{R: 0xe6 / 255.0, G: 0x39 / 255.0, B: 0x46 / 255.0, A: 1}
 	thresholdWidth := 1.5
-	ax.Plot([]float64{x[0], x[len(x)-1]}, []float64{threshold, threshold}, core.PlotOptions{
+	if _, err := ax.Plot([]float64{x[0], x[len(x)-1]}, []float64{threshold, threshold}, core.PlotOptions{
 		Color:     optional.Of(thresholdColor),
 		LineWidth: optional.Of(thresholdWidth),
 		Dashes:    []float64{6, 4},
 		Label:     fmt.Sprintf("Threshold (%.1f%%)", threshold*100),
-	})
+	}); err != nil {
+		return fmt.Errorf("failed to plot refactoring threshold: %w", err)
+	}
 
 	spanColor := render.Color{R: 0xa8 / 255.0, G: 0xda / 255.0, B: 0xdc / 255.0, A: 1}
 	spanAlpha := 0.2

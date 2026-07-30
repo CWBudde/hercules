@@ -829,7 +829,7 @@ func TestLegacyBurndownSerializeRejectsNegativeBalances(t *testing.T) {
 
 	for _, binary := range []bool{false, true} {
 		buffer := &bytes.Buffer{}
-		err := (&LegacyBurndownAnalysis{}).Serialize(result, binary, buffer)
+		err := (&LegacyBurndownAnalysis{StrictBalances: true}).Serialize(result, binary, buffer)
 		assert.ErrorIs(t, err, errNegativeBurndownBalance)
 		assert.ErrorContains(t, err, "tick 3")
 		assert.ErrorContains(t, err, "age band 0")

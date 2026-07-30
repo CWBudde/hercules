@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"os"
 	"path"
 
 	"github.com/go-git/go-git/v5"
@@ -164,6 +165,14 @@ func (accumulator *ownershipSnapshotAccumulator) consume(
 }
 
 func (accumulator *ownershipSnapshotAccumulator) apply(change core.LineHistoryChange) error {
+	if os.Getenv("HERCULES_TRACE_FILE") != "" {
+		if fmt.Sprint(int(change.FileId)) == os.Getenv("HERCULES_TRACE_FILE") {
+			fmt.Fprintf(os.Stderr, "TRACE file=%d del=%v prev=%d curr=%d delta=%d prevTick=%d currTick=%d state=%v total=%d\n",
+				change.FileId, change.IsDelete(), int(change.PrevAuthor), int(change.CurrAuthor),
+				change.Delta, change.PrevTick, change.CurrTick,
+				accumulator.fileLines[change.FileId], accumulator.totalLines)
+		}
+	}
 	if change.IsDelete() || change.Delta == 0 || change.PrevAuthor == core.AuthorMissing {
 		return nil
 	}

@@ -172,22 +172,25 @@ func TestSimilarityMetricsAccuracy(t *testing.T) {
 func TestArtifactSetValidation(t *testing.T) {
 	expected := map[string]string{"chart.png": "golden/chart.png"}
 
-	if err := validateArtifactSet(
+	err := validateArtifactSet(
 		map[string]string{"chart.png": "/tmp/chart.png"},
 		expected,
-	); err != nil {
+	)
+	if err != nil {
 		t.Fatalf("matching artifact set rejected: %v", err)
 	}
-	if err := validateArtifactSet(map[string]string{}, expected); err == nil {
+	err = validateArtifactSet(map[string]string{}, expected)
+	if err == nil {
 		t.Fatal("missing required artifact was accepted")
 	}
-	if err := validateArtifactSet(
+	err = validateArtifactSet(
 		map[string]string{
 			"chart.png":      "/tmp/chart.png",
 			"unexpected.png": "/tmp/unexpected.png",
 		},
 		expected,
-	); err == nil {
+	)
+	if err == nil {
 		t.Fatal("unexpected artifact was accepted")
 	}
 }
@@ -201,14 +204,16 @@ func runVisualRegressionTest(t *testing.T, tc VisualTestCase) {
 	if err != nil {
 		t.Fatalf("Failed to generate %s: %v", tc.Description, err)
 	}
-	if setErr := validateArtifactSet(current, tc.Artifacts); setErr != nil {
+	setErr := validateArtifactSet(current, tc.Artifacts)
+	if setErr != nil {
 		t.Fatalf("%s artifact contract failed: %v", tc.Description, setErr)
 	}
 
 	for name, expectedPath := range tc.Artifacts {
 		currentPath := current[name]
 		if os.Getenv("UPDATE_VISUAL_GOLDENS") == "1" {
-			if mkdirErr := os.MkdirAll(filepath.Dir(expectedPath), 0o750); mkdirErr != nil {
+			mkdirErr := os.MkdirAll(filepath.Dir(expectedPath), 0o750)
+			if mkdirErr != nil {
 				t.Fatalf("create golden directory: %v", mkdirErr)
 			}
 			copyFile(t, currentPath, expectedPath)

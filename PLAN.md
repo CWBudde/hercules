@@ -221,6 +221,32 @@ bug and converting silently-wrong output into a fatal error.
 Whichever is chosen, **the validator must not abort a whole multi-hour run over
 a single `-1`.**
 
+### B3's trace answers most of this — (b), with a caveat 🔎
+
+The `OwnershipSnapshot` investigation (see B3) traced an identical negative to its
+mechanism, on `ewws-render`, change by change. It is **structural, not an accounting
+slip**: divergent branches each remove the same lines from their own copy of a file, and
+every branch feeds one shared accumulator (`ForkSamePipelineItem`), so a total goes negative
+until the branches merge and the duplication cancels. Confirmed by
+`git merge-base --is-ancestor`: the two commits that removed the same 32 lines are on
+branches neither of which reaches the other.
+
+Burndown's `sparseHistory` is fed by the same `LineHistoryChanges` in the same way, so its
+negative cells have the same origin — the difference is only that `sparseHistory` tolerates
+the dip and `ownershipSnapshotAccumulator` used to abort on it.
+
+That makes **(b) the supported reading**, with one important refinement over how (b) is
+worded above: _do not clamp the accumulator_. The negative is a placeholder for a positive
+the merge is going to deliver; clamping it away destroys the cancellation and inflates every
+later total. Clamp at the reporting boundary only. That is exactly what B3's fix does, and
+what `pb.ToBurndownSparseMatrix` has always done for burndown.
+
+The caveat: a **final** matrix should still balance out, because by then every branch has
+merged. Cells that are still negative after `Finalize` — `render-pdf`'s −7386, 208 cells —
+are not explained by this and remain open. So the honest split is: transient negatives are
+expected and must be tolerated; residual ones at the end are a real defect still to chase,
+and B1c is part of that.
+
 ### The demotion is done ✅ (uncommitted) — the decision is not
 
 `validateBurndownResultBalances` was replaced by `auditBurndownResultBalances`, which scans
@@ -264,7 +290,7 @@ was B1 after all.
 
 ---
 
-## B3 — `OwnershipSnapshot` underflows, killing `--bus-factor` / `--ownership-concentration` 🔴
+## B3 — `OwnershipSnapshot` underflows, killing `--bus-factor` / `--ownership-concentration` ✅ FIXED (uncommitted)
 
 Both flags share the accumulator added in `745f25b`, so either one aborts the run:
 
@@ -284,27 +310,64 @@ unchanged. `ewws-render` still fails on `file 39 author 5 … -12 after delta -3
 still on `file 35 … -20 after delta -34` (author index moved 1 → 3, magnitudes identical),
 `ewws-tailscale` still passes. The merge-delta fix did not touch this.
 
-**One confirmed defect, and it is not the whole story.**
-`ownershipSnapshotAccumulator.apply` (`leaves/ownership_snapshot.go:166`) skips
-`change.IsDelete()` entirely. A deletion sentinel means _drop the whole file_, so
-its per-author lines stay in `authorLines`/`totalLines` forever — every later
-snapshot is inflated, and a reused `FileId` starts from stale state. Compare
-`leaves/burndown.go:336`, which correctly calls `updateFileDelete`.
+### Root cause: found, and it is not an accounting slip ✅
 
-Adding a `forget(FileId)` that subtracts the file's authors and deletes the entry
-was tried and **did not** fix the underflow (the error moved but persisted), so
-there is a second cause. Two candidates, both visible in the same function:
+Both earlier hypotheses (skipped `AuthorMissing` insertions; missing
+`peopleCount` clamping) are **wrong**. Tracing every change for the offending
+`FileId` on `ewws-render` shows the actual mechanism.
 
-1. Line 167 also skips every change with `PrevAuthor == core.AuthorMissing`,
-   including positive deltas. If lines can be _added_ under `AuthorMissing` and
-   later removed under a resolved author, removals are counted while the matching
-   insertions never were — which is exactly this underflow signature.
-2. `burndown.go:344-348` clamps `PrevAuthor >= peopleCount` back to
-   `AuthorMissing`; `ownership_snapshot.go` does no such clamping. With a
-   `--people-dict` in play the two consumers disagree about who an author is.
+File 39 accumulates 32 lines for author 5 at tick 7. Commit `b84333d6` (tick 42)
+replaces 12 of them: `+12` for author 2 at tick 42, `-12` for author 5 at tick 7,
+leaving `{a5: 20, a2: 12}`. Commit `93355521` (tick 75) then deletes the file and
+emits `-32` for author 5 at tick 7 — more than the 20 that remain.
 
-Fix the delete handling regardless — it is unambiguously wrong — then chase the
-sign error.
+`93355521` is **not a descendant of `b84333d6`**; `git merge-base --is-ancestor`
+says neither reaches the other. They are on divergent branches. Each branch holds
+its own line-history tree, and each legitimately removes the whole file _as its
+own branch sees it_. Every branch feeds the one shared accumulator
+(`ForkSamePipelineItem`), so the same lines are removed twice and the total goes
+negative until the branches merge and the duplication cancels.
+
+The same trace on file 13 is unambiguous: `93355521`'s removals replay, delta for
+delta, exactly the ownership breakdown file 13 had _before_ `b84333d6` rewrote it
+(`-4@t7 a5`, `-3@t36 a8`, `-1@t40 a8`, `-20@t7 a5`, …).
+
+**So the invariant was wrong, not the arithmetic.** A shared accumulator fed by
+divergent branches cannot be assumed monotonically non-negative, and aborting on
+the first dip kills `--bus-factor` and `--ownership-concentration` on perfectly
+ordinary histories.
+
+**This is the same mechanism as B2's negative burndown balances** — burndown's
+`sparseHistory` simply tolerates the dip and carries a negative cell instead of
+erroring. See the note under B2.
+
+### Fix (uncommitted)
+
+- Internal totals stay **signed**. Clamping in `apply` would destroy the
+  compensating positive the merge later delivers and inflate every subsequent
+  total.
+- Clamping happens at the reporting boundary only — `snapshot()` and
+  `subsystemOwnership()` report zero for a negative total and drop authors left
+  with nothing, since no metric downstream can use a negative line count.
+- One `[WARN]` per run names the first dip and why it happens; repeating it would
+  be one line per commit on a repository with a long-lived branch.
+
+Measured: `ewws-render`, `go-clients` and `ewws-tailscale` all complete
+(`exit 0`), the first two with one warning each, `ewws-tailscale` with none.
+`labours -m bus-factor` renders the result.
+
+### Deliberately not changed
+
+`apply` still ignores the `IsDelete()` sentinel, and the earlier claim that this
+is "unambiguously wrong" does not survive the trace. `handleDeletion`
+(`line_history.go:1106`) calls `file.Update(..., 0, 0, lines)` **before**
+`file.Delete()`, so the per-line removals are already emitted explicitly; the
+sentinel is pure bookkeeping, exactly as `BurndownAnalysis.updateFileDelete`
+treats it. Subtracting the file's remaining authors on the sentinel would
+double-subtract — and worse, would drop the lines a _sibling branch_ still holds
+in that file. What is genuinely open is whether a per-file entry should be
+retired for `subsystemOwnership` purposes when the file dies on every branch;
+that needs a merge-aware answer, not a local one.
 
 ---
 
@@ -321,8 +384,8 @@ CommitsStat   FileHistoryAnalysis   ImportsPerDeveloper   RefactoringProxy
 The set is larger than originally recorded. Enumerating the registry, **10 of 20
 leaves are mergeable** and 10 are not:
 
-| mergeable | not mergeable |
-| --- | --- |
+| mergeable                                                                                                                                                    | not mergeable                                                                                                                                                            |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `Burndown`, `BusFactor`, `CodeChurn`, `Couples`, `Devs`, `HotspotRisk`, `KnowledgeDiffusion`, `LegacyBurndown`, `OwnershipConcentration`, `TemporalActivity` | `CommitsStat`, `FileHistoryAnalysis`, `ImportsPerDeveloper`, `RefactoringProxy`, `LineDumper`, `Onboarding`, `Sentiment`, `Shotness`, `TyposDataset`, `UASTChangesSaver` |
 
 ### What was wrong
@@ -350,11 +413,11 @@ printed the same messages but exited 0, whereas 0.2.0 returns them from `RunE`.
 Measured on `ewws-tailscale` analysed with `--burndown --devs --file-history
 --commits-stat`:
 
-| invocation | before | after |
-| --- | --- | --- |
-| `combine a.pb a.pb` | exit 1 | exit 0, contents `[Burndown Devs]`, 2 skips reported |
-| `combine --only Burndown …` | exit 1 | exit 0, contents `[Burndown]` |
-| `combine --only FileHistoryAnalysis …` | exit 1 | exit 1, with the reason named |
+| invocation                             | before | after                                                |
+| -------------------------------------- | ------ | ---------------------------------------------------- |
+| `combine a.pb a.pb`                    | exit 1 | exit 0, contents `[Burndown Devs]`, 2 skips reported |
+| `combine --only Burndown …`            | exit 1 | exit 0, contents `[Burndown]`                        |
+| `combine --only FileHistoryAnalysis …` | exit 1 | exit 1, with the reason named                        |
 
 Still open: `RefactoringProxy` has a labours mode and is the one unmergeable leaf
 worth actually implementing `ResultMergeablePipelineItem` for. Everything else in
@@ -478,8 +541,11 @@ idle person in the fixture.
    analysis is skipped with a report instead of taking the combine down. All combined charts
    are unblocked. Only `RefactoringProxy`'s missing `ResultMergeablePipelineItem` remains,
    and nothing fails on it any more.
-3. **B3.** Two suspected causes, one already confirmed wrong-and-fixed-nowhere.
-   Re-measured after B1/B1b: unchanged, so the line-history fixes did not touch it.
+3. ~~**B3.**~~ Done — the underflow is a structural consequence of divergent branches sharing
+   one accumulator, not an accounting slip. Totals stay signed; only the snapshots handed to
+   the metrics clamp. `--bus-factor` and `--ownership-concentration` complete again. **Its
+   trace is the strongest evidence available for B2's open decision — read B2's
+   "B3's trace answers most of this" before choosing (a) or (b).**
 4. **B8 commit** + regression test.
 5. **B1d.** Nothing fails on it and totals are now right, but merged lines are still
    credited to the merge author instead of their real one — so it must be settled before

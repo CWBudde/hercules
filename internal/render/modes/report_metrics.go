@@ -7,6 +7,7 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"maps"
 	"math"
 	"os"
 	"path/filepath"
@@ -74,6 +75,7 @@ func temporalClockLabels() []string {
 	for hour := range labels {
 		labels[hour] = fmt.Sprintf("%02d:00", hour)
 	}
+
 	return labels
 }
 
@@ -82,6 +84,7 @@ func temporalWeekLabels() []string {
 	for week := range labels {
 		labels[week] = fmt.Sprintf("W%d", week+1)
 	}
+
 	return labels
 }
 
@@ -112,12 +115,14 @@ func loadTemporalActivity(
 	if !ok {
 		return nil, 0, 0, fmt.Errorf("%w: temporal activity", readers.ErrAnalysisMissing)
 	}
+
 	data, err := temporalReader.GetTemporalActivity()
 	if err != nil {
 		return nil, 0, 0, fmt.Errorf("failed to get temporal activity data: %w", err)
 	}
 
 	data = filteredTemporalActivity(data, reader, startTime, endTime)
+
 	totalCommits, totalLines := temporalActivityTotals(data)
 	if totalCommits == 0 && totalLines == 0 {
 		return nil, 0, 0, errNoTemporalActivityValues
@@ -157,6 +162,7 @@ func renderTemporalActivity(
 			return err
 		}
 	}
+
 	return nil
 }
 
@@ -184,6 +190,7 @@ func renderTemporalActivityMode(
 
 func temporalDimensionValues(activity readers.TemporalDeveloperActivity, dimKey, mode string) []int {
 	var dim readers.TemporalDimensionData
+
 	switch dimKey {
 	case "weekdays":
 		dim = activity.Weekdays
@@ -194,9 +201,11 @@ func temporalDimensionValues(activity readers.TemporalDeveloperActivity, dimKey,
 	case "weeks":
 		dim = activity.Weeks
 	}
+
 	if mode == "lines" {
 		return dim.Lines
 	}
+
 	return dim.Commits
 }
 
@@ -206,11 +215,13 @@ func temporalActivityTotals(data *readers.TemporalActivityData) (int, int) {
 		commits += sumInts(activity.Hours.Commits)
 		lines += sumInts(activity.Hours.Lines)
 	}
+
 	return commits, lines
 }
 
 func buildTemporalDimensionSeries(data *readers.TemporalActivityData, dimKey, mode string, numBins int) []temporalHourCommitSeries {
 	developers := sortedIntKeys(data.Activities)
+
 	series := make([]temporalHourCommitSeries, 0, len(developers))
 	for _, developer := range developers {
 		values := make([]int, numBins)
@@ -219,12 +230,15 @@ func buildTemporalDimensionSeries(data *readers.TemporalActivityData, dimKey, mo
 				values[i] = value
 			}
 		}
+
 		name := "Unknown"
 		if developer >= 0 && developer < len(data.People) {
 			name = data.People[developer]
 		}
+
 		series = append(series, temporalHourCommitSeries{Name: name, Values: values})
 	}
+
 	return series
 }
 
@@ -237,6 +251,7 @@ func plotTemporalDimension(repoName string, data *readers.TemporalActivityData, 
 	}
 
 	numBins := len(spec.Labels)
+
 	series := buildTemporalDimensionSeries(data, spec.Key, mode, numBins)
 	if len(series) == 0 {
 		return errNoTemporalActivityValues
@@ -369,11 +384,13 @@ func configureTemporalTickLabels(axes *core.Axes, rotate bool) {
 func temporalDimensionTicks(spec temporalDimensionSpec) ([]float64, []string) {
 	numBins := len(spec.Labels)
 	ticks := make([]float64, 0, numBins)
+
 	labels := make([]string, 0, numBins)
 	for bin := 0; bin < numBins; bin += spec.TickStep {
 		ticks = append(ticks, float64(bin))
 		labels = append(labels, spec.Labels[bin])
 	}
+
 	return ticks, labels
 }
 
@@ -381,6 +398,7 @@ func addTemporalLegend(ax *core.Axes, seriesCount, legendThreshold int) {
 	if seriesCount <= 1 || (legendThreshold > 0 && seriesCount >= legendThreshold) {
 		return
 	}
+
 	legend := ax.AddLegend()
 	legend.Location = core.LegendUpperRight
 	legend.FontSize = 9.6
@@ -397,36 +415,44 @@ func temporalWeekdayHourMatrix(data *readers.TemporalActivityData, mode string) 
 	for i := range matrix {
 		matrix[i] = make([]float64, 24)
 	}
+
 	for _, activity := range data.Activities {
 		weekday := temporalDimensionValues(activity, "weekdays", mode)
 		hour := temporalDimensionValues(activity, "hours", mode)
 		totalWeekday := sumInts(weekday)
+
 		totalHour := sumInts(hour)
 		if totalWeekday == 0 || totalHour == 0 {
 			continue
 		}
+
 		for wi := 0; wi < 7 && wi < len(weekday); wi++ {
 			if weekday[wi] == 0 {
 				continue
 			}
+
 			weekdayProb := float64(weekday[wi]) / float64(totalWeekday)
+
 			for hi := 0; hi < 24 && hi < len(hour); hi++ {
 				hourProb := float64(hour[hi]) / float64(totalHour)
 				matrix[wi][hi] += math.Trunc(weekdayProb * hourProb * float64(totalWeekday))
 			}
 		}
 	}
+
 	return matrix
 }
 
 func plotTemporalHeatmap(repoName string, data *readers.TemporalActivityData, mode, output string) error {
 	matrix := temporalWeekdayHourMatrix(data, mode)
 	total := 0.0
+
 	for _, row := range matrix {
 		for _, value := range row {
 			total += value
 		}
 	}
+
 	if total == 0 {
 		fmt.Printf("No data for weekday×hour heatmap (%s)\n", mode)
 		return nil
@@ -441,6 +467,7 @@ func plotTemporalHeatmap(repoName string, data *readers.TemporalActivityData, mo
 	for hour := range colLabels {
 		colLabels[hour] = fmt.Sprintf("%02d", hour)
 	}
+
 	rowLabels := append([]string(nil), temporalWeekdayLabels...)
 
 	// Python's heatmap sets figsize=(19.2,8) at creation but apply_plot_style
@@ -456,7 +483,9 @@ func plotTemporalHeatmap(repoName string, data *readers.TemporalActivityData, mo
 	}); err != nil {
 		return fmt.Errorf("failed to plot temporal heatmap: %w", err)
 	}
+
 	fmt.Printf("Saved %s\n", output)
+
 	return nil
 }
 
@@ -591,6 +620,7 @@ func addTemporalBin(commits, lines []int, index, commitDelta, lineDelta int) {
 	if index < 0 || index >= len(commits) {
 		return
 	}
+
 	commits[index] += commitDelta
 	lines[index] += lineDelta
 }
@@ -605,10 +635,12 @@ func BusFactor(reader readers.Reader, output string) error {
 	if !ok {
 		return fmt.Errorf("%w: bus factor", readers.ErrAnalysisMissing)
 	}
+
 	data, err := busFactorReader.GetBusFactor()
 	if err != nil {
 		return fmt.Errorf("failed to get bus factor data: %w", err)
 	}
+
 	if len(data.Snapshots) == 0 {
 		return errNoBusFactorSnapshots
 	}
@@ -691,6 +723,7 @@ func plotBusFactorSubsystemSummary(
 		"Bus factor subsystem summary: %d subsystems\n",
 		len(data.SubsystemBusFactor),
 	)
+
 	return nil
 }
 
@@ -715,67 +748,82 @@ func busFactorTopOwners(authorLines map[int]int64, people []string, maxSlices in
 		ID    int
 		Lines int64
 	}
+
 	owners := make([]owner, 0, len(authorLines))
 	for id, lines := range authorLines {
 		owners = append(owners, owner{ID: id, Lines: lines})
 	}
+
 	sort.Slice(owners, func(i, j int) bool {
 		if owners[i].Lines != owners[j].Lines {
 			return owners[i].Lines > owners[j].Lines
 		}
+
 		return owners[i].ID < owners[j].ID
 	})
 
 	labels := make([]string, 0, maxSlices+1)
 	values := make([]float64, 0, maxSlices+1)
 	var others int64
+
 	for i, o := range owners {
 		if i < maxSlices {
 			name := fmt.Sprintf("Author %d", o.ID)
 			if o.ID >= 0 && o.ID < len(people) {
 				name = people[o.ID]
 			}
+
 			labels = append(labels, name)
 			values = append(values, float64(o.Lines))
 		} else {
 			others += o.Lines
 		}
 	}
+
 	if others > 0 {
 		labels = append(labels, "Others")
 		values = append(values, float64(others))
 	}
+
 	return labels, values
 }
 
 // humanizeInt formats an integer with thousands separators (e.g. 12345 -> "12,345").
 func humanizeInt(value int64) string {
 	s := strconv.FormatInt(value, 10)
+
 	negative := strings.HasPrefix(s, "-")
 	if negative {
 		s = s[1:]
 	}
+
 	n := len(s)
 	if n <= 3 {
 		if negative {
 			return "-" + s
 		}
+
 		return s
 	}
 	var b strings.Builder
+
 	lead := n % 3
 	if lead > 0 {
 		b.WriteString(s[:lead])
 	}
+
 	for i := lead; i < n; i += 3 {
 		if b.Len() > 0 {
 			b.WriteByte(',')
 		}
+
 		b.WriteString(s[i : i+3])
 	}
+
 	if negative {
 		return "-" + b.String()
 	}
+
 	return b.String()
 }
 
@@ -907,12 +955,14 @@ func hideAxesContent(ax *core.Axes) {
 	if ax == nil {
 		return
 	}
+
 	ax.ShowFrame = false
 	if ax.XAxis != nil {
 		ax.XAxis.ShowSpine = false
 		ax.XAxis.ShowTicks = false
 		ax.XAxis.ShowLabels = false
 	}
+
 	if ax.YAxis != nil {
 		ax.YAxis.ShowSpine = false
 		ax.YAxis.ShowTicks = false
@@ -925,16 +975,19 @@ func OwnershipConcentration(reader readers.Reader, output string) error {
 	if !ok {
 		return fmt.Errorf("%w: ownership concentration", readers.ErrAnalysisMissing)
 	}
+
 	data, err := ownershipReader.GetOwnershipConcentration()
 	if err != nil {
 		return fmt.Errorf("failed to get ownership concentration data: %w", err)
 	}
+
 	if len(data.Snapshots) == 0 {
-		return fmt.Errorf("no ownership concentration snapshots found")
+		return errors.New("no ownership concentration snapshots found")
 	}
 
 	ticks := sortedIntKeys(data.Snapshots)
 	gini := make(xySeries, len(ticks))
+
 	hhi := make(xySeries, len(ticks))
 	for i, tick := range ticks {
 		snapshot := data.Snapshots[tick]
@@ -965,11 +1018,15 @@ func OwnershipConcentration(reader readers.Reader, output string) error {
 
 	if len(data.SubsystemGini) > 0 {
 		subsystemOutput := siblingOutputPath(output, "ownership-concentration.png", "subsystems")
-		if err := plotOwnershipSubsystemsBar(reader.GetName(), data.SubsystemGini, data.SubsystemHHI, subsystemOutput); err != nil {
+
+		err := plotOwnershipSubsystemsBar(reader.GetName(), data.SubsystemGini, data.SubsystemHHI, subsystemOutput)
+		if err != nil {
 			return fmt.Errorf("failed to plot subsystem ownership concentration: %w", err)
 		}
+
 		fmt.Printf("Ownership concentration subsystem summary: %d subsystems\n", len(data.SubsystemGini))
 	}
+
 	return nil
 }
 
@@ -1086,6 +1143,7 @@ func drawOwnershipSubsystemBars(axes *core.Axes, series ownershipSubsystemSeries
 
 func drawOwnershipSubsystemLabels(axes *core.Axes, series ownershipSubsystemSeries) {
 	clipOff := false
+
 	labelColor := render.Color{R: 0, G: 0, B: 0, A: 1}
 	for index := range series.directories {
 		axes.Text(
@@ -1130,17 +1188,20 @@ func KnowledgeDiffusion(reader readers.Reader, output string, detail bool) error
 	if !ok {
 		return fmt.Errorf("%w: knowledge diffusion", readers.ErrAnalysisMissing)
 	}
+
 	data, err := diffusionReader.GetKnowledgeDiffusion()
 	if err != nil {
 		return fmt.Errorf("failed to get knowledge diffusion data: %w", err)
 	}
+
 	if len(data.Distribution) == 0 && len(data.Files) == 0 {
-		return fmt.Errorf("no knowledge diffusion data found")
+		return errors.New("no knowledge diffusion data found")
 	}
 
 	labels, values := knowledgeDistribution(data)
 	fmt.Printf("Knowledge diffusion: %d files, %d developers, window=%d months\n",
 		len(data.Files), len(data.People), data.WindowMonths)
+
 	distributionOutput := siblingOutputPath(output, "knowledge-diffusion.png", "distribution")
 	if err := plotKnowledgeDistribution(reader.GetName(), labels, values, distributionOutput); err != nil {
 		return err
@@ -1149,14 +1210,18 @@ func KnowledgeDiffusion(reader readers.Reader, output string, detail bool) error
 	if err := plotKnowledgeSilos(reader.GetName(), data, siblingOutputPath(output, "knowledge-diffusion.png", "silos")); err != nil {
 		return err
 	}
+
 	if err := plotKnowledgeLorenz(reader.GetName(), data, siblingOutputPath(output, "knowledge-diffusion.png", "lorenz")); err != nil {
 		return err
 	}
+
 	if detail {
-		if err := plotKnowledgeTrend(data, siblingOutputPath(output, "knowledge-diffusion.png", "trend")); err != nil {
+		err := plotKnowledgeTrend(data, siblingOutputPath(output, "knowledge-diffusion.png", "trend"))
+		if err != nil {
 			return err
 		}
 	}
+
 	return nil
 }
 
@@ -1169,18 +1234,22 @@ func plotKnowledgeLorenz(repoName string, data *readers.KnowledgeDiffusionData, 
 	for _, f := range data.Files {
 		counts = append(counts, f.UniqueEditors)
 	}
+
 	sort.Ints(counts)
 	n := len(counts)
+
 	total := 0
 	for _, c := range counts {
 		total += c
 	}
+
 	if n == 0 || total == 0 {
 		return nil
 	}
 
 	lorenz := make(xySeries, n+1)
 	lorenz[0] = xyPoint{X: 0, Y: 0}
+
 	cum := 0
 	for i, c := range counts {
 		cum += c
@@ -1192,17 +1261,21 @@ func plotKnowledgeLorenz(repoName string, data *readers.KnowledgeDiffusionData, 
 
 	// Gini = 1 - 2 * area under the Lorenz curve (trapezoidal rule).
 	area := 0.0
+
 	for i := 1; i < len(lorenz); i++ {
 		dx := lorenz[i].X - lorenz[i-1].X
 		area += dx * (lorenz[i].Y + lorenz[i-1].Y) / 2
 	}
+
 	gini := 1 - 2*area
 
 	diagonal := xySeries{{X: 0, Y: 0}, {X: 1, Y: 1}}
+
 	title := fmt.Sprintf("Editor Distribution (Lorenz Curve) - Gini=%.3f", gini)
 	if repoName != "" {
 		title = fmt.Sprintf("%s - %s", repoName, title)
 	}
+
 	return plotLineSeries(
 		title,
 		"Cumulative Fraction of Files",
@@ -1221,23 +1294,27 @@ func HotspotRisk(reader readers.Reader, output string) error {
 	if !ok {
 		return fmt.Errorf("%w: hotspot risk", readers.ErrAnalysisMissing)
 	}
+
 	data, err := hotspotReader.GetHotspotRisk()
 	if err != nil {
 		return fmt.Errorf("failed to get hotspot risk data: %w", err)
 	}
+
 	if len(data.Files) == 0 {
-		return fmt.Errorf("no hotspot risk files found")
+		return errors.New("no hotspot risk files found")
 	}
 
 	files := append([]readers.HotspotRiskFile(nil), data.Files...)
 	sort.Slice(files, func(i, j int) bool {
 		return files[i].RiskScore > files[j].RiskScore
 	})
+
 	if len(files) > 20 {
 		files = files[:20]
 	}
 
 	labels := make([]string, len(files))
+
 	values := make(floatSeries, len(files))
 	for i, file := range files {
 		labels[i] = compactPathLabel(file.Path)
@@ -1462,24 +1539,29 @@ func buildTemporalHourCommitSeries(data *readers.TemporalActivityData) []tempora
 	}
 
 	developers := sortedIntKeys(data.Activities)
+
 	series := make([]temporalHourCommitSeries, 0, len(developers))
 	for _, developer := range developers {
 		activity := data.Activities[developer]
+
 		values := make([]int, 24)
 		for hour, commits := range activity.Hours.Commits {
 			if hour >= 0 && hour < len(values) {
 				values[hour] = commits
 			}
 		}
+
 		name := "Unknown"
 		if developer >= 0 && developer < len(data.People) {
 			name = data.People[developer]
 		}
+
 		series = append(series, temporalHourCommitSeries{
 			Name:   name,
 			Values: values,
 		})
 	}
+
 	return series
 }
 
@@ -1487,7 +1569,9 @@ func sampledTab20Colors(n int) []render.Color {
 	if n <= 0 {
 		return nil
 	}
+
 	palette := graphics.PythonLaboursColorPalette(20)
+
 	colors := make([]render.Color, n)
 	for i := range colors {
 		index := 0
@@ -1497,8 +1581,10 @@ func sampledTab20Colors(n int) []render.Color {
 				index = len(palette) - 1
 			}
 		}
+
 		colors[i] = renderColor(palette[index])
 	}
+
 	return colors
 }
 
@@ -1506,19 +1592,23 @@ func temporalActivityYTicks(maxValue float64) []float64 {
 	if maxValue <= 0 {
 		return []float64{0, 1}
 	}
+
 	step := 5.0
 	if maxValue > 100 {
 		step = 20
 	} else if maxValue > 50 {
 		step = 10
 	}
+
 	ticks := make([]float64, 0, int(math.Ceil(maxValue/step))+1)
 	for tick := 0.0; tick <= maxValue; tick += step {
 		ticks = append(ticks, tick)
 	}
+
 	if last := ticks[len(ticks)-1]; last < maxValue {
 		ticks = append(ticks, maxValue)
 	}
+
 	return ticks
 }
 
@@ -1526,17 +1616,18 @@ func temporalLegendNote(developers, legendThreshold, singleColumnThreshold int) 
 	if legendThreshold > 0 && developers > legendThreshold {
 		return fmt.Sprintf(" (legend suppressed above %d developers)", legendThreshold)
 	}
+
 	if singleColumnThreshold > 0 && developers <= singleColumnThreshold {
 		return " (single-column legend eligible)"
 	}
+
 	return ""
 }
 
 func knowledgeDistribution(data *readers.KnowledgeDiffusionData) ([]string, []int) {
 	distribution := make(map[int]int, len(data.Distribution))
-	for editors, files := range data.Distribution {
-		distribution[editors] = files
-	}
+	maps.Copy(distribution, data.Distribution)
+
 	if len(distribution) == 0 {
 		for _, file := range data.Files {
 			distribution[file.UniqueEditors]++
@@ -1547,14 +1638,17 @@ func knowledgeDistribution(data *readers.KnowledgeDiffusionData) ([]string, []in
 	for editors := range distribution {
 		keys = append(keys, editors)
 	}
+
 	sort.Ints(keys)
 
 	labels := make([]string, len(keys))
+
 	values := make([]int, len(keys))
 	for i, editors := range keys {
-		labels[i] = fmt.Sprintf("%d", editors)
+		labels[i] = strconv.Itoa(editors)
 		values[i] = distribution[editors]
 	}
+
 	return labels, values
 }
 
@@ -1563,6 +1657,7 @@ func plotIntBars(title, xLabel, yLabel string, labels []string, values []int, ou
 	for i, value := range values {
 		plotValues[i] = float64(value)
 	}
+
 	return plotFloatBars(title, xLabel, yLabel, labels, plotValues, output, defaultOutput)
 }
 
@@ -1571,10 +1666,12 @@ func plotFloatBars(title, xLabel, yLabel string, labels []string, values floatSe
 	if err != nil {
 		return err
 	}
+
 	plotValues := make([]float64, len(values))
 	for i, value := range values {
 		plotValues[i] = float64(value)
 	}
+
 	width, height := reportPlotInches(defaultOutput)
 	if err := graphics.PlotBarChartMatplotlib(labels, plotValues, graphics.MatplotlibBarOptions{
 		Title:        title,
@@ -1587,7 +1684,9 @@ func plotFloatBars(title, xLabel, yLabel string, labels []string, values floatSe
 	}); err != nil {
 		return err
 	}
+
 	fmt.Printf("Saved %s\n", output)
+
 	return nil
 }
 
@@ -1596,26 +1695,32 @@ func plotBusFactorSubsystemsMatplotlib(repoName string, labels []string, values 
 	if err != nil {
 		return err
 	}
+
 	width, height := busFactorSubsystemPlotPixels(len(labels))
 	fig := newReportFigure(width, height)
+
 	ax, err := reportFigureAxes(fig)
 	if err != nil {
-		return fmt.Errorf("failed to create bus factor subsystem axes")
+		return errors.New("failed to create bus factor subsystem axes")
 	}
+
 	configureBusFactorSubsystemAxes(ax, repoName, labels, values, threshold)
 
 	if err := saveReportFigure(fig, output, width, height); err != nil { // TightLayout ~ Python tight_layout
 		return err
 	}
+
 	fmt.Printf("Saved %s\n", output)
+
 	return nil
 }
 
 func reportFigureAxes(fig *core.Figure) (*core.Axes, error) {
 	grid := fig.Subplots(1, 1)
 	if len(grid) == 0 || len(grid[0]) == 0 || grid[0][0] == nil {
-		return nil, fmt.Errorf("figure has no axes")
+		return nil, errors.New("figure has no axes")
 	}
+
 	return grid[0][0], nil
 }
 
@@ -1631,6 +1736,7 @@ func configureBusFactorSubsystemAxes(
 	} else {
 		ax.SetTitle(fmt.Sprintf("Bus Factor by Subsystem (threshold: %.0f%%)", threshold*100))
 	}
+
 	ax.SetXLabel("Bus Factor")
 	ax.XAxis.Locator = ticker.MaxNLocator{Integer: true}
 
@@ -1638,14 +1744,17 @@ func configureBusFactorSubsystemAxes(
 	barValues := make([]float64, len(values))
 	ticks := make([]float64, len(values))
 	maxValue := 0.0
+
 	for i, value := range values {
 		y[i] = float64(i)
 		ticks[i] = float64(i)
 		barValues[i] = float64(value)
 		maxValue = math.Max(maxValue, barValues[i])
 	}
+
 	orientation := core.BarHorizontal
 	barHeight := 0.6
+
 	for i, value := range values {
 		barColor := renderColor(busFactorColor(value))
 		_, _ = ax.Bar([]float64{y[i]}, []float64{barValues[i]}, core.BarOptions{
@@ -1654,8 +1763,9 @@ func configureBusFactorSubsystemAxes(
 			Orientation: optional.Of(orientation),
 		})
 	}
+
 	for i, value := range values {
-		ax.Text(float64(value)+0.1, y[i], fmt.Sprintf("%d", value), core.TextOptions{
+		ax.Text(float64(value)+0.1, y[i], strconv.Itoa(value), core.TextOptions{
 			FontSize: 9.6,
 			VAlign:   core.TextVAlignMiddle,
 		})
@@ -1675,6 +1785,7 @@ func configureBusFactorSubsystemAxes(
 	yMax := float64(len(labels)-1) + 0.3
 	yMargin := 0.05 * (yMax - yMin)
 	ax.SetYLim(yMin-yMargin, yMax+yMargin)
+
 	if busFactorSubsystemInvertY() {
 		ax.InvertY()
 	}
@@ -1713,12 +1824,14 @@ func plotKnowledgeSilos(repoName string, data *readers.KnowledgeDiffusionData, o
 	if len(files) == 0 {
 		return nil
 	}
+
 	if len(files) > 30 {
 		files = files[:30]
 	}
 
 	labels := make([]string, len(files))
 	uniqueValues := make(floatSeries, len(files))
+
 	recentValues := make(floatSeries, len(files))
 	for i, file := range files {
 		labels[i] = truncateKnowledgeSiloLabel(file.Path)
@@ -1848,6 +1961,7 @@ func drawKnowledgeSiloBars(axes *core.Axes, series knowledgeSiloSeries, windowMo
 
 func drawKnowledgeSiloLabels(axes *core.Axes, series knowledgeSiloSeries) {
 	clipOff := false
+
 	labelColor := render.Color{R: 0, G: 0, B: 0, A: 1}
 	for index := range series.labels {
 		drawKnowledgeSiloLabel(
@@ -1900,6 +2014,7 @@ func configureKnowledgeSiloLegend(axes *core.Axes) {
 // gated behind --knowledge-diffusion-detail.
 func plotKnowledgeTrend(data *readers.KnowledgeDiffusionData, output string) error {
 	trend := make(map[int]int)
+
 	for _, file := range data.Files {
 		for tick, editors := range file.UniqueEditorsOverTime {
 			if editors > trend[tick] {
@@ -1907,16 +2022,19 @@ func plotKnowledgeTrend(data *readers.KnowledgeDiffusionData, output string) err
 			}
 		}
 	}
+
 	if len(trend) == 0 {
 		return nil
 	}
 
 	ticks := sortedIntKeys(trend)
+
 	points := make(xySeries, len(ticks))
 	for i, tick := range ticks {
 		points[i].X = float64(tick)
 		points[i].Y = float64(trend[tick])
 	}
+
 	return plotLineSeries(
 		"Knowledge Diffusion Trend",
 		"Tick",
@@ -1942,12 +2060,15 @@ func sortedKnowledgeFiles(files map[string]readers.KnowledgeDiffusionFile) []kno
 			RecentEditors: file.RecentEditors,
 		})
 	}
+
 	sort.Slice(result, func(i, j int) bool {
 		if result[i].UniqueEditors == result[j].UniqueEditors {
 			return result[i].Path < result[j].Path
 		}
+
 		return result[i].UniqueEditors < result[j].UniqueEditors
 	})
+
 	return result
 }
 
@@ -1955,26 +2076,35 @@ func truncateKnowledgeSiloLabel(path string) string {
 	if len(path) > 60 {
 		return "..." + path[len(path)-57:]
 	}
+
 	return path
 }
 
 func writeHotspotRiskTable(files []readers.HotspotRiskFile, output string) error {
 	var buffer bytes.Buffer
 	buffer.WriteString("rank\trisk_score\tsize\tchurn\tcoupling_degree\townership_gini\tfile\n")
+
 	for i, file := range files {
 		fmt.Fprintf(&buffer, "%d\t%.6f\t%d\t%d\t%d\t%.6f\t%s\n",
 			i+1, file.RiskScore, file.Size, file.Churn, file.CouplingDegree, file.OwnershipGini, file.Path)
 	}
+
 	if output == "" {
 		output = "hotspot-risk-table.tsv"
 	}
-	if err := os.MkdirAll(filepath.Dir(output), 0o750); err != nil && filepath.Dir(output) != "." {
+
+	err := os.MkdirAll(filepath.Dir(output), 0o750)
+	if err != nil && filepath.Dir(output) != "." {
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
-	if err := os.WriteFile(output, buffer.Bytes(), 0o600); err != nil {
+
+	err = os.WriteFile(output, buffer.Bytes(), 0o600)
+	if err != nil {
 		return fmt.Errorf("failed to write hotspot risk table: %w", err)
 	}
+
 	fmt.Printf("Saved %s\n", output)
+
 	return nil
 }
 
@@ -2115,6 +2245,7 @@ func drawHotspotRiskBars(axes *core.Axes, series hotspotRiskSeries, repoName str
 	if err != nil {
 		return fmt.Errorf("failed to plot hotspot risk bars: %w", err)
 	}
+
 	bars.Colors = hotspotRiskColors(series.risk, series.maxRisk)
 	bars.EdgeColor = render.Color{R: 0, G: 0, B: 0, A: 1}
 	bars.EdgeWidth = 0.5
@@ -2159,6 +2290,7 @@ func drawHotspotRiskComponents(axes *core.Axes, series hotspotRiskSeries, alpha 
 	if err != nil {
 		return err
 	}
+
 	left := append([]float64(nil), series.size...)
 
 	err = addHotspotComponentBars(
@@ -2167,6 +2299,7 @@ func drawHotspotRiskComponents(axes *core.Axes, series hotspotRiskSeries, alpha 
 	if err != nil {
 		return err
 	}
+
 	addHotspotComponentValues(left, series.churn)
 
 	err = addHotspotComponentBars(
@@ -2175,6 +2308,7 @@ func drawHotspotRiskComponents(axes *core.Axes, series hotspotRiskSeries, alpha 
 	if err != nil {
 		return err
 	}
+
 	addHotspotComponentValues(left, series.coupling)
 
 	err = addHotspotComponentBars(
@@ -2183,6 +2317,7 @@ func drawHotspotRiskComponents(axes *core.Axes, series hotspotRiskSeries, alpha 
 	if err != nil {
 		return err
 	}
+
 	configureHotspotComponentAxes(axes, series)
 
 	return nil
@@ -2246,6 +2381,7 @@ func applyHotspotComponentAlpha(path string, alpha float64) error {
 	if err != nil {
 		return err
 	}
+
 	targetAlpha := uint8(math.Round(math.Max(0, math.Min(1, alpha)) * 255))
 
 	out, changed := normalizeHotspotComponentImage(img, targetAlpha)
@@ -2260,11 +2396,13 @@ func normalizeHotspotComponentImage(img image.Image, targetAlpha uint8) (*image.
 	bounds := img.Bounds()
 	out := image.NewNRGBA(bounds)
 	changed := false
+
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
 			pixel := color.NRGBAModel.Convert(img.At(x, y)).(color.NRGBA)
 			pixel, pixelChanged := normalizeHotspotComponentPixel(pixel, targetAlpha)
 			changed = changed || pixelChanged
+
 			out.SetNRGBA(x, y, pixel)
 		}
 	}
@@ -2330,6 +2468,7 @@ func writeReportMetricPNG(path string, img image.Image, purpose string) error {
 	if closeErr != nil {
 		return fmt.Errorf("failed to close %s PNG: %w", purpose, closeErr)
 	}
+
 	return nil
 }
 
@@ -2340,6 +2479,7 @@ func hotspotMaxima(files []readers.HotspotRiskFile) (float64, float64, float64) 
 		maxChurn = math.Max(maxChurn, float64(file.Churn))
 		maxCoupling = math.Max(maxCoupling, float64(file.CouplingDegree))
 	}
+
 	return maxSize, maxChurn, maxCoupling
 }
 
@@ -2347,9 +2487,11 @@ func hotspotSizeNormalized(file readers.HotspotRiskFile, maxSize float64) float6
 	if file.SizeNormalized > 0 {
 		return file.SizeNormalized
 	}
+
 	if maxSize <= 0 {
 		return 0
 	}
+
 	return math.Log(float64(file.Size)+1) / math.Log(maxSize+1)
 }
 
@@ -2357,9 +2499,11 @@ func hotspotNormalized(normalized, raw, maxValue float64) float64 {
 	if normalized > 0 {
 		return normalized
 	}
+
 	if maxValue <= 0 {
 		return 0
 	}
+
 	return raw / maxValue
 }
 
@@ -2369,8 +2513,10 @@ func hotspotDisplayName(label, path string) string {
 		if len(parts) > 3 {
 			return ".../" + strings.Join(parts[len(parts)-2:], "/")
 		}
+
 		return path
 	}
+
 	return label
 }
 
@@ -2378,10 +2524,12 @@ func hotspotRiskColors(values []float64, maxValue float64) []render.Color {
 	if maxValue <= 0 {
 		maxValue = 1
 	}
+
 	colors := make([]render.Color, len(values))
 	for i, value := range values {
 		colors[i] = renderColor(riskGradient(value / maxValue))
 	}
+
 	return colors
 }
 
@@ -2389,12 +2537,14 @@ func riskGradient(ratio float64) color.Color {
 	ratio = math.Max(0, math.Min(1, ratio))
 	if ratio < 0.5 {
 		t := ratio * 2
+
 		return interpolateColor(
 			color.RGBA{R: 26, G: 152, B: 80, A: 255},
 			color.RGBA{R: 255, G: 255, B: 191, A: 255},
 			t,
 		)
 	}
+
 	return interpolateColor(
 		color.RGBA{R: 255, G: 255, B: 191, A: 255},
 		color.RGBA{R: 215, G: 48, B: 39, A: 255},
@@ -2406,9 +2556,11 @@ func printHotspotRiskTable(files []readers.HotspotRiskFile, limit int) {
 	if len(files) < limit {
 		limit = len(files)
 	}
+
 	fmt.Printf("\nTop %d High-Risk Files\n", limit)
 	fmt.Printf("%-5s %8s %6s %6s %9s %6s  %s\n", "Rank", "Risk", "Size", "Churn", "Coupling", "Gini", "File")
-	for i := 0; i < limit; i++ {
+
+	for i := range limit {
 		file := files[i]
 		fmt.Printf("%-5d %8.4f %6d %6d %9d %6.3f  %s\n",
 			i+1, file.RiskScore, file.Size, file.Churn, file.CouplingDegree, file.OwnershipGini, file.Path)
@@ -2420,16 +2572,20 @@ func plotLineSeries(title, xLabel, yLabel string, series []namedSeries, output, 
 	if err != nil {
 		return err
 	}
+
 	plotSeries := make([]graphics.MatplotlibLineSeries, len(series))
 	for i, item := range series {
 		x := make([]float64, len(item.Points))
+
 		y := make([]float64, len(item.Points))
 		for j, point := range item.Points {
 			x[j] = point.X
 			y[j] = point.Y
 		}
+
 		plotSeries[i] = graphics.MatplotlibLineSeries{Name: item.Name, X: x, Y: y, Marker: true}
 	}
+
 	width, height := reportPlotInches(defaultOutput)
 	if err := graphics.PlotLineChartMatplotlib(plotSeries, graphics.MatplotlibLineOptions{
 		Title:        title,
@@ -2443,7 +2599,9 @@ func plotLineSeries(title, xLabel, yLabel string, series []namedSeries, output, 
 	}); err != nil {
 		return err
 	}
+
 	fmt.Printf("Saved %s\n", output)
+
 	return nil
 }
 
@@ -2451,11 +2609,14 @@ func resolveReportOutput(output, defaultOutput string) (string, error) {
 	if output == "" {
 		output = defaultOutput
 	}
+
 	if dir := filepath.Dir(output); dir != "." {
-		if err := os.MkdirAll(dir, 0o750); err != nil {
+		err := os.MkdirAll(dir, 0o750)
+		if err != nil {
 			return "", fmt.Errorf("failed to create output directory %s: %w", dir, err)
 		}
 	}
+
 	return output, nil
 }
 
@@ -2489,6 +2650,7 @@ func reportPlotPixels(defaultOutput string) (int, int) {
 func newReportFigure(width, height int) *core.Figure {
 	background := render.Color{R: 1, G: 1, B: 1, A: 0}
 	text := render.Color{R: 0, G: 0, B: 0, A: 1}
+
 	return core.NewFigure(
 		width,
 		height,
@@ -2505,6 +2667,7 @@ func newReportFigure(width, height int) *core.Figure {
 func newKnowledgeSilosFigure(width, height int) *core.Figure {
 	background := render.Color{R: 1, G: 1, B: 1, A: 0}
 	text := render.Color{R: 0, G: 0, B: 0, A: 1}
+
 	return core.NewFigure(
 		width,
 		height,
@@ -2525,6 +2688,7 @@ func newKnowledgeSilosFigure(width, height int) *core.Figure {
 func newHotspotRiskFigure(width, height int) *core.Figure {
 	background := render.Color{R: 1, G: 1, B: 1, A: 0}
 	text := render.Color{R: 0, G: 0, B: 0, A: 1}
+
 	return core.NewFigure(
 		width,
 		height,
@@ -2561,21 +2725,25 @@ func saveReportFigureDirect(fig *core.Figure, output string, width, height int) 
 		DPI:         100,
 		Transparent: true,
 	}
+
 	switch strings.ToLower(filepath.Ext(output)) {
 	case ".svg":
 		renderer, _, err := backends.NewRenderer("svg", config, nil)
 		if err != nil {
 			return fmt.Errorf("failed to create SVG renderer: %w", err)
 		}
+
 		return core.SaveSVG(fig, renderer, output)
 	default:
 		renderer, _, err := backends.NewRenderer("agg", config, backends.TextCapabilities)
 		if err != nil {
 			return fmt.Errorf("failed to create AGG renderer: %w", err)
 		}
+
 		if err := core.SavePNG(fig, renderer, output); err != nil {
 			return err
 		}
+
 		return whitenTransparentPNGMatte(output)
 	}
 }
@@ -2598,11 +2766,13 @@ func whitenTransparentImage(img image.Image) (*image.NRGBA, bool) {
 	bounds := img.Bounds()
 	out := image.NewNRGBA(bounds)
 	changed := false
+
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
 			pixel := color.NRGBAModel.Convert(img.At(x, y)).(color.NRGBA)
 			pixel, pixelChanged := whitenTransparentPixel(pixel)
 			changed = changed || pixelChanged
+
 			out.SetNRGBA(x, y, pixel)
 		}
 	}
@@ -2639,16 +2809,19 @@ func rangeWithPadding(values []float64, padding float64) (float64, float64) {
 	if len(values) == 0 {
 		return -padding, padding
 	}
+
 	minValue, maxValue := values[0], values[0]
 	for _, value := range values[1:] {
 		minValue = math.Min(minValue, value)
 		maxValue = math.Max(maxValue, value)
 	}
+
 	return minValue - padding, maxValue + padding
 }
 
 func renderColor(c color.Color) render.Color {
 	r, g, b, a := c.RGBA()
+
 	return render.Color{
 		R: float64(r) / 65535,
 		G: float64(g) / 65535,
@@ -2662,23 +2835,28 @@ func mustHexColor(hex string) color.RGBA {
 	if len(hex) != 6 {
 		return color.RGBA{A: 255}
 	}
+
 	r, err := strconv.ParseUint(hex[0:2], 16, 8)
 	if err != nil {
 		return color.RGBA{A: 255}
 	}
+
 	g, err := strconv.ParseUint(hex[2:4], 16, 8)
 	if err != nil {
 		return color.RGBA{A: 255}
 	}
+
 	b, err := strconv.ParseUint(hex[4:6], 16, 8)
 	if err != nil {
 		return color.RGBA{A: 255}
 	}
+
 	return color.RGBA{R: uint8(r), G: uint8(g), B: uint8(b), A: 255}
 }
 
 func interpolateColor(a, b color.RGBA, t float64) color.RGBA {
 	t = math.Max(0, math.Min(1, t))
+
 	return color.RGBA{
 		R: uint8(float64(a.R) + (float64(b.R)-float64(a.R))*t),
 		G: uint8(float64(a.G) + (float64(b.G)-float64(a.G))*t),
@@ -2692,7 +2870,9 @@ func sortedIntKeys[T any](values map[int]T) []int {
 	for key := range values {
 		keys = append(keys, key)
 	}
+
 	sort.Ints(keys)
+
 	return keys
 }
 
@@ -2701,28 +2881,36 @@ func topStringIntPairs(values map[string]int, limit int, descending bool) ([]str
 		Key   string
 		Value int
 	}
+
 	pairs := make([]pair, 0, len(values))
 	for key, value := range values {
 		pairs = append(pairs, pair{Key: key, Value: value})
 	}
+
 	sort.Slice(pairs, func(i, j int) bool {
 		if pairs[i].Value == pairs[j].Value {
 			return pairs[i].Key < pairs[j].Key
 		}
+
 		if descending {
 			return pairs[i].Value > pairs[j].Value
 		}
+
 		return pairs[i].Value < pairs[j].Value
 	})
+
 	if limit > 0 && len(pairs) > limit {
 		pairs = pairs[:limit]
 	}
+
 	labels := make([]string, len(pairs))
+
 	resultValues := make([]int, len(pairs))
 	for i, pair := range pairs {
 		labels[i] = pair.Key
 		resultValues[i] = pair.Value
 	}
+
 	return labels, resultValues
 }
 
@@ -2731,33 +2919,43 @@ func busFactorSubsystemPairs(values map[string]int, limit int) ([]string, []int)
 		Key   string
 		Value int
 	}
+
 	pairs := make([]pair, 0, len(values))
 	for key, value := range values {
 		pairs = append(pairs, pair{Key: key, Value: value})
 	}
+
 	sort.Slice(pairs, func(i, j int) bool {
 		if pairs[i].Value != pairs[j].Value {
 			return pairs[i].Value < pairs[j].Value
 		}
+
 		leftRank, leftKnown := busFactorSubsystemTieRank(pairs[i].Key)
+
 		rightRank, rightKnown := busFactorSubsystemTieRank(pairs[j].Key)
 		if leftKnown && rightKnown {
 			return leftRank < rightRank
 		}
+
 		if leftKnown != rightKnown {
 			return leftKnown
 		}
+
 		return pairs[i].Key < pairs[j].Key
 	})
+
 	if limit > 0 && len(pairs) > limit {
 		pairs = pairs[:limit]
 	}
+
 	labels := make([]string, len(pairs))
+
 	resultValues := make([]int, len(pairs))
 	for i, pair := range pairs {
 		labels[i] = pair.Key
 		resultValues[i] = pair.Value
 	}
+
 	return labels, resultValues
 }
 
@@ -2774,6 +2972,7 @@ func busFactorSubsystemTieRank(label string) (int, bool) {
 		"vendor/github.com/jeffail/tunny": 8,
 		"test_data":                       9,
 	}[label]
+
 	return rank, ok
 }
 
@@ -2781,14 +2980,17 @@ func siblingOutputPath(output, defaultOutput, suffix string) string {
 	if output == "" {
 		output = defaultOutput
 	}
+
 	ext := filepath.Ext(output)
 	if ext == "" {
 		ext = ".png"
 	}
+
 	base := output[:len(output)-len(filepath.Ext(output))]
 	if filepath.Ext(suffix) != "" {
 		return base + "_" + suffix
 	}
+
 	return base + "_" + suffix + ext
 }
 
@@ -2797,6 +2999,7 @@ func sumInts(values []int) int {
 	for _, value := range values {
 		total += value
 	}
+
 	return total
 }
 
@@ -2805,5 +3008,6 @@ func compactPathLabel(path string) string {
 	if len(base) <= 24 {
 		return base
 	}
+
 	return base[:21] + "..."
 }

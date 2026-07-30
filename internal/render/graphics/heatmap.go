@@ -66,6 +66,7 @@ func registerLaboursColormap(name string, colors []render.Color) {
 	for i, clr := range colors {
 		stops[i] = matcolor.ColorStop{Pos: float64(i) / float64(len(colors)-1), Color: clr}
 	}
+
 	matcolor.RegisterColormap(name, matcolor.NewColormap(name, stops))
 }
 
@@ -73,10 +74,12 @@ func ValidateHeatMap(matrix [][]float64, rows, cols []string) error {
 	if len(matrix) != len(rows) {
 		return fmt.Errorf("heatmap row count mismatch: matrix has %d rows, labels have %d", len(matrix), len(rows))
 	}
+
 	for i, row := range matrix {
 		if len(row) != len(cols) {
 			return fmt.Errorf("heatmap column count mismatch on row %d: matrix has %d columns, labels have %d", i, len(row), len(cols))
 		}
 	}
+
 	return nil
 }

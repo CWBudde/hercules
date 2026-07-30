@@ -1,11 +1,13 @@
 package modes
 
 import (
+	"errors"
 	"fmt"
 	"image/color"
 	"math"
 	"os"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/cwbudde/hercules/internal/render/graphics"
@@ -21,6 +23,7 @@ import (
 func DevsEfforts(reader readers.Reader, output string, maxPeople int, detail bool) error {
 	opts := defaultOptions()
 	opts.MaxPeople, opts.DevsEffortsDetail = maxPeople, detail
+
 	return DevsEffortsWithOptions(reader, output, opts)
 }
 
@@ -30,12 +33,14 @@ func DevsEffortsWithOptions(reader readers.Reader, output string, opts Options) 
 	progEstimator := progress.NewProgressEstimator(!quiet)
 
 	totalPhases := 4 // data extraction, time series, analysis, plotting
+
 	progEstimator.StartMultiOperation(totalPhases, "Developer Efforts Analysis")
 	defer progEstimator.FinishMultiOperation()
 
 	// Phase 1: Extract developer statistics (drives the optional ranking chart
 	// and the scatter fallback).
 	progEstimator.NextOperation("Extracting developer statistics")
+
 	developerStats, err := reader.GetDeveloperStats()
 	if err != nil {
 		return fmt.Errorf("failed to get developer stats: %w", err)
@@ -44,17 +49,21 @@ func DevsEffortsWithOptions(reader readers.Reader, output string, opts Options) 
 	// Phase 2: Build the per-day efforts time series when available.
 	progEstimator.NextOperation("Building effort time series")
 	progEstimator.NextOperation("Analyzing developer efforts")
+
 	effortsTimeSeries := loadDevEffortsTimeSeries(reader, maxPeople, quiet)
 
 	// Phase 4: Generate the primary plot.
 	progEstimator.NextOperation("Generating visualization")
+
 	if err := renderDevEffortsPrimary(effortsTimeSeries, developerStats, output, maxPeople, quiet, opts.Graphics); err != nil {
 		return err
 	}
 
 	if detail {
 		rankingOutput := siblingOutputPath(output, "devs-efforts.png", "productivity_ranking")
-		if err := plotProductivityRanking(effortMetricsForRanking(developerStats, maxPeople), rankingOutput, opts.Graphics); err != nil {
+
+		err := plotProductivityRanking(effortMetricsForRanking(developerStats, maxPeople), rankingOutput, opts.Graphics)
+		if err != nil {
 			return fmt.Errorf("failed to generate developer productivity ranking: %w", err)
 		}
 	}
@@ -62,11 +71,13 @@ func DevsEffortsWithOptions(reader readers.Reader, output string, opts Options) 
 	if !quiet {
 		fmt.Println("Developer efforts analysis completed successfully.")
 	}
+
 	return nil
 }
 
 func loadDevEffortsTimeSeries(reader readers.Reader, maxPeople int, quiet bool) *devEffortsMatrix {
 	timeSeries, err := reader.GetDeveloperTimeSeriesData()
+
 	startUnix, endUnix := reader.GetHeader()
 	if err != nil || timeSeries == nil || len(timeSeries.Days) == 0 || endUnix <= startUnix {
 		return nil
@@ -77,8 +88,10 @@ func loadDevEffortsTimeSeries(reader readers.Reader, maxPeople int, quiet bool) 
 		if !quiet {
 			fmt.Printf("Falling back to commits-vs-lines scatter: %v\n", err)
 		}
+
 		return nil
 	}
+
 	return &built
 }
 
@@ -91,18 +104,23 @@ func renderDevEffortsPrimary(
 	visuals graphics.Options,
 ) error {
 	if timeSeries != nil {
-		if err := plotDevEffortsTimeSeries(*timeSeries, output, visuals); err != nil {
+		err := plotDevEffortsTimeSeries(*timeSeries, output, visuals)
+		if err != nil {
 			return fmt.Errorf("failed to generate developer efforts plot: %w", err)
 		}
+
 		return nil
 	}
 
 	if maxPeople > 0 && len(stats) > maxPeople && !quiet {
 		fmt.Printf("Picking top %d developers by commit count.\n", maxPeople)
 	}
-	if err := plotDevEfforts(effortMetricsForRanking(stats, maxPeople), output, visuals); err != nil {
+
+	err := plotDevEfforts(effortMetricsForRanking(stats, maxPeople), output, visuals)
+	if err != nil {
 		return fmt.Errorf("failed to generate developer efforts plots: %w", err)
 	}
+
 	return nil
 }
 
@@ -112,10 +130,11 @@ func effortMetricsForRanking(stats []readers.DeveloperStat, maxPeople int) []Eff
 	if maxPeople > 0 && len(stats) > maxPeople {
 		stats = selectTopDevelopers(stats, maxPeople)
 	}
+
 	return analyzeDevEfforts(stats)
 }
 
-// EffortMetric represents effort analysis for a developer
+// EffortMetric represents effort analysis for a developer.
 type EffortMetric struct {
 	Name             string
 	Commits          int
@@ -126,7 +145,7 @@ type EffortMetric struct {
 	ProductivityRank int
 }
 
-// analyzeDevEfforts performs effort analysis on developer statistics
+// analyzeDevEfforts performs effort analysis on developer statistics.
 func analyzeDevEfforts(stats []readers.DeveloperStat) []EffortMetric {
 	metrics := make([]EffortMetric, 0, len(stats))
 
@@ -147,6 +166,7 @@ func analyzeDevEfforts(stats []readers.DeveloperStat) []EffortMetric {
 	sort.Slice(metrics, func(i, j int) bool {
 		scoreI := float64(metrics[i].Commits) + float64(metrics[i].LinesAdded+metrics[i].LinesRemoved+metrics[i].LinesModified)*0.01
 		scoreJ := float64(metrics[j].Commits) + float64(metrics[j].LinesAdded+metrics[j].LinesRemoved+metrics[j].LinesModified)*0.01
+
 		return scoreI > scoreJ
 	})
 
@@ -165,10 +185,11 @@ func plotDevEfforts(metrics []EffortMetric, output string, visuals graphics.Opti
 	if output == "" {
 		output = "devs-efforts.png"
 	}
+
 	return plotCommitsVsLines(metrics, output, visuals)
 }
 
-// plotCommitsVsLines creates scatter plot of commits vs total lines changed
+// plotCommitsVsLines creates scatter plot of commits vs total lines changed.
 func plotCommitsVsLines(metrics []EffortMetric, output string, visuals graphics.Options) error {
 	points := make([]graphics.MatplotlibScatterPoint, len(metrics))
 	for i, metric := range metrics {
@@ -179,14 +200,17 @@ func plotCommitsVsLines(metrics []EffortMetric, output string, visuals graphics.
 		if i < 10 { // Only label top 10 to avoid clutter
 			point.Label = peopleChartLabel(metric.Name)
 		}
+
 		points[i] = point
 	}
 
 	palette := visuals.Palette()
+
 	series := []graphics.MatplotlibScatterSeries{
 		{Name: "Developers", Points: points, Color: palette[0], Size: 32},
 	}
-	if err := graphics.PlotScatterMatplotlib(series, graphics.MatplotlibScatterOptions{
+
+	err := graphics.PlotScatterMatplotlib(series, graphics.MatplotlibScatterOptions{
 		Title:          "Developer Efforts: Commits vs Lines Changed",
 		XLabel:         "Total Commits",
 		YLabel:         "Total Lines Changed",
@@ -196,11 +220,13 @@ func plotCommitsVsLines(metrics []EffortMetric, output string, visuals graphics.
 		ShowGrid:       true,
 		AnnotateLabels: true,
 		FontSize:       visuals.PlotFontSize(),
-	}); err != nil {
+	})
+	if err != nil {
 		return fmt.Errorf("failed to save devs-efforts plot %s: %w", output, err)
 	}
 
 	fmt.Printf("Saved devs-efforts plot to %s\n", output)
+
 	return nil
 }
 
@@ -218,15 +244,17 @@ func plotProductivityRanking(metrics []EffortMetric, output string, visuals grap
 	}
 
 	labels := make([]string, maxDev)
+
 	values := make([]float64, maxDev)
-	for i := 0; i < maxDev; i++ {
+	for i := range maxDev {
 		metric := metrics[i]
-		labels[i] = fmt.Sprintf("%d", i+1)
+		labels[i] = strconv.Itoa(i + 1)
 		values[i] = float64(metric.Commits) + float64(metric.LinesAdded+metric.LinesRemoved+metric.LinesModified)*0.01
 	}
 
 	barColor := color.RGBA{R: 245, G: 133, B: 24, A: 255}
-	if err := graphics.PlotBarChartMatplotlib(labels, values, graphics.MatplotlibBarOptions{
+
+	err := graphics.PlotBarChartMatplotlib(labels, values, graphics.MatplotlibBarOptions{
 		Title:        "Developer Productivity Ranking",
 		XLabel:       "Developer Rank",
 		YLabel:       "Productivity Score (Commits + Lines/100)",
@@ -241,11 +269,13 @@ func plotProductivityRanking(metrics []EffortMetric, output string, visuals grap
 		XMin:         -0.64,
 		XMax:         float64(maxDev) - 0.36,
 		FontSize:     visuals.PlotFontSize(),
-	}); err != nil {
+	})
+	if err != nil {
 		return fmt.Errorf("failed to save productivity ranking plot: %w", err)
 	}
 
 	fmt.Printf("Saved developer productivity ranking plot to %s\n", output)
+
 	return nil
 }
 
@@ -267,15 +297,17 @@ type rankedDevEffort struct {
 // cumulative sums, and applies Slepian/DPSS smoothing.
 func buildDevEffortsMatrix(ts *readers.DeveloperTimeSeriesData, startUnix, endUnix int64, maxPeople int, quiet bool) (devEffortsMatrix, error) {
 	start := dateOnly(time.Unix(startUnix, 0))
+
 	numDays := calendarDayCount(start, dateOnly(time.Unix(endUnix, 0)))
 	if numDays < 2 {
-		return devEffortsMatrix{}, fmt.Errorf("not enough days for an effort time series")
+		return devEffortsMatrix{}, errors.New("not enough days for an effort time series")
 	}
 
 	ranked := rankDeveloperEfforts(ts.Days)
 	if len(ranked) == 0 {
-		return devEffortsMatrix{}, fmt.Errorf("no developer effort data")
+		return devEffortsMatrix{}, errors.New("no developer effort data")
 	}
+
 	chosen := chooseDeveloperEfforts(ranked, maxPeople, quiet)
 	efforts := collectDailyDeveloperEfforts(ts.Days, chosen, numDays)
 	cumulative := cumulativeEfforts(efforts)
@@ -290,6 +322,7 @@ func buildDevEffortsMatrix(ts *readers.DeveloperTimeSeriesData, startUnix, endUn
 
 func rankDeveloperEfforts(days map[int]map[int]readers.DevDay) []rankedDevEffort {
 	effortsByDev := make(map[int]int)
+
 	for _, devs := range days {
 		for dev, stats := range devs {
 			effortsByDev[dev] += nonNegativeDevEffort(stats)
@@ -300,12 +333,15 @@ func rankDeveloperEfforts(days map[int]map[int]readers.DevDay) []rankedDevEffort
 	for dev, effort := range effortsByDev {
 		ranked = append(ranked, rankedDevEffort{effort: effort, dev: dev})
 	}
+
 	sort.Slice(ranked, func(i, j int) bool {
 		if ranked[i].effort == ranked[j].effort {
 			return ranked[i].dev < ranked[j].dev
 		}
+
 		return ranked[i].effort > ranked[j].effort
 	})
+
 	return ranked
 }
 
@@ -317,6 +353,7 @@ func chooseDeveloperEfforts(ranked []rankedDevEffort, maxPeople int, quiet bool)
 			fmt.Fprintf(os.Stderr, "Warning: truncated people to the most active %d\n", maxPeople)
 		}
 	}
+
 	return ranked[:chosenCount]
 }
 
@@ -326,10 +363,12 @@ func collectDailyDeveloperEfforts(
 	numDays int,
 ) [][]float64 {
 	chosenCount := len(chosen)
+
 	chosenOrder := make(map[int]int, chosenCount)
 	for i, item := range chosen {
 		chosenOrder[item.dev] = i
 	}
+
 	othersRow := chosenCount
 	rows := chosenCount + 1
 
@@ -337,10 +376,12 @@ func collectDailyDeveloperEfforts(
 	for i := range efforts {
 		efforts[i] = make([]float64, numDays)
 	}
+
 	for day, devs := range days {
 		if day < 0 || day >= numDays {
 			continue
 		}
+
 		for dev, stats := range devs {
 			row, ok := chosenOrder[dev]
 			if !ok {
@@ -350,6 +391,7 @@ func collectDailyDeveloperEfforts(
 			efforts[row][day] += float64(nonNegativeDevEffort(stats))
 		}
 	}
+
 	return efforts
 }
 
@@ -357,12 +399,14 @@ func cumulativeEfforts(efforts [][]float64) [][]float64 {
 	cumulative := make([][]float64, len(efforts))
 	for i := range efforts {
 		cumulative[i] = make([]float64, len(efforts[i]))
+
 		running := 0.0
 		for day, effort := range efforts[i] {
 			running += effort
 			cumulative[i][day] = running
 		}
 	}
+
 	return cumulative
 }
 
@@ -373,6 +417,7 @@ func normalizedSlepianWindow(m int, bw float64) []float64 {
 			window[i] /= sum
 		}
 	}
+
 	return window
 }
 
@@ -381,6 +426,7 @@ func developerEffortNames(chosen []rankedDevEffort, people []string) []string {
 	for _, item := range chosen {
 		names = append(names, developerEffortName(item.dev, people))
 	}
+
 	return append(names, "others")
 }
 
@@ -393,20 +439,24 @@ func developerEffortName(dev int, people []string) string {
 		// could not be identified (Python labours labels it "Unidentified").
 		name = "Unidentified"
 	}
+
 	if name == "" {
 		name = fmt.Sprintf("developer %d", dev)
 	}
+
 	if len(name) > 40 {
 		return name[:37] + "..."
 	}
+
 	return name
 }
 
 func consecutiveDates(start time.Time, numDays int) []time.Time {
 	dates := make([]time.Time, numDays)
-	for i := 0; i < numDays; i++ {
+	for i := range numDays {
 		dates[i] = start.AddDate(0, 0, i)
 	}
+
 	return dates
 }
 
@@ -440,7 +490,9 @@ func plotDevEffortsTimeSeries(data devEffortsMatrix, output string, visuals grap
 	if err != nil {
 		return err
 	}
+
 	fmt.Printf("Saved devs-efforts plot to %s\n", output)
+
 	return nil
 }
 
@@ -453,6 +505,7 @@ func slepianWindow(m int, bw float64) []float64 {
 	if m <= 0 {
 		return nil
 	}
+
 	if m == 1 {
 		return []float64{1}
 	}
@@ -466,32 +519,39 @@ func slepianWindow(m int, bw float64) []float64 {
 			v[i] = -v[i]
 		}
 	}
+
 	return v
 }
 
 func slepianTridiagonal(m int, bw float64) ([]float64, []float64) {
 	cos2piW := math.Cos(2 * math.Pi * bw / 4)
 	diag := make([]float64, m)
+
 	off := make([]float64, m) // off[n] couples rows n-1 and n (n = 1..m-1)
-	for n := 0; n < m; n++ {
+	for n := range m {
 		t := float64(m-1-2*n) / 2
 		diag[n] = t * t * cos2piW
 	}
+
 	for n := 1; n < m; n++ {
 		off[n] = float64(n) * float64(m-n) / 2
 	}
+
 	return diag, off
 }
 
 func positiveDefiniteShift(diag, off []float64) float64 {
 	minBound := math.Inf(1)
+
 	for n := range diag {
 		radius := adjacentOffDiagonalSum(off, n)
 		minBound = math.Min(minBound, diag[n]-radius)
 	}
+
 	if minBound < 0 {
 		return -minBound + 1
 	}
+
 	return 0
 }
 
@@ -500,9 +560,11 @@ func adjacentOffDiagonalSum(off []float64, n int) float64 {
 	if n >= 1 {
 		radius += math.Abs(off[n])
 	}
+
 	if n+1 < len(off) {
 		radius += math.Abs(off[n+1])
 	}
+
 	return radius
 }
 
@@ -511,14 +573,17 @@ func dominantTridiagonalEigenvector(diag, off []float64, shift float64) []float6
 	for i := range vector {
 		vector[i] = 1
 	}
+
 	next := make([]float64, len(diag))
 	for range 2000 {
 		multiplyShiftedTridiagonal(next, vector, diag, off, shift)
+
 		norm := vectorNorm(next)
 		if norm == 0 || normalizeEigenvector(vector, next, norm) < 1e-12 {
 			break
 		}
 	}
+
 	return vector
 }
 
@@ -528,6 +593,7 @@ func multiplyShiftedTridiagonal(dst, vector, diag, off []float64, shift float64)
 		if n >= 1 {
 			dst[n] += off[n] * vector[n-1]
 		}
+
 		if n+1 < len(diag) {
 			dst[n] += off[n+1] * vector[n+1]
 		}
@@ -539,16 +605,19 @@ func vectorNorm(vector []float64) float64 {
 	for _, value := range vector {
 		squared += value * value
 	}
+
 	return math.Sqrt(squared)
 }
 
 func normalizeEigenvector(vector, next []float64, norm float64) float64 {
 	diff := 0.0
+
 	for n := range next {
 		scaled := next[n] / norm
 		diff += math.Abs(scaled - vector[n])
 		vector[n] = scaled
 	}
+
 	return diff
 }
 
@@ -558,14 +627,18 @@ func smoothRowsPreserveTail(matrix [][]float64, window []float64) {
 	if len(window) == 0 {
 		return
 	}
+
 	tail := len(window) * 2
+
 	for i := range matrix {
 		row := matrix[i]
 		n := len(row)
+
 		endLen := tail
 		if endLen > n {
 			endLen = n
 		}
+
 		ending := append([]float64(nil), row[n-endLen:]...)
 		smoothed := convolveSame(row, window)
 		copy(smoothed[n-endLen:], ending)
@@ -578,5 +651,6 @@ func sumFloat64(values []float64) float64 {
 	for _, v := range values {
 		total += v
 	}
+
 	return total
 }

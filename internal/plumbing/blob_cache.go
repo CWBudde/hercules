@@ -283,10 +283,12 @@ func (*BlobCache) ConfigureUpstream(facts map[string]any) error {
 func (blobCache *BlobCache) Initialize(repository *git.Repository) error {
 	blobCache.l = core.NewLogger()
 	blobCache.repository = repository
+
 	blobCache.cache = map[plumbing.Hash]*CachedBlob{}
 	if blobCache.MaxBlobSize <= 0 {
 		blobCache.MaxBlobSize = DefaultBlobCacheMaxBlobSize
 	}
+
 	if blobCache.MaxCommitSize <= 0 {
 		blobCache.MaxCommitSize = DefaultBlobCacheMaxCommitSize
 	}
@@ -429,6 +431,7 @@ func (blobCache *BlobCache) cacheFrom(
 		}
 
 		cache[entry.TreeEntry.Hash] = cached
+
 		return nil
 	}
 
@@ -451,7 +454,9 @@ func (blobCache *BlobCache) cacheFrom(
 		blobCache.l.Errorf("file from %s %s: %v\n", entry.Name, entry.TreeEntry.Hash, err)
 		return err
 	}
+
 	cache[entry.TreeEntry.Hash] = cached
+
 	return nil
 }
 
@@ -464,10 +469,13 @@ func (blobCache *BlobCache) cacheDummyBlob(
 	if err != nil {
 		return fmt.Errorf("create placeholder for missing blob %s: %w", hash, err)
 	}
+
 	if err := blobCache.validateAndReserve(blob, budget); err != nil {
 		return err
 	}
+
 	cache[hash] = &CachedBlob{Blob: *blob}
+
 	return nil
 }
 

@@ -37,7 +37,7 @@ func TestGenerateHSVColorsDistinct(t *testing.T) {
 	// Test that generated colors are distinct
 	colors := GenerateHSVColors(10)
 
-	for i := 0; i < len(colors); i++ {
+	for i := range colors {
 		for j := i + 1; j < len(colors); j++ {
 			rgba1 := colors[i].(color.RGBA)
 			rgba2 := colors[j].(color.RGBA)
@@ -280,7 +280,7 @@ func calculateContrast(c1, c2 color.Color) float64 {
 func generateGradient(start, end color.RGBA, steps int) []color.RGBA {
 	gradient := make([]color.RGBA, steps)
 
-	for i := 0; i < steps; i++ {
+	for i := range steps {
 		t := float64(i) / float64(steps-1)
 		gradient[i] = interpolateColor(start, end, t)
 	}
@@ -318,7 +318,7 @@ func mod(x, y float64) float64 {
 
 func GenerateHSVColors(count int) []color.Color {
 	colors := make([]color.Color, count)
-	for i := 0; i < count; i++ {
+	for i := range count {
 		hue := float64(i) / float64(count) * 360
 		colors[i] = hsvToRGBA(hue, 0.7, 0.9)
 	}

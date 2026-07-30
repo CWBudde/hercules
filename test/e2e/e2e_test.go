@@ -174,7 +174,8 @@ func TestRemoteCacheSafety(t *testing.T) {
 	requireRegularFile(t, filepath.Join(cache, remoteCacheMarker))
 
 	staleFile := filepath.Join(cache, "stale-user-data")
-	if err := os.WriteFile(staleFile, []byte("replace me"), 0o600); err != nil {
+	err := os.WriteFile(staleFile, []byte("replace me"), 0o600)
+	if err != nil {
 		t.Fatalf("write stale cache file: %v", err)
 	}
 	result = runCommand(
@@ -188,11 +189,13 @@ func TestRemoteCacheSafety(t *testing.T) {
 	}
 
 	unrelated := filepath.Join(t.TempDir(), "unrelated")
-	if err := os.Mkdir(unrelated, 0o750); err != nil {
+	err = os.Mkdir(unrelated, 0o750)
+	if err != nil {
 		t.Fatalf("create unrelated directory: %v", err)
 	}
 	sentinel := filepath.Join(unrelated, "keep-me")
-	if err := os.WriteFile(sentinel, []byte("unrelated"), 0o600); err != nil {
+	err = os.WriteFile(sentinel, []byte("unrelated"), 0o600)
+	if err != nil {
 		t.Fatalf("write unrelated sentinel: %v", err)
 	}
 	result = runCommand(
@@ -213,12 +216,14 @@ func TestCombineCommand(t *testing.T) {
 	requireSuccess(t, result)
 
 	var combined pb.AnalysisResults
-	if err := proto.Unmarshal(result.stdout, &combined); err != nil {
+	err := proto.Unmarshal(result.stdout, &combined)
+	if err != nil {
 		t.Fatalf("decode combined protobuf: %v", err)
 	}
-	if err := analysisio.ValidateAndMigrateAnalysisResults(
+	err = analysisio.ValidateAndMigrateAnalysisResults(
 		&combined, analysisio.DefaultLimits(),
-	); err != nil {
+	)
+	if err != nil {
 		t.Fatalf("validate combined protobuf: %v", err)
 	}
 	if len(combined.GetContents()["Devs"]) == 0 {

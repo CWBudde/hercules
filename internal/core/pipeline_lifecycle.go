@@ -122,12 +122,16 @@ func validateTickSizeFact(facts map[string]any, key string) error {
 }
 
 func (pipeline *Pipeline) applyConfigurationFacts(facts map[string]any) error {
-	if err := pipeline.applyLoggerFact(facts); err != nil {
+	err := pipeline.applyLoggerFact(facts)
+	if err != nil {
 		return err
 	}
-	if err := pipeline.applyBoolConfigurationFacts(facts); err != nil {
+
+	err = pipeline.applyBoolConfigurationFacts(facts)
+	if err != nil {
 		return err
 	}
+
 	return pipeline.applyHibernationDistanceFact(facts)
 }
 
@@ -142,6 +146,7 @@ func (pipeline *Pipeline) applyLoggerFact(facts map[string]any) error {
 	} else {
 		facts[ConfigLogger] = pipeline.l
 	}
+
 	return nil
 }
 
@@ -159,10 +164,12 @@ func (pipeline *Pipeline) applyBoolConfigurationFacts(facts map[string]any) erro
 		if err != nil {
 			return err
 		}
+
 		if exists {
 			*configuration.target = value
 		}
 	}
+
 	return nil
 }
 
@@ -171,15 +178,20 @@ func (pipeline *Pipeline) applyHibernationDistanceFact(facts map[string]any) err
 	if err != nil {
 		return err
 	}
+
 	if !exists {
 		return nil
 	}
+
 	if distance < 0 {
 		err := fmt.Errorf("%w (got %d)", errNegativeHibernationDistance, distance)
 		pipeline.l.Error(err)
+
 		return err
 	}
+
 	pipeline.HibernationDistance = distance
+
 	return nil
 }
 

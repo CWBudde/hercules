@@ -3,6 +3,7 @@ package graphics
 import (
 	"image/color"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -159,13 +160,7 @@ func TestThemeManager(t *testing.T) {
 	}
 
 	for _, expected := range expectedThemes {
-		found := false
-		for _, theme := range themes {
-			if theme == expected {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(themes, expected)
 		if !found {
 			t.Errorf("Expected theme '%s' not found in list", expected)
 		}
@@ -242,7 +237,8 @@ func TestBuiltinThemes(t *testing.T) {
 	// Test that all built-in themes are valid
 	for name, theme := range BuiltinThemes {
 		t.Run(name, func(t *testing.T) {
-			if err := theme.Validate(); err != nil {
+			err := theme.Validate()
+			if err != nil {
 				t.Errorf("Built-in theme '%s' is invalid: %v", name, err)
 			}
 

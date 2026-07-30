@@ -1,10 +1,7 @@
 package leaves
 
 import (
-	"errors"
 	"fmt"
-	"maps"
-	"os"
 	"path"
 
 	"github.com/go-git/go-git/v5"
@@ -13,8 +10,6 @@ import (
 	"github.com/cwbudde/hercules/internal/linehistory"
 	items "github.com/cwbudde/hercules/internal/plumbing"
 )
-
-var errOwnershipUnderflow = errors.New("incremental ownership total became negative")
 
 const dependencyOwnershipSnapshot = "ownership_snapshot"
 
@@ -39,6 +34,7 @@ type ownershipSnapshotUpdate struct {
 type ownershipSnapshotter struct {
 	core.NoopMerger
 
+	l         core.Logger
 	ownership ownershipSnapshotAccumulator
 }
 
@@ -61,7 +57,11 @@ func (*ownershipSnapshotter) ListConfigurationOptions() []core.ConfigurationOpti
 	return nil
 }
 
-func (*ownershipSnapshotter) Configure(map[string]any) error {
+func (snapshotter *ownershipSnapshotter) Configure(facts map[string]any) error {
+	if l, exists := facts[core.ConfigLogger].(core.Logger); exists {
+		snapshotter.l = l
+	}
+
 	return nil
 }
 
@@ -71,6 +71,10 @@ func (*ownershipSnapshotter) ConfigureUpstream(map[string]any) error {
 
 func (snapshotter *ownershipSnapshotter) Initialize(*git.Repository) error {
 	snapshotter.ownership.reset()
+
+	if snapshotter.l == nil {
+		snapshotter.l = core.NewLogger()
+	}
 
 	return nil
 }
@@ -86,10 +90,8 @@ func (snapshotter *ownershipSnapshotter) Consume(
 		return nil, reader.err
 	}
 
-	closedTick, closedTotals, err := snapshotter.ownership.consume(tick, changes)
-	if err != nil {
-		return nil, fmt.Errorf("update ownership snapshot: %w", err)
-	}
+	closedTick, closedTotals := snapshotter.ownership.consume(tick, changes)
+	snapshotter.reportDivergence()
 
 	return map[string]any{
 		dependencyOwnershipSnapshot: ownershipSnapshotUpdate{
@@ -104,18 +106,52 @@ func (snapshotter *ownershipSnapshotter) Fork(n int) []core.PipelineItem {
 	return core.ForkSamePipelineItem(snapshotter, n)
 }
 
+// reportDivergence says once that this history drives ownership totals below zero, and why.
+// Saying it every time would be one line per commit on a repository with a long-lived branch.
+func (snapshotter *ownershipSnapshotter) reportDivergence() {
+	report := snapshotter.ownership.divergence
+	if report == nil || report.reported {
+		return
+	}
+
+	report.reported = true
+
+	if snapshotter.l == nil {
+		return
+	}
+
+	snapshotter.l.Warnf(
+		"ownership of %s went to %d lines. Divergent branches remove the same lines from their "+
+			"own copy of a file, and every branch feeds this one accumulator, so a total can dip "+
+			"below zero until the branches merge and the duplication cancels. Snapshots report "+
+			"zero for such a total; further occurrences are not reported.\n",
+		report.scope, report.value,
+	)
+}
+
 // ownershipSnapshotAccumulator incrementally follows LineHistoryChanges. It closes an occupied
 // tick before applying the first commit from a later tick, so callers can never label future state
 // as belonging to the previous tick.
 type ownershipSnapshotAccumulator struct {
-	lastTick           int
-	totalLines         int64
-	authorLines        map[int]int64
-	fileLines          map[core.FileId]map[int]int64
-	resolver           core.FileIdResolver
+	lastTick    int
+	totalLines  int64
+	authorLines map[int]int64
+	fileLines   map[core.FileId]map[int]int64
+	resolver    core.FileIdResolver
+	// divergence records the first total this history drove below zero, if any. Totals stay signed
+	// internally so the branch that duplicated the removal can still cancel it out later; only the
+	// snapshots handed to the metrics are clamped.
+	divergence         *ownershipDivergence
 	finalTotals        *ownershipTotals
 	finalSubsystems    map[string]map[int]int64
 	finalSubsystemsSet bool
+}
+
+// ownershipDivergence describes the first negative ownership total of a run.
+type ownershipDivergence struct {
+	scope    string
+	value    int64
+	reported bool
 }
 
 func (accumulator *ownershipSnapshotAccumulator) reset() {
@@ -124,6 +160,7 @@ func (accumulator *ownershipSnapshotAccumulator) reset() {
 	accumulator.authorLines = map[int]int64{}
 	accumulator.fileLines = map[core.FileId]map[int]int64{}
 	accumulator.resolver = nil
+	accumulator.divergence = nil
 	accumulator.finalTotals = nil
 	accumulator.finalSubsystems = nil
 	accumulator.finalSubsystemsSet = false
@@ -134,7 +171,7 @@ func (accumulator *ownershipSnapshotAccumulator) reset() {
 func (accumulator *ownershipSnapshotAccumulator) consume(
 	tick int,
 	changes core.LineHistoryChanges,
-) (int, *ownershipTotals, error) {
+) (int, *ownershipTotals) {
 	accumulator.finalTotals = nil
 	accumulator.finalSubsystems = nil
 	accumulator.finalSubsystemsSet = false
@@ -155,70 +192,56 @@ func (accumulator *ownershipSnapshotAccumulator) consume(
 	accumulator.resolver = changes.Resolver
 
 	for _, change := range changes.Changes {
-		err := accumulator.apply(change)
-		if err != nil {
-			return -1, nil, err
-		}
+		accumulator.apply(change)
 	}
 
-	return closedTick, closedTotals, nil
+	return closedTick, closedTotals
 }
 
-func (accumulator *ownershipSnapshotAccumulator) apply(change core.LineHistoryChange) error {
-	if os.Getenv("HERCULES_TRACE_FILE") != "" {
-		if fmt.Sprint(int(change.FileId)) == os.Getenv("HERCULES_TRACE_FILE") {
-			fmt.Fprintf(os.Stderr, "TRACE file=%d del=%v prev=%d curr=%d delta=%d prevTick=%d currTick=%d state=%v total=%d\n",
-				change.FileId, change.IsDelete(), int(change.PrevAuthor), int(change.CurrAuthor),
-				change.Delta, change.PrevTick, change.CurrTick,
-				accumulator.fileLines[change.FileId], accumulator.totalLines)
-		}
-	}
+// apply folds one line-history change into the running totals.
+//
+// The arithmetic is deliberately signed. Every branch feeds this one accumulator, and two branches
+// which diverged before a file was rewritten each remove that file's lines from their own copy of
+// it - so the same lines are removed twice and a total dips below zero until the branches merge and
+// the duplicate cancels out. Refusing the negative would abort the run on a legitimate history;
+// clamping it here would destroy the compensating positive and leave every later total too high.
+// Only the snapshots handed to the metrics are clamped, in snapshot() and subsystemOwnership().
+func (accumulator *ownershipSnapshotAccumulator) apply(change core.LineHistoryChange) {
 	if change.IsDelete() || change.Delta == 0 || change.PrevAuthor == core.AuthorMissing {
-		return nil
+		return
 	}
 
 	author := int(change.PrevAuthor)
 	delta := int64(change.Delta)
-
-	nextAuthorLines, err := checkedOwnershipTotal(
-		accumulator.authorLines[author],
-		delta,
-		fmt.Sprintf("author %d", author),
-	)
-	if err != nil {
-		return err
-	}
 
 	fileAuthors := accumulator.fileLines[change.FileId]
 	if fileAuthors == nil {
 		fileAuthors = map[int]int64{}
 	}
 
-	nextFileLines, err := checkedOwnershipTotal(
-		fileAuthors[author],
-		delta,
-		fmt.Sprintf("file %d author %d", change.FileId, author),
-	)
-	if err != nil {
-		return err
-	}
-
-	nextTotalLines, err := checkedOwnershipTotal(accumulator.totalLines, delta, "repository")
-	if err != nil {
-		return err
-	}
-
-	accumulator.totalLines = nextTotalLines
-	setOwnershipCount(accumulator.authorLines, author, nextAuthorLines)
-	setOwnershipCount(fileAuthors, author, nextFileLines)
+	accumulator.totalLines = accumulator.add(accumulator.totalLines, delta, "the repository")
+	setOwnershipCount(accumulator.authorLines, author, accumulator.add(
+		accumulator.authorLines[author], delta, fmt.Sprintf("author %d", author),
+	))
+	setOwnershipCount(fileAuthors, author, accumulator.add(
+		fileAuthors[author], delta, fmt.Sprintf("file %d author %d", change.FileId, author),
+	))
 
 	if len(fileAuthors) == 0 {
 		delete(accumulator.fileLines, change.FileId)
 	} else {
 		accumulator.fileLines[change.FileId] = fileAuthors
 	}
+}
 
-	return nil
+// add sums a delta into a total and remembers the first one that goes negative.
+func (accumulator *ownershipSnapshotAccumulator) add(current, delta int64, scope string) int64 {
+	total := current + delta
+	if total < 0 && accumulator.divergence == nil {
+		accumulator.divergence = &ownershipDivergence{scope: scope, value: total}
+	}
+
+	return total
 }
 
 func setOwnershipCount(counts map[int]int64, author int, lines int64) {
@@ -229,27 +252,20 @@ func setOwnershipCount(counts map[int]int64, author int, lines int64) {
 	}
 }
 
-func checkedOwnershipTotal(current, delta int64, scope string) (int64, error) {
-	total := current + delta
-	if total < 0 {
-		return 0, fmt.Errorf(
-			"%w: %s has %d lines after delta %d",
-			errOwnershipUnderflow,
-			scope,
-			total,
-			delta,
-		)
-	}
-
-	return total, nil
-}
-
+// snapshot is the reporting boundary: nobody downstream can do anything sensible with a negative
+// number of alive lines, so a total which branch divergence drove below zero is reported as zero
+// and an author left with nothing is left out entirely. The accumulator keeps the signed values.
 func (accumulator *ownershipSnapshotAccumulator) snapshot() ownershipTotals {
 	authorLines := make(map[int]int64, len(accumulator.authorLines))
-	maps.Copy(authorLines, accumulator.authorLines)
+
+	for author, lines := range accumulator.authorLines {
+		if lines > 0 {
+			authorLines[author] = lines
+		}
+	}
 
 	return ownershipTotals{
-		TotalLines:  accumulator.totalLines,
+		TotalLines:  max(accumulator.totalLines, 0),
 		AuthorLines: authorLines,
 	}
 }
@@ -306,7 +322,9 @@ func (accumulator *ownershipSnapshotAccumulator) subsystemOwnership() map[string
 		}
 
 		for author, lines := range fileAuthors {
-			directoryAuthors[author] += lines
+			if lines > 0 {
+				directoryAuthors[author] += lines
+			}
 		}
 	}
 

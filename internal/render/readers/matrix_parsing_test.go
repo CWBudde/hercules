@@ -13,7 +13,7 @@ import (
 )
 
 // TestMatrixParsingCompatibility performs comprehensive verification of matrix parsing
-// compatibility between Go and Python implementations
+// compatibility between Go and Python implementations.
 func TestMatrixParsingCompatibility(t *testing.T) {
 	testFiles := []string{
 		"../testdata/example_data/hercules_burndown.pb",
@@ -22,7 +22,7 @@ func TestMatrixParsingCompatibility(t *testing.T) {
 	}
 
 	for _, testFile := range testFiles {
-		t.Run(fmt.Sprintf("File_%s", testFile), func(t *testing.T) {
+		t.Run("File_"+testFile, func(t *testing.T) {
 			// Test basic matrix parsing functionality
 			testBurndownMatrixParsing(t, testFile)
 			testCompressedSparseRowMatrixParsing(t, testFile)
@@ -33,7 +33,7 @@ func TestMatrixParsingCompatibility(t *testing.T) {
 }
 
 // testBurndownMatrixParsing verifies BurndownSparseMatrix parsing matches Python's
-// _parse_burndown_matrix behavior (row/column format)
+// _parse_burndown_matrix behavior (row/column format).
 func testBurndownMatrixParsing(t *testing.T, testFile string) {
 	t.Run("BurndownSparseMatrix", func(t *testing.T) {
 		reader := &ProtobufReader{}
@@ -82,7 +82,7 @@ func testBurndownMatrixParsing(t *testing.T, testFile string) {
 }
 
 // testCompressedSparseRowMatrixParsing verifies CSR matrix parsing matches Python's
-// _parse_sparse_matrix behavior
+// _parse_sparse_matrix behavior.
 func testCompressedSparseRowMatrixParsing(t *testing.T, testFile string) {
 	t.Run("CompressedSparseRowMatrix", func(t *testing.T) {
 		reader := &ProtobufReader{}
@@ -126,7 +126,7 @@ func testCompressedSparseRowMatrixParsing(t *testing.T, testFile string) {
 }
 
 // testMatrixFormatSelection verifies that Go correctly chooses between matrix parsing
-// methods based on data type (critical compatibility issue)
+// methods based on data type (critical compatibility issue).
 func testMatrixFormatSelection(t *testing.T, testFile string) {
 	t.Run("FormatSelection", func(t *testing.T) {
 		// Load raw protobuf data to inspect structure
@@ -141,7 +141,7 @@ func testMatrixFormatSelection(t *testing.T, testFile string) {
 
 		// Check Contents map for different analysis types
 		if results.Contents != nil {
-			for key, data := range results.Contents {
+			for key, data := range results.GetContents() {
 				t.Logf("  Found Contents[\"%s\"] (%d bytes)", key, len(data))
 
 				switch key {
@@ -210,7 +210,7 @@ func TestYamlReaderLabelsUnknownPeopleCouplingRow(t *testing.T) {
 	assert.Equal(t, 4, matrix.At(1, 1))
 }
 
-// verifyBurndownFormatSelection checks that burndown data uses correct matrix format
+// verifyBurndownFormatSelection checks that burndown data uses correct matrix format.
 func verifyBurndownFormatSelection(t *testing.T, data []byte) {
 	var burndownData pb.BurndownAnalysisResults
 	err := proto.Unmarshal(data, &burndownData)
@@ -220,15 +220,15 @@ func verifyBurndownFormatSelection(t *testing.T, data []byte) {
 	}
 
 	t.Log("    Burndown analysis structure:")
-	if burndownData.Project != nil {
+	if burndownData.GetProject() != nil {
 		t.Logf("    - Project: BurndownSparseMatrix (%dx%d)",
-			burndownData.Project.NumberOfRows, burndownData.Project.NumberOfColumns)
+			burndownData.GetProject().GetNumberOfRows(), burndownData.GetProject().GetNumberOfColumns())
 	}
-	t.Logf("    - Files count: %d", len(burndownData.Files))
-	t.Logf("    - People count: %d", len(burndownData.People))
-	if burndownData.PeopleInteraction != nil {
+	t.Logf("    - Files count: %d", len(burndownData.GetFiles()))
+	t.Logf("    - People count: %d", len(burndownData.GetPeople()))
+	if burndownData.GetPeopleInteraction() != nil {
 		t.Logf("    - PeopleInteraction: CompressedSparseRowMatrix (%dx%d)",
-			burndownData.PeopleInteraction.NumberOfRows, burndownData.PeopleInteraction.NumberOfColumns)
+			burndownData.GetPeopleInteraction().GetNumberOfRows(), burndownData.GetPeopleInteraction().GetNumberOfColumns())
 	}
 
 	// Verify format selection logic
@@ -237,7 +237,7 @@ func verifyBurndownFormatSelection(t *testing.T, data []byte) {
 	// Go should match this pattern
 }
 
-// verifyCouplesFormatSelection checks couples data matrix format
+// verifyCouplesFormatSelection checks couples data matrix format.
 func verifyCouplesFormatSelection(t *testing.T, data []byte) {
 	var couplesData pb.CouplesAnalysisResults
 	err := proto.Unmarshal(data, &couplesData)
@@ -247,20 +247,20 @@ func verifyCouplesFormatSelection(t *testing.T, data []byte) {
 	}
 
 	t.Log("    Couples analysis structure:")
-	if couplesData.FileCouples != nil && couplesData.FileCouples.Matrix != nil {
+	if couplesData.GetFileCouples() != nil && couplesData.GetFileCouples().GetMatrix() != nil {
 		t.Logf("    - FileCouples: CompressedSparseRowMatrix (%dx%d)",
-			couplesData.FileCouples.Matrix.NumberOfRows, couplesData.FileCouples.Matrix.NumberOfColumns)
+			couplesData.GetFileCouples().GetMatrix().GetNumberOfRows(), couplesData.GetFileCouples().GetMatrix().GetNumberOfColumns())
 	}
-	if couplesData.PeopleCouples != nil && couplesData.PeopleCouples.Matrix != nil {
+	if couplesData.GetPeopleCouples() != nil && couplesData.GetPeopleCouples().GetMatrix() != nil {
 		t.Logf("    - PeopleCouples: CompressedSparseRowMatrix (%dx%d)",
-			couplesData.PeopleCouples.Matrix.NumberOfRows, couplesData.PeopleCouples.Matrix.NumberOfColumns)
+			couplesData.GetPeopleCouples().GetMatrix().GetNumberOfRows(), couplesData.GetPeopleCouples().GetMatrix().GetNumberOfColumns())
 	}
 
 	// Python uses _parse_sparse_matrix() for both FileCouples and PeopleCouples
 	// Go should use parseCompressedSparseRowMatrix() for both
 }
 
-// verifyDevsFormatSelection checks developer data structure
+// verifyDevsFormatSelection checks developer data structure.
 func verifyDevsFormatSelection(t *testing.T, data []byte) {
 	var devsData pb.DevsAnalysisResults
 	err := proto.Unmarshal(data, &devsData)
@@ -270,18 +270,18 @@ func verifyDevsFormatSelection(t *testing.T, data []byte) {
 	}
 
 	t.Log("    Devs analysis structure:")
-	t.Logf("    - Developer count: %d", len(devsData.DevIndex))
-	t.Logf("    - Time ticks: %d", len(devsData.Ticks))
+	t.Logf("    - Developer count: %d", len(devsData.GetDevIndex()))
+	t.Logf("    - Time ticks: %d", len(devsData.GetTicks()))
 
 	// This is critical for time series compatibility
-	if len(devsData.Ticks) > 0 {
+	if len(devsData.GetTicks()) > 0 {
 		t.Log("    - Has time series data (compatible with Python)")
 	} else {
 		t.Log("    - No time series data (may need synthetic generation)")
 	}
 }
 
-// verifyShotnessFormatSelection checks shotness data structure
+// verifyShotnessFormatSelection checks shotness data structure.
 func verifyShotnessFormatSelection(t *testing.T, data []byte) {
 	var shotnessData pb.ShotnessAnalysisResults
 	err := proto.Unmarshal(data, &shotnessData)
@@ -291,10 +291,10 @@ func verifyShotnessFormatSelection(t *testing.T, data []byte) {
 	}
 
 	t.Log("    Shotness analysis structure:")
-	t.Logf("    - Records count: %d", len(shotnessData.Records))
+	t.Logf("    - Records count: %d", len(shotnessData.GetRecords()))
 }
 
-// testContentsAccessPattern verifies Contents map access matches Python's dynamic parsing
+// testContentsAccessPattern verifies Contents map access matches Python's dynamic parsing.
 func testContentsAccessPattern(t *testing.T, testFile string) {
 	t.Run("ContentsAccess", func(t *testing.T) {
 		// This test specifically validates that Go's Contents access pattern
@@ -357,11 +357,11 @@ func testContentsAccessPattern(t *testing.T, testFile string) {
 		t.Logf("Contents access success rate: %d/%d methods", successCount, len(testMethods))
 
 		// A reasonable file should support at least basic analysis
-		assert.Greater(t, successCount, 0, "At least one Contents access method should succeed")
+		assert.Positive(t, successCount, "At least one Contents access method should succeed")
 	})
 }
 
-// verifyMatrixStructure validates matrix structure and provides debugging info
+// verifyMatrixStructure validates matrix structure and provides debugging info.
 func verifyMatrixStructure(t *testing.T, matrix [][]int, name string) {
 	t.Helper()
 
@@ -407,12 +407,12 @@ func verifyMatrixStructure(t *testing.T, matrix [][]int, name string) {
 		name, rows, cols, sparsity, minValue, maxValue)
 
 	// Validate that matrix contains meaningful data
-	assert.Greater(t, rows, 0, "%s should have rows", name)
-	assert.Greater(t, cols, 0, "%s should have columns", name)
+	assert.Positive(t, rows, "%s should have rows", name)
+	assert.Positive(t, cols, "%s should have columns", name)
 	assert.GreaterOrEqual(t, nonZeroValues, 0, "%s should have valid data", name)
 }
 
-// TestTransposeOperationCompatibility specifically tests matrix transpose behavior
+// TestTransposeOperationCompatibility specifically tests matrix transpose behavior.
 func TestTransposeOperationCompatibility(t *testing.T) {
 	testFiles := []string{
 		"../testdata/example_data/hercules_burndown.pb",
@@ -450,7 +450,7 @@ func TestTransposeOperationCompatibility(t *testing.T) {
 			if err == nil {
 				for i, file := range files {
 					if i < 3 {
-						verifyTransposeLogic(t, file.Matrix, fmt.Sprintf("File_%s", file.Filename))
+						verifyTransposeLogic(t, file.Matrix, "File_"+file.Filename)
 					}
 				}
 			}
@@ -460,7 +460,7 @@ func TestTransposeOperationCompatibility(t *testing.T) {
 			if err == nil {
 				for i, person := range people {
 					if i < 3 {
-						verifyTransposeLogic(t, person.Matrix, fmt.Sprintf("Person_%s", person.Person))
+						verifyTransposeLogic(t, person.Matrix, "Person_"+person.Person)
 					}
 				}
 			}
@@ -468,7 +468,7 @@ func TestTransposeOperationCompatibility(t *testing.T) {
 	}
 }
 
-// verifyTransposeLogic validates that transpose operation produces expected structure
+// verifyTransposeLogic validates that transpose operation produces expected structure.
 func verifyTransposeLogic(t *testing.T, matrix [][]int, name string) {
 	t.Helper()
 

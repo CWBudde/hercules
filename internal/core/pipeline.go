@@ -542,6 +542,7 @@ func (pipeline *Pipeline) HeadCommit() ([]*object.Commit, error) {
 	if errors.Is(err, plumbing.ErrReferenceNotFound) {
 		head, err = pipeline.fallbackHeadReference()
 	}
+
 	if err != nil {
 		return nil, errors.Wrap(err, "unable to find the head reference")
 	}
@@ -568,31 +569,39 @@ func (pipeline *Pipeline) fallbackHeadReference() (*plumbing.Reference, error) {
 	var preferred *plumbing.Reference
 	var refnames []string
 	refByName := map[string]*plumbing.Reference{}
+
 	err = refs.ForEach(func(ref *plumbing.Reference) error {
 		if ref.Hash() == plumbing.ZeroHash {
 			return nil
 		}
+
 		refname := ref.Name().String()
 		refnames = append(refnames, refname)
+
 		refByName[refname] = ref
 		if strings.HasPrefix(refname, "refs/heads/HEAD/") {
 			preferred = ref
 			return storer.ErrStop
 		}
+
 		return nil
 	})
 	if err != nil && !errors.Is(err, storer.ErrStop) {
 		return nil, errors.Wrap(err, "unable to iterate the references")
 	}
+
 	if preferred != nil {
 		return preferred, nil
 	}
+
 	if len(refnames) == 0 {
 		return nil, ErrNoReferences
 	}
+
 	sort.Strings(refnames)
 	headName := refnames[len(refnames)-1]
 	pipeline.l.Warnf("could not determine the HEAD, falling back to %s", headName)
+
 	return refByName[headName], nil
 }
 

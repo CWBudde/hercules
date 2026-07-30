@@ -23,6 +23,7 @@ var (
 func BurndownPerson(reader readers.Reader, output string, relative bool, startDate, endDate *time.Time, resample string) error {
 	opts := defaultOptions()
 	opts.Relative, opts.Resample = relative, resample
+
 	return BurndownPersonWithOptions(reader, output, startDate, endDate, opts)
 }
 
@@ -31,18 +32,23 @@ func BurndownPersonWithOptions(reader readers.Reader, output string, startDate, 
 	if err != nil {
 		return fmt.Errorf("failed to get people burndown data: %w", err)
 	}
+
 	header, usePythonRenderer, err := personBurndownHeader(reader, opts.Quiet)
 	if err != nil {
 		return err
 	}
+
 	if opts.Resample == "" {
 		opts.Resample = "year"
 	}
+
 	displayNames, outputFiles, err := personBurndownOutputPaths(peopleBurndowns, output)
 	if err != nil {
 		return err
 	}
+
 	rendered := 0
+
 	for index, person := range peopleBurndowns {
 		err := renderPersonBurndown(
 			person, displayNames[index], outputFiles[index], header,
@@ -60,16 +66,21 @@ func BurndownPersonWithOptions(reader readers.Reader, output string, startDate, 
 					displayNames[index],
 				)
 			}
+
 			continue
 		}
+
 		if err != nil {
 			return err
 		}
+
 		rendered++
 	}
+
 	if rendered == 0 && len(peopleBurndowns) > 0 {
 		return errNoPersonActivity
 	}
+
 	return nil
 }
 
@@ -81,10 +92,12 @@ func personBurndownHeader(
 	if err != nil && !errors.Is(err, readers.ErrAnalysisMissing) {
 		return burndown.BurndownHeader{}, false, fmt.Errorf("get burndown header: %w", err)
 	}
+
 	usePythonRenderer := err == nil
 	if !usePythonRenderer && !quiet {
 		fmt.Fprintf(os.Stderr, "Warning: falling back to legacy person burndown renderer: %v\n", err)
 	}
+
 	return header, usePythonRenderer, nil
 }
 
@@ -93,17 +106,20 @@ func personBurndownOutputPaths(
 	output string,
 ) ([]string, []string, error) {
 	identities := make([]string, len(people))
+
 	displayNames := make([]string, len(people))
 	for index, person := range people {
 		identities[index] = person.Person
 		displayNames[index] = peopleChartLabel(person.Person)
 	}
+
 	outputFiles, err := outputpath.FanoutLabeledPaths(
 		output, "burndown_person", displayNames, identities,
 	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("plan person burndown outputs: %w", err)
 	}
+
 	return displayNames, outputFiles, nil
 }
 
@@ -118,20 +134,24 @@ func renderPersonBurndown(
 	if !usePythonRenderer {
 		return renderLegacyPersonBurndown(person, displayName, outputFile, startDate, endDate, opts)
 	}
+
 	processedData, err := burndown.LoadBurndown(
 		header, displayName, person.Matrix, opts.Resample, false, false,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to process burndown for person %s: %w", person.Person, err)
 	}
+
 	if err := compactPersonBurndown(processedData); err != nil {
 		return fmt.Errorf("compact burndown for person %s: %w", person.Person, err)
 	}
+
 	if err := graphics.PlotBurndownMatplotlibWithOptions(
 		processedData, outputFile, opts.Relative, opts.Graphics,
 	); err != nil {
 		return fmt.Errorf("failed to generate burndown for person %s: %w", person.Person, err)
 	}
+
 	return nil
 }
 
@@ -145,11 +165,13 @@ func renderLegacyPersonBurndown(
 	if err != nil {
 		return fmt.Errorf("compact burndown for person %s: %w", person.Person, err)
 	}
+
 	if err := generateBurndownPlotWithOptions(
 		displayName, compactedMatrix, outputFile, startDate, endDate, opts,
 	); err != nil {
 		return fmt.Errorf("failed to generate burndown for person %s: %w", person.Person, err)
 	}
+
 	return nil
 }
 

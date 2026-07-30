@@ -265,6 +265,7 @@ func (shotness *ShotnessAnalysis) recordNode(
 	if name == "" {
 		name = node.Name
 	}
+
 	summary := NodeSummary{Type: node.Type, Name: name, File: fileName}
 	key := summary.String()
 	seen := allNodes[key]

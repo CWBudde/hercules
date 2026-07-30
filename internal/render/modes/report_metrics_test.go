@@ -114,7 +114,8 @@ func testReportMetricModesCreateOutputFiles(t *testing.T, ext string) {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := t.TempDir()
 			output := filepath.Join(dir, tt.name+"."+ext)
-			if err := tt.run(output); err != nil {
+			err := tt.run(output)
+			if err != nil {
 				t.Fatalf("%s() unexpected error: %v", tt.name, err)
 			}
 			if !tt.noPrimary {
@@ -172,7 +173,8 @@ func TestDirectoryChartModesCreatePNGAndSVGAssets(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := t.TempDir()
-			if err := tt.run(dir); err != nil {
+			err := tt.run(dir)
+			if err != nil {
 				t.Fatalf("%s() unexpected error: %v", tt.name, err)
 			}
 			for _, file := range tt.files {
@@ -292,7 +294,7 @@ func TestBusFactorSubsystemPairsMatchesPythonParityTieOrder(t *testing.T) {
 
 func TestBusFactorSubsystemPairsCanReturnAllSubsystems(t *testing.T) {
 	values := map[string]int{}
-	for i := 0; i < 25; i++ {
+	for i := range 25 {
 		values[fmt.Sprintf("subsystem-%02d", i)] = i % 4
 	}
 

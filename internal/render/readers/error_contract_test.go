@@ -9,7 +9,7 @@ import (
 
 func TestLegacyReadersTypeMissingAnalysisErrors(t *testing.T) {
 	protobuf := &ProtobufReader{data: &pb.AnalysisResults{Contents: map[string][]byte{}}}
-	yaml := &YamlReader{data: map[string]interface{}{}}
+	yaml := &YamlReader{data: map[string]any{}}
 
 	tests := []struct {
 		name string
@@ -60,7 +60,8 @@ func TestLegacyReadersTypeMissingAnalysisErrors(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if err := test.call(); !errors.Is(err, ErrAnalysisMissing) {
+			err := test.call()
+			if !errors.Is(err, ErrAnalysisMissing) {
 				t.Fatalf("error = %v, want ErrAnalysisMissing", err)
 			}
 		})

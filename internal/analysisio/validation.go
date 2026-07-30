@@ -284,6 +284,7 @@ func ValidateCSR(name string, matrix *pb.CompressedSparseRowMatrix, limits Limit
 	if err != nil {
 		return err
 	}
+
 	if len(data) != len(indices) {
 		return fmt.Errorf(
 			"%w: %s has %d data values but %d indices",
@@ -418,6 +419,7 @@ func ValidateCouplesResults(message *pb.CouplesAnalysisResults, limits Limits) e
 	if message.GetFileCouples() != nil {
 		fileCount = len(message.GetFileCouples().GetIndex())
 	}
+
 	if err := ValidateParallelLengths("file index", fileCount,
 		NamedLength{"file line counts", len(message.GetFilesLines())}); err != nil {
 		return err
@@ -427,6 +429,7 @@ func ValidateCouplesResults(message *pb.CouplesAnalysisResults, limits Limits) e
 	if message.GetPeopleCouples() != nil {
 		peopleCount = len(message.GetPeopleCouples().GetIndex())
 	}
+
 	if err := ValidateParallelLengths("people index", peopleCount,
 		NamedLength{"people touched files", len(message.GetPeopleFiles())}); err != nil {
 		return err

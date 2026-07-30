@@ -17,7 +17,9 @@ func BurndownFile(reader readers.Reader, output string, relative bool, startDate
 	// Generate a chart for each file
 	for _, file := range fileBurndowns {
 		outputFile := fmt.Sprintf("%s_%s.png", output, file.Filename)
-		if err := generateBurndownPlot(file.Filename, file.Matrix, outputFile, relative, startDate, endDate, resample); err != nil {
+
+		err := generateBurndownPlot(file.Filename, file.Matrix, outputFile, relative, startDate, endDate, resample)
+		if err != nil {
 			return fmt.Errorf("failed to generate burndown for file %s: %w", file.Filename, err)
 		}
 	}

@@ -114,6 +114,7 @@ func (ca *CommitsAnalysis) Initialize(repository *git.Repository) error {
 	if ca.l == nil {
 		ca.l = core.NewLogger()
 	}
+
 	return nil
 }
 
@@ -260,6 +261,7 @@ func (ca *CommitsAnalysis) serializeBinary(result *CommitsResult, writer io.Writ
 
 func commitFilesToProto(files []FileStat) ([]*pb.CommitFile, error) {
 	files = sortedFileStats(files)
+
 	result := make([]*pb.CommitFile, len(files))
 	for fileIndex, file := range files {
 		stats, err := commitLineStatsToProto(file)

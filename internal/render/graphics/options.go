@@ -25,12 +25,15 @@ func (opts Options) normalized() Options {
 	if opts.Theme.Name == "" {
 		opts.Theme = defaults.Theme
 	}
+
 	if opts.FontSize <= 0 {
 		opts.FontSize = defaults.FontSize
 	}
+
 	if opts.Background == "" {
 		opts.Background = defaults.Background
 	}
+
 	return opts
 }
 

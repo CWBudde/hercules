@@ -271,6 +271,7 @@ func (analyser *LineHistoryLoader) Initialize(*git.Repository) error {
 	if analyser.l == nil {
 		analyser.l = core.NewLogger()
 	}
+
 	analyser.nextCommit = 0
 
 	return nil
@@ -327,6 +328,7 @@ func (analyser *LineHistoryLoader) loadChangesFromYaml(decoder *yaml.Decoder) er
 	if err != nil {
 		return err
 	}
+
 	if err := reconstructFileStates(loadedFiles, loadedCommits); err != nil {
 		return err
 	}
@@ -334,14 +336,18 @@ func (analyser *LineHistoryLoader) loadChangesFromYaml(decoder *yaml.Decoder) er
 	analyser.authors = loadedAuthors
 	analyser.files = loadedFiles
 	analyser.commits = loadedCommits
+
 	return nil
 }
 
 func decodeLineHistoryDocument(decoder *yaml.Decoder) (yaml.MapSlice, error) {
 	var document yaml.MapSlice
-	if err := decoder.Decode(&document); err != nil {
+
+	err := decoder.Decode(&document)
+	if err != nil {
 		return nil, fmt.Errorf("%w: decode YAML: %w", ErrLineHistoryMalformed, err)
 	}
+
 	var trailing any
 	switch err := decoder.Decode(&trailing); {
 	case errors.Is(err, io.EOF):
@@ -350,6 +356,7 @@ func decodeLineHistoryDocument(decoder *yaml.Decoder) (yaml.MapSlice, error) {
 	default:
 		return nil, fmt.Errorf("%w: multiple YAML documents", ErrLineHistoryMalformed)
 	}
+
 	return document, nil
 }
 
@@ -496,6 +503,7 @@ func parseLineHistoryCommit(yamlCommit yaml.MapItem, authorCount int) (commitInf
 
 func lineHistoryCommitFields(yamlCommit yaml.MapItem) (string, string, error) {
 	hash, hashOK := yamlCommit.Key.(string)
+
 	changes, changesOK := yamlCommit.Value.(string)
 	if !hashOK || !changesOK {
 		return "", "", fmt.Errorf("%w: invalid commit entry", ErrLineHistoryMalformed)

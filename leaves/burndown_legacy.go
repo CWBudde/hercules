@@ -336,7 +336,8 @@ func (analyser *LegacyBurndownAnalysis) Consume(deps map[string]any) (map[string
 	}
 
 	for _, change := range treeDiffs {
-		if err := analyser.consumeLegacyTreeChange(change, author, cache, fileDiffs); err != nil {
+		err := analyser.consumeLegacyTreeChange(change, author, cache, fileDiffs)
+		if err != nil {
 			return nil, err
 		}
 	}

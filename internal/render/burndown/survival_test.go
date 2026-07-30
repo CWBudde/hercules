@@ -186,9 +186,10 @@ func TestWriteSurvivalFunctionIsStableAndUsesSampling(t *testing.T) {
 		t.Fatalf("FitKaplanMeier() error = %v", err)
 	}
 	var first string
-	for iteration := 0; iteration < 100; iteration++ {
+	for iteration := range 100 {
 		var output bytes.Buffer
-		if err := WriteSurvivalFunction(&output, curve, 3); err != nil {
+		err := WriteSurvivalFunction(&output, curve, 3)
+		if err != nil {
 			t.Fatalf("WriteSurvivalFunction() error = %v", err)
 		}
 		if iteration == 0 {
@@ -213,7 +214,8 @@ func TestWriteSurvivalFunctionOmitsShortAndZeroCurves(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			var output bytes.Buffer
-			if err := WriteSurvivalFunction(&output, test.curve, 1); err != nil {
+			err := WriteSurvivalFunction(&output, test.curve, 1)
+			if err != nil {
 				t.Fatalf("WriteSurvivalFunction() error = %v", err)
 			}
 			if output.Len() != 0 {

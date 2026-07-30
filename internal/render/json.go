@@ -9,7 +9,7 @@ import (
 	"github.com/cwbudde/hercules/internal/render/readers"
 )
 
-type jsonModeExtractor func(readers.Reader) (interface{}, error)
+type jsonModeExtractor func(readers.Reader) (any, error)
 
 var jsonModeExtractors = map[string]jsonModeExtractor{
 	"devs":                    extractDeveloperStatsJSON,
@@ -39,191 +39,217 @@ var jsonModeExtractors = map[string]jsonModeExtractor{
 }
 
 // extractModeDataForJSON extracts raw reader data for JSON output without rendering plots.
-func extractModeDataForJSON(reader readers.Reader, mode string) (interface{}, error) {
+func extractModeDataForJSON(reader readers.Reader, mode string) (any, error) {
 	extract, ok := jsonModeExtractors[mode]
 	if !ok {
 		return nil, fmt.Errorf("JSON output is not implemented for mode %s", mode)
 	}
+
 	return extract(reader)
 }
 
-func extractDeveloperStatsJSON(reader readers.Reader) (interface{}, error) {
+func extractDeveloperStatsJSON(reader readers.Reader) (any, error) {
 	stats, err := reader.GetDeveloperStats()
 	return jsonField("developer_stats", stats, err)
 }
 
-func extractDeveloperTimeSeriesJSON(reader readers.Reader) (interface{}, error) {
+func extractDeveloperTimeSeriesJSON(reader readers.Reader) (any, error) {
 	data, err := reader.GetDeveloperTimeSeriesData()
 	return jsonField("developer_time_series", data, err)
 }
 
-func extractProjectBurndownJSON(reader readers.Reader) (interface{}, error) {
+func extractProjectBurndownJSON(reader readers.Reader) (any, error) {
 	header, name, matrix, err := reader.GetProjectBurndownWithHeader()
 	if err != nil {
 		return nil, err
 	}
-	return map[string]interface{}{
+
+	return map[string]any{
 		"type": "burndown", "target": "project", "header": header, "name": name, "matrix": matrix,
 	}, nil
 }
 
-func extractFileBurndownJSON(reader readers.Reader) (interface{}, error) {
+func extractFileBurndownJSON(reader readers.Reader) (any, error) {
 	files, err := reader.GetFilesBurndown()
 	if err != nil {
 		return nil, err
 	}
-	return map[string]interface{}{"type": "burndown", "target": "file", "files": files}, nil
+
+	return map[string]any{"type": "burndown", "target": "file", "files": files}, nil
 }
 
-func extractPeopleBurndownJSON(reader readers.Reader) (interface{}, error) {
+func extractPeopleBurndownJSON(reader readers.Reader) (any, error) {
 	people, err := reader.GetPeopleBurndown()
 	if err != nil {
 		return nil, err
 	}
-	return map[string]interface{}{"type": "burndown", "target": "person", "people": people}, nil
+
+	return map[string]any{"type": "burndown", "target": "person", "people": people}, nil
 }
 
-func extractRepositoryBurndownJSON(reader readers.Reader) (interface{}, error) {
+func extractRepositoryBurndownJSON(reader readers.Reader) (any, error) {
 	repositoryReader, ok := reader.(readers.RepositoryBurndownReader)
 	if !ok {
 		return nil, fmt.Errorf("%w: repository burndown", readers.ErrAnalysisMissing)
 	}
+
 	repositories, err := repositoryReader.GetRepositoriesBurndown()
 	if err != nil {
 		return nil, err
 	}
-	return map[string]interface{}{
+
+	return map[string]any{
 		"type": "burndown", "target": "repository", "repositories": repositories,
 	}, nil
 }
 
-func extractOwnershipJSON(reader readers.Reader) (interface{}, error) {
+func extractOwnershipJSON(reader readers.Reader) (any, error) {
 	names, matrices, err := reader.GetOwnershipBurndown()
 	if err != nil {
 		return nil, err
 	}
-	return map[string]interface{}{"type": "ownership", "file_names": names, "matrices": matrices}, nil
+
+	return map[string]any{"type": "ownership", "file_names": names, "matrices": matrices}, nil
 }
 
-func extractOverwritesJSON(reader readers.Reader) (interface{}, error) {
+func extractOverwritesJSON(reader readers.Reader) (any, error) {
 	people, matrix, err := reader.GetPeopleInteraction()
 	if err != nil {
 		return nil, err
 	}
-	return map[string]interface{}{"type": "overwrites_matrix", "people": people, "matrix": matrix}, nil
+
+	return map[string]any{"type": "overwrites_matrix", "people": people, "matrix": matrix}, nil
 }
 
-func extractFileCouplingJSON(reader readers.Reader) (interface{}, error) {
+func extractFileCouplingJSON(reader readers.Reader) (any, error) {
 	names, matrix, err := reader.GetFileCooccurrence()
 	if err != nil {
 		return nil, err
 	}
-	return map[string]interface{}{"file_names": names, "coupling_matrix": matrix}, nil
+
+	return map[string]any{"file_names": names, "coupling_matrix": matrix}, nil
 }
 
-func extractPeopleCouplingJSON(reader readers.Reader) (interface{}, error) {
+func extractPeopleCouplingJSON(reader readers.Reader) (any, error) {
 	names, matrix, err := reader.GetPeopleCooccurrence()
 	if err != nil {
 		return nil, err
 	}
-	return map[string]interface{}{"people_names": names, "coupling_matrix": matrix}, nil
+
+	return map[string]any{"people_names": names, "coupling_matrix": matrix}, nil
 }
 
-func extractShotnessCouplingJSON(reader readers.Reader) (interface{}, error) {
+func extractShotnessCouplingJSON(reader readers.Reader) (any, error) {
 	names, matrix, err := reader.GetShotnessCooccurrence()
 	if err != nil {
 		return nil, err
 	}
-	return map[string]interface{}{"entity_names": names, "coupling_matrix": matrix}, nil
+
+	return map[string]any{"entity_names": names, "coupling_matrix": matrix}, nil
 }
 
-func extractShotnessJSON(reader readers.Reader) (interface{}, error) {
+func extractShotnessJSON(reader readers.Reader) (any, error) {
 	records, err := reader.GetShotnessRecords()
 	return jsonField("shotness_records", records, err)
 }
 
-func extractRuntimeStatsJSON(reader readers.Reader) (interface{}, error) {
+func extractRuntimeStatsJSON(reader readers.Reader) (any, error) {
 	stats, err := reader.GetRuntimeStats()
 	return jsonField("runtime_stats", stats, err)
 }
 
-func extractLanguageStatsJSON(reader readers.Reader) (interface{}, error) {
+func extractLanguageStatsJSON(reader readers.Reader) (any, error) {
 	stats, err := reader.GetLanguageStats()
 	return jsonField("language_stats", stats, err)
 }
 
-func extractSentimentJSON(reader readers.Reader) (interface{}, error) {
+func extractSentimentJSON(reader readers.Reader) (any, error) {
 	sentimentReader, ok := reader.(readers.SentimentReader)
 	if !ok {
 		return nil, fmt.Errorf("%w: sentiment", readers.ErrAnalysisMissing)
 	}
+
 	data, err := sentimentReader.GetSentimentByTick()
+
 	return jsonField("sentiment_by_tick", data, err)
 }
 
-func extractTemporalActivityJSON(reader readers.Reader) (interface{}, error) {
+func extractTemporalActivityJSON(reader readers.Reader) (any, error) {
 	temporalReader, ok := reader.(readers.TemporalActivityReader)
 	if !ok {
 		return nil, fmt.Errorf("%w: temporal activity", readers.ErrAnalysisMissing)
 	}
+
 	data, err := temporalReader.GetTemporalActivity()
+
 	return jsonField("temporal_activity", data, err)
 }
 
-func extractBusFactorJSON(reader readers.Reader) (interface{}, error) {
+func extractBusFactorJSON(reader readers.Reader) (any, error) {
 	busFactorReader, ok := reader.(readers.BusFactorReader)
 	if !ok {
 		return nil, fmt.Errorf("%w: bus factor", readers.ErrAnalysisMissing)
 	}
+
 	data, err := busFactorReader.GetBusFactor()
+
 	return jsonField("bus_factor", data, err)
 }
 
-func extractOwnershipConcentrationJSON(reader readers.Reader) (interface{}, error) {
+func extractOwnershipConcentrationJSON(reader readers.Reader) (any, error) {
 	ownershipReader, ok := reader.(readers.OwnershipConcentrationReader)
 	if !ok {
 		return nil, fmt.Errorf("%w: ownership concentration", readers.ErrAnalysisMissing)
 	}
+
 	data, err := ownershipReader.GetOwnershipConcentration()
+
 	return jsonField("ownership_concentration", data, err)
 }
 
-func extractKnowledgeDiffusionJSON(reader readers.Reader) (interface{}, error) {
+func extractKnowledgeDiffusionJSON(reader readers.Reader) (any, error) {
 	diffusionReader, ok := reader.(readers.KnowledgeDiffusionReader)
 	if !ok {
 		return nil, fmt.Errorf("%w: knowledge diffusion", readers.ErrAnalysisMissing)
 	}
+
 	data, err := diffusionReader.GetKnowledgeDiffusion()
+
 	return jsonField("knowledge_diffusion", data, err)
 }
 
-func extractHotspotRiskJSON(reader readers.Reader) (interface{}, error) {
+func extractHotspotRiskJSON(reader readers.Reader) (any, error) {
 	hotspotReader, ok := reader.(readers.HotspotRiskReader)
 	if !ok {
 		return nil, fmt.Errorf("%w: hotspot risk", readers.ErrAnalysisMissing)
 	}
+
 	data, err := hotspotReader.GetHotspotRisk()
+
 	return jsonField("hotspot_risk", data, err)
 }
 
-func extractRefactoringProxyJSON(reader readers.Reader) (interface{}, error) {
+func extractRefactoringProxyJSON(reader readers.Reader) (any, error) {
 	refactoringReader, ok := reader.(readers.RefactoringProxyReader)
 	if !ok {
 		return nil, fmt.Errorf("%w: refactoring proxy", readers.ErrAnalysisMissing)
 	}
+
 	data, err := refactoringReader.GetRefactoringProxy()
+
 	return jsonField("refactoring_proxy", data, err)
 }
 
-func jsonField(key string, value interface{}, err error) (interface{}, error) {
+func jsonField(key string, value any, err error) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return map[string]interface{}{key: value}, nil
+
+	return map[string]any{key: value}, nil
 }
 
-// saveJSONResults saves the analysis results as JSON
-func saveJSONResults(results map[string]interface{}, outputPath string) error {
+// saveJSONResults saves the analysis results as JSON.
+func saveJSONResults(results map[string]any, outputPath string) error {
 	file, err := os.Create(outputPath) // #nosec G304 - JSON output path is explicitly requested by caller.
 	if err != nil {
 		return fmt.Errorf("failed to create JSON output file: %w", err)
@@ -233,8 +259,8 @@ func saveJSONResults(results map[string]interface{}, outputPath string) error {
 	encoder.SetIndent("", "  ") // Pretty print
 
 	// Add metadata
-	output := map[string]interface{}{
-		"meta": map[string]interface{}{
+	output := map[string]any{
+		"meta": map[string]any{
 			"generated_by":   "labours-go",
 			"generated_at":   time.Now().Format(time.RFC3339),
 			"modes_executed": len(results),
@@ -246,8 +272,10 @@ func saveJSONResults(results map[string]interface{}, outputPath string) error {
 		_ = file.Close()
 		return fmt.Errorf("encode JSON output: %w", err)
 	}
+
 	if err := file.Close(); err != nil {
 		return fmt.Errorf("close JSON output: %w", err)
 	}
+
 	return nil
 }

@@ -109,9 +109,11 @@ func (r Result) Err() error {
 			failures = append(failures, fmt.Errorf("render mode %s: %w", mode.Mode, mode.Err))
 		}
 	}
+
 	if r.OutputError != nil {
 		failures = append(failures, fmt.Errorf("write render output: %w", r.OutputError))
 	}
+
 	return errors.Join(failures...)
 }
 
@@ -123,6 +125,7 @@ func (r Result) HasWarnings() bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -135,6 +138,7 @@ func Run(reader readers.Reader, modeNames []string, opts Options) Result {
 	if err != nil {
 		return Result{OutputError: fmt.Errorf("configure renderer: %w", err)}
 	}
+
 	return renderer.Render(reader, modeNames)
 }
 
@@ -165,12 +169,16 @@ func SetRenderDefaults() {}
 // NewRenderer validates and snapshots opts.
 func NewRenderer(opts Options) (*Renderer, error) {
 	opts = normalizeOptions(opts)
-	if err := opts.Theme.Validate(); err != nil {
+
+	err := opts.Theme.Validate()
+	if err != nil {
 		return nil, fmt.Errorf("invalid renderer theme: %w", err)
 	}
+
 	opts.Theme = cloneTheme(opts.Theme)
 	opts.StartTime = cloneTime(opts.StartTime)
 	opts.EndTime = cloneTime(opts.EndTime)
+
 	return &Renderer{
 		options: opts,
 		theme:   opts.Theme,
@@ -194,27 +202,35 @@ func normalizeOptions(opts Options) Options {
 	if opts.Resample == "" {
 		opts.Resample = defaults.Resample
 	}
+
 	if opts.MaxPeople == 0 {
 		opts.MaxPeople = defaults.MaxPeople
 	}
+
 	if opts.MaxRepos == 0 {
 		opts.MaxRepos = defaults.MaxRepos
 	}
+
 	if opts.Background == "" {
 		opts.Background = defaults.Background
 	}
+
 	if opts.FontSize <= 0 {
 		opts.FontSize = defaults.FontSize
 	}
+
 	if opts.TemporalLegendThreshold == 0 {
 		opts.TemporalLegendThreshold = defaults.TemporalLegendThreshold
 	}
+
 	if opts.TemporalLegendSingleColumn == 0 {
 		opts.TemporalLegendSingleColumn = defaults.TemporalLegendSingleColumn
 	}
+
 	if opts.Theme.Name == "" {
 		opts.Theme = defaults.Theme
 	}
+
 	return opts
 }
 
@@ -227,7 +243,9 @@ func cloneTime(value *time.Time) *time.Time {
 	if value == nil {
 		return nil
 	}
+
 	cloned := *value
+
 	return &cloned
 }
 
@@ -267,5 +285,6 @@ func LoadInput(input, inputFormat string) (readers.Reader, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return readers.DetectAndReadInput(input, format)
 }

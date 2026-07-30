@@ -27,12 +27,14 @@ func DetectAndReadInputWithOptions(input, format string, quiet bool) (Reader, er
 			return nil, fmt.Errorf("error opening file %s: %w", input, err)
 		}
 		defer func() { _ = f.Close() }()
+
 		file = f
 	}
 
 	// Detect format if set to "auto"
 	if format == "auto" {
 		var err error
+
 		format, file, err = detectFormat(file)
 		if err != nil {
 			return nil, err
@@ -56,6 +58,7 @@ func DetectAndReadInputWithOptions(input, format string, quiet bool) (Reader, er
 // detectFormat inspects the input to determine the format (YAML or Protobuf).
 func detectFormat(file io.Reader) (string, io.Reader, error) {
 	buffer := make([]byte, 16)
+
 	_, err := file.Read(buffer)
 	if err != nil && err != io.EOF {
 		return "", nil, fmt.Errorf("error reading input for format detection: %w", err)
@@ -67,6 +70,7 @@ func detectFormat(file io.Reader) (string, io.Reader, error) {
 	if isYAML(buffer) {
 		return "yaml", file, nil
 	}
+
 	return "pb", file, nil
 }
 
@@ -91,13 +95,14 @@ func createReaderWithOptions(format string, quiet bool) (Reader, error) {
 	}
 }
 
-// transposeMatrix transposes a 2D integer matrix (swaps rows and columns)
+// transposeMatrix transposes a 2D integer matrix (swaps rows and columns).
 func transposeMatrix(matrix [][]int) [][]int {
 	if len(matrix) == 0 || len(matrix[0]) == 0 {
 		return [][]int{}
 	}
 
 	rows := len(matrix)
+
 	cols := len(matrix[0])
 	for _, row := range matrix {
 		if len(row) != cols {
@@ -112,8 +117,8 @@ func transposeMatrix(matrix [][]int) [][]int {
 	}
 
 	// Fill transposed matrix
-	for i := 0; i < rows; i++ {
-		for j := 0; j < cols; j++ {
+	for i := range rows {
+		for j := range cols {
 			transposed[j][i] = matrix[i][j]
 		}
 	}
@@ -169,10 +174,12 @@ func sortedLanguageStats(totals map[string]int) []LanguageStat {
 			Lines:    lines,
 		})
 	}
+
 	sort.Slice(languages, func(i, j int) bool {
 		if languages[i].Lines == languages[j].Lines {
 			return languages[i].Language < languages[j].Language
 		}
+
 		return languages[i].Lines > languages[j].Lines
 	})
 

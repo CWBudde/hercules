@@ -1,6 +1,7 @@
 package modes
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"time"
@@ -18,13 +19,16 @@ func RefactoringProxy(reader readers.Reader, output string) error {
 	if !ok {
 		return fmt.Errorf("%w: RefactoringProxy", readers.ErrAnalysisMissing)
 	}
+
 	data, err := proxyReader.GetRefactoringProxy()
 	if err != nil {
 		return err
 	}
+
 	if data == nil || len(data.Ticks) == 0 {
 		return fmt.Errorf("%w: RefactoringProxy", readers.ErrAnalysisMissing)
 	}
+
 	return plotRefactoringProxy(reader.GetName(), data, output)
 }
 
@@ -38,6 +42,7 @@ func plotRefactoringProxy(repoName string, data *readers.RefactoringProxyData, o
 	x := make([]float64, len(data.Ticks))
 	rates := make([]float64, len(data.Ticks))
 	maxRate := 0.0
+
 	for i, tick := range data.Ticks {
 		timestamps[i] = time.Unix(tick.Timestamp, 0).UTC()
 		x[i] = refactoringProxyDateNumber(timestamps[i])
@@ -47,10 +52,12 @@ func plotRefactoringProxy(repoName string, data *readers.RefactoringProxyData, o
 
 	width, height := reportPlotPixels("refactoring-proxy.png")
 	fig := newReportFigure(width, height)
+
 	grid := fig.Subplots(1, 1, core.WithSubplotPadding(0.080, 0.950, 0.140, 0.900))
 	if len(grid) == 0 || len(grid[0]) == 0 || grid[0][0] == nil {
-		return fmt.Errorf("failed to create refactoring proxy axes")
+		return errors.New("failed to create refactoring proxy axes")
 	}
+
 	ax := grid[0][0]
 
 	lineColor := render.Color{R: 0x2e / 255.0, G: 0x86 / 255.0, B: 0xab / 255.0, A: 1}
@@ -80,6 +87,7 @@ func plotRefactoringProxy(repoName string, data *readers.RefactoringProxyData, o
 	}
 
 	spanColor := render.Color{R: 0xa8 / 255.0, G: 0xda / 255.0, B: 0xdc / 255.0, A: 1}
+
 	spanAlpha := 0.2
 	for _, region := range refactoringProxyRegions(data.Ticks, threshold, x) {
 		ax.AxVSpan(region.Start, region.End, core.VSpanOptions{
@@ -93,17 +101,21 @@ func plotRefactoringProxy(repoName string, data *readers.RefactoringProxyData, o
 	if err := saveReportFigureWithoutTightLayout(fig, output, width, height); err != nil {
 		return fmt.Errorf("failed to save refactoring proxy chart: %w", err)
 	}
+
 	fmt.Printf("Saved refactoring proxy chart to %s\n", output)
+
 	return nil
 }
 
 func configureRefactoringProxyAxes(ax *core.Axes, repoName string, maxRate, threshold float64) {
 	ax.SetXLabel("Date")
 	ax.SetYLabel("Refactoring Rate (Renames/Moves per Commit)")
+
 	title := "Refactoring Proxy Timeline"
 	if repoName != "" {
 		title = fmt.Sprintf("%s - %s", repoName, title)
 	}
+
 	ax.SetTitle(title)
 	ax.YAxis.Formatter = ticker.PercentFormatter{XMax: 1, Decimals: 0}
 	ax.SetYLim(0, math.Max(maxRate, threshold)*1.08)
@@ -118,6 +130,7 @@ type refactoringProxyRegion struct {
 func refactoringProxyRegions(ticks []readers.RefactoringProxyTick, threshold float64, x []float64) []refactoringProxyRegion {
 	regions := []refactoringProxyRegion{}
 	currentStart := math.NaN()
+
 	for i, tick := range ticks {
 		isRefactoring := float64(tick.RefactoringRate) >= threshold
 		switch {
@@ -128,9 +141,11 @@ func refactoringProxyRegions(ticks []readers.RefactoringProxyTick, threshold flo
 			currentStart = math.NaN()
 		}
 	}
+
 	if !math.IsNaN(currentStart) && len(x) > 0 {
 		regions = append(regions, refactoringProxyRegion{Start: currentStart, End: x[len(x)-1]})
 	}
+
 	return regions
 }
 

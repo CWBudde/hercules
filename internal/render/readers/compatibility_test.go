@@ -9,7 +9,7 @@ import (
 )
 
 // TestCriticalCompatibilityIssues verifies the critical compatibility issues
-// identified in COMPATIBILITY_ANALYSIS.md
+// identified in COMPATIBILITY_ANALYSIS.md.
 func TestCriticalCompatibilityIssues(t *testing.T) {
 	testFile := "../testdata/example_data/hercules_burndown.pb"
 
@@ -28,7 +28,7 @@ func TestCriticalCompatibilityIssues(t *testing.T) {
 		header, name, matrix, err := reader.GetProjectBurndownWithHeader()
 		assert.NoError(t, err, "Contents[\"Burndown\"] access should work")
 		assert.NotEmpty(t, name, "Should extract repository name")
-		assert.Greater(t, len(matrix), 0, "Should extract matrix data")
+		assert.NotEmpty(t, matrix, "Should extract matrix data")
 		assert.Greater(t, header.TickSize, float64(0), "Should extract header data")
 
 		t.Logf("✓ Contents parsing works: %s, %dx%d matrix, tick_size=%.3f",
@@ -90,13 +90,13 @@ func TestCriticalCompatibilityIssues(t *testing.T) {
 
 		// Verify consistent rectangular structure (transpose worked correctly)
 		for i, row := range matrix {
-			assert.Equal(t, cols, len(row), "Row %d should have %d columns", i, cols)
+			assert.Len(t, row, cols, "Row %d should have %d columns", i, cols)
 		}
 
 		// For burndown data, typically expect more time points than metrics
 		// But this depends on the specific data, so just verify basic structure
-		assert.Greater(t, rows, 0, "Should have metric rows")
-		assert.Greater(t, cols, 0, "Should have time columns")
+		assert.Positive(t, rows, "Should have metric rows")
+		assert.Positive(t, cols, "Should have time columns")
 	})
 
 	t.Run("DataIntegrityIssues", func(t *testing.T) {

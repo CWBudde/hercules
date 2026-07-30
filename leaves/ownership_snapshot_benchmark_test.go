@@ -36,15 +36,12 @@ func BenchmarkOwnershipSnapshotsStableLargeFiles(b *testing.B) {
 					previousAuthor, currentAuthor = currentAuthor, previousAuthor
 				}
 
-				_, snapshot, err := accumulator.consume(tick, core.LineHistoryChanges{
+				_, snapshot := accumulator.consume(tick, core.LineHistoryChanges{
 					Changes: []core.LineHistoryChange{
 						ownershipChange(1, -1, previousAuthor, currentAuthor, core.TickNumber(tick)),
 						ownershipChange(1, 1, currentAuthor, currentAuthor, core.TickNumber(tick)),
 					},
 				})
-				if err != nil {
-					b.Fatal(err)
-				}
 
 				benchmarkOwnershipSnapshot = snapshot
 				tick++
@@ -111,10 +108,7 @@ func benchmarkSeedOwnership(b *testing.B, fileCount int) ownershipSnapshotAccumu
 	accumulator := ownershipSnapshotAccumulator{}
 	accumulator.reset()
 
-	_, _, err := accumulator.consume(0, core.LineHistoryChanges{Changes: changes})
-	if err != nil {
-		b.Fatal(err)
-	}
+	accumulator.consume(0, core.LineHistoryChanges{Changes: changes})
 
 	return accumulator
 }

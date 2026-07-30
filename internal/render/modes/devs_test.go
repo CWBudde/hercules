@@ -260,7 +260,7 @@ func TestCalculateTeamMetrics(t *testing.T) {
 	}
 }
 
-// Helper type for team metrics testing
+// Helper type for team metrics testing.
 type TeamMetrics struct {
 	TotalCommits               int
 	TotalLinesAdded            int
@@ -270,7 +270,7 @@ type TeamMetrics struct {
 	AverageLinesPerDeveloper   float64
 }
 
-// Mock function for calculating team metrics
+// Mock function for calculating team metrics.
 func calculateTeamMetrics(devStats []readers.DeveloperStat) TeamMetrics {
 	var metrics TeamMetrics
 
@@ -289,14 +289,14 @@ func calculateTeamMetrics(devStats []readers.DeveloperStat) TeamMetrics {
 	return metrics
 }
 
-// Mock function for sorting developers
+// Mock function for sorting developers.
 func sortDevelopersByCommits(devStats []readers.DeveloperStat) []readers.DeveloperStat {
 	sorted := make([]readers.DeveloperStat, len(devStats))
 	copy(sorted, devStats)
 
 	// Simple bubble sort for testing
-	for i := 0; i < len(sorted)-1; i++ {
-		for j := 0; j < len(sorted)-i-1; j++ {
+	for i := range len(sorted) - 1 {
+		for j := range len(sorted) - i - 1 {
 			if sorted[j].Commits < sorted[j+1].Commits {
 				sorted[j], sorted[j+1] = sorted[j+1], sorted[j]
 			}
@@ -306,7 +306,7 @@ func sortDevelopersByCommits(devStats []readers.DeveloperStat) []readers.Develop
 	return sorted
 }
 
-// Mock function for calculating language distribution
+// Mock function for calculating language distribution.
 func calculateLanguageDistribution(devStats []readers.DeveloperStat) map[string]int {
 	langDist := make(map[string]int)
 
@@ -319,11 +319,11 @@ func calculateLanguageDistribution(devStats []readers.DeveloperStat) map[string]
 	return langDist
 }
 
-// Mock function for testing
+// Mock function for testing.
 func mockGenerateDevsPlot(name string, devStats []readers.DeveloperStat, outputPath string) error {
 	// Simple mock implementation
 	if len(devStats) == 0 {
-		return fmt.Errorf("empty developer stats")
+		return errors.New("empty developer stats")
 	}
 
 	// Create a simple test file to simulate chart generation

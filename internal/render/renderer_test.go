@@ -82,7 +82,8 @@ func TestParallelRenderersKeepOppositeOptionsIsolated(t *testing.T) {
 	wait.Wait()
 	close(results)
 	for result := range results {
-		if err := result.Err(); err != nil {
+		err := result.Err()
+		if err != nil {
 			t.Fatalf("parallel render failed: %v", err)
 		}
 	}

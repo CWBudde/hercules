@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -134,9 +135,7 @@ func TestRunAllModesUsesPythonAllComposition(t *testing.T) {
 		}
 	}
 	defer func() {
-		for mode, handler := range oldHandlers {
-			modeHandlers[mode] = handler
-		}
+		maps.Copy(modeHandlers, oldHandlers)
 	}()
 
 	renderer, err := NewRenderer(Options{Quiet: true})
@@ -245,7 +244,7 @@ func TestRunWithResultsClassifiesOutcomes(t *testing.T) {
 		wantWarning bool
 	}{
 		{name: "success", handlerErr: nil, wantErr: false, wantWarning: false},
-		{name: "hard failure", handlerErr: fmt.Errorf("render exploded"), wantErr: true, wantWarning: false},
+		{name: "hard failure", handlerErr: errors.New("render exploded"), wantErr: true, wantWarning: false},
 		{name: "downgraded warning", handlerErr: fmt.Errorf("failed: %w", readers.ErrAnalysisMissing), wantErr: false, wantWarning: true},
 	}
 	for _, tt := range tests {

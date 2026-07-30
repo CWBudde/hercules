@@ -2,6 +2,7 @@ package modes
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -48,6 +49,7 @@ func OverwritesMatrixWithOptions(reader readers.Reader, output string, opts Opti
 	}
 
 	fmt.Println("Overwrites matrix generated successfully.")
+
 	return nil
 }
 
@@ -67,11 +69,13 @@ func processOverwritesMatrix(people []string, matrix [][]int, maxPeople int, nor
 	}
 
 	colLabels := append([]string{"Unidentified"}, people...)
+
 	return people, colLabels, normalizedMatrix
 }
 
 func overwriteValues(row []int, normalize bool) []float64 {
 	values := make([]float64, max(len(row)-1, 0))
+
 	total := overwriteRowTotal(row)
 	for column := 1; column < len(row); column++ {
 		values[column-1] = -float64(row[column])
@@ -79,6 +83,7 @@ func overwriteValues(row []int, normalize bool) []float64 {
 			values[column-1] /= float64(total)
 		}
 	}
+
 	return values
 }
 
@@ -86,6 +91,7 @@ func overwriteRowTotal(row []int) int {
 	if len(row) == 0 {
 		return 0
 	}
+
 	return row[0]
 }
 
@@ -102,7 +108,8 @@ func plotOverwritesMatrixWithOptions(
 	people = truncateOverwriteLabels(peopleChartLabels(people))
 	colLabels = truncateOverwriteLabels(peopleChartLabels(colLabels))
 
-	if err := graphics.ValidateHeatMap(matrix, people, colLabels); err != nil {
+	err := graphics.ValidateHeatMap(matrix, people, colLabels)
+	if err != nil {
 		return err
 	}
 
@@ -114,10 +121,12 @@ func plotOverwritesMatrixWithOptions(
 		opts.Size,
 	)
 	background, foreground := graphics.LaboursPlotColors(opts.Background)
+
 	graphics.RegisterPythonLaboursHeatmapColormaps()
+
 	fig, ax := newOverwritesFigure(width, height, background, foreground, opts.PlotFontSize())
 	if ax == nil {
-		return fmt.Errorf("failed to create overwrites axes")
+		return errors.New("failed to create overwrites axes")
 	}
 
 	cmap := "OrRd"
@@ -126,13 +135,16 @@ func plotOverwritesMatrixWithOptions(
 		VMin:     optional.Of(minValue),
 		VMax:     optional.Of(maxValue),
 	}); img == nil {
-		return fmt.Errorf("failed to create overwrites matrix image")
+		return errors.New("failed to create overwrites matrix image")
 	}
+
 	configureOverwritesMatrixAxes(ax, people, colLabels, foreground)
 
-	if err := saveOverwritesMatplotlibFigure(fig, output, width, height, background); err != nil {
+	err = saveOverwritesMatplotlibFigure(fig, output, width, height, background)
+	if err != nil {
 		return fmt.Errorf("failed to save plot: %w", err)
 	}
+
 	return nil
 }
 
@@ -142,6 +154,7 @@ func truncateOverwriteLabels(labels []string) []string {
 			labels[i] = label[:37] + "..."
 		}
 	}
+
 	return labels
 }
 
@@ -164,6 +177,7 @@ func newOverwritesFigure(
 		1,
 		core.WithGridSpecPadding(0.105, 0.99, 0.01, 0.89),
 	).Cell(0, 0).AddAxes()
+
 	return fig, ax
 }
 
@@ -180,6 +194,7 @@ func configureOverwritesMatrixAxes(ax *core.Axes, people, colLabels []string, fo
 		ax.XAxis.Formatter = ticker.FixedFormatter{Labels: colLabels}
 		ax.XAxis.MinorLocator = ticker.FixedLocator{TicksList: xMinorTicks}
 	}
+
 	top := ax.TopAxis()
 	top.Locator = ticker.FixedLocator{TicksList: xTicks}
 	top.Formatter = ticker.FixedFormatter{Labels: colLabels}
@@ -218,6 +233,7 @@ func configureOverwritesMatrixAxes(ax *core.Axes, people, colLabels []string, fo
 	yGrid.MinorLocator = ticker.FixedLocator{TicksList: yMinorTicks}
 	yGrid.MinorColor = gridColor
 	yGrid.MinorLineWidth = 1
+
 	ax.Add(xGrid)
 	ax.Add(yGrid)
 }
@@ -227,6 +243,7 @@ func integerTicks(count int) []float64 {
 	for i := range ticks {
 		ticks[i] = float64(i)
 	}
+
 	return ticks
 }
 
@@ -235,6 +252,7 @@ func halfOffsetTicks(count int) []float64 {
 	for i := range ticks {
 		ticks[i] = float64(i) + 0.5
 	}
+
 	return ticks
 }
 
@@ -242,7 +260,9 @@ func saveOverwritesMatplotlibFigure(fig *core.Figure, output string, width, heig
 	if output == "" {
 		output = "overwrites.png"
 	}
-	if err := os.MkdirAll(filepath.Dir(output), 0o750); err != nil {
+
+	err := os.MkdirAll(filepath.Dir(output), 0o750)
+	if err != nil {
 		return fmt.Errorf("failed to create output directory for %s: %w", output, err)
 	}
 
@@ -255,24 +275,29 @@ func saveOverwritesMatplotlibFigure(fig *core.Figure, output string, width, heig
 		DPI:         100,
 		Transparent: transparentBackground.A == 0,
 	}
+
 	switch strings.ToLower(filepath.Ext(output)) {
 	case ".svg":
 		renderer, _, err := backends.NewRenderer("svg", config, nil)
 		if err != nil {
 			return fmt.Errorf("failed to create SVG renderer: %w", err)
 		}
+
 		return core.SaveSVG(fig, renderer, output)
 	default:
 		renderer, _, err := backends.NewRenderer("agg", config, backends.TextCapabilities)
 		if err != nil {
 			return fmt.Errorf("failed to create AGG renderer: %w", err)
 		}
+
 		if err := core.SavePNG(fig, renderer, output); err != nil {
 			return err
 		}
+
 		if transparentBackground.A == 0 {
 			return graphics.SetTransparentPNGRGB(output, transparentBackground)
 		}
+
 		return nil
 	}
 }
@@ -280,18 +305,22 @@ func saveOverwritesMatplotlibFigure(fig *core.Figure, output string, width, heig
 func matrixRange(matrix [][]float64) (minValue, maxValue float64) {
 	minValue = math.Inf(1)
 	maxValue = math.Inf(-1)
+
 	for _, row := range matrix {
 		for _, value := range row {
 			minValue = math.Min(minValue, value)
 			maxValue = math.Max(maxValue, value)
 		}
 	}
+
 	if math.IsInf(minValue, 0) {
 		return 0, 1
 	}
+
 	if minValue == maxValue {
 		return minValue - 0.5, maxValue + 0.5
 	}
+
 	return minValue, maxValue
 }
 
@@ -314,6 +343,7 @@ func saveMatrixAsJSON(output string, people []string, matrix [][]float64) error 
 
 	encoder := json.NewEncoder(file)
 	encoder.SetIndent("", "  ")
+
 	return encoder.Encode(data)
 }
 
@@ -323,7 +353,9 @@ func truncateOverwritesMatrix(matrix [][]int, indices []int) [][]int {
 		if idx >= len(matrix) {
 			continue
 		}
+
 		cols := append([]int{0, 1}, addOffset(indices, 2)...)
+
 		truncated[i] = make([]int, len(cols))
 		for j, col := range cols {
 			if col >= 0 && col < len(matrix[idx]) {
@@ -331,6 +363,7 @@ func truncateOverwritesMatrix(matrix [][]int, indices []int) [][]int {
 			}
 		}
 	}
+
 	return truncated
 }
 
@@ -339,6 +372,7 @@ func addOffset(values []int, offset int) []int {
 	for i, value := range values {
 		result[i] = value + offset
 	}
+
 	return result
 }
 
@@ -347,6 +381,7 @@ func truncatePeople(people []string, indices []int) []string {
 	for i, idx := range indices {
 		truncated[i] = people[idx]
 	}
+
 	return truncated
 }
 

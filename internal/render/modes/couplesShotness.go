@@ -1,6 +1,7 @@
 package modes
 
 import (
+	"errors"
 	"fmt"
 	"image/color"
 	"os"
@@ -31,7 +32,7 @@ func CouplesShotnessWithOptions(reader readers.Reader, output string, opts Optio
 	)
 }
 
-// ShotnessCouplingPair represents a coupling relationship between two shotness entities
+// ShotnessCouplingPair represents a coupling relationship between two shotness entities.
 type ShotnessCouplingPair struct {
 	Entity1          string
 	Entity2          string
@@ -39,7 +40,7 @@ type ShotnessCouplingPair struct {
 	CooccuranceCount int
 }
 
-// ShotnessCouplingAnalysis represents the complete shotness coupling analysis results
+// ShotnessCouplingAnalysis represents the complete shotness coupling analysis results.
 type ShotnessCouplingAnalysis struct {
 	EntityNames    []string
 	CouplingMatrix readers.SparseMatrix
@@ -47,7 +48,7 @@ type ShotnessCouplingAnalysis struct {
 	Statistics     ShotnessCouplingStatistics
 }
 
-// ShotnessCouplingStatistics provides summary statistics about shotness coupling
+// ShotnessCouplingStatistics provides summary statistics about shotness coupling.
 type ShotnessCouplingStatistics struct {
 	TotalEntities   int
 	TotalCouplings  int
@@ -92,7 +93,7 @@ func analyzeShotnessCoupling(
 	return analysis
 }
 
-// plotShotnessCoupling generates coupling visualization plots
+// plotShotnessCoupling generates coupling visualization plots.
 func plotShotnessCoupling(analysis ShotnessCouplingAnalysis, output string) error {
 	return plotShotnessCouplingWithOptions(analysis, output, graphics.DefaultOptions())
 }
@@ -103,7 +104,8 @@ func plotShotnessCouplingWithOptions(
 	visuals graphics.Options,
 ) error {
 	// Create heatmap for shotness entities
-	if err := plotShotnessCouplingHeatmap(analysis, output, visuals); err != nil {
+	err := plotShotnessCouplingHeatmap(analysis, output, visuals)
+	if err != nil {
 		return err
 	}
 
@@ -112,44 +114,50 @@ func plotShotnessCouplingWithOptions(
 	}
 
 	// Create bar chart of top coupling pairs
-	if err := plotTopShotnessCouplingPairs(analysis, output, visuals); err != nil {
+	err = plotTopShotnessCouplingPairs(analysis, output, visuals)
+	if err != nil {
 		return err
 	}
 
 	return nil
 }
 
-// plotShotnessCouplingHeatmap creates a heatmap of shotness coupling relationships
+// plotShotnessCouplingHeatmap creates a heatmap of shotness coupling relationships.
 func plotShotnessCouplingHeatmap(
 	analysis ShotnessCouplingAnalysis,
 	output string,
 	optionValues ...graphics.Options,
 ) error {
 	if analysis.CouplingMatrix.Rows == 0 {
-		return fmt.Errorf("no coupling matrix data available")
+		return errors.New("no coupling matrix data available")
 	}
 
 	pngFile := filepath.Join(output, "shotness_coupling_heatmap.png")
-	if err := plotPythonCouplingHeatmap(
+
+	err := plotPythonCouplingHeatmap(
 		"Shotness Coupling Heatmap", pngFile, analysis.EntityNames,
 		analysis.CouplingMatrix, "Greens", optionValues...,
-	); err != nil {
+	)
+	if err != nil {
 		return fmt.Errorf("failed to save heatmap: %w", err)
 	}
 
 	svgFile := filepath.Join(output, "shotness_coupling_heatmap.svg")
-	if err := plotPythonCouplingHeatmap(
+
+	err = plotPythonCouplingHeatmap(
 		"Shotness Coupling Heatmap", svgFile, analysis.EntityNames,
 		analysis.CouplingMatrix, "Greens", optionValues...,
-	); err != nil {
+	)
+	if err != nil {
 		return fmt.Errorf("failed to save heatmap: %w", err)
 	}
 
 	fmt.Printf("Saved shotness coupling heatmap to %s and %s\n", pngFile, svgFile)
+
 	return nil
 }
 
-// plotTopShotnessCouplingPairs creates a bar chart of the most coupled shotness entities
+// plotTopShotnessCouplingPairs creates a bar chart of the most coupled shotness entities.
 func plotTopShotnessCouplingPairs(
 	analysis ShotnessCouplingAnalysis,
 	output string,
@@ -159,8 +167,9 @@ func plotTopShotnessCouplingPairs(
 	if len(optionValues) > 0 {
 		visuals = optionValues[0]
 	}
+
 	if len(analysis.TopCoupling) == 0 {
-		return fmt.Errorf("no coupling pairs data available")
+		return errors.New("no coupling pairs data available")
 	}
 
 	values, rankLabels, barLabels := shotnessCouplingBarData(analysis.TopCoupling)
@@ -168,9 +177,12 @@ func plotTopShotnessCouplingPairs(
 	if output == "" {
 		output = "."
 	}
-	if err := os.MkdirAll(output, 0o750); err != nil {
+
+	err := os.MkdirAll(output, 0o750)
+	if err != nil {
 		return fmt.Errorf("failed to create output directory %s: %w", output, err)
 	}
+
 	opts := graphics.MatplotlibBarOptions{
 		Title:         "Top Shotness Coupling Pairs",
 		XLabel:        "Coupling Pair Rank",
@@ -184,19 +196,23 @@ func plotTopShotnessCouplingPairs(
 		BarLabelAngle: 70,
 		FontSize:      visuals.PlotFontSize(),
 	}
+
 	outputs := []string{
 		filepath.Join(output, "top_shotness_coupling_pairs.png"),
 		filepath.Join(output, "top_shotness_coupling_pairs.svg"),
 	}
 	for _, outputPath := range outputs {
 		opts.Output = outputPath
-		if err := graphics.PlotBarChartMatplotlib(rankLabels, values, opts); err != nil {
+
+		err := graphics.PlotBarChartMatplotlib(rankLabels, values, opts)
+		if err != nil {
 			return fmt.Errorf("failed to save coupling pairs plot: %w", err)
 		}
 	}
 
 	fmt.Printf("Saved top shotness coupling pairs plots to %s and %s\n", outputs[0], outputs[1])
 	printShotnessCouplingSummary(analysis)
+
 	return nil
 }
 
@@ -204,9 +220,11 @@ func shotnessCouplingBarData(pairs []ShotnessCouplingPair) ([]float64, []string,
 	maxPairs := min(len(pairs), 20)
 	values := make([]float64, maxPairs)
 	rankLabels := make([]string, maxPairs)
+
 	barLabels := make([]string, maxPairs)
 	for i, pair := range pairs[:maxPairs] {
 		values[i] = pair.CouplingScore
+
 		rankLabels[i] = strconv.Itoa(i + 1)
 		if i < 10 {
 			barLabels[i] = compactCouplingPairLabel(
@@ -214,6 +232,7 @@ func shotnessCouplingBarData(pairs []ShotnessCouplingPair) ([]float64, []string,
 			)
 		}
 	}
+
 	return values, rankLabels, barLabels
 }
 

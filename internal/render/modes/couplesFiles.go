@@ -2,9 +2,11 @@ package modes
 
 import (
 	"container/heap"
+	"errors"
 	"fmt"
 	"image/color"
 	"path/filepath"
+	"slices"
 	"strconv"
 
 	"github.com/cwbudde/hercules/internal/render/graphics"
@@ -12,7 +14,7 @@ import (
 	"github.com/cwbudde/hercules/internal/render/readers"
 )
 
-// CouplesFiles generates file coupling analysis and visualization
+// CouplesFiles generates file coupling analysis and visualization.
 func CouplesFiles(reader readers.Reader, output string) error {
 	return CouplesFilesWithOptions(reader, output, defaultOptions())
 }
@@ -40,35 +42,45 @@ func runCouplingMode(
 	if len(quietValues) > 0 {
 		quiet = quietValues[0]
 	}
+
 	progEstimator := progress.NewProgressEstimator(!quiet)
 	progEstimator.StartMultiOperation(3, title)
 	progEstimator.NextOperation("Extracting " + label + " data")
+
 	names, matrix, err := read()
 	if err != nil {
 		progEstimator.FinishMultiOperation()
 		return fmt.Errorf("failed to get %s data: %w", label, err)
 	}
+
 	if len(names) == 0 {
 		progEstimator.FinishMultiOperation()
+
 		if !quiet {
 			fmt.Printf("No %s data available\n", label)
 		}
+
 		return nil
 	}
+
 	progEstimator.NextOperation("Analyzing coupling patterns")
 	progEstimator.NextOperation("Generating visualization")
+
 	if err := plot(names, matrix, output); err != nil {
 		progEstimator.FinishMultiOperation()
 		return fmt.Errorf("failed to generate %s plots: %w", label, err)
 	}
+
 	progEstimator.FinishMultiOperation()
+
 	if !quiet {
 		fmt.Printf("%s completed successfully.\n", title)
 	}
+
 	return nil
 }
 
-// FileCouplingPair represents a coupling relationship between two files
+// FileCouplingPair represents a coupling relationship between two files.
 type FileCouplingPair struct {
 	File1            string
 	File2            string
@@ -76,7 +88,7 @@ type FileCouplingPair struct {
 	CooccuranceCount int
 }
 
-// FileCouplingAnalysis represents the complete coupling analysis results
+// FileCouplingAnalysis represents the complete coupling analysis results.
 type FileCouplingAnalysis struct {
 	FileNames      []string
 	CouplingMatrix readers.SparseMatrix
@@ -84,7 +96,7 @@ type FileCouplingAnalysis struct {
 	Statistics     CouplingStatistics
 }
 
-// CouplingStatistics provides summary statistics about file coupling
+// CouplingStatistics provides summary statistics about file coupling.
 type CouplingStatistics struct {
 	TotalFiles      int
 	TotalCoupling   int
@@ -93,11 +105,12 @@ type CouplingStatistics struct {
 	MinCoupling     int
 }
 
-// analyzeFileCoupling performs analysis on file coupling data
+// analyzeFileCoupling performs analysis on file coupling data.
 func analyzeFileCoupling(
 	fileNames []string, couplingMatrix readers.SparseMatrix,
 ) FileCouplingAnalysis {
 	pairs, stats := analyzeCouplingPairs(fileNames, couplingMatrix, 20)
+
 	filePairs := make([]FileCouplingPair, len(pairs))
 	for i, pair := range pairs {
 		filePairs[i] = FileCouplingPair{
@@ -172,15 +185,19 @@ func (analysis *couplingPairAnalysis) observe(row, column, coupling int) {
 	if row >= len(analysis.names) || column >= len(analysis.names) || row >= column || coupling <= 0 {
 		return
 	}
+
 	analysis.total += coupling
 	analysis.positivePairs++
+
 	analysis.max = max(analysis.max, coupling)
 	if analysis.min == 0 || coupling < analysis.min {
 		analysis.min = coupling
 	}
+
 	if analysis.limit <= 0 {
 		return
 	}
+
 	analysis.retain(rankedCouplingPair{
 		commonCouplingPair: commonCouplingPair{
 			Name1: analysis.names[row],
@@ -197,6 +214,7 @@ func (analysis *couplingPairAnalysis) retain(pair rankedCouplingPair) {
 		heap.Push(analysis.pairs, pair)
 		return
 	}
+
 	if betterCouplingPair(pair, (*analysis.pairs)[0]) {
 		heap.Pop(analysis.pairs)
 		heap.Push(analysis.pairs, pair)
@@ -208,10 +226,12 @@ func (analysis *couplingPairAnalysis) result() ([]commonCouplingPair, commonCoup
 	if analysis.positivePairs > 0 {
 		average = float64(analysis.total) / float64(analysis.positivePairs)
 	}
+
 	ranked := make([]commonCouplingPair, analysis.pairs.Len())
-	for index := len(ranked) - 1; index >= 0; index-- {
-		ranked[index] = heap.Pop(analysis.pairs).(rankedCouplingPair).commonCouplingPair
+	for range slices.Backward(ranked) {
+		_ = heap.Pop(analysis.pairs).(rankedCouplingPair).commonCouplingPair
 	}
+
 	return ranked, commonCouplingStats{
 		Total:   analysis.total,
 		Average: average,
@@ -222,6 +242,7 @@ func (analysis *couplingPairAnalysis) result() ([]commonCouplingPair, commonCoup
 
 type rankedCouplingPair struct {
 	commonCouplingPair
+
 	row    int
 	column int
 }
@@ -243,6 +264,7 @@ func (pairs *couplingPairHeap) Pop() any {
 	last := len(old) - 1
 	value := old[last]
 	*pairs = old[:last]
+
 	return value
 }
 
@@ -250,65 +272,72 @@ func betterCouplingPair(left, right rankedCouplingPair) bool {
 	if left.Count != right.Count {
 		return left.Count > right.Count
 	}
+
 	if left.row != right.row {
 		return left.row < right.row
 	}
+
 	return left.column < right.column
 }
 
-// plotFileCoupling generates coupling visualization plots
+// plotFileCoupling generates coupling visualization plots.
 func plotFileCoupling(analysis FileCouplingAnalysis, output string) error {
 	return plotFileCouplingWithOptions(analysis, output, graphics.DefaultOptions())
 }
 
 func plotFileCouplingWithOptions(analysis FileCouplingAnalysis, output string, opts graphics.Options) error {
 	// Create heatmap for top coupled files
-	if err := plotCouplingHeatmap(analysis, output, opts); err != nil {
+	err := plotCouplingHeatmap(analysis, output, opts)
+	if err != nil {
 		return err
 	}
 
 	// Create bar chart of top coupling pairs
-	if err := plotTopCouplingPairsWithOptions(analysis, output, opts); err != nil {
+	err = plotTopCouplingPairsWithOptions(analysis, output, opts)
+	if err != nil {
 		return err
 	}
 
 	return nil
 }
 
-// plotCouplingHeatmap creates a heatmap of file coupling relationships
+// plotCouplingHeatmap creates a heatmap of file coupling relationships.
 func plotCouplingHeatmap(
 	analysis FileCouplingAnalysis,
 	output string,
 	optionValues ...graphics.Options,
 ) error {
 	if analysis.CouplingMatrix.Rows == 0 {
-		return fmt.Errorf("no coupling matrix data available")
+		return errors.New("no coupling matrix data available")
 	}
 
 	outputFile := filepath.Join(output, "file_coupling_heatmap.png")
-	if err := plotPythonCouplingHeatmap(
+
+	err := plotPythonCouplingHeatmap(
 		"File Coupling Heatmap",
 		outputFile,
 		analysis.FileNames,
 		analysis.CouplingMatrix,
 		"Reds",
 		optionValues...,
-	); err != nil {
+	)
+	if err != nil {
 		return fmt.Errorf("failed to save heatmap: %w", err)
 	}
 
 	fmt.Printf("Saved file coupling heatmap to %s\n", outputFile)
+
 	return nil
 }
 
-// plotTopCouplingPairs creates a bar chart of the most coupled file pairs
+// plotTopCouplingPairs creates a bar chart of the most coupled file pairs.
 func plotTopCouplingPairs(analysis FileCouplingAnalysis, output string) error {
 	return plotTopCouplingPairsWithOptions(analysis, output, graphics.DefaultOptions())
 }
 
 func plotTopCouplingPairsWithOptions(analysis FileCouplingAnalysis, output string, opts graphics.Options) error {
 	if len(analysis.TopCoupling) == 0 {
-		return fmt.Errorf("no coupling pairs data available")
+		return errors.New("no coupling pairs data available")
 	}
 
 	// Prepare data for bar chart
@@ -319,10 +348,12 @@ func plotTopCouplingPairsWithOptions(analysis FileCouplingAnalysis, output strin
 
 	values := make([]float64, maxPairs)
 	rankLabels := make([]string, maxPairs)
+
 	barLabels := make([]string, maxPairs)
-	for i := 0; i < maxPairs; i++ {
+	for i := range maxPairs {
 		pair := analysis.TopCoupling[i]
 		values[i] = pair.CouplingScore
+
 		rankLabels[i] = strconv.Itoa(i + 1)
 		if i < 10 {
 			barLabels[i] = compactCouplingPairLabel(filepath.Base(pair.File1)+"-"+filepath.Base(pair.File2), 28)
@@ -330,8 +361,10 @@ func plotTopCouplingPairsWithOptions(analysis FileCouplingAnalysis, output strin
 	}
 
 	outputFile := filepath.Join(output, "top_file_coupling_pairs.png")
+
 	widthBar, heightBar := graphics.GetPlotSizeInchesWithOptions(graphics.ChartTypeDefault, opts)
-	if err := graphics.PlotBarChartMatplotlib(rankLabels, values, graphics.MatplotlibBarOptions{
+
+	err := graphics.PlotBarChartMatplotlib(rankLabels, values, graphics.MatplotlibBarOptions{
 		Title:         "Top File Coupling Pairs",
 		XLabel:        "Coupling Pair Rank",
 		YLabel:        "Coupling Score",
@@ -344,7 +377,8 @@ func plotTopCouplingPairsWithOptions(analysis FileCouplingAnalysis, output strin
 		BarLabels:     barLabels,
 		BarLabelAngle: 70,
 		FontSize:      opts.PlotFontSize(),
-	}); err != nil {
+	})
+	if err != nil {
 		return fmt.Errorf("failed to save coupling pairs plot: %w", err)
 	}
 
@@ -364,9 +398,11 @@ func compactCouplingPairLabel(label string, limit int) string {
 	if limit <= 0 || len(label) <= limit {
 		return label
 	}
+
 	if limit <= 3 {
 		return label[len(label)-limit:]
 	}
+
 	return "..." + label[len(label)-(limit-3):]
 }
 
@@ -377,5 +413,6 @@ func maxCouplingValue(values []float64) float64 {
 			maxValue = value
 		}
 	}
+
 	return maxValue
 }

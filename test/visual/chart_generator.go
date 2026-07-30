@@ -52,12 +52,15 @@ func (cg *ChartGenerator) GenerateChart(t *testing.T, mode, inputFile string) (s
 	if err != nil {
 		return "", err
 	}
+
 	if len(artifacts) != 1 {
 		return "", fmt.Errorf("%s generated %d artifacts, expected one", mode, len(artifacts))
 	}
+
 	for _, path := range artifacts {
 		return path, nil
 	}
+
 	return "", fmt.Errorf("%w: %s", errChartNotCreated, mode)
 }
 
@@ -104,12 +107,14 @@ func (cg *ChartGenerator) GenerateChartSet(
 	if err != nil {
 		return nil, fmt.Errorf("list generated charts: %w", err)
 	}
+
 	artifacts := make(map[string]string, len(entries))
 	for _, entry := range entries {
 		if entry.Type().IsRegular() {
 			artifacts[entry.Name()] = filepath.Join(cg.OutputDir, entry.Name())
 		}
 	}
+
 	if len(artifacts) == 0 {
 		return nil, fmt.Errorf("%w: %s", errChartNotCreated, outputPath)
 	}

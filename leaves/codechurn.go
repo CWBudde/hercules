@@ -238,7 +238,8 @@ func (analyser *CodeChurnAnalysis) Consume(deps map[string]any) (map[string]any,
 	peopleCount := analyser.peopleResolver.MaxCount()
 
 	for _, change := range changes.Changes {
-		if err := analyser.consumeCodeChurnChange(change, peopleCount); err != nil {
+		err := analyser.consumeCodeChurnChange(change, peopleCount)
+		if err != nil {
 			return nil, err
 		}
 	}
@@ -253,6 +254,7 @@ func (analyser *CodeChurnAnalysis) consumeCodeChurnChange(
 	// File-deletion sentinels do not affect ownership, but their tick still
 	// advances the repository-wide decay horizon used by Finalize.
 	analyser.observeTick(change.CurrTick)
+
 	if change.IsDelete() {
 		return nil
 	}
@@ -261,18 +263,22 @@ func (analyser *CodeChurnAnalysis) consumeCodeChurnChange(
 	if err != nil {
 		return err
 	}
+
 	if lineDelta == math.MinInt32 {
 		return fmt.Errorf(
 			"%w: deletion magnitude %d cannot be represented",
 			errCodeChurnCounterOverflow, change.Delta,
 		)
 	}
+
 	if int(change.PrevAuthor) >= peopleCount && change.PrevAuthor != core.AuthorMissing {
 		change.PrevAuthor = core.AuthorMissing
 	}
+
 	if int(change.CurrAuthor) >= peopleCount && change.CurrAuthor != core.AuthorMissing {
 		change.CurrAuthor = core.AuthorMissing
 	}
+
 	return analyser.updateAuthor(change, lineDelta)
 }
 
@@ -296,7 +302,8 @@ type churnFileEntry struct {
 
 // Finalize returns the result of the analysis. Further calls to Consume() are not expected.
 func (analyser *CodeChurnAnalysis) Finalize() any {
-	if err := analyser.consumePendingLineHistory(); err != nil {
+	err := analyser.consumePendingLineHistory()
+	if err != nil {
 		return err
 	}
 

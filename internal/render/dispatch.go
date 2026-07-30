@@ -12,7 +12,7 @@ import (
 	"github.com/cwbudde/hercules/internal/render/readers"
 )
 
-// Map of mode names to their handlers
+// Map of mode names to their handlers.
 type modeHandler func(reader readers.Reader, output string, startTime, endTime *time.Time, opts modes.Options) error
 
 var modeHandlers = map[string]modeHandler{
@@ -45,10 +45,12 @@ var modeHandlers = map[string]modeHandler{
 func executeModes(modeNames []string, reader readers.Reader, output string, startTime, endTime *time.Time) Result {
 	opts := DefaultOptions()
 	opts.Output, opts.StartTime, opts.EndTime = output, startTime, endTime
+
 	renderer, err := NewRenderer(opts)
 	if err != nil {
 		return Result{OutputError: err}
 	}
+
 	return renderer.executeModes(modeNames, reader)
 }
 
@@ -56,20 +58,25 @@ func (r *Renderer) executeModes(modeNames []string, reader readers.Reader) Resul
 	if len(modeNames) == 0 {
 		return Result{}
 	}
-	if err := r.validateModeOutputPlan(r.options.Output, modeNames); err != nil {
+
+	err := r.validateModeOutputPlan(r.options.Output, modeNames)
+	if err != nil {
 		return Result{OutputError: fmt.Errorf("plan renderer outputs: %w", err)}
 	}
+
 	if strings.HasSuffix(strings.ToLower(r.options.Output), ".json") {
 		return r.executeJSONModes(modeNames, reader)
 	}
+
 	return r.executeImageModes(modeNames, reader)
 }
 
 func (r *Renderer) executeJSONModes(modeNames []string, reader readers.Reader) Result {
-	results := make(map[string]interface{}, len(modeNames))
+	results := make(map[string]any, len(modeNames))
 	modeResults := make([]ModeResult, 0, len(modeNames))
 	estimator := progress.NewProgressEstimator(!r.options.Quiet)
 	startMultiModeProgress(estimator, modeNames)
+
 	for _, mode := range modeNames {
 		nextModeProgress(estimator, mode, len(modeNames))
 		r.printRunningMode(mode)
@@ -77,39 +84,50 @@ func (r *Renderer) executeJSONModes(modeNames []string, reader readers.Reader) R
 		modeResults = append(modeResults, modeResult)
 		results[mode] = data
 	}
+
 	finishMultiModeProgress(estimator, modeNames)
-	if err := saveJSONResults(results, r.options.Output); err != nil {
+
+	err := saveJSONResults(results, r.options.Output)
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error saving JSON results: %v\n", err)
 		return Result{Modes: modeResults, OutputError: err}
 	}
+
 	if !r.options.Quiet {
 		fmt.Printf("Results saved as JSON to: %s\n", r.options.Output)
 	}
+
 	return Result{Modes: modeResults}
 }
 
-func runJSONMode(reader readers.Reader, mode string) (ModeResult, interface{}) {
+func runJSONMode(reader readers.Reader, mode string) (ModeResult, any) {
 	if _, ok := modeHandlers[mode]; !ok {
 		printModeUnavailable(mode)
+
 		return ModeResult{Mode: mode, Err: errors.New(modeUnavailableMessage(mode))},
-			map[string]interface{}{"error": "mode not implemented"}
+			map[string]any{"error": "mode not implemented"}
 	}
+
 	data, err := extractModeDataForJSON(reader, mode)
 	if err == nil {
 		return ModeResult{Mode: mode}, data
 	}
+
 	result := handleModeError(mode, err)
+
 	key, message := "error", err.Error()
 	if result.Warning != "" {
 		key, message = "warning", result.Warning
 	}
-	return result, map[string]interface{}{key: message}
+
+	return result, map[string]any{key: message}
 }
 
 func (r *Renderer) executeImageModes(modeNames []string, reader readers.Reader) Result {
 	modeResults := make([]ModeResult, 0, len(modeNames))
 	estimator := progress.NewProgressEstimator(!r.options.Quiet)
 	startMultiModeProgress(estimator, modeNames)
+
 	for _, mode := range modeNames {
 		nextModeProgress(estimator, mode, len(modeNames))
 		r.printRunningMode(mode)
@@ -118,7 +136,9 @@ func (r *Renderer) executeImageModes(modeNames []string, reader readers.Reader) 
 			r.options.StartTime, r.options.EndTime, r.modeOptions(),
 		))
 	}
+
 	finishMultiModeProgress(estimator, modeNames)
+
 	return Result{Modes: modeResults}
 }
 
@@ -130,7 +150,7 @@ func startMultiModeProgress(estimator *progress.ProgressEstimator, modeNames []s
 
 func nextModeProgress(estimator *progress.ProgressEstimator, mode string, modeCount int) {
 	if modeCount > 1 {
-		estimator.NextOperation(fmt.Sprintf("Running %s", mode))
+		estimator.NextOperation("Running " + mode)
 	}
 }
 
@@ -159,10 +179,14 @@ func (r *Renderer) runSingleMode(
 		printModeUnavailable(mode)
 		return ModeResult{Mode: mode, Err: errors.New(modeUnavailableMessage(mode))}
 	}
+
 	formattedOutput := r.planModeOutput(output, mode, modeCount)
-	if err := modeFunc(reader, formattedOutput, startTime, endTime, opts); err != nil {
+
+	err := modeFunc(reader, formattedOutput, startTime, endTime, opts)
+	if err != nil {
 		return handleModeError(mode, err)
 	}
+
 	return ModeResult{Mode: mode}
 }
 
@@ -170,6 +194,7 @@ func modeUnavailableMessage(mode string) string {
 	if isValidMode(mode) {
 		return "Mode not implemented yet: " + mode
 	}
+
 	return "Unknown mode: " + mode
 }
 
@@ -185,7 +210,9 @@ func handleModeError(mode string, err error) ModeResult {
 		fmt.Fprintln(os.Stderr, warning)
 		return ModeResult{Mode: mode, Warning: warning}
 	}
+
 	fmt.Fprintf(os.Stderr, "Error in mode %s: %v\n", mode, err)
+
 	return ModeResult{Mode: mode, Err: err}
 }
 
@@ -193,10 +220,13 @@ func missingAnalysisWarning(mode string, err error) (string, bool) {
 	if !isMissingAnalysisError(err) {
 		return "", false
 	}
+
 	if mode == "devs-parallel" {
 		return devsParallelMissingAnalysisWarning(err), true
 	}
+
 	warning, ok := standardMissingAnalysisWarnings()[mode]
+
 	return warning, ok
 }
 
@@ -209,6 +239,7 @@ func standardMissingAnalysisWarnings() map[string]string {
 		shotness       = "Structural hotness stats were not collected. Re-run hercules with --shotness. Also check --languages - the output may be empty."
 		devs           = "Devs stats were not collected. Re-run hercules with --devs."
 	)
+
 	return map[string]string{
 		"burndown-project":        "project: " + burndown,
 		"burndown-file":           "files: " + burndownFiles,
@@ -240,9 +271,11 @@ func devsParallelMissingAnalysisWarning(err error) string {
 	if strings.Contains(message, "people cooccurrence") {
 		return "Coupling stats were not collected. Re-run hercules with --couples."
 	}
+
 	if strings.Contains(message, "devs time series") {
 		return "Devs stats were not collected. Re-run hercules with --devs."
 	}
+
 	return "devs-parallel: Burndown stats for people were not collected. Re-run hercules with --burndown --burndown-people."
 }
 
@@ -350,12 +383,12 @@ func refactoringProxy(reader readers.Reader, output string, _, _ *time.Time, _ m
 	return modes.RefactoringProxy(reader, output)
 }
 
-//nolint:unparam // Mode handlers share an error-returning signature.
 func runAllModes(reader readers.Reader, output string, startTime, endTime *time.Time) error {
 	renderer, err := NewRenderer(DefaultOptions())
 	if err != nil {
 		return err
 	}
+
 	return renderer.runAllModes(reader, output, startTime, endTime)
 }
 
@@ -365,6 +398,7 @@ func (r *Renderer) runAllModes(reader readers.Reader, output string, startTime, 
 	}
 
 	var failures []error
+
 	for _, modeName := range pythonAllModes {
 		if !r.options.Quiet {
 			fmt.Printf("  Running %s...\n", modeName)
@@ -374,10 +408,14 @@ func (r *Renderer) runAllModes(reader readers.Reader, output string, startTime, 
 		if !ok {
 			printModeUnavailable(modeName)
 			failures = append(failures, errors.New(modeUnavailableMessage(modeName)))
+
 			continue
 		}
+
 		modeOutput := r.planModeOutput(output, modeName, len(pythonAllModes))
-		if err := modeFunc(reader, modeOutput, startTime, endTime, r.modeOptions()); err != nil {
+
+		err := modeFunc(reader, modeOutput, startTime, endTime, r.modeOptions())
+		if err != nil {
 			result := handleModeError(modeName, err)
 			if result.Err != nil {
 				failures = append(failures, fmt.Errorf("render mode %s: %w", modeName, result.Err))

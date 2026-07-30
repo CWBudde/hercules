@@ -2,7 +2,8 @@ package modes
 
 import (
 	"container/heap"
-	"fmt"
+	"errors"
+	"slices"
 
 	"github.com/cwbudde/hercules/internal/render/graphics"
 	"github.com/cwbudde/hercules/internal/render/readers"
@@ -24,8 +25,9 @@ func plotPythonCouplingHeatmap(
 	if len(optionValues) > 0 {
 		visuals = optionValues[0]
 	}
+
 	if len(names) == 0 || matrix.Rows == 0 {
-		return fmt.Errorf("no coupling matrix data available")
+		return errors.New("no coupling matrix data available")
 	}
 
 	shownNames, shownMatrix := topCouplingHeatmapEntries(
@@ -51,11 +53,13 @@ func topCouplingHeatmapEntries(
 	if limit <= 0 {
 		return nil, nil
 	}
+
 	if len(names) <= limit {
 		indices := make([]int, len(names))
 		for index := range indices {
 			indices[index] = index
 		}
+
 		return append([]string(nil), names...), matrix.DenseSubset(indices)
 	}
 
@@ -65,10 +69,13 @@ func topCouplingHeatmapEntries(
 		if row < len(totals) {
 			totals[row] += value
 		}
+
 		return true
 	})
+
 	ranked := &couplingIndexHeap{}
 	heap.Init(ranked)
+
 	for index, total := range totals {
 		item := rankedCouplingIndex{index: index, total: total}
 		if ranked.Len() < limit {
@@ -78,17 +85,20 @@ func topCouplingHeatmapEntries(
 			heap.Push(ranked, item)
 		}
 	}
+
 	selected := make([]rankedCouplingIndex, ranked.Len())
-	for index := len(selected) - 1; index >= 0; index-- {
-		selected[index] = heap.Pop(ranked).(rankedCouplingIndex)
+	for range slices.Backward(selected) {
+		_ = heap.Pop(ranked).(rankedCouplingIndex)
 	}
 
 	shownNames := make([]string, len(selected))
+
 	indices := make([]int, len(selected))
 	for row, selectedRow := range selected {
 		shownNames[row] = names[selectedRow.index]
 		indices[row] = selectedRow.index
 	}
+
 	return shownNames, matrix.DenseSubset(indices)
 }
 
@@ -113,6 +123,7 @@ func (entries *couplingIndexHeap) Pop() any {
 	last := len(old) - 1
 	value := old[last]
 	*entries = old[:last]
+
 	return value
 }
 
@@ -120,6 +131,7 @@ func betterCouplingIndex(left, right rankedCouplingIndex) bool {
 	if left.total != right.total {
 		return left.total > right.total
 	}
+
 	return left.index < right.index
 }
 
@@ -131,5 +143,6 @@ func intMatrixToFloat64(matrix [][]int) [][]float64 {
 			data[i][j] = float64(value)
 		}
 	}
+
 	return data
 }

@@ -33,7 +33,7 @@ func TestCompressedSparseCouplingMatrixKeepsTenThousandRowsSparse(t *testing.T) 
 	indptr := make([]int64, size+1)
 	indices := make([]int32, size)
 	values := make([]int64, size)
-	for index := 0; index < size; index++ {
+	for index := range size {
 		indptr[index+1] = int64(index + 1)
 		indices[index] = int32(index)
 		values[index] = int64(index + 1)
@@ -55,11 +55,11 @@ func TestCompressedSparseCouplingMatrixKeepsTenThousandRowsSparse(t *testing.T) 
 }
 
 func TestSparseYAMLCouplingRowsRetainEmptyTrailingColumns(t *testing.T) {
-	rows := []interface{}{
-		map[string]interface{}{"0": 2, "3": 4},
-		map[string]interface{}{},
-		map[string]interface{}{},
-		map[string]interface{}{"0": 4},
+	rows := []any{
+		map[string]any{"0": 2, "3": 4},
+		map[string]any{},
+		map[string]any{},
+		map[string]any{"0": 4},
 	}
 	matrix, err := parseSparseCooccurrenceRows(rows, 4, analysisio.DefaultLimits())
 	require.NoError(t, err)
@@ -70,11 +70,11 @@ func TestSparseYAMLCouplingRowsRetainEmptyTrailingColumns(t *testing.T) {
 }
 
 func TestSparseYAMLValidationUsesStoredEntryLimit(t *testing.T) {
-	rows := make([]interface{}, 10_000)
+	rows := make([]any, 10_000)
 	for index := range rows {
-		rows[index] = map[string]interface{}{}
+		rows[index] = map[string]any{}
 	}
-	rows[0] = map[string]interface{}{"9999": 1}
+	rows[0] = map[string]any{"9999": 1}
 	limits := analysisio.Limits{
 		MaxDecodedCells: 1,
 		MaxRows:         10_000,
@@ -82,7 +82,7 @@ func TestSparseYAMLValidationUsesStoredEntryLimit(t *testing.T) {
 	}
 	require.NoError(t, validateYAMLSparseRows("large sparse YAML", rows, limits))
 
-	rows[1] = map[string]interface{}{"9998": 1}
+	rows[1] = map[string]any{"9998": 1}
 	require.ErrorIs(
 		t,
 		validateYAMLSparseRows("too many sparse YAML entries", rows, limits),

@@ -118,7 +118,7 @@ func TestReadersValidateSchemaVersions(t *testing.T) {
 					t.Fatalf("error = %v, want %v", err, test.wantErr)
 				}
 				if err == nil {
-					header := reader.data["hercules"].(map[string]interface{})
+					header := reader.data["hercules"].(map[string]any)
 					if header["version"] != int(pb.SchemaVersion) {
 						t.Fatalf("normalized version = %v, want %d", header["version"], pb.SchemaVersion)
 					}

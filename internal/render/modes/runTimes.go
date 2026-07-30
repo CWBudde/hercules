@@ -1,6 +1,7 @@
 package modes
 
 import (
+	"errors"
 	"fmt"
 	"image/color"
 	"path/filepath"
@@ -25,6 +26,7 @@ import (
 func RunTimes(reader readers.Reader, output string, detail bool) error {
 	opts := defaultOptions()
 	opts.RunTimesDetail = detail
+
 	return RunTimesWithOptions(reader, output, opts)
 }
 
@@ -38,6 +40,7 @@ func RunTimesWithOptions(reader readers.Reader, output string, opts Options) err
 
 	// Phase 1: Extract runtime data
 	progEstimator.NextOperation("Extracting runtime statistics")
+
 	runtimeStats, err := reader.GetRuntimeStats()
 	if err != nil {
 		progEstimator.FinishMultiOperation()
@@ -46,33 +49,42 @@ func RunTimesWithOptions(reader readers.Reader, output string, opts Options) err
 
 	if len(runtimeStats) == 0 {
 		progEstimator.FinishMultiOperation()
+
 		if !quiet {
 			fmt.Println("No runtime data available")
 		}
+
 		return nil
 	}
 
 	// Phase 2: Analyze runtime patterns
 	progEstimator.NextOperation("Analyzing runtime patterns")
+
 	runtimeAnalysis := analyzeRuntimeStats(runtimeStats)
 
 	// Phase 3: Generate visualizations (detail only) and print the summary.
 	progEstimator.NextOperation("Generating visualization")
+
 	if detail {
-		if err := plotRuntimeBreakdown(runtimeAnalysis, runtimeOutputPath(output), opts.Graphics); err != nil {
+		err := plotRuntimeBreakdown(runtimeAnalysis, runtimeOutputPath(output), opts.Graphics)
+		if err != nil {
 			progEstimator.FinishMultiOperation()
 			return fmt.Errorf("failed to generate runtime plots: %w", err)
 		}
 	}
+
 	printRuntimeSummary(runtimeAnalysis)
 
 	progEstimator.FinishMultiOperation()
+
 	if !quiet {
 		if !detail {
 			fmt.Println("Runtime breakdown chart skipped (pass --run-times-detail to render it).")
 		}
+
 		fmt.Println("Runtime analysis completed successfully.")
 	}
+
 	return nil
 }
 
@@ -80,24 +92,25 @@ func runtimeOutputPath(output string) string {
 	if output == "" {
 		return "run-times.png"
 	}
+
 	return output
 }
 
-// RuntimeMetric represents a single runtime measurement
+// RuntimeMetric represents a single runtime measurement.
 type RuntimeMetric struct {
 	Operation  string
 	TimeMs     float64
 	Percentage float64
 }
 
-// RuntimeAnalysis represents the complete runtime analysis results
+// RuntimeAnalysis represents the complete runtime analysis results.
 type RuntimeAnalysis struct {
 	Metrics    []RuntimeMetric
 	TotalTime  float64
 	Statistics RuntimeStatistics
 }
 
-// RuntimeStatistics provides summary statistics about runtime performance
+// RuntimeStatistics provides summary statistics about runtime performance.
 type RuntimeStatistics struct {
 	TotalOperations int
 	TotalTimeMs     float64
@@ -108,7 +121,7 @@ type RuntimeStatistics struct {
 	FastestOp       string
 }
 
-// analyzeRuntimeStats performs analysis on runtime statistics
+// analyzeRuntimeStats performs analysis on runtime statistics.
 func analyzeRuntimeStats(runtimeStats map[string]float64) RuntimeAnalysis {
 	var metrics []RuntimeMetric
 	totalTime := 0.0
@@ -140,6 +153,7 @@ func analyzeRuntimeStats(runtimeStats map[string]float64) RuntimeAnalysis {
 			maxTime = time
 			slowestOp = operation
 		}
+
 		if time < minTime {
 			minTime = time
 			fastestOp = operation
@@ -181,10 +195,10 @@ func printRuntimeSummary(analysis RuntimeAnalysis) {
 	fmt.Printf("  Fastest operation: %s (%.2f ms)\n", analysis.Statistics.FastestOp, analysis.Statistics.MinTime)
 }
 
-// plotRuntimeBreakdown creates a bar chart showing runtime for each operation
+// plotRuntimeBreakdown creates a bar chart showing runtime for each operation.
 func plotRuntimeBreakdown(analysis RuntimeAnalysis, output string, visuals graphics.Options) error {
 	if len(analysis.Metrics) == 0 {
-		return fmt.Errorf("no runtime metrics available")
+		return errors.New("no runtime metrics available")
 	}
 
 	// Prepare data for bar chart (show top 15 operations)
@@ -194,15 +208,18 @@ func plotRuntimeBreakdown(analysis RuntimeAnalysis, output string, visuals graph
 	}
 
 	labels := make([]string, maxOps)
+
 	values := make([]float64, maxOps)
-	for i := 0; i < maxOps; i++ {
+	for i := range maxOps {
 		labels[i] = compactRuntimeLabel(analysis.Metrics[i].Operation, 12)
 		values[i] = analysis.Metrics[i].TimeMs
 	}
 
 	xMargin := 0.05 * (float64(maxOps) - 0.2)
+
 	barColor := color.RGBA{R: 84, G: 162, B: 75, A: 255}
-	if err := graphics.PlotBarChartMatplotlib(labels, values, graphics.MatplotlibBarOptions{
+
+	err := graphics.PlotBarChartMatplotlib(labels, values, graphics.MatplotlibBarOptions{
 		Title:        "Runtime Analysis Breakdown",
 		XLabel:       "Operations (by time)",
 		YLabel:       "Time",
@@ -218,11 +235,13 @@ func plotRuntimeBreakdown(analysis RuntimeAnalysis, output string, visuals graph
 		XMin:         -0.4 - xMargin,
 		XMax:         float64(maxOps) - 0.6 + xMargin,
 		FontSize:     visuals.PlotFontSize(),
-	}); err != nil {
+	})
+	if err != nil {
 		return fmt.Errorf("failed to save runtime breakdown plot: %w", err)
 	}
 
 	fmt.Printf("Saved runtime breakdown plot to %s\n", output)
+
 	return nil
 }
 
@@ -230,15 +249,17 @@ func compactRuntimeLabel(label string, limit int) string {
 	if len(label) <= limit {
 		return label
 	}
+
 	return "..." + label[len(label)-(limit-3):]
 }
 
 // plotRuntimePieChart creates a pie chart showing percentage breakdown of runtime.
 // Currently unreferenced — kept as scaffolding for a future `--run-times-detail` flag.
-// nolint:unused
+//
+//nolint:unused
 func plotRuntimePieChart(analysis RuntimeAnalysis, output string) error {
 	if len(analysis.Metrics) == 0 {
-		return fmt.Errorf("no runtime metrics available")
+		return errors.New("no runtime metrics available")
 	}
 
 	// Prepare data for stacked representation (top 10 operations)
@@ -248,19 +269,24 @@ func plotRuntimePieChart(analysis RuntimeAnalysis, output string) error {
 	}
 
 	labels := make([]string, maxOps)
+
 	values := make([]float64, maxOps)
-	for i := 0; i < maxOps; i++ {
+	for i := range maxOps {
 		labels[i] = fmt.Sprintf("%s (%.1f%%)", compactRuntimeLabel(analysis.Metrics[i].Operation, 18), analysis.Metrics[i].Percentage)
 		values[i] = analysis.Metrics[i].Percentage
 	}
 
 	pngFile := filepath.Join(output, "runtime_percentage.png")
-	if err := plotRuntimePercentageMatplotlib(labels, values, pngFile); err != nil {
+
+	err := plotRuntimePercentageMatplotlib(labels, values, pngFile)
+	if err != nil {
 		return fmt.Errorf("failed to save runtime percentage PNG plot: %w", err)
 	}
 
 	svgFile := filepath.Join(output, "runtime_percentage.svg")
-	if err := plotRuntimePercentageMatplotlib(labels, values, svgFile); err != nil {
+
+	err = plotRuntimePercentageMatplotlib(labels, values, svgFile)
+	if err != nil {
 		return fmt.Errorf("failed to save runtime percentage SVG plot: %w", err)
 	}
 
@@ -289,10 +315,12 @@ func plotRuntimePercentageMatplotlib(labels []string, values []float64, output s
 		style.WithAxesBackground(render.Color{R: 1, G: 1, B: 1, A: 1}),
 		style.WithAxesEdgeColor(render.Color{R: 0, G: 0, B: 0, A: 1}),
 	)
+
 	grid := fig.Subplots(1, 1, core.WithSubplotPadding(0.149, 0.991, 0.058, 0.964))
 	if len(grid) == 0 || len(grid[0]) == 0 || grid[0][0] == nil {
-		return fmt.Errorf("failed to create runtime percentage axes")
+		return errors.New("failed to create runtime percentage axes")
 	}
+
 	ax := grid[0][0]
 	ax.SetTitle("Runtime Percentage Distribution")
 	ax.SetXLabel("Cumulative Percentage")
@@ -301,9 +329,11 @@ func plotRuntimePercentageMatplotlib(labels []string, values []float64, output s
 	y := make([]float64, len(values))
 	ticks := make([]float64, len(values))
 	maxValue := 0.0
+
 	for i, value := range values {
 		y[i] = float64(i)
 		ticks[i] = float64(i)
+
 		if value > maxValue {
 			maxValue = value
 		}
@@ -339,18 +369,21 @@ func saveRuntimeFigure(fig *core.Figure, output string, width, height int) error
 		DPI:         96,
 		Transparent: false,
 	}
+
 	switch strings.ToLower(filepath.Ext(output)) {
 	case ".svg":
 		renderer, _, err := backends.NewRenderer("svg", config, nil)
 		if err != nil {
 			return fmt.Errorf("failed to create SVG renderer: %w", err)
 		}
+
 		return core.SaveSVG(fig, renderer, output)
 	default:
 		renderer, _, err := backends.NewRenderer("agg", config, backends.TextCapabilities)
 		if err != nil {
 			return fmt.Errorf("failed to create AGG renderer: %w", err)
 		}
+
 		return core.SavePNG(fig, renderer, output)
 	}
 }

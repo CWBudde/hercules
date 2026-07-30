@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// ChartType represents different types of charts with their default dimensions
+// ChartType represents different types of charts with their default dimensions.
 type ChartType int
 
 const (
@@ -17,7 +17,7 @@ const (
 	ChartTypeWide                     // Wide charts (timeline-heavy charts)
 )
 
-// defaultSizes defines the default dimensions for each chart type
+// defaultSizes defines the default dimensions for each chart type.
 var defaultSizes = map[ChartType][2]float64{
 	ChartTypeDefault: {16.0, 8.0},  // Python labours default (16, 12) adapted for Go's typical 16x8
 	ChartTypeSquare:  {12.0, 12.0}, // Square for heatmaps and matrices
@@ -43,9 +43,12 @@ func GetPlotSizeInchesWithOptions(chartType ChartType, opts Options) (width, hei
 	width, height, err := parsePlotSizeFloats(sizeStr)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: %v, using default size\n", err)
+
 		defaultSize := defaultSizes[chartType]
+
 		return defaultSize[0], defaultSize[1]
 	}
+
 	return width, height
 }
 
@@ -70,8 +73,10 @@ func parsePlotSizeFloats(sizeStr string) (width, height float64, err error) {
 	if width <= 0 || height <= 0 {
 		return 0, 0, fmt.Errorf("dimensions must be positive: got width=%.1f, height=%.1f", width, height)
 	}
+
 	if width > 50 || height > 50 {
 		return 0, 0, fmt.Errorf("dimensions too large: got width=%.1f, height=%.1f (max 50 inches)", width, height)
 	}
+
 	return width, height, nil
 }

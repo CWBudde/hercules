@@ -275,7 +275,7 @@ func listThemes() {
 }
 
 func handleExportTheme(themeName string) error {
-	outputPath := fmt.Sprintf("%s-theme.yaml", themeName)
+	outputPath := themeName + "-theme.yaml"
 	if err := graphics.GlobalThemeManager.ExportTheme(themeName, outputPath); err != nil {
 		return fmt.Errorf("export theme %q: %w", themeName, err)
 	}
@@ -327,7 +327,7 @@ func handleHerculesIntegration(repoPath string, rendererOptions ...render.Option
 	)
 }
 
-// mapStyleToTheme maps matplotlib style names to labours-go theme names
+// mapStyleToTheme maps matplotlib style names to labours-go theme names.
 func mapStyleToTheme(style string) string {
 	styleToTheme := map[string]string{
 		// Core matplotlib built-in styles

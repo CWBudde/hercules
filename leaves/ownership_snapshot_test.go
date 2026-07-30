@@ -328,15 +328,41 @@ func TestOwnershipAnalysesEmptyAndSingleAuthorRepositories(t *testing.T) {
 	})
 }
 
-func TestOwnershipSnapshotAccumulatorRejectsUnderflow(t *testing.T) {
+// TestOwnershipSnapshotAccumulatorSurvivesDivergentRemoval pins PLAN.md B3: divergent branches
+// each remove the same lines from their own copy of a file and all of them feed this one
+// accumulator, so a total legitimately dips below zero until the branches merge. Aborting the run
+// over it killed --bus-factor and --ownership-concentration on ordinary histories.
+func TestOwnershipSnapshotAccumulatorSurvivesDivergentRemoval(t *testing.T) {
 	accumulator := ownershipSnapshotAccumulator{}
 	accumulator.reset()
 
-	_, _, err := accumulator.consume(0, core.LineHistoryChanges{
+	accumulator.consume(0, core.LineHistoryChanges{
+		Changes: []core.LineHistoryChange{ownershipChange(1, -1, 0, 1, 0)},
+	})
+
+	require.NotNil(t, accumulator.divergence, "the dip must be recorded for the run's warning")
+	assert.Equal(t, int64(-1), accumulator.totalLines,
+		"internal totals stay signed so the compensating positive can still cancel them")
+
+	totals := accumulator.snapshot()
+	assert.Zero(t, totals.TotalLines, "snapshots must not hand a negative line count downstream")
+	assert.Empty(t, totals.AuthorLines, "an author left with nothing owns nothing")
+}
+
+// TestOwnershipSnapshotAccumulatorCancelsDivergentRemoval is the other half: because the negative
+// is carried rather than clamped, the branch which duplicated the removal cancels out exactly.
+func TestOwnershipSnapshotAccumulatorCancelsDivergentRemoval(t *testing.T) {
+	accumulator := ownershipSnapshotAccumulator{}
+	accumulator.reset()
+
+	accumulator.consume(0, core.LineHistoryChanges{
 		Changes: []core.LineHistoryChange{
-			ownershipChange(1, -1, 0, 1, 0),
+			ownershipChange(1, -10, 0, 1, 0),
+			ownershipChange(1, 30, 0, 1, 0),
 		},
 	})
 
-	require.ErrorIs(t, err, errOwnershipUnderflow)
+	totals := accumulator.snapshot()
+	assert.Equal(t, int64(20), totals.TotalLines)
+	assert.Equal(t, map[int]int64{0: 20}, totals.AuthorLines)
 }

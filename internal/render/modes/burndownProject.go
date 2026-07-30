@@ -1,7 +1,7 @@
 package modes
 
 import (
-	"fmt"
+	"errors"
 	"time"
 
 	"github.com/cwbudde/hercules/internal/render/readers"
@@ -11,7 +11,7 @@ import (
 func BurndownProject(reader readers.Reader, output string, relative bool, startTime, endTime *time.Time, resample string) error {
 	repoName, burndownMatrix := reader.GetProjectBurndown()
 	if len(burndownMatrix) == 0 {
-		return fmt.Errorf("no burndown data available for project")
+		return errors.New("no burndown data available for project")
 	}
 
 	// Generate plot

@@ -7,7 +7,7 @@ import (
 	"github.com/schollz/progressbar/v3"
 )
 
-// ProgressEstimator provides estimation and tracking for long-running operations
+// ProgressEstimator provides estimation and tracking for long-running operations.
 type ProgressEstimator struct {
 	enabled          bool
 	currentBar       *progressbar.ProgressBar
@@ -15,14 +15,14 @@ type ProgressEstimator struct {
 	currentOperation int
 }
 
-// NewProgressEstimator creates a new progress estimator
+// NewProgressEstimator creates a new progress estimator.
 func NewProgressEstimator(enabled bool) *ProgressEstimator {
 	return &ProgressEstimator{
 		enabled: enabled,
 	}
 }
 
-// OperationType represents different types of operations with different cost weights
+// OperationType represents different types of operations with different cost weights.
 type OperationType int
 
 const (
@@ -34,7 +34,7 @@ const (
 	DataProcessing
 )
 
-// OperationWeights defines the relative computational cost of each operation type
+// OperationWeights defines the relative computational cost of each operation type.
 var OperationWeights = map[OperationType]int{
 	FileRead:            1,
 	DataParsing:         2,
@@ -44,18 +44,17 @@ var OperationWeights = map[OperationType]int{
 	DataProcessing:      2,
 }
 
-// EstimateFileReadSteps estimates progress steps for file reading based on file size
+// EstimateFileReadSteps estimates progress steps for file reading based on file size.
 func (pe *ProgressEstimator) EstimateFileReadSteps(fileSizeBytes int64) int {
 	// Estimate ~1MB per step for file reading
 	const bytesPerStep = 1024 * 1024
-	steps := int(fileSizeBytes/bytesPerStep) + 1
-	if steps < 1 {
-		steps = 1
-	}
+
+	steps := max(int(fileSizeBytes/bytesPerStep)+1, 1)
+
 	return steps
 }
 
-// EstimateMatrixSteps estimates progress steps for matrix operations
+// EstimateMatrixSteps estimates progress steps for matrix operations.
 func (pe *ProgressEstimator) EstimateMatrixSteps(rows, cols int) int {
 	// Base estimation on matrix size - more complex matrices take longer
 	totalElements := rows * cols
@@ -70,18 +69,16 @@ func (pe *ProgressEstimator) EstimateMatrixSteps(rows, cols int) int {
 	}
 }
 
-// EstimateProcessingSteps estimates steps for general data processing
+// EstimateProcessingSteps estimates steps for general data processing.
 func (pe *ProgressEstimator) EstimateProcessingSteps(dataSize int, complexity OperationType) int {
-	baseSteps := dataSize / 100
-	if baseSteps < 1 {
-		baseSteps = 1
-	}
+	baseSteps := max(dataSize/100, 1)
 
 	weight := OperationWeights[complexity]
+
 	return baseSteps * weight
 }
 
-// StartOperation begins a new operation with progress tracking
+// StartOperation begins a new operation with progress tracking.
 func (pe *ProgressEstimator) StartOperation(operationName string, estimatedSteps int) {
 	if !pe.enabled {
 		return
@@ -103,32 +100,35 @@ func (pe *ProgressEstimator) StartOperation(operationName string, estimatedSteps
 	)
 }
 
-// UpdateProgress updates the current operation's progress
+// UpdateProgress updates the current operation's progress.
 func (pe *ProgressEstimator) UpdateProgress(increment int) {
 	if !pe.enabled || pe.currentBar == nil {
 		return
 	}
+
 	_ = pe.currentBar.Add(increment)
 }
 
-// SetProgress sets the absolute progress value
+// SetProgress sets the absolute progress value.
 func (pe *ProgressEstimator) SetProgress(current int) {
 	if !pe.enabled || pe.currentBar == nil {
 		return
 	}
+
 	_ = pe.currentBar.Set(current)
 }
 
-// FinishOperation completes the current operation
+// FinishOperation completes the current operation.
 func (pe *ProgressEstimator) FinishOperation() {
 	if !pe.enabled || pe.currentBar == nil {
 		return
 	}
+
 	_ = pe.currentBar.Finish()
 	pe.currentBar = nil
 }
 
-// StartMultiOperation begins tracking multiple operations
+// StartMultiOperation begins tracking multiple operations.
 func (pe *ProgressEstimator) StartMultiOperation(totalOperations int, operationName string) {
 	if !pe.enabled {
 		return
@@ -152,7 +152,7 @@ func (pe *ProgressEstimator) StartMultiOperation(totalOperations int, operationN
 	)
 }
 
-// NextOperation moves to the next operation in a multi-operation sequence
+// NextOperation moves to the next operation in a multi-operation sequence.
 func (pe *ProgressEstimator) NextOperation(operationName string) {
 	if !pe.enabled {
 		return
@@ -167,18 +167,19 @@ func (pe *ProgressEstimator) NextOperation(operationName string) {
 	}
 }
 
-// FinishMultiOperation completes the multi-operation sequence
+// FinishMultiOperation completes the multi-operation sequence.
 func (pe *ProgressEstimator) FinishMultiOperation() {
 	if !pe.enabled || pe.currentBar == nil {
 		return
 	}
+
 	_ = pe.currentBar.Finish()
 	pe.currentBar = nil
 	pe.totalOperations = 0
 	pe.currentOperation = 0
 }
 
-// SimpleProgress creates a simple progress bar for quick operations
+// SimpleProgress creates a simple progress bar for quick operations.
 func (pe *ProgressEstimator) SimpleProgress(description string, total int) *progressbar.ProgressBar {
 	if !pe.enabled {
 		return progressbar.NewOptions(total, progressbar.OptionClearOnFinish())
@@ -192,11 +193,12 @@ func (pe *ProgressEstimator) SimpleProgress(description string, total int) *prog
 	)
 }
 
-// EstimateTimeBasedSteps estimates steps for time-based operations
+// EstimateTimeBasedSteps estimates steps for time-based operations.
 func (pe *ProgressEstimator) EstimateTimeBasedSteps(startTime, endTime time.Time, resampleInterval string) int {
 	duration := endTime.Sub(startTime)
 
 	var stepDuration time.Duration
+
 	switch resampleInterval {
 	case "day", "D":
 		stepDuration = 24 * time.Hour
@@ -210,14 +212,12 @@ func (pe *ProgressEstimator) EstimateTimeBasedSteps(startTime, endTime time.Time
 		stepDuration = 365 * 24 * time.Hour
 	}
 
-	steps := int(duration / stepDuration)
-	if steps < 1 {
-		steps = 1
-	}
+	steps := max(int(duration/stepDuration), 1)
+
 	return steps
 }
 
-// IsEnabled returns whether progress tracking is enabled
+// IsEnabled returns whether progress tracking is enabled.
 func (pe *ProgressEstimator) IsEnabled() bool {
 	return pe.enabled
 }

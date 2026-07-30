@@ -166,6 +166,7 @@ func (oa *OnboardingAnalysis) Configure(facts map[string]any) error {
 		if err != nil {
 			return err
 		}
+
 		oa.WindowDays = windows
 	}
 
@@ -193,22 +194,28 @@ func (oa *OnboardingAnalysis) Configure(facts map[string]any) error {
 
 func parseOnboardingWindows(value string) ([]int, error) {
 	parts := strings.Split(value, ",")
+
 	windows := make([]int, 0, len(parts))
 	for _, part := range parts {
 		part = strings.TrimSpace(part)
 		if part == "" {
 			continue
 		}
+
 		days, err := strconv.Atoi(part)
 		if err != nil {
 			return nil, fmt.Errorf("invalid window days value '%s': %w", part, err)
 		}
+
 		if _, err := onboardingWindowDuration(days); err != nil {
 			return nil, err
 		}
+
 		windows = append(windows, days)
 	}
+
 	sort.Ints(windows)
+
 	return windows, nil
 }
 

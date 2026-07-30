@@ -17,6 +17,7 @@ import (
 func OldVsNew(reader readers.Reader, output string, startTime, endTime *time.Time, resample string) error {
 	opts := defaultOptions()
 	opts.Resample = resample
+
 	return OldVsNewWithOptions(reader, output, startTime, endTime, opts)
 }
 
@@ -30,6 +31,7 @@ func OldVsNewWithOptions(
 	if err != nil {
 		return err
 	}
+
 	if rendered {
 		return nil
 	}
@@ -42,6 +44,7 @@ func OldVsNewWithOptions(
 	newCodeSeries := generateOldVsNewTimeSeries(totalLinesAdded, timeSeriesLength, "new")
 	modifiedCodeSeries := generateOldVsNewTimeSeries(totalLinesModified, timeSeriesLength, "modified")
 	dates := syntheticOldVsNewDates(timeSeriesLength)
+
 	return generateOldVsNewPlot(newCodeSeries, modifiedCodeSeries, dates, output, opts.Graphics)
 }
 
@@ -58,11 +61,14 @@ func renderActualOldVsNew(
 	if errors.Is(timeSeriesErr, readers.ErrAnalysisMissing) || len(timeSeries.Days) == 0 {
 		return false, nil
 	}
+
 	startUnix, endUnix := reader.GetHeader()
 	if startUnix <= 0 || endUnix <= startUnix {
 		return false, nil
 	}
+
 	newLines, oldLines, dates := oldVsNewDailySeries(timeSeries, startUnix, endUnix)
+
 	return true, generateOldVsNewPlot(newLines, oldLines, dates, output, visuals)
 }
 
@@ -71,6 +77,7 @@ func oldVsNewTotals(reader readers.Reader) (int, int, error) {
 	if err != nil && !errors.Is(err, readers.ErrAnalysisMissing) {
 		return 0, 0, fmt.Errorf("get developer stats: %w", err)
 	}
+
 	if err != nil || len(developerStats) == 0 {
 		return oldVsNewBurndownTotals(reader)
 	}
@@ -80,22 +87,27 @@ func oldVsNewTotals(reader readers.Reader) (int, int, error) {
 		totalLinesAdded += stat.LinesAdded
 		totalLinesModified += stat.LinesModified
 	}
+
 	return totalLinesAdded, totalLinesModified, nil
 }
 
 func oldVsNewBurndownTotals(reader readers.Reader) (int, int, error) {
 	fmt.Println("Developer stats not available, using synthetic data based on project burndown...")
+
 	_, _, matrix, err := reader.GetProjectBurndownWithHeader()
 	if err != nil {
 		return 0, 0, fmt.Errorf("get project burndown fallback: %w", err)
 	}
+
 	if len(matrix) == 0 {
 		return 0, 0, fmt.Errorf("%w: old-vs-new", readers.ErrAnalysisMissing)
 	}
+
 	finalLines := 0
 	for _, value := range matrix[len(matrix)-1] {
 		finalLines += value
 	}
+
 	return int(float64(finalLines) * 0.6), int(float64(finalLines) * 0.4), nil
 }
 
@@ -104,6 +116,7 @@ func syntheticOldVsNewDates(length int) []time.Time {
 	for i := range dates {
 		dates[i] = time.Unix(0, 0).AddDate(0, 0, i)
 	}
+
 	return dates
 }
 
@@ -115,7 +128,7 @@ func generateOldVsNewTimeSeries(totalLines, length int, changeType string) []flo
 	if changeType == "new" {
 		// New code typically starts high in early project phases and then decreases
 		// as the project matures and moves to maintenance mode
-		for i := 0; i < length; i++ {
+		for i := range length {
 			// Exponential decay to simulate project maturation
 			factor := 1.0 - float64(i)/float64(length)*0.7
 			series[i] = float64(totalLines) / float64(length) * factor
@@ -123,7 +136,7 @@ func generateOldVsNewTimeSeries(totalLines, length int, changeType string) []flo
 	} else {
 		// Modified code typically starts low and increases as the project matures
 		// and more refactoring/maintenance work is done
-		for i := 0; i < length; i++ {
+		for i := range length {
 			// Gradual increase to simulate transition to maintenance mode
 			factor := 0.3 + float64(i)/float64(length)*0.7
 			series[i] = float64(totalLines) / float64(length) * factor
@@ -137,11 +150,13 @@ func oldVsNewDailySeries(timeSeries *readers.DeveloperTimeSeriesData, startUnix,
 	start, _, seriesLength := timeSeriesCalendarRange(timeSeries, startUnix, endUnix, 1)
 
 	newLines := make([]float64, seriesLength)
+
 	oldLines := make([]float64, seriesLength)
 	for day, devs := range timeSeries.Days {
 		if day < 0 || day >= seriesLength {
 			continue
 		}
+
 		for _, stats := range devs {
 			newLines[day] += float64(stats.LinesAdded)
 			oldLines[day] += float64(stats.LinesRemoved + stats.LinesModified)
@@ -157,6 +172,7 @@ func oldVsNewDailySeries(timeSeries *readers.DeveloperTimeSeriesData, startUnix,
 	for i := range dates {
 		dates[i] = start.AddDate(0, 0, i)
 	}
+
 	return newLines, oldLines, dates
 }
 
@@ -167,44 +183,54 @@ func dateOnly(t time.Time) time.Time {
 func timeSeriesCalendarRange(timeSeries *readers.DeveloperTimeSeriesData, startUnix, endUnix int64, extraDays int) (time.Time, time.Time, int) {
 	start := dateOnly(time.Unix(startUnix, 0))
 	end := dateOnly(time.Unix(endUnix, 0))
+
 	size := calendarDayCount(start, end) + extraDays
 	if size < 1 {
 		size = 1
 	}
+
 	for day := range timeSeries.Days {
 		if day < 0 {
 			continue
 		}
+
 		if needed := day + 1; needed > size {
 			size = needed
 		}
 	}
+
 	return start, end, size
 }
 
 func calendarDayCount(start, end time.Time) int {
 	start = dateOnly(start)
+
 	end = dateOnly(end)
 	if end.Before(start) {
 		return 1
 	}
+
 	count := 1
 	for current := start; current.Before(end); current = current.AddDate(0, 0, 1) {
 		count++
 	}
+
 	return count
 }
 
 func calendarDayIndex(start, target time.Time) int {
 	start = dateOnly(start)
+
 	target = dateOnly(target)
 	if target.Before(start) {
 		return -calendarDayCount(target, start) + 1
 	}
+
 	index := 0
 	for current := start; current.Before(target); current = current.AddDate(0, 0, 1) {
 		index++
 	}
+
 	return index
 }
 
@@ -212,13 +238,16 @@ func oldVsNewSmoothingWindow(size int) []float64 {
 	if size <= 1 {
 		return []float64{1}
 	}
+
 	window := make([]float64, size)
 	mid := float64(size-1) / 2
+
 	sigma := float64(size) / 2.8
 	for i := range window {
 		x := (float64(i) - mid) / sigma
 		window[i] = math.Exp(-0.5 * x * x)
 	}
+
 	return window
 }
 
@@ -226,7 +255,9 @@ func convolveSame(series, window []float64) []float64 {
 	if len(series) == 0 || len(window) == 0 {
 		return series
 	}
+
 	out := make([]float64, len(series))
+
 	center := len(window) / 2
 	for i := range series {
 		for j, weight := range window {
@@ -236,6 +267,7 @@ func convolveSame(series, window []float64) []float64 {
 			}
 		}
 	}
+
 	return out
 }
 
@@ -250,12 +282,14 @@ func generateOldVsNewPlot(
 	if len(optionValues) > 0 {
 		visuals = optionValues[0]
 	}
+
 	length := len(newCodeSeries)
 	if len(modifiedCodeSeries) != length {
-		return fmt.Errorf("new code and modified code series must have the same length")
+		return errors.New("new code and modified code series must have the same length")
 	}
+
 	if len(dates) != length {
-		return fmt.Errorf("dates and series must have the same length")
+		return errors.New("dates and series must have the same length")
 	}
 
 	series := []graphics.MatplotlibTimeAreaSeries{
@@ -274,7 +308,8 @@ func generateOldVsNewPlot(
 	if output == "" {
 		output = "old-vs-new.png"
 	}
-	if err := graphics.PlotTimeAreasMatplotlib(dates, series, graphics.MatplotlibTimeAreaOptions{
+
+	err := graphics.PlotTimeAreasMatplotlib(dates, series, graphics.MatplotlibTimeAreaOptions{
 		Title:        "Additions vs changes",
 		Output:       output,
 		WidthInches:  6.4,
@@ -286,11 +321,13 @@ func generateOldVsNewPlot(
 		AutoXMargin:  true,
 		Alpha:        1,
 		FontSize:     visuals.PlotFontSize(),
-	}); err != nil {
+	})
+	if err != nil {
 		return fmt.Errorf("failed to save old-vs-new plot: %w", err)
 	}
 
 	fmt.Printf("Old vs New analysis plot saved to %s\n", output)
+
 	return nil
 }
 

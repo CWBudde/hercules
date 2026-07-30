@@ -8,7 +8,8 @@ import (
 
 func TestPlotTopCouplingPairsWritesPNG(t *testing.T) {
 	output := t.TempDir()
-	if err := plotTopCouplingPairs(sampleFileCouplingAnalysis(), output); err != nil {
+	err := plotTopCouplingPairs(sampleFileCouplingAnalysis(), output)
+	if err != nil {
 		t.Fatalf("plotTopCouplingPairs() failed: %v", err)
 	}
 

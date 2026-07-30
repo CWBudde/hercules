@@ -23,7 +23,7 @@ const experimentalSentimentSubtitle = "[EXPERIMENTAL] Sentiment analysis is expe
 const heuristicSentimentNotice = "Collected sentiment data is missing; using heuristic fallback " +
 	"because --sentiment-fallback is enabled."
 
-// SentimentResult represents sentiment analysis for a developer or file
+// SentimentResult represents sentiment analysis for a developer or file.
 type SentimentResult struct {
 	Entity   string
 	Type     string // "developer" or "language"
@@ -39,6 +39,7 @@ type SentimentResult struct {
 func Sentiment(reader readers.Reader, output string, allowHeuristicFallback bool) error {
 	opts := defaultOptions()
 	opts.SentimentFallback = allowHeuristicFallback
+
 	return SentimentWithOptions(reader, output, opts)
 }
 
@@ -189,6 +190,7 @@ func sentimentResultsFromTicks(ticks map[int]readers.SentimentTick) []SentimentR
 	for tick := range ticks {
 		keys = append(keys, tick)
 	}
+
 	sort.Ints(keys)
 
 	results := make([]SentimentResult, 0, len(keys))
@@ -202,11 +204,13 @@ func sentimentResultsFromTicks(ticks map[int]readers.SentimentTick) []SentimentR
 		score := clamp((0.5-value)*2, -1, 1)
 		positive := 0.0
 		negative := 0.0
+
 		if score > 0 {
 			positive = score
 		} else if score < 0 {
 			negative = -score
 		}
+
 		results = append(results, normalizeSentimentResult(SentimentResult{
 			Entity:   fmt.Sprintf("tick %d", tick),
 			Type:     "tick",
@@ -216,6 +220,7 @@ func sentimentResultsFromTicks(ticks map[int]readers.SentimentTick) []SentimentR
 			Score:    score,
 		}))
 	}
+
 	return results
 }
 
@@ -231,7 +236,7 @@ func plotCollectedSentimentTimelineWithOptions(
 	visuals graphics.Options,
 ) error {
 	if len(ticks) == 0 {
-		return fmt.Errorf("no collected sentiment ticks")
+		return errors.New("no collected sentiment ticks")
 	}
 
 	output, err := prepareSentimentOutput(output)
@@ -259,7 +264,9 @@ func prepareSentimentOutput(output string) (string, error) {
 	if output == "" {
 		output = "."
 	}
-	if err := os.MkdirAll(output, 0o750); err != nil {
+
+	err := os.MkdirAll(output, 0o750)
+	if err != nil {
 		return "", fmt.Errorf("failed to create output directory %s: %w", output, err)
 	}
 
@@ -375,23 +382,29 @@ func movingAverage(values []float64, window int) []float64 {
 	if window <= 1 || len(values) == 0 {
 		return append([]float64(nil), values...)
 	}
+
 	result := make([]float64, len(values))
+
 	half := window / 2
 	for i := range values {
 		start := i - half
 		if start < 0 {
 			start = 0
 		}
+
 		end := i + half + 1
 		if end > len(values) {
 			end = len(values)
 		}
+
 		sum := 0.0
 		for _, value := range values[start:end] {
 			sum += value
 		}
+
 		result[i] = sum / float64(end-start)
 	}
+
 	return result
 }
 
@@ -399,12 +412,13 @@ func sentimentColor(r, g, b uint8) color.Color {
 	return color.RGBA{R: r, G: g, B: b, A: 255}
 }
 
-// analyzeDeveloperSentiment analyzes sentiment based on developer activity patterns
+// analyzeDeveloperSentiment analyzes sentiment based on developer activity patterns.
 func analyzeDeveloperSentiment(reader readers.Reader) ([]SentimentResult, error) {
 	devStats, err := reader.GetDeveloperStats()
 	if err != nil {
 		return nil, fmt.Errorf("get developer statistics: %w", err)
 	}
+
 	if len(devStats) == 0 {
 		return nil, fmt.Errorf("%w: developer statistics", readers.ErrAnalysisMissing)
 	}
@@ -418,8 +432,10 @@ func analyzeDeveloperSentiment(reader readers.Reader) ([]SentimentResult, error)
 		totalAdded += dev.LinesAdded
 		totalRemoved += dev.LinesRemoved
 	}
+
 	_ = totalAdded
 	_ = totalRemoved
+
 	if totalCommits <= 0 {
 		totalCommits = 1
 	}
@@ -446,6 +462,7 @@ func analyzeDeveloperSentiment(reader readers.Reader) ([]SentimentResult, error)
 		if dev.LinesRemoved > dev.LinesAdded*2 {
 			negative += 0.3 // High removal ratio
 		}
+
 		if commitRatio < 0.01 && len(devStats) > 5 {
 			negative += 0.2 // Very low activity
 		}
@@ -474,12 +491,13 @@ func analyzeDeveloperSentiment(reader readers.Reader) ([]SentimentResult, error)
 	return results, nil
 }
 
-// analyzeLanguageSentiment analyzes sentiment based on language usage patterns
+// analyzeLanguageSentiment analyzes sentiment based on language usage patterns.
 func analyzeLanguageSentiment(reader readers.Reader) ([]SentimentResult, error) {
 	langStats, err := reader.GetLanguageStats()
 	if err != nil {
 		return nil, fmt.Errorf("get language statistics: %w", err)
 	}
+
 	if len(langStats) == 0 {
 		return nil, fmt.Errorf("%w: language statistics", readers.ErrAnalysisMissing)
 	}
@@ -491,6 +509,7 @@ func analyzeLanguageSentiment(reader readers.Reader) ([]SentimentResult, error) 
 	for _, lang := range langStats {
 		totalLines += lang.Lines
 	}
+
 	if totalLines <= 0 {
 		return nil, fmt.Errorf("%w: non-zero language statistics", readers.ErrAnalysisMissing)
 	}
@@ -561,6 +580,7 @@ func analyzeLanguageSentiment(reader readers.Reader) ([]SentimentResult, error) 
 func normalizeSentimentResult(result SentimentResult) SentimentResult {
 	result.Positive = nonNegativeFinite(result.Positive)
 	result.Neutral = nonNegativeFinite(result.Neutral)
+
 	result.Negative = nonNegativeFinite(result.Negative)
 	if !isFinite(result.Score) {
 		result.Score = 0
@@ -575,6 +595,7 @@ func normalizeSentimentResult(result SentimentResult) SentimentResult {
 		result.Neutral /= total
 		result.Negative /= total
 	}
+
 	return result
 }
 
@@ -582,6 +603,7 @@ func nonNegativeFinite(value float64) float64 {
 	if !isFinite(value) || value < 0 {
 		return 0
 	}
+
 	return value
 }
 
@@ -593,13 +615,15 @@ func clamp(value, minValue, maxValue float64) float64 {
 	if value < minValue {
 		return minValue
 	}
+
 	if value > maxValue {
 		return maxValue
 	}
+
 	return value
 }
 
-// plotSentimentOverview creates a stacked bar chart showing overall sentiment distribution
+// plotSentimentOverview creates a stacked bar chart showing overall sentiment distribution.
 func plotSentimentOverview(results []SentimentResult, output string) error {
 	return plotSentimentOverviewWithOptions(results, output, graphics.DefaultOptions())
 }
@@ -641,22 +665,29 @@ func plotSentimentOverviewWithOptions(results []SentimentResult, output string, 
 	}
 
 	outputFile := filepath.Join(output, "sentiment-overview.png")
+
 	opts.Output = outputFile
-	if err := graphics.PlotStackedBarChartMatplotlib(entities, series, opts); err != nil {
+
+	err := graphics.PlotStackedBarChartMatplotlib(entities, series, opts)
+	if err != nil {
 		return fmt.Errorf("failed to save sentiment overview: %w", err)
 	}
 
 	svgFile := filepath.Join(output, "sentiment-overview.svg")
+
 	opts.Output = svgFile
-	if err := graphics.PlotStackedBarChartMatplotlib(entities, series, opts); err != nil {
+
+	err = graphics.PlotStackedBarChartMatplotlib(entities, series, opts)
+	if err != nil {
 		return fmt.Errorf("failed to save sentiment overview SVG: %w", err)
 	}
 
 	fmt.Printf("Sentiment overview charts saved to %s and %s\n", outputFile, svgFile)
+
 	return nil
 }
 
-// plotSentimentByType creates separate charts for developers and languages
+// plotSentimentByType creates separate charts for developers and languages.
 func plotSentimentByType(results []SentimentResult, output string) error {
 	return plotSentimentByTypeWithOptions(results, output, graphics.DefaultOptions())
 }
@@ -664,6 +695,7 @@ func plotSentimentByType(results []SentimentResult, output string) error {
 func plotSentimentByTypeWithOptions(results []SentimentResult, output string, visuals graphics.Options) error {
 	// Separate by type
 	var developers, languages []SentimentResult
+
 	for _, result := range results {
 		switch result.Type {
 		case "developer":
@@ -675,14 +707,16 @@ func plotSentimentByTypeWithOptions(results []SentimentResult, output string, vi
 
 	// Plot developer sentiment if available
 	if len(developers) > 0 {
-		if err := plotSentimentForTypeWithOptions(developers, "Developer Sentiment Analysis", output, "sentiment-developers", visuals); err != nil {
+		err := plotSentimentForTypeWithOptions(developers, "Developer Sentiment Analysis", output, "sentiment-developers", visuals)
+		if err != nil {
 			return fmt.Errorf("failed to plot developer sentiment: %w", err)
 		}
 	}
 
 	// Plot language sentiment if available
 	if len(languages) > 0 {
-		if err := plotSentimentForTypeWithOptions(languages, "Language Sentiment Analysis", output, "sentiment-languages", visuals); err != nil {
+		err := plotSentimentForTypeWithOptions(languages, "Language Sentiment Analysis", output, "sentiment-languages", visuals)
+		if err != nil {
 			return fmt.Errorf("failed to plot language sentiment: %w", err)
 		}
 	}
@@ -690,7 +724,7 @@ func plotSentimentByTypeWithOptions(results []SentimentResult, output string, vi
 	return nil
 }
 
-// plotSentimentForType creates a sentiment chart for a specific type
+// plotSentimentForType creates a sentiment chart for a specific type.
 func plotSentimentForType(results []SentimentResult, title, output, filename string) error {
 	return plotSentimentForTypeWithOptions(results, title, output, filename, graphics.DefaultOptions())
 }
@@ -706,6 +740,7 @@ func plotSentimentForTypeWithOptions(
 	})
 
 	points := make([]graphics.MatplotlibScatterPoint, len(results))
+
 	names := make([]string, len(results))
 	for i, result := range results {
 		result = normalizeSentimentResult(result)
@@ -732,22 +767,29 @@ func plotSentimentForTypeWithOptions(
 	}
 
 	outputFile := filepath.Join(output, filename+".png")
+
 	opts.Output = outputFile
-	if err := graphics.PlotScatterMatplotlib(series, opts); err != nil {
+
+	err := graphics.PlotScatterMatplotlib(series, opts)
+	if err != nil {
 		return fmt.Errorf("failed to save %s: %w", filename, err)
 	}
 
 	svgFile := filepath.Join(output, filename+".svg")
+
 	opts.Output = svgFile
-	if err := graphics.PlotScatterMatplotlib(series, opts); err != nil {
+
+	err = graphics.PlotScatterMatplotlib(series, opts)
+	if err != nil {
 		return fmt.Errorf("failed to save %s SVG: %w", filename, err)
 	}
 
 	fmt.Printf("%s charts saved to %s and %s\n", title, outputFile, svgFile)
+
 	return nil
 }
 
-// printSentimentSummary prints a text summary of sentiment analysis
+// printSentimentSummary prints a text summary of sentiment analysis.
 func printSentimentSummary(results []SentimentResult) {
 	fmt.Println("\n[EXPERIMENTAL] Sentiment Analysis Summary:")
 	fmt.Println("==========================================")
@@ -785,10 +827,12 @@ func printSentimentSummary(results []SentimentResult) {
 	})
 
 	fmt.Println("\nMost Positive Entities:")
+
 	for i, result := range results {
 		if i >= 5 || result.Score <= 0 {
 			break
 		}
+
 		fmt.Printf("  %d. %s (%s) - Score: %.3f\n", i+1, result.Entity, result.Type, result.Score)
 	}
 
@@ -796,10 +840,12 @@ func printSentimentSummary(results []SentimentResult) {
 	sort.Slice(results, func(i, j int) bool {
 		return results[i].Score < results[j].Score
 	})
+
 	for i, result := range results {
 		if i >= 5 || result.Score >= 0 {
 			break
 		}
+
 		fmt.Printf("  %d. %s (%s) - Score: %.3f\n", i+1, result.Entity, result.Type, result.Score)
 	}
 }

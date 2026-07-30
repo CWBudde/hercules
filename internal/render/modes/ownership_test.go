@@ -1,6 +1,7 @@
 package modes
 
 import (
+	"errors"
 	"fmt"
 	"image/png"
 	"os"
@@ -305,14 +306,14 @@ func calculateFileOwnershipPercentages(ownershipMatrix [][]int) [][]float64 {
 		percentages[dev] = make([]float64, timePoints)
 	}
 
-	for t := 0; t < timePoints; t++ {
+	for t := range timePoints {
 		total := 0
-		for dev := 0; dev < len(ownershipMatrix); dev++ {
+		for dev := range ownershipMatrix {
 			total += ownershipMatrix[dev][t]
 		}
 
 		if total > 0 {
-			for dev := 0; dev < len(ownershipMatrix); dev++ {
+			for dev := range ownershipMatrix {
 				percentages[dev][t] = float64(ownershipMatrix[dev][t]) * 100.0 / float64(total)
 			}
 		}
@@ -335,7 +336,7 @@ func findTopFilesByOwnershipChanges(ownership map[string][][]int, limit int) []s
 	}
 
 	// Simple sort by churn (descending)
-	for i := 0; i < len(files)-1; i++ {
+	for i := range len(files) - 1 {
 		for j := i + 1; j < len(files); j++ {
 			if files[i].churn < files[j].churn {
 				files[i], files[j] = files[j], files[i]
@@ -360,7 +361,7 @@ func calculateOwnershipChurn(ownershipMatrix [][]int) float64 {
 	timePoints := len(ownershipMatrix[0])
 
 	for t := 1; t < timePoints; t++ {
-		for dev := 0; dev < len(ownershipMatrix); dev++ {
+		for dev := range ownershipMatrix {
 			change := float64(ownershipMatrix[dev][t] - ownershipMatrix[dev][t-1])
 			if change < 0 {
 				change = -change // Absolute value
@@ -380,16 +381,16 @@ func calculateOwnershipConcentration(ownershipMatrix [][]int) float64 {
 	concentration := 0.0
 	timePoints := len(ownershipMatrix[0])
 
-	for t := 0; t < timePoints; t++ {
+	for t := range timePoints {
 		total := 0
-		for dev := 0; dev < len(ownershipMatrix); dev++ {
+		for dev := range ownershipMatrix {
 			total += ownershipMatrix[dev][t]
 		}
 
 		if total > 0 {
 			// Calculate Herfindahl index for this time point
 			herfindahl := 0.0
-			for dev := 0; dev < len(ownershipMatrix); dev++ {
+			for dev := range ownershipMatrix {
 				share := float64(ownershipMatrix[dev][t]) / float64(total)
 				herfindahl += share * share
 			}
@@ -518,11 +519,11 @@ func TestPlotOwnershipBurndownLargeValuesKeepsMagnitudeOnAxis(t *testing.T) {
 	}
 }
 
-// Mock function for testing
+// Mock function for testing.
 func mockGenerateOwnershipPlot(name string, people []string, ownership map[string][][]int, outputPath string) error {
 	// Simple mock implementation
 	if len(people) == 0 || len(ownership) == 0 {
-		return fmt.Errorf("empty people or ownership data")
+		return errors.New("empty people or ownership data")
 	}
 
 	// Create a simple test file to simulate chart generation

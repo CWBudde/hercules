@@ -9,7 +9,7 @@ import (
 )
 
 // TestDeveloperTimeSeriesFixVerification verifies that the fix for developer time series
-// produces the exact same data structure as Python's get_devs() method
+// produces the exact same data structure as Python's get_devs() method.
 func TestDeveloperTimeSeriesFixVerification(t *testing.T) {
 	testFile := "../testdata/example_data/hercules_devs.pb"
 
@@ -112,7 +112,7 @@ func TestDeveloperTimeSeriesFixVerification(t *testing.T) {
 				// Python language format: {lang: [added, removed, changed]}
 				for lang, langStats := range devDay.Languages {
 					assert.IsType(t, "", lang, "Language keys should be strings")
-					assert.Equal(t, 3, len(langStats), "Language stats should have [added, removed, changed] format")
+					assert.Len(t, langStats, 3, "Language stats should have [added, removed, changed] format")
 				}
 			}
 		}
@@ -121,7 +121,7 @@ func TestDeveloperTimeSeriesFixVerification(t *testing.T) {
 	})
 }
 
-// TestDeveloperModeIntegration tests that developer analysis modes work with real temporal data
+// TestDeveloperModeIntegration tests that developer analysis modes work with real temporal data.
 func TestDeveloperModeIntegration(t *testing.T) {
 	testFile := "../testdata/example_data/hercules_devs.pb"
 
@@ -196,7 +196,7 @@ func TestDeveloperModeIntegration(t *testing.T) {
 	})
 }
 
-// Helper function to get map keys for logging
+// Helper function to get map keys for logging.
 func getMapKeys(m map[int]map[int]DevDay) []int {
 	keys := make([]int, 0, len(m))
 	for k := range m {

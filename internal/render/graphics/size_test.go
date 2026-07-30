@@ -104,7 +104,7 @@ func TestDefaultSizes(t *testing.T) {
 }
 
 func BenchmarkGetPlotSizeInches(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		GetPlotSizeInches(ChartTypeDefault)
 	}
 }

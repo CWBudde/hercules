@@ -74,6 +74,7 @@ func OwnershipBurndownWithOptions(reader readers.Reader, output string, opts Opt
 	)
 
 	progEstimator.NextOperation("Generating visualization")
+
 	if filepath.Ext(output) == ".json" {
 		return saveOwnershipBurndownAsJSON(output, names, peopleMatrix, dateRange, input.lastTime)
 	}
@@ -210,7 +211,7 @@ func processOwnershipBurndown(
 	return processOwnershipData(start, sampling, tickSize, sequence, data, maxPeople, orderByTime, nil)
 }
 
-// processOwnershipBurndownWithProgress processes ownership data with progress tracking
+// processOwnershipBurndownWithProgress processes ownership data with progress tracking.
 func processOwnershipBurndownWithProgress(
 	start, _ time.Time, sampling int, tickSize float64,
 	sequence []string, data map[string][][]int,
@@ -240,6 +241,7 @@ func processOwnershipData(
 	updateProgress func(),
 ) ([]string, [][]float64, []time.Time) {
 	people := aggregateOwnership(sequence, data, updateProgress)
+
 	pointCount := ownershipPointCount(people)
 	if pointCount == 0 {
 		return sequence, people, nil
@@ -437,6 +439,7 @@ func prepareOwnershipSeries(
 	if len(people) == 0 || len(dateRange) == 0 {
 		return ownershipSeries{}, errNoOwnershipPlot
 	}
+
 	if lastTime.Before(dateRange[len(dateRange)-1]) {
 		lastTime = dateRange[len(dateRange)-1]
 	}
@@ -515,6 +518,7 @@ func newOwnershipPlot(opts Options) (ownershipPlot, error) {
 			foreground,
 		),
 	)
+
 	grid := fig.Subplots(1, 1, core.WithSubplotPadding(0.075, 0.965, 0.11, 0.968))
 	if len(grid) == 0 || len(grid[0]) == 0 || grid[0][0] == nil {
 		return ownershipPlot{}, errOwnershipAxes
@@ -548,6 +552,7 @@ func configureOwnershipPlot(plot ownershipPlot, repoName string, series ownershi
 
 func ownershipColors(count int) []render.Color {
 	colors := graphics.PythonLaboursColorPalette(count)
+
 	renderColors := make([]render.Color, len(colors))
 	for index, paletteColor := range colors {
 		renderColors[index] = ownershipRenderColor(paletteColor)
@@ -558,6 +563,7 @@ func ownershipColors(count int) []render.Color {
 
 func configureOwnershipXRange(axes *core.Axes, dateRange []time.Time, lastTime time.Time) {
 	xMin := float64(dateRange[0].Unix())
+
 	xMax := float64(lastTime.Unix())
 	if xMin == xMax {
 		xMin = float64(dateRange[0].AddDate(-2, 0, 0).Unix())
@@ -599,6 +605,7 @@ func ownershipChartTitle(repoName string) string {
 	if name == "" || name == "." {
 		return "Code ownership through time"
 	}
+
 	return name + " code ownership through time"
 }
 
@@ -606,9 +613,11 @@ func ownershipSamplingDuration(sampling int, tickSize float64) time.Duration {
 	if sampling <= 0 {
 		sampling = 1
 	}
+
 	if tickSize <= 0 {
 		tickSize = 86400
 	}
+
 	return secondsDuration(float64(sampling) * tickSize)
 }
 
@@ -622,6 +631,7 @@ func ownershipPointCount(people [][]float64) int {
 			return len(row)
 		}
 	}
+
 	return 0
 }
 
@@ -630,6 +640,7 @@ func truncateOwnershipLabel(label string) string {
 	if len(label) <= maxLabelLength {
 		return label
 	}
+
 	return label[:maxLabelLength-3] + "..."
 }
 
@@ -637,17 +648,21 @@ func normalizeOwnershipColumns(matrix [][]float64) {
 	if len(matrix) == 0 {
 		return
 	}
+
 	points := len(matrix[0])
-	for col := 0; col < points; col++ {
+	for col := range points {
 		total := 0.0
+
 		for _, row := range matrix {
 			if col < len(row) {
 				total += row[col]
 			}
 		}
+
 		if total == 0 {
 			continue
 		}
+
 		for _, row := range matrix {
 			if col < len(row) {
 				row[col] /= total
@@ -660,10 +675,12 @@ func floorTimeBySeconds(t time.Time, seconds float64) time.Time {
 	if seconds <= 0 {
 		return t
 	}
+
 	step := int64(seconds)
 	if step <= 0 {
 		return t
 	}
+
 	return time.Unix((t.Unix()/step)*step, 0)
 }
 
@@ -671,17 +688,22 @@ func configureOwnershipTimeAxis(ax *core.Axes, dates []time.Time) {
 	if len(dates) == 0 {
 		return
 	}
+
 	limit := 8
+
 	step := int(math.Ceil(float64(len(dates)) / float64(limit)))
 	if step < 1 {
 		step = 1
 	}
+
 	ticks := make([]float64, 0, limit+1)
 	labels := make([]string, 0, limit+1)
+
 	for i := 0; i < len(dates); i += step {
 		ticks = append(ticks, float64(dates[i].Unix()))
 		labels = append(labels, dates[i].Format("2006-01-02"))
 	}
+
 	lastTick := float64(dates[len(dates)-1].Unix())
 	if len(ticks) == 0 || ticks[len(ticks)-1] != lastTick {
 		ticks = append(ticks, lastTick)
@@ -700,24 +722,30 @@ func maxOwnershipStackY(matrix [][]float64) float64 {
 	if len(matrix) == 0 {
 		return 0
 	}
+
 	points := len(matrix[0])
 	maxY := 0.0
-	for i := 0; i < points; i++ {
+
+	for i := range points {
 		total := 0.0
+
 		for _, row := range matrix {
 			if i < len(row) {
 				total += row[i]
 			}
 		}
+
 		if total > maxY {
 			maxY = total
 		}
 	}
+
 	return maxY
 }
 
 func ownershipRenderColor(c color.Color) render.Color {
 	r, g, b, a := c.RGBA()
+
 	return render.Color{
 		R: float64(r) / 0xffff,
 		G: float64(g) / 0xffff,
@@ -729,10 +757,12 @@ func ownershipRenderColor(c color.Color) render.Color {
 func ownershipPlotPixelSize(defaultWidth, defaultHeight float64, configuredSize ...string) (int, int) {
 	width := defaultWidth
 	height := defaultHeight
+
 	sizeStr := ""
 	if len(configuredSize) > 0 {
 		sizeStr = configuredSize[0]
 	}
+
 	if sizeStr != "" {
 		if parsedWidth, parsedHeight, err := parseOwnershipPlotSize(sizeStr); err == nil {
 			width, height = parsedWidth, parsedHeight
@@ -740,6 +770,7 @@ func ownershipPlotPixelSize(defaultWidth, defaultHeight float64, configuredSize 
 			fmt.Fprintf(os.Stderr, "Warning: %v, using default size\n", err)
 		}
 	}
+
 	return graphics.InchesToPixels(width), graphics.InchesToPixels(height)
 }
 
@@ -748,14 +779,17 @@ func parseOwnershipPlotSize(sizeStr string) (float64, float64, error) {
 	if len(parts) != 2 {
 		return 0, 0, fmt.Errorf("invalid size %q: expected width,height", sizeStr)
 	}
+
 	width, err := strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
 	if err != nil || width <= 0 {
 		return 0, 0, fmt.Errorf("invalid plot width %q", parts[0])
 	}
+
 	height, err := strconv.ParseFloat(strings.TrimSpace(parts[1]), 64)
 	if err != nil || height <= 0 {
 		return 0, 0, fmt.Errorf("invalid plot height %q", parts[1])
 	}
+
 	return width, height, nil
 }
 
@@ -763,7 +797,9 @@ func saveOwnershipMatplotlibFigure(fig *core.Figure, output string, width, heigh
 	if output == "" {
 		output = "ownership.png"
 	}
-	if err := os.MkdirAll(filepath.Dir(output), 0o750); err != nil {
+
+	err := os.MkdirAll(filepath.Dir(output), 0o750)
+	if err != nil {
 		return fmt.Errorf("failed to create output directory for %s: %w", output, err)
 	}
 
@@ -774,6 +810,7 @@ func saveOwnershipMatplotlibFigure(fig *core.Figure, output string, width, heigh
 		DPI:         100,
 		Transparent: background.A == 0,
 	}
+
 	switch strings.ToLower(filepath.Ext(output)) {
 	case ".svg":
 		return saveOwnershipSVG(fig, output, config)
@@ -849,6 +886,7 @@ func readOwnershipPNG(path string) (image.Image, error) {
 	if decodeErr != nil {
 		return nil, fmt.Errorf("failed to decode ownership PNG for matte normalization: %w", decodeErr)
 	}
+
 	if closeErr != nil {
 		return nil, fmt.Errorf("failed to close ownership PNG for matte normalization: %w", closeErr)
 	}
@@ -860,11 +898,13 @@ func normalizedOwnershipImage(img image.Image) (*image.NRGBA, bool) {
 	bounds := img.Bounds()
 	out := image.NewNRGBA(bounds)
 	changed := false
+
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
 			pixel := color.NRGBAModel.Convert(img.At(x, y)).(color.NRGBA)
 			pixel, pixelChanged := normalizeOwnershipPixel(pixel)
 			changed = changed || pixelChanged
+
 			out.SetNRGBA(x, y, pixel)
 		}
 	}
@@ -907,9 +947,11 @@ func writeOwnershipPNG(path string, img image.Image) error {
 		_ = file.Close()
 		return fmt.Errorf("failed to encode ownership PNG matte: %w", err)
 	}
+
 	if err := file.Close(); err != nil {
 		return fmt.Errorf("failed to close ownership PNG matte: %w", err)
 	}
+
 	return nil
 }
 
@@ -921,6 +963,7 @@ func absDiffUint8(a, b uint8) uint8 {
 	if a > b {
 		return a - b
 	}
+
 	return b - a
 }
 
@@ -947,11 +990,13 @@ func saveOwnershipBurndownAsJSON(output string, names []string, people [][]float
 
 	encoder := json.NewEncoder(file)
 	encoder.SetIndent("", "  ")
+
 	if err := encoder.Encode(data); err != nil {
 		return fmt.Errorf("failed to write JSON data: %w", err)
 	}
 
 	fmt.Printf("JSON data saved to %s\n", output)
+
 	return nil
 }
 
@@ -960,9 +1005,11 @@ func argsortDescending(data []float64) []int {
 	for i := range indices {
 		indices[i] = i
 	}
+
 	sort.Slice(indices, func(i, j int) bool {
 		return data[indices[i]] > data[indices[j]]
 	})
+
 	return indices
 }
 
@@ -971,9 +1018,11 @@ func argsortAscending(data []int) []int {
 	for i := range indices {
 		indices[i] = i
 	}
+
 	sort.Slice(indices, func(i, j int) bool {
 		return data[indices[i]] < data[indices[j]]
 	})
+
 	return indices
 }
 
@@ -983,6 +1032,7 @@ func findFirstNonZero(row []float64) int {
 			return i
 		}
 	}
+
 	return math.MaxInt
 }
 
@@ -991,6 +1041,7 @@ func reorder(data [][]float64, indices []int) [][]float64 {
 	for i, idx := range indices {
 		reordered[i] = data[idx]
 	}
+
 	return reordered
 }
 
@@ -999,5 +1050,6 @@ func reorderStrings(data []string, indices []int) []string {
 	for i, idx := range indices {
 		reordered[i] = data[idx]
 	}
+
 	return reordered
 }

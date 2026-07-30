@@ -10,7 +10,7 @@ import (
 	"github.com/cwbudde/hercules/internal/render/readers"
 )
 
-// Mock reader for testing the languages mode
+// Mock reader for testing the languages mode.
 type MockLanguageReader struct {
 	languageStats []readers.LanguageStat
 }

@@ -481,6 +481,7 @@ func (analyser *BurndownAnalysis) Boot() error {
 	if err != nil {
 		return err
 	}
+
 	if len(data) == 0 {
 		return errBurndownNotHibernated
 	}
@@ -489,7 +490,9 @@ func (analyser *BurndownAnalysis) Boot() error {
 	if err != nil {
 		return err
 	}
+
 	analyser.restoreBurndownState(state)
+
 	return nil
 }
 
@@ -497,17 +500,20 @@ func (analyser *BurndownAnalysis) loadBurndownHibernationData() ([]byte, error) 
 	if analyser.hibernatedFileName == "" {
 		data := analyser.hibernatedData
 		analyser.hibernatedData = nil
+
 		return data, nil
 	}
 
 	hibernatedFileName := analyser.hibernatedFileName
 	data, readErr := os.ReadFile(hibernatedFileName)
 	removeErr := removeBurndownHibernationFile(analyser)
+
 	if readErr != nil {
 		readErr = fmt.Errorf(
 			"read burndown hibernation file %q: %w", hibernatedFileName, readErr,
 		)
 	}
+
 	return data, errors.Join(readErr, removeErr)
 }
 
@@ -516,12 +522,15 @@ func decodeBurndownState(data []byte) (burndownState, error) {
 	var state burndownState
 	decodeErr := gob.NewDecoder(fr).Decode(&state)
 	closeErr := fr.Close()
+
 	if decodeErr != nil {
 		decodeErr = fmt.Errorf("decode burndown hibernation state: %w", decodeErr)
 	}
+
 	if decodeErr != nil || closeErr != nil {
 		return burndownState{}, errors.Join(decodeErr, closeErr)
 	}
+
 	return state, nil
 }
 
@@ -529,10 +538,12 @@ func (analyser *BurndownAnalysis) restoreBurndownState(state burndownState) {
 	analyser.globalHistory = mapToSparseHistory(state.GlobalHistory)
 	analyser.matrix = state.Matrix
 	analyser.fileHistories = restoreSparseHistories(state.FileHistories)
+
 	analyser.deletedFileHistories = restoreSparseHistories(state.DeletedFileHistories)
 	if analyser.deletedFileHistories == nil {
 		analyser.deletedFileHistories = map[core.FileId]sparseHistory{}
 	}
+
 	if state.PeopleHistories != nil {
 		analyser.peopleHistories = make([]sparseHistory, len(state.PeopleHistories))
 		for i, v := range state.PeopleHistories {
@@ -545,10 +556,12 @@ func restoreSparseHistories(source map[core.FileId]map[int]map[int]int64) map[co
 	if source == nil {
 		return nil
 	}
+
 	histories := make(map[core.FileId]sparseHistory, len(source))
 	for key, value := range source {
 		histories[key] = mapToSparseHistory(value)
 	}
+
 	return histories
 }
 
@@ -733,7 +746,8 @@ func (analyser *BurndownAnalysis) MergeResults(
 		return fmt.Errorf("%w: second result has type %T", errUnexpectedBurndownResult, secondResult)
 	}
 
-	if err := analyser.validateBurndownMergeInputs(&bar1, &bar2); err != nil {
+	err := analyser.validateBurndownMergeInputs(&bar1, &bar2)
+	if err != nil {
 		return err
 	}
 
@@ -762,7 +776,8 @@ func (analyser *BurndownAnalysis) MergeResults(
 
 	coordinator.wg.Wait()
 
-	if err := analyser.checkBalances(&merged, "merge"); err != nil {
+	err = analyser.checkBalances(&merged, "merge")
+	if err != nil {
 		return err
 	}
 
@@ -782,7 +797,8 @@ func (analyser *BurndownAnalysis) validateBurndownMergeInputs(first, second *Bur
 			errBurndownMismatchingTickSizes, first.tickSize, second.tickSize)
 	}
 
-	if err := analyser.checkBalances(first, "merge input 1"); err != nil {
+	err := analyser.checkBalances(first, "merge input 1")
+	if err != nil {
 		return err
 	}
 

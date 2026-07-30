@@ -50,7 +50,7 @@ func parseDates() (startTime, endTime *time.Time, err error) {
 
 func validateDateRange(startTime, endTime *time.Time) error {
 	if startTime != nil && endTime != nil && endTime.Before(*startTime) {
-		return fmt.Errorf("end date must be after start date")
+		return errors.New("end date must be after start date")
 	}
 	return nil
 }

@@ -1,8 +1,10 @@
 package readers
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"sort"
 
 	"github.com/gogo/protobuf/proto"
@@ -19,7 +21,7 @@ type ProtobufReader struct {
 	Quiet  bool
 }
 
-// Read loads the Protobuf data into the ProtobufReader structure
+// Read loads the Protobuf data into the ProtobufReader structure.
 func (r *ProtobufReader) Read(file io.Reader) error {
 	// Initialize progress tracking for file reading
 	progEstimator := progress.NewProgressEstimator(!r.Quiet)
@@ -28,6 +30,7 @@ func (r *ProtobufReader) Read(file io.Reader) error {
 	progEstimator.StartOperation("Reading protobuf data", 2) // read + parse phases
 
 	progEstimator.UpdateProgress(1)
+
 	allBytes, err := analysisio.ReadAll(file, r.Limits)
 	if err != nil {
 		progEstimator.FinishOperation()
@@ -35,92 +38,105 @@ func (r *ProtobufReader) Read(file io.Reader) error {
 	}
 
 	progEstimator.UpdateProgress(1)
+
 	var results pb.AnalysisResults
 	if err := proto.Unmarshal(allBytes, &results); err != nil {
 		progEstimator.FinishOperation()
 		return fmt.Errorf("%w: unmarshal protobuf envelope: %w", ErrAnalysisMalformed, err)
 	}
+
 	if err := analysisio.ValidateAndMigrateAnalysisResults(&results, r.Limits); err != nil {
 		progEstimator.FinishOperation()
 		return err
 	}
 
 	r.data = &results
+
 	progEstimator.FinishOperation()
+
 	return nil
 }
 
-// GetName retrieves the repository name from the Protobuf metadata
+// GetName retrieves the repository name from the Protobuf metadata.
 func (r *ProtobufReader) GetName() string {
-	if r.data.Header != nil {
-		return r.data.Header.Repository
+	if r.data.GetHeader() != nil {
+		return r.data.GetHeader().GetRepository()
 	}
+
 	return ""
 }
 
-// GetHeader retrieves the start and end timestamps from the Protobuf metadata
+// GetHeader retrieves the start and end timestamps from the Protobuf metadata.
 func (r *ProtobufReader) GetHeader() (int64, int64) {
-	if r.data.Header != nil {
-		return r.data.Header.BeginUnixTime, r.data.Header.EndUnixTime
+	if r.data.GetHeader() != nil {
+		return r.data.GetHeader().GetBeginUnixTime(), r.data.GetHeader().GetEndUnixTime()
 	}
+
 	return 0, 0
 }
 
-// GetProjectBurndown retrieves the project-level burndown matrix
+// GetProjectBurndown retrieves the project-level burndown matrix.
 func (r *ProtobufReader) GetProjectBurndown() (string, [][]int) {
 	// Parse burndown data from Contents
 	burndownData, _ := r.parseBurndownAnalysisResults()
-	if burndownData == nil || burndownData.Project == nil {
+	if burndownData == nil || burndownData.GetProject() == nil {
 		return "", nil
 	}
 
-	matrix := parseBurndownSparseMatrix(burndownData.Project)
+	matrix := parseBurndownSparseMatrix(burndownData.GetProject())
+
 	return r.GetName(), transposeMatrix(matrix)
 }
 
-// GetFilesBurndown retrieves burndown data for files
+// GetFilesBurndown retrieves burndown data for files.
 func (r *ProtobufReader) GetFilesBurndown() ([]FileBurndown, error) {
 	burndownData, err := r.parseBurndownAnalysisResults()
 	if err != nil {
 		return nil, err
 	}
-	if len(burndownData.Files) == 0 {
+
+	if len(burndownData.GetFiles()) == 0 {
 		return nil, fmt.Errorf("%w: files burndown", ErrAnalysisMissing)
 	}
 
 	// Process each file's burndown matrix
 	var fileBurndowns []FileBurndown
-	for _, fileMatrix := range burndownData.Files {
+
+	for _, fileMatrix := range burndownData.GetFiles() {
 		matrix := parseBurndownSparseMatrix(fileMatrix)
 		transposed := transposeMatrix(matrix)
 		fileBurndowns = append(fileBurndowns, FileBurndown{
-			Filename: fileMatrix.Name,
+			Filename: fileMatrix.GetName(),
 			Matrix:   transposed,
 		})
 	}
+
 	return fileBurndowns, nil
 }
 
-// GetPeopleBurndown retrieves burndown data for people
+// GetPeopleBurndown retrieves burndown data for people.
 func (r *ProtobufReader) GetPeopleBurndown() ([]PeopleBurndown, error) {
 	burndownData, err := r.parseBurndownAnalysisResults()
 	if err != nil {
 		return nil, err
 	}
-	if len(burndownData.People) == 0 {
+
+	if len(burndownData.GetPeople()) == 0 {
 		return nil, fmt.Errorf("%w: people burndown", ErrAnalysisMissing)
 	}
 
 	// Process each person's burndown matrix
 	var peopleBurndowns []PeopleBurndown
-	for _, personMatrix := range burndownData.People {
+
+	for _, personMatrix := range burndownData.GetPeople() {
 		matrix := parseBurndownSparseMatrix(personMatrix)
 		transposed := transposeMatrix(matrix)
 		peopleBurndowns = append(peopleBurndowns, PeopleBurndown{
-			Person: personMatrix.Name,
+			Person: personMatrix.GetName(),
 			Matrix: transposed,
 		})
 	}
+
 	return peopleBurndowns, nil
 }
 
@@ -130,18 +146,20 @@ func (r *ProtobufReader) GetRepositoriesBurndown() ([]RepositoryBurndown, error)
 	if err != nil {
 		return nil, err
 	}
-	if len(burndownData.Repositories) == 0 {
+
+	if len(burndownData.GetRepositories()) == 0 {
 		return nil, fmt.Errorf("%w: repository burndown", ErrAnalysisMissing)
 	}
 
-	repositories := make([]RepositoryBurndown, 0, len(burndownData.Repositories))
-	for _, repoMatrix := range burndownData.Repositories {
+	repositories := make([]RepositoryBurndown, 0, len(burndownData.GetRepositories()))
+	for _, repoMatrix := range burndownData.GetRepositories() {
 		matrix := parseBurndownSparseMatrix(repoMatrix)
 		repositories = append(repositories, RepositoryBurndown{
-			Repository: repoMatrix.Name,
+			Repository: repoMatrix.GetName(),
 			Matrix:     transposeMatrix(matrix),
 		})
 	}
+
 	return repositories, nil
 }
 
@@ -151,11 +169,13 @@ func (r *ProtobufReader) GetRepositoryNames() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	names := append([]string(nil), burndownData.RepositorySequence...)
+
+	names := append([]string(nil), burndownData.GetRepositorySequence()...)
+
 	return names, nil
 }
 
-// GetOwnershipBurndown retrieves the ownership matrix and sequence
+// GetOwnershipBurndown retrieves the ownership matrix and sequence.
 func (r *ProtobufReader) GetOwnershipBurndown() ([]string, map[string][][]int, error) {
 	// Get people burndown data (matches Python behavior)
 	peopleBurndowns, err := r.GetPeopleBurndown()
@@ -178,55 +198,59 @@ func (r *ProtobufReader) GetOwnershipBurndown() ([]string, map[string][][]int, e
 	return peopleSequence, ownership, nil
 }
 
-// GetPeopleInteraction retrieves the interaction matrix for people
+// GetPeopleInteraction retrieves the interaction matrix for people.
 func (r *ProtobufReader) GetPeopleInteraction() ([]string, [][]int, error) {
 	burndownData, err := r.parseBurndownAnalysisResults()
 	if err != nil {
 		return nil, nil, err
 	}
-	if burndownData.PeopleInteraction == nil {
+
+	if burndownData.GetPeopleInteraction() == nil {
 		return nil, nil, fmt.Errorf("%w: people interaction", ErrAnalysisMissing)
 	}
 
-	matrix := parseCompressedSparseRowMatrix(burndownData.PeopleInteraction)
+	matrix := parseCompressedSparseRowMatrix(burndownData.GetPeopleInteraction())
 
 	// Extract people names from the burndown people data
 	var peopleNames []string
-	for _, person := range burndownData.People {
-		peopleNames = append(peopleNames, person.Name)
+	for _, person := range burndownData.GetPeople() {
+		peopleNames = append(peopleNames, person.GetName())
 	}
 
 	return peopleNames, matrix, nil
 }
 
-// GetFileCooccurrence retrieves file coupling data
+// GetFileCooccurrence retrieves file coupling data.
 func (r *ProtobufReader) GetFileCooccurrence() ([]string, SparseMatrix, error) {
 	couplesData, err := r.parseCouplesAnalysisResults()
 	if err != nil {
 		return nil, SparseMatrix{}, err
 	}
-	if couplesData.FileCouples == nil || couplesData.FileCouples.Matrix == nil {
+
+	if couplesData.GetFileCouples() == nil || couplesData.GetFileCouples().GetMatrix() == nil {
 		return nil, SparseMatrix{}, fmt.Errorf("%w: file coupling", ErrAnalysisMissing)
 	}
 
-	matrix, err := parseCompressedSparseCouplingMatrix(couplesData.FileCouples.Matrix)
+	matrix, err := parseCompressedSparseCouplingMatrix(couplesData.GetFileCouples().GetMatrix())
 	if err != nil {
 		return nil, SparseMatrix{}, fmt.Errorf("%w: file coupling: %w", ErrAnalysisMalformed, err)
 	}
-	return couplesData.FileCouples.Index, matrix, nil
+
+	return couplesData.GetFileCouples().GetIndex(), matrix, nil
 }
 
-// GetPeopleCooccurrence retrieves people coupling data
+// GetPeopleCooccurrence retrieves people coupling data.
 func (r *ProtobufReader) GetPeopleCooccurrence() ([]string, SparseMatrix, error) {
 	couplesData, err := r.parseCouplesAnalysisResults()
 	if err != nil {
 		return nil, SparseMatrix{}, err
 	}
-	if couplesData.PeopleCouples == nil || couplesData.PeopleCouples.Matrix == nil {
+
+	if couplesData.GetPeopleCouples() == nil || couplesData.GetPeopleCouples().GetMatrix() == nil {
 		return nil, SparseMatrix{}, fmt.Errorf("%w: people coupling", ErrAnalysisMissing)
 	}
 
-	matrix, err := parseCompressedSparseCouplingMatrix(couplesData.PeopleCouples.Matrix)
+	matrix, err := parseCompressedSparseCouplingMatrix(couplesData.GetPeopleCouples().GetMatrix())
 	if err != nil {
 		return nil, SparseMatrix{}, fmt.Errorf("%w: people coupling: %w", ErrAnalysisMalformed, err)
 	}
@@ -239,7 +263,7 @@ func (r *ProtobufReader) GetPeopleCooccurrence() ([]string, SparseMatrix, error)
 	return index, matrix, nil
 }
 
-// GetShotnessCooccurrence retrieves shotness coupling data
+// GetShotnessCooccurrence retrieves shotness coupling data.
 func (r *ProtobufReader) GetShotnessCooccurrence() ([]string, SparseMatrix, error) {
 	shotnessRecords, err := r.GetShotnessRecords()
 	if err != nil {
@@ -249,55 +273,58 @@ func (r *ProtobufReader) GetShotnessCooccurrence() ([]string, SparseMatrix, erro
 	return shotnessCouplingMatrix(shotnessRecords)
 }
 
-// GetShotnessRecords retrieves shotness records
+// GetShotnessRecords retrieves shotness records.
 func (r *ProtobufReader) GetShotnessRecords() ([]ShotnessRecord, error) {
 	shotnessData, err := r.parseShotnessAnalysisResults()
 	if err != nil {
 		return nil, err
 	}
-	pbRecords := shotnessData.Records
+
+	pbRecords := shotnessData.GetRecords()
+
 	records := make([]ShotnessRecord, len(pbRecords))
 	for i, pbRecord := range pbRecords {
 		records[i] = ShotnessRecord{
-			Type:     pbRecord.Type,
-			Name:     pbRecord.Name,
-			File:     pbRecord.File,
-			Counters: pbRecord.Counters,
+			Type:     pbRecord.GetType(),
+			Name:     pbRecord.GetName(),
+			File:     pbRecord.GetFile(),
+			Counters: pbRecord.GetCounters(),
 		}
 	}
 
 	return records, nil
 }
 
-// GetDeveloperStats retrieves developer statistics
+// GetDeveloperStats retrieves developer statistics.
 func (r *ProtobufReader) GetDeveloperStats() ([]DeveloperStat, error) {
 	timeSeries, err := r.GetDeveloperTimeSeriesData()
 	if err != nil {
 		return nil, err
 	}
+
 	return aggregateDeveloperStats(timeSeries), nil
 }
 
-// GetLanguageStats retrieves language statistics
+// GetLanguageStats retrieves language statistics.
 func (r *ProtobufReader) GetLanguageStats() ([]LanguageStat, error) {
 	timeSeries, err := r.GetDeveloperTimeSeriesData()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get developer time series data: %w", err)
 	}
+
 	return aggregateLanguageStats(timeSeries)
 }
 
-// GetRuntimeStats retrieves runtime statistics
+// GetRuntimeStats retrieves runtime statistics.
 func (r *ProtobufReader) GetRuntimeStats() (map[string]float64, error) {
-	if r.data.Header == nil {
-		return nil, fmt.Errorf("no header found for runtime stats")
+	if r.data.GetHeader() == nil {
+		return nil, errors.New("no header found for runtime stats")
 	}
 
 	runtimeStats := make(map[string]float64)
+
 	if r.data.Header.RunTimePerItem != nil {
-		for key, value := range r.data.Header.RunTimePerItem {
-			runtimeStats[key] = value
-		}
+		maps.Copy(runtimeStats, r.data.GetHeader().GetRunTimePerItem())
 	}
 
 	return runtimeStats, nil
@@ -309,21 +336,24 @@ func (r *ProtobufReader) GetSentimentByTick() (map[int]SentimentTick, error) {
 	if err != nil {
 		return nil, err
 	}
-	if len(sentimentData.SentimentByTick) == 0 {
+
+	if len(sentimentData.GetSentimentByTick()) == 0 {
 		return nil, fmt.Errorf("%w: Sentiment", ErrAnalysisMissing)
 	}
 
-	result := make(map[int]SentimentTick, len(sentimentData.SentimentByTick))
-	for tick, sentiment := range sentimentData.SentimentByTick {
+	result := make(map[int]SentimentTick, len(sentimentData.GetSentimentByTick()))
+	for tick, sentiment := range sentimentData.GetSentimentByTick() {
 		if sentiment == nil {
 			continue
 		}
+
 		result[int(tick)] = SentimentTick{
-			Value:    sentiment.Value,
-			Comments: append([]string(nil), sentiment.Comments...),
-			Commits:  append([]string(nil), sentiment.Commits...),
+			Value:    sentiment.GetValue(),
+			Comments: append([]string(nil), sentiment.GetComments()...),
+			Commits:  append([]string(nil), sentiment.GetCommits()...),
 		}
 	}
+
 	return result, nil
 }
 
@@ -334,46 +364,50 @@ func (r *ProtobufReader) GetTemporalActivity() (*TemporalActivityData, error) {
 		return nil, err
 	}
 
-	activities := make(map[int]TemporalDeveloperActivity, len(temporalData.Activities))
-	for devID, activity := range temporalData.Activities {
+	activities := make(map[int]TemporalDeveloperActivity, len(temporalData.GetActivities()))
+	for devID, activity := range temporalData.GetActivities() {
 		if activity == nil {
 			continue
 		}
+
 		activities[int(devID)] = TemporalDeveloperActivity{
-			Weekdays: convertTemporalDimension(activity.Weekdays),
-			Hours:    convertTemporalDimension(activity.Hours),
-			Months:   convertTemporalDimension(activity.Months),
-			Weeks:    convertTemporalDimension(activity.Weeks),
+			Weekdays: convertTemporalDimension(activity.GetWeekdays()),
+			Hours:    convertTemporalDimension(activity.GetHours()),
+			Months:   convertTemporalDimension(activity.GetMonths()),
+			Weeks:    convertTemporalDimension(activity.GetWeeks()),
 		}
 	}
 
-	ticks := make(map[int]map[int]TemporalActivityTick, len(temporalData.Ticks))
-	for tickID, tickDevs := range temporalData.Ticks {
+	ticks := make(map[int]map[int]TemporalActivityTick, len(temporalData.GetTicks()))
+	for tickID, tickDevs := range temporalData.GetTicks() {
 		if tickDevs == nil {
 			continue
 		}
-		devs := make(map[int]TemporalActivityTick, len(tickDevs.Devs))
-		for devID, tick := range tickDevs.Devs {
+
+		devs := make(map[int]TemporalActivityTick, len(tickDevs.GetDevs()))
+		for devID, tick := range tickDevs.GetDevs() {
 			if tick == nil {
 				continue
 			}
+
 			devs[int(devID)] = TemporalActivityTick{
-				Commits: int(tick.Commits),
-				Lines:   int(tick.Lines),
-				Weekday: int(tick.Weekday),
-				Hour:    int(tick.Hour),
-				Month:   int(tick.Month),
-				Week:    int(tick.Week),
+				Commits: int(tick.GetCommits()),
+				Lines:   int(tick.GetLines()),
+				Weekday: int(tick.GetWeekday()),
+				Hour:    int(tick.GetHour()),
+				Month:   int(tick.GetMonth()),
+				Week:    int(tick.GetWeek()),
 			}
 		}
+
 		ticks[int(tickID)] = devs
 	}
 
 	return &TemporalActivityData{
 		Activities: activities,
-		People:     append([]string(nil), temporalData.DevIndex...),
+		People:     append([]string(nil), temporalData.GetDevIndex()...),
 		Ticks:      ticks,
-		TickSize:   temporalData.TickSize,
+		TickSize:   temporalData.GetTickSize(),
 	}, nil
 }
 
@@ -384,24 +418,25 @@ func (r *ProtobufReader) GetBusFactor() (*BusFactorData, error) {
 		return nil, err
 	}
 
-	snapshots := make(map[int]BusFactorSnapshot, len(busFactorData.Snapshots))
-	for tick, snapshot := range busFactorData.Snapshots {
+	snapshots := make(map[int]BusFactorSnapshot, len(busFactorData.GetSnapshots()))
+	for tick, snapshot := range busFactorData.GetSnapshots() {
 		if snapshot == nil {
 			continue
 		}
+
 		snapshots[int(tick)] = BusFactorSnapshot{
-			BusFactor:   int(snapshot.BusFactor),
-			TotalLines:  snapshot.TotalLines,
-			AuthorLines: convertInt32Int64Map(snapshot.AuthorLines),
+			BusFactor:   int(snapshot.GetBusFactor()),
+			TotalLines:  snapshot.GetTotalLines(),
+			AuthorLines: convertInt32Int64Map(snapshot.GetAuthorLines()),
 		}
 	}
 
 	return &BusFactorData{
 		Snapshots:          snapshots,
-		People:             append([]string(nil), busFactorData.DevIndex...),
-		SubsystemBusFactor: convertStringInt32Map(busFactorData.SubsystemBusFactor),
-		Threshold:          busFactorData.Threshold,
-		TickSize:           busFactorData.TickSize,
+		People:             append([]string(nil), busFactorData.GetDevIndex()...),
+		SubsystemBusFactor: convertStringInt32Map(busFactorData.GetSubsystemBusFactor()),
+		Threshold:          busFactorData.GetThreshold(),
+		TickSize:           busFactorData.GetTickSize(),
 	}, nil
 }
 
@@ -412,25 +447,26 @@ func (r *ProtobufReader) GetOwnershipConcentration() (*OwnershipConcentrationDat
 		return nil, err
 	}
 
-	snapshots := make(map[int]OwnershipConcentrationSnapshot, len(ownershipData.Snapshots))
-	for tick, snapshot := range ownershipData.Snapshots {
+	snapshots := make(map[int]OwnershipConcentrationSnapshot, len(ownershipData.GetSnapshots()))
+	for tick, snapshot := range ownershipData.GetSnapshots() {
 		if snapshot == nil {
 			continue
 		}
+
 		snapshots[int(tick)] = OwnershipConcentrationSnapshot{
-			Gini:        snapshot.Gini,
-			HHI:         snapshot.Hhi,
-			TotalLines:  snapshot.TotalLines,
-			AuthorLines: convertInt32Int64Map(snapshot.AuthorLines),
+			Gini:        snapshot.GetGini(),
+			HHI:         snapshot.GetHhi(),
+			TotalLines:  snapshot.GetTotalLines(),
+			AuthorLines: convertInt32Int64Map(snapshot.GetAuthorLines()),
 		}
 	}
 
 	return &OwnershipConcentrationData{
 		Snapshots:     snapshots,
-		People:        append([]string(nil), ownershipData.DevIndex...),
-		SubsystemGini: copyStringFloat64Map(ownershipData.SubsystemGini),
-		SubsystemHHI:  copyStringFloat64Map(ownershipData.SubsystemHhi),
-		TickSize:      ownershipData.TickSize,
+		People:        append([]string(nil), ownershipData.GetDevIndex()...),
+		SubsystemGini: copyStringFloat64Map(ownershipData.GetSubsystemGini()),
+		SubsystemHHI:  copyStringFloat64Map(ownershipData.GetSubsystemHhi()),
+		TickSize:      ownershipData.GetTickSize(),
 	}, nil
 }
 
@@ -441,25 +477,26 @@ func (r *ProtobufReader) GetKnowledgeDiffusion() (*KnowledgeDiffusionData, error
 		return nil, err
 	}
 
-	files := make(map[string]KnowledgeDiffusionFile, len(diffusionData.Files))
-	for fileName, fileData := range diffusionData.Files {
+	files := make(map[string]KnowledgeDiffusionFile, len(diffusionData.GetFiles()))
+	for fileName, fileData := range diffusionData.GetFiles() {
 		if fileData == nil {
 			continue
 		}
+
 		files[fileName] = KnowledgeDiffusionFile{
-			UniqueEditors:         int(fileData.UniqueEditorsCount),
-			RecentEditors:         int(fileData.RecentEditorsCount),
-			UniqueEditorsOverTime: convertInt32Int32Map(fileData.UniqueEditorsOverTime),
-			Authors:               convertInt32Slice(fileData.Authors),
+			UniqueEditors:         int(fileData.GetUniqueEditorsCount()),
+			RecentEditors:         int(fileData.GetRecentEditorsCount()),
+			UniqueEditorsOverTime: convertInt32Int32Map(fileData.GetUniqueEditorsOverTime()),
+			Authors:               convertInt32Slice(fileData.GetAuthors()),
 		}
 	}
 
 	return &KnowledgeDiffusionData{
 		Files:        files,
-		Distribution: convertInt32Int32Map(diffusionData.Distribution),
-		People:       append([]string(nil), diffusionData.DevIndex...),
-		WindowMonths: int(diffusionData.WindowMonths),
-		TickSize:     diffusionData.TickSize,
+		Distribution: convertInt32Int32Map(diffusionData.GetDistribution()),
+		People:       append([]string(nil), diffusionData.GetDevIndex()...),
+		WindowMonths: int(diffusionData.GetWindowMonths()),
+		TickSize:     diffusionData.GetTickSize(),
 	}, nil
 }
 
@@ -470,28 +507,29 @@ func (r *ProtobufReader) GetHotspotRisk() (*HotspotRiskData, error) {
 		return nil, err
 	}
 
-	files := make([]HotspotRiskFile, 0, len(hotspotData.Files))
-	for _, file := range hotspotData.Files {
+	files := make([]HotspotRiskFile, 0, len(hotspotData.GetFiles()))
+	for _, file := range hotspotData.GetFiles() {
 		if file == nil {
 			continue
 		}
+
 		files = append(files, HotspotRiskFile{
-			Path:                file.Path,
-			RiskScore:           file.RiskScore,
-			Size:                int(file.Size_),
-			Churn:               int(file.Churn),
-			CouplingDegree:      int(file.CouplingDegree),
-			OwnershipGini:       file.OwnershipGini,
-			SizeNormalized:      file.SizeNormalized,
-			ChurnNormalized:     file.ChurnNormalized,
-			CouplingNormalized:  file.CouplingNormalized,
-			OwnershipNormalized: file.OwnershipNormalized,
+			Path:                file.GetPath(),
+			RiskScore:           file.GetRiskScore(),
+			Size:                int(file.GetSize_()),
+			Churn:               int(file.GetChurn()),
+			CouplingDegree:      int(file.GetCouplingDegree()),
+			OwnershipGini:       file.GetOwnershipGini(),
+			SizeNormalized:      file.GetSizeNormalized(),
+			ChurnNormalized:     file.GetChurnNormalized(),
+			CouplingNormalized:  file.GetCouplingNormalized(),
+			OwnershipNormalized: file.GetOwnershipNormalized(),
 		})
 	}
 
 	return &HotspotRiskData{
 		Files:      files,
-		WindowDays: int(hotspotData.WindowDays),
+		WindowDays: int(hotspotData.GetWindowDays()),
 	}, nil
 }
 
@@ -503,30 +541,34 @@ func (r *ProtobufReader) GetRefactoringProxy() (*RefactoringProxyData, error) {
 	}
 
 	start, end := r.GetHeader()
-	tickSizeDays := proxyData.TickSize / int64(86400*1_000_000_000)
-	if tickSizeDays == 0 && proxyData.TickSize > 0 {
+
+	tickSizeDays := proxyData.GetTickSize() / int64(86400*1_000_000_000)
+	if tickSizeDays == 0 && proxyData.GetTickSize() > 0 {
 		tickSizeDays = 1
 	}
 
-	ticks := make([]RefactoringProxyTick, 0, len(proxyData.Ticks))
-	for i, tickIndex := range proxyData.Ticks {
+	ticks := make([]RefactoringProxyTick, 0, len(proxyData.GetTicks()))
+	for i, tickIndex := range proxyData.GetTicks() {
 		rate := float32(0)
-		if i < len(proxyData.RenameRatios) {
-			rate = proxyData.RenameRatios[i]
+		if i < len(proxyData.GetRenameRatios()) {
+			rate = proxyData.GetRenameRatios()[i]
 		}
+
 		isRefactoring := false
-		if i < len(proxyData.IsRefactoring) {
-			isRefactoring = proxyData.IsRefactoring[i]
+		if i < len(proxyData.GetIsRefactoring()) {
+			isRefactoring = proxyData.GetIsRefactoring()[i]
 		}
+
 		totalChanges := 0
-		if i < len(proxyData.TotalChanges) {
-			totalChanges = int(proxyData.TotalChanges[i])
+		if i < len(proxyData.GetTotalChanges()) {
+			totalChanges = int(proxyData.GetTotalChanges()[i])
 		}
 
 		timestamp := start
 		if tickSizeDays > 0 {
 			timestamp = start + int64(tickIndex)*tickSizeDays*86400
 		}
+
 		ticks = append(ticks, RefactoringProxyTick{
 			Timestamp:       timestamp,
 			RefactoringRate: rate,
@@ -537,7 +579,7 @@ func (r *ProtobufReader) GetRefactoringProxy() (*RefactoringProxyData, error) {
 
 	return &RefactoringProxyData{
 		Ticks:        ticks,
-		Threshold:    proxyData.Threshold,
+		Threshold:    proxyData.GetThreshold(),
 		TickSizeDays: tickSizeDays,
 		StartDate:    start,
 		EndDate:      end,
@@ -551,33 +593,36 @@ func (r *ProtobufReader) GetCommits() (*CommitsData, error) {
 		return nil, err
 	}
 
-	commits := make([]Commit, 0, len(commitsData.Commits))
-	for _, commit := range commitsData.Commits {
+	commits := make([]Commit, 0, len(commitsData.GetCommits()))
+	for _, commit := range commitsData.GetCommits() {
 		if commit == nil {
 			continue
 		}
-		files := make([]CommitFile, 0, len(commit.Files))
-		for _, file := range commit.Files {
+
+		files := make([]CommitFile, 0, len(commit.GetFiles()))
+		for _, file := range commit.GetFiles() {
 			if file == nil {
 				continue
 			}
+
 			files = append(files, CommitFile{
-				Name:     file.Name,
-				Language: file.Language,
-				Stats:    convertLineStats(file.Stats),
+				Name:     file.GetName(),
+				Language: file.GetLanguage(),
+				Stats:    convertLineStats(file.GetStats()),
 			})
 		}
+
 		commits = append(commits, Commit{
-			Hash:         commit.Hash,
-			WhenUnixTime: commit.WhenUnixTime,
-			Author:       int(commit.Author),
+			Hash:         commit.GetHash(),
+			WhenUnixTime: commit.GetWhenUnixTime(),
+			Author:       int(commit.GetAuthor()),
 			Files:        files,
 		})
 	}
 
 	return &CommitsData{
 		Commits:     commits,
-		AuthorIndex: append([]string(nil), commitsData.AuthorIndex...),
+		AuthorIndex: append([]string(nil), commitsData.GetAuthorIndex()...),
 	}, nil
 }
 
@@ -588,17 +633,19 @@ func (r *ProtobufReader) GetFileHistory() (*FileHistoryData, error) {
 		return nil, err
 	}
 
-	files := make(map[string]FileHistory, len(historyData.Files))
-	for path, history := range historyData.Files {
+	files := make(map[string]FileHistory, len(historyData.GetFiles()))
+	for path, history := range historyData.GetFiles() {
 		if history == nil {
 			continue
 		}
-		changes := make(map[int]LineStats, len(history.ChangesByDeveloper))
-		for developer, stats := range history.ChangesByDeveloper {
+
+		changes := make(map[int]LineStats, len(history.GetChangesByDeveloper()))
+		for developer, stats := range history.GetChangesByDeveloper() {
 			changes[int(developer)] = convertLineStats(stats)
 		}
+
 		files[path] = FileHistory{
-			Commits:            append([]string(nil), history.Commits...),
+			Commits:            append([]string(nil), history.GetCommits()...),
 			ChangesByDeveloper: changes,
 		}
 	}
@@ -607,7 +654,7 @@ func (r *ProtobufReader) GetFileHistory() (*FileHistoryData, error) {
 }
 
 // GetDeveloperTimeSeriesData returns Python-compatible time series data for protobuf files
-// This now parses real temporal data from DevsAnalysisResults.Ticks (matches Python's approach)
+// This now parses real temporal data from DevsAnalysisResults.Ticks (matches Python's approach).
 func (r *ProtobufReader) GetDeveloperTimeSeriesData() (*DeveloperTimeSeriesData, error) {
 	devsData, err := r.parseDevsAnalysisResults()
 	if err != nil {
@@ -745,26 +792,28 @@ func sortedDeveloperStats(statsByDev map[int]*DeveloperStat) []DeveloperStat {
 }
 
 // parseBurndownSparseMatrix converts protobuf BurndownSparseMatrix to dense matrix
-// This matches the Python _parse_burndown_matrix logic
+// This matches the Python _parse_burndown_matrix logic.
 func parseBurndownSparseMatrix(matrix *pb.BurndownSparseMatrix) [][]int {
 	if matrix == nil {
 		return [][]int{}
 	}
 
-	result := make([][]int, matrix.NumberOfRows)
+	result := make([][]int, matrix.GetNumberOfRows())
 	for i := range result {
-		result[i] = make([]int, matrix.NumberOfColumns)
+		result[i] = make([]int, matrix.GetNumberOfColumns())
 	}
 
 	// Convert from row/column format to dense matrix (matches Python logic)
-	for y, row := range matrix.Rows {
-		if y >= int(matrix.NumberOfRows) {
+	for y, row := range matrix.GetRows() {
+		if y >= int(matrix.GetNumberOfRows()) {
 			break
 		}
-		for x, value := range row.Columns {
-			if x >= int(matrix.NumberOfColumns) {
+
+		for x, value := range row.GetColumns() {
+			if x >= int(matrix.GetNumberOfColumns()) {
 				break
 			}
+
 			result[y][x] = int(value)
 		}
 	}
@@ -772,34 +821,37 @@ func parseBurndownSparseMatrix(matrix *pb.BurndownSparseMatrix) [][]int {
 	return result
 }
 
-// parseCompressedSparseRowMatrix converts protobuf CompressedSparseRowMatrix to dense matrix
+// parseCompressedSparseRowMatrix converts protobuf CompressedSparseRowMatrix to dense matrix.
 func parseCompressedSparseRowMatrix(matrix *pb.CompressedSparseRowMatrix) [][]int {
 	if matrix == nil {
 		return [][]int{}
 	}
 
-	result := make([][]int, matrix.NumberOfRows)
+	result := make([][]int, matrix.GetNumberOfRows())
 	for i := range result {
-		result[i] = make([]int, matrix.NumberOfColumns)
+		result[i] = make([]int, matrix.GetNumberOfColumns())
 	}
 
 	// Convert from CSR format to dense matrix with bounds checking
-	for i := int32(0); i < matrix.NumberOfRows; i++ {
-		if int(i+1) >= len(matrix.Indptr) {
+	for i := int32(0); i < matrix.GetNumberOfRows(); i++ {
+		if int(i+1) >= len(matrix.GetIndptr()) {
 			break
 		}
-		start := matrix.Indptr[i]
-		end := matrix.Indptr[i+1]
+
+		start := matrix.GetIndptr()[i]
+		end := matrix.GetIndptr()[i+1]
 
 		for j := start; j < end; j++ {
-			if int(j) >= len(matrix.Indices) || int(j) >= len(matrix.Data) {
+			if int(j) >= len(matrix.GetIndices()) || int(j) >= len(matrix.GetData()) {
 				break
 			}
-			col := matrix.Indices[j]
-			if int(col) >= int(matrix.NumberOfColumns) {
+
+			col := matrix.GetIndices()[j]
+			if int(col) >= int(matrix.GetNumberOfColumns()) {
 				continue
 			}
-			value := matrix.Data[j]
+
+			value := matrix.GetData()[j]
 			result[i][col] = int(value)
 		}
 	}
@@ -813,71 +865,82 @@ func parseCompressedSparseCouplingMatrix(
 	if matrix == nil {
 		return SparseMatrix{}, nil
 	}
-	rows, columns := int(matrix.NumberOfRows), int(matrix.NumberOfColumns)
-	if rows < 0 || columns < 0 || len(matrix.Indptr) != rows+1 {
+
+	rows, columns := int(matrix.GetNumberOfRows()), int(matrix.GetNumberOfColumns())
+	if rows < 0 || columns < 0 || len(matrix.GetIndptr()) != rows+1 {
 		return SparseMatrix{}, fmt.Errorf(
 			"invalid CSR dimensions or row offsets for %dx%d matrix", rows, columns,
 		)
 	}
-	entries := make([]SparseEntry, 0, len(matrix.Data))
-	for row := 0; row < rows; row++ {
+
+	entries := make([]SparseEntry, 0, len(matrix.GetData()))
+	for row := range rows {
 		rowEntries, err := parseCompressedSparseRow(matrix, row)
 		if err != nil {
 			return SparseMatrix{}, err
 		}
+
 		entries = append(entries, rowEntries...)
 	}
+
 	return NewSparseMatrix(rows, columns, entries)
 }
 
 func parseCompressedSparseRow(matrix *pb.CompressedSparseRowMatrix, row int) ([]SparseEntry, error) {
-	start, end := int(matrix.Indptr[row]), int(matrix.Indptr[row+1])
-	if start < 0 || end < start || end > len(matrix.Data) || end > len(matrix.Indices) {
+	start, end := int(matrix.GetIndptr()[row]), int(matrix.GetIndptr()[row+1])
+	if start < 0 || end < start || end > len(matrix.GetData()) || end > len(matrix.GetIndices()) {
 		return nil, fmt.Errorf("invalid CSR offsets [%d:%d] for row %d", start, end, row)
 	}
+
 	entries := make([]SparseEntry, 0, end-start)
 	for index := start; index < end; index++ {
-		value := int(matrix.Data[index])
-		if int64(value) != matrix.Data[index] {
+		value := int(matrix.GetData()[index])
+		if int64(value) != matrix.GetData()[index] {
 			return nil, fmt.Errorf("CSR value at index %d overflows int", index)
 		}
+
 		entries = append(entries, SparseEntry{
-			Row: row, Column: int(matrix.Indices[index]), Value: value,
+			Row: row, Column: int(matrix.GetIndices()[index]), Value: value,
 		})
 	}
+
 	return entries, nil
 }
 
-// parseBurndownAnalysisResults extracts and parses burndown data from the Contents map
+// parseBurndownAnalysisResults extracts and parses burndown data from the Contents map.
 func (r *ProtobufReader) parseBurndownAnalysisResults() (*pb.BurndownAnalysisResults, error) {
 	if r.data == nil || r.data.Contents == nil {
 		return nil, fmt.Errorf("%w: Burndown", ErrAnalysisMissing)
 	}
 
 	var burndownData pb.BurndownAnalysisResults
-	if err := r.unmarshalContent("Burndown", &burndownData); err != nil {
+
+	err := r.unmarshalContent("Burndown", &burndownData)
+	if err != nil {
 		return nil, err
 	}
+
 	return &burndownData, nil
 }
 
-// GetBurndownParameters retrieves burndown parameters in Python-compatible format
+// GetBurndownParameters retrieves burndown parameters in Python-compatible format.
 func (r *ProtobufReader) GetBurndownParameters() (burndown.BurndownParameters, error) {
 	burndownData, err := r.parseBurndownAnalysisResults()
 	if err != nil {
 		return burndown.BurndownParameters{}, err
 	}
 
-	sampling := int(burndownData.Sampling)
+	sampling := int(burndownData.GetSampling())
 	if sampling <= 0 {
 		sampling = 1
 	}
-	granularity := int(burndownData.Granularity)
+
+	granularity := int(burndownData.GetGranularity())
 	if granularity <= 0 {
 		granularity = 1
 	}
 
-	tickSize := float64(burndownData.TickSize) / 1e9 // Hercules stores time.Duration in nanoseconds.
+	tickSize := float64(burndownData.GetTickSize()) / 1e9 // Hercules stores time.Duration in nanoseconds.
 	if tickSize <= 0 {
 		tickSize = 86400
 	}
@@ -889,18 +952,20 @@ func (r *ProtobufReader) GetBurndownParameters() (burndown.BurndownParameters, e
 	}, nil
 }
 
-// GetProjectBurndownWithHeader retrieves project burndown with full header info
+// GetProjectBurndownWithHeader retrieves project burndown with full header info.
 func (r *ProtobufReader) GetProjectBurndownWithHeader() (burndown.BurndownHeader, string, [][]int, error) {
 	burndownData, err := r.parseBurndownAnalysisResults()
 	if err != nil {
 		return burndown.BurndownHeader{}, "", nil, err
 	}
-	if burndownData.Project == nil {
+
+	if burndownData.GetProject() == nil {
 		return burndown.BurndownHeader{}, "", nil, fmt.Errorf("%w: project burndown", ErrAnalysisMissing)
 	}
 
 	// Get header information
 	start, last := r.GetHeader()
+
 	params, err := r.GetBurndownParameters()
 	if err != nil {
 		return burndown.BurndownHeader{}, "", nil, err
@@ -920,39 +985,51 @@ func (r *ProtobufReader) GetProjectBurndownWithHeader() (burndown.BurndownHeader
 	return header, name, matrix, nil
 }
 
-// parseCouplesAnalysisResults extracts and parses couples data from the Contents map
+// parseCouplesAnalysisResults extracts and parses couples data from the Contents map.
 func (r *ProtobufReader) parseCouplesAnalysisResults() (*pb.CouplesAnalysisResults, error) {
 	if r.data == nil || r.data.Contents == nil {
 		return nil, fmt.Errorf("%w: Couples", ErrAnalysisMissing)
 	}
+
 	var couplesData pb.CouplesAnalysisResults
-	if err := r.unmarshalContent("Couples", &couplesData); err != nil {
+
+	err := r.unmarshalContent("Couples", &couplesData)
+	if err != nil {
 		return nil, err
 	}
+
 	return &couplesData, nil
 }
 
-// parseShotnessAnalysisResults extracts and parses shotness data from the Contents map
+// parseShotnessAnalysisResults extracts and parses shotness data from the Contents map.
 func (r *ProtobufReader) parseShotnessAnalysisResults() (*pb.ShotnessAnalysisResults, error) {
 	if r.data == nil || r.data.Contents == nil {
 		return nil, fmt.Errorf("%w: Shotness", ErrAnalysisMissing)
 	}
+
 	var shotnessData pb.ShotnessAnalysisResults
-	if err := r.unmarshalContent("Shotness", &shotnessData); err != nil {
+
+	err := r.unmarshalContent("Shotness", &shotnessData)
+	if err != nil {
 		return nil, err
 	}
+
 	return &shotnessData, nil
 }
 
-// parseDevsAnalysisResults extracts and parses devs data from the Contents map
+// parseDevsAnalysisResults extracts and parses devs data from the Contents map.
 func (r *ProtobufReader) parseDevsAnalysisResults() (*pb.DevsAnalysisResults, error) {
 	if r.data == nil || r.data.Contents == nil {
 		return nil, fmt.Errorf("%w: Devs", ErrAnalysisMissing)
 	}
+
 	var devsData pb.DevsAnalysisResults
-	if err := r.unmarshalContent("Devs", &devsData); err != nil {
+
+	err := r.unmarshalContent("Devs", &devsData)
+	if err != nil {
 		return nil, err
 	}
+
 	return &devsData, nil
 }
 
@@ -960,10 +1037,14 @@ func (r *ProtobufReader) parseSentimentAnalysisResults() (*pb.CommentSentimentRe
 	if r.data == nil || r.data.Contents == nil {
 		return nil, fmt.Errorf("%w: Sentiment", ErrAnalysisMissing)
 	}
+
 	var sentimentData pb.CommentSentimentResults
-	if err := r.unmarshalContent("Sentiment", &sentimentData); err != nil {
+
+	err := r.unmarshalContent("Sentiment", &sentimentData)
+	if err != nil {
 		return nil, err
 	}
+
 	return &sentimentData, nil
 }
 
@@ -971,10 +1052,14 @@ func (r *ProtobufReader) parseTemporalActivityResults() (*pb.TemporalActivityRes
 	if r.data == nil || r.data.Contents == nil {
 		return nil, fmt.Errorf("%w: TemporalActivity", ErrAnalysisMissing)
 	}
+
 	var temporalData pb.TemporalActivityResults
-	if err := r.unmarshalContent("TemporalActivity", &temporalData); err != nil {
+
+	err := r.unmarshalContent("TemporalActivity", &temporalData)
+	if err != nil {
 		return nil, err
 	}
+
 	return &temporalData, nil
 }
 
@@ -982,10 +1067,14 @@ func (r *ProtobufReader) parseBusFactorResults() (*pb.BusFactorAnalysisResults, 
 	if r.data == nil || r.data.Contents == nil {
 		return nil, fmt.Errorf("%w: BusFactor", ErrAnalysisMissing)
 	}
+
 	var busFactorData pb.BusFactorAnalysisResults
-	if err := r.unmarshalContent("BusFactor", &busFactorData); err != nil {
+
+	err := r.unmarshalContent("BusFactor", &busFactorData)
+	if err != nil {
 		return nil, err
 	}
+
 	return &busFactorData, nil
 }
 
@@ -993,10 +1082,14 @@ func (r *ProtobufReader) parseOwnershipConcentrationResults() (*pb.OwnershipConc
 	if r.data == nil || r.data.Contents == nil {
 		return nil, fmt.Errorf("%w: OwnershipConcentration", ErrAnalysisMissing)
 	}
+
 	var ownershipData pb.OwnershipConcentrationResults
-	if err := r.unmarshalContent("OwnershipConcentration", &ownershipData); err != nil {
+
+	err := r.unmarshalContent("OwnershipConcentration", &ownershipData)
+	if err != nil {
 		return nil, err
 	}
+
 	return &ownershipData, nil
 }
 
@@ -1004,10 +1097,14 @@ func (r *ProtobufReader) parseKnowledgeDiffusionResults() (*pb.KnowledgeDiffusio
 	if r.data == nil || r.data.Contents == nil {
 		return nil, fmt.Errorf("%w: KnowledgeDiffusion", ErrAnalysisMissing)
 	}
+
 	var diffusionData pb.KnowledgeDiffusionResults
-	if err := r.unmarshalContent("KnowledgeDiffusion", &diffusionData); err != nil {
+
+	err := r.unmarshalContent("KnowledgeDiffusion", &diffusionData)
+	if err != nil {
 		return nil, err
 	}
+
 	return &diffusionData, nil
 }
 
@@ -1015,10 +1112,14 @@ func (r *ProtobufReader) parseHotspotRiskResults() (*pb.HotspotRiskResults, erro
 	if r.data == nil || r.data.Contents == nil {
 		return nil, fmt.Errorf("%w: HotspotRisk", ErrAnalysisMissing)
 	}
+
 	var hotspotData pb.HotspotRiskResults
-	if err := r.unmarshalContent("HotspotRisk", &hotspotData); err != nil {
+
+	err := r.unmarshalContent("HotspotRisk", &hotspotData)
+	if err != nil {
 		return nil, err
 	}
+
 	return &hotspotData, nil
 }
 
@@ -1026,16 +1127,22 @@ func (r *ProtobufReader) parseRefactoringProxyResults() (*pb.RefactoringProxyRes
 	if r.data == nil {
 		return nil, fmt.Errorf("%w: RefactoringProxy", ErrAnalysisMissing)
 	}
-	if r.data.RefactoringProxy != nil {
-		return r.data.RefactoringProxy, nil
+
+	if r.data.GetRefactoringProxy() != nil {
+		return r.data.GetRefactoringProxy(), nil
 	}
+
 	if r.data.Contents == nil {
 		return nil, fmt.Errorf("%w: RefactoringProxy", ErrAnalysisMissing)
 	}
+
 	var proxyData pb.RefactoringProxyResults
-	if err := r.unmarshalContent("RefactoringProxy", &proxyData); err != nil {
+
+	err := r.unmarshalContent("RefactoringProxy", &proxyData)
+	if err != nil {
 		return nil, err
 	}
+
 	return &proxyData, nil
 }
 
@@ -1043,10 +1150,14 @@ func (r *ProtobufReader) parseCommitsAnalysisResults() (*pb.CommitsAnalysisResul
 	if r.data == nil || r.data.Contents == nil {
 		return nil, fmt.Errorf("%w: CommitsStat", ErrAnalysisMissing)
 	}
+
 	var commitsData pb.CommitsAnalysisResults
-	if err := r.unmarshalContent("CommitsStat", &commitsData); err != nil {
+
+	err := r.unmarshalContent("CommitsStat", &commitsData)
+	if err != nil {
 		return nil, err
 	}
+
 	return &commitsData, nil
 }
 
@@ -1054,21 +1165,28 @@ func (r *ProtobufReader) parseFileHistoryResults() (*pb.FileHistoryResultMessage
 	if r.data == nil || r.data.Contents == nil {
 		return nil, fmt.Errorf("%w: FileHistoryAnalysis", ErrAnalysisMissing)
 	}
+
 	var historyData pb.FileHistoryResultMessage
-	if err := r.unmarshalContent("FileHistoryAnalysis", &historyData); err != nil {
+
+	err := r.unmarshalContent("FileHistoryAnalysis", &historyData)
+	if err != nil {
 		return nil, err
 	}
+
 	return &historyData, nil
 }
 
 func (r *ProtobufReader) unmarshalContent(key string, message proto.Message) error {
-	contentBytes, exists := r.data.Contents[key]
+	contentBytes, exists := r.data.GetContents()[key]
 	if !exists {
 		return fmt.Errorf("%w: %s", ErrAnalysisMissing, key)
 	}
-	if err := analysisio.Unmarshal(contentBytes, message, r.Limits); err != nil {
+
+	err := analysisio.Unmarshal(contentBytes, message, r.Limits)
+	if err != nil {
 		return fmt.Errorf("%s: %w", key, err)
 	}
+
 	return nil
 }
 
@@ -1076,9 +1194,10 @@ func convertTemporalDimension(dimension *pb.TemporalDimension) TemporalDimension
 	if dimension == nil {
 		return TemporalDimensionData{}
 	}
+
 	return TemporalDimensionData{
-		Commits: convertInt32Slice(dimension.Commits),
-		Lines:   convertInt32Slice(dimension.Lines),
+		Commits: convertInt32Slice(dimension.GetCommits()),
+		Lines:   convertInt32Slice(dimension.GetLines()),
 	}
 }
 
@@ -1087,6 +1206,7 @@ func convertInt32Slice(values []int32) []int {
 	for i, value := range values {
 		result[i] = int(value)
 	}
+
 	return result
 }
 
@@ -1095,6 +1215,7 @@ func convertInt32Int32Map(values map[int32]int32) map[int]int {
 	for key, value := range values {
 		result[int(key)] = int(value)
 	}
+
 	return result
 }
 
@@ -1103,6 +1224,7 @@ func convertInt32Int64Map(values map[int32]int64) map[int]int64 {
 	for key, value := range values {
 		result[int(key)] = value
 	}
+
 	return result
 }
 
@@ -1111,14 +1233,14 @@ func convertStringInt32Map(values map[string]int32) map[string]int {
 	for key, value := range values {
 		result[key] = int(value)
 	}
+
 	return result
 }
 
 func copyStringFloat64Map(values map[string]float64) map[string]float64 {
 	result := make(map[string]float64, len(values))
-	for key, value := range values {
-		result[key] = value
-	}
+	maps.Copy(result, values)
+
 	return result
 }
 
@@ -1126,9 +1248,10 @@ func convertLineStats(stats *pb.LineStats) LineStats {
 	if stats == nil {
 		return LineStats{}
 	}
+
 	return LineStats{
-		Added:   int(stats.Added),
-		Removed: int(stats.Removed),
-		Changed: int(stats.Changed),
+		Added:   int(stats.GetAdded()),
+		Removed: int(stats.GetRemoved()),
+		Changed: int(stats.GetChanged()),
 	}
 }

@@ -2,7 +2,6 @@ package readers
 
 import (
 	"bytes"
-	"errors"
 	"os"
 	"strconv"
 	"testing"
@@ -272,7 +271,7 @@ func TestProtobufReader_ReportPayloadErrorsAreTyped(t *testing.T) {
 
 		_, err := reader.GetTemporalActivity()
 		require.Error(t, err)
-		require.True(t, errors.Is(err, ErrAnalysisMissing))
+		require.ErrorIs(t, err, ErrAnalysisMissing)
 	})
 
 	t.Run("malformed", func(t *testing.T) {
@@ -287,7 +286,7 @@ func TestProtobufReader_ReportPayloadErrorsAreTyped(t *testing.T) {
 
 		_, err := reader.GetTemporalActivity()
 		require.Error(t, err)
-		require.True(t, errors.Is(err, ErrAnalysisMalformed))
+		require.ErrorIs(t, err, ErrAnalysisMalformed)
 	})
 }
 
@@ -309,7 +308,7 @@ func TestProtobufReader_CurrentHerculesReportDefaultFixture(t *testing.T) {
 		"HotspotRisk",
 	}
 	for _, key := range requiredContents {
-		require.Contains(t, payload.Contents, key)
+		require.Contains(t, payload.GetContents(), key)
 	}
 
 	reader := &ProtobufReader{}
@@ -373,7 +372,7 @@ func TestProtobufReader_CurrentHerculesShotnessFixture(t *testing.T) {
 
 	var payload pb.AnalysisResults
 	require.NoError(t, proto.Unmarshal(data, &payload))
-	require.Contains(t, payload.Contents, "Shotness")
+	require.Contains(t, payload.GetContents(), "Shotness")
 
 	reader := &ProtobufReader{}
 	require.NoError(t, reader.Read(bytes.NewReader(data)))

@@ -2,6 +2,7 @@ package graphics
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,26 +10,24 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// ThemeManager handles theme loading and management
+// ThemeManager handles theme loading and management.
 type ThemeManager struct {
 	themes map[string]Theme
 }
 
-// NewThemeManager creates a new theme manager with built-in themes
+// NewThemeManager creates a new theme manager with built-in themes.
 func NewThemeManager() *ThemeManager {
 	tm := &ThemeManager{
 		themes: make(map[string]Theme),
 	}
 
 	// Load built-in themes
-	for name, theme := range BuiltinThemes {
-		tm.themes[name] = theme
-	}
+	maps.Copy(tm.themes, BuiltinThemes)
 
 	return tm
 }
 
-// LoadThemeFromFile loads a theme from a YAML file
+// LoadThemeFromFile loads a theme from a YAML file.
 func (tm *ThemeManager) LoadThemeFromFile(filepath string) error {
 	data, err := os.ReadFile(filepath) // #nosec G304 - theme config path is caller-provided by design.
 	if err != nil {
@@ -45,10 +44,11 @@ func (tm *ThemeManager) LoadThemeFromFile(filepath string) error {
 	}
 
 	tm.themes[theme.Name] = theme
+
 	return nil
 }
 
-// LoadThemesFromDirectory loads all theme files from a directory
+// LoadThemesFromDirectory loads all theme files from a directory.
 func (tm *ThemeManager) LoadThemesFromDirectory(dirPath string) error {
 	entries, err := os.ReadDir(dirPath)
 	if err != nil {
@@ -67,7 +67,9 @@ func (tm *ThemeManager) LoadThemesFromDirectory(dirPath string) error {
 		}
 
 		fullPath := filepath.Join(dirPath, fileName)
-		if err := tm.LoadThemeFromFile(fullPath); err != nil {
+
+		err := tm.LoadThemeFromFile(fullPath)
+		if err != nil {
 			// Log warning but continue loading other themes
 			fmt.Fprintf(os.Stderr, "Warning: failed to load theme from %s: %v\n", fullPath, err)
 		}
@@ -76,7 +78,7 @@ func (tm *ThemeManager) LoadThemesFromDirectory(dirPath string) error {
 	return nil
 }
 
-// GetTheme retrieves a theme by name
+// GetTheme retrieves a theme by name.
 func (tm *ThemeManager) GetTheme(name string) (*Theme, error) {
 	theme, exists := tm.themes[name]
 	if !exists {
@@ -86,16 +88,17 @@ func (tm *ThemeManager) GetTheme(name string) (*Theme, error) {
 	return &theme, nil
 }
 
-// ListThemes returns a list of available theme names
+// ListThemes returns a list of available theme names.
 func (tm *ThemeManager) ListThemes() []string {
 	names := make([]string, 0, len(tm.themes))
 	for name := range tm.themes {
 		names = append(names, name)
 	}
+
 	return names
 }
 
-// SetCurrentTheme sets the global current theme
+// SetCurrentTheme sets the global current theme.
 func (tm *ThemeManager) SetCurrentTheme(name string) error {
 	theme, err := tm.GetTheme(name)
 	if err != nil {
@@ -110,7 +113,7 @@ func (tm *ThemeManager) SetCurrentTheme(name string) error {
 	return nil
 }
 
-// SaveThemeToFile saves a theme to a YAML file
+// SaveThemeToFile saves a theme to a YAML file.
 func (tm *ThemeManager) SaveThemeToFile(theme *Theme, filepath string) error {
 	data, err := yaml.Marshal(theme)
 	if err != nil {
@@ -124,18 +127,20 @@ func (tm *ThemeManager) SaveThemeToFile(theme *Theme, filepath string) error {
 	return nil
 }
 
-// RegisterTheme registers a new theme
+// RegisterTheme registers a new theme.
 func (tm *ThemeManager) RegisterTheme(theme Theme) error {
-	if err := theme.Validate(); err != nil {
+	err := theme.Validate()
+	if err != nil {
 		return fmt.Errorf("invalid theme: %w", err)
 	}
 
 	tm.themes[theme.Name] = theme
+
 	return nil
 }
 
-// CreateCustomTheme creates a custom theme based on an existing theme with modifications
-func (tm *ThemeManager) CreateCustomTheme(baseName string, customizations map[string]interface{}) (*Theme, error) {
+// CreateCustomTheme creates a custom theme based on an existing theme with modifications.
+func (tm *ThemeManager) CreateCustomTheme(baseName string, customizations map[string]any) (*Theme, error) {
 	base, err := tm.GetTheme(baseName)
 	if err != nil {
 		return nil, fmt.Errorf("base theme not found: %w", err)
@@ -149,13 +154,15 @@ func (tm *ThemeManager) CreateCustomTheme(baseName string, customizations map[st
 		custom.Name = name
 	}
 
-	if bg, ok := customizations["background"].(map[string]interface{}); ok {
+	if bg, ok := customizations["background"].(map[string]any); ok {
 		if r, ok := bg["r"].(int); ok {
 			custom.Background.R = colorByte(r)
 		}
+
 		if g, ok := bg["g"].(int); ok {
 			custom.Background.G = colorByte(g)
 		}
+
 		if b, ok := bg["b"].(int); ok {
 			custom.Background.B = colorByte(b)
 		}
@@ -168,13 +175,15 @@ func colorByte(value int) uint8 {
 	if value < 0 {
 		return 0
 	}
+
 	if value > 255 {
 		return 255
 	}
+
 	return uint8(value)
 }
 
-// ExportTheme exports a built-in theme to a file for customization
+// ExportTheme exports a built-in theme to a file for customization.
 func (tm *ThemeManager) ExportTheme(themeName, outputPath string) error {
 	theme, err := tm.GetTheme(themeName)
 	if err != nil {
@@ -184,14 +193,15 @@ func (tm *ThemeManager) ExportTheme(themeName, outputPath string) error {
 	return tm.SaveThemeToFile(theme, outputPath)
 }
 
-// Global theme manager instance
+// Global theme manager instance.
 var GlobalThemeManager = NewThemeManager()
 
-// LoadUserThemes loads themes from user directories
+// LoadUserThemes loads themes from user directories.
 func LoadUserThemes() error {
 	// Try to load from current directory themes/
 	if _, err := os.Stat("themes"); err == nil {
-		if err := GlobalThemeManager.LoadThemesFromDirectory("themes"); err != nil {
+		err := GlobalThemeManager.LoadThemesFromDirectory("themes")
+		if err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to load themes from ./themes: %v\n", err)
 		}
 	}
@@ -201,7 +211,8 @@ func LoadUserThemes() error {
 	if err == nil {
 		themeDir := filepath.Join(homeDir, ".labours-go", "themes")
 		if _, err := os.Stat(themeDir); err == nil {
-			if err := GlobalThemeManager.LoadThemesFromDirectory(themeDir); err != nil {
+			err := GlobalThemeManager.LoadThemesFromDirectory(themeDir)
+			if err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: failed to load themes from %s: %v\n", themeDir, err)
 			}
 		}
@@ -210,17 +221,17 @@ func LoadUserThemes() error {
 	return nil
 }
 
-// SetTheme sets the current theme by name
+// SetTheme sets the current theme by name.
 func SetTheme(name string) error {
 	return GlobalThemeManager.SetCurrentTheme(name)
 }
 
-// GetTheme gets a theme by name
+// GetTheme gets a theme by name.
 func GetTheme(name string) (*Theme, error) {
 	return GlobalThemeManager.GetTheme(name)
 }
 
-// ListThemes lists all available themes
+// ListThemes lists all available themes.
 func ListThemes() []string {
 	return GlobalThemeManager.ListThemes()
 }

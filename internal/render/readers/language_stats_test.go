@@ -122,7 +122,8 @@ func readProtobufAnalysis(t *testing.T, results *pb.AnalysisResults) *ProtobufRe
 	t.Helper()
 
 	reader := &ProtobufReader{}
-	if err := reader.Read(bytes.NewReader(marshalLanguageStatsProto(t, results))); err != nil {
+	err := reader.Read(bytes.NewReader(marshalLanguageStatsProto(t, results)))
+	if err != nil {
 		t.Fatalf("Read() unexpected error: %v", err)
 	}
 	return reader

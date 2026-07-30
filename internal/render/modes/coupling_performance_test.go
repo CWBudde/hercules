@@ -24,7 +24,7 @@ func TestAnalyzeCouplingPairsKeepsDeterministicTopK(t *testing.T) {
 		{Name1: "d", Name2: "e", Score: 9, Count: 9},
 	}
 
-	for iteration := 0; iteration < 100; iteration++ {
+	for range 100 {
 		pairs, stats := analyzeCouplingPairs(names, matrix, 3)
 		require.Equal(t, want, pairs)
 		require.Equal(t, commonCouplingStats{
@@ -71,7 +71,7 @@ func BenchmarkAnalyzeCouplingPairsSparse(b *testing.B) {
 			b.ReportAllocs()
 			b.ReportMetric(float64(matrix.NonZeroCount()), "nonzero")
 			b.ResetTimer()
-			for iteration := 0; iteration < b.N; iteration++ {
+			for range b.N {
 				pairs, _ := analyzeCouplingPairs(names, matrix, 20)
 				if len(pairs) != 20 {
 					b.Fatalf("got %d pairs, want 20", len(pairs))
@@ -83,7 +83,7 @@ func BenchmarkAnalyzeCouplingPairsSparse(b *testing.B) {
 
 func benchmarkSparseCoupling(entities, degree int) readers.SparseMatrix {
 	entries := make([]readers.SparseEntry, 0, 2*entities*degree)
-	for row := 0; row < entities; row++ {
+	for row := range entities {
 		for offset := 1; offset <= degree && row+offset < entities; offset++ {
 			column := row + offset
 			value := 1 + (row+column)%100

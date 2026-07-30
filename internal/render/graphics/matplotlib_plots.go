@@ -1,6 +1,7 @@
 package graphics
 
 import (
+	"errors"
 	"fmt"
 	"image/color"
 	"math"
@@ -144,6 +145,7 @@ func drawSubtitle(ax *core.Axes, subtitle string) {
 	if ax == nil || subtitle == "" {
 		return
 	}
+
 	ax.Text(0.5, 0.98, subtitle, core.TextOptions{
 		Coords:   core.Coords(core.CoordAxes),
 		FontSize: 9,
@@ -155,10 +157,11 @@ func drawSubtitle(ax *core.Axes, subtitle string) {
 
 func PlotTimeAreasMatplotlib(dates []time.Time, series []MatplotlibTimeAreaSeries, opts MatplotlibTimeAreaOptions) error {
 	if len(dates) == 0 {
-		return fmt.Errorf("no dates to plot")
+		return errors.New("no dates to plot")
 	}
+
 	if len(series) == 0 {
-		return fmt.Errorf("no series to plot")
+		return errors.New("no series to plot")
 	}
 
 	width, height := pythonPlotPixelSize(defaultPlotWidth(opts.WidthInches), defaultPlotHeight(opts.HeightInches))
@@ -167,26 +170,33 @@ func PlotTimeAreasMatplotlib(dates []time.Time, series []MatplotlibTimeAreaSerie
 		height,
 		pythonTransparentFigureOptions(opts.FontSize)...,
 	)
+
 	ax := fig.AddSubplot(1, 1, 1)
 	if ax == nil {
-		return fmt.Errorf("failed to create axes")
+		return errors.New("failed to create axes")
 	}
+
 	configureTimeAreaAxes(ax, dates, opts)
 	x := unixTimeValues(dates)
+
 	colors, matrix, labels, err := prepareTimeAreaSeries(series, len(dates))
 	if err != nil {
 		return err
 	}
+
 	alpha := opts.Alpha
 	if alpha <= 0 || alpha > 1 {
 		alpha = 1
 	}
+
 	if err := plotTimeAreaSeries(ax, x, series, colors, matrix, labels, opts, alpha); err != nil {
 		return err
 	}
+
 	configureTimeAreaYTicks(ax, matrix, opts)
 	addTimeAreaTextLabels(ax, opts.TextLabels)
 	configureTimeAreaLegend(ax, opts)
+
 	if opts.HideFrame {
 		ax.XAxis.ShowSpine = false
 		ax.YAxis.ShowSpine = false
@@ -202,6 +212,7 @@ func unixTimeValues(dates []time.Time) []float64 {
 	for i, date := range dates {
 		values[i] = float64(date.Unix())
 	}
+
 	return values
 }
 
@@ -212,6 +223,7 @@ func prepareTimeAreaSeries(
 	colors := make([]render.Color, len(series))
 	matrix := make([][]float64, len(series))
 	labels := make([]string, len(series))
+
 	palette := PythonLaboursColorPalette(len(series))
 	for i, item := range series {
 		if len(item.Values) != pointCount {
@@ -219,14 +231,18 @@ func prepareTimeAreaSeries(
 				"series %q has %d values for %d dates", item.Label, len(item.Values), pointCount,
 			)
 		}
+
 		itemColor := item.Color
 		if itemColor == nil {
 			itemColor = palette[i%len(palette)]
 		}
+
 		colors[i] = renderColor(itemColor)
+
 		matrix[i] = append([]float64(nil), item.Values...)
 		labels[i] = item.Label
 	}
+
 	return colors, matrix, labels, nil
 }
 
@@ -245,19 +261,23 @@ func plotTimeAreaSeries(
 		ax.StackPlot(x, matrix, core.StackPlotOptions{
 			Colors: colors, Labels: labels, Alpha: optional.Of(alpha), EdgeWidth: optional.Of(edgeWidth),
 		})
+
 		return nil
 	}
+
 	zero := make([]float64, len(x))
 	for i, item := range series {
 		baseline, err := timeAreaBaseline(opts.Baselines, i, zero)
 		if err != nil {
 			return err
 		}
+
 		color := colors[i]
 		_, _ = ax.FillBetween(x, item.Values, baseline, core.FillOptions{
 			Color: optional.Of(color), Alpha: optional.Of(alpha), EdgeWidth: optional.Of(edgeWidth), Label: item.Label,
 		})
 	}
+
 	return nil
 }
 
@@ -265,11 +285,13 @@ func timeAreaBaseline(baselines [][]float64, index int, zero []float64) ([]float
 	if index >= len(baselines) {
 		return zero, nil
 	}
+
 	if len(baselines[index]) != len(zero) {
 		return nil, fmt.Errorf(
 			"baseline %d has %d values for %d dates", index, len(baselines[index]), len(zero),
 		)
 	}
+
 	return baselines[index], nil
 }
 
@@ -277,11 +299,13 @@ func configureTimeAreaYTicks(ax *core.Axes, matrix [][]float64, opts MatplotlibT
 	if !opts.FullNumberYTicks {
 		return
 	}
+
 	maxY := opts.YMax
 	if maxY <= opts.YMin && opts.Stacked {
 		maxY = stackedSumMax(matrix) * 1.05
 		ax.SetYLim(0, math.Max(maxY, 1))
 	}
+
 	ConfigureLineCountYAxis(ax, maxY)
 }
 
@@ -291,6 +315,7 @@ func addTimeAreaTextLabels(ax *core.Axes, labels []MatplotlibTextLabel) {
 		if fontSize == 0 {
 			fontSize = 12
 		}
+
 		textOpts := core.TextOptions{
 			FontSize: fontSize,
 			Color:    render.Color{R: 0, G: 0, B: 0, A: 1},
@@ -301,6 +326,7 @@ func addTimeAreaTextLabels(ax *core.Axes, labels []MatplotlibTextLabel) {
 			fill := renderColor(label.BackgroundColor)
 			textOpts.BBox = optional.Of(core.TextBBoxOptions{FaceColor: fill, EdgeColor: fill, Padding: 2})
 		}
+
 		ax.Text(label.X, label.Y, label.Text, textOpts)
 	}
 }
@@ -309,12 +335,14 @@ func configureTimeAreaLegend(ax *core.Axes, opts MatplotlibTimeAreaOptions) {
 	if !opts.Legend {
 		return
 	}
+
 	legend := ax.AddLegend()
 	if opts.LegendLeft && opts.LegendTop {
 		legend.Location = core.LegendUpperLeft
 	} else if opts.LegendLeft {
 		legend.Location = core.LegendLowerLeft
 	}
+
 	if opts.LegendFace != nil {
 		face := renderColor(opts.LegendFace)
 		legend.BackgroundColor = face
@@ -324,7 +352,7 @@ func configureTimeAreaLegend(ax *core.Axes, opts MatplotlibTimeAreaOptions) {
 
 func PlotLineChartMatplotlib(series []MatplotlibLineSeries, opts MatplotlibLineOptions) error {
 	if len(series) == 0 {
-		return fmt.Errorf("no line data to plot")
+		return errors.New("no line data to plot")
 	}
 
 	width, height := pythonPlotPixelSize(defaultPlotWidth(opts.WidthInches), defaultPlotHeight(opts.HeightInches))
@@ -333,23 +361,30 @@ func PlotLineChartMatplotlib(series []MatplotlibLineSeries, opts MatplotlibLineO
 		height,
 		pythonTransparentFigureOptions(opts.FontSize)...,
 	)
+
 	ax := fig.AddSubplot(1, 1, 1)
 	if ax == nil {
-		return fmt.Errorf("failed to create axes")
+		return errors.New("failed to create axes")
 	}
+
 	ax.SetTitle(opts.Title)
 	ax.SetXLabel(opts.XLabel)
 	ax.SetYLabel(opts.YLabel)
+
 	if opts.ShowGrid {
 		ax.AddXGrid()
 		ax.AddYGrid()
 	}
-	if err := addMatplotlibLineSeries(ax, series); err != nil {
+
+	err := addMatplotlibLineSeries(ax, series)
+	if err != nil {
 		return err
 	}
+
 	if opts.Legend {
 		ax.AddLegend()
 	}
+
 	return saveMatplotlibFigure(fig, opts.Output, width, height)
 }
 
@@ -359,21 +394,26 @@ func addMatplotlibLineSeries(ax *core.Axes, series []MatplotlibLineSeries) error
 		if len(item.X) == 0 || len(item.Y) == 0 {
 			continue
 		}
+
 		if len(item.X) != len(item.Y) {
 			return fmt.Errorf("line series %q x/y length mismatch", item.Name)
 		}
+
 		c := item.Color
 		if c == nil {
 			c = palette[i%len(palette)]
 		}
+
 		color := renderColor(c)
 		addMatplotlibLine(ax, item, color)
 	}
+
 	return nil
 }
 
 func addMatplotlibLine(ax *core.Axes, item MatplotlibLineSeries, color render.Color) {
 	lineWidth := 2.0
+
 	if item.Fill {
 		fillAlpha, fillEdge := 0.3, 0.0
 		zero := make([]float64, len(item.Y))
@@ -392,7 +432,8 @@ func addMatplotlibLine(ax *core.Axes, item MatplotlibLineSeries, color render.Co
 }
 
 func PlotHeatmapMatplotlib(matrix [][]float64, rowLabels, colLabels []string, opts MatplotlibHeatmapOptions) error {
-	if err := ValidateHeatMap(matrix, rowLabels, colLabels); err != nil {
+	err := ValidateHeatMap(matrix, rowLabels, colLabels)
+	if err != nil {
 		return err
 	}
 
@@ -407,18 +448,22 @@ func PlotHeatmapMatplotlib(matrix [][]float64, rowLabels, colLabels []string, op
 		core.WithGridSpecPadding(0.132, 0.893, 0.087, 0.970),
 		core.WithGridSpecSpacing(0, 0),
 	)
+
 	ax := gs.Cell(0, 0).AddAxes()
 	if ax == nil {
-		return fmt.Errorf("failed to create axes")
+		return errors.New("failed to create axes")
 	}
 
 	ax.SetTitle(opts.Title)
+
 	cmap := opts.Colormap
 	if cmap == "" {
 		cmap = "Reds"
 	}
+
 	vmin := 0.0
 	vmax := maxMatrixFloat64(matrix)
+
 	img := ax.ImShow(matrix, core.ImShowOptions{
 		Colormap: optional.Of(cmap),
 		VMin:     optional.Of(vmin),
@@ -427,7 +472,7 @@ func PlotHeatmapMatplotlib(matrix [][]float64, rowLabels, colLabels []string, op
 		Origin:   optional.Of(core.ImageOriginUpper),
 	})
 	if img == nil {
-		return fmt.Errorf("failed to create heatmap image")
+		return errors.New("failed to create heatmap image")
 	}
 
 	configureMatplotlibHeatmapTicks(ax, rowLabels, colLabels, opts)
@@ -444,6 +489,7 @@ func addMatplotlibHeatmapColorbar(fig *core.Figure, colormap string, vmin, vmax 
 		core.WithGridSpecPadding(0.927, 0.965, 0.142, 0.915),
 		core.WithGridSpecSpacing(0, 0),
 	)
+
 	ax := gs.Cell(0, 0).AddAxes()
 	if ax == nil {
 		return
@@ -452,20 +498,24 @@ func addMatplotlibHeatmapColorbar(fig *core.Figure, colormap string, vmin, vmax 
 	ax.ShowFrame = false
 	ax.SetXLim(0, 1)
 	ax.SetYLim(vmin, vmax)
+
 	if ax.XAxis != nil {
 		ax.XAxis.ShowSpine = false
 		ax.XAxis.ShowTicks = false
 		ax.XAxis.ShowLabels = false
 	}
+
 	if ax.YAxis != nil {
 		ax.YAxis.ShowSpine = false
 		ax.YAxis.ShowTicks = false
 		ax.YAxis.ShowLabels = false
 		ax.YAxis.MinorLocator = nil
 	}
+
 	if right := ax.RightAxis(); right != nil {
 		right.MinorLocator = nil
 	}
+
 	_ = ax.SetYTickLabelPosition("right")
 	_ = ax.SetYLabelPosition("right")
 	ax.Add(&core.Colorbar{
@@ -478,42 +528,52 @@ func addMatplotlibHeatmapColorbar(fig *core.Figure, colormap string, vmin, vmax 
 
 func PlotBarChartMatplotlib(labels []string, values []float64, opts MatplotlibBarOptions) error {
 	if len(labels) == 0 || len(values) == 0 {
-		return fmt.Errorf("no bar data to plot")
+		return errors.New("no bar data to plot")
 	}
+
 	if len(labels) != len(values) {
-		return fmt.Errorf("bar labels and values length mismatch")
+		return errors.New("bar labels and values length mismatch")
 	}
 
 	width, height := pythonPlotPixelSize(defaultPlotWidth(opts.WidthInches), defaultPlotHeight(opts.HeightInches))
+
 	figureOptions := pythonTransparentFigureOptions(opts.FontSize)
 	if opts.DefaultStyle {
 		figureOptions = nil
 	}
+
 	fig := core.NewFigure(width, height, figureOptions...)
+
 	ax := fig.AddSubplot(1, 1, 1)
 	if ax == nil {
-		return fmt.Errorf("failed to create axes")
+		return errors.New("failed to create axes")
 	}
+
 	ax.SetTitle(opts.Title)
 	ax.SetXLabel(opts.XLabel)
 	ax.SetYLabel(opts.YLabel)
+
 	if !opts.DisableGrid {
 		ax.AddYGrid()
 	}
 
 	x := indexPositions(len(values))
+
 	barColor := opts.Color
 	if barColor == nil {
 		barColor = PythonLaboursColorPalette(1)[0]
 	}
+
 	renderedColor := renderColor(barColor)
 
 	_, err := ax.Bar(x, values, core.BarOptions{Color: optional.Of(renderedColor)})
 	if err != nil {
 		return fmt.Errorf("failed to plot bars: %w", err)
 	}
+
 	addMatplotlibBarLabels(ax, x, values, opts)
 	configureMatplotlibBarAxes(ax, labels, values, x, opts)
+
 	return saveMatplotlibBarFigure(fig, opts, width, height)
 }
 
@@ -526,10 +586,12 @@ func addMatplotlibBarLabels(
 	if angle == 0 {
 		angle = 70
 	}
+
 	for i, label := range opts.BarLabels {
 		if i >= len(values) || label == "" {
 			continue
 		}
+
 		ax.Text(x[i], values[i], label, core.TextOptions{
 			FontSize: 7,
 			Color:    render.Color{R: 0, G: 0, B: 0, A: 1},
@@ -551,6 +613,7 @@ func configureMatplotlibBarAxes(
 	} else {
 		ax.SetXLim(-0.5, float64(len(values))-0.5)
 	}
+
 	if opts.YMax > 0 {
 		ax.SetYLim(0, opts.YMax)
 	} else {
@@ -573,12 +636,13 @@ func saveMatplotlibBarFigure(fig *core.Figure, opts MatplotlibBarOptions, width,
 	if opts.Opaque {
 		return saveMatplotlibFigure(fig, opts.Output, width, height, render.Color{R: 1, G: 1, B: 1, A: 1})
 	}
+
 	return saveMatplotlibFigure(fig, opts.Output, width, height)
 }
 
 func PlotGroupedBarChartMatplotlib(labels []string, series []MatplotlibGroupedBarSeries, opts MatplotlibGroupedBarOptions) error {
 	if len(labels) == 0 || len(series) == 0 {
-		return fmt.Errorf("no grouped bar data to plot")
+		return errors.New("no grouped bar data to plot")
 	}
 
 	width, height := pythonPlotPixelSize(defaultPlotWidth(opts.WidthInches), defaultPlotHeight(opts.HeightInches))
@@ -587,20 +651,24 @@ func PlotGroupedBarChartMatplotlib(labels []string, series []MatplotlibGroupedBa
 		height,
 		pythonTransparentFigureOptions(opts.FontSize)...,
 	)
+
 	ax := fig.AddSubplot(1, 1, 1)
 	if ax == nil {
-		return fmt.Errorf("failed to create axes")
+		return errors.New("failed to create axes")
 	}
+
 	ax.SetTitle(opts.Title)
 	ax.SetXLabel(opts.XLabel)
 	ax.SetYLabel(opts.YLabel)
 	ax.AddYGrid()
 
 	barWidth := 0.8 / float64(len(series))
+
 	maxValue, err := addGroupedBarSeries(ax, labels, series, barWidth)
 	if err != nil {
 		return err
 	}
+
 	ticks := indexPositions(len(labels))
 	ax.SetXLim(-0.5, float64(len(labels))-0.5)
 	ax.SetYLim(0, math.Max(maxValue*1.05, 1))
@@ -610,6 +678,7 @@ func PlotGroupedBarChartMatplotlib(labels []string, series []MatplotlibGroupedBa
 	if opts.RotateX {
 		ax.XAxis.MajorLabelStyle = core.TickLabelStyle{Rotation: 45, AutoAlign: true}
 	}
+
 	ax.AddLegend()
 
 	return saveMatplotlibFigure(fig, opts.Output, width, height)
@@ -623,22 +692,28 @@ func addGroupedBarSeries(
 ) (float64, error) {
 	palette := PythonLaboursColorPalette(len(series))
 	maxValue := 0.0
+
 	for i, item := range series {
 		if len(item.Values) != len(labels) {
 			return 0, fmt.Errorf("bar series %q has %d values for %d labels", item.Name, len(item.Values), len(labels))
 		}
+
 		x := make([]float64, len(labels))
+
 		offset := (float64(i) - float64(len(series)-1)/2) * barWidth
 		for j, value := range item.Values {
 			x[j] = float64(j) + offset
+
 			if value > maxValue {
 				maxValue = value
 			}
 		}
+
 		seriesColor := palette[i%len(palette)]
 		if item.Color != nil {
 			seriesColor = item.Color
 		}
+
 		color := renderColor(seriesColor)
 		_, _ = ax.Bar(x, item.Values, core.BarOptions{
 			Color: optional.Of(color),
@@ -646,6 +721,7 @@ func addGroupedBarSeries(
 			Label: item.Name,
 		})
 	}
+
 	return maxValue, nil
 }
 
@@ -654,6 +730,7 @@ func indexPositions(count int) []float64 {
 	for i := range positions {
 		positions[i] = float64(i)
 	}
+
 	return positions
 }
 
@@ -694,31 +771,39 @@ type MatplotlibScatterOptions struct {
 // reference line.
 func PlotScatterMatplotlib(series []MatplotlibScatterSeries, opts MatplotlibScatterOptions) error {
 	if len(series) == 0 {
-		return fmt.Errorf("no scatter data to plot")
+		return errors.New("no scatter data to plot")
 	}
 
 	width, height := pythonPlotPixelSize(defaultPlotWidth(opts.WidthInches), defaultPlotHeight(opts.HeightInches))
 	fig := core.NewFigure(width, height, pythonTransparentFigureOptions(opts.FontSize)...)
+
 	ax := fig.AddSubplot(1, 1, 1)
 	if ax == nil {
-		return fmt.Errorf("failed to create axes")
+		return errors.New("failed to create axes")
 	}
+
 	ax.SetTitle(opts.Title)
 	ax.SetXLabel(opts.XLabel)
 	ax.SetYLabel(opts.YLabel)
+
 	if opts.ShowGrid {
 		ax.AddXGrid()
 		ax.AddYGrid()
 	}
+
 	addMatplotlibScatterSeries(ax, series, opts.AnnotateLabels)
 	configureMatplotlibScatterXAxis(ax, opts)
+
 	if opts.ZeroLine {
 		ax.AxHLine(0, core.HLineOptions{Dashes: []float64{5, 5}})
 	}
+
 	if opts.Legend {
 		ax.AddLegend()
 	}
+
 	drawSubtitle(ax, opts.Subtitle)
+
 	return saveMatplotlibFigure(fig, opts.Output, width, height)
 }
 
@@ -732,17 +817,22 @@ func addMatplotlibScatterSeries(
 		if len(item.Points) == 0 {
 			continue
 		}
+
 		x := make([]float64, len(item.Points))
+
 		y := make([]float64, len(item.Points))
 		for j, point := range item.Points {
 			x[j] = point.X
 			y[j] = point.Y
 		}
+
 		c := item.Color
 		if c == nil {
 			c = palette[i%len(palette)]
 		}
+
 		renderedColor := renderColor(c)
+
 		size := item.Size
 		if size <= 0 {
 			size = 24
@@ -762,6 +852,7 @@ func addMatplotlibScatterLabels(ax *core.Axes, points []MatplotlibScatterPoint, 
 		if point.Label == "" {
 			continue
 		}
+
 		ax.Text(x[i], y[i], point.Label, core.TextOptions{
 			FontSize: 9,
 			Color:    render.Color{R: 0, G: 0, B: 0, A: 1},
@@ -775,6 +866,7 @@ func configureMatplotlibScatterXAxis(ax *core.Axes, opts MatplotlibScatterOption
 	if len(opts.XTickLabels) == 0 {
 		return
 	}
+
 	ax.SetXLim(-0.5, float64(len(opts.XTickLabels))-0.5)
 	ax.XAxis.Locator = ticker.FixedLocator{TicksList: indexPositions(len(opts.XTickLabels))}
 	ax.XAxis.Formatter = ticker.FixedFormatter{Labels: append([]string(nil), opts.XTickLabels...)}
@@ -792,25 +884,29 @@ func configureMatplotlibScatterXAxis(ax *core.Axes, opts MatplotlibScatterOption
 // label) using per-bar baselines, mirroring gonum's BarChart.StackOn chains.
 func PlotStackedBarChartMatplotlib(labels []string, series []MatplotlibGroupedBarSeries, opts MatplotlibGroupedBarOptions) error {
 	if len(labels) == 0 || len(series) == 0 {
-		return fmt.Errorf("no stacked bar data to plot")
+		return errors.New("no stacked bar data to plot")
 	}
 
 	width, height := pythonPlotPixelSize(defaultPlotWidth(opts.WidthInches), defaultPlotHeight(opts.HeightInches))
 	fig := core.NewFigure(width, height, pythonTransparentFigureOptions(opts.FontSize)...)
+
 	ax := fig.AddSubplot(1, 1, 1)
 	if ax == nil {
-		return fmt.Errorf("failed to create axes")
+		return errors.New("failed to create axes")
 	}
+
 	ax.SetTitle(opts.Title)
 	ax.SetXLabel(opts.XLabel)
 	ax.SetYLabel(opts.YLabel)
 	ax.AddYGrid()
 
 	x := indexPositions(len(labels))
+
 	maxTotal, err := addMatplotlibStackedBars(ax, x, len(labels), series)
 	if err != nil {
 		return err
 	}
+
 	ax.SetXLim(-0.5, float64(len(labels))-0.5)
 	ax.SetYLim(0, math.Max(maxTotal*1.05, 1))
 	ax.XAxis.Locator = ticker.FixedLocator{TicksList: append([]float64(nil), x...)}
@@ -823,6 +919,7 @@ func PlotStackedBarChartMatplotlib(labels []string, series []MatplotlibGroupedBa
 			VAlign:   core.TextVAlignTop,
 		}
 	}
+
 	ax.AddLegend()
 
 	drawSubtitle(ax, opts.Subtitle)
@@ -837,6 +934,7 @@ func addMatplotlibStackedBars(
 	series []MatplotlibGroupedBarSeries,
 ) (float64, error) {
 	baseline := make([]float64, labelCount)
+
 	palette := PythonLaboursColorPalette(len(series))
 	for i, item := range series {
 		if len(item.Values) != labelCount {
@@ -845,10 +943,12 @@ func addMatplotlibStackedBars(
 				item.Name, len(item.Values), labelCount,
 			)
 		}
+
 		seriesColor := palette[i%len(palette)]
 		if item.Color != nil {
 			seriesColor = item.Color
 		}
+
 		color := renderColor(seriesColor)
 
 		_, _ = ax.Bar(x, item.Values, core.BarOptions{
@@ -858,6 +958,7 @@ func addMatplotlibStackedBars(
 			baseline[j] += value
 		}
 	}
+
 	return maxFloat64(baseline), nil
 }
 
@@ -879,10 +980,11 @@ func PlotDevsEffortsMatplotlib(
 	opts MatplotlibDevsEffortsOptions,
 ) error {
 	if len(dates) < 2 {
-		return fmt.Errorf("not enough dates to plot devs-efforts time series")
+		return errors.New("not enough dates to plot devs-efforts time series")
 	}
+
 	if len(cumLayers) == 0 {
-		return fmt.Errorf("no effort layers to plot")
+		return errors.New("no effort layers to plot")
 	}
 
 	x := make([]float64, len(dates))
@@ -892,10 +994,12 @@ func PlotDevsEffortsMatplotlib(
 
 	width, height := pythonPlotPixelSize(defaultPlotWidth(opts.WidthInches), defaultPlotHeight(opts.HeightInches))
 	fig := core.NewFigure(width, height, pythonTransparentFigureOptions(opts.FontSize)...)
+
 	ax := fig.AddSubplot(1, 1, 1)
 	if ax == nil {
-		return fmt.Errorf("failed to create axes")
+		return errors.New("failed to create axes")
 	}
+
 	ax.SetTitle(opts.Title)
 
 	renderedLayers := nonNegativeEffortLayers(cumLayers)
@@ -1003,8 +1107,9 @@ type MatplotlibParallelCoordinatesOptions struct {
 // axes, drawn as short segments tinted along the viridis colormap.
 func PlotParallelCoordinatesMatplotlib(series []MatplotlibParallelCoordinatesSeries, opts MatplotlibParallelCoordinatesOptions) error {
 	if len(series) == 0 {
-		return fmt.Errorf("no series to plot")
+		return errors.New("no series to plot")
 	}
+
 	axesCount := opts.Axes
 	if axesCount <= 0 {
 		axesCount = 5
@@ -1012,10 +1117,12 @@ func PlotParallelCoordinatesMatplotlib(series []MatplotlibParallelCoordinatesSer
 
 	width, height := pythonPlotPixelSize(defaultPlotWidth(opts.WidthInches), defaultPlotHeight(opts.HeightInches))
 	fig := core.NewFigure(width, height, pythonTransparentFigureOptions(opts.FontSize)...)
+
 	ax := fig.AddSubplot(1, 1, 1)
 	if ax == nil {
-		return fmt.Errorf("failed to create axes")
+		return errors.New("failed to create axes")
 	}
+
 	ax.SetTitle(opts.Title)
 
 	cmap := matcolor.LookupColormap("viridis")
@@ -1023,17 +1130,20 @@ func PlotParallelCoordinatesMatplotlib(series []MatplotlibParallelCoordinatesSer
 	// Slightly wider than matplotlib's default so the per-segment gradient reads
 	// as a continuous ribbon instead of stippling at 1px.
 	lineWidth := 1.5
+
 	for _, item := range series {
 		px, py := parallelSplinePolyline(item.Values, perGap)
 		if len(px) < 2 {
 			continue
 		}
+
 		segments := len(px) - 1
-		for k := 0; k < segments; k++ {
+		for k := range segments {
 			t := 0.0
 			if segments > 1 {
 				t = float64(k) / float64(segments-1)
 			}
+
 			c := cmap.At(t)
 
 			_, err := ax.Plot(px[k:k+2], py[k:k+2], core.PlotOptions{
@@ -1057,24 +1167,29 @@ func parallelSplinePolyline(values []float64, perGap int) (xs, ys []float64) {
 	if len(values) < 2 {
 		return nil, nil
 	}
+
 	if perGap < 1 {
 		perGap = 1
 	}
-	for i := 0; i < len(values)-1; i++ {
+
+	for i := range len(values) - 1 {
 		x1 := float64(i + 1)
 		y1 := values[i]
 		x2 := float64(i + 2)
 		y2 := values[i+1]
 		a, b, c, d := solveSplineEquations(x1, y1, x2, y2)
+
 		for j := 0; j <= perGap; j++ {
 			if i > 0 && j == 0 {
 				continue // the join point was already emitted by the previous gap
 			}
+
 			t := x1 + (x2-x1)*float64(j)/float64(perGap)
 			xs = append(xs, t)
 			ys = append(ys, a*t*t*t+b*t*t+c*t+d)
 		}
 	}
+
 	return xs, ys
 }
 
@@ -1085,10 +1200,12 @@ func solveSplineEquations(x1, y1, x2, y2 float64) (a, b, c, d float64) {
 	if xcube == 0 {
 		return 0, 0, 0, y1
 	}
+
 	a = 2 * (y2 - y1) / xcube
 	b = 3 * (y1 - y2) * (x1 + x2) / xcube
 	c = 6 * (y2 - y1) * x1 * x2 / xcube
 	d = y1 - a*x1*x1*x1 - b*x1*x1 - c*x1
+
 	return a, b, c, d
 }
 
@@ -1097,21 +1214,27 @@ func stackedSumMax(layers [][]float64) float64 {
 	if len(layers) == 0 || len(layers[0]) == 0 {
 		return 0
 	}
+
 	maxValue := math.Inf(-1)
+
 	for d := range layers[0] {
 		sum := 0.0
+
 		for _, row := range layers {
 			if d < len(row) {
 				sum += row[d]
 			}
 		}
+
 		if sum > maxValue {
 			maxValue = sum
 		}
 	}
+
 	if math.IsInf(maxValue, -1) {
 		return 0
 	}
+
 	return maxValue
 }
 
@@ -1123,6 +1246,7 @@ func nonNegativeNiceTicks(maxValue float64) []float64 {
 	const target = 6.0
 	raw := maxValue / target
 	magnitude := math.Pow(10, math.Floor(math.Log10(raw)))
+
 	step := magnitude
 	switch norm := raw / magnitude; {
 	case norm <= 1:
@@ -1134,10 +1258,12 @@ func nonNegativeNiceTicks(maxValue float64) []float64 {
 	default:
 		step = 10 * magnitude
 	}
+
 	ticks := make([]float64, 0, int(maxValue/step)+1)
 	for v := 0.0; v <= maxValue+step*0.001; v += step {
 		ticks = append(ticks, v)
 	}
+
 	return ticks
 }
 
@@ -1176,6 +1302,7 @@ func pythonTransparentFigureOptions(fontSize float64) []style.Option {
 	if fontSize <= 0 {
 		fontSize = PythonPlotFontSize()
 	}
+
 	transparent := render.Color{R: 1, G: 1, B: 1, A: 0}
 	white := render.Color{R: 1, G: 1, B: 1, A: 1}
 	text := render.Color{R: 0, G: 0, B: 0, A: 1}
@@ -1197,7 +1324,9 @@ func configureTimeAreaAxes(ax *core.Axes, dates []time.Time, opts MatplotlibTime
 	ax.SetTitle(opts.Title)
 	ax.SetXLabel(opts.XLabel)
 	ax.SetYLabel(opts.YLabel)
+
 	xMin := float64(dates[0].Unix())
+
 	xMax := float64(dates[len(dates)-1].Unix())
 	if xMin == xMax {
 		xMin = float64(dates[0].AddDate(-2, 0, 0).Unix())
@@ -1207,7 +1336,9 @@ func configureTimeAreaAxes(ax *core.Axes, dates []time.Time, opts MatplotlibTime
 		xMin -= padding
 		xMax += padding
 	}
+
 	ax.SetXLim(xMin, xMax)
+
 	if opts.YMax > opts.YMin {
 		ax.SetYLim(opts.YMin, opts.YMax)
 	}
@@ -1225,11 +1356,13 @@ func configureTimeAreaAxes(ax *core.Axes, dates []time.Time, opts MatplotlibTime
 			ax.XAxis.MajorLabelStyle = core.TickLabelStyle{Rotation: 30, AutoAlign: true}
 		}
 	}
+
 	if opts.HideY {
 		ax.YAxis.ShowSpine = false
 		ax.YAxis.ShowTicks = false
 		ax.YAxis.ShowLabels = false
 	}
+
 	if opts.ShowGrid {
 		ax.AddXGrid()
 		ax.AddYGrid()
@@ -1240,6 +1373,7 @@ func defaultPlotWidth(width float64) float64 {
 	if width > 0 {
 		return width
 	}
+
 	return PythonPlotDefaultWidthInches
 }
 
@@ -1247,6 +1381,7 @@ func defaultPlotHeight(height float64) float64 {
 	if height > 0 {
 		return height
 	}
+
 	return PythonPlotDefaultHeightInches
 }
 
@@ -1257,11 +1392,13 @@ func maxFloat64(values []float64) float64 {
 			maxValue = value
 		}
 	}
+
 	return maxValue
 }
 
 func maxMatrixFloat64(matrix [][]float64) float64 {
 	maxValue := 0.0
+
 	for _, row := range matrix {
 		for _, value := range row {
 			if value > maxValue {
@@ -1269,16 +1406,19 @@ func maxMatrixFloat64(matrix [][]float64) float64 {
 			}
 		}
 	}
+
 	return maxValue
 }
 
 func configureMatplotlibHeatmapTicks(ax *core.Axes, rowLabels, colLabels []string, opts MatplotlibHeatmapOptions) {
 	xTicks := make([]float64, len(colLabels))
 	xLabels := make([]string, len(colLabels))
+
 	xLimit := opts.XLabelLimit
 	if xLimit <= 0 {
 		xLimit = 18
 	}
+
 	for i, label := range colLabels {
 		xTicks[i] = float64(i)
 		xLabels[i] = compactMatplotlibLabel(label, xLimit)
@@ -1294,10 +1434,12 @@ func configureMatplotlibHeatmapTicks(ax *core.Axes, rowLabels, colLabels []strin
 
 	yTicks := make([]float64, len(rowLabels))
 	yLabels := make([]string, len(rowLabels))
+
 	yLimit := opts.YLabelLimit
 	if yLimit <= 0 {
 		yLimit = 28
 	}
+
 	for i, label := range rowLabels {
 		yTicks[i] = float64(i)
 		yLabels[i] = compactMatplotlibLabel(label, yLimit)
@@ -1311,8 +1453,10 @@ func compactMatplotlibLabel(label string, limit int) string {
 	if limit <= 0 || len(label) <= limit {
 		return label
 	}
+
 	if limit <= 3 {
 		return label[len(label)-limit:]
 	}
+
 	return "..." + label[len(label)-(limit-3):]
 }

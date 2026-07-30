@@ -402,6 +402,7 @@ func (analyser *LineHistoryAnalyser) Consume(deps map[string]any) (map[string]an
 
 	err = analyser.consumeTreeDiffs(treeDiffs, author, cache, fileDiffs)
 	analyser.tick = tick
+
 	if err != nil {
 		return nil, err
 	}
@@ -1112,6 +1113,7 @@ func (analyser *LineHistoryAnalyser) handleDeletion(
 			core.NewLineHistoryDeletion(file.Id, author, tick),
 		)
 	}
+
 	analyser.forgetFileName(name)
 
 	return nil

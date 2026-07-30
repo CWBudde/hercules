@@ -1,6 +1,7 @@
 package modes
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -31,7 +32,7 @@ func LanguagesWithOptions(reader readers.Reader, output string, opts Options) er
 	}
 
 	if len(languageStats) == 0 {
-		return fmt.Errorf("no language statistics found in the data - the input file may not contain language analysis results")
+		return errors.New("no language statistics found in the data - the input file may not contain language analysis results")
 	}
 
 	// Step 2: Sort languages by line count (descending)
@@ -46,11 +47,13 @@ func LanguagesWithOptions(reader readers.Reader, output string, opts Options) er
 	} else {
 		err = plotLanguages(languageStats, output, opts.Graphics)
 	}
+
 	if err != nil {
 		return fmt.Errorf("failed to generate language plot: %w", err)
 	}
 
 	fmt.Printf("Language analysis completed. Found %d languages.\n", len(languageStats))
+
 	return nil
 }
 
@@ -88,12 +91,14 @@ func plotLanguageEvolutionWithOptions(
 	}
 
 	colors := graphics.PythonLaboursColorPalette(len(data.Languages))
+
 	series := make([]graphics.MatplotlibTimeAreaSeries, len(data.Languages))
 	for langIndex, lang := range data.Languages {
 		values := make([]float64, len(data.Dates))
 		for i := range data.Dates {
 			values[i] = data.Matrix[i][langIndex]
 		}
+
 		series[langIndex] = graphics.MatplotlibTimeAreaSeries{
 			Label:  lang,
 			Values: values,
@@ -107,7 +112,7 @@ func plotLanguageEvolutionWithOptions(
 	}
 
 	for _, outputPath := range outputs {
-		if err := graphics.PlotTimeAreasMatplotlib(data.Dates, series, graphics.MatplotlibTimeAreaOptions{
+		err := graphics.PlotTimeAreasMatplotlib(data.Dates, series, graphics.MatplotlibTimeAreaOptions{
 			Title:            fmt.Sprintf("Language Evolution Over Time\n(Total: %s lines)", formatFloatWithCommas(data.Total)),
 			XLabel:           timeAxisLabel,
 			YLabel:           "Lines of Code",
@@ -123,28 +128,32 @@ func plotLanguageEvolutionWithOptions(
 			YMax:             math.Max(data.Total*1.05, 1),
 			ShowGrid:         false,
 			FontSize:         opts.PlotFontSize(),
-		}); err != nil {
+		})
+		if err != nil {
 			return err
 		}
+
 		fmt.Printf("Language chart saved to %s\n", outputPath)
 	}
+
 	return nil
 }
 
 func buildLanguageEvolution(timeSeries *readers.DeveloperTimeSeriesData, startUnix, endUnix int64, resample string) (languageEvolution, error) {
 	start, end, totalDays := timeSeriesCalendarRange(timeSeries, startUnix, endUnix, 0)
 	if totalDays <= 0 {
-		return languageEvolution{}, fmt.Errorf("no temporal data to plot")
+		return languageEvolution{}, errors.New("no temporal data to plot")
 	}
 
 	totals := totalLanguageActivity(timeSeries.Days)
 	if len(totals) == 0 {
-		return languageEvolution{}, fmt.Errorf("no language data to plot")
+		return languageEvolution{}, errors.New("no language data to plot")
 	}
 
 	selection := selectEvolutionLanguages(totals, 10)
 	daily := dailyLanguageEvolution(timeSeries.Days, totalDays, selection)
 	dates, matrix := resampleLanguageMatrix(daily, start, end, resample)
+
 	return languageEvolution{
 		Languages: selection.languages,
 		Dates:     dates,
@@ -155,18 +164,21 @@ func buildLanguageEvolution(timeSeries *readers.DeveloperTimeSeriesData, startUn
 
 func totalLanguageActivity(days map[int]map[int]readers.DevDay) map[string]int {
 	totals := make(map[string]int)
+
 	for _, developers := range days {
 		for _, stats := range developers {
 			for language, values := range stats.Languages {
 				if language == "" {
 					continue
 				}
+
 				for _, value := range values {
 					totals[language] += value
 				}
 			}
 		}
 	}
+
 	return totals
 }
 
@@ -175,14 +187,17 @@ func selectEvolutionLanguages(totals map[string]int, limit int) languageSelectio
 	for language, total := range totals {
 		ranked = append(ranked, languageTotal{Name: language, Total: total})
 	}
+
 	sort.Slice(ranked, func(i, j int) bool {
 		if ranked[i].Total == ranked[j].Total {
 			return ranked[i].Name < ranked[j].Name
 		}
+
 		return ranked[i].Total > ranked[j].Total
 	})
 
 	topCount := min(len(ranked), limit)
+
 	selection := languageSelection{
 		languages: make([]string, 0, topCount+1),
 		top:       make(map[string]bool, topCount),
@@ -191,14 +206,18 @@ func selectEvolutionLanguages(totals map[string]int, limit int) languageSelectio
 		selection.top[item.Name] = true
 		selection.languages = append(selection.languages, item.Name)
 	}
+
 	sort.Strings(selection.languages)
+
 	if len(ranked) > topCount {
 		selection.languages = append(selection.languages, "Other")
 	}
+
 	selection.index = make(map[string]int, len(selection.languages))
 	for i, language := range selection.languages {
 		selection.index[language] = i
 	}
+
 	return selection
 }
 
@@ -213,14 +232,18 @@ func dailyLanguageEvolution(
 	}
 
 	cumulative := make(map[string]int)
+
 	for _, day := range sortedDeveloperDays(days) {
 		if day < 0 || day >= totalDays {
 			continue
 		}
+
 		addDailyLanguageChanges(cumulative, days[day], selection)
 		writeDailyLanguageTotals(daily[day], cumulative, selection.languages)
 	}
+
 	carryLanguageTotalsForward(daily)
+
 	return daily
 }
 
@@ -229,7 +252,9 @@ func sortedDeveloperDays(days map[int]map[int]readers.DevDay) []int {
 	for day := range days {
 		result = append(result, day)
 	}
+
 	sort.Ints(result)
+
 	return result
 }
 
@@ -243,6 +268,7 @@ func addDailyLanguageChanges(
 			if language == "" || len(values) < 2 {
 				continue
 			}
+
 			target, ok := selectedLanguageTarget(language, selection)
 			if ok {
 				cumulative[target] += values[0] - values[1]
@@ -255,7 +281,9 @@ func selectedLanguageTarget(language string, selection languageSelection) (strin
 	if selection.top[language] {
 		return language, true
 	}
+
 	_, hasOther := selection.index["Other"]
+
 	return "Other", hasOther
 }
 
@@ -280,6 +308,7 @@ func maximumLanguageTotal(matrix [][]float64) float64 {
 	for _, row := range matrix {
 		total = math.Max(total, sumFloat64(row))
 	}
+
 	return total
 }
 
@@ -288,6 +317,7 @@ func resampleLanguageMatrix(daily [][]float64, start, end time.Time, resample st
 	if len(dates) == 0 {
 		dates = []time.Time{start}
 	}
+
 	return dates, sampleLanguageMatrix(daily, start, dates)
 }
 
@@ -327,18 +357,22 @@ func languageYearEndDates(start, end time.Time) []time.Time {
 			dates = append(dates, date)
 		}
 	}
+
 	return dates
 }
 
 func languageMonthEndDates(start, end time.Time) []time.Time {
 	var dates []time.Time
+
 	for current := languageMonthEnd(start.Year(), start.Month(), start); !current.After(end); {
 		if !current.Before(start) {
 			dates = append(dates, current)
 		}
+
 		next := current.AddDate(0, 1, 0)
 		current = languageMonthEnd(next.Year(), next.Month(), start)
 	}
+
 	return dates
 }
 
@@ -347,6 +381,7 @@ func languageWeeklyDates(start, end time.Time) []time.Time {
 	for current := start; !current.After(end); current = current.AddDate(0, 0, 7) {
 		dates = append(dates, current)
 	}
+
 	return dates
 }
 
@@ -356,6 +391,7 @@ func sampleLanguageMatrix(daily [][]float64, start time.Time, dates []time.Time)
 		day := min(max(calendarDayIndex(start, date), 0), len(daily)-1)
 		matrix[i] = append([]float64(nil), daily[day]...)
 	}
+
 	return matrix
 }
 
@@ -368,6 +404,7 @@ func formatFloatWithCommas(v float64) string {
 	parts := strings.SplitN(s, ".", 2)
 	intPart := parts[0]
 	var out []rune
+
 	for i, r := range reverseString(intPart) {
 		if i > 0 && i%3 == 0 {
 			out = append(out, ',')
@@ -375,10 +412,12 @@ func formatFloatWithCommas(v float64) string {
 
 		out = append(out, r)
 	}
+
 	formatted := reverseString(string(out))
 	if len(parts) == 2 {
 		formatted += "." + parts[1]
 	}
+
 	return formatted
 }
 
@@ -387,10 +426,11 @@ func reverseString(s string) string {
 	for i, j := 0, len(runes)-1; i < j; i, j = i+1, j-1 {
 		runes[i], runes[j] = runes[j], runes[i]
 	}
+
 	return string(runes)
 }
 
-// plotLanguages creates a bar chart showing language distribution by lines of code
+// plotLanguages creates a bar chart showing language distribution by lines of code.
 func plotLanguages(
 	languageStats []readers.LanguageStat,
 	output string,
@@ -415,7 +455,7 @@ func plotLanguages(
 	}
 
 	for _, outputPath := range outputs {
-		if err := graphics.PlotBarChartMatplotlib(names, values, graphics.MatplotlibBarOptions{
+		err := graphics.PlotBarChartMatplotlib(names, values, graphics.MatplotlibBarOptions{
 			Title:        "Programming Languages by Lines of Code",
 			XLabel:       "Languages",
 			YLabel:       "Lines of Code",
@@ -424,15 +464,18 @@ func plotLanguages(
 			HeightInches: 12,
 			RotateX:      len(languageStats) > 10,
 			FontSize:     visuals.PlotFontSize(),
-		}); err != nil {
+		})
+		if err != nil {
 			return err
 		}
+
 		fmt.Printf("Language chart saved to %s\n", outputPath)
 	}
 
 	// Print text summary
 	fmt.Println("\nLanguage Statistics:")
 	fmt.Println("====================")
+
 	totalLines := 0
 	for _, stat := range languageStats {
 		totalLines += stat.Lines
@@ -456,16 +499,20 @@ func languageOutputPaths(output string) ([]string, error) {
 	ext := strings.ToLower(filepath.Ext(output))
 	if ext != "" {
 		if dir := filepath.Dir(output); dir != "." {
-			if err := os.MkdirAll(dir, 0o750); err != nil {
+			err := os.MkdirAll(dir, 0o750)
+			if err != nil {
 				return nil, fmt.Errorf("failed to create output directory %s: %w", dir, err)
 			}
 		}
+
 		return []string{output}, nil
 	}
 
-	if err := os.MkdirAll(output, 0o750); err != nil {
+	err := os.MkdirAll(output, 0o750)
+	if err != nil {
 		return nil, fmt.Errorf("failed to create output directory %s: %w", output, err)
 	}
+
 	return []string{
 		filepath.Join(output, "languages.png"),
 		filepath.Join(output, "languages.svg"),

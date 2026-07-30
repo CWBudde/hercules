@@ -176,12 +176,17 @@ func (hra *HotspotRiskAnalysis) Configure(facts map[string]any) error {
 	if l, exists := facts[core.ConfigLogger].(core.Logger); exists {
 		hra.l = l
 	}
-	if err := hra.configureHotspotLimits(facts); err != nil {
+
+	err := hra.configureHotspotLimits(facts)
+	if err != nil {
 		return err
 	}
-	if err := hra.configureHotspotWeights(facts); err != nil {
+
+	err = hra.configureHotspotWeights(facts)
+	if err != nil {
 		return err
 	}
+
 	return hra.configureHotspotTickSize(facts)
 }
 
@@ -189,39 +194,47 @@ func (hra *HotspotRiskAnalysis) configureHotspotLimits(facts map[string]any) err
 	if val, exists := facts[ConfigHotspotRiskTopN].(int); exists {
 		hra.TopN = val
 	}
+
 	if val, exists := facts[ConfigHotspotRiskWindow].(int); exists {
 		if _, err := hotspotRiskWindowDuration(val); err != nil {
 			return err
 		}
+
 		hra.WindowDays = val
 	}
+
 	return nil
 }
 
 func (hra *HotspotRiskAnalysis) configureHotspotWeights(facts map[string]any) error {
 	if val, exists := facts[ConfigHotspotRiskWeightSize].(float32); exists {
-		if err := hra.configureWeight(0, ConfigHotspotRiskWeightSize, val); err != nil {
+		err := hra.configureWeight(0, ConfigHotspotRiskWeightSize, val)
+		if err != nil {
 			return err
 		}
 	}
 
 	if val, exists := facts[ConfigHotspotRiskWeightChurn].(float32); exists {
-		if err := hra.configureWeight(1, ConfigHotspotRiskWeightChurn, val); err != nil {
+		err := hra.configureWeight(1, ConfigHotspotRiskWeightChurn, val)
+		if err != nil {
 			return err
 		}
 	}
 
 	if val, exists := facts[ConfigHotspotRiskWeightCoupling].(float32); exists {
-		if err := hra.configureWeight(2, ConfigHotspotRiskWeightCoupling, val); err != nil {
+		err := hra.configureWeight(2, ConfigHotspotRiskWeightCoupling, val)
+		if err != nil {
 			return err
 		}
 	}
 
 	if val, exists := facts[ConfigHotspotRiskWeightOwnership].(float32); exists {
-		if err := hra.configureWeight(3, ConfigHotspotRiskWeightOwnership, val); err != nil {
+		err := hra.configureWeight(3, ConfigHotspotRiskWeightOwnership, val)
+		if err != nil {
 			return err
 		}
 	}
+
 	return nil
 }
 
@@ -233,13 +246,16 @@ func (hra *HotspotRiskAnalysis) configureHotspotTickSize(facts map[string]any) e
 
 		hra.tickSize = val
 	}
+
 	return nil
 }
 
 func (hra *HotspotRiskAnalysis) configureWeight(index int, name string, weight float32) error {
-	if err := validateHotspotRiskWeight(name, weight); err != nil {
+	err := validateHotspotRiskWeight(name, weight)
+	if err != nil {
 		return err
 	}
+
 	weights := []*float32{
 		&hra.WeightSize,
 		&hra.WeightChurn,
@@ -248,6 +264,7 @@ func (hra *HotspotRiskAnalysis) configureWeight(index int, name string, weight f
 	}
 	*weights[index] = weight
 	hra.weightsConfigured[index] = true
+
 	return nil
 }
 
@@ -728,6 +745,7 @@ func (hra *HotspotRiskAnalysis) fileRisk(file *object.File, authorLines map[int]
 	}
 
 	churn := 0
+
 	for tick, count := range metrics.ChurnByTick {
 		if tick <= hra.currentTick &&
 			time.Duration(hra.currentTick-tick)*hra.tickSize <= hra.windowDuration {

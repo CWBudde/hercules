@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"image/color"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -28,19 +29,23 @@ var (
 func Devs(reader readers.Reader, output string, maxPeople int) error {
 	opts := defaultOptions()
 	opts.MaxPeople = maxPeople
+
 	return DevsWithOptions(reader, output, opts)
 }
 
 func DevsWithOptions(reader readers.Reader, output string, opts Options) error {
 	progEstimator := progress.NewProgressEstimator(!opts.Quiet)
+
 	progEstimator.StartMultiOperation(4, "Developer Analysis")
 	defer progEstimator.FinishMultiOperation()
 
 	progEstimator.NextOperation("Extracting developer statistics")
+
 	rendered, err := plotDeveloperTimeSeries(reader, output, opts)
 	if err != nil {
 		return err
 	}
+
 	if rendered {
 		reportDeveloperPlotsComplete(opts.Quiet)
 		return nil
@@ -52,16 +57,20 @@ func DevsWithOptions(reader readers.Reader, output string, opts Options) error {
 	}
 
 	progEstimator.NextOperation("Selecting top developers")
+
 	developerStats = limitDeveloperStats(developerStats, opts.MaxPeople, opts.Quiet)
 
 	progEstimator.NextOperation("Generating time series data")
 	devSeries := generateTimeSeriesWithProgress(developerStats, progEstimator)
 
 	progEstimator.NextOperation("Generating visualization")
+
 	if err := plotDevs(developerStats, devSeries, output, opts.Graphics); err != nil {
 		return fmt.Errorf("failed to generate developer plots: %w", err)
 	}
+
 	reportDeveloperPlotsComplete(opts.Quiet)
+
 	return nil
 }
 
@@ -78,15 +87,18 @@ func plotDeveloperTimeSeries(reader readers.Reader, output string, opts Options)
 	if len(timeSeries.Days) == 0 {
 		return false, nil
 	}
+
 	startUnix, endUnix := reader.GetHeader()
 	if startUnix <= 0 || endUnix <= startUnix {
 		return false, nil
 	}
+
 	if err := plotDevsPythonStyle(
 		timeSeries, startUnix, endUnix, output, opts.MaxPeople, opts.Graphics,
 	); err != nil {
 		return false, fmt.Errorf("failed to generate Python-style developer plot: %w", err)
 	}
+
 	return true, nil
 }
 
@@ -94,9 +106,11 @@ func limitDeveloperStats(stats []readers.DeveloperStat, maxPeople int, quiet boo
 	if len(stats) <= maxPeople {
 		return stats
 	}
+
 	if !quiet {
 		fmt.Printf("Picking top %d developers by commit count.\n", maxPeople)
 	}
+
 	return selectTopDevelopers(stats, maxPeople)
 }
 
@@ -125,7 +139,7 @@ func plotDevsPythonStyle(
 ) error {
 	rows, dates := buildDeveloperSeriesRows(timeSeries, startUnix, endUnix, maxPeople)
 	if len(rows) == 0 {
-		return fmt.Errorf("no developer time series to plot")
+		return errors.New("no developer time series to plot")
 	}
 
 	rowHeight := developerPlotRowHeight(rows)
@@ -135,7 +149,7 @@ func plotDevsPythonStyle(
 	// supplied (see `deploy_plot` and `show_devs` in
 	// `labours/modes/devs.py`). Mirroring that keeps the visual matching the
 	// baseline, where the chart frame stays minimal.
-	if err := graphics.PlotTimeAreasMatplotlib(dates, series, graphics.MatplotlibTimeAreaOptions{
+	err := graphics.PlotTimeAreasMatplotlib(dates, series, graphics.MatplotlibTimeAreaOptions{
 		Output:       output,
 		WidthInches:  32,
 		HeightInches: 16,
@@ -146,16 +160,19 @@ func plotDevsPythonStyle(
 		Baselines:    baselines,
 		TextLabels:   labels,
 		FontSize:     visuals.PlotFontSize(),
-	}); err != nil {
+	})
+	if err != nil {
 		return err
 	}
 
 	fmt.Printf("Saved developer plot to %s\n", output)
+
 	return nil
 }
 
 func developerPlotRowHeight(rows []devSeriesRow) float64 {
 	maxY := 0.0
+
 	for _, row := range rows {
 		for _, value := range row.Series {
 			if value > maxY {
@@ -163,9 +180,11 @@ func developerPlotRowHeight(rows []devSeriesRow) float64 {
 			}
 		}
 	}
+
 	if maxY <= 0 {
 		maxY = 1
 	}
+
 	return maxY * 1.4
 }
 
@@ -177,6 +196,7 @@ func buildDeveloperPlotLayers(
 	colors := graphics.PythonLaboursColorPalette(len(rows))
 	series := make([]graphics.MatplotlibTimeAreaSeries, len(rows))
 	baselines := make([][]float64, len(rows))
+
 	labels := make([]graphics.MatplotlibTextLabel, 0, len(rows)*2+1)
 	for index, row := range rows {
 		series[index], baselines[index] = developerAreaSeries(
@@ -186,7 +206,9 @@ func buildDeveloperPlotLayers(
 			row, series[index].Label, dates, float64(len(rows)-1-index)*rowHeight+rowHeight*0.45,
 		)...)
 	}
+
 	labels = append(labels, developerStatsHeader(dates, len(rows), rowHeight))
+
 	return series, baselines, labels
 }
 
@@ -196,11 +218,13 @@ func developerAreaSeries(
 	seriesColor color.Color,
 ) (graphics.MatplotlibTimeAreaSeries, []float64) {
 	top := make([]float64, len(row.Series))
+
 	baseline := make([]float64, len(row.Series))
 	for index, value := range row.Series {
 		baseline[index] = offset
 		top[index] = offset + value
 	}
+
 	return graphics.MatplotlibTimeAreaSeries{
 		Label:  peopleChartLabel(row.Name),
 		Values: top,
@@ -215,6 +239,7 @@ func developerAreaLabels(
 	y float64,
 ) []graphics.MatplotlibTextLabel {
 	netDelta := row.LinesAdded - row.LinesRemove
+
 	return []graphics.MatplotlibTextLabel{
 		{
 			X:      float64(dates[0].Unix()),
@@ -236,6 +261,7 @@ func developerStatsBackground(netDelta int) color.Color {
 	if netDelta < 0 {
 		return devsStatNegativeBackground
 	}
+
 	return devsStatPositiveBackground
 }
 
@@ -256,10 +282,12 @@ func buildDeveloperSeriesRows(timeSeries *readers.DeveloperTimeSeriesData, start
 	start, _, size := timeSeriesCalendarRange(timeSeries, startUnix, endUnix, 0)
 	dates := developerSeriesDates(start, size)
 	rowsByDev := collectDeveloperSeriesRows(timeSeries, size)
+
 	rows := smoothAndSortDeveloperRows(rowsByDev, size)
 	if maxPeople > 0 && len(rows) > maxPeople {
 		rows = rows[:maxPeople]
 	}
+
 	return rows, dates
 }
 
@@ -268,6 +296,7 @@ func developerSeriesDates(start time.Time, size int) []time.Time {
 	for i := range dates {
 		dates[i] = start.AddDate(0, 0, i)
 	}
+
 	return dates
 }
 
@@ -276,10 +305,12 @@ func collectDeveloperSeriesRows(
 	size int,
 ) map[int]*devSeriesRow {
 	rowsByDev := make(map[int]*devSeriesRow)
+
 	for day, devs := range timeSeries.Days {
 		if day < 0 || day >= size {
 			continue
 		}
+
 		for dev, stats := range devs {
 			row := developerSeriesRow(rowsByDev, timeSeries.People, dev, size)
 			row.Series[day] = float64(stats.Commits)
@@ -289,6 +320,7 @@ func collectDeveloperSeriesRows(
 			row.LinesChange += stats.LinesModified
 		}
 	}
+
 	return rowsByDev
 }
 
@@ -300,28 +332,35 @@ func developerSeriesRow(
 	if row := rows[developer]; row != nil {
 		return row
 	}
+
 	name := fmt.Sprintf("Developer %d", developer)
 	if developer >= 0 && developer < len(people) {
 		name = people[developer]
 	}
+
 	row := &devSeriesRow{Index: developer, Name: name, Series: make([]float64, size)}
 	rows[developer] = row
+
 	return row
 }
 
 func smoothAndSortDeveloperRows(rowsByDev map[int]*devSeriesRow, size int) []devSeriesRow {
 	rows := make([]devSeriesRow, 0, len(rowsByDev))
+
 	window := oldVsNewSmoothingWindow(max(size/64, 1))
 	for _, row := range rowsByDev {
 		row.Series = convolveSame(row.Series, window)
 		rows = append(rows, *row)
 	}
+
 	sort.Slice(rows, func(i, j int) bool {
 		if rows[i].Commits == rows[j].Commits {
 			return rows[i].Name < rows[j].Name
 		}
+
 		return rows[i].Commits > rows[j].Commits
 	})
+
 	return rows
 }
 
@@ -330,16 +369,19 @@ func shortenDeveloperName(name string) string {
 	if len(name) <= maxLen {
 		return name
 	}
+
 	return strings.TrimSpace(name[:maxLen]) + "..."
 }
 
 func formatNumber(n int) string {
 	sign := ""
+
 	value := float64(n)
 	if n < 0 {
 		sign = "-"
 		value = -value
 	}
+
 	switch {
 	case value >= 1_000_000:
 		return fmt.Sprintf("%s%.1fM", sign, value/1_000_000)
@@ -348,7 +390,7 @@ func formatNumber(n int) string {
 	case value >= 1_000:
 		return fmt.Sprintf("%s%.1fK", sign, value/1_000)
 	default:
-		return fmt.Sprintf("%d", n)
+		return strconv.Itoa(n)
 	}
 }
 
@@ -357,33 +399,39 @@ func selectTopDevelopers(stats []readers.DeveloperStat, maxPeople int) []readers
 	sort.Slice(stats, func(i, j int) bool {
 		return stats[i].Commits > stats[j].Commits
 	})
+
 	if len(stats) > maxPeople {
 		return stats[:maxPeople]
 	}
+
 	return stats
 }
 
-// generateTimeSeriesWithProgress generates synthetic time series data with progress tracking
+// generateTimeSeriesWithProgress generates synthetic time series data with progress tracking.
 func generateTimeSeriesWithProgress(stats []readers.DeveloperStat, progEstimator *progress.ProgressEstimator) map[string][]float64 {
 	// Start detailed progress for time series generation
 	progEstimator.StartOperation("Generating time series", len(stats))
 
 	devSeries := make(map[string][]float64)
+
 	for _, stat := range stats {
 		progEstimator.UpdateProgress(1)
 
 		// Generate a synthetic time series based on commit activity
 		// In a real implementation, this would come from daily or weekly data
 		series := make([]float64, 52) // 52 weeks in a year
+
 		commitsPerWeek := float64(stat.Commits) / 52.0
-		for i := 0; i < len(series); i++ {
+		for i := range series {
 			// Add random variation to simulate real activity
 			series[i] = commitsPerWeek + float64(i%5)*0.1*commitsPerWeek
 		}
+
 		devSeries[stat.Name] = series
 	}
 
 	progEstimator.FinishOperation()
+
 	return devSeries
 }
 
@@ -395,7 +443,7 @@ func plotDevs(
 	visuals graphics.Options,
 ) error {
 	if len(developerStats) == 0 {
-		return fmt.Errorf("no developer stats to plot")
+		return errors.New("no developer stats to plot")
 	}
 
 	length := 0
@@ -404,21 +452,25 @@ func plotDevs(
 			length = len(devSeries[dev.Name])
 		}
 	}
+
 	if length == 0 {
-		return fmt.Errorf("no developer series to plot")
+		return errors.New("no developer series to plot")
 	}
 
 	dates := make([]time.Time, length)
 	for i := range dates {
 		dates[i] = time.Unix(0, 0).AddDate(0, 0, i*7)
 	}
+
 	colors := graphics.PythonLaboursColorPalette(len(developerStats))
+
 	series := make([]graphics.MatplotlibTimeAreaSeries, 0, len(developerStats))
 	for i, dev := range developerStats {
 		values := append([]float64(nil), devSeries[dev.Name]...)
 		if len(values) < length {
 			values = append(values, make([]float64, length-len(values))...)
 		}
+
 		series = append(series, graphics.MatplotlibTimeAreaSeries{
 			Label:  peopleChartLabel(dev.Name),
 			Values: values,
@@ -426,7 +478,7 @@ func plotDevs(
 		})
 	}
 
-	if err := graphics.PlotTimeAreasMatplotlib(dates, series, graphics.MatplotlibTimeAreaOptions{
+	err := graphics.PlotTimeAreasMatplotlib(dates, series, graphics.MatplotlibTimeAreaOptions{
 		Title:        "Developer Contributions Over Time",
 		XLabel:       "Time",
 		YLabel:       "Commits",
@@ -440,10 +492,12 @@ func plotDevs(
 		Alpha:        0.7,
 		ShowGrid:     true,
 		FontSize:     visuals.PlotFontSize(),
-	}); err != nil {
+	})
+	if err != nil {
 		return err
 	}
 
 	fmt.Printf("Saved developer plot to %s\n", output)
+
 	return nil
 }

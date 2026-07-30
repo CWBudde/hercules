@@ -15,7 +15,7 @@ import (
 	"github.com/cwbudde/hercules/internal/render/readers"
 )
 
-// MockCouplesReader provides test data for couples-people testing
+// MockCouplesReader provides test data for couples-people testing.
 type MockCouplesReader struct{}
 
 func (r *MockCouplesReader) Read(file io.Reader) error             { return nil }
@@ -60,7 +60,7 @@ func (r *MockCouplesReader) GetDeveloperTimeSeriesData() (*readers.DeveloperTime
 	return nil, nil
 }
 
-// GetPeopleCooccurrence returns test coupling data mimicking real hercules output
+// GetPeopleCooccurrence returns test coupling data mimicking real hercules output.
 func (r *MockCouplesReader) GetPeopleCooccurrence() ([]string, readers.SparseMatrix, error) {
 	// Simulate realistic people coupling data
 	people := []string{

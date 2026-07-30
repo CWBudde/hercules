@@ -37,7 +37,8 @@ func TestRefactoringProxyWritesChart(t *testing.T) {
 
 func TestRefactoringProxyMatchesPythonDimensions(t *testing.T) {
 	output := filepath.Join(t.TempDir(), "refactoring-proxy.png")
-	if err := RefactoringProxy(&refactoringProxyTestReader{NoDataReader: &NoDataReader{}}, output); err != nil {
+	err := RefactoringProxy(&refactoringProxyTestReader{NoDataReader: &NoDataReader{}}, output)
+	if err != nil {
 		t.Fatalf("RefactoringProxy() unexpected error: %v", err)
 	}
 
@@ -50,7 +51,8 @@ func TestRefactoringProxyMatchesPythonDimensions(t *testing.T) {
 
 func TestRefactoringProxyPreservesTransparentBackground(t *testing.T) {
 	output := filepath.Join(t.TempDir(), "refactoring-proxy.png")
-	if err := RefactoringProxy(&refactoringProxyTestReader{NoDataReader: &NoDataReader{}}, output); err != nil {
+	err := RefactoringProxy(&refactoringProxyTestReader{NoDataReader: &NoDataReader{}}, output)
+	if err != nil {
 		t.Fatalf("RefactoringProxy() unexpected error: %v", err)
 	}
 

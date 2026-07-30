@@ -10,7 +10,7 @@ import (
 	"github.com/cwbudde/hercules/internal/render/readers"
 )
 
-// MockReader implements readers.Reader interface for testing sentiment mode
+// MockReader implements readers.Reader interface for testing sentiment mode.
 type MockSentimentReader struct{}
 
 func (m *MockSentimentReader) Read(file io.Reader) error             { return nil }
@@ -194,7 +194,7 @@ func closeEnough(a, b float64) bool {
 	return b-a < epsilon
 }
 
-// NoDataReader implements readers.Reader but returns no data
+// NoDataReader implements readers.Reader but returns no data.
 type NoDataReader struct{}
 
 func (n *NoDataReader) Read(file io.Reader) error                            { return nil }

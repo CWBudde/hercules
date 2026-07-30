@@ -110,7 +110,7 @@ type ShotnessRecord struct {
 	Counters map[int32]int32 // Time-based modification counters
 }
 
-// DevDay represents developer activity for a single day (Python-compatible)
+// DevDay represents developer activity for a single day (Python-compatible).
 type DevDay struct {
 	Commits       int              // Number of commits
 	LinesAdded    int              // Lines of code added
@@ -119,7 +119,7 @@ type DevDay struct {
 	Languages     map[string][]int // Language-specific stats [added, removed, changed]
 }
 
-// DeveloperTimeSeriesData represents Python-compatible developer time series data
+// DeveloperTimeSeriesData represents Python-compatible developer time series data.
 type DeveloperTimeSeriesData struct {
 	People []string               // List of developer names
 	Days   map[int]map[int]DevDay // {day: {dev_index: DevDay}}

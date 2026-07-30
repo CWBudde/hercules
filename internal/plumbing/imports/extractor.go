@@ -152,6 +152,7 @@ func (ex *Extractor) Consume(deps map[string]any) (map[string]any, error) {
 
 	result := map[gitplumbing.Hash]lang.File{}
 	resultSync := sync.Mutex{}
+
 	err := runImportWorkers(ex.Goroutines, changes, func(jobs <-chan *object.Change) {
 		extractImports(ex, jobs, cache, result, &resultSync)
 	})

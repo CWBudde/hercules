@@ -18,10 +18,11 @@ import (
 
 var errNoRepositoryData = errors.New("no repository data available")
 
-// GenerateBurndownProjectPython creates a Python-compatible burndown chart
+// GenerateBurndownProjectPython creates a Python-compatible burndown chart.
 func GenerateBurndownProjectPython(reader readers.Reader, output string, relative bool, resample string) error {
 	opts := defaultOptions()
 	opts.Relative, opts.Resample = relative, resample
+
 	return GenerateBurndownProjectPythonWithOptions(reader, output, opts)
 }
 
@@ -29,20 +30,24 @@ func GenerateBurndownProjectPythonWithOptions(reader readers.Reader, output stri
 	fmt.Println("Running: burndown-project (Python-compatible)")
 
 	progEstimator := progress.NewProgressEstimator(!opts.Quiet)
+
 	progEstimator.StartMultiOperation(4, "Python-Compatible Burndown Analysis")
 	defer progEstimator.FinishMultiOperation()
 
 	progEstimator.NextOperation("Validating output path")
+
 	output, err := prepareProjectBurndownOutput(output, opts.Quiet)
 	if err != nil {
 		return err
 	}
 
 	progEstimator.NextOperation("Loading burndown data")
+
 	header, name, matrix, err := reader.GetProjectBurndownWithHeader()
 	if err != nil {
 		return fmt.Errorf("failed to load burndown data: %w", err)
 	}
+
 	if !opts.Quiet {
 		fmt.Printf("Processing %s with %d age bands and %d time points\n", name, len(matrix), len(matrix[0]))
 		fmt.Printf("Header: start=%d, last=%d, sampling=%d, granularity=%d, tick_size=%.3f\n",
@@ -58,11 +63,13 @@ func GenerateBurndownProjectPythonWithOptions(reader readers.Reader, output stri
 	if err != nil {
 		return fmt.Errorf("failed to process burndown data: %w", err)
 	}
+
 	if err := reportProjectBurndown(processedData, header.Sampling, opts.Quiet); err != nil {
 		return err
 	}
 
 	progEstimator.NextOperation("Generating Python-style visualization")
+
 	if err := graphics.PlotBurndownMatplotlibWithOptions(processedData, output, opts.Relative, opts.Graphics); err != nil {
 		return fmt.Errorf("error creating Python-style burndown plot: %w", err)
 	}
@@ -70,6 +77,7 @@ func GenerateBurndownProjectPythonWithOptions(reader readers.Reader, output stri
 	if !opts.Quiet {
 		fmt.Printf("Python-compatible chart saved to %s\n", output)
 	}
+
 	return nil
 }
 
@@ -80,10 +88,14 @@ func prepareProjectBurndownOutput(output string, quiet bool) (string, error) {
 			fmt.Printf("Output not provided, using default: %s\n", output)
 		}
 	}
+
 	outputDir := filepath.Dir(output)
-	if err := os.MkdirAll(outputDir, 0o750); err != nil {
+
+	err := os.MkdirAll(outputDir, 0o750)
+	if err != nil {
 		return "", fmt.Errorf("failed to create output directory %s: %w", outputDir, err)
 	}
+
 	return output, nil
 }
 
@@ -91,6 +103,7 @@ func defaultBurndownResample(resample string) string {
 	if resample == "" {
 		return "year"
 	}
+
 	return resample
 }
 
@@ -98,18 +111,23 @@ func reportProjectBurndown(data *burndown.ProcessedBurndown, sampling int, quiet
 	if quiet {
 		return nil
 	}
+
 	fmt.Printf("Processed into %d layers: %v\n", len(data.Labels), data.Labels)
 	fmt.Printf("Final matrix dimensions: %dx%d\n", len(data.Matrix), len(data.Matrix[0]))
-	if err := burndown.WriteSurvivalFunction(os.Stdout, data.Survival, sampling); err != nil {
+
+	err := burndown.WriteSurvivalFunction(os.Stdout, data.Survival, sampling)
+	if err != nil {
 		return fmt.Errorf("print survival analysis: %w", err)
 	}
+
 	return nil
 }
 
-// GenerateBurndownFilePython creates Python-compatible file-level burndown charts
+// GenerateBurndownFilePython creates Python-compatible file-level burndown charts.
 func GenerateBurndownFilePython(reader readers.Reader, output string, relative bool, resample string) error {
 	opts := defaultOptions()
 	opts.Relative, opts.Resample = relative, resample
+
 	return GenerateBurndownFilePythonWithOptions(reader, output, opts)
 }
 
@@ -120,10 +138,12 @@ func GenerateBurndownFilePythonWithOptions(reader readers.Reader, output string,
 	if err != nil {
 		return fmt.Errorf("failed to get files burndown data: %w", err)
 	}
+
 	header, _, _, err := reader.GetProjectBurndownWithHeader()
 	if err != nil {
 		return fmt.Errorf("failed to get burndown header: %w", err)
 	}
+
 	if !opts.Quiet {
 		fmt.Printf("Processing %d files\n", len(files))
 	}
@@ -134,11 +154,14 @@ func GenerateBurndownFilePythonWithOptions(reader readers.Reader, output string,
 	}
 
 	var failures []error
+
 	for i, file := range files {
-		if err := renderFileBurndown(header, file, outputFiles[i], i, len(files), opts); err != nil {
+		err := renderFileBurndown(header, file, outputFiles[i], i, len(files), opts)
+		if err != nil {
 			failures = append(failures, err)
 		}
 	}
+
 	return errors.Join(failures...)
 }
 
@@ -147,6 +170,7 @@ func fileBurndownOutputPaths(output string, files []readers.FileBurndown) ([]str
 	for index, file := range files {
 		identities[index] = file.Filename
 	}
+
 	return outputpath.FanoutPaths(output, "burndown_file", identities)
 }
 
@@ -160,18 +184,22 @@ func renderFileBurndown(
 	if !opts.Quiet {
 		fmt.Printf("Processing file %d/%d: %s\n", index+1, total, file.Filename)
 	}
+
 	data, err := burndown.LoadBurndown(
 		header, file.Filename, file.Matrix, defaultBurndownResample(opts.Resample), false, false,
 	)
 	if err != nil {
 		return fmt.Errorf("process %s: %w", file.Filename, err)
 	}
+
 	if err := graphics.PlotBurndownMatplotlibWithOptions(data, output, opts.Relative, opts.Graphics); err != nil {
 		return fmt.Errorf("create plot for %s: %w", file.Filename, err)
 	}
+
 	if !opts.Quiet {
 		fmt.Printf("Chart saved: %s\n", output)
 	}
+
 	return nil
 }
 
@@ -179,6 +207,7 @@ func renderFileBurndown(
 func GenerateBurndownRepositoryPython(reader readers.Reader, output string, relative bool, resample string) error {
 	opts := defaultOptions()
 	opts.Relative, opts.Resample = relative, resample
+
 	return GenerateBurndownRepositoryPythonWithOptions(reader, output, opts)
 }
 
@@ -196,13 +225,16 @@ func GenerateBurndownRepositoryPythonWithOptions(reader readers.Reader, output s
 	}
 
 	var failures []error
+
 	for i, repository := range repositories {
-		if err := renderRepositoryBurndown(
+		err := renderRepositoryBurndown(
 			header, repository, outputFiles[i], i, len(repositories), opts,
-		); err != nil {
+		)
+		if err != nil {
 			failures = append(failures, err)
 		}
 	}
+
 	return errors.Join(failures...)
 }
 
@@ -214,19 +246,23 @@ func loadRepositoryBurndown(
 		return nil, burndown.BurndownHeader{},
 			fmt.Errorf("%w: repository burndown", readers.ErrAnalysisMissing)
 	}
+
 	repositories, err := repoReader.GetRepositoriesBurndown()
 	if err != nil {
 		return nil, burndown.BurndownHeader{},
 			fmt.Errorf("failed to get repositories burndown data: %w", err)
 	}
+
 	if len(repositories) == 0 {
 		return nil, burndown.BurndownHeader{},
 			fmt.Errorf("%w: repository burndown", readers.ErrAnalysisMissing)
 	}
+
 	header, _, _, err := reader.GetProjectBurndownWithHeader()
 	if err != nil {
 		return nil, burndown.BurndownHeader{}, fmt.Errorf("failed to get burndown header: %w", err)
 	}
+
 	return repositories, header, nil
 }
 
@@ -237,19 +273,23 @@ func repositoryBurndownOutputPaths(
 	if output == "" {
 		output = "."
 	}
+
 	if err := os.MkdirAll(output, 0o750); err != nil {
 		return nil, fmt.Errorf("failed to create output directory %s: %w", output, err)
 	}
+
 	identities := make([]string, len(repositories))
 	for index, repository := range repositories {
 		identities[index] = repository.Repository
 	}
+
 	outputFiles, err := outputpath.AssetFanoutPaths(
 		output, "burndown-repository", identities, []string{".png", ".svg"},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("plan repository burndown outputs: %w", err)
 	}
+
 	return outputFiles, nil
 }
 
@@ -263,21 +303,26 @@ func renderRepositoryBurndown(
 	if !opts.Quiet {
 		fmt.Printf("Processing repository %d/%d: %s\n", index+1, total, repository.Repository)
 	}
+
 	data, err := burndown.LoadBurndown(
 		header, repository.Repository, repository.Matrix, defaultBurndownResample(opts.Resample), false, false,
 	)
 	if err != nil {
 		return fmt.Errorf("process repository %s: %w", repository.Repository, err)
 	}
+
 	if err := graphics.PlotBurndownMatplotlibWithOptions(data, outputs[0], opts.Relative, opts.Graphics); err != nil {
 		return fmt.Errorf("create plot for repository %s: %w", repository.Repository, err)
 	}
+
 	if err := graphics.PlotBurndownMatplotlibWithOptions(data, outputs[1], opts.Relative, opts.Graphics); err != nil {
 		return fmt.Errorf("create SVG plot for repository %s: %w", repository.Repository, err)
 	}
+
 	if !opts.Quiet {
 		fmt.Printf("Charts saved: %s and %s\n", outputs[0], outputs[1])
 	}
+
 	return nil
 }
 
@@ -288,6 +333,7 @@ func renderRepositoryBurndown(
 func GenerateBurndownReposCombinedPython(reader readers.Reader, output string, relative bool, resample string, maxRepos int) error {
 	opts := defaultOptions()
 	opts.Relative, opts.Resample, opts.MaxRepos = relative, resample, maxRepos
+
 	return GenerateBurndownReposCombinedPythonWithOptions(reader, output, opts)
 }
 
@@ -316,6 +362,7 @@ func GenerateBurndownReposCombinedPythonWithOptions(reader readers.Reader, outpu
 	if !opts.Quiet {
 		fmt.Printf("Combined repository burndown chart saved to %s\n", output)
 	}
+
 	return nil
 }
 
@@ -327,18 +374,22 @@ func loadCombinedRepositoryBurndown(
 		// Match Python labours: ValueError("No repository data available").
 		return nil, burndown.BurndownHeader{}, errNoRepositoryData
 	}
+
 	repositories, err := repoReader.GetRepositoriesBurndown()
 	if err != nil {
 		return nil, burndown.BurndownHeader{},
 			fmt.Errorf("failed to get repositories burndown data: %w", err)
 	}
+
 	if len(repositories) == 0 {
 		return nil, burndown.BurndownHeader{}, errNoRepositoryData
 	}
+
 	header, _, _, err := reader.GetProjectBurndownWithHeader()
 	if err != nil {
 		return nil, burndown.BurndownHeader{}, fmt.Errorf("failed to get burndown header: %w", err)
 	}
+
 	return repositories, header, nil
 }
 
@@ -351,10 +402,12 @@ func combinedRepositoryBurndownData(
 	// lines at every sample point, matching Python labours.
 	repoMatrix, labels := repositoryBands(repositories)
 	if len(repoMatrix) == 0 || len(repoMatrix[0]) == 0 {
-		return nil, fmt.Errorf("empty combined repository burndown matrix")
+		return nil, errors.New("empty combined repository burndown matrix")
 	}
+
 	repoMatrix, labels = limitRepositoryBands(repoMatrix, labels, opts.MaxRepos)
 	dateRange := repositoryBurndownDates(header, len(repoMatrix[0]))
+
 	return &burndown.ProcessedBurndown{
 		Name:         "combined repositories",
 		Matrix:       repoMatrix,
@@ -369,10 +422,12 @@ func combinedRepositoryBurndownData(
 func repositoryBurndownDates(header burndown.BurndownHeader, columns int) []time.Time {
 	start := burndown.FloorDateTime(time.Unix(header.Start, 0), header.TickSize)
 	secondsPerSample := int64(header.TickSize) * int64(header.Sampling)
+
 	dateRange := make([]time.Time, columns)
 	for index := range dateRange {
 		dateRange[index] = start.Add(time.Duration(int64(index)*secondsPerSample) * time.Second)
 	}
+
 	return dateRange
 }
 
@@ -380,13 +435,17 @@ func prepareCombinedRepositoryOutput(output string) (string, error) {
 	if output == "" {
 		output = "burndown-repos-combined.png"
 	}
+
 	dir := filepath.Dir(output)
 	if dir == "" || dir == "." {
 		return output, nil
 	}
-	if err := os.MkdirAll(dir, 0o750); err != nil {
+
+	err := os.MkdirAll(dir, 0o750)
+	if err != nil {
 		return "", fmt.Errorf("failed to create output directory %s: %w", dir, err)
 	}
+
 	return output, nil
 }
 
@@ -397,6 +456,7 @@ func prepareCombinedRepositoryOutput(output string) (string, error) {
 // matching repository-name labels.
 func repositoryBands(repositories []readers.RepositoryBurndown) ([][]float64, []string) {
 	cols := 0
+
 	for _, repository := range repositories {
 		for _, row := range repository.Matrix {
 			if len(row) > cols {
@@ -404,11 +464,13 @@ func repositoryBands(repositories []readers.RepositoryBurndown) ([][]float64, []
 			}
 		}
 	}
+
 	if cols == 0 {
 		return nil, nil
 	}
 
 	matrix := make([][]float64, 0, len(repositories))
+
 	labels := make([]string, 0, len(repositories))
 	for _, repository := range repositories {
 		total := make([]float64, cols)
@@ -417,12 +479,14 @@ func repositoryBands(repositories []readers.RepositoryBurndown) ([][]float64, []
 				total[j] += float64(row[j])
 			}
 		}
+
 		matrix = append(matrix, total)
 		// Use the repository's basename as the legend label: Hercules records the
 		// path it was invoked with, which may be absolute
 		// (/mnt/projekte/Code/MeKo/foo) and would otherwise bloat the legend.
 		labels = append(labels, filepath.Base(strings.TrimRight(repository.Repository, "/")))
 	}
+
 	return matrix, labels
 }
 
@@ -436,12 +500,15 @@ func limitRepositoryBands(matrix [][]float64, labels []string, maxRepos int) ([]
 	if maxRepos <= 0 || len(matrix) <= maxRepos {
 		return matrix, labels
 	}
+
 	sizes := repositoryBandSizes(matrix)
 	sort.SliceStable(sizes, func(a, b int) bool { return sizes[a].peak > sizes[b].peak })
+
 	keep := make(map[int]bool, maxRepos)
-	for i := 0; i < maxRepos; i++ {
+	for i := range maxRepos {
 		keep[sizes[i].idx] = true
 	}
+
 	return combineRepositoryBands(matrix, labels, keep)
 }
 
@@ -459,8 +526,10 @@ func repositoryBandSizes(matrix [][]float64) []repositoryBandSize {
 				peak = v
 			}
 		}
+
 		sizes[i] = repositoryBandSize{idx: i, peak: peak}
 	}
+
 	return sizes
 }
 
@@ -470,20 +539,26 @@ func combineRepositoryBands(matrix [][]float64, labels []string, keep map[int]bo
 	cols := len(matrix[0])
 	other := make([]float64, cols)
 	otherCount := 0
+
 	for i := range matrix {
 		if keep[i] {
 			newMatrix = append(newMatrix, matrix[i])
 			newLabels = append(newLabels, labels[i])
+
 			continue
 		}
+
 		for j := 0; j < cols && j < len(matrix[i]); j++ {
 			other[j] += matrix[i][j]
 		}
+
 		otherCount++
 	}
+
 	if otherCount > 0 {
 		newMatrix = append(newMatrix, other)
 		newLabels = append(newLabels, fmt.Sprintf("Other (%d repos)", otherCount))
 	}
+
 	return newMatrix, newLabels
 }

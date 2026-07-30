@@ -1,6 +1,7 @@
 package graphics
 
 import (
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
@@ -41,7 +42,7 @@ func PlotStackedBurndownMatplotlibWithOptions(
 	opts Options,
 ) error {
 	if len(matrix) == 0 || len(dateRange) == 0 {
-		return fmt.Errorf("empty matrix or date range")
+		return errors.New("empty matrix or date range")
 	}
 
 	numPoints := len(dateRange)
@@ -51,6 +52,7 @@ func PlotStackedBurndownMatplotlibWithOptions(
 	}
 
 	colors := GetBurndownColorsForTheme(opts.Theme, len(matrix))
+
 	series := make([]MatplotlibTimeAreaSeries, len(matrix))
 	for i, row := range matrix {
 		values := make([]float64, numPoints)
@@ -98,27 +100,31 @@ func PlotBurndownMatplotlibWithOptions(
 	opts Options,
 ) error {
 	if data == nil || len(data.Matrix) == 0 || len(data.DateRange) == 0 {
-		return fmt.Errorf("empty burndown data")
+		return errors.New("empty burndown data")
 	}
 
 	numSeries := len(data.Matrix)
 	if numSeries == 0 {
-		return fmt.Errorf("empty matrix")
+		return errors.New("empty matrix")
 	}
+
 	matrix := data.Matrix
 	timeValues, renderColors, labels := prepareBurndownStackData(data)
 	width, height := pythonPlotPixelSize(PythonPlotDefaultWidthInches, PythonPlotDefaultHeightInches, opts.Size)
 	background, foreground := LaboursPlotColors(opts.Background)
 	transparentBackground := background
 	transparentBackground.A = 0
+
 	fig, ax := newPythonBurndownFigure(
 		width, height, opts.PlotFontSize(), background, foreground, transparentBackground,
 		matrix, relative,
 	)
 	if ax == nil {
-		return fmt.Errorf("failed to create burndown axes")
+		return errors.New("failed to create burndown axes")
 	}
+
 	configureBurndownStackAxes(ax, data, matrix, timeValues, renderColors, labels, relative, opts)
+
 	return saveMatplotlibFigureWithoutTightLayout(fig, output, width, height, transparentBackground)
 }
 
@@ -127,10 +133,12 @@ func prepareBurndownStackData(
 ) ([]float64, []render.Color, []string) {
 	timeValues := unixTimeValues(data.DateRange)
 	colors := PythonLaboursColorPalette(len(data.Matrix))
+
 	renderColors := make([]render.Color, len(colors))
 	for i, itemColor := range colors {
 		renderColors[i] = renderColor(itemColor)
 	}
+
 	labels := make([]string, len(data.Matrix))
 	for i := range labels {
 		labels[i] = fmt.Sprintf("Layer %d", i)
@@ -138,6 +146,7 @@ func prepareBurndownStackData(
 			labels[i] = data.Labels[i]
 		}
 	}
+
 	return timeValues, renderColors, labels
 }
 
@@ -162,6 +171,7 @@ func newPythonBurndownFigure(
 	ax := fig.GridSpec(
 		1, 1, core.WithGridSpecPadding(pythonBurndownAxesPadding(matrix, relative)),
 	).Cell(0, 0).AddAxes()
+
 	return fig, ax
 }
 
@@ -179,8 +189,10 @@ func configureBurndownStackAxes(
 		ax.SetTitle(fmt.Sprintf("%s %d x %d (granularity %d, sampling %d)",
 			data.Name, len(data.Matrix), len(data.DateRange), data.Granularity, data.Sampling))
 	}
+
 	ax.SetXLabel("Time")
 	ax.SetYLabel("Lines of code")
+
 	plotMatrix := matrix
 	if relative {
 		// Python lets matplotlib clip the unnormalized stackplot after ylim(0, 1).
@@ -188,19 +200,23 @@ func configureBurndownStackAxes(
 		// so pre-clip the stacked layers to the same visible result.
 		plotMatrix = clippedStackMatrix(matrix, 0, 1)
 	}
+
 	ax.StackPlot(timeValues, plotMatrix, core.StackPlotOptions{
 		Colors: colors,
 		Labels: labels,
 	})
 	ax.SetXLim(timeValues[0], timeValues[len(timeValues)-1])
+
 	if relative {
 		ax.SetYLim(0, 1)
 	} else {
 		configureMatplotlibBurndownYAxis(ax, matrix)
 	}
+
 	configureMatplotlibBurndownTimeAxis(ax, data.DateRange, data.ResampleMode)
 
 	legend := ax.AddLegend()
+
 	legend.Location = core.LegendUpperLeft
 	if relative {
 		legend.Location = core.LegendLowerLeft
@@ -217,6 +233,7 @@ func pythonBurndownAxesPadding(matrix [][]float64, relative bool) (left, right, 
 	} else {
 		left = 0.041
 	}
+
 	return left, 0.991, 0.049, 0.968
 }
 
@@ -224,31 +241,37 @@ func clippedStackMatrix(matrix [][]float64, minY, maxY float64) [][]float64 {
 	if len(matrix) == 0 {
 		return nil
 	}
+
 	points := 0
 	for _, row := range matrix {
 		if points == 0 || len(row) < points {
 			points = len(row)
 		}
 	}
+
 	if points == 0 {
 		return nil
 	}
 
 	clipped := make([][]float64, len(matrix))
+
 	cumulative := make([]float64, points)
 	for i, row := range matrix {
 		clipped[i] = make([]float64, points)
-		for j := 0; j < points; j++ {
+		for j := range points {
 			lower := cumulative[j]
 			upper := lower + row[j]
 			clippedLower := clampFloat(lower, minY, maxY)
+
 			clippedUpper := clampFloat(upper, minY, maxY)
 			if clippedUpper > clippedLower {
 				clipped[i][j] = clippedUpper - clippedLower
 			}
+
 			cumulative[j] = upper
 		}
 	}
+
 	return clipped
 }
 
@@ -272,16 +295,20 @@ func maxStackY(matrix [][]float64) float64 {
 			points = len(row)
 		}
 	}
+
 	maxY := 0.0
-	for j := 0; j < points; j++ {
+
+	for j := range points {
 		total := 0.0
 		for i := range matrix {
 			total += matrix[i][j]
 		}
+
 		if total > maxY {
 			maxY = total
 		}
 	}
+
 	return maxY
 }
 
@@ -292,6 +319,7 @@ func LaboursPlotColors(backgroundName string) (background, foreground render.Col
 	if strings.EqualFold(backgroundName, "black") {
 		return render.Color{R: 0, G: 0, B: 0, A: 1}, render.Color{R: 1, G: 1, B: 1, A: 1}
 	}
+
 	return render.Color{R: 1, G: 1, B: 1, A: 1}, render.Color{R: 0, G: 0, B: 0, A: 1}
 }
 
@@ -323,15 +351,18 @@ func shouldRotateDateLabels(labels []string) bool {
 	if len(labels) <= 1 {
 		return false
 	}
+
 	maxLen := 0
 	for _, label := range labels {
 		if len(label) > maxLen {
 			maxLen = len(label)
 		}
 	}
+
 	approxAxisWidth := 1500.0
 	approxLabelWidth := float64(maxLen) * 8.0 // px per character at default fontsize
 	totalLabelWidth := approxLabelWidth * float64(len(labels))
+
 	return totalLabelWidth > approxAxisWidth*0.9
 }
 
@@ -355,7 +386,9 @@ func chooseDateTicks(dates []time.Time, resampleMode string, includeEndpoints bo
 	if len(dates) == 0 {
 		return nil, nil
 	}
+
 	start := dates[0]
+
 	end := dates[len(dates)-1]
 	if end.Before(start) {
 		start, end = end, start
@@ -387,15 +420,19 @@ func chooseDateTicks(dates []time.Time, resampleMode string, includeEndpoints bo
 func buildDailyTicks(start, end time.Time, includeEndpoints bool) ([]float64, []string) {
 	days := int(math.Ceil(end.Sub(start).Hours() / 24))
 	step := atLeastOne(int(math.Ceil(float64(atLeastOne(days)) / 10)))
+
 	first := start.Truncate(24 * time.Hour)
 	if first.Before(start) {
 		first = first.AddDate(0, 0, 1)
 	}
+
 	natural := make([]time.Time, 0, days/step+2)
 	for t := first; !t.After(end); t = t.AddDate(0, 0, step) {
 		natural = append(natural, t)
 	}
+
 	stepDuration := time.Duration(step) * 24 * time.Hour
+
 	return formatDateTicks(maybeAddEndpoints(natural, start, end, stepDuration, includeEndpoints), "2006-01-02")
 }
 
@@ -405,15 +442,19 @@ func buildDailyTicks(start, end time.Time, includeEndpoints bool) ([]float64, []
 func buildMonthlyTicks(start, end time.Time, includeEndpoints bool) ([]float64, []string) {
 	months := (end.Year()-start.Year())*12 + int(end.Month()-start.Month()) + 1
 	step := atLeastOne(int(math.Ceil(float64(atLeastOne(months)) / 10)))
+
 	first := time.Date(start.Year(), start.Month(), 1, 0, 0, 0, 0, start.Location())
 	if first.Before(start) {
 		first = first.AddDate(0, step, 0)
 	}
+
 	natural := make([]time.Time, 0, months/step+2)
 	for t := first; !t.After(end); t = t.AddDate(0, step, 0) {
 		natural = append(natural, t)
 	}
+
 	stepDuration := time.Duration(step*30) * 24 * time.Hour
+
 	return formatDateTicks(maybeAddEndpoints(natural, start, end, stepDuration, includeEndpoints), "2006-01")
 }
 
@@ -424,19 +465,23 @@ func buildYearlyTicks(start, end time.Time, includeEndpoints bool) ([]float64, [
 	years := atLeastOne(end.Year() - start.Year() + 1)
 	step := atLeastOne(int(math.Ceil(float64(years) / 10)))
 	natural := make([]time.Time, 0, years)
+
 	for year := start.Year(); year <= end.Year(); year += step {
 		t := time.Date(year, 1, 1, 0, 0, 0, 0, start.Location())
 		if !t.Before(start) && !t.After(end) {
 			natural = append(natural, t)
 		}
 	}
+
 	stepDuration := time.Duration(step) * 365 * 24 * time.Hour
+
 	out := maybeAddEndpoints(natural, start, end, stepDuration, includeEndpoints)
 	if len(out) <= 2 {
 		// Short spans look better as dated endpoints (e.g. "2017-01-01") so
 		// the reader can tell what range is shown without a year-only label.
 		return formatDateTicks(out, "2006-01-02")
 	}
+
 	return formatDateTicks(out, "2006")
 }
 
@@ -458,10 +503,12 @@ func maybeAddEndpoints(natural []time.Time, start, end time.Time, stepDuration t
 			// which is worse than diverging from Python's auto-locator.
 			return []time.Time{start, end}
 		}
+
 		return append([]time.Time(nil), natural...)
 	}
 
 	out := make([]time.Time, 0, len(natural)+2)
+
 	tolerance := stepDuration / 2
 	if tolerance <= 0 {
 		tolerance = 24 * time.Hour
@@ -470,11 +517,13 @@ func maybeAddEndpoints(natural []time.Time, start, end time.Time, stepDuration t
 	if len(natural) == 0 || natural[0].Sub(start) > tolerance {
 		out = append(out, start)
 	}
+
 	out = append(out, natural...)
 
 	if len(natural) == 0 || end.Sub(natural[len(natural)-1]) > tolerance {
 		out = append(out, end)
 	}
+
 	return out
 }
 
@@ -484,16 +533,20 @@ func maybeAddEndpoints(natural []time.Time, start, end time.Time, stepDuration t
 func formatDateTicks(dates []time.Time, layout string) ([]float64, []string) {
 	seenLabel := map[string]bool{}
 	ticks := make([]float64, 0, len(dates))
+
 	labels := make([]string, 0, len(dates))
 	for _, date := range dates {
 		label := date.Format(layout)
 		if seenLabel[label] {
 			continue
 		}
+
 		seenLabel[label] = true
+
 		ticks = append(ticks, float64(date.Unix()))
 		labels = append(labels, label)
 	}
+
 	return ticks, labels
 }
 
@@ -509,13 +562,16 @@ func saveMatplotlibFigureWithLayout(fig *core.Figure, output string, width, heig
 	if output == "" {
 		output = "burndown_project_python.png"
 	}
-	if err := os.MkdirAll(filepath.Dir(output), 0o750); err != nil {
+
+	err := os.MkdirAll(filepath.Dir(output), 0o750)
+	if err != nil {
 		return fmt.Errorf("failed to create output directory for %s: %w", output, err)
 	}
 
 	if tight {
 		fig.TightLayout()
 	}
+
 	background := matplotlibBackground(backgrounds)
 	config := backends.Config{
 		Width:       width,
@@ -524,6 +580,7 @@ func saveMatplotlibFigureWithLayout(fig *core.Figure, output string, width, heig
 		DPI:         100,
 		Transparent: background.A == 0,
 	}
+
 	return saveMatplotlibFigureWithConfig(fig, output, config)
 }
 
@@ -531,6 +588,7 @@ func matplotlibBackground(backgrounds []render.Color) render.Color {
 	if len(backgrounds) > 0 {
 		return backgrounds[0]
 	}
+
 	return render.Color{R: 1, G: 1, B: 1, A: 0}
 }
 
@@ -541,24 +599,29 @@ func saveMatplotlibFigureWithConfig(fig *core.Figure, output string, config back
 		if err != nil {
 			return fmt.Errorf("failed to create SVG renderer: %w", err)
 		}
+
 		return core.SaveSVG(fig, renderer, output)
 	default:
 		renderer, _, err := backends.NewRenderer("agg", config, backends.TextCapabilities)
 		if err != nil {
 			return fmt.Errorf("failed to create AGG renderer: %w", err)
 		}
+
 		if err := core.SavePNG(fig, renderer, output); err != nil {
 			return err
 		}
+
 		if config.Background.A == 0 {
 			return setTransparentPNGRGB(output, config.Background)
 		}
+
 		return nil
 	}
 }
 
 func renderColor(c color.Color) render.Color {
 	r, g, b, a := c.RGBA()
+
 	return render.Color{
 		R: float64(r) / 0xffff,
 		G: float64(g) / 0xffff,
@@ -570,10 +633,12 @@ func renderColor(c color.Color) render.Color {
 func pythonPlotPixelSize(defaultWidth, defaultHeight float64, configuredSize ...string) (int, int) {
 	width := defaultWidth
 	height := defaultHeight
+
 	sizeStr := ""
 	if len(configuredSize) > 0 {
 		sizeStr = configuredSize[0]
 	}
+
 	if sizeStr != "" {
 		parsedWidth, parsedHeight, err := parsePlotSizeFloats(sizeStr)
 		if err == nil {
@@ -582,6 +647,7 @@ func pythonPlotPixelSize(defaultWidth, defaultHeight float64, configuredSize ...
 			fmt.Fprintf(os.Stderr, "Warning: %v, using default size\n", err)
 		}
 	}
+
 	return InchesToPixels(width), InchesToPixels(height)
 }
 
@@ -589,6 +655,7 @@ func atLeastOne(value int) int {
 	if value < 1 {
 		return 1
 	}
+
 	return value
 }
 
@@ -596,9 +663,11 @@ func clampFloat(v, minVal, maxVal float64) float64 {
 	if v < minVal {
 		return minVal
 	}
+
 	if v > maxVal {
 		return maxVal
 	}
+
 	return v
 }
 
@@ -607,17 +676,21 @@ func setTransparentPNGRGB(path string, background render.Color) error {
 	if err != nil {
 		return err
 	}
+
 	img, err := png.Decode(file)
 	closeErr := file.Close()
+
 	if err != nil {
 		return err
 	}
+
 	if closeErr != nil {
 		return closeErr
 	}
 
 	bounds := img.Bounds()
 	rgba := imageToNRGBA(img)
+
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
 			offset := rgba.PixOffset(x, y)
@@ -634,6 +707,7 @@ func setTransparentPNGRGB(path string, background render.Color) error {
 		return err
 	}
 	defer func() { _ = file.Close() }()
+
 	return png.Encode(file, rgba)
 }
 
@@ -647,9 +721,11 @@ func imageToNRGBA(img image.Image) *image.NRGBA {
 	if rgba, ok := img.(*image.NRGBA); ok {
 		return rgba
 	}
+
 	bounds := img.Bounds()
 	rgba := image.NewNRGBA(bounds)
 	draw.Draw(rgba, bounds, img, bounds.Min, draw.Src)
+
 	return rgba
 }
 
@@ -663,10 +739,12 @@ func imageToNRGBA(img image.Image) *image.NRGBA {
 // length, which mirrors matplotlib's `axes.prop_cycle` wrap-around.
 func PythonLaboursColorPalette(n int) []color.Color {
 	palette := tab20Palette()
+
 	colors := make([]color.Color, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		colors[i] = palette[i%len(palette)]
 	}
+
 	return colors
 }
 

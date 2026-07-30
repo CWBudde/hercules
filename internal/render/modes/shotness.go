@@ -10,7 +10,7 @@ import (
 	"github.com/cwbudde/hercules/internal/render/readers"
 )
 
-// ShotnessResult represents a processed shotness record with aggregated statistics
+// ShotnessResult represents a processed shotness record with aggregated statistics.
 type ShotnessResult struct {
 	Type           string
 	Name           string
@@ -49,7 +49,8 @@ func ShotnessWithOptions(reader readers.Reader, output string, opts Options) err
 
 	// Step 4: Generate visualization (optional - only if output directory specified)
 	if output != "" {
-		if err := plotShotness(results, output, opts.Graphics); err != nil {
+		err := plotShotness(results, output, opts.Graphics)
+		if err != nil {
 			return fmt.Errorf("plot shotness: %w", err)
 		}
 	}
@@ -57,7 +58,7 @@ func ShotnessWithOptions(reader readers.Reader, output string, opts Options) err
 	return nil
 }
 
-// processShotnessRecords processes raw shotness records and calculates aggregate statistics
+// processShotnessRecords processes raw shotness records and calculates aggregate statistics.
 func processShotnessRecords(records []readers.ShotnessRecord) []ShotnessResult {
 	results := make([]ShotnessResult, len(records))
 	for i, record := range records {
@@ -73,17 +74,21 @@ func processShotnessRecords(records []readers.ShotnessRecord) []ShotnessResult {
 func processShotnessRecord(record readers.ShotnessRecord, index int) ShotnessResult {
 	var totalHits int32
 	firstHit, lastHit := int32(-1), int32(-1)
+
 	for timePoint, count := range record.Counters {
 		totalHits += count
+
 		if firstHit == -1 || timePoint < firstHit {
 			firstHit = timePoint
 		}
+
 		if lastHit == -1 || timePoint > lastHit {
 			lastHit = timePoint
 		}
 	}
 
 	timeSpan := safeInt32(len(record.Counters))
+
 	return ShotnessResult{
 		Type:           record.Type,
 		Name:           record.Name,
@@ -101,6 +106,7 @@ func averageShotnessHits(total, span int32) float64 {
 	if span == 0 {
 		return 0
 	}
+
 	return float64(total) / float64(span)
 }
 
@@ -108,15 +114,19 @@ func shotnessResultGreater(left, right ShotnessResult) bool {
 	if left.TotalHits != right.TotalHits {
 		return left.TotalHits > right.TotalHits
 	}
+
 	if left.File != right.File {
 		return left.File > right.File
 	}
+
 	if left.Name != right.Name {
 		return left.Name > right.Name
 	}
+
 	if left.Type != right.Type {
 		return left.Type > right.Type
 	}
+
 	return left.OriginalIndex > right.OriginalIndex
 }
 
@@ -125,10 +135,11 @@ func safeInt32(value int) int32 {
 	if value > maxInt32 {
 		return int32(maxInt32)
 	}
+
 	return int32(value) // #nosec G115 - value is bounded above and non-negative len input.
 }
 
-// plotShotness creates a bar chart showing the hottest code spots by modification frequency
+// plotShotness creates a bar chart showing the hottest code spots by modification frequency.
 func plotShotness(
 	results []ShotnessResult,
 	output string,
@@ -147,8 +158,10 @@ func plotShotness(
 	labels := make([]string, len(results))
 	values := make([]float64, len(results))
 	maxValue := 0.0
+
 	for i, result := range results {
 		labels[i] = compactPlotLabel(fmt.Sprintf("%s:%s", result.Type, result.Name), 24)
+
 		values[i] = float64(result.TotalHits)
 		if values[i] > maxValue {
 			maxValue = values[i]
@@ -156,8 +169,10 @@ func plotShotness(
 	}
 
 	width, height := graphics.GetPlotSizeInchesWithOptions(graphics.ChartTypeWide, visuals)
+
 	outputFile := filepath.Join(output, "shotness.png")
-	if err := graphics.PlotBarChartMatplotlib(labels, values, graphics.MatplotlibBarOptions{
+
+	err := graphics.PlotBarChartMatplotlib(labels, values, graphics.MatplotlibBarOptions{
 		Title:        "Code Hotspots (Most Frequently Modified Structural Units)",
 		XLabel:       "Structural Units",
 		YLabel:       "Total Modifications",
@@ -167,13 +182,14 @@ func plotShotness(
 		Color:        color.RGBA{R: 228, G: 87, B: 86, A: 255},
 		RotateX:      true,
 		DisableGrid:  true,
-		// Matplotlib's bar autoscale leaves asymmetric room for edge bars and labels.
+
 		ManualXLim: true,
 		XMin:       -0.53,
 		XMax:       float64(len(results)) + 0.60,
 		YMax:       maxValue * 1.05,
 		FontSize:   visuals.PlotFontSize(),
-	}); err != nil {
+	})
+	if err != nil {
 		return fmt.Errorf("failed to save shotness plot: %w", err)
 	}
 
@@ -189,15 +205,17 @@ func compactPlotLabel(label string, limit int) string {
 	if len(label) <= limit {
 		return label
 	}
+
 	if limit <= 3 {
 		return label[:limit]
 	}
+
 	return "..." + label[len(label)-limit+3:]
 }
 
 // printShotnessStats prints shotness statistics in Python-compatible format
 // Matches the format from Python's show_shotness_stats function:
-// "%8d  %s:%s [%s]" % (count, r.file, r.name, r.internal_role)
+// "%8d  %s:%s [%s]" % (count, r.file, r.name, r.internal_role).
 func printShotnessStats(results []ShotnessResult) {
 	fmt.Println("Shotness Analysis - Code Hotspots:")
 
@@ -218,7 +236,7 @@ func printShotnessStats(results []ShotnessResult) {
 	fmt.Printf("\nTotal: %d hotspots analyzed\n", len(results))
 }
 
-// printShotnessSummary prints a detailed text summary of the shotness analysis
+// printShotnessSummary prints a detailed text summary of the shotness analysis.
 func printShotnessSummary(results []ShotnessResult) {
 	fmt.Println("\nCode Hotspot Analysis (Shotness):")
 	fmt.Println("==================================")
@@ -232,6 +250,7 @@ func printShotnessSummary(results []ShotnessResult) {
 	fmt.Printf("Total structural units analyzed: %d\n", len(results))
 	fmt.Printf("Total modifications tracked: %d\n", totalModifications)
 	fmt.Println("\nStructural unit types:")
+
 	for unitType, count := range typeCount {
 		fmt.Printf("  %-12s: %d units\n", unitType, count)
 	}
@@ -242,6 +261,7 @@ func printShotnessSummary(results []ShotnessResult) {
 
 	maxDisplay := min(15, len(results))
 	printShotnessRows(results[:maxDisplay])
+
 	if len(results) > maxDisplay {
 		fmt.Printf("\n... and %d more hotspots\n", len(results)-maxDisplay)
 	}
@@ -256,10 +276,12 @@ func printShotnessSummary(results []ShotnessResult) {
 func summarizeShotnessResults(results []ShotnessResult) (int32, map[string]int) {
 	total := int32(0)
 	types := make(map[string]int)
+
 	for _, result := range results {
 		total += result.TotalHits
 		types[result.Type]++
 	}
+
 	return total, types
 }
 
@@ -282,5 +304,6 @@ func compactEndEllipsis(value string, limit int) string {
 	if len(value) <= limit {
 		return value
 	}
+
 	return value[:limit-3] + "..."
 }

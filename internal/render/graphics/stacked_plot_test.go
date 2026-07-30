@@ -1,6 +1,7 @@
 package graphics
 
 import (
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
@@ -232,7 +233,7 @@ func TestGenerateColorPalette(t *testing.T) {
 	}
 
 	// Check that all colors are different
-	for i := 0; i < len(colors); i++ {
+	for i := range colors {
 		for j := i + 1; j < len(colors); j++ {
 			if colors[i] == colors[j] {
 				t.Errorf("Colors %d and %d are identical", i, j)
@@ -257,9 +258,9 @@ func TestNormalizeData(t *testing.T) {
 	normalized := normalizeData(data)
 
 	// Check that each time point sums to 100%
-	for timePoint := 0; timePoint < len(normalized[0]); timePoint++ {
+	for timePoint := range len(normalized[0]) {
 		sum := 0.0
-		for series := 0; series < len(normalized); series++ {
+		for series := range normalized {
 			sum += normalized[series][timePoint]
 		}
 		if sum < 99.9 || sum > 100.1 { // Allow for small floating point errors
@@ -275,8 +276,8 @@ func TestSaveImagePNG(t *testing.T) {
 	// Create a simple test image
 	img := image.NewRGBA(image.Rect(0, 0, 100, 100))
 	// Fill with red color
-	for y := 0; y < 100; y++ {
-		for x := 0; x < 100; x++ {
+	for y := range 100 {
+		for x := range 100 {
 			img.Set(x, y, color.RGBA{255, 0, 0, 255})
 		}
 	}
@@ -316,7 +317,7 @@ func interpolateData(data [][]float64, targetPoints int) [][]float64 {
 		}
 
 		// Linear interpolation
-		for j := 0; j < targetPoints; j++ {
+		for j := range targetPoints {
 			pos := float64(j) / float64(targetPoints-1) * float64(len(data[i])-1)
 			idx := int(pos)
 
@@ -357,7 +358,7 @@ func calculateStackedValues(data [][]float64) [][]float64 {
 func generateTestColorPalette(count int) []color.Color {
 	colors := make([]color.Color, count)
 
-	for i := 0; i < count; i++ {
+	for i := range count {
 		hue := float64(i) / float64(count) * 360
 		colors[i] = hsvToRGB(hue, 0.7, 0.9)
 	}
@@ -376,14 +377,14 @@ func normalizeData(data [][]float64) [][]float64 {
 	}
 
 	// Normalize each time point to sum to 100%
-	for timePoint := 0; timePoint < len(data[0]); timePoint++ {
+	for timePoint := range len(data[0]) {
 		total := 0.0
-		for series := 0; series < len(data); series++ {
+		for series := range data {
 			total += data[series][timePoint]
 		}
 
 		if total > 0 {
-			for series := 0; series < len(data); series++ {
+			for series := range data {
 				normalized[series][timePoint] = (data[series][timePoint] / total) * 100.0
 			}
 		}
@@ -439,12 +440,12 @@ func hsvToRGB(h, s, v float64) color.Color {
 
 func mockCreateStackedPlot(data [][]float64, labels []string, timePoints []time.Time, title, yLabel, outputPath string) error {
 	if len(data) == 0 || len(labels) == 0 || len(timePoints) == 0 {
-		return fmt.Errorf("empty data provided")
+		return errors.New("empty data provided")
 	}
 
 	// Check for mismatched data
 	if len(data) != len(labels) {
-		return fmt.Errorf("data and labels length mismatch")
+		return errors.New("data and labels length mismatch")
 	}
 
 	for i, series := range data {
@@ -460,11 +461,11 @@ func mockCreateStackedPlot(data [][]float64, labels []string, timePoints []time.
 
 func mockCreateBarChart(values []float64, labels []string, title, yLabel, outputPath string) error {
 	if len(values) == 0 || len(labels) == 0 {
-		return fmt.Errorf("empty data provided")
+		return errors.New("empty data provided")
 	}
 
 	if len(values) != len(labels) {
-		return fmt.Errorf("values and labels length mismatch")
+		return errors.New("values and labels length mismatch")
 	}
 
 	// Create mock output file

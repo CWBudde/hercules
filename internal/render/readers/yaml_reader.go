@@ -1,6 +1,7 @@
 package readers
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"sort"
@@ -14,7 +15,7 @@ import (
 )
 
 type YamlReader struct {
-	data   map[string]interface{}
+	data   map[string]any
 	Limits analysisio.Limits
 	Quiet  bool
 }
@@ -30,110 +31,131 @@ func (r *YamlReader) Read(file io.Reader) error {
 		progEstimator.FinishOperation()
 		return fmt.Errorf("read YAML input: %w", err)
 	}
-	var data map[string]interface{}
+
+	var data map[string]any
 	if err := yaml.Unmarshal(input, &data); err != nil {
 		progEstimator.FinishOperation()
 		return fmt.Errorf("%w: decode YAML: %w", ErrAnalysisMalformed, err)
 	}
+
 	if err := validateYAMLAnalysis(data, r.Limits); err != nil {
 		progEstimator.FinishOperation()
 		return err
 	}
 
 	r.data = data
+
 	progEstimator.UpdateProgress(1)
 	progEstimator.FinishOperation()
+
 	return nil
 }
 
 func (r *YamlReader) GetName() string {
-	herculesData, ok := r.data["hercules"].(map[string]interface{})
+	herculesData, ok := r.data["hercules"].(map[string]any)
 	if !ok {
 		return ""
 	}
+
 	repository, _ := herculesData["repository"].(string)
+
 	return repository
 }
 
 func (r *YamlReader) GetHeader() (int64, int64) {
-	herculesData, ok := r.data["hercules"].(map[string]interface{})
+	herculesData, ok := r.data["hercules"].(map[string]any)
 	if !ok {
 		return 0, 0
 	}
+
 	begin, beginOK := convertToInt(herculesData["begin_unix_time"])
+
 	end, endOK := convertToInt(herculesData["end_unix_time"])
 	if !beginOK || !endOK {
 		return 0, 0
 	}
+
 	return int64(begin), int64(end)
 }
 
 func (r *YamlReader) GetProjectBurndown() (string, [][]int) {
-	burndownData, ok := r.data["Burndown"].(map[string]interface{})
+	burndownData, ok := r.data["Burndown"].(map[string]any)
 	if !ok {
 		return "", nil
 	}
+
 	repo := r.GetName()
+
 	project, ok := burndownData["project"].(string)
 	if !ok {
 		return "", nil
 	}
+
 	matrix := parseBurndownMatrix(project)
+
 	return repo, transposeMatrix(matrix)
 }
 
 func (r *YamlReader) GetFilesBurndown() ([]FileBurndown, error) {
-	burndownData, ok := r.data["Burndown"].(map[string]interface{})
+	burndownData, ok := r.data["Burndown"].(map[string]any)
 	if !ok {
 		return nil, fmt.Errorf("%w: Burndown", ErrAnalysisMissing)
 	}
-	filesData, ok := burndownData["files"].(map[string]interface{})
+
+	filesData, ok := burndownData["files"].(map[string]any)
 	if !ok {
 		return nil, fmt.Errorf("%w: files burndown", ErrAnalysisMissing)
 	}
 
 	var fileBurndowns []FileBurndown
+
 	for filename, matrixData := range filesData {
 		matrixText, ok := matrixData.(string)
 		if !ok {
 			return nil, fmt.Errorf("%w: file burndown %q is not a matrix string", ErrAnalysisMalformed, filename)
 		}
+
 		matrix := parseBurndownMatrix(matrixText)
 		fileBurndowns = append(fileBurndowns, FileBurndown{
 			Filename: filename,
 			Matrix:   transposeMatrix(matrix),
 		})
 	}
+
 	return fileBurndowns, nil
 }
 
 func (r *YamlReader) GetPeopleBurndown() ([]PeopleBurndown, error) {
-	burndownData, ok := r.data["Burndown"].(map[string]interface{})
+	burndownData, ok := r.data["Burndown"].(map[string]any)
 	if !ok {
 		return nil, fmt.Errorf("%w: Burndown", ErrAnalysisMissing)
 	}
-	peopleData, ok := burndownData["people"].(map[string]interface{})
+
+	peopleData, ok := burndownData["people"].(map[string]any)
 	if !ok {
 		return nil, fmt.Errorf("%w: people burndown", ErrAnalysisMissing)
 	}
 
 	var peopleBurndowns []PeopleBurndown
+
 	for person, matrixData := range peopleData {
 		matrixText, ok := matrixData.(string)
 		if !ok {
 			return nil, fmt.Errorf("%w: people burndown %q is not a matrix string", ErrAnalysisMalformed, person)
 		}
+
 		matrix := parseBurndownMatrix(matrixText)
 		peopleBurndowns = append(peopleBurndowns, PeopleBurndown{
 			Person: person,
 			Matrix: transposeMatrix(matrix),
 		})
 	}
+
 	return peopleBurndowns, nil
 }
 
 func (r *YamlReader) GetOwnershipBurndown() ([]string, map[string][][]int, error) {
-	burndownData, ok := r.data["Burndown"].(map[string]interface{})
+	burndownData, ok := r.data["Burndown"].(map[string]any)
 	if !ok {
 		return nil, nil, fmt.Errorf("%w: Burndown", ErrAnalysisMissing)
 	}
@@ -143,12 +165,13 @@ func (r *YamlReader) GetOwnershipBurndown() ([]string, map[string][][]int, error
 		return nil, nil, fmt.Errorf("%w: people sequence", ErrAnalysisMissing)
 	}
 
-	peopleData, ok := burndownData["people"].(map[string]interface{})
+	peopleData, ok := burndownData["people"].(map[string]any)
 	if !ok {
 		return nil, nil, fmt.Errorf("%w: people burndown", ErrAnalysisMissing)
 	}
 
 	ownership := make(map[string][][]int)
+
 	for person, matrixData := range peopleData {
 		matrixText, ok := matrixData.(string)
 		if !ok {
@@ -157,6 +180,7 @@ func (r *YamlReader) GetOwnershipBurndown() ([]string, map[string][][]int, error
 				ErrAnalysisMalformed, person,
 			)
 		}
+
 		matrix := parseBurndownMatrix(matrixText)
 		ownership[person] = matrix
 	}
@@ -165,7 +189,7 @@ func (r *YamlReader) GetOwnershipBurndown() ([]string, map[string][][]int, error
 }
 
 func (r *YamlReader) GetPeopleInteraction() ([]string, [][]int, error) {
-	burndownData, ok := r.data["Burndown"].(map[string]interface{})
+	burndownData, ok := r.data["Burndown"].(map[string]any)
 	if !ok {
 		return nil, nil, fmt.Errorf("%w: Burndown", ErrAnalysisMissing)
 	}
@@ -174,12 +198,14 @@ func (r *YamlReader) GetPeopleInteraction() ([]string, [][]int, error) {
 	if !ok {
 		return nil, nil, fmt.Errorf("%w: people sequence", ErrAnalysisMissing)
 	}
+
 	interactionData, ok := burndownData["people_interaction"].(string)
 	if !ok {
 		return nil, nil, fmt.Errorf("%w: people interaction", ErrAnalysisMissing)
 	}
 
 	matrix := parseBurndownMatrix(interactionData)
+
 	return peopleSequence, matrix, nil
 }
 
@@ -198,12 +224,12 @@ func (r *YamlReader) GetPeopleCooccurrence() ([]string, SparseMatrix, error) {
 func (r *YamlReader) getCouplesCooccurrence(
 	nestedKey, flatIndexKey, flatMatrixKey string, allowUnknown bool,
 ) ([]string, SparseMatrix, error) {
-	couplesData, ok := r.data["Couples"].(map[string]interface{})
+	couplesData, ok := r.data["Couples"].(map[string]any)
 	if !ok {
 		return nil, SparseMatrix{}, fmt.Errorf("%w: Couples", ErrAnalysisMissing)
 	}
 
-	if nested, exists := couplesData[nestedKey].(map[string]interface{}); exists {
+	if nested, exists := couplesData[nestedKey].(map[string]any); exists {
 		return parseNestedCooccurrence(nested, r.Limits, allowUnknown)
 	}
 
@@ -211,6 +237,7 @@ func (r *YamlReader) getCouplesCooccurrence(
 	if !ok {
 		return nil, SparseMatrix{}, fmt.Errorf("%w: %s", ErrAnalysisMissing, flatIndexKey)
 	}
+
 	matrixData, ok := couplesData[flatMatrixKey].(string)
 	if !ok {
 		return nil, SparseMatrix{}, fmt.Errorf("%w: %s", ErrAnalysisMissing, flatMatrixKey)
@@ -238,6 +265,7 @@ func parseNestedCooccurrence(
 	if !indexOk {
 		return nil, SparseMatrix{}, fmt.Errorf("%w: coupling index", ErrAnalysisMalformed)
 	}
+
 	if matrixStr, ok := data["matrix"].(string); ok {
 		matrix, err := parseSparseMatrixTextChecked(
 			"coupling matrix", matrixStr, limits,
@@ -253,7 +281,8 @@ func parseNestedCooccurrence(
 
 		return index, matrix, nil
 	}
-	if matrixData, ok := data["matrix"].([]interface{}); ok {
+
+	if matrixData, ok := data["matrix"].([]any); ok {
 		if allowUnknown && len(matrixData) == len(index)+1 {
 			index = append(index, "unknown")
 		}
@@ -262,8 +291,10 @@ func parseNestedCooccurrence(
 		if err != nil {
 			return nil, SparseMatrix{}, err
 		}
+
 		return index, matrix, nil
 	}
+
 	return nil, SparseMatrix{}, fmt.Errorf("%w: coupling matrix", ErrAnalysisMalformed)
 }
 
@@ -356,6 +387,7 @@ func buildShotnessProfiles(
 
 	index := make([]string, len(records))
 	stableLabels := make(map[string]struct{}, len(records))
+
 	byDimension := make([][]shotnessDimensionValue, len(records))
 	for i, record := range records {
 		index[i] = shotnessLabel(record, baseLabelCounts)
@@ -365,6 +397,7 @@ func buildShotnessProfiles(
 				ErrAnalysisMalformed, index[i],
 			)
 		}
+
 		stableLabels[index[i]] = struct{}{}
 
 		err := appendShotnessCounters(byDimension, i, index[i], record.Counters)
@@ -482,12 +515,14 @@ func shotnessSparseEntries(index []string, upper []map[int]int64) ([]SparseEntry
 	maxInt := int64(^uint(0) >> 1)
 	entries := make([]SparseEntry, 0)
 	var pairTotal int64
+
 	for row, values := range upper {
 		for _, column := range sortedShotnessColumns(values) {
 			score := values[column]
 			if score == 0 {
 				continue
 			}
+
 			entries = append(entries, SparseEntry{
 				Row: row, Column: column, Value: int(score),
 			})
@@ -498,6 +533,7 @@ func shotnessSparseEntries(index []string, upper []map[int]int64) ([]SparseEntry
 						ErrAnalysisMalformed, index[row], index[column],
 					)
 				}
+
 				pairTotal += score
 				entries = append(entries, SparseEntry{
 					Row: column, Column: row, Value: int(score),
@@ -526,14 +562,15 @@ type shotnessDimensionValue struct {
 }
 
 func (r *YamlReader) GetShotnessRecords() ([]ShotnessRecord, error) {
-	shotnessData, ok := r.data["Shotness"].([]interface{})
+	shotnessData, ok := r.data["Shotness"].([]any)
 	if !ok {
 		return []ShotnessRecord{}, fmt.Errorf("%w: Shotness", ErrAnalysisMissing)
 	}
 
 	var records []ShotnessRecord
+
 	for _, recordInterface := range shotnessData {
-		record, ok := recordInterface.(map[string]interface{})
+		record, ok := recordInterface.(map[string]any)
 		if !ok {
 			continue // Skip invalid records
 		}
@@ -547,9 +584,11 @@ func (r *YamlReader) GetShotnessRecords() ([]ShotnessRecord, error) {
 		} else if t, ok := record["internal_role"].(string); ok {
 			recordType = t
 		}
+
 		if n, ok := record["name"].(string); ok {
 			recordName = n
 		}
+
 		if f, ok := record["file"].(string); ok {
 			recordFile = f
 		}
@@ -561,6 +600,7 @@ func (r *YamlReader) GetShotnessRecords() ([]ShotnessRecord, error) {
 			Counters: counters,
 		})
 	}
+
 	return records, nil
 }
 
@@ -568,6 +608,7 @@ func parseShotnessCounters(raw any) map[int32]int32 {
 	counters := make(map[int32]int32)
 	add := func(rawKey, rawValue any) {
 		key, keyOK := shotnessCounterInt32(rawKey)
+
 		value, valueOK := shotnessCounterInt32(rawValue)
 		if keyOK && valueOK {
 			counters[key] = value
@@ -575,15 +616,16 @@ func parseShotnessCounters(raw any) map[int32]int32 {
 	}
 
 	switch data := raw.(type) {
-	case map[interface{}]interface{}:
+	case map[any]any:
 		for key, value := range data {
 			add(key, value)
 		}
-	case map[string]interface{}:
+	case map[string]any:
 		for key, value := range data {
 			add(key, value)
 		}
 	}
+
 	return counters
 }
 
@@ -600,6 +642,7 @@ func shotnessCounterInt32(value any) (int32, bool) {
 		if err != nil {
 			return 0, false
 		}
+
 		return int32(parsed), true
 	default:
 		return 0, false
@@ -614,6 +657,7 @@ func checkedInt32(value int64) (int32, bool) {
 	if value < minInt32 || value > maxInt32 {
 		return 0, false
 	}
+
 	return int32(value), true
 }
 
@@ -658,9 +702,9 @@ func (r *YamlReader) GetDeveloperStats() ([]DeveloperStat, error) {
 }
 
 // GetDeveloperTimeSeriesData returns Python-compatible time series data: (people, days)
-// where days is {day: {dev: DevDay}}
+// where days is {day: {dev: DevDay}}.
 func (r *YamlReader) GetDeveloperTimeSeriesData() (*DeveloperTimeSeriesData, error) {
-	devsData, ok := r.data["Devs"].(map[string]interface{})
+	devsData, ok := r.data["Devs"].(map[string]any)
 	if !ok {
 		return nil, fmt.Errorf("%w: Devs", ErrAnalysisMissing)
 	}
@@ -703,6 +747,7 @@ func yamlDeveloperPeople(devsData map[string]any) ([]string, error) {
 
 func yamlDeveloperDays(ticks map[any]any) map[int]map[int]DevDay {
 	days := make(map[int]map[int]DevDay)
+
 	for dayKey, dayData := range ticks {
 		dayInt, ok := convertToInt(dayKey)
 		if !ok {
@@ -748,15 +793,16 @@ func (r *YamlReader) GetLanguageStats() ([]LanguageStat, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get developer time series data: %w", err)
 	}
+
 	return aggregateLanguageStats(timeSeries)
 }
 
 func (r *YamlReader) GetRuntimeStats() (map[string]float64, error) {
 	// Stub: Runtime stats are typically not present in YAML files.
-	return nil, fmt.Errorf("runtime stats not implemented for YAML")
+	return nil, errors.New("runtime stats not implemented for YAML")
 }
 
-// Helper function to parse burndown matrices
+// Helper function to parse burndown matrices.
 func parseBurndownMatrix(data string) [][]int {
 	matrix, err := parseBurndownMatrixChecked(
 		"YAML matrix", data, analysisio.DefaultLimits(),
@@ -764,37 +810,43 @@ func parseBurndownMatrix(data string) [][]int {
 	if err != nil {
 		return [][]int{}
 	}
+
 	return matrix
 }
 
 // parseSparseCooccurrenceRows converts Python's array-of-maps format directly
 // to CSR. size is the aligned coupling index length, including empty columns.
 func parseSparseCooccurrenceRows(
-	data []interface{}, size int, limits analysisio.Limits,
+	data []any, size int, limits analysisio.Limits,
 ) (SparseMatrix, error) {
 	if err := validateYAMLSparseRows(
 		"YAML co-occurrence matrix", data, limits,
 	); err != nil {
 		return SparseMatrix{}, err
 	}
+
 	if len(data) != size {
 		return SparseMatrix{}, fmt.Errorf(
 			"%w: coupling matrix has %d rows for %d labels",
 			ErrAnalysisMalformed, len(data), size,
 		)
 	}
+
 	entries := make([]SparseEntry, 0)
+
 	for row, rowData := range data {
 		rowMap, _ := asMap(rowData)
 		for rawColumn, rawValue := range rowMap {
 			column, _ := convertToInt(rawColumn)
 			value, _ := convertToInt(rawValue)
+
 			if column >= size {
 				return SparseMatrix{}, fmt.Errorf(
 					"%w: coupling matrix row %d column %d exceeds %d labels",
 					ErrAnalysisMalformed, row, column, size,
 				)
 			}
+
 			if value != 0 {
 				entries = append(entries, SparseEntry{
 					Row: row, Column: column, Value: value,
@@ -802,17 +854,19 @@ func parseSparseCooccurrenceRows(
 			}
 		}
 	}
+
 	matrix, err := NewSparseMatrix(size, size, entries)
 	if err != nil {
 		return SparseMatrix{}, fmt.Errorf(
 			"%w: YAML co-occurrence matrix: %w", ErrAnalysisMalformed, err,
 		)
 	}
+
 	return matrix, nil
 }
 
-// convertToInt safely converts various number types to int
-func convertToInt(val interface{}) (int, bool) {
+// convertToInt safely converts various number types to int.
+func convertToInt(val any) (int, bool) {
 	switch v := val.(type) {
 	case int:
 		return v, true
@@ -827,35 +881,38 @@ func convertToInt(val interface{}) (int, bool) {
 			return i, true
 		}
 	}
+
 	return 0, false
 }
 
-func asMap(value interface{}) (map[interface{}]interface{}, bool) {
+func asMap(value any) (map[any]any, bool) {
 	switch typed := value.(type) {
-	case map[interface{}]interface{}:
+	case map[any]any:
 		return typed, true
-	case map[string]interface{}:
-		result := make(map[interface{}]interface{}, len(typed))
+	case map[string]any:
+		result := make(map[any]any, len(typed))
 		for key, val := range typed {
 			result[key] = val
 		}
+
 		return result, true
 	default:
 		return nil, false
 	}
 }
 
-func lookupMap(values map[interface{}]interface{}, key string) (map[interface{}]interface{}, bool) {
+func lookupMap(values map[any]any, key string) (map[any]any, bool) {
 	for candidateKey, value := range values {
 		if candidateKey == key {
 			return asMap(value)
 		}
 	}
+
 	return nil, false
 }
 
-func parseYamlDevDay(value interface{}) (DevDay, bool) {
-	if values, ok := value.([]interface{}); ok {
+func parseYamlDevDay(value any) (DevDay, bool) {
+	if values, ok := value.([]any); ok {
 		return parseYamlDevDayList(values)
 	}
 
@@ -868,22 +925,27 @@ func parseYamlDevDay(value interface{}) (DevDay, bool) {
 	if commits, ok := lookupInt(devMap, "commits"); ok {
 		day.Commits = commits
 	}
+
 	if added, ok := lookupInt(devMap, "added"); ok {
 		day.LinesAdded = added
 	}
+
 	if removed, ok := lookupInt(devMap, "removed"); ok {
 		day.LinesRemoved = removed
 	}
+
 	if changed, ok := lookupInt(devMap, "changed"); ok {
 		day.LinesModified = changed
 	}
+
 	if languages, ok := lookupLanguages(devMap, "languages"); ok {
 		day.Languages = languages
 	}
+
 	return day, true
 }
 
-func parseYamlDevDayList(values []interface{}) (DevDay, bool) {
+func parseYamlDevDayList(values []any) (DevDay, bool) {
 	if len(values) < 4 {
 		return DevDay{}, false
 	}
@@ -892,64 +954,75 @@ func parseYamlDevDayList(values []interface{}) (DevDay, bool) {
 	if commits, ok := convertToInt(values[0]); ok {
 		day.Commits = commits
 	}
+
 	if added, ok := convertToInt(values[1]); ok {
 		day.LinesAdded = added
 	}
+
 	if removed, ok := convertToInt(values[2]); ok {
 		day.LinesRemoved = removed
 	}
+
 	if changed, ok := convertToInt(values[3]); ok {
 		day.LinesModified = changed
 	}
+
 	if len(values) >= 5 {
 		if languages, ok := parseYamlLanguages(values[4]); ok {
 			day.Languages = languages
 		}
 	}
+
 	return day, true
 }
 
-func lookupInt(values map[interface{}]interface{}, key string) (int, bool) {
+func lookupInt(values map[any]any, key string) (int, bool) {
 	for candidateKey, value := range values {
 		if candidateKey == key {
 			return convertToInt(value)
 		}
 	}
+
 	return 0, false
 }
 
-func lookupLanguages(values map[interface{}]interface{}, key string) (map[string][]int, bool) {
+func lookupLanguages(values map[any]any, key string) (map[string][]int, bool) {
 	for candidateKey, value := range values {
 		if candidateKey == key {
 			return parseYamlLanguages(value)
 		}
 	}
+
 	return nil, false
 }
 
-func parseYamlLanguages(value interface{}) (map[string][]int, bool) {
+func parseYamlLanguages(value any) (map[string][]int, bool) {
 	languageMap, ok := asMap(value)
 	if !ok {
 		return nil, false
 	}
 
 	languages := make(map[string][]int)
+
 	for languageKey, statsValue := range languageMap {
 		language, ok := languageKey.(string)
 		if !ok {
 			continue
 		}
+
 		stats, ok := parseYamlIntList(statsValue)
 		if !ok || len(stats) < 3 {
 			continue
 		}
+
 		languages[language] = stats[:3]
 	}
+
 	return languages, true
 }
 
-func parseYamlIntList(value interface{}) ([]int, bool) {
-	rawValues, ok := value.([]interface{})
+func parseYamlIntList(value any) ([]int, bool) {
+	rawValues, ok := value.([]any)
 	if !ok {
 		return nil, false
 	}
@@ -960,12 +1033,13 @@ func parseYamlIntList(value interface{}) ([]int, bool) {
 			values = append(values, intValue)
 		}
 	}
+
 	return values, true
 }
 
-// GetBurndownParameters retrieves burndown parameters for YAML reader
+// GetBurndownParameters retrieves burndown parameters for YAML reader.
 func (r *YamlReader) GetBurndownParameters() (burndown.BurndownParameters, error) {
-	burndownData, ok := r.data["Burndown"].(map[string]interface{})
+	burndownData, ok := r.data["Burndown"].(map[string]any)
 	if !ok {
 		return burndown.BurndownParameters{}, fmt.Errorf("%w: Burndown", ErrAnalysisMissing)
 	}
@@ -1002,7 +1076,7 @@ func (r *YamlReader) GetBurndownParameters() (burndown.BurndownParameters, error
 	}, nil
 }
 
-// GetProjectBurndownWithHeader retrieves project burndown with header for YAML reader
+// GetProjectBurndownWithHeader retrieves project burndown with header for YAML reader.
 func (r *YamlReader) GetProjectBurndownWithHeader() (burndown.BurndownHeader, string, [][]int, error) {
 	// Get the basic data
 	name, matrix := r.GetProjectBurndown()

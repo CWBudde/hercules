@@ -2,6 +2,7 @@ package render
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -61,10 +62,12 @@ func ResolveModes(rawModes []string) ([]string, error) {
 
 	// Handle mode aliases for Python compatibility
 	var resolvedModes []string
+
 	for _, mode := range modes {
 		if !isValidMode(mode) {
 			return nil, fmt.Errorf("unknown mode: %s", mode)
 		}
+
 		switch mode {
 		case "burndown":
 			// Python compatibility: burndown defaults to burndown-project
@@ -76,25 +79,29 @@ func ResolveModes(rawModes []string) ([]string, error) {
 			resolvedModes = append(resolvedModes, mode)
 		}
 	}
+
 	modes = resolvedModes
 
 	if contains(modes, "all") {
 		// Match Python's "all" mode composition exactly
 		modes = append([]string{}, pythonAllModes...)
 	}
+
 	return modes, nil
 }
 
 func splitModeValues(rawModes []string) []string {
 	var modes []string
+
 	for _, raw := range rawModes {
-		for _, part := range strings.Split(raw, ",") {
+		for part := range strings.SplitSeq(raw, ",") {
 			mode := strings.TrimSpace(part)
 			if mode != "" {
 				modes = append(modes, mode)
 			}
 		}
 	}
+
 	return modes
 }
 
@@ -104,12 +111,7 @@ func isValidMode(mode string) bool {
 }
 
 func contains(slice []string, value string) bool {
-	for _, item := range slice {
-		if item == value {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(slice, value)
 }
 
 // NormalizeInputFormat canonicalizes an input format hint. An empty value
@@ -120,6 +122,7 @@ func NormalizeInputFormat(inputFormat string) (string, error) {
 	if format == "" {
 		format = "auto"
 	}
+
 	switch format {
 	case "auto", "yaml", "pb":
 		return format, nil

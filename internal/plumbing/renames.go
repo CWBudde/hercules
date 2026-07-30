@@ -398,6 +398,7 @@ func (ra *RenameAnalysis) matchSimilarRenames(
 	if first.err != nil {
 		return nil, nil, nil, first.err
 	}
+
 	if second.err != nil && !isRenameCancellation(second.err) {
 		return nil, nil, nil, second.err
 	}
@@ -759,7 +760,8 @@ func (state *renameSimilarityState) applyEqual(text string, srcPositions []int) 
 func renameLineDiffs(
 	ctx context.Context, src, dst string,
 ) ([]diffmatchpatch.Diff, []int, []int, error) {
-	if err := ctx.Err(); err != nil {
+	err := ctx.Err()
+	if err != nil {
 		return nil, nil, nil, fmt.Errorf("prepare rename line diff: %w", err)
 	}
 
@@ -768,12 +770,16 @@ func renameLineDiffs(
 	dmp := diffmatchpatch.New()
 	dmp.DiffTimeout = remainingRenameTime(ctx)
 	srcLineRunes, dstLineRunes, _ := dmp.DiffLinesToRunes(src, dst)
-	if err := ctx.Err(); err != nil {
+
+	err = ctx.Err()
+	if err != nil {
 		return nil, nil, nil, fmt.Errorf("encode rename line diff: %w", err)
 	}
 
 	diffs := dmp.DiffMainRunes(srcLineRunes, dstLineRunes, false)
-	if err := ctx.Err(); err != nil {
+
+	err = ctx.Err()
+	if err != nil {
 		return nil, nil, nil, fmt.Errorf("compute rename line diff: %w", err)
 	}
 
@@ -836,7 +842,8 @@ func delInsCommonRunes(
 	srcPositions, dstPositions []int,
 	prevPosSrc, posSrc, posDst, nextPosDst int,
 ) (int, error) {
-	if err := ctx.Err(); err != nil {
+	err := ctx.Err()
+	if err != nil {
 		return 0, fmt.Errorf("prepare byte-level rename diff: %w", err)
 	}
 
@@ -854,7 +861,9 @@ func delInsCommonRunes(
 	localDiffs := localDmp.DiffMainRunes(
 		strToLiteralRunes(localSrc), strToLiteralRunes(localDst), false,
 	)
-	if err := ctx.Err(); err != nil {
+
+	err = ctx.Err()
+	if err != nil {
 		return 0, fmt.Errorf("compute byte-level rename diff: %w", err)
 	}
 

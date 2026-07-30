@@ -1,7 +1,7 @@
 package graphics
 
 import (
-	"fmt"
+	"errors"
 	"image/color"
 	"math"
 )
@@ -41,68 +41,69 @@ func InchesToPixels(inches float64) int {
 	if pixels < 1 {
 		return 1
 	}
+
 	return pixels
 }
 
-// Theme represents a complete visual theme configuration
+// Theme represents a complete visual theme configuration.
 type Theme struct {
-	Name         string     `yaml:"name" json:"name"`
-	ColorPalette []ColorRGB `yaml:"colors" json:"colors"`
-	Background   ColorRGB   `yaml:"background" json:"background"`
-	Grid         GridStyle  `yaml:"grid" json:"grid"`
-	Text         TextStyle  `yaml:"text" json:"text"`
-	Chart        ChartStyle `yaml:"chart" json:"chart"`
-	HeatMap      HeatStyle  `yaml:"heatmap" json:"heatmap"`
+	Name         string     `json:"name"       yaml:"name"`
+	ColorPalette []ColorRGB `json:"colors"     yaml:"colors"`
+	Background   ColorRGB   `json:"background" yaml:"background"`
+	Grid         GridStyle  `json:"grid"       yaml:"grid"`
+	Text         TextStyle  `json:"text"       yaml:"text"`
+	Chart        ChartStyle `json:"chart"      yaml:"chart"`
+	HeatMap      HeatStyle  `json:"heatmap"    yaml:"heatmap"`
 }
 
-// ColorRGB represents an RGB color that can be serialized
+// ColorRGB represents an RGB color that can be serialized.
 type ColorRGB struct {
-	R uint8 `yaml:"r" json:"r"`
-	G uint8 `yaml:"g" json:"g"`
-	B uint8 `yaml:"b" json:"b"`
-	A uint8 `yaml:"a" json:"a"`
+	R uint8 `json:"r" yaml:"r"`
+	G uint8 `json:"g" yaml:"g"`
+	B uint8 `json:"b" yaml:"b"`
+	A uint8 `json:"a" yaml:"a"`
 }
 
-// ToColor converts ColorRGB to color.Color
+// ToColor converts ColorRGB to color.Color.
 func (c ColorRGB) ToColor() color.Color {
 	return color.RGBA{R: c.R, G: c.G, B: c.B, A: c.A}
 }
 
-// GridStyle configures grid appearance
+// GridStyle configures grid appearance.
 type GridStyle struct {
-	Show  bool     `yaml:"show" json:"show"`
-	Color ColorRGB `yaml:"color" json:"color"`
-	Width float64  `yaml:"width" json:"width"`
+	Show  bool     `json:"show"  yaml:"show"`
+	Color ColorRGB `json:"color" yaml:"color"`
+	Width float64  `json:"width" yaml:"width"`
 }
 
-// TextStyle configures text appearance
+// TextStyle configures text appearance.
 type TextStyle struct {
-	Font      string   `yaml:"font" json:"font"`
-	Size      float64  `yaml:"size" json:"size"`
-	Color     ColorRGB `yaml:"color" json:"color"`
-	TitleSize float64  `yaml:"title_size" json:"title_size"`
-	LabelSize float64  `yaml:"label_size" json:"label_size"`
+	Font      string   `json:"font"       yaml:"font"`
+	Size      float64  `json:"size"       yaml:"size"`
+	Color     ColorRGB `json:"color"      yaml:"color"`
+	TitleSize float64  `json:"title_size" yaml:"title_size"`
+	LabelSize float64  `json:"label_size" yaml:"label_size"`
 }
 
-// ChartStyle configures chart-specific styling
+// ChartStyle configures chart-specific styling.
 type ChartStyle struct {
-	LineWidth   float64  `yaml:"line_width" json:"line_width"`
-	BorderWidth float64  `yaml:"border_width" json:"border_width"`
-	BorderColor ColorRGB `yaml:"border_color" json:"border_color"`
-	FillOpacity float64  `yaml:"fill_opacity" json:"fill_opacity"`
-	LegendShow  bool     `yaml:"legend_show" json:"legend_show"`
-	LegendPos   string   `yaml:"legend_position" json:"legend_position"`
+	LineWidth   float64  `json:"line_width"      yaml:"line_width"`
+	BorderWidth float64  `json:"border_width"    yaml:"border_width"`
+	BorderColor ColorRGB `json:"border_color"    yaml:"border_color"`
+	FillOpacity float64  `json:"fill_opacity"    yaml:"fill_opacity"`
+	LegendShow  bool     `json:"legend_show"     yaml:"legend_show"`
+	LegendPos   string   `json:"legend_position" yaml:"legend_position"`
 }
 
-// HeatStyle configures heatmap-specific styling
+// HeatStyle configures heatmap-specific styling.
 type HeatStyle struct {
-	ColdColor   ColorRGB `yaml:"cold_color" json:"cold_color"`
-	HotColor    ColorRGB `yaml:"hot_color" json:"hot_color"`
-	MidColor    ColorRGB `yaml:"mid_color" json:"mid_color"`
-	UseMidPoint bool     `yaml:"use_mid_point" json:"use_mid_point"`
+	ColdColor   ColorRGB `json:"cold_color"    yaml:"cold_color"`
+	HotColor    ColorRGB `json:"hot_color"     yaml:"hot_color"`
+	MidColor    ColorRGB `json:"mid_color"     yaml:"mid_color"`
+	UseMidPoint bool     `json:"use_mid_point" yaml:"use_mid_point"`
 }
 
-// Default themes
+// Default themes.
 var (
 	DefaultTheme       = newTheme("default", matplotlibPalette(), rgba(255, 255, 255, 255), grid(true, rgba(224, 224, 224, 255), 0.5), text("Arial", 10, rgba(0, 0, 0, 255), 14, 10), chart(1.0, 1.0, rgba(0, 0, 0, 255), 0.7, true, "right"), heat(rgba(31, 119, 180, 255), rgba(214, 39, 40, 255), rgba(148, 103, 189, 255), false))
 	DarkTheme          = newTheme("dark", darkPalette(), rgba(35, 39, 42, 255), grid(true, rgba(68, 74, 79, 255), 0.5), text("Arial", 10, rgba(240, 240, 240, 255), 14, 10), chart(1.0, 1.0, rgba(200, 200, 200, 255), 0.8, true, "right"), heat(rgba(0, 100, 200, 255), rgba(255, 80, 80, 255), rgba(150, 50, 200, 255), false))
@@ -151,7 +152,7 @@ func vibrantPalette() []ColorRGB {
 	return []ColorRGB{rgba(255, 0, 128, 255), rgba(0, 255, 128, 255), rgba(128, 0, 255, 255), rgba(255, 128, 0, 255), rgba(0, 128, 255, 255), rgba(255, 255, 0, 255), rgba(255, 0, 0, 255), rgba(0, 255, 0, 255), rgba(0, 255, 255, 255), rgba(255, 0, 255, 255)}
 }
 
-// BuiltinThemes contains all built-in themes
+// BuiltinThemes contains all built-in themes.
 var BuiltinThemes = map[string]Theme{
 	"default":    DefaultTheme,
 	"dark":       DarkTheme,
@@ -160,20 +161,22 @@ var BuiltinThemes = map[string]Theme{
 	"matplotlib": MatplotlibTheme,
 }
 
-// GetColorPalette returns the color palette as color.Color slice
+// GetColorPalette returns the color palette as color.Color slice.
 func (t *Theme) GetColorPalette() []color.Color {
 	colors := make([]color.Color, len(t.ColorPalette))
 	for i, c := range t.ColorPalette {
 		colors[i] = c.ToColor()
 	}
+
 	return colors
 }
 
-// GetHeatColor generates a heat map color based on ratio and theme settings
+// GetHeatColor generates a heat map color based on ratio and theme settings.
 func (t *Theme) GetHeatColor(ratio float64) color.Color {
 	if ratio < 0 {
 		ratio = 0
 	}
+
 	if ratio > 1 {
 		ratio = 1
 	}
@@ -189,6 +192,7 @@ func (t *Theme) GetHeatColor(ratio float64) color.Color {
 		r := uint8(float64(cold.R) + ratio*(float64(mid.R)-float64(cold.R)))
 		g := uint8(float64(cold.G) + ratio*(float64(mid.G)-float64(cold.G)))
 		b := uint8(float64(cold.B) + ratio*(float64(mid.B)-float64(cold.B)))
+
 		return color.RGBA{R: r, G: g, B: b, A: 255}
 	case t.HeatMap.UseMidPoint:
 		// Interpolate from mid to hot
@@ -197,36 +201,38 @@ func (t *Theme) GetHeatColor(ratio float64) color.Color {
 		r := uint8(float64(mid.R) + ratio*(float64(hot.R)-float64(mid.R)))
 		g := uint8(float64(mid.G) + ratio*(float64(hot.G)-float64(mid.G)))
 		b := uint8(float64(mid.B) + ratio*(float64(hot.B)-float64(mid.B)))
+
 		return color.RGBA{R: r, G: g, B: b, A: 255}
 	default:
 		// Direct interpolation from cold to hot
 		r := uint8(float64(cold.R) + ratio*(float64(hot.R)-float64(cold.R)))
 		g := uint8(float64(cold.G) + ratio*(float64(hot.G)-float64(cold.G)))
 		b := uint8(float64(cold.B) + ratio*(float64(hot.B)-float64(cold.B)))
+
 		return color.RGBA{R: r, G: g, B: b, A: 255}
 	}
 }
 
-// Validate checks if theme configuration is valid
+// Validate checks if theme configuration is valid.
 func (t *Theme) Validate() error {
 	if len(t.ColorPalette) == 0 {
-		return fmt.Errorf("theme must have at least one color in palette")
+		return errors.New("theme must have at least one color in palette")
 	}
 
 	if t.Name == "" {
-		return fmt.Errorf("theme must have a name")
+		return errors.New("theme must have a name")
 	}
 
 	if t.Text.Size <= 0 {
-		return fmt.Errorf("text size must be positive")
+		return errors.New("text size must be positive")
 	}
 
 	if t.Chart.FillOpacity < 0 || t.Chart.FillOpacity > 1 {
-		return fmt.Errorf("fill opacity must be between 0 and 1")
+		return errors.New("fill opacity must be between 0 and 1")
 	}
 
 	return nil
 }
 
-// CurrentTheme holds the active theme (defaults to DefaultTheme)
+// CurrentTheme holds the active theme (defaults to DefaultTheme).
 var CurrentTheme = DefaultTheme

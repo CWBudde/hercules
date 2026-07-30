@@ -45,6 +45,7 @@ func GenerateOutputPath(basePath, format string) string {
 
 	// Remove any existing extension and add the correct one
 	nameWithoutExt := strings.TrimSuffix(basePath, filepath.Ext(basePath))
+
 	return nameWithoutExt + ext
 }
 
@@ -213,6 +214,7 @@ func (r *Renderer) planModeOutput(baseOutput, mode string, modeCount int) string
 		if filepath.Ext(baseOutput) == "" {
 			return GenerateOutputPath(filepath.Join(baseOutput, mode), detectOutputFormat("", r.output.backend))
 		}
+
 		return GenerateOutputPath(filepath.Join(filepath.Dir(baseOutput), mode), format)
 	}
 
@@ -227,13 +229,16 @@ func (r *Renderer) validateModeOutputPlan(baseOutput string, modes []string) err
 	if strings.HasSuffix(strings.ToLower(baseOutput), ".json") {
 		return nil
 	}
+
 	paths := make([]string, 0, len(modes))
 	for _, mode := range modes {
 		if outputConventionFor(mode).Kind == outputAssetDir {
 			continue
 		}
+
 		paths = append(paths, r.planModeOutput(baseOutput, mode, len(modes)))
 	}
+
 	return outputpath.RejectDuplicates(paths)
 }
 
@@ -242,6 +247,7 @@ func defaultRenderer() *Renderer {
 	if err != nil {
 		panic(err)
 	}
+
 	return renderer
 }
 
@@ -249,9 +255,11 @@ func planMultiAssetModeOutput(baseOutput string) string {
 	if baseOutput == "" {
 		return "."
 	}
+
 	if outputLooksLikeFile(baseOutput) {
 		return filepath.Dir(baseOutput)
 	}
+
 	return baseOutput
 }
 
@@ -263,6 +271,7 @@ func outputConventionFor(mode string) outputConvention {
 	if convention, ok := modeOutputConventions[mode]; ok {
 		return convention
 	}
+
 	return outputConvention{
 		Kind:        outputSingleFile,
 		Description: "writes exactly the requested chart file",
@@ -274,10 +283,13 @@ func isDirectoryPath(path string) bool {
 	if path == "" {
 		return false
 	}
+
 	if strings.HasSuffix(path, "/") || strings.HasSuffix(path, "\\") {
 		return true
 	}
+
 	info, err := os.Stat(path)
+
 	return err == nil && info.IsDir()
 }
 
@@ -285,5 +297,6 @@ func outputLooksLikeFile(path string) bool {
 	if isDirectoryPath(path) {
 		return false
 	}
+
 	return filepath.Ext(path) != ""
 }

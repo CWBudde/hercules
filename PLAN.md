@@ -308,14 +308,59 @@ sign error.
 
 ---
 
-## B4 — four analyses are unmergeable, and `combine --only` does not help them 🟠
+## B4 — unmergeable analyses used to sink the whole combine ✅ (mostly fixed)
 
-`hercules combine` fails outright if _any_ input `.pb` contains one of:
+`hercules combine` failed outright if _any_ input `.pb` contained an analysis
+without `ResultMergeablePipelineItem`:
 
 ```
 CommitsStat   FileHistoryAnalysis   ImportsPerDeveloper   RefactoringProxy
 → "<Name>: ResultMergeablePipelineItem is not implemented"
 ```
+
+The set is larger than originally recorded. Enumerating the registry, **10 of 20
+leaves are mergeable** and 10 are not:
+
+| mergeable | not mergeable |
+| --- | --- |
+| `Burndown`, `BusFactor`, `CodeChurn`, `Couples`, `Devs`, `HotspotRisk`, `KnowledgeDiffusion`, `LegacyBurndown`, `OwnershipConcentration`, `TemporalActivity` | `CommitsStat`, `FileHistoryAnalysis`, `ImportsPerDeveloper`, `RefactoringProxy`, `LineDumper`, `Onboarding`, `Sentiment`, `Shotness`, `TyposDataset`, `UASTChangesSaver` |
+
+### What was wrong
+
+`deserializeAnalysisContents` decoded **every** key in the file and recorded a
+failure for each unmergeable one; `--only` was applied later, in `mergeResults`,
+long after those failures had been collected. So the flag never restricted
+anything that mattered. Note the 0.2.0 aspect of the regression: `082bf15`
+printed the same messages but exited 0, whereas 0.2.0 returns them from `RunE`.
+
+### Fix (uncommitted)
+
+- `--only` now filters at deserialization, so an analysis nobody asked for cannot
+  fail the run on its way in.
+- Without `--only`, an unmergeable analysis is **named and stepped over** rather
+  than fatal — it is a property of the analysis, not a defect in the input, and
+  killing the combine discards every mergeable analysis alongside it. The
+  messages moved from the `Errors:` block to a new `Skipped:` block on stderr and
+  no longer contribute to the exit code.
+- Naming an unmergeable analysis in `--only` stays a hard error: there the caller
+  asked for exactly that.
+- `--only`'s help text now lists the 10 mergeable leaves only, instead of
+  advertising choices `combine` can never honour.
+
+Measured on `ewws-tailscale` analysed with `--burndown --devs --file-history
+--commits-stat`:
+
+| invocation | before | after |
+| --- | --- | --- |
+| `combine a.pb a.pb` | exit 1 | exit 0, contents `[Burndown Devs]`, 2 skips reported |
+| `combine --only Burndown …` | exit 1 | exit 0, contents `[Burndown]` |
+| `combine --only FileHistoryAnalysis …` | exit 1 | exit 1, with the reason named |
+
+Still open: `RefactoringProxy` has a labours mode and is the one unmergeable leaf
+worth actually implementing `ResultMergeablePipelineItem` for. Everything else in
+that column has no combined rendering, so skipping is the right end state.
+
+### Original report
 
 One unmergeable analysis takes down **every** combined chart, not just its own.
 
@@ -330,14 +375,6 @@ hercules combine --only Burndown output/data/hercules-pb/*.pb > /dev/null
 Tested with all 13 analysis names — every single one fails on some _other_
 analysis in the file. Either `--only` should filter inputs before merging (which
 is what the help text implies), or the docs should stop implying it.
-
-Actions:
-
-- Make `--only` actually restrict the merge set. This alone makes the four
-  unmergeable analyses harmless.
-- Implement `ResultMergeablePipelineItem` for `RefactoringProxy` (the only one of
-  the four that has a labours mode and is therefore worth merging).
-- Consider skip-with-warning rather than hard failure for the rest.
 
 Downstream workaround: `ewws-statistics` stopped requesting `--commits-stat`,
 `--file-history` and `--imports-per-dev` altogether — no labours mode renders
@@ -437,8 +474,10 @@ idle person in the fixture.
    **B2's actual decision — (a) fix the accounting or (b) declare the negatives legitimate —
    is still open and still needs the user.** Note that whatever is chosen, the old binary's
    clamped output is _not_ a correctness baseline to compare against.
-2. **B4's `--only` fix.** Unblocks all combined charts and is likely small. This is now the
-   only thing left that fails a whole run outright, apart from B3's opt-in flags.
+2. ~~**B4's `--only` fix.**~~ Done — `--only` filters before the merge, and an unmergeable
+   analysis is skipped with a report instead of taking the combine down. All combined charts
+   are unblocked. Only `RefactoringProxy`'s missing `ResultMergeablePipelineItem` remains,
+   and nothing fails on it any more.
 3. **B3.** Two suspected causes, one already confirmed wrong-and-fixed-nowhere.
    Re-measured after B1/B1b: unchanged, so the line-history fixes did not touch it.
 4. **B8 commit** + regression test.

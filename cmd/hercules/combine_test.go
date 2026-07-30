@@ -18,6 +18,10 @@ import (
 
 const combineTestDevs = "Devs"
 
+// combineTestUnmergeable is a registered leaf which does not implement
+// ResultMergeablePipelineItem, so combine can never merge it.
+const combineTestUnmergeable = "FileHistoryAnalysis"
+
 func TestRunCombineValidatesSingleInput(t *testing.T) {
 	input := filepath.Join(t.TempDir(), "invalid.pb")
 	if err := os.WriteFile(input, []byte("not protobuf"), 0o600); err != nil {
@@ -150,6 +154,73 @@ func TestRunCombineFailsWhenOnlyCannotBeHonored(t *testing.T) {
 	}
 }
 
+// TestRunCombineOnlyRestrictsWhatIsRead pins the escape hatch of PLAN.md B4: --only must keep an
+// unmergeable analysis in the input from failing the run, which it can only do by filtering before
+// the merge rather than during it.
+func TestRunCombineOnlyRestrictsWhatIsRead(t *testing.T) {
+	input := writeCombineTestInputWithUnmergeable(t, "repository")
+	var output bytes.Buffer
+
+	if err := runCombine(newCombineTestCommand(&output, combineTestDevs), []string{input}); err != nil {
+		t.Fatalf("runCombine() failed despite --only: %v", err)
+	}
+
+	contents := unmarshalCombineOutput(t, &output)
+	if _, exists := contents[combineTestDevs]; !exists {
+		t.Fatalf("combined output lacks the requested analysis: %v", contents)
+	}
+	if _, exists := contents[combineTestUnmergeable]; exists {
+		t.Fatalf("--only %s emitted %s as well", combineTestDevs, combineTestUnmergeable)
+	}
+}
+
+// TestRunCombineSkipsUnmergeableAnalyses covers the same input without --only: an analysis which
+// cannot be merged at all is a property of that analysis, not a defect in the file, so it must not
+// take every mergeable analysis down with it.
+func TestRunCombineSkipsUnmergeableAnalyses(t *testing.T) {
+	input := writeCombineTestInputWithUnmergeable(t, "repository")
+	var output bytes.Buffer
+
+	if err := runCombine(newCombineTestCommand(&output, ""), []string{input}); err != nil {
+		t.Fatalf("runCombine() failed over an unmergeable analysis: %v", err)
+	}
+
+	contents := unmarshalCombineOutput(t, &output)
+	if _, exists := contents[combineTestDevs]; !exists {
+		t.Fatalf("combined output lacks the mergeable analysis: %v", contents)
+	}
+}
+
+// TestRunCombineRejectsUnmergeableOnly keeps the skip from swallowing an explicit request: naming
+// an unmergeable analysis in --only means the caller wants exactly that, so it has to fail loudly.
+func TestRunCombineRejectsUnmergeableOnly(t *testing.T) {
+	input := writeCombineTestInputWithUnmergeable(t, "repository")
+	var output bytes.Buffer
+
+	err := runCombine(newCombineTestCommand(&output, combineTestUnmergeable), []string{input})
+	if err == nil {
+		t.Fatalf("runCombine() succeeded for unmergeable --only %s", combineTestUnmergeable)
+	}
+	if !strings.Contains(err.Error(), "ResultMergeablePipelineItem is not implemented") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if output.Len() != 0 {
+		t.Fatalf("runCombine() wrote %d bytes for an unmergeable request", output.Len())
+	}
+}
+
+// TestGetOptionsStringListsOnlyMergeableLeaves guards the --only help text against advertising
+// choices combine cannot honour.
+func TestGetOptionsStringListsOnlyMergeableLeaves(t *testing.T) {
+	choices := getOptionsString()
+	if !strings.Contains(choices, combineTestDevs) {
+		t.Fatalf("--only choices lack a mergeable leaf: %s", choices)
+	}
+	if strings.Contains(choices, combineTestUnmergeable) {
+		t.Fatalf("--only choices advertise unmergeable %s: %s", combineTestUnmergeable, choices)
+	}
+}
+
 func TestRunCombineReportsOutputWriteFailure(t *testing.T) {
 	input := writeCombineTestInput(t, "repository")
 
@@ -209,6 +280,33 @@ func writeCombineTestInput(t *testing.T, repository string) string {
 		Contents: map[string][]byte{combineTestDevs: devs},
 	}
 	return writeCombineEnvelope(t, &message)
+}
+
+func writeCombineTestInputWithUnmergeable(t *testing.T, repository string) string {
+	t.Helper()
+
+	message := pb.AnalysisResults{
+		Header: &pb.Metadata{
+			Version:    pb.SchemaVersion,
+			Repository: repository,
+			Commits:    1,
+		},
+		Contents: map[string][]byte{
+			combineTestDevs:        marshalCombineProto(t, &pb.DevsAnalysisResults{}),
+			combineTestUnmergeable: marshalCombineProto(t, &pb.FileHistoryResultMessage{}),
+		},
+	}
+	return writeCombineEnvelope(t, &message)
+}
+
+func unmarshalCombineOutput(t *testing.T, output *bytes.Buffer) map[string][]byte {
+	t.Helper()
+
+	var result pb.AnalysisResults
+	if err := proto.Unmarshal(output.Bytes(), &result); err != nil {
+		t.Fatalf("combined output is malformed: %v", err)
+	}
+	return result.GetContents()
 }
 
 func writeCombineEnvelope(t *testing.T, message *pb.AnalysisResults) string {

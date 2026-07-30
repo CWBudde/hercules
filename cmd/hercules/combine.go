@@ -34,9 +34,24 @@ var combineCmd = &cobra.Command{
 type combineAccumulator struct {
 	repositories []string
 	errors       map[string][]string
+	// warnings names what was stepped over without failing the run - analyses which cannot take
+	// part in a merge at all.
+	warnings     map[string][]string
 	results      map[string]any
 	metadata     *hercules.CommonAnalysisResult
 	mergedInputs int
+}
+
+// loadedMessage is the outcome of reading one input file.
+type loadedMessage struct {
+	results    map[string]any
+	metadata   *hercules.CommonAnalysisResult
+	repository string
+	// failures fail the whole run: the file could not be read or parsed, or an analysis it does
+	// carry could not be deserialized.
+	failures []string
+	// skipped names analyses which do not implement ResultMergeablePipelineItem.
+	skipped []string
 }
 
 func runCombine(cmd *cobra.Command, files []string) error {
@@ -55,7 +70,8 @@ func runCombine(cmd *cobra.Command, files []string) error {
 
 	accumulator := newCombineAccumulator()
 	accumulator.mergeFiles(files, only)
-	printErrors(accumulator.errors)
+	printMessages("Skipped:", accumulator.warnings)
+	printMessages("Errors:", accumulator.errors)
 	if only != "" {
 		if _, exists := accumulator.results[only]; !exists {
 			return errors.Join(
@@ -95,6 +111,7 @@ func startCombineProfileServer() {
 func newCombineAccumulator() *combineAccumulator {
 	return &combineAccumulator{
 		errors:   map[string][]string{},
+		warnings: map[string][]string{},
 		results:  map[string]any{},
 		metadata: &hercules.CommonAnalysisResult{},
 	}
@@ -123,22 +140,26 @@ func newCombineProgress(fileCount int, currentFile *string) *progress.ProgressBa
 }
 
 func (accumulator *combineAccumulator) mergeFile(fileName, only string) {
-	results, metadata, repository, messages := loadMessage(fileName)
-	if metadata == nil {
+	loaded := loadMessage(fileName, only)
+	if len(loaded.skipped) > 0 {
+		accumulator.warnings[fileName] = loaded.skipped
+	}
+	messages := loaded.failures
+	if loaded.metadata == nil {
 		accumulator.errors[fileName] = messages
 		return
 	}
 
-	initializeBurndownRepository(results, repository)
+	initializeBurndownRepository(loaded.results, loaded.repository)
 	merged, mergeErrors := mergeResults(
-		accumulator.results, accumulator.metadata, results, metadata, only,
+		accumulator.results, accumulator.metadata, loaded.results, loaded.metadata, only,
 	)
 	for _, err := range mergeErrors {
 		messages = append(messages, err.Error())
 	}
 	if merged > 0 {
 		accumulator.mergedInputs++
-		accumulator.repositories = append(accumulator.repositories, repository)
+		accumulator.repositories = append(accumulator.repositories, loaded.repository)
 	}
 	accumulator.errors[fileName] = messages
 }
@@ -211,17 +232,16 @@ func serializeCombinedContents(contents map[string][]byte, results map[string]an
 	return nil
 }
 
-func loadMessage(fileName string) (
-	map[string]any, *hercules.CommonAnalysisResult, string, []string,
-) {
+func loadMessage(fileName, only string) loadedMessage {
 	message, loadErr := readAnalysisMessage(fileName)
 	if loadErr != "" {
-		return nil, nil, "", []string{loadErr}
+		return loadedMessage{failures: []string{loadErr}}
 	}
 
-	results, errs := deserializeAnalysisContents(fileName, message.GetContents())
-	return results, hercules.MetadataToCommonAnalysisResult(message.GetHeader()),
-		message.GetHeader().GetRepository(), errs
+	loaded := deserializeAnalysisContents(fileName, only, message.GetContents())
+	loaded.metadata = hercules.MetadataToCommonAnalysisResult(message.GetHeader())
+	loaded.repository = message.GetHeader().GetRepository()
+	return loaded
 }
 
 func readAnalysisMessage(fileName string) (*pb.AnalysisResults, string) {
@@ -260,53 +280,76 @@ func readAnalysisMessage(fileName string) (*pb.AnalysisResults, string) {
 	return &message, ""
 }
 
-func deserializeAnalysisContents(fileName string, contents map[string][]byte) (map[string]any, []string) {
-	results := map[string]any{}
-	var errs []string
+// deserializeAnalysisContents decodes the analyses one input file carries.
+//
+// only, when set, restricts the work to that single analysis - everything else in the file is left
+// untouched, which is what makes --only the escape hatch its help text promises. Filtering here
+// rather than at merge time is the whole point: an analysis nobody asked for must not be able to
+// fail the run on its way in.
+//
+// Analyses which do not implement ResultMergeablePipelineItem cannot take part in a combine at
+// all. That is a property of the analysis, not a defect in the file, so they are named and stepped
+// over instead of taking every mergeable analysis down with them. Asking for one by name in --only
+// is the exception: there the caller wants exactly that analysis and gets a hard failure.
+func deserializeAnalysisContents(
+	fileName, only string, contents map[string][]byte,
+) loadedMessage {
+	loaded := loadedMessage{results: map[string]any{}}
 	for key, val := range contents {
+		if only != "" && key != only {
+			continue
+		}
 		summoned := hercules.Registry.Summon(key)
 		if len(summoned) == 0 {
-			errs = append(errs, fileName+": item not found: "+key)
+			loaded.failures = append(loaded.failures, fileName+": item not found: "+key)
 			continue
 		}
 		mpi, ok := summoned[0].(hercules.ResultMergeablePipelineItem)
 		if !ok {
-			errs = append(errs, fileName+": "+key+": ResultMergeablePipelineItem is not implemented")
+			message := key + ": ResultMergeablePipelineItem is not implemented"
+			if only != "" {
+				loaded.failures = append(loaded.failures, fileName+": "+message)
+			} else {
+				loaded.skipped = append(loaded.skipped, message+"; not merged")
+			}
 			continue
 		}
 		msg, err := mpi.Deserialize(val)
 		if err != nil {
-			errs = append(errs, fileName+": deserialization failed: "+key+": "+err.Error())
+			loaded.failures = append(loaded.failures, fileName+": deserialization failed: "+key+": "+err.Error())
 			continue
 		}
-		results[key] = msg
+		loaded.results[key] = msg
 	}
-	return results, errs
+	// Map iteration order is random, so sort to keep a run's diagnostics reproducible.
+	sort.Strings(loaded.failures)
+	sort.Strings(loaded.skipped)
+	return loaded
 }
 
-func printErrors(allErrors map[string][]string) {
-	needToPrintErrors := false
-	for _, errs := range allErrors {
-		if len(errs) > 0 {
-			needToPrintErrors = true
+func printMessages(title string, perFile map[string][]string) {
+	anything := false
+	for _, messages := range perFile {
+		if len(messages) > 0 {
+			anything = true
 			break
 		}
 	}
-	if !needToPrintErrors {
+	if !anything {
 		return
 	}
-	fmt.Fprintln(os.Stderr, "Errors:")
-	files := make([]string, 0, len(allErrors))
-	for fileName := range allErrors {
+	fmt.Fprintln(os.Stderr, title)
+	files := make([]string, 0, len(perFile))
+	for fileName := range perFile {
 		files = append(files, fileName)
 	}
 	sort.Strings(files)
 	for _, key := range files {
-		errs := allErrors[key]
-		if len(errs) > 0 {
+		messages := perFile[key]
+		if len(messages) > 0 {
 			fmt.Fprintln(os.Stderr, "  "+key)
-			for _, err := range errs {
-				fmt.Fprintln(os.Stderr, "    "+err)
+			for _, message := range messages {
+				fmt.Fprintln(os.Stderr, "    "+message)
 			}
 		}
 	}
@@ -367,13 +410,19 @@ func mergeResult(
 	return nil
 }
 
+// getOptionsString lists the analyses --only can name. Leaves which do not implement
+// ResultMergeablePipelineItem are left out: combine cannot merge them under any flag, so offering
+// them as choices only invites the failure the flag exists to avoid.
 func getOptionsString() string {
 	registeredLeaves := hercules.Registry.GetLeaves()
-	leaves := make([]string, 0, len(registeredLeaves))
+	names := make([]string, 0, len(registeredLeaves))
 	for _, leaf := range registeredLeaves {
-		leaves = append(leaves, leaf.Name())
+		if _, mergeable := leaf.(hercules.ResultMergeablePipelineItem); mergeable {
+			names = append(names, leaf.Name())
+		}
 	}
-	return strings.Join(leaves, ", ")
+	sort.Strings(names)
+	return strings.Join(names, ", ")
 }
 
 func init() {

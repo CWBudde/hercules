@@ -548,7 +548,10 @@ func (analyser *LineHistoryAnalyser) Merge(items []core.PipelineItem) {
 	if analyser.mergePending {
 		for name, file := range analyser.files {
 			others := matchingMergeFiles(branches[1:], name, file)
+			lost := hcTraceMerge(branches[1:], name, file, others)
+			before := hcMergeMarkedLines
 			file.Merge(packPersonWithTick(analyser.mergedAuthor, analyser.tick), others...)
+			hcAttribute(lost, hcMergeMarkedLines-before)
 		}
 	}
 
@@ -566,6 +569,59 @@ func (analyser *LineHistoryAnalyser) Merge(items []core.PipelineItem) {
 	analyser.pendingChanges = append(analyser.pendingChanges, analyser.changes...)
 	analyser.changes = nil
 	analyser.onNewTick()
+}
+
+//nolint:gochecknoglobals // temporary B1d instrumentation
+var hcMerges, hcFiles, hcMatched, hcLenMismatch, hcAbsent int64
+
+//nolint:gochecknoglobals // temporary B1d instrumentation
+var hcLinesLost, hcLinesClean int64
+
+// hcTraceMerge reports whether any sibling branch was dropped for this file.
+func hcTraceMerge(branches []*LineHistoryAnalyser, name string, target *File, others []*File) bool {
+	if os.Getenv("HC_TRACE_MERGE") == "" {
+		return false
+	}
+
+	hcFiles++
+	hcMatched += int64(len(others))
+	lost := false
+
+	for _, branch := range branches {
+		file := branch.files[name]
+		switch {
+		case file == nil || file.Id != target.Id:
+			hcAbsent++
+
+			lost = true
+		case file.Len() != target.Len():
+			hcLenMismatch++
+
+			lost = true
+		}
+	}
+
+	return lost
+}
+
+func hcAttribute(lost bool, lines int64) {
+	if os.Getenv("HC_TRACE_MERGE") == "" {
+		return
+	}
+
+	if lost {
+		hcLinesLost += lines
+	} else {
+		hcLinesClean += lines
+	}
+
+	hcMerges++
+
+	fmt.Fprintf(os.Stderr,
+		"MERGESTAT files=%d matched=%d lenMismatch=%d absent=%d "+
+			"markedLines=%d linesLostSibling=%d linesCleanMerge=%d\n",
+		hcFiles, hcMatched, hcLenMismatch, hcAbsent,
+		hcMergeMarkedLines, hcLinesLost, hcLinesClean)
 }
 
 func matchingMergeFiles(

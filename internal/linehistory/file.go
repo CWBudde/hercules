@@ -396,6 +396,9 @@ func restoreUpdatedInterval(tree *rbtree.RBTree, origin, prevOrigin rbtree.Item,
 	}
 }
 
+//nolint:gochecknoglobals // temporary B1d instrumentation
+var hcMergeMarkedLines int64
+
 // Merge combines several prepared File-s together.
 func (file *File) Merge(day int, others ...*File) {
 	myself := file.flatten()
@@ -437,6 +440,12 @@ func mergeLineValues(destination []int, other *File) {
 
 func resolveMergeMarks(file *File, lines []int, day int) {
 	mergedCount := 0
+
+	for _, line := range lines {
+		if line&TreeMergeMark == TreeMergeMark {
+			hcMergeMarkedLines++
+		}
+	}
 
 	for _, line := range lines {
 		if line&TreeMergeMark == TreeMergeMark {

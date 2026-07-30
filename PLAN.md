@@ -82,6 +82,10 @@ comparable; default timeouts, `--granularity=30 --sampling=30`:
 (636 783 vs 1 098 211); the fix restores them to within 0.5 % of the old baseline and
 removes every negative. `process-manager` likewise returns to zero.
 
+**Superseded by B1b — read that table, not this one.** The "0 neg" columns here and
+`render-pdf`'s Σ 5 787 185 are what B1 looks like _in isolation_; the negatives it appeared
+to remove were merely being cancelled by the deletion leak B1b fixes.
+
 ### What is left (not this regression)
 
 `personio-ipoffice-sync`, `render-pdf`, `backend-for-microscope` and `meko-etl-tool`
@@ -400,8 +404,10 @@ idle person in the fixture.
    B1 fix now delivers it the merge deltas it was previously missing — re-measure
    before digging.
 4. **B8 commit** + regression test.
-5. **B1b.** Inflation only, so nothing fails on it; worth doing before anyone trusts
-   absolute line totals.
+5. **B1d.** Nothing fails on it and totals are now right, but merged lines are still
+   credited to the merge author instead of their real one — so it must be settled before
+   anyone trusts `--burndown-people`, `--devs` or ownership output, and it may well be
+   feeding B2.
 6. **B5, B6, B7.** Lower frequency; B6 may be documentation only.
 
 ## Regression coverage worth adding

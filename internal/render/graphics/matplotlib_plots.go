@@ -605,6 +605,7 @@ func PlotGroupedBarChartMatplotlib(labels []string, series []MatplotlibGroupedBa
 	ax.SetXLim(-0.5, float64(len(labels))-0.5)
 	ax.SetYLim(0, math.Max(maxValue*1.05, 1))
 	ax.XAxis.Locator = ticker.FixedLocator{TicksList: ticks}
+
 	ax.XAxis.Formatter = ticker.FixedFormatter{Labels: append([]string(nil), labels...)}
 	if opts.RotateX {
 		ax.XAxis.MajorLabelStyle = core.TickLabelStyle{Rotation: 45, AutoAlign: true}
@@ -811,6 +812,7 @@ func PlotStackedBarChartMatplotlib(labels []string, series []MatplotlibGroupedBa
 	ax.SetXLim(-0.5, float64(len(labels))-0.5)
 	ax.SetYLim(0, math.Max(maxTotal*1.05, 1))
 	ax.XAxis.Locator = ticker.FixedLocator{TicksList: append([]float64(nil), x...)}
+
 	ax.XAxis.Formatter = ticker.FixedFormatter{Labels: append([]string(nil), labels...)}
 	if opts.RotateX {
 		ax.XAxis.MajorLabelStyle = core.TickLabelStyle{
@@ -913,6 +915,7 @@ func PlotDevsEffortsMatplotlib(
 	ticks, tlabels := timeAxisDateTicks(dates, "")
 	if len(ticks) > 0 {
 		ax.XAxis.Locator = ticker.FixedLocator{TicksList: ticks}
+
 		ax.XAxis.Formatter = ticker.FixedFormatter{Labels: tlabels}
 		if shouldRotateDateLabels(tlabels) {
 			ax.XAxis.MajorLabelStyle = core.TickLabelStyle{Rotation: 30, AutoAlign: true}
@@ -1274,6 +1277,7 @@ func configureMatplotlibHeatmapTicks(ax *core.Axes, rowLabels, colLabels []strin
 		xTicks[i] = float64(i)
 		xLabels[i] = compactMatplotlibLabel(label, xLimit)
 	}
+
 	ax.XAxis.Locator = ticker.FixedLocator{TicksList: xTicks}
 	ax.XAxis.Formatter = ticker.FixedFormatter{Labels: xLabels}
 	ax.XAxis.MajorLabelStyle = core.TickLabelStyle{
@@ -1292,6 +1296,7 @@ func configureMatplotlibHeatmapTicks(ax *core.Axes, rowLabels, colLabels []strin
 		yTicks[i] = float64(i)
 		yLabels[i] = compactMatplotlibLabel(label, yLimit)
 	}
+
 	ax.YAxis.Locator = ticker.FixedLocator{TicksList: yTicks}
 	ax.YAxis.Formatter = ticker.FixedFormatter{Labels: yLabels}
 }

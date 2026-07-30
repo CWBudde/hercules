@@ -71,6 +71,9 @@ type LineHistoryAnalyser struct {
 
 	// tick is the most recent tick index processed.
 	tick core.TickNumber
+	// commitTick is the tick of the commit currently being consumed. It differs from tick only
+	// while a merge commit is processed, where tick carries TreeMergeMark instead.
+	commitTick core.TickNumber
 	// previousTick is the tick from the previous sample period -
 	// different from TicksSinceStart.previousTick.
 	previousTick core.TickNumber
@@ -353,6 +356,7 @@ func (analyser *LineHistoryAnalyser) Initialize(repository *git.Repository) erro
 	analyser.fileAllocator.HibernationThreshold = analyser.HibernationThreshold
 
 	analyser.tick = 0
+	analyser.commitTick = 0
 	analyser.previousTick = 0
 	analyser.mergedAuthor = core.AuthorMissing
 	analyser.mergePending = false
@@ -378,6 +382,7 @@ func (analyser *LineHistoryAnalyser) Consume(deps map[string]any) (map[string]an
 	}
 
 	analyser.tick = tick
+	analyser.commitTick = tick
 	analyser.onNewTick()
 	// Deltas buffered by a preceding Merge() ride along with this commit. Every change carries
 	// its own PrevTick/CurrTick, so delivering them late does not move any line between bands.
@@ -1096,18 +1101,39 @@ func (analyser *LineHistoryAnalyser) handleDeletion(
 		return nil
 	}
 
-	file.Update(packChangePersonWithTick(author, analyser.tick), 0, 0, lines)
+	tick := analyser.deletionTick(file)
+
+	file.Update(packChangePersonWithTick(author, tick), 0, 0, lines)
 	file.Delete()
 
-	if analyser.tick != TreeMergeMark {
+	if tick != TreeMergeMark {
 		analyser.changes = append(
 			analyser.changes,
-			core.NewLineHistoryDeletion(file.Id, author, analyser.tick),
+			core.NewLineHistoryDeletion(file.Id, author, tick),
 		)
 	}
 	analyser.forgetFileName(name)
 
 	return nil
+}
+
+// deletionTick picks the tick a file removal is charged to. A merge commit edits with
+// TreeMergeMark, which suppresses every updater until Merge() resolves who really owns the
+// touched lines - but a removal has nothing to resolve: each removed line already carries its
+// own owner, and the path is gone from this branch's tree either way. Charging the removal to
+// the real tick keeps those lines from lingering in every consumer's history forever, which
+// silently inflated every line total. The single case that must still wait is a file whose own
+// lines are unresolved marks, since updateTime() refuses to touch those.
+func (analyser *LineHistoryAnalyser) deletionTick(file *File) core.TickNumber {
+	if analyser.tick != TreeMergeMark {
+		return analyser.tick
+	}
+
+	if file.hasMergeMarks() {
+		return TreeMergeMark
+	}
+
+	return analyser.commitTick
 }
 
 func (analyser *LineHistoryAnalyser) handleModification(

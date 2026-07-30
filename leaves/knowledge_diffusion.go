@@ -162,6 +162,12 @@ func (kd *KnowledgeDiffusionAnalysis) Initialize(repository *git.Repository) err
 // Consume runs this PipelineItem on the next commit data.
 // For each changed file, it records the author as an editor.
 func (kd *KnowledgeDiffusionAnalysis) Consume(deps map[string]any) (map[string]any, error) {
+	// A merge commit is replayed on every parent branch; its tree changes would otherwise be
+	// folded into the diffusion matrix once per parent.
+	if core.IsMergeReplica(deps) {
+		return noDependencies(), nil
+	}
+
 	reader := factReader{facts: deps}
 	changes := readFact[object.Changes](&reader, items.DependencyTreeChanges)
 	author := readFact[int](&reader, identity.DependencyAuthor)

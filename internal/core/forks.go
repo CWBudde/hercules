@@ -46,6 +46,19 @@ func (proc *OneShotMergeProcessor) ShouldConsumeCommit(deps map[string]any) bool
 	return false
 }
 
+// IsMergeReplica reports whether this Consume() is replaying a merge commit which another branch
+// accounts for. Every parent branch replays a merge so that line history can reconcile them, so an
+// item which accumulates anything per commit has to return early when this is true, or the merge
+// lands in its results once per parent. See planBuilder.appendMergeReplicas.
+//
+// Unlike OneShotMergeProcessor this needs no state and no DependencyCommit, and it marks exactly
+// the actions the planner added rather than inferring from repeat sightings.
+func IsMergeReplica(deps map[string]any) bool {
+	replica, _ := deps[DependencyIsMergeReplica].(bool)
+
+	return replica
+}
+
 // NoopMerger provides an empty Merge() method suitable for PipelineItem.
 type NoopMerger struct{}
 
@@ -106,6 +119,9 @@ type runAction struct {
 	Commit    *object.Commit
 	NextMerge *object.Commit
 	Items     []int
+	// MergeReplica marks a commit action which replays a merge commit on a parent branch other
+	// than the one that consumes it authoritatively. See planBuilder.appendMergeReplicas.
+	MergeReplica bool
 }
 
 // DuplicateCommitError describes the repeated hash and its zero-based input positions. Commit
@@ -906,7 +922,10 @@ func (builder *planBuilder) appendCommitSequence(
 			log.Panicf("head of the sequence does not have an assigned branch: %s", commit.Hash.String())
 		}
 
+		// The authoritative consumption comes first so that OneShotMergeProcessor, which keeps the
+		// first sighting of a merge commit, keeps the one whose tree diff the leaves should see.
 		builder.appendCommit(offspring, mergeBranch)
+		builder.appendMergeReplicas(offspring, mergeBranch, items)
 
 		if len(items) > 0 {
 			builder.plan = append(builder.plan, runAction{
@@ -995,6 +1014,41 @@ func sortedHashSet(set map[plumbing.Hash]bool) []plumbing.Hash {
 
 func branchExists(branch int) bool {
 	return branch >= rootBranchIndex
+}
+
+// appendMergeReplicas replays a merge commit on every parent branch except the one which consumes
+// it authoritatively. TreeDiff forks by copy and so keeps a per-branch previousTree, which means
+// each replica diffs the merge against its own head and all the parents end up holding the same
+// tree.
+//
+// That is what lets Merge() pair the files up. matchingMergeFiles drops any parent whose copy of a
+// file has a different length, and a parent which never saw the merge commit almost always does.
+// Once it is dropped, mergeLineValues never runs for it, so every line the merge touched keeps its
+// TreeMergeMark and resolveMergeMarks charges the lot to whoever pushed the merge button instead
+// of to the real author. Measured over the corpus, file merges which lose a parent this way
+// account for 100% of the lines attributed to merge authors.
+//
+// The replicas exist purely to align state; LineHistoryAnalyser.Consume discards the deltas they
+// produce, because a file the merge deletes is visible from every parent that had it and would
+// otherwise be charged once per parent.
+func (builder *planBuilder) appendMergeReplicas(commit *object.Commit, branch int, items []int) {
+	seen := map[int]bool{branch: true}
+
+	for _, item := range items {
+		if seen[item] {
+			continue
+		}
+
+		seen[item] = true
+
+		if item == 0 {
+			log.Panicf("setting a zero branch for %s", commit.Hash)
+		}
+
+		builder.plan = append(builder.plan, runAction{
+			Action: runActionCommit, Commit: commit, Items: []int{item}, MergeReplica: true,
+		})
+	}
 }
 
 func (builder *planBuilder) appendCommit(commit *object.Commit, branch int) {

@@ -191,9 +191,10 @@ func (state *pipelineRunState) executeStep(plan []runAction, index int, step run
 
 func (state *pipelineRunState) consumeCommit(plan []runAction, index, firstItem int, step runAction) error {
 	dependencies := map[string]any{
-		DependencyCommit:  step.Commit,
-		DependencyIndex:   state.commitIndex,
-		DependencyIsMerge: isMergeAction(plan, index, step.Commit.Hash),
+		DependencyCommit:         step.Commit,
+		DependencyIndex:          state.commitIndex,
+		DependencyIsMerge:        isMergeAction(plan, index, step.Commit.Hash),
+		DependencyIsMergeReplica: step.MergeReplica,
 	}
 	if state.mergeHashCount >= 0 {
 		dependencies[DependencyNextMerge] = step.NextMerge
@@ -230,18 +231,30 @@ func (state *pipelineRunState) consumeCommit(plan []runAction, index, firstItem 
 		state.newestTime = commitTime
 	}
 
-	state.commitIndex++
+	// A replica is the same commit seen again on another parent branch, so it must not advance the
+	// index - otherwise DependencyIndex counts merges once per parent and no longer matches the
+	// number of commits the run reports.
+	if !step.MergeReplica {
+		state.commitIndex++
+	}
 
 	return nil
 }
 
+// isMergeAction reports whether the commit action at index is consuming a merge commit, so that
+// LineHistoryAnalyser marks the lines it introduces and leaves Merge() something to resolve.
+//
+// A merge commit is replayed once per parent branch (see planBuilder.appendMergeReplicas), so the
+// action is followed either by the next replica or, for the last one, by the merge action itself.
+// Every replica has to answer true: a branch which consumed the merge without marking would offer
+// its merge-introduced lines to mergeLineValues as ground truth.
 func isMergeAction(plan []runAction, index int, commit plumbing.Hash) bool {
 	for i := index + 1; i < len(plan); i++ {
 		switch plan[i].Action {
 		case runActionHibernate, runActionBoot:
 			continue
-		case runActionMerge:
-			return plan[i].Commit.Hash == commit
+		case runActionCommit, runActionMerge:
+			return plan[i].Commit != nil && plan[i].Commit.Hash == commit
 		default:
 			return false
 		}

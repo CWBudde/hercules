@@ -89,6 +89,10 @@ type LineHistoryAnalyser struct {
 	// Consume() emits them. Leftovers - the analysed HEAD being a merge commit - are read by
 	// the consuming leaves through FileIdResolver.PendingChanges().
 	pendingChanges []core.LineHistoryChange
+	// replicaChanges holds the removals produced while this branch replayed a merge commit that
+	// another branch accounts for. Merge() folds them into the authoritative branch, one per file,
+	// so a file several parents hold is not removed once per parent.
+	replicaChanges []core.LineHistoryChange
 
 	l core.Logger
 }
@@ -384,16 +388,22 @@ func (analyser *LineHistoryAnalyser) Consume(deps map[string]any) (map[string]an
 	analyser.tick = tick
 	analyser.commitTick = tick
 	analyser.onNewTick()
-	// Deltas buffered by a preceding Merge() ride along with this commit. Every change carries
-	// its own PrevTick/CurrTick, so delivering them late does not move any line between bands.
-	analyser.changes = analyser.pendingChanges
-	analyser.pendingChanges = nil
+
+	// Every parent branch replays a merge commit, so nothing it produces may be reported here:
+	// whichever branch reported first would be joined by the others. Merge() reconciles the lot
+	// and hands the result to the next ordinary commit. Holding the buffer back over a merge is
+	// safe for the same reason delivering it late is - each change carries its own
+	// PrevTick/CurrTick, so nothing moves between bands.
+	isMerge, _ := deps[core.DependencyIsMerge].(bool)
+	if !isMerge {
+		analyser.changes = analyser.pendingChanges
+		analyser.pendingChanges = nil
+	}
 
 	if analyser.changes == nil {
 		analyser.changes = make([]core.LineHistoryChange, 0, len(treeDiffs)*4)
 	}
 
-	isMerge, _ := deps[core.DependencyIsMerge].(bool)
 	if isMerge {
 		analyser.mergedAuthor = author
 		analyser.mergePending = true
@@ -407,12 +417,21 @@ func (analyser *LineHistoryAnalyser) Consume(deps map[string]any) (map[string]an
 		return nil, err
 	}
 
+	emitted := analyser.changes
+	analyser.changes = nil
+
+	if isMerge {
+		// Everything a merge commit inserts or edits is marked and suppressed, so the only deltas
+		// left are removals. Those are real - a file the merge drops has to leave the history - but
+		// a file several parents held reports one removal per parent. Merge() keeps one per file.
+		analyser.replicaChanges = append(analyser.replicaChanges, emitted...)
+		emitted = nil
+	}
+
 	result := map[string]any{DependencyLineHistory: core.LineHistoryChanges{
-		Changes:  analyser.changes,
+		Changes:  emitted,
 		Resolver: FileIdResolver{analyser},
 	}}
-
-	analyser.changes = nil
 
 	return result, nil
 }
@@ -513,6 +532,7 @@ func (analyser *LineHistoryAnalyser) Fork(n int) []core.PipelineItem {
 		// The origin keeps the branch slot and will emit its own buffer; duplicating it here
 		// would count the merged lines once per clone.
 		clone.pendingChanges = nil
+		clone.replicaChanges = nil
 
 		result[cloneIndex] = &clone
 	}
@@ -548,12 +568,11 @@ func (analyser *LineHistoryAnalyser) Merge(items []core.PipelineItem) {
 	if analyser.mergePending {
 		for name, file := range analyser.files {
 			others := matchingMergeFiles(branches[1:], name, file)
-			lost := hcTraceMerge(branches[1:], name, file, others)
-			before := hcMergeMarkedLines
 			file.Merge(packPersonWithTick(analyser.mergedAuthor, analyser.tick), others...)
-			hcAttribute(lost, hcMergeMarkedLines-before)
 		}
 	}
+
+	analyser.foldMergeRemovals(branches)
 
 	for _, branch := range branches[1:] {
 		rememberLineHistoryBranchNames(analyser, branch)
@@ -571,66 +590,51 @@ func (analyser *LineHistoryAnalyser) Merge(items []core.PipelineItem) {
 	analyser.onNewTick()
 }
 
-//nolint:gochecknoglobals // temporary B1d instrumentation
-var hcMerges, hcFiles, hcMatched, hcLenMismatch, hcAbsent int64
-
-//nolint:gochecknoglobals // temporary B1d instrumentation
-var hcLinesLost, hcLinesClean int64
-
-// hcTraceMerge reports whether any sibling branch was dropped for this file.
-func hcTraceMerge(branches []*LineHistoryAnalyser, name string, target *File, others []*File) bool {
-	if os.Getenv("HC_TRACE_MERGE") == "" {
-		return false
-	}
-
-	hcFiles++
-	hcMatched += int64(len(others))
-	lost := false
+// foldMergeRemovals collects the removals every parent branch produced while it replayed the merge
+// commit and keeps one per file.
+//
+// A merge commit is consumed once per parent so that Merge() can pair the files up, which means a
+// file the merge deletes is reported gone by every parent that held it. Letting all of those
+// through would remove the same lines several times over and drive the burndown matrix negative -
+// the same shape as PLAN.md B1c. Dropping them all instead would lose the file a single parent
+// held, whose removal no other branch can see, and its lines would stay alive forever.
+//
+// The authoritative branch comes first in branches, so its version of a shared removal wins.
+func (analyser *LineHistoryAnalyser) foldMergeRemovals(branches []*LineHistoryAnalyser) {
+	seen := map[FileId]bool{}
 
 	for _, branch := range branches {
-		file := branch.files[name]
-		switch {
-		case file == nil || file.Id != target.Id:
-			hcAbsent++
+		for _, change := range branch.replicaChanges {
+			if seen[change.FileId] {
+				continue
+			}
 
-			lost = true
-		case file.Len() != target.Len():
-			hcLenMismatch++
+			seen[change.FileId] = true
 
-			lost = true
+			analyser.changes = append(analyser.changes, change)
 		}
+
+		branch.replicaChanges = nil
 	}
-
-	return lost
-}
-
-func hcAttribute(lost bool, lines int64) {
-	if os.Getenv("HC_TRACE_MERGE") == "" {
-		return
-	}
-
-	if lost {
-		hcLinesLost += lines
-	} else {
-		hcLinesClean += lines
-	}
-
-	hcMerges++
-
-	fmt.Fprintf(os.Stderr,
-		"MERGESTAT files=%d matched=%d lenMismatch=%d absent=%d "+
-			"markedLines=%d linesLostSibling=%d linesCleanMerge=%d\n",
-		hcFiles, hcMatched, hcLenMismatch, hcAbsent,
-		hcMergeMarkedLines, hcLinesLost, hcLinesClean)
 }
 
 func matchingMergeFiles(
 	branches []*LineHistoryAnalyser, name string, target *File,
 ) []*File {
 	files := make([]*File, 0, len(branches))
+
 	for _, branch := range branches {
+		// Matching on the path alone is what upstream does, and now that every parent replays the
+		// merge commit they all hold the merged tree, so the paths line up. Requiring the same
+		// FileId as well used to reject a file which the branches tracked as separate entities -
+		// created independently on each side, or renamed into place - even though the merge left
+		// one file at that path and the lines are positionally comparable. Measured over the
+		// corpus, that was the only remaining reason a parent was dropped.
+		//
+		// The length check stays as a guard: mergeLineValues panics on a mismatch, and a branch
+		// which somehow did not converge should be skipped rather than take the run down.
 		file := branch.files[name]
-		if file != nil && file.Id == target.Id && file.Len() == target.Len() {
+		if file != nil && file.Len() == target.Len() {
 			files = append(files, file)
 		}
 	}
@@ -674,6 +678,7 @@ func synchronizeLineHistoryBranch(source, target *LineHistoryAnalyser) {
 	target.changes = nil
 	// The merge branch owns the resolution deltas; synchronized siblings must not re-emit them.
 	target.pendingChanges = nil
+	target.replicaChanges = nil
 }
 
 func mustLineHistoryAnalyser(item core.PipelineItem) *LineHistoryAnalyser {

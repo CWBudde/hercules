@@ -124,6 +124,12 @@ func (ca *CommitsAnalysis) Initialize(repository *git.Repository) error {
 // This function returns the mapping with analysis results. The keys must be the same as
 // in Provides(). If there was an error, nil is returned.
 func (ca *CommitsAnalysis) Consume(deps map[string]any) (map[string]any, error) {
+	// A merge commit is replayed on every parent branch; without this it would be recorded once
+	// per parent.
+	if core.IsMergeReplica(deps) {
+		return noDependencies(), nil
+	}
+
 	values, err := getCommitsDependencies(deps)
 	if err != nil {
 		return nil, err

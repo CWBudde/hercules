@@ -403,6 +403,11 @@ const (
 	// which always exists. It indicates whether the analyzed commit is a merge commit.
 	// Checking the number of parents is not correct - we remove the back edges during the DAG simplification.
 	DependencyIsMerge = "is_merge"
+	// DependencyIsMergeReplica indicates that this consumption of a merge commit exists only to
+	// bring a parent branch's state in line with the merge, and that another branch is accounting
+	// for it. Items which accumulate anything per commit must ignore these, or the merge is
+	// counted once per parent. See planBuilder.appendMergeReplicas.
+	DependencyIsMergeReplica = "is_merge_replica"
 	// MessageFinalize is the status text reported before calling LeafPipelineItem.Finalize()-s.
 	MessageFinalize = "finalize"
 

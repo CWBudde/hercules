@@ -304,8 +304,10 @@ func configureMatplotlibBurndownTimeAxis(ax *core.Axes, dates []time.Time, resam
 	if len(ticks) == 0 {
 		return
 	}
+
 	ax.XAxis.Locator = ticker.FixedLocator{TicksList: ticks}
 	ax.XAxis.Formatter = ticker.FixedFormatter{Labels: labels}
+
 	if shouldRotateDateLabels(labels) {
 		ax.XAxis.MajorLabelStyle = core.TickLabelStyle{Rotation: 30, AutoAlign: true}
 	}

@@ -127,3 +127,125 @@ func TestLinesPendingChangesIgnoresForeignResolver(t *testing.T) {
 	assert.Nil(t, PendingChanges(nil))
 	assert.Nil(t, PendingChanges(FileIdResolver{}))
 }
+
+const (
+	// deleteTestBlob is the fixture blob for .travis.yml, which CountLines() reports as 12.
+	deleteTestBlob  = "291286b4ac41952cbd1389fda66420ec03c1a9fe"
+	deleteTestLines = 12
+	deleteTestPath  = ".travis.yml"
+	deleteTestBorn  = core.TickNumber(5)
+)
+
+// deleteChange builds the tree change a commit which removes deleteTestPath produces.
+func deleteChange() *object.Change {
+	return &object.Change{
+		From: object.ChangeEntry{
+			Name: deleteTestPath,
+			TreeEntry: object.TreeEntry{
+				Name: deleteTestPath,
+				Mode: 0o100644,
+				Hash: plumbing.NewHash(deleteTestBlob),
+			},
+		},
+		To: object.ChangeEntry{},
+	}
+}
+
+// newDeletionAnalyser holds a single file born at deleteTestBorn, ready to be removed.
+func newDeletionAnalyser(t *testing.T) (*LineHistoryAnalyser, map[plumbing.Hash]*items.CachedBlob) {
+	t.Helper()
+
+	analyser := &LineHistoryAnalyser{}
+	require.NoError(t, analyser.Configure(map[string]any{core.ConfigLogger: core.NewLogger()}))
+	require.NoError(t, analyser.Initialize(test.Repository))
+
+	analyser.tick = deleteTestBorn
+	analyser.commitTick = deleteTestBorn
+
+	file := analyser.newFile(deleteTestPath, mergeTestAuthor, deleteTestBorn, deleteTestLines)
+	require.NotNil(t, file)
+	require.Equal(t, deleteTestLines, totalDelta(analyser.changes))
+
+	analyser.changes = nil
+
+	cache := map[plumbing.Hash]*items.CachedBlob{}
+	AddHash(t, cache, deleteTestBlob)
+
+	return analyser, cache
+}
+
+// TestLinesDeletionInsideMergeCommitIsAccounted guards B1b: handleDeletion used to run the removal
+// under TreeMergeMark, which suppresses every updater, and to skip the deletion marker as well.
+// The file was dropped regardless, so its lines stayed in every consumer's history forever - line
+// totals drifted upwards with no negative value for the burndown balance check to catch.
+func TestLinesDeletionInsideMergeCommitIsAccounted(t *testing.T) {
+	analyser, cache := newDeletionAnalyser(t)
+
+	// The state Consume() leaves behind while a merge commit is processed.
+	analyser.commitTick = deleteTestBorn + 3
+	analyser.tick = TreeMergeMark
+	analyser.mergedAuthor = mergeTestAuthor
+	analyser.mergePending = true
+
+	require.NoError(t, analyser.handleDeletion(deleteChange(), mergeTestAuthor, cache))
+
+	var removed, markers int
+
+	for _, change := range analyser.changes {
+		if change.IsDelete() {
+			markers++
+
+			assert.Equal(t, deleteTestBorn+3, change.CurrTick)
+
+			continue
+		}
+
+		removed += change.Delta
+
+		assert.Equal(t, deleteTestBorn, change.PrevTick, "removed lines keep the tick they were born on")
+		assert.Equal(t, deleteTestBorn+3, change.CurrTick, "the removal belongs to the merge commit's tick")
+	}
+
+	assert.Equal(t, -deleteTestLines, removed)
+	assert.Equal(t, 1, markers, "consumers must be told the file is gone")
+	assert.NotContains(t, analyser.files, deleteTestPath)
+}
+
+// TestLinesDeletionOutsideMergeCommitUnchanged pins the ordinary path, which was already correct.
+func TestLinesDeletionOutsideMergeCommitUnchanged(t *testing.T) {
+	analyser, cache := newDeletionAnalyser(t)
+	analyser.tick = deleteTestBorn + 3
+	analyser.commitTick = analyser.tick
+
+	require.NoError(t, analyser.handleDeletion(deleteChange(), mergeTestAuthor, cache))
+
+	removed := 0
+
+	for _, change := range analyser.changes {
+		if !change.IsDelete() {
+			removed += change.Delta
+		}
+	}
+
+	assert.Equal(t, -deleteTestLines, removed)
+}
+
+// TestLinesDeletionOfUnresolvedMergeLinesDefers covers the one case that must still be suppressed:
+// the removed lines are themselves unresolved marks, which updateTime() refuses to touch. They were
+// never added to any history either, so dropping them keeps the books balanced.
+func TestLinesDeletionOfUnresolvedMergeLinesDefers(t *testing.T) {
+	analyser, cache := newDeletionAnalyser(t)
+
+	analyser.tick = TreeMergeMark
+	analyser.commitTick = deleteTestBorn + 3
+
+	// Overwrite every line with the marker the merge commit's own edits carry.
+	analyser.files[deleteTestPath].Update(packChangePersonWithTick(mergeTestAuthor, TreeMergeMark),
+		0, deleteTestLines, deleteTestLines)
+	require.True(t, analyser.files[deleteTestPath].hasMergeMarks())
+
+	analyser.changes = nil
+
+	require.NoError(t, analyser.handleDeletion(deleteChange(), mergeTestAuthor, cache))
+	assert.Empty(t, analyser.changes)
+}

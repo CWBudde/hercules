@@ -95,22 +95,84 @@ repositories failing. See B1c.
 
 ---
 
-## B1b — file deletion inside a merge commit emits nothing 🟠
+## B1b — file deletion inside a merge commit emits nothing ✅ FIXED (uncommitted)
 
-`handleDeletion` (`line_history.go:1018-1063`) suppresses both the removal deltas
-(`file.Update` with `TreeMergeMark`) and the `NewLineHistoryDeletion` marker when
-`analyser.tick == TreeMergeMark`, yet still drops the file from `analyser.files`. Its
-lines stay in `globalHistory` forever.
+`handleDeletion` suppressed both the removal deltas (`file.Update` with `TreeMergeMark`,
+which makes `File.updateTime` return before running any updater) and the
+`NewLineHistoryDeletion` marker when `analyser.tick == TreeMergeMark`, yet dropped the
+file from `analyser.files` regardless. Its lines stayed in `globalHistory` forever.
 
-Same shape in `synchronizeLineHistoryBranch` (`line_history.go:546-566`): the sibling
-branches' files are `Delete()`d and replaced with clones of the merge branch's, and the
-resulting deltas land in `target.changes`, which is then discarded.
+**Fix:** a removal has nothing for `Merge()` to resolve — every removed line already
+carries its own owner, and the path is gone from this branch's tree either way — so it is
+charged to the real commit tick instead of the mark. `LineHistoryAnalyser.commitTick`
+holds that tick while `tick` carries `TreeMergeMark`; `deletionTick()` falls back to the
+mark only when the file's own lines are still unresolved marks, which `updateTime()`
+refuses to touch and which were never added to any history anyway. Regression tests:
+`TestLinesDeletion*` in `line_history_merge_test.go`.
 
-Both are _inflation_, never negatives, so the validator cannot catch them — but they are
-the most likely explanation for `render-pdf`'s total growing from 3.17 M to 5.79 M under
-the B1 fix: the merge positives are now kept while these negatives are still dropped, so
-the two no longer partially cancel. Fixing them means touching the `TreeMergeMark`
-invariants in `File.updateTime`, which currently `panic`.
+### The second claim in this item was wrong
+
+`synchronizeLineHistoryBranch` does **not** leak deltas. `File.Delete()` only calls
+`tree.Erase()`; it runs no updaters and emits nothing, so the `target.changes = nil`
+next to it discards an empty slice. There is no bug there.
+
+### Measured effect — this is what actually restored the line totals
+
+Same three-build setup as B1 (clamping disabled, default timeouts,
+`--granularity=30 --sampling=30`):
+
+| repository               | 082bf15                        | B1 only                        | B1 + B1b                       |
+| ------------------------ | ------------------------------ | ------------------------------ | ------------------------------ |
+| `ewws-wiki`              | Σ 1 098 211, 22 neg, min −227  | Σ 1 104 135, **0 neg**         | Σ 1 097 779, 22 neg, min −227  |
+| `render-pdf`             | Σ 3 563 642, 53 neg, min −6912 | Σ 5 787 185, 53 neg            | Σ 3 549 470, 53 neg, min −6836 |
+| `process-manager`        | Σ 241 786, 0 neg               | Σ 260 003, 0 neg               | Σ 243 549, **0 neg**           |
+| `meko-etl-tool`          | (old binary produced no output) | Σ 5 003 113, 44 neg            | Σ 4 848 902, 116 neg           |
+| `backend-for-microscope` | (old binary produced no output) | Σ 1 594 601, 64 neg            | Σ 1 594 601, 64 neg            |
+| `personio-ipoffice-sync` | Σ 73 182, 3 neg                | Σ 73 182, 3 neg                | Σ 73 182, 3 neg                |
+
+Every repository with a baseline now lands within 0.5 % of it — `render-pdf`'s 62 %
+overshoot under B1 alone is gone. The inflation was real and this was its cause.
+
+**Honest consequence:** `ewws-wiki`'s zero-negative result under B1 alone was an accident.
+The missing deletion negatives were partially cancelling the double-counted merge
+positives; with both sides accounted for, `ewws-wiki` reproduces `082bf15` exactly (22
+cells, min −227) and `meko-etl-tool` goes from 44 to 116 negative cells. B1b makes the
+totals right and re-exposes the long-standing negatives underneath — which are B1c/B2, not
+a new defect. At project scope the corpus therefore still fails until B2 is decided.
+
+---
+
+## B1d — the merge commit is consumed by only one branch 🟠
+
+Not filed originally; found while measuring B1b. Upstream replays the merge commit on
+**every** parent branch (`if parentBranch != branch { appendCommit(commit, parentBranch) }`
+in `appendMergeIfNeeded`), so each branch diffs it against its own head and all branches
+end up holding the same tree. `Merge()` then compares them line by line and hands each
+merged line back to its original author and tick.
+
+Our `planBuilder.mergeBranches` (`internal/core/forks.go`) appends the merge commit to
+`mergeBranch` only. The siblings stay at their pre-merge state, so
+`matchingMergeFiles`'s `file.Id == target.Id && file.Len() == target.Len()` test rejects
+them, `resolveMergeMarks` finds every merged line still marked, and attributes the lot to
+the merge author at the merge tick — a second count of lines the sibling branch already
+counted. The `Len()` filter itself only exists to stop `mergeLineValues` from panicking on
+the length mismatch that this causes; upstream needs no such filter.
+
+The divergence predates `082bf15` (which had no merge handling in `linehistory` at all —
+merge commits were consumed as ordinary commits, double-counting the same way). B1b masks
+the symptom by restoring the compensating negatives, so totals now agree with the old
+baseline, but the _attribution_ is still wrong: merged lines are credited to whoever
+pushed the merge button rather than to their author. That corrupts `--burndown-people`,
+`--devs` and ownership, and is a plausible contributor to B2's person-scope negatives.
+
+Evidence that this was a deliberate-looking but unnoticed change: `TestPrepareRunPlanBig`'s
+"extra commit actions" column is `0` in every case here, against upstream's `1`–`7`.
+
+Fixing it means restoring the replay in `forks.go`, teaching `isMergeAction`
+(`pipeline_execution.go:238`) to recognise the adjacent replicas the way upstream's
+`isMerge` does, and re-baselining `TestPrepareRunPlanBig`. Every leaf then sees merge
+commits once per parent branch, as upstream does — so commit counts in `devs`,
+`temporal-activity` and friends need checking before this lands.
 
 ---
 
@@ -322,7 +384,10 @@ idle person in the fixture.
 
 ## Suggested order
 
-0. ~~**B1.**~~ Done — the merge-resolution regression is fixed and covered by tests.
+0. ~~**B1.**~~ ~~**B1b.**~~ Done — merge-resolution deltas are delivered and merge-commit
+   deletions are accounted for; both covered by tests. Line totals now track the
+   `082bf15` baseline within 0.5 %. They must be read together: B1 alone overshoots,
+   B1b alone would deepen the undercount.
 1. **B2's decision, then the demotion.** Now also covers B1c, since project-scope
    negatives turn out to be the same long-standing bug and predate 0.2.0. Turning
    `validateBurndownResultBalances` into a warning (or clamping) is a few lines and

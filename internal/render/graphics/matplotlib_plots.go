@@ -1211,6 +1211,7 @@ func configureTimeAreaAxes(ax *core.Axes, dates []time.Time, opts MatplotlibTime
 	if len(ticks) > 0 {
 		ax.XAxis.Locator = ticker.FixedLocator{TicksList: ticks}
 		ax.XAxis.Formatter = ticker.FixedFormatter{Labels: labels}
+
 		if shouldRotateDateLabels(labels) {
 			ax.XAxis.MajorLabelStyle = core.TickLabelStyle{Rotation: 30, AutoAlign: true}
 		}

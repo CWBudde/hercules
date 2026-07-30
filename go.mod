@@ -6,7 +6,7 @@ require (
 	github.com/Masterminds/sprig v0.0.0-20180725212158-77bb58b7f5e1
 	github.com/araddon/dateparse v0.0.0-20210429162001-6b43995a97de
 	github.com/cwbudde/lz4 v1.0.2-0.20260419232955-5f478e68f711
-	github.com/cwbudde/matplotlib-go v0.3.1
+	github.com/cwbudde/matplotlib-go v0.3.2
 	github.com/cyraxred/go-billy-siva v0.5.1
 	github.com/fatih/camelcase v1.0.0
 	github.com/go-git/go-billy/v5 v5.9.1
@@ -38,9 +38,9 @@ require (
 	github.com/ProtonMail/go-crypto v1.1.6 // indirect
 	github.com/aokoli/goutils v1.0.1 // indirect
 	github.com/cloudflare/circl v1.6.3 // indirect
-	github.com/cwbudde/agg_go v0.3.2 // indirect
+	github.com/cwbudde/agg_go v0.4.0 // indirect
 	github.com/cwbudde/algo-fft v0.6.11 // indirect
-	github.com/cwbudde/mathtext v0.4.4 // indirect
+	github.com/cwbudde/mathtext v0.5.3 // indirect
 	github.com/cwbudde/qhull-go v0.1.0 // indirect
 	github.com/cyphar/filepath-securejoin v0.6.1 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect

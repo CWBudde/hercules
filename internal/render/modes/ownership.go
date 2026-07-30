@@ -21,6 +21,7 @@ import (
 	"github.com/cwbudde/matplotlib-go/core"
 	"github.com/cwbudde/matplotlib-go/render"
 	"github.com/cwbudde/matplotlib-go/style"
+	"github.com/cwbudde/matplotlib-go/ticker"
 
 	"github.com/cwbudde/hercules/internal/render/graphics"
 	"github.com/cwbudde/hercules/internal/render/progress"
@@ -686,8 +687,8 @@ func configureOwnershipTimeAxis(ax *core.Axes, dates []time.Time) {
 		ticks = append(ticks, lastTick)
 		labels = append(labels, dates[len(dates)-1].Format("2006-01-02"))
 	}
-	ax.XAxis.Locator = core.FixedLocator{TicksList: ticks}
-	ax.XAxis.Formatter = core.FixedFormatter{Labels: labels}
+	ax.XAxis.Locator = ticker.FixedLocator{TicksList: ticks}
+	ax.XAxis.Formatter = ticker.FixedFormatter{Labels: labels}
 	if len(labels) > 6 {
 		ax.XAxis.MajorLabelStyle = core.TickLabelStyle{Rotation: 30, AutoAlign: true}
 	}

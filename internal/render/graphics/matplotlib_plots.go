@@ -9,8 +9,10 @@ import (
 
 	matcolor "github.com/cwbudde/matplotlib-go/color"
 	"github.com/cwbudde/matplotlib-go/core"
+	"github.com/cwbudde/matplotlib-go/optional"
 	"github.com/cwbudde/matplotlib-go/render"
 	"github.com/cwbudde/matplotlib-go/style"
+	"github.com/cwbudde/matplotlib-go/ticker"
 )
 
 type MatplotlibTimeAreaSeries struct {
@@ -241,7 +243,7 @@ func plotTimeAreaSeries(
 	edgeWidth := 0.0
 	if opts.Stacked {
 		ax.StackPlot(x, matrix, core.StackPlotOptions{
-			Colors: colors, Labels: labels, Alpha: &alpha, EdgeWidth: &edgeWidth,
+			Colors: colors, Labels: labels, Alpha: optional.Of(alpha), EdgeWidth: optional.Of(edgeWidth),
 		})
 		return nil
 	}
@@ -253,7 +255,7 @@ func plotTimeAreaSeries(
 		}
 		color := colors[i]
 		ax.FillBetween(x, item.Values, baseline, core.FillOptions{
-			Color: &color, Alpha: &alpha, EdgeWidth: &edgeWidth, Label: item.Label,
+			Color: optional.Of(color), Alpha: optional.Of(alpha), EdgeWidth: optional.Of(edgeWidth), Label: item.Label,
 		})
 	}
 	return nil
@@ -297,7 +299,7 @@ func addTimeAreaTextLabels(ax *core.Axes, labels []MatplotlibTextLabel) {
 		}
 		if label.BackgroundColor != nil {
 			fill := renderColor(label.BackgroundColor)
-			textOpts.BBox = &core.TextBBoxOptions{FaceColor: fill, EdgeColor: fill, Padding: 2}
+			textOpts.BBox = optional.Of(core.TextBBoxOptions{FaceColor: fill, EdgeColor: fill, Padding: 2})
 		}
 		ax.Text(label.X, label.Y, label.Text, textOpts)
 	}
@@ -376,15 +378,15 @@ func addMatplotlibLine(ax *core.Axes, item MatplotlibLineSeries, color render.Co
 		fillAlpha, fillEdge := 0.3, 0.0
 		zero := make([]float64, len(item.Y))
 		ax.FillBetween(item.X, item.Y, zero, core.FillOptions{
-			Color: &color, Alpha: &fillAlpha, EdgeWidth: &fillEdge,
+			Color: optional.Of(color), Alpha: optional.Of(fillAlpha), EdgeWidth: optional.Of(fillEdge),
 		})
 	}
 	ax.Plot(item.X, item.Y, core.PlotOptions{
-		Color: &color, LineWidth: &lineWidth, Dashes: item.Dashes, Label: item.Name,
+		Color: optional.Of(color), LineWidth: optional.Of(lineWidth), Dashes: item.Dashes, Label: item.Name,
 	})
 	if item.Marker {
 		size := 24.0
-		ax.Scatter(item.X, item.Y, core.ScatterOptions{Color: &color, Size: &size, Label: ""})
+		ax.Scatter(item.X, item.Y, core.ScatterOptions{Color: optional.Of(color), Size: optional.Of(size), Label: ""})
 	}
 }
 
@@ -417,11 +419,11 @@ func PlotHeatmapMatplotlib(matrix [][]float64, rowLabels, colLabels []string, op
 	vmin := 0.0
 	vmax := maxMatrixFloat64(matrix)
 	img := ax.ImShow(matrix, core.ImShowOptions{
-		Colormap: &cmap,
-		VMin:     &vmin,
-		VMax:     &vmax,
-		Aspect:   "auto",
-		Origin:   core.ImageOriginUpper,
+		Colormap: optional.Of(cmap),
+		VMin:     optional.Of(vmin),
+		VMax:     optional.Of(vmax),
+		Aspect:   optional.Of(core.ImageAspect("auto")),
+		Origin:   optional.Of(core.ImageOriginUpper),
 	})
 	if img == nil {
 		return fmt.Errorf("failed to create heatmap image")
@@ -504,7 +506,7 @@ func PlotBarChartMatplotlib(labels []string, values []float64, opts MatplotlibBa
 		barColor = PythonLaboursColorPalette(1)[0]
 	}
 	renderedColor := renderColor(barColor)
-	ax.Bar(x, values, core.BarOptions{Color: &renderedColor})
+	ax.Bar(x, values, core.BarOptions{Color: optional.Of(renderedColor)})
 	addMatplotlibBarLabels(ax, x, values, opts)
 	configureMatplotlibBarAxes(ax, labels, values, x, opts)
 	return saveMatplotlibBarFigure(fig, opts, width, height)
@@ -549,8 +551,8 @@ func configureMatplotlibBarAxes(
 	} else {
 		ax.SetYLim(0, math.Max(maxFloat64(values)*1.05, 1))
 	}
-	ax.XAxis.Locator = core.FixedLocator{TicksList: ticks}
-	ax.XAxis.Formatter = core.FixedFormatter{Labels: append([]string(nil), labels...)}
+	ax.XAxis.Locator = ticker.FixedLocator{TicksList: ticks}
+	ax.XAxis.Formatter = ticker.FixedFormatter{Labels: append([]string(nil), labels...)}
 	if opts.RotateX {
 		ax.XAxis.MajorLabelStyle = core.TickLabelStyle{
 			Rotation: 45,
@@ -595,8 +597,8 @@ func PlotGroupedBarChartMatplotlib(labels []string, series []MatplotlibGroupedBa
 	ticks := indexPositions(len(labels))
 	ax.SetXLim(-0.5, float64(len(labels))-0.5)
 	ax.SetYLim(0, math.Max(maxValue*1.05, 1))
-	ax.XAxis.Locator = core.FixedLocator{TicksList: ticks}
-	ax.XAxis.Formatter = core.FixedFormatter{Labels: append([]string(nil), labels...)}
+	ax.XAxis.Locator = ticker.FixedLocator{TicksList: ticks}
+	ax.XAxis.Formatter = ticker.FixedFormatter{Labels: append([]string(nil), labels...)}
 	if opts.RotateX {
 		ax.XAxis.MajorLabelStyle = core.TickLabelStyle{Rotation: 45, AutoAlign: true}
 	}
@@ -631,8 +633,8 @@ func addGroupedBarSeries(
 		}
 		color := renderColor(seriesColor)
 		ax.Bar(x, item.Values, core.BarOptions{
-			Color: &color,
-			Width: &barWidth,
+			Color: optional.Of(color),
+			Width: optional.Of(barWidth),
 			Label: item.Name,
 		})
 	}
@@ -737,7 +739,7 @@ func addMatplotlibScatterSeries(
 		if size <= 0 {
 			size = 24
 		}
-		ax.Scatter(x, y, core.ScatterOptions{Color: &renderedColor, Size: &size, Label: item.Name})
+		ax.Scatter(x, y, core.ScatterOptions{Color: optional.Of(renderedColor), Size: optional.Of(size), Label: item.Name})
 		if annotateLabels {
 			addMatplotlibScatterLabels(ax, item.Points, x, y)
 		}
@@ -763,8 +765,8 @@ func configureMatplotlibScatterXAxis(ax *core.Axes, opts MatplotlibScatterOption
 		return
 	}
 	ax.SetXLim(-0.5, float64(len(opts.XTickLabels))-0.5)
-	ax.XAxis.Locator = core.FixedLocator{TicksList: indexPositions(len(opts.XTickLabels))}
-	ax.XAxis.Formatter = core.FixedFormatter{Labels: append([]string(nil), opts.XTickLabels...)}
+	ax.XAxis.Locator = ticker.FixedLocator{TicksList: indexPositions(len(opts.XTickLabels))}
+	ax.XAxis.Formatter = ticker.FixedFormatter{Labels: append([]string(nil), opts.XTickLabels...)}
 	if opts.RotateX {
 		ax.XAxis.MajorLabelStyle = core.TickLabelStyle{
 			Rotation: 45,
@@ -799,8 +801,8 @@ func PlotStackedBarChartMatplotlib(labels []string, series []MatplotlibGroupedBa
 	}
 	ax.SetXLim(-0.5, float64(len(labels))-0.5)
 	ax.SetYLim(0, math.Max(maxTotal*1.05, 1))
-	ax.XAxis.Locator = core.FixedLocator{TicksList: append([]float64(nil), x...)}
-	ax.XAxis.Formatter = core.FixedFormatter{Labels: append([]string(nil), labels...)}
+	ax.XAxis.Locator = ticker.FixedLocator{TicksList: append([]float64(nil), x...)}
+	ax.XAxis.Formatter = ticker.FixedFormatter{Labels: append([]string(nil), labels...)}
 	if opts.RotateX {
 		ax.XAxis.MajorLabelStyle = core.TickLabelStyle{
 			Rotation: 45,
@@ -836,7 +838,7 @@ func addMatplotlibStackedBars(
 		}
 		color := renderColor(seriesColor)
 		ax.Bar(x, item.Values, core.BarOptions{
-			Color: &color, Baselines: append([]float64(nil), baseline...), Label: item.Name,
+			Color: optional.Of(color), Baselines: append([]float64(nil), baseline...), Label: item.Name,
 		})
 		for j, value := range item.Values {
 			baseline[j] += value
@@ -888,8 +890,8 @@ func PlotDevsEffortsMatplotlib(
 	ax.StackPlot(x, renderedLayers, core.StackPlotOptions{
 		Colors:    effortLayerColors(len(cumLayers)),
 		Labels:    labels,
-		EdgeWidth: &edge,
-		Alpha:     &alpha,
+		EdgeWidth: optional.Of(edge),
+		Alpha:     optional.Of(alpha),
 	})
 
 	ax.SetXLim(x[0], x[len(x)-1])
@@ -900,8 +902,8 @@ func PlotDevsEffortsMatplotlib(
 
 	ticks, tlabels := timeAxisDateTicks(dates, "")
 	if len(ticks) > 0 {
-		ax.XAxis.Locator = core.FixedLocator{TicksList: ticks}
-		ax.XAxis.Formatter = core.FixedFormatter{Labels: tlabels}
+		ax.XAxis.Locator = ticker.FixedLocator{TicksList: ticks}
+		ax.XAxis.Formatter = ticker.FixedFormatter{Labels: tlabels}
 		if shouldRotateDateLabels(tlabels) {
 			ax.XAxis.MajorLabelStyle = core.TickLabelStyle{Rotation: 30, AutoAlign: true}
 		}
@@ -1001,7 +1003,7 @@ func PlotParallelCoordinatesMatplotlib(series []MatplotlibParallelCoordinatesSer
 	}
 	ax.SetTitle(opts.Title)
 
-	cmap := matcolor.GetColormap("viridis")
+	cmap := matcolor.LookupColormap("viridis")
 	const perGap = 20
 	// Slightly wider than matplotlib's default so the per-segment gradient reads
 	// as a continuous ribbon instead of stippling at 1px.
@@ -1018,7 +1020,7 @@ func PlotParallelCoordinatesMatplotlib(series []MatplotlibParallelCoordinatesSer
 				t = float64(k) / float64(segments-1)
 			}
 			c := cmap.At(t)
-			ax.Plot(px[k:k+2], py[k:k+2], core.PlotOptions{Color: &c, LineWidth: &lineWidth})
+			ax.Plot(px[k:k+2], py[k:k+2], core.PlotOptions{Color: optional.Of(c), LineWidth: optional.Of(lineWidth)})
 		}
 	}
 
@@ -1127,8 +1129,8 @@ func ConfigureLineCountYAxis(axes *core.Axes, maxValue float64) {
 	}
 
 	ticks, labels := lineCountYAxisTicks(maxValue)
-	axes.YAxis.Locator = core.FixedLocator{TicksList: ticks}
-	axes.YAxis.Formatter = core.FixedFormatter{Labels: labels}
+	axes.YAxis.Locator = ticker.FixedLocator{TicksList: ticks}
+	axes.YAxis.Formatter = ticker.FixedFormatter{Labels: labels}
 }
 
 func lineCountYAxisTicks(maxValue float64) ([]float64, []string) {
@@ -1195,8 +1197,8 @@ func configureTimeAreaAxes(ax *core.Axes, dates []time.Time, opts MatplotlibTime
 	// range artifact the burndown-only logic would introduce.
 	ticks, labels := timeAxisDateTicks(dates, "")
 	if len(ticks) > 0 {
-		ax.XAxis.Locator = core.FixedLocator{TicksList: ticks}
-		ax.XAxis.Formatter = core.FixedFormatter{Labels: labels}
+		ax.XAxis.Locator = ticker.FixedLocator{TicksList: ticks}
+		ax.XAxis.Formatter = ticker.FixedFormatter{Labels: labels}
 		if shouldRotateDateLabels(labels) {
 			ax.XAxis.MajorLabelStyle = core.TickLabelStyle{Rotation: 30, AutoAlign: true}
 		}
@@ -1259,8 +1261,8 @@ func configureMatplotlibHeatmapTicks(ax *core.Axes, rowLabels, colLabels []strin
 		xTicks[i] = float64(i)
 		xLabels[i] = compactMatplotlibLabel(label, xLimit)
 	}
-	ax.XAxis.Locator = core.FixedLocator{TicksList: xTicks}
-	ax.XAxis.Formatter = core.FixedFormatter{Labels: xLabels}
+	ax.XAxis.Locator = ticker.FixedLocator{TicksList: xTicks}
+	ax.XAxis.Formatter = ticker.FixedFormatter{Labels: xLabels}
 	ax.XAxis.MajorLabelStyle = core.TickLabelStyle{
 		Rotation: 90,
 		HAlign:   core.TextAlignRight,
@@ -1277,8 +1279,8 @@ func configureMatplotlibHeatmapTicks(ax *core.Axes, rowLabels, colLabels []strin
 		yTicks[i] = float64(i)
 		yLabels[i] = compactMatplotlibLabel(label, yLimit)
 	}
-	ax.YAxis.Locator = core.FixedLocator{TicksList: yTicks}
-	ax.YAxis.Formatter = core.FixedFormatter{Labels: yLabels}
+	ax.YAxis.Locator = ticker.FixedLocator{TicksList: yTicks}
+	ax.YAxis.Formatter = ticker.FixedFormatter{Labels: yLabels}
 }
 
 func compactMatplotlibLabel(label string, limit int) string {

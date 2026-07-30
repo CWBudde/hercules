@@ -9,8 +9,10 @@ import (
 
 	"github.com/cwbudde/matplotlib-go/backends"
 	"github.com/cwbudde/matplotlib-go/core"
+	"github.com/cwbudde/matplotlib-go/optional"
 	"github.com/cwbudde/matplotlib-go/render"
 	"github.com/cwbudde/matplotlib-go/style"
+	"github.com/cwbudde/matplotlib-go/ticker"
 
 	"github.com/cwbudde/hercules/internal/render/graphics"
 	"github.com/cwbudde/hercules/internal/render/progress"
@@ -311,15 +313,15 @@ func plotRuntimePercentageMatplotlib(labels []string, values []float64, output s
 	barHeight := 0.8
 	barColor := renderColor(color.RGBA{R: 228, G: 87, B: 86, A: 255})
 	ax.Bar(y, values, core.BarOptions{
-		Color:       &barColor,
-		Width:       &barHeight,
-		Orientation: &orientation,
+		Color:       optional.Of(barColor),
+		Width:       optional.Of(barHeight),
+		Orientation: optional.Of(orientation),
 	})
 	ax.SetXLim(0, maxValue*1.05)
 	ax.SetYLim(-0.89, float64(len(values))-0.11)
-	ax.XAxis.Locator = core.FixedLocator{TicksList: []float64{0, 20, 40, 60, 80}}
-	ax.YAxis.Locator = core.FixedLocator{TicksList: ticks}
-	ax.YAxis.Formatter = core.FixedFormatter{Labels: append([]string(nil), labels...)}
+	ax.XAxis.Locator = ticker.FixedLocator{TicksList: []float64{0, 20, 40, 60, 80}}
+	ax.YAxis.Locator = ticker.FixedLocator{TicksList: ticks}
+	ax.YAxis.Formatter = ticker.FixedFormatter{Labels: append([]string(nil), labels...)}
 
 	return saveRuntimeFigure(fig, output, width, height)
 }

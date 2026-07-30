@@ -82,52 +82,52 @@ func TestForkCopyPipelineItem(t *testing.T) {
 
 func TestInsertHibernateBoot(t *testing.T) {
 	plan := []runAction{
-		{runActionEmerge, nil, nil, []int{1, 2}},
-		{runActionEmerge, nil, nil, []int{3}},
-		{runActionCommit, nil, nil, []int{3}},
-		{runActionCommit, nil, nil, []int{3}},
-		{runActionCommit, nil, nil, []int{1}},
-		{runActionFork, nil, nil, []int{2, 4}},
-		{runActionCommit, nil, nil, []int{3}},
-		{runActionCommit, nil, nil, []int{3}},
-		{runActionDelete, nil, nil, []int{1}},
-		{runActionMerge, nil, nil, []int{2, 4}},
+		{Action: runActionEmerge, Commit: nil, NextMerge: nil, Items: []int{1, 2}},
+		{Action: runActionEmerge, Commit: nil, NextMerge: nil, Items: []int{3}},
+		{Action: runActionCommit, Commit: nil, NextMerge: nil, Items: []int{3}},
+		{Action: runActionCommit, Commit: nil, NextMerge: nil, Items: []int{3}},
+		{Action: runActionCommit, Commit: nil, NextMerge: nil, Items: []int{1}},
+		{Action: runActionFork, Commit: nil, NextMerge: nil, Items: []int{2, 4}},
+		{Action: runActionCommit, Commit: nil, NextMerge: nil, Items: []int{3}},
+		{Action: runActionCommit, Commit: nil, NextMerge: nil, Items: []int{3}},
+		{Action: runActionDelete, Commit: nil, NextMerge: nil, Items: []int{1}},
+		{Action: runActionMerge, Commit: nil, NextMerge: nil, Items: []int{2, 4}},
 	}
 	plan = insertHibernateBoot(plan, 2)
 	assert.Equal(t, []runAction{
-		{runActionEmerge, nil, nil, []int{1, 2}},
-		{runActionHibernate, nil, nil, []int{1, 2}},
-		{runActionEmerge, nil, nil, []int{3}},
-		{runActionCommit, nil, nil, []int{3}},
-		{runActionCommit, nil, nil, []int{3}},
-		{runActionBoot, nil, nil, []int{1}},
-		{runActionCommit, nil, nil, []int{1}},
-		{runActionBoot, nil, nil, []int{2}},
-		{runActionFork, nil, nil, []int{2, 4}},
-		{runActionHibernate, nil, nil, []int{2, 4}},
-		{runActionCommit, nil, nil, []int{3}},
-		{runActionCommit, nil, nil, []int{3}},
-		{runActionDelete, nil, nil, []int{1}},
-		{runActionBoot, nil, nil, []int{2, 4}},
-		{runActionMerge, nil, nil, []int{2, 4}},
+		{Action: runActionEmerge, Commit: nil, NextMerge: nil, Items: []int{1, 2}},
+		{Action: runActionHibernate, Commit: nil, NextMerge: nil, Items: []int{1, 2}},
+		{Action: runActionEmerge, Commit: nil, NextMerge: nil, Items: []int{3}},
+		{Action: runActionCommit, Commit: nil, NextMerge: nil, Items: []int{3}},
+		{Action: runActionCommit, Commit: nil, NextMerge: nil, Items: []int{3}},
+		{Action: runActionBoot, Commit: nil, NextMerge: nil, Items: []int{1}},
+		{Action: runActionCommit, Commit: nil, NextMerge: nil, Items: []int{1}},
+		{Action: runActionBoot, Commit: nil, NextMerge: nil, Items: []int{2}},
+		{Action: runActionFork, Commit: nil, NextMerge: nil, Items: []int{2, 4}},
+		{Action: runActionHibernate, Commit: nil, NextMerge: nil, Items: []int{2, 4}},
+		{Action: runActionCommit, Commit: nil, NextMerge: nil, Items: []int{3}},
+		{Action: runActionCommit, Commit: nil, NextMerge: nil, Items: []int{3}},
+		{Action: runActionDelete, Commit: nil, NextMerge: nil, Items: []int{1}},
+		{Action: runActionBoot, Commit: nil, NextMerge: nil, Items: []int{2, 4}},
+		{Action: runActionMerge, Commit: nil, NextMerge: nil, Items: []int{2, 4}},
 	}, plan)
 }
 
 func TestRunActionString(t *testing.T) {
 	c, _ := test.FixtureRepository().CommitObject(plumbing.NewHash("cce947b98a050c6d356bc6ba95030254914027b1"))
-	ra := runAction{runActionCommit, c, nil, nil}
+	ra := runAction{Action: runActionCommit, Commit: c}
 	assert.Equal(t, "cce947b", ra.String())
-	ra = runAction{runActionFork, nil, nil, []int{1, 2, 5}}
+	ra = runAction{Action: runActionFork, Commit: nil, NextMerge: nil, Items: []int{1, 2, 5}}
 	assert.Equal(t, "fork^3", ra.String())
-	ra = runAction{runActionMerge, nil, nil, []int{1, 2, 5}}
+	ra = runAction{Action: runActionMerge, Commit: nil, NextMerge: nil, Items: []int{1, 2, 5}}
 	assert.Equal(t, "merge^3", ra.String())
-	ra = runAction{runActionEmerge, nil, nil, nil}
+	ra = runAction{Action: runActionEmerge, Commit: nil}
 	assert.Equal(t, runActionEmergeName, ra.String())
-	ra = runAction{runActionDelete, nil, nil, nil}
+	ra = runAction{Action: runActionDelete, Commit: nil}
 	assert.Equal(t, "delete", ra.String())
-	ra = runAction{runActionHibernate, nil, nil, nil}
+	ra = runAction{Action: runActionHibernate, Commit: nil}
 	assert.Equal(t, "hibernate", ra.String())
-	ra = runAction{runActionBoot, nil, nil, nil}
+	ra = runAction{Action: runActionBoot, Commit: nil}
 	assert.Equal(t, "boot", ra.String())
 }
 
@@ -879,10 +879,23 @@ func TestMergeActionLeadsWithTheConsumingBranch(t *testing.T) {
 		require.NoError(t, err)
 
 		consumedOn := map[plumbing.Hash]int{}
+		replicatedOn := map[plumbing.Hash]map[int]bool{}
 
 		for _, action := range plan {
 			switch action.Action {
 			case runActionCommit:
+				// Replicas replay the same commit on the other parents; only the authoritative
+				// consumption may claim the branch the merge is resolved against.
+				if action.MergeReplica {
+					if replicatedOn[action.Commit.Hash] == nil {
+						replicatedOn[action.Commit.Hash] = map[int]bool{}
+					}
+
+					replicatedOn[action.Commit.Hash][action.Items[0]] = true
+
+					continue
+				}
+
 				consumedOn[action.Commit.Hash] = action.Items[0]
 			case runActionMerge:
 				merges++
@@ -892,6 +905,14 @@ func TestMergeActionLeadsWithTheConsumingBranch(t *testing.T) {
 				require.Equal(t, branch, action.Items[0],
 					"merge of %s leads with branch %d but the commit ran on %d",
 					action.Commit.Hash.String()[:7], action.Items[0], branch)
+
+				// Every other parent must have replayed it, or Merge() cannot pair the files up
+				// and charges everything the merge touched to the merge author. See PLAN.md B1d.
+				for _, item := range action.Items[1:] {
+					require.True(t, replicatedOn[action.Commit.Hash][item],
+						"merge of %s reconciles branch %d, which never consumed it",
+						action.Commit.Hash.String()[:7], item)
+				}
 			}
 		}
 	}

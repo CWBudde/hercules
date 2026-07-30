@@ -466,7 +466,10 @@ func TestPipelineRunBranches(t *testing.T) {
 	common, ok := result[nil].(*CommonAnalysisResult)
 	require.True(t, ok)
 	assert.Equal(t, 5, common.CommitsNumber)
-	assert.Equal(t, 6, *item.MergeState)
+	// MergeState counts every Consume() plus every one that saw DependencyIsMerge set. The
+	// fixture's merge commit is replayed on its other parent branch, so there are 6 consumptions
+	// of 5 commits, two of which are merge consumptions: 6 + 2. See PLAN.md B1d.
+	assert.Equal(t, 8, *item.MergeState)
 }
 
 func TestPipelineDisposesEveryUniqueBranchItemOnce(t *testing.T) {
@@ -1079,22 +1082,29 @@ func TestMergeDag(t *testing.T) {
 }
 
 func TestPrepareRunPlanBig(t *testing.T) {
+	// Columns: year, month, day, extra commit actions, forks, merges, deletes.
+	//
+	// "Extra commit actions" counts plan entries beyond one per commit. A merge commit is replayed
+	// on each of its other parent branches so that every branch holds the merged tree when Merge()
+	// runs (PLAN.md B1d), which for the usual two-parent merge is one extra action apiece - hence
+	// the column tracking the merge count. The two -2 rows are cutoff artifacts: their merge joins
+	// two parents that resolve to the same branch, so it needs no replica.
 	cases := [][7]int{
 		{2017, 8, 9, 0, 0, 0, 0},
 		{2017, 8, 10, 0, 0, 0, 0},
-		{2017, 8, 24, 0, 1, 1, 1},
+		{2017, 8, 24, 1, 1, 1, 1},
 		{2017, 9, 19, -2, 1, 1, 1},
 		{2017, 9, 23, -2, 1, 1, 1},
-		{2017, 12, 8, 0, 1, 1, 1},
-		{2017, 12, 9, 0, 1, 1, 1},
-		{2017, 12, 10, 0, 1, 1, 1},
-		{2017, 12, 11, 0, 2, 2, 2},
-		{2017, 12, 19, 0, 3, 3, 3},
-		{2017, 12, 27, 0, 3, 3, 3},
-		{2018, 1, 10, 0, 3, 3, 3},
-		{2018, 1, 16, 0, 3, 3, 3},
-		{2018, 1, 18, 0, 5, 4, 4},
-		{2018, 1, 23, 0, 5, 5, 5},
+		{2017, 12, 8, 1, 1, 1, 1},
+		{2017, 12, 9, 1, 1, 1, 1},
+		{2017, 12, 10, 1, 1, 1, 1},
+		{2017, 12, 11, 2, 2, 2, 2},
+		{2017, 12, 19, 3, 3, 3, 3},
+		{2017, 12, 27, 3, 3, 3, 3},
+		{2018, 1, 10, 3, 3, 3, 3},
+		{2018, 1, 16, 3, 3, 3, 3},
+		{2018, 1, 18, 4, 5, 4, 4},
+		{2018, 1, 23, 5, 5, 5, 5},
 		// The hermetic siva fixture's history ends at its master commit
 		// (authored 2018-01-25), so cases with later cutoffs — which relied on
 		// upstream commits not present in the fixture — are not included.

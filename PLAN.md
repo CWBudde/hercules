@@ -1,7 +1,7 @@
 # PLAN: correctness regressions blocking real-world use of 0.2.0
 
-**Status:** open — 8 of 13 items fixed; B1c's rename half is fixed, its double-removal residue
-carries the remaining accounting defect
+**Status:** open — 9 of 13 items fixed; B1c's double-removal residue carries the remaining
+accounting defect
 **Filed:** 2026-07-30, against `b330adf` (tag `0.2.0`)
 **Reference build for "worked before":** `082bf15` (the `Version: 0` binary still installed at `/usr/local/bin/hercules`)
 
@@ -27,7 +27,7 @@ Checkbox = done / not done. The emoji is the severity of what is left.
 - [x] [**B1**](#b1--merge-resolution-deltas-were-discarded-corrupting-the-project-matrix--fixed) — merge-resolution deltas discarded, project matrix corrupted (`9e570a3`, `1be72df`)
 - [x] [**B1b**](#b1b--file-deletion-inside-a-merge-commit-emits-nothing--fixed) — file deletion inside a merge commit emits nothing (`1abecda`, `9c010ef`)
 - [ ] [**B1c**](#b1c--residual-negatives-the-same-lines-removed-twice-across-branches-) — residual negatives: the same lines removed twice across branches 🟡 (rename comparator fixed; genuine double-removal open)
-- [ ] [**B1d**](#b1d--the-merge-commit-is-consumed-by-only-one-branch-) — merge commit is consumed by only one branch 🟠
+- [x] [**B1d**](#b1d--the-merge-commit-is-consumed-by-only-one-branch--fixed) — merge commit is consumed by only one branch; merged lines now keep their real author
 - [x] [**B2** (demotion)](#the-demotion-is-done---the-decision-is-not) — negative balances warn instead of aborting (`ebc8ded`, `a7c8cba`, `0ea3cc0`)
 - [x] [**B2** (decision)](#b2--person-burndown-matrices-have-always-contained-negatives--decided-a) — decided **(a)**: the accounting is wrong; the residual/transient split is now measured and reported
 - [x] [**B3**](#b3--ownershipsnapshot-underflows-killing---bus-factor----ownership-concentration--fixed) — `OwnershipSnapshot` underflow (`fafb754`, `c04d08c`)
@@ -169,7 +169,7 @@ a new defect. At project scope the corpus therefore still fails until B2 is deci
 
 ---
 
-## B1d — the merge commit is consumed by only one branch 🟠
+## B1d — the merge commit is consumed by only one branch ✅ FIXED
 
 Not filed originally; found while measuring B1b. Upstream replays the merge commit on
 **every** parent branch (`if parentBranch != branch { appendCommit(commit, parentBranch) }`
@@ -195,11 +195,82 @@ pushed the merge button rather than to their author. That corrupts `--burndown-p
 Evidence that this was a deliberate-looking but unnoticed change: `TestPrepareRunPlanBig`'s
 "extra commit actions" column is `0` in every case here, against upstream's `1`–`7`.
 
-Fixing it means restoring the replay in `forks.go`, teaching `isMergeAction`
-(`pipeline_execution.go:238`) to recognise the adjacent replicas the way upstream's
-`isMerge` does, and re-baselining `TestPrepareRunPlanBig`. Every leaf then sees merge
-commits once per parent branch, as upstream does — so commit counts in `devs`,
-`temporal-activity` and friends need checking before this lands.
+### Measured first: the length filter accounted for all of it
+
+Before touching anything, `matchingMergeFiles` was instrumented to count, per file merge, how many
+parents it accepted and how many lines `resolveMergeMarks` then charged to the merge author:
+
+| repository | file merges | parent dropped | lines charged to the merge author |
+| --- | ---: | ---: | ---: |
+| `mekorp-backend` | 106 567 | 2 536 | 103 014 |
+| `meko-etl-tool` | 6 974 | 913 | 38 390 |
+| `render-pdf` | 3 322 | 116 | 11 241 |
+| `backend-for-microscope` | 1 685 | 90 | 3 079 |
+
+Splitting those lines by whether the file merge had lost a parent gave **100 % from the lost-parent
+population and zero from the clean one**. When every parent is present `mergeLineValues` resolves
+every mark and nothing reaches the merge author, so the 2–13 % of file merges that lose a parent
+were producing all of the misattribution.
+
+### The fix
+
+1. `planBuilder.appendMergeReplicas` (`internal/core/forks.go`) replays the merge commit on every
+   parent branch but the authoritative one, which comes first so that `OneShotMergeProcessor`
+   keeps the right sighting. `TreeDiff` forks by copy, so each replica diffs against its own head.
+2. `isMergeAction` accepts an adjacent commit replica as well as the merge action. Every replica
+   must answer true, or a branch would offer its merge-introduced lines as ground truth.
+3. `matchingMergeFiles` drops the `file.Id == target.Id` requirement. Once the parents converge,
+   that was the **only** remaining reason to reject one — measured `noPath=0` and every rejection
+   `otherId` with identical length. Upstream matches on the path alone; the length check stays
+   only as a guard against the `mergeLineValues` panic.
+4. `LineHistoryAnalyser.foldMergeRemovals` keeps one removal per file across the parents. This is
+   load-bearing: a merge commit suppresses everything it inserts or edits, so removals are the only
+   deltas it emits, and a file several parents hold reports one per parent. Left alone that
+   double-removal recreates B1c's shape — measured 11 697 duplicate removals on `mekorp-backend`.
+   Dropping them all instead would lose the file only one parent held.
+5. `commits.go` and `knowledge_diffusion.go` gained `core.IsMergeReplica(deps)` guards; the ten
+   leaves which already embed `OneShotMergeProcessor` were fine. Replicas do not advance
+   `DependencyIndex`.
+
+### Effect
+
+Lines charged to the merge author instead of their real author:
+
+| repository | before | after |
+| --- | ---: | ---: |
+| `mekorp-backend` | 103 014 | **341** |
+| `meko-etl-tool` | 38 390 | **74** |
+| `render-pdf` | 11 241 | **27** |
+| `backend-for-microscope` | 3 079 | **2** |
+
+99.7 % gone; the remainder is genuine conflict resolution, which does belong to the merge author.
+
+The project matrix also moves sharply towards the truth. Comparing the final sampled row against
+`git grep -I -c ''` at HEAD:
+
+| repository | git at HEAD | before | after |
+| --- | ---: | ---: | ---: |
+| `meko-etl-tool` | 24 908 | 65 141 (+161 %) | **27 685 (+11 %)** |
+| `render-pdf` | 81 290 | 93 195 (+15 %) | **81 725 (+0.5 %)** |
+| `backend-for-microscope` | 42 591 | 45 781 (+7.5 %) | **42 704 (+0.3 %)** |
+| `personio-ipoffice-sync` | 5 014 | 5 014 | 5 014 |
+| `mekorp-backend` | 958 910 | 882 918 (−7.9 %) | 823 907 (−14.1 %) |
+
+The inflation those matrices carried was the merge re-adding lines a parent had already counted.
+
+**`mekorp-backend` is the open end.** It was already under-counting before this change, and the
+same correction pushes it further under. The likely reading is a separate pre-existing shortfall
+there — B6's fail-closed blob size limit would do it, and that repository has the large generated
+files for it — with B1d's correction applied on top rather than a new defect. Not proven. It is
+the repository to drive the corpus regression suite from.
+
+### Tests
+
+`TestMergeActionLeadsWithTheConsumingBranch` additionally asserts that every branch a merge
+reconciles has consumed it. `verifyLineageInvariants` gained invariant 1b, keyed off what the
+planner decided rather than the raw parent count — a redundant merge edge is collapsed away and
+must then *not* be replayed. `TestPrepareRunPlanBig`'s "extra commit actions" column went from `0`
+everywhere to the per-case merge count, which is upstream's `1`–`7` shape.
 
 ---
 
@@ -835,11 +906,12 @@ _observed_ to abort on `MKTools`, `mw_prod_planner` and `mekorp-webclient`.
 - [ ] **6. The corpus regression test**, below. It is now a prerequisite rather than a
       nice-to-have: B1c and B1d both change merge accounting, and there is no way to tell a
       real improvement from a new leak without one.
-- [ ] **7. B1c's residue, then B1d.** B1c's rename half is fixed (the `sortableChange.Less`
-      comparator); what is left is the genuine double-removal across sibling branches. Take it
-      with B1d — both are about reconciling branch state at a merge, and B1d's mis-attribution
-      is plausibly the same code path. `mekorp-backend` is now the case to drive from: 2226
-      cells and essentially all of the remaining negative mass.
+- [ ] **7. B1c's residue.** Both of its neighbours are now fixed — the `sortableChange.Less`
+      comparator (B1c's rename half) and the merge replay (B1d) — and B1d turned out to share
+      the mechanism, since dropping a parent from a file merge is what left the marks unresolved.
+      What is left is the genuine double-removal across sibling branches. `mekorp-backend` is the
+      case to drive from: it holds essentially all the remaining negative mass, and it is also the
+      one repository whose project matrix B1d moved away from the git ground truth.
 - [ ] **8. B8's regression test.** The fix itself is committed (`c04d08c`); what is left is a
       fixture with a deliberately idle person.
 - [ ] **9. B5, B6, B7, B9.** Lower frequency; B6 may be documentation only and B9 is a

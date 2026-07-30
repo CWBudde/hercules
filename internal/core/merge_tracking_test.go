@@ -45,6 +45,7 @@ type lineageConsumeRecord struct {
 	hash      plumbing.Hash
 	index     int
 	isMerge   bool
+	replica   bool
 	nextMerge *object.Commit
 	// state is a snapshot of the branch-local state BEFORE consuming the commit.
 	state lineageState
@@ -124,6 +125,7 @@ func (item *lineageTestItem) Consume(deps map[string]any) (map[string]any, error
 		hash:    commit.Hash,
 		index:   index,
 		isMerge: isMerge,
+		replica: IsMergeReplica(deps),
 		state:   copyLineageState(item.seen),
 	}
 	if nextMerge, exists := deps[DependencyNextMerge]; exists {
@@ -275,16 +277,57 @@ func verifyLineageInvariants(
 	}
 	ancestors := properAncestors(commits)
 
-	// 1. Every commit is consumed exactly once.
-	require.Len(t, recorder.records, len(commits),
-		"number of Consume() calls must match the number of commits")
+	// 1. Every commit is consumed exactly once authoritatively. A merge commit is additionally
+	// replayed on each of its other parent branches so that the item-level Merge() can pair the
+	// branches' files up - those replicas are marked and accounted for separately in 1b.
+	authoritative := 0
 	consumedAt := map[plumbing.Hash]int{}
+
 	for i, record := range recorder.records {
 		_, known := inSet[record.hash]
 		require.True(t, known, "consumed unknown commit %s", record.hash)
+
+		if record.replica {
+			require.True(t, record.isMerge,
+				"commit %s is a replica but was not reported as a merge", record.hash)
+			require.Contains(t, consumedAt, record.hash,
+				"replica of %s ran before its authoritative consumption", record.hash)
+
+			continue
+		}
+
 		_, duplicate := consumedAt[record.hash]
 		require.False(t, duplicate, "commit %s was consumed twice", record.hash)
 		consumedAt[record.hash] = i
+		authoritative++
+	}
+
+	require.Equal(t, len(commits), authoritative,
+		"number of authoritative Consume() calls must match the number of commits")
+
+	// 1b. A commit the planner treats as a merge is replayed on the other parent branches, so
+	// that none of them is still holding a pre-merge tree when Merge() runs. See PLAN.md B1d.
+	// The raw parent count is not the test: a redundant merge edge is collapsed away, and the
+	// commit is then planned - and must be replayed - as an ordinary one.
+	replicas := map[plumbing.Hash]int{}
+	merging := map[plumbing.Hash]bool{}
+
+	for _, record := range recorder.records {
+		if record.replica {
+			replicas[record.hash]++
+		} else {
+			merging[record.hash] = record.isMerge
+		}
+	}
+
+	for hash, isMerge := range merging {
+		if isMerge {
+			require.Positive(t, replicas[hash],
+				"merge commit %s was not replayed on any other parent branch", hash)
+		} else {
+			require.Zero(t, replicas[hash],
+				"non-merge commit %s was replayed", hash)
+		}
 	}
 
 	for _, record := range recorder.records {

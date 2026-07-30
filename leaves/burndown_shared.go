@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/cwbudde/hercules/internal/burndown"
@@ -20,6 +21,9 @@ const (
 	ConfigBurndownTrackFiles = "Burndown.TrackFiles"
 	// ConfigBurndownTrackPeople enables burndown collection for authors.
 	ConfigBurndownTrackPeople = "Burndown.TrackPeople"
+	// ConfigBurndownStrictBalances makes a negative burndown balance abort the run instead of
+	// being reported once as a warning.
+	ConfigBurndownStrictBalances = "Burndown.StrictBalances"
 	// DefaultBurndownGranularity is the default number of ticks for BurndownAnalysis.Granularity
 	// and BurndownAnalysis.Sampling.
 	DefaultBurndownGranularity = 30
@@ -64,67 +68,130 @@ func (err *negativeBurndownBalanceError) Unwrap() error {
 	return errNegativeBurndownBalance
 }
 
-func validateBurndownResultBalances(result *BurndownResult, operation string) error {
-	err := validateBurndownHistory(
-		result.GlobalHistory, result, operation, "project", "project",
+// burndownBalanceReport collects every cell in which a burndown matrix claims a negative number
+// of alive lines. Such a cell is always an accounting defect - a repository cannot make one
+// happen - but the defect predates this release and is not yet fixed, so the report exists to
+// describe the damage rather than to stop at the first sign of it.
+type burndownBalanceReport struct {
+	// first is the offending cell in scan order. Strict mode reports this one, so that the
+	// message stays stable regardless of how many other cells are affected.
+	first *negativeBurndownBalanceError
+	// worst is the most negative cell, which says far more about the scale of the problem.
+	worst  *negativeBurndownBalanceError
+	cells  int
+	scopes map[string]int
+}
+
+func (report *burndownBalanceReport) add(err *negativeBurndownBalanceError) {
+	report.cells++
+
+	if report.scopes == nil {
+		report.scopes = map[string]int{}
+	}
+
+	report.scopes[err.Scope]++
+
+	if report.first == nil {
+		report.first = err
+	}
+
+	if report.worst == nil || err.Value < report.worst.Value {
+		report.worst = err
+	}
+}
+
+// summary describes the worst cell plus the overall extent, for the single warning a
+// non-strict run emits.
+func (report *burndownBalanceReport) summary() string {
+	return fmt.Sprintf(
+		"%s; %d cell(s) affected in total (%s). The matrix is reported as computed - "+
+			"pass --strict-burndown-balances to fail the run instead.",
+		report.worst, report.cells, report.breakdown(),
 	)
-	if err != nil {
-		return err
+}
+
+func (report *burndownBalanceReport) breakdown() string {
+	parts := make([]string, 0, len(report.scopes))
+	for _, scope := range sortedKeys(report.scopes) {
+		parts = append(parts, fmt.Sprintf("%s: %d", scope, report.scopes[scope]))
 	}
 
-	for _, name := range sortedKeys(result.FileHistories) {
-		err = validateBurndownHistory(
-			result.FileHistories[name], result, operation, "file", name,
-		)
-		if err != nil {
-			return err
-		}
+	return strings.Join(parts, ", ")
+}
+
+// reportBurndownBalances applies the configured policy to a result which may contain negative
+// balances. Aborting a multi-hour run over a single -1 throws away every other analysis it
+// produced, so by default the run continues and warns once; --strict-burndown-balances restores
+// the hard failure for anyone bisecting the accounting itself.
+func reportBurndownBalances(
+	logger core.Logger, strict bool, result *BurndownResult, operation string,
+) error {
+	report := auditBurndownResultBalances(result, operation)
+	if report.cells == 0 {
+		return nil
 	}
 
-	for index, history := range result.PeopleHistories {
-		name := indexedBurndownName(result.reversedPeopleDict, index)
-
-		err = validateBurndownHistory(history, result, operation, "person", name)
-		if err != nil {
-			return err
-		}
+	if strict {
+		return report.first
 	}
 
-	for index, history := range result.RepositoryHistories {
-		name := indexedBurndownName(result.ReversedRepositoryDict, index)
-
-		err = validateBurndownHistory(history, result, operation, "repository", name)
-		if err != nil {
-			return err
-		}
+	if logger == nil {
+		logger = core.NewLogger()
 	}
+
+	logger.Warn(report.summary())
 
 	return nil
 }
 
-func validateBurndownHistory(
+func auditBurndownResultBalances(
+	result *BurndownResult, operation string,
+) *burndownBalanceReport {
+	report := &burndownBalanceReport{}
+
+	auditBurndownHistory(report, result.GlobalHistory, result, operation, "project", "project")
+
+	for _, name := range sortedKeys(result.FileHistories) {
+		auditBurndownHistory(report, result.FileHistories[name], result, operation, "file", name)
+	}
+
+	for index, history := range result.PeopleHistories {
+		name := indexedBurndownName(result.reversedPeopleDict, index)
+		auditBurndownHistory(report, history, result, operation, "person", name)
+	}
+
+	for index, history := range result.RepositoryHistories {
+		name := indexedBurndownName(result.ReversedRepositoryDict, index)
+		auditBurndownHistory(report, history, result, operation, "repository", name)
+	}
+
+	return report
+}
+
+func auditBurndownHistory(
+	report *burndownBalanceReport,
 	history burndown.DenseHistory,
 	result *BurndownResult,
 	operation, scope, name string,
-) error {
+) {
 	for row, values := range history {
 		for column, value := range values {
-			if value < 0 {
-				return &negativeBurndownBalanceError{
-					Operation: operation,
-					Scope:     scope,
-					Name:      name,
-					Tick:      row * result.sampling,
-					AgeBand:   column * result.granularity,
-					Row:       row,
-					Column:    column,
-					Value:     value,
-				}
+			if value >= 0 {
+				continue
 			}
+
+			report.add(&negativeBurndownBalanceError{
+				Operation: operation,
+				Scope:     scope,
+				Name:      name,
+				Tick:      row * result.sampling,
+				AgeBand:   column * result.granularity,
+				Row:       row,
+				Column:    column,
+				Value:     value,
+			})
 		}
 	}
-
-	return nil
 }
 
 func indexedBurndownName(names []string, index int) string {
@@ -164,6 +231,15 @@ func burndownSharedOptions() []core.ConfigurationOption {
 		Type:        core.BoolConfigurationOption,
 		Shared:      true,
 		Default:     false,
+	}, {
+		Name: ConfigBurndownStrictBalances,
+		Description: "Abort when a burndown matrix contains a negative number of alive lines. " +
+			"Off by default: such cells are a known accounting defect which predates this " +
+			"release, and failing the run discards every other analysis it computed.",
+		Flag:    "strict-burndown-balances",
+		Type:    core.BoolConfigurationOption,
+		Shared:  true,
+		Default: false,
 	}}
 }
 

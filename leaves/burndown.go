@@ -53,6 +53,10 @@ type BurndownAnalysis struct {
 	// It does not change the project level burndown results.
 	TrackFiles bool
 
+	// StrictBalances turns a negative number of alive lines into a fatal error instead of a
+	// single warning. See ConfigBurndownStrictBalances.
+	StrictBalances bool
+
 	// Repository points to the analysed Git repository struct from go-git.
 	repository *git.Repository
 	// repositoryName is the name/path of the repository from metadata.
@@ -140,7 +144,7 @@ func (analyser *BurndownAnalysis) ListConfigurationOptions() []core.Configuratio
 func (analyser *BurndownAnalysis) Configure(facts map[string]any) error {
 	configureBurndownBasics(
 		facts, &analyser.l, &analyser.tickSize, &analyser.Granularity,
-		&analyser.Sampling, &analyser.TrackFiles,
+		&analyser.Sampling, &analyser.TrackFiles, &analyser.StrictBalances,
 	)
 
 	if people, ok := facts[ConfigBurndownTrackPeople].(bool); people {
@@ -169,7 +173,7 @@ func configureBurndownBasics(
 	logger *core.Logger,
 	tickSize *time.Duration,
 	granularity, sampling *int,
-	trackFiles *bool,
+	trackFiles, strictBalances *bool,
 ) {
 	*logger = core.NewLogger()
 	if value, ok := facts[core.ConfigLogger].(core.Logger); ok {
@@ -180,6 +184,7 @@ func configureBurndownBasics(
 	assignFact(facts, ConfigBurndownGranularity, granularity)
 	assignFact(facts, ConfigBurndownSampling, sampling)
 	assignFact(facts, ConfigBurndownTrackFiles, trackFiles)
+	assignFact(facts, ConfigBurndownStrictBalances, strictBalances)
 }
 
 func configureBurndownHibernation(facts map[string]any, toDisk *bool, directory *string) {
@@ -600,7 +605,7 @@ func (analyser *BurndownAnalysis) Finalize() any {
 		result.RepositoryHistories = []burndown.DenseHistory{globalHistory}
 	}
 
-	err := validateBurndownResultBalances(&result, "finalization")
+	err := analyser.checkBalances(&result, "finalization")
 	if err != nil {
 		return err
 	}
@@ -616,7 +621,7 @@ func (analyser *BurndownAnalysis) Serialize(result any, binary bool, writer io.W
 		return fmt.Errorf("%w: '%v'", errUnexpectedBurndownResult, result)
 	}
 
-	err := validateBurndownResultBalances(&burndownResult, "serialization")
+	err := analyser.checkBalances(&burndownResult, "serialization")
 	if err != nil {
 		return err
 	}
@@ -725,7 +730,7 @@ func (analyser *BurndownAnalysis) MergeResults(
 		return fmt.Errorf("%w: second result has type %T", errUnexpectedBurndownResult, secondResult)
 	}
 
-	if err := validateBurndownMergeInputs(&bar1, &bar2); err != nil {
+	if err := analyser.validateBurndownMergeInputs(&bar1, &bar2); err != nil {
 		return err
 	}
 
@@ -754,22 +759,29 @@ func (analyser *BurndownAnalysis) MergeResults(
 
 	coordinator.wg.Wait()
 
-	if err := validateBurndownResultBalances(&merged, "merge"); err != nil {
+	if err := analyser.checkBalances(&merged, "merge"); err != nil {
 		return err
 	}
 
 	return merged
 }
 
-func validateBurndownMergeInputs(first, second *BurndownResult) error {
+// checkBalances reports negative alive-line counts according to the configured policy.
+func (analyser *BurndownAnalysis) checkBalances(result *BurndownResult, operation string) error {
+	return reportBurndownBalances(analyser.l, analyser.StrictBalances, result, operation)
+}
+
+func (analyser *BurndownAnalysis) validateBurndownMergeInputs(first, second *BurndownResult) error {
 	if first.tickSize != second.tickSize {
 		return fmt.Errorf("%w (r1: %d, r2: %d) received",
 			errBurndownMismatchingTickSizes, first.tickSize, second.tickSize)
 	}
-	if err := validateBurndownResultBalances(first, "merge input 1"); err != nil {
+
+	if err := analyser.checkBalances(first, "merge input 1"); err != nil {
 		return err
 	}
-	return validateBurndownResultBalances(second, "merge input 2")
+
+	return analyser.checkBalances(second, "merge input 2")
 }
 
 func newMergedBurndownResult(first, second BurndownResult) BurndownResult {

@@ -19,8 +19,10 @@ import (
 	_ "github.com/cwbudde/matplotlib-go/backends/agg"
 	_ "github.com/cwbudde/matplotlib-go/backends/svg"
 	"github.com/cwbudde/matplotlib-go/core"
+	"github.com/cwbudde/matplotlib-go/optional"
 	"github.com/cwbudde/matplotlib-go/render"
 	"github.com/cwbudde/matplotlib-go/style"
+	"github.com/cwbudde/matplotlib-go/ticker"
 
 	"github.com/cwbudde/hercules/internal/render/graphics"
 	"github.com/cwbudde/hercules/internal/render/readers"
@@ -297,9 +299,9 @@ func plotTemporalBars(axes *core.Axes, series []temporalHourCommitSeries, numBin
 	for index, item := range series {
 		values := temporalBarValues(item.Values, numBins)
 		barColor := colors[index]
-		axes.Bar(positions, values, core.BarOptions{
-			Color:     &barColor,
-			Width:     &barWidth,
+		_, _ = axes.Bar(positions, values, core.BarOptions{
+			Color:     optional.Of(barColor),
+			Width:     optional.Of(barWidth),
 			Baselines: append([]float64(nil), bottom...),
 			Label:     item.Name,
 		})
@@ -345,10 +347,10 @@ func configureTemporalDimensionAxes(
 	ticks, labels := temporalDimensionTicks(spec)
 	axes.SetXLim(-0.75, float64(len(spec.Labels))-0.25)
 	axes.SetYLim(0, math.Max(maxStack, 1))
-	axes.XAxis.Locator = core.FixedLocator{TicksList: ticks}
-	axes.XAxis.Formatter = core.FixedFormatter{Labels: labels}
+	axes.XAxis.Locator = ticker.FixedLocator{TicksList: ticks}
+	axes.XAxis.Formatter = ticker.FixedFormatter{Labels: labels}
 	configureTemporalTickLabels(axes, spec.Rotate)
-	axes.YAxis.Locator = core.FixedLocator{TicksList: temporalActivityYTicks(maxStack)}
+	axes.YAxis.Locator = ticker.FixedLocator{TicksList: temporalActivityYTicks(maxStack)}
 	axes.SetYLabel("Number of " + mode)
 }
 
@@ -817,7 +819,7 @@ func newBusFactorGaugePlot(repoName string) (busFactorGaugePlot, error) {
 
 	figure := newReportFigure(width, height)
 	if repoName != "" {
-		figure.SetSuptitle(repoName + " - Bus Factor Summary")
+		figure.SetSupTitle(repoName + " - Bus Factor Summary")
 	}
 
 	grid := figure.GridSpec(
@@ -1073,11 +1075,11 @@ func drawOwnershipSubsystemBars(axes *core.Axes, series ownershipSubsystemSeries
 	giniColor := render.Color{R: 233.0 / 255, G: 30.0 / 255, B: 99.0 / 255, A: 0.8}
 	hhiColor := render.Color{R: 63.0 / 255, G: 81.0 / 255, B: 181.0 / 255, A: 0.8}
 
-	axes.Bar(series.giniY, series.giniValues, core.BarOptions{
-		Color: &giniColor, Width: &barHeight, Orientation: &orientation, Label: "Gini",
+	_, _ = axes.Bar(series.giniY, series.giniValues, core.BarOptions{
+		Color: optional.Of(giniColor), Width: optional.Of(barHeight), Orientation: optional.Of(orientation), Label: "Gini",
 	})
-	axes.Bar(series.hhiY, series.hhiValues, core.BarOptions{
-		Color: &hhiColor, Width: &barHeight, Orientation: &orientation, Label: "HHI",
+	_, _ = axes.Bar(series.hhiY, series.hhiValues, core.BarOptions{
+		Color: optional.Of(hhiColor), Width: optional.Of(barHeight), Orientation: optional.Of(orientation), Label: "HHI",
 	})
 	drawOwnershipSubsystemLabels(axes, series)
 }
@@ -1091,7 +1093,7 @@ func drawOwnershipSubsystemLabels(axes *core.Axes, series ownershipSubsystemSeri
 			series.giniY[index],
 			fmt.Sprintf("%.2f", series.giniValues[index]),
 			core.TextOptions{
-				FontSize: 8.4, Color: labelColor, VAlign: core.TextVAlignMiddle, ClipOn: &clipOff,
+				FontSize: 8.4, Color: labelColor, VAlign: core.TextVAlignMiddle, ClipOn: optional.Of(clipOff),
 			},
 		)
 		axes.Text(
@@ -1099,7 +1101,7 @@ func drawOwnershipSubsystemLabels(axes *core.Axes, series ownershipSubsystemSeri
 			series.hhiY[index],
 			fmt.Sprintf("%.2f", series.hhiValues[index]),
 			core.TextOptions{
-				FontSize: 8.4, Color: labelColor, VAlign: core.TextVAlignMiddle, ClipOn: &clipOff,
+				FontSize: 8.4, Color: labelColor, VAlign: core.TextVAlignMiddle, ClipOn: optional.Of(clipOff),
 			},
 		)
 	}
@@ -1112,8 +1114,8 @@ func configureOwnershipSubsystemAxes(axes *core.Axes, series ownershipSubsystemS
 	dataMax := float64(len(series.directories)-1) + ownershipSubsystemBarHeight
 	margin := 0.05 * (dataMax - dataMin)
 	axes.SetYLim(dataMin-margin, dataMax+margin)
-	axes.YAxis.Locator = core.FixedLocator{TicksList: series.ticks}
-	axes.YAxis.Formatter = core.FixedFormatter{
+	axes.YAxis.Locator = ticker.FixedLocator{TicksList: series.ticks}
+	axes.YAxis.Formatter = ticker.FixedFormatter{
 		Labels: append([]string(nil), series.directories...),
 	}
 	labelStyle := axes.YAxis.MajorLabelStyle
@@ -1375,8 +1377,8 @@ func drawKnowledgeDistributionBar(axes *core.Axes, editorCount, fileCount float6
 	barColor := renderColor(knowledgeDistributionColor(int(editorCount)))
 	edgeColor := render.Color{R: 1, G: 1, B: 1, A: 1}
 	edgeWidth := 0.5
-	axes.Bar([]float64{editorCount}, []float64{fileCount}, core.BarOptions{
-		Color: &barColor, EdgeColor: &edgeColor, EdgeWidth: &edgeWidth,
+	_, _ = axes.Bar([]float64{editorCount}, []float64{fileCount}, core.BarOptions{
+		Color: optional.Of(barColor), EdgeColor: optional.Of(edgeColor), EdgeWidth: optional.Of(edgeWidth),
 	})
 	axes.Text(editorCount, fileCount+0.3, fmt.Sprintf("%.0f", fileCount), core.TextOptions{
 		FontSize: 9.6,
@@ -1399,11 +1401,11 @@ func drawSingleEditorSummary(axes *core.Axes, totalFiles, singleEditorFiles int)
 			Color:    riskColor,
 			HAlign:   core.TextAlignRight,
 			VAlign:   core.TextVAlignTop,
-			BBox: &core.TextBBoxOptions{
+			BBox: optional.Of(core.TextBBoxOptions{
 				FaceColor: boxColor,
 				EdgeColor: boxColor,
 				Padding:   3,
-			},
+			}),
 		},
 	)
 }
@@ -1415,9 +1417,9 @@ func configureKnowledgeDistributionAxes(axes *core.Axes, series knowledgeDistrib
 
 	axes.SetXLim(minimumX, maximumX)
 	axes.SetYLim(0, maximumY)
-	axes.XAxis.Locator = core.FixedLocator{TicksList: xTicks}
-	axes.XAxis.Formatter = core.FixedFormatter{Labels: xLabels}
-	axes.YAxis.Locator = core.FixedLocator{TicksList: knowledgeDistributionYTicks(maximumY)}
+	axes.XAxis.Locator = ticker.FixedLocator{TicksList: xTicks}
+	axes.XAxis.Formatter = ticker.FixedFormatter{Labels: xLabels}
+	axes.YAxis.Locator = ticker.FixedLocator{TicksList: knowledgeDistributionYTicks(maximumY)}
 }
 
 func knowledgeDistributionXTicks(minimum, maximum float64) ([]float64, []string) {
@@ -1630,7 +1632,7 @@ func configureBusFactorSubsystemAxes(
 		ax.SetTitle(fmt.Sprintf("Bus Factor by Subsystem (threshold: %.0f%%)", threshold*100))
 	}
 	ax.SetXLabel("Bus Factor")
-	ax.XAxis.Locator = core.MaxNLocator{Integer: true}
+	ax.XAxis.Locator = ticker.MaxNLocator{Integer: true}
 
 	y := make([]float64, len(values))
 	barValues := make([]float64, len(values))
@@ -1646,10 +1648,10 @@ func configureBusFactorSubsystemAxes(
 	barHeight := 0.6
 	for i, value := range values {
 		barColor := renderColor(busFactorColor(value))
-		ax.Bar([]float64{y[i]}, []float64{barValues[i]}, core.BarOptions{
-			Color:       &barColor,
-			Width:       &barHeight,
-			Orientation: &orientation,
+		_, _ = ax.Bar([]float64{y[i]}, []float64{barValues[i]}, core.BarOptions{
+			Color:       optional.Of(barColor),
+			Width:       optional.Of(barHeight),
+			Orientation: optional.Of(orientation),
 		})
 	}
 	for i, value := range values {
@@ -1662,8 +1664,8 @@ func configureBusFactorSubsystemAxes(
 	limitColor := render.Color{R: 1, G: 0, B: 0, A: 0.4} // Python: axvline color="red", alpha=0.4
 	lineWidth := 1.0
 	ax.AxVLine(1, core.VLineOptions{
-		Color:     &limitColor,
-		LineWidth: &lineWidth,
+		Color:     optional.Of(limitColor),
+		LineWidth: optional.Of(lineWidth),
 		Dashes:    []float64{6, 4},
 	})
 	ax.SetXLim(0, math.Max(maxValue*1.05, 1.05))
@@ -1676,8 +1678,9 @@ func configureBusFactorSubsystemAxes(
 	if busFactorSubsystemInvertY() {
 		ax.InvertY()
 	}
-	ax.YAxis.Locator = core.FixedLocator{TicksList: ticks}
-	ax.YAxis.Formatter = core.FixedFormatter{Labels: append([]string(nil), labels...)}
+
+	ax.YAxis.Locator = ticker.FixedLocator{TicksList: ticks}
+	ax.YAxis.Formatter = ticker.FixedFormatter{Labels: append([]string(nil), labels...)}
 	yLabelStyle := ax.YAxis.MajorLabelStyle
 	yLabelStyle.FontSize = 9.6 // Python: fontsize=font_size*0.8
 	ax.YAxis.MajorLabelStyle = yLabelStyle
@@ -1828,16 +1831,16 @@ func drawKnowledgeSiloBars(axes *core.Axes, series knowledgeSiloSeries, windowMo
 	totalColor := renderColor(color.RGBA{R: 144, G: 202, B: 249, A: 255})
 	recentColor := renderColor(color.RGBA{R: 21, G: 101, B: 192, A: 255})
 
-	axes.Bar(series.totalY, series.totalValues, core.BarOptions{
-		Color:       &totalColor,
-		Width:       &barHeight,
-		Orientation: &orientation,
+	_, _ = axes.Bar(series.totalY, series.totalValues, core.BarOptions{
+		Color:       optional.Of(totalColor),
+		Width:       optional.Of(barHeight),
+		Orientation: optional.Of(orientation),
 		Label:       "Total unique editors",
 	})
-	axes.Bar(series.recentY, series.recentValues, core.BarOptions{
-		Color:       &recentColor,
-		Width:       &barHeight,
-		Orientation: &orientation,
+	_, _ = axes.Bar(series.recentY, series.recentValues, core.BarOptions{
+		Color:       optional.Of(recentColor),
+		Width:       optional.Of(barHeight),
+		Orientation: optional.Of(orientation),
 		Label:       fmt.Sprintf("Active in last %d months", windowMonths),
 	})
 	drawKnowledgeSiloLabels(axes, series)
@@ -1848,10 +1851,10 @@ func drawKnowledgeSiloLabels(axes *core.Axes, series knowledgeSiloSeries) {
 	labelColor := render.Color{R: 0, G: 0, B: 0, A: 1}
 	for index := range series.labels {
 		drawKnowledgeSiloLabel(
-			axes, series.totalValues[index], series.totalY[index], labelColor, &clipOff,
+			axes, series.totalValues[index], series.totalY[index], labelColor, optional.Of(clipOff),
 		)
 		drawKnowledgeSiloLabel(
-			axes, series.recentValues[index], series.recentY[index], labelColor, &clipOff,
+			axes, series.recentValues[index], series.recentY[index], labelColor, optional.Of(clipOff),
 		)
 	}
 }
@@ -1860,7 +1863,7 @@ func drawKnowledgeSiloLabel(
 	axes *core.Axes,
 	value, y float64,
 	labelColor render.Color,
-	clipOff *bool,
+	clipOff optional.Value[bool],
 ) {
 	axes.Text(value+0.1, y, fmt.Sprintf("%.0f", value), core.TextOptions{
 		FontSize: 8.4,
@@ -1874,8 +1877,8 @@ func configureKnowledgeSiloAxes(axes *core.Axes, series knowledgeSiloSeries) {
 	axes.SetXLim(0, math.Max(series.maxValue*1.05, 1.05))
 	axes.SetYLim(-1.85, float64(len(series.labels))+0.85)
 	axes.InvertY()
-	axes.YAxis.Locator = core.FixedLocator{TicksList: series.ticks}
-	axes.YAxis.Formatter = core.FixedFormatter{Labels: append([]string(nil), series.labels...)}
+	axes.YAxis.Locator = ticker.FixedLocator{TicksList: series.ticks}
+	axes.YAxis.Formatter = ticker.FixedFormatter{Labels: append([]string(nil), series.labels...)}
 	labelStyle := axes.YAxis.MajorLabelStyle
 	labelStyle.FontKey = graphics.PythonPlotMonoFontFamily
 	axes.YAxis.MajorLabelStyle = labelStyle
@@ -1988,10 +1991,17 @@ func plotHotspotRiskRanked(repoName string, files []readers.HotspotRiskFile, lab
 		return err
 	}
 
-	drawHotspotRiskBars(plot.riskAxes, series, repoName)
+	err = drawHotspotRiskBars(plot.riskAxes, series, repoName)
+	if err != nil {
+		return err
+	}
 
 	renderAlpha := hotspotComponentRenderAlpha(output)
-	drawHotspotRiskComponents(plot.componentAxes, series, renderAlpha)
+
+	err = drawHotspotRiskComponents(plot.componentAxes, series, renderAlpha)
+	if err != nil {
+		return err
+	}
 
 	err = saveReportFigure(plot.figure, output, plot.width, plot.height)
 	if err != nil {
@@ -2095,12 +2105,16 @@ func newHotspotRiskPlot() (hotspotRiskPlot, error) {
 	}, nil
 }
 
-func drawHotspotRiskBars(axes *core.Axes, series hotspotRiskSeries, repoName string) {
+func drawHotspotRiskBars(axes *core.Axes, series hotspotRiskSeries, repoName string) error {
 	orientation := core.BarHorizontal
 	barHeight := 0.8
-	bars := axes.Bar(series.positions, series.risk, core.BarOptions{
-		Width: &barHeight, Orientation: &orientation,
+
+	bars, err := axes.Bar(series.positions, series.risk, core.BarOptions{
+		Width: optional.Of(barHeight), Orientation: optional.Of(orientation),
 	})
+	if err != nil {
+		return fmt.Errorf("failed to plot hotspot risk bars: %w", err)
+	}
 	bars.Colors = hotspotRiskColors(series.risk, series.maxRisk)
 	bars.EdgeColor = render.Color{R: 0, G: 0, B: 0, A: 1}
 	bars.EdgeWidth = 0.5
@@ -2111,8 +2125,10 @@ func drawHotspotRiskBars(axes *core.Axes, series hotspotRiskSeries, repoName str
 	axes.SetYLim(-0.5, float64(len(series.risk))-0.5)
 	axes.InvertY()
 	axes.AddXGrid()
-	axes.YAxis.Locator = core.FixedLocator{TicksList: series.ticks}
-	axes.YAxis.Formatter = core.FixedFormatter{Labels: series.displayNames}
+	axes.YAxis.Locator = ticker.FixedLocator{TicksList: series.ticks}
+	axes.YAxis.Formatter = ticker.FixedFormatter{Labels: series.displayNames}
+
+	return nil
 }
 
 func configureHotspotRiskXRange(axes *core.Axes, maxRisk float64) {
@@ -2125,7 +2141,7 @@ func configureHotspotRiskXRange(axes *core.Axes, maxRisk float64) {
 
 	black := render.Color{R: 0, G: 0, B: 0, A: 1}
 	lineWidth := 0.5
-	axes.AxVLine(0, core.VLineOptions{Color: &black, LineWidth: &lineWidth})
+	axes.AxVLine(0, core.VLineOptions{Color: optional.Of(black), LineWidth: optional.Of(lineWidth)})
 }
 
 func hotspotComponentRenderAlpha(output string) float64 {
@@ -2136,15 +2152,40 @@ func hotspotComponentRenderAlpha(output string) float64 {
 	return 1
 }
 
-func drawHotspotRiskComponents(axes *core.Axes, series hotspotRiskSeries, alpha float64) {
-	addHotspotComponentBars(axes, series.positions, series.size, nil, "#3498db", "Size (log)", alpha)
+func drawHotspotRiskComponents(axes *core.Axes, series hotspotRiskSeries, alpha float64) error {
+	err := addHotspotComponentBars(
+		axes, series.positions, series.size, nil, "#3498db", "Size (log)", alpha,
+	)
+	if err != nil {
+		return err
+	}
 	left := append([]float64(nil), series.size...)
-	addHotspotComponentBars(axes, series.positions, series.churn, left, "#e74c3c", "Churn", alpha)
+
+	err = addHotspotComponentBars(
+		axes, series.positions, series.churn, left, "#e74c3c", "Churn", alpha,
+	)
+	if err != nil {
+		return err
+	}
 	addHotspotComponentValues(left, series.churn)
-	addHotspotComponentBars(axes, series.positions, series.coupling, left, "#f39c12", "Coupling", alpha)
+
+	err = addHotspotComponentBars(
+		axes, series.positions, series.coupling, left, "#f39c12", "Coupling", alpha,
+	)
+	if err != nil {
+		return err
+	}
 	addHotspotComponentValues(left, series.coupling)
-	addHotspotComponentBars(axes, series.positions, series.ownership, left, "#9b59b6", "Ownership", alpha)
+
+	err = addHotspotComponentBars(
+		axes, series.positions, series.ownership, left, "#9b59b6", "Ownership", alpha,
+	)
+	if err != nil {
+		return err
+	}
 	configureHotspotComponentAxes(axes, series)
+
+	return nil
 }
 
 func addHotspotComponentValues(left, values []float64) {
@@ -2159,8 +2200,8 @@ func configureHotspotComponentAxes(axes *core.Axes, series hotspotRiskSeries) {
 	axes.SetXLim(0, 4)
 	axes.SetYLim(-0.5, float64(len(series.risk))-0.5)
 	axes.InvertY()
-	axes.YAxis.Locator = core.FixedLocator{TicksList: series.ticks}
-	axes.YAxis.Formatter = core.NullFormatter{}
+	axes.YAxis.Locator = ticker.FixedLocator{TicksList: series.ticks}
+	axes.YAxis.Formatter = ticker.NullFormatter{}
 	axes.YAxis.ShowTicks = false
 	legend := axes.AddLegend()
 	legend.Location = core.LegendLowerRight
@@ -2175,24 +2216,29 @@ func restoreHotspotComponentAlpha(output string, renderAlpha float64) error {
 	return applyHotspotComponentAlpha(output, componentAlpha)
 }
 
-func addHotspotComponentBars(ax *core.Axes, y, values, left []float64, hex, label string, alpha float64) {
+func addHotspotComponentBars(ax *core.Axes, y, values, left []float64, hex, label string, alpha float64) error {
 	orientation := core.BarHorizontal
 	barHeight := 0.8
 	c := renderColor(mustHexColor(hex))
-	bars := ax.Bar(y, values, core.BarOptions{
-		Color:       &c,
-		Width:       &barHeight,
+
+	bars, err := ax.Bar(y, values, core.BarOptions{
+		Color:       optional.Of(c),
+		Width:       optional.Of(barHeight),
 		Baselines:   left,
-		Orientation: &orientation,
-		Alpha:       &alpha,
+		Orientation: optional.Of(orientation),
+		Alpha:       optional.Of(alpha),
 		Label:       label,
 	})
-	if bars != nil {
-		bars.Colors = make([]render.Color, len(values))
-		for i := range bars.Colors {
-			bars.Colors[i] = c
-		}
+	if err != nil {
+		return fmt.Errorf("failed to plot hotspot %s bars: %w", label, err)
 	}
+
+	bars.Colors = make([]render.Color, len(values))
+	for i := range bars.Colors {
+		bars.Colors[i] = c
+	}
+
+	return nil
 }
 
 func applyHotspotComponentAlpha(path string, alpha float64) error {

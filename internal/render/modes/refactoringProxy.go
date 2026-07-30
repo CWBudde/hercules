@@ -6,7 +6,9 @@ import (
 	"time"
 
 	"github.com/cwbudde/matplotlib-go/core"
+	"github.com/cwbudde/matplotlib-go/optional"
 	"github.com/cwbudde/matplotlib-go/render"
+	"github.com/cwbudde/matplotlib-go/ticker"
 
 	"github.com/cwbudde/hercules/internal/render/readers"
 )
@@ -53,30 +55,36 @@ func plotRefactoringProxy(repoName string, data *readers.RefactoringProxyData, o
 
 	lineColor := render.Color{R: 0x2e / 255.0, G: 0x86 / 255.0, B: 0xab / 255.0, A: 1}
 	lineWidth := 2.0
-	if _, err := ax.PlotUnits(timestamps, rates, core.PlotOptions{
-		Color:     &lineColor,
-		LineWidth: &lineWidth,
+
+	_, err = ax.Plot(timestamps, rates, core.PlotOptions{
+		Color:     optional.Of(lineColor),
+		LineWidth: optional.Of(lineWidth),
 		Label:     "Refactoring Rate",
-	}); err != nil {
+	})
+	if err != nil {
 		return fmt.Errorf("failed to plot refactoring rate: %w", err)
 	}
 
 	threshold := float64(data.Threshold)
 	thresholdColor := render.Color{R: 0xe6 / 255.0, G: 0x39 / 255.0, B: 0x46 / 255.0, A: 1}
 	thresholdWidth := 1.5
-	ax.Plot([]float64{x[0], x[len(x)-1]}, []float64{threshold, threshold}, core.PlotOptions{
-		Color:     &thresholdColor,
-		LineWidth: &thresholdWidth,
+
+	_, err = ax.Plot([]float64{x[0], x[len(x)-1]}, []float64{threshold, threshold}, core.PlotOptions{
+		Color:     optional.Of(thresholdColor),
+		LineWidth: optional.Of(thresholdWidth),
 		Dashes:    []float64{6, 4},
 		Label:     fmt.Sprintf("Threshold (%.1f%%)", threshold*100),
 	})
+	if err != nil {
+		return fmt.Errorf("failed to plot refactoring threshold: %w", err)
+	}
 
 	spanColor := render.Color{R: 0xa8 / 255.0, G: 0xda / 255.0, B: 0xdc / 255.0, A: 1}
 	spanAlpha := 0.2
 	for _, region := range refactoringProxyRegions(data.Ticks, threshold, x) {
 		ax.AxVSpan(region.Start, region.End, core.VSpanOptions{
-			Color: &spanColor,
-			Alpha: &spanAlpha,
+			Color: optional.Of(spanColor),
+			Alpha: optional.Of(spanAlpha),
 		})
 	}
 
@@ -97,7 +105,7 @@ func configureRefactoringProxyAxes(ax *core.Axes, repoName string, maxRate, thre
 		title = fmt.Sprintf("%s - %s", repoName, title)
 	}
 	ax.SetTitle(title)
-	ax.YAxis.Formatter = core.PercentFormatter{XMax: 1, Decimals: 0}
+	ax.YAxis.Formatter = ticker.PercentFormatter{XMax: 1, Decimals: 0}
 	ax.SetYLim(0, math.Max(maxRate, threshold)*1.08)
 	ax.AddLegend().Location = core.LegendUpperRight
 }

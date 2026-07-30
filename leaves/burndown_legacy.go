@@ -51,6 +51,10 @@ type LegacyBurndownAnalysis struct {
 	// It does not change the project level burndown results.
 	TrackFiles bool
 
+	// StrictBalances turns a negative number of alive lines into a fatal error instead of a
+	// single warning. See ConfigBurndownStrictBalances.
+	StrictBalances bool
+
 	// PeopleNumber is the number of developers for which to collect the burndown stats. 0 disables it.
 	PeopleNumber int
 
@@ -204,7 +208,7 @@ func (analyser *LegacyBurndownAnalysis) ListConfigurationOptions() []core.Config
 func (analyser *LegacyBurndownAnalysis) Configure(facts map[string]any) error {
 	configureBurndownBasics(
 		facts, &analyser.l, &analyser.tickSize, &analyser.Granularity,
-		&analyser.Sampling, &analyser.TrackFiles,
+		&analyser.Sampling, &analyser.TrackFiles, &analyser.StrictBalances,
 	)
 
 	if people, exists := facts[ConfigBurndownTrackPeople].(bool); people {

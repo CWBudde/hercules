@@ -55,7 +55,8 @@ func TestBurndownMeta(t *testing.T) {
 	for _, opt := range opts {
 		switch opt.Name {
 		case ConfigBurndownGranularity, ConfigBurndownSampling, ConfigBurndownTrackFiles,
-			ConfigBurndownTrackPeople, ConfigBurndownHibernationDisk, ConfigBurndownHibernationDir:
+			ConfigBurndownTrackPeople, ConfigBurndownStrictBalances,
+			ConfigBurndownHibernationDisk, ConfigBurndownHibernationDir:
 			matches++
 		}
 	}
@@ -755,7 +756,9 @@ func TestBurndownSerializeRejectsNegativeBalances(t *testing.T) {
 				testCase.result.granularity = 7
 				buffer := &bytes.Buffer{}
 
-				err := (&BurndownAnalysis{}).Serialize(testCase.result, binary, buffer)
+				analyser := &BurndownAnalysis{StrictBalances: true}
+
+				err := analyser.Serialize(testCase.result, binary, buffer)
 				assert.ErrorIs(t, err, errNegativeBurndownBalance)
 				assert.Empty(t, buffer.Bytes())
 
@@ -1174,8 +1177,8 @@ func TestBurndownLifecycleTransitionsRemainNonNegative(t *testing.T) {
 			finalized := bd.Finalize()
 			result, ok := finalized.(BurndownResult)
 			require.Truef(t, ok, "finalization returned %T: %v", finalized, finalized)
-			require.NoError(t, validateBurndownResultBalances(
-				&result, "lifecycle transition test",
+			require.NoError(t, reportBurndownBalances(
+				nil, true, &result, "lifecycle transition test",
 			))
 
 			require.NotEmpty(t, result.GlobalHistory)
@@ -1228,7 +1231,7 @@ func TestBurndownMergeRejectsNegativeInput(t *testing.T) {
 	}
 	common := &core.CommonAnalysisResult{BeginTime: 0, EndTime: 2 * 86400}
 
-	merged := (&BurndownAnalysis{}).MergeResults(first, second, common, common)
+	merged := (&BurndownAnalysis{StrictBalances: true}).MergeResults(first, second, common, common)
 	err, ok := merged.(error)
 	require.True(t, ok)
 	assert.ErrorIs(t, err, errNegativeBurndownBalance)

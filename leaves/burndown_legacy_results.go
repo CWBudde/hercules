@@ -27,12 +27,19 @@ func (analyser *LegacyBurndownAnalysis) Finalize() any {
 		sampling: analyser.Sampling, granularity: analyser.Granularity,
 	}
 
-	err := validateBurndownResultBalances(&result, "legacy finalization")
+	err := analyser.checkBalances(&result, "legacy finalization")
 	if err != nil {
 		return err
 	}
 
 	return result
+}
+
+// checkBalances reports negative alive-line counts according to the configured policy.
+func (analyser *LegacyBurndownAnalysis) checkBalances(
+	result *BurndownResult, operation string,
+) error {
+	return reportBurndownBalances(analyser.l, analyser.StrictBalances, result, operation)
 }
 
 // Serialize converts the analysis result as returned by Finalize() to text or bytes.
@@ -43,7 +50,7 @@ func (analyser *LegacyBurndownAnalysis) Serialize(result any, binary bool, write
 		return fmt.Errorf("%w: '%v'", errUnexpectedBurndownResult, result)
 	}
 
-	err := validateBurndownResultBalances(&burndownResult, "legacy serialization")
+	err := analyser.checkBalances(&burndownResult, "legacy serialization")
 	if err != nil {
 		return err
 	}
@@ -123,7 +130,8 @@ func (analyser *LegacyBurndownAnalysis) Deserialize(pbmessage []byte) (any, erro
 func (analyser *LegacyBurndownAnalysis) MergeResults(
 	r1, r2 any, c1, c2 *core.CommonAnalysisResult,
 ) any {
-	return (&BurndownAnalysis{}).MergeResults(r1, r2, c1, c2)
+	return (&BurndownAnalysis{StrictBalances: analyser.StrictBalances, l: analyser.l}).
+		MergeResults(r1, r2, c1, c2)
 }
 
 func (analyser *LegacyBurndownAnalysis) finalizeFiles(

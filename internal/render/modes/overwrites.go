@@ -11,8 +11,10 @@ import (
 
 	"github.com/cwbudde/matplotlib-go/backends"
 	"github.com/cwbudde/matplotlib-go/core"
+	"github.com/cwbudde/matplotlib-go/optional"
 	"github.com/cwbudde/matplotlib-go/render"
 	"github.com/cwbudde/matplotlib-go/style"
+	"github.com/cwbudde/matplotlib-go/ticker"
 
 	"github.com/cwbudde/hercules/internal/render/graphics"
 	"github.com/cwbudde/hercules/internal/render/readers"
@@ -120,9 +122,9 @@ func plotOverwritesMatrixWithOptions(
 
 	cmap := "OrRd"
 	if img := ax.MatShow(matrix, core.MatShowOptions{
-		Colormap: &cmap,
-		VMin:     &minValue,
-		VMax:     &maxValue,
+		Colormap: optional.Of(cmap),
+		VMin:     optional.Of(minValue),
+		VMax:     optional.Of(maxValue),
 	}); img == nil {
 		return fmt.Errorf("failed to create overwrites matrix image")
 	}
@@ -174,14 +176,14 @@ func configureOverwritesMatrixAxes(ax *core.Axes, people, colLabels []string, fo
 	if ax.XAxis != nil {
 		ax.XAxis.ShowTicks = false
 		ax.XAxis.ShowLabels = false
-		ax.XAxis.Locator = core.FixedLocator{TicksList: xTicks}
-		ax.XAxis.Formatter = core.FixedFormatter{Labels: colLabels}
-		ax.XAxis.MinorLocator = core.FixedLocator{TicksList: xMinorTicks}
+		ax.XAxis.Locator = ticker.FixedLocator{TicksList: xTicks}
+		ax.XAxis.Formatter = ticker.FixedFormatter{Labels: colLabels}
+		ax.XAxis.MinorLocator = ticker.FixedLocator{TicksList: xMinorTicks}
 	}
 	top := ax.TopAxis()
-	top.Locator = core.FixedLocator{TicksList: xTicks}
-	top.Formatter = core.FixedFormatter{Labels: colLabels}
-	top.MinorLocator = core.FixedLocator{TicksList: xMinorTicks}
+	top.Locator = ticker.FixedLocator{TicksList: xTicks}
+	top.Formatter = ticker.FixedFormatter{Labels: colLabels}
+	top.MinorLocator = ticker.FixedLocator{TicksList: xMinorTicks}
 	top.MajorLabelStyle = core.TickLabelStyle{
 		Rotation:  45,
 		HAlign:    core.TextAlignLeft,
@@ -192,9 +194,9 @@ func configureOverwritesMatrixAxes(ax *core.Axes, people, colLabels []string, fo
 	top.ShowLabels = true
 
 	if ax.YAxis != nil {
-		ax.YAxis.Locator = core.FixedLocator{TicksList: yTicks}
-		ax.YAxis.Formatter = core.FixedFormatter{Labels: people}
-		ax.YAxis.MinorLocator = core.FixedLocator{TicksList: yMinorTicks}
+		ax.YAxis.Locator = ticker.FixedLocator{TicksList: yTicks}
+		ax.YAxis.Formatter = ticker.FixedFormatter{Labels: people}
+		ax.YAxis.MinorLocator = ticker.FixedLocator{TicksList: yMinorTicks}
 		ax.YAxis.MajorLabelStyle = core.TickLabelStyle{
 			HAlign:    core.TextAlignRight,
 			VAlign:    core.TextVAlignMiddle,
@@ -207,13 +209,13 @@ func configureOverwritesMatrixAxes(ax *core.Axes, people, colLabels []string, fo
 	xGrid := core.NewGrid(core.AxisTop)
 	xGrid.Major = false
 	xGrid.Minor = true
-	xGrid.MinorLocator = core.FixedLocator{TicksList: xMinorTicks}
+	xGrid.MinorLocator = ticker.FixedLocator{TicksList: xMinorTicks}
 	xGrid.MinorColor = gridColor
 	xGrid.MinorLineWidth = 1
 	yGrid := core.NewGrid(core.AxisLeft)
 	yGrid.Major = false
 	yGrid.Minor = true
-	yGrid.MinorLocator = core.FixedLocator{TicksList: yMinorTicks}
+	yGrid.MinorLocator = ticker.FixedLocator{TicksList: yMinorTicks}
 	yGrid.MinorColor = gridColor
 	yGrid.MinorLineWidth = 1
 	ax.Add(xGrid)

@@ -539,6 +539,18 @@ func (file *File) ForEach(callback func(line, value int)) {
 	}
 }
 
+// hasMergeMarks reports whether any line is still waiting for Merge() to resolve its owner.
+// TreeEnd carries all the mark's bits as well, so the terminator is compared explicitly.
+func (file *File) hasMergeMarks() bool {
+	for iter := file.tree.Min(); !iter.Limit(); iter = iter.Next() {
+		if iter.Item().Value == TreeMergeMark {
+			return true
+		}
+	}
+
+	return false
+}
+
 func (file *File) updateTime(currentTime, previousTime, delta int) {
 	if previousTime&TreeMergeMark == TreeMergeMark {
 		if currentTime == previousTime {

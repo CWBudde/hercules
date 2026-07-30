@@ -18,6 +18,7 @@ import (
 	"github.com/cwbudde/matplotlib-go/core"
 	"github.com/cwbudde/matplotlib-go/render"
 	"github.com/cwbudde/matplotlib-go/style"
+	"github.com/cwbudde/matplotlib-go/ticker"
 
 	"github.com/cwbudde/hercules/internal/render/burndown"
 )
@@ -303,8 +304,10 @@ func configureMatplotlibBurndownTimeAxis(ax *core.Axes, dates []time.Time, resam
 	if len(ticks) == 0 {
 		return
 	}
-	ax.XAxis.Locator = core.FixedLocator{TicksList: ticks}
-	ax.XAxis.Formatter = core.FixedFormatter{Labels: labels}
+
+	ax.XAxis.Locator = ticker.FixedLocator{TicksList: ticks}
+	ax.XAxis.Formatter = ticker.FixedFormatter{Labels: labels}
+
 	if shouldRotateDateLabels(labels) {
 		ax.XAxis.MajorLabelStyle = core.TickLabelStyle{Rotation: 30, AutoAlign: true}
 	}

@@ -40,7 +40,8 @@ func TestLegacyBurndownMeta(t *testing.T) {
 	for _, opt := range opts {
 		switch opt.Name {
 		case ConfigBurndownGranularity, ConfigBurndownSampling, ConfigBurndownTrackFiles,
-			ConfigBurndownTrackPeople, ConfigLegacyBurndownHibernationThreshold,
+			ConfigBurndownTrackPeople, ConfigBurndownStrictBalances,
+			ConfigLegacyBurndownHibernationThreshold,
 			ConfigLegacyBurndownHibernationToDisk, ConfigLegacyBurndownHibernationDirectory,
 			ConfigLegacyBurndownDebug:
 			matches++
@@ -829,7 +830,7 @@ func TestLegacyBurndownSerializeRejectsNegativeBalances(t *testing.T) {
 
 	for _, binary := range []bool{false, true} {
 		buffer := &bytes.Buffer{}
-		err := (&LegacyBurndownAnalysis{}).Serialize(result, binary, buffer)
+		err := (&LegacyBurndownAnalysis{StrictBalances: true}).Serialize(result, binary, buffer)
 		assert.ErrorIs(t, err, errNegativeBurndownBalance)
 		assert.ErrorContains(t, err, "tick 3")
 		assert.ErrorContains(t, err, "age band 0")

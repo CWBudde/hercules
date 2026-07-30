@@ -299,7 +299,7 @@ func plotTemporalBars(axes *core.Axes, series []temporalHourCommitSeries, numBin
 	for index, item := range series {
 		values := temporalBarValues(item.Values, numBins)
 		barColor := colors[index]
-		axes.Bar(positions, values, core.BarOptions{
+		_, _ = axes.Bar(positions, values, core.BarOptions{
 			Color:     optional.Of(barColor),
 			Width:     optional.Of(barWidth),
 			Baselines: append([]float64(nil), bottom...),
@@ -1075,10 +1075,10 @@ func drawOwnershipSubsystemBars(axes *core.Axes, series ownershipSubsystemSeries
 	giniColor := render.Color{R: 233.0 / 255, G: 30.0 / 255, B: 99.0 / 255, A: 0.8}
 	hhiColor := render.Color{R: 63.0 / 255, G: 81.0 / 255, B: 181.0 / 255, A: 0.8}
 
-	axes.Bar(series.giniY, series.giniValues, core.BarOptions{
+	_, _ = axes.Bar(series.giniY, series.giniValues, core.BarOptions{
 		Color: optional.Of(giniColor), Width: optional.Of(barHeight), Orientation: optional.Of(orientation), Label: "Gini",
 	})
-	axes.Bar(series.hhiY, series.hhiValues, core.BarOptions{
+	_, _ = axes.Bar(series.hhiY, series.hhiValues, core.BarOptions{
 		Color: optional.Of(hhiColor), Width: optional.Of(barHeight), Orientation: optional.Of(orientation), Label: "HHI",
 	})
 	drawOwnershipSubsystemLabels(axes, series)

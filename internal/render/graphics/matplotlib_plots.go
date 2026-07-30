@@ -254,7 +254,7 @@ func plotTimeAreaSeries(
 			return err
 		}
 		color := colors[i]
-		ax.FillBetween(x, item.Values, baseline, core.FillOptions{
+		_, _ = ax.FillBetween(x, item.Values, baseline, core.FillOptions{
 			Color: optional.Of(color), Alpha: optional.Of(alpha), EdgeWidth: optional.Of(edgeWidth), Label: item.Label,
 		})
 	}
@@ -377,16 +377,16 @@ func addMatplotlibLine(ax *core.Axes, item MatplotlibLineSeries, color render.Co
 	if item.Fill {
 		fillAlpha, fillEdge := 0.3, 0.0
 		zero := make([]float64, len(item.Y))
-		ax.FillBetween(item.X, item.Y, zero, core.FillOptions{
+		_, _ = ax.FillBetween(item.X, item.Y, zero, core.FillOptions{
 			Color: optional.Of(color), Alpha: optional.Of(fillAlpha), EdgeWidth: optional.Of(fillEdge),
 		})
 	}
-	ax.Plot(item.X, item.Y, core.PlotOptions{
+	_, _ = ax.Plot(item.X, item.Y, core.PlotOptions{
 		Color: optional.Of(color), LineWidth: optional.Of(lineWidth), Dashes: item.Dashes, Label: item.Name,
 	})
 	if item.Marker {
 		size := 24.0
-		ax.Scatter(item.X, item.Y, core.ScatterOptions{Color: optional.Of(color), Size: optional.Of(size), Label: ""})
+		_, _ = ax.Scatter(item.X, item.Y, core.ScatterOptions{Color: optional.Of(color), Size: optional.Of(size), Label: ""})
 	}
 }
 
@@ -506,7 +506,9 @@ func PlotBarChartMatplotlib(labels []string, values []float64, opts MatplotlibBa
 		barColor = PythonLaboursColorPalette(1)[0]
 	}
 	renderedColor := renderColor(barColor)
-	ax.Bar(x, values, core.BarOptions{Color: optional.Of(renderedColor)})
+	if _, err := ax.Bar(x, values, core.BarOptions{Color: optional.Of(renderedColor)}); err != nil {
+		return fmt.Errorf("failed to plot bars: %w", err)
+	}
 	addMatplotlibBarLabels(ax, x, values, opts)
 	configureMatplotlibBarAxes(ax, labels, values, x, opts)
 	return saveMatplotlibBarFigure(fig, opts, width, height)
@@ -632,7 +634,7 @@ func addGroupedBarSeries(
 			seriesColor = item.Color
 		}
 		color := renderColor(seriesColor)
-		ax.Bar(x, item.Values, core.BarOptions{
+		_, _ = ax.Bar(x, item.Values, core.BarOptions{
 			Color: optional.Of(color),
 			Width: optional.Of(barWidth),
 			Label: item.Name,
@@ -739,7 +741,7 @@ func addMatplotlibScatterSeries(
 		if size <= 0 {
 			size = 24
 		}
-		ax.Scatter(x, y, core.ScatterOptions{Color: optional.Of(renderedColor), Size: optional.Of(size), Label: item.Name})
+		_, _ = ax.Scatter(x, y, core.ScatterOptions{Color: optional.Of(renderedColor), Size: optional.Of(size), Label: item.Name})
 		if annotateLabels {
 			addMatplotlibScatterLabels(ax, item.Points, x, y)
 		}
@@ -837,7 +839,7 @@ func addMatplotlibStackedBars(
 			seriesColor = item.Color
 		}
 		color := renderColor(seriesColor)
-		ax.Bar(x, item.Values, core.BarOptions{
+		_, _ = ax.Bar(x, item.Values, core.BarOptions{
 			Color: optional.Of(color), Baselines: append([]float64(nil), baseline...), Label: item.Name,
 		})
 		for j, value := range item.Values {
@@ -1020,7 +1022,9 @@ func PlotParallelCoordinatesMatplotlib(series []MatplotlibParallelCoordinatesSer
 				t = float64(k) / float64(segments-1)
 			}
 			c := cmap.At(t)
-			ax.Plot(px[k:k+2], py[k:k+2], core.PlotOptions{Color: optional.Of(c), LineWidth: optional.Of(lineWidth)})
+			if _, err := ax.Plot(px[k:k+2], py[k:k+2], core.PlotOptions{Color: optional.Of(c), LineWidth: optional.Of(lineWidth)}); err != nil {
+				return fmt.Errorf("failed to plot parallel coordinates segment: %w", err)
+			}
 		}
 	}
 

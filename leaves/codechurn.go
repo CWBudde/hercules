@@ -276,28 +276,6 @@ func (analyser *CodeChurnAnalysis) consumeCodeChurnChange(
 	return analyser.updateAuthor(change, lineDelta)
 }
 
-// consumePendingLineHistory accounts for merge-resolution deltas that were still buffered when
-// the last commit was consumed - the case where the analysed HEAD is itself a merge commit.
-func (analyser *CodeChurnAnalysis) consumePendingLineHistory() error {
-	if analyser.fileResolver == nil {
-		return nil
-	}
-
-	pending := linehistory.PendingChanges(analyser.fileResolver)
-	if len(pending) == 0 {
-		return nil
-	}
-
-	peopleCount := analyser.peopleResolver.MaxCount()
-	for _, change := range pending {
-		if err := analyser.consumeCodeChurnChange(change, peopleCount); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
 type churnLines struct {
 	inserted        int32
 	deletedBySelf   int32
@@ -466,6 +444,29 @@ func (analyser *CodeChurnAnalysis) MergeResults(
 	}
 
 	return merged
+}
+
+// consumePendingLineHistory accounts for merge-resolution deltas that were still buffered when
+// the last commit was consumed - the case where the analysed HEAD is itself a merge commit.
+func (analyser *CodeChurnAnalysis) consumePendingLineHistory() error {
+	if analyser.fileResolver == nil {
+		return nil
+	}
+
+	pending := linehistory.PendingChanges(analyser.fileResolver)
+	if len(pending) == 0 {
+		return nil
+	}
+
+	peopleCount := analyser.peopleResolver.MaxCount()
+	for _, change := range pending {
+		err := analyser.consumeCodeChurnChange(change, peopleCount)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (analyser *CodeChurnAnalysis) observeTick(tick core.TickNumber) {

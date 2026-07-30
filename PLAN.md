@@ -21,42 +21,108 @@ in `ewws-statistics/.core-repos`.
 
 ---
 
-## B1 — `--burndown-people` corrupts the _project_ burndown matrix 🔴
+## B1 — merge-resolution deltas were discarded, corrupting the _project_ matrix ✅ FIXED (uncommitted)
 
-**The main regression.** Enabling people tracking makes the global history go
-negative. The project matrix is fine without it.
+**Two claims in the original filing were wrong; both were checked against builds.**
 
-```
-new b330adf  --burndown                                    → OK
-new b330adf  --burndown --burndown-people                  → negative burndown balance:
-                                                              project "project" became -1
-                                                              at tick 450 (row 15), age band 30 (column 1)
-                                                              during finalization
-old 082bf15  --burndown                                    → OK
-old 082bf15  --burndown --burndown-people                  → OK
-```
+1. _"Only `--burndown-people` corrupts the project matrix."_ No. `ewws-wiki` fails
+   identically with plain `--burndown`, with or without the people flag and with or
+   without explicit `--granularity`/`--sampling`. `GlobalHistory` never sees an
+   author: without people tracking every author is clamped to `AuthorMissing`, which
+   only disables `updateAuthor`/`updateChurnMatrix`. The flag is incidental.
+2. _"`082bf15` was OK."_ Only its _output_ was. Until `3e31507` both serializers
+   clamped negatives away — `yaml.PrintMatrix(..., fixNegative=true)` and
+   `pb.ToBurndownSparseMatrix`'s `if v < 0 { v = 0 }`, the latter still carrying
+   upstream's `TODO(vmarkovtsev): find the root cause of tiny negative balances`.
+   Rebuilding `082bf15` with `fixNegative=false` shows its project matrix was already
+   negative on `ewws-wiki` (22 cells, min `-227`) and `render-pdf` (53 cells, min
+   `-6912`). 0.2.0 did not start producing negatives, it started _reporting_ them. Any
+   "worked before" baseline read from the old binary's YAML or `.pb` is an artifact of
+   that clamp.
 
-Exact repro (≈20 s):
+### Root cause of the regression (fixed)
 
-```bash
-hercules --burndown --granularity=30 --sampling=30 --burndown-people \
-         --progress=none /mnt/projekte/Code/MeKo/ewws-wiki > /dev/null
-```
+`a16f55f` moved merge accounting from burndown into `internal/linehistory` and lost the
+deltas in transit. A merge commit is consumed with `analyser.tick = TreeMergeMark`
+(`line_history.go:352-357`), and `File.updateTime` (`file.go:542-560`) suppresses every
+updater while that mark is set — by design, since the sibling parents' state is only
+reachable in `Merge()`. `Merge()` then resolves the marks via `resolveMergeMarks`
+(`file.go:436-455`), which produces exactly the missing positive deltas — and threw them
+away on the next line (`analyser.changes = nil`, `line_history.go:514`). Nothing
+recovered them: `Merge` has no output channel into the pipeline, and
+`BurndownAnalysis.Merge` is a deliberate no-op.
 
-`ewws-wiki` is the smallest reproducer found (`-1`, so it is a single
-off-by-one leak, not a structural error — good for bisecting). Larger ones:
-`process-manager` (`-118`), `meko-etl-tool` (`-32`), `mekorp-backend` (`-64`),
-`render-pdf` (`-5558`).
+Lines first owned at a merge were therefore never inserted into `globalHistory`, while
+their later removal still emitted a negative delta.
 
-**Where to look.** People tracking must be double-subtracting from, or otherwise
-writing through to, `GlobalHistory`. Start at `leaves/burndown.go` where the
-per-person deltas are applied, and at the `updateFileDelete` / merge paths — the
-error surfaces in `validateBurndownResultBalances` during _finalization_, so the
-corruption happens while accumulating, not while serialising.
+**Fix** (uncommitted): buffer the deltas in `LineHistoryAnalyser.pendingChanges` and
+emit them with the next commit the branch consumes; `Fork` and
+`synchronizeLineHistoryBranch` clear the buffer so no clone re-emits it. For a history
+that _ends_ on a merge commit (20 of 288 repos under `/mnt/projekte/Code/MeKo`) there is
+no next commit, so `FileIdResolver.PendingChanges()` exposes the leftovers and
+`BurndownAnalysis.Finalize` / `CodeChurnAnalysis.Finalize` drain them. `hotspot_risk`
+needs no drain — it reads ownership from the live resolver tree. Regression tests:
+`internal/linehistory/line_history_merge_test.go`.
 
-**Affected in the corpus:** 6 repositories fail at `project` scope
-(`backend-for-microscope`, `ewws-wiki`, `meko-etl-tool`, `mekorp-backend`,
-`personio-ipoffice-sync`, `process-manager`, `render-pdf`).
+### Measured effect
+
+Project matrix with output clamping disabled in all three builds so the raw numbers are
+comparable; default timeouts, `--granularity=30 --sampling=30`:
+
+| repository               | 082bf15                        | 0.2.0                         | 0.2.0 + fix             |
+| ------------------------ | ------------------------------ | ----------------------------- | ----------------------- |
+| `ewws-wiki`              | 22 neg, min −227, Σ 1 098 211   | 14 neg, min −1, Σ 636 783      | **0 neg**, Σ 1 104 135  |
+| `process-manager`        | 0 neg, Σ 241 786                | 3 neg, min −118, Σ 226 776     | **0 neg**, Σ 260 003    |
+| `personio-ipoffice-sync` | 3 neg, min −18                  | 3 neg, min −18                 | 3 neg, min −18          |
+| `render-pdf`             | 53 neg, min −6912, Σ 3 563 642  | 53 neg, min −6817, Σ 3 173 527 | 53 neg, Σ 5 787 185     |
+| `backend-for-microscope` | (old binary produced no output) | 64 neg, min −43                | 64 neg, min −43         |
+| `meko-etl-tool`          | (old binary produced no output) | 86 neg, min −2084              | 44 neg, min −2120       |
+
+`ewws-wiki` is the clean case: 0.2.0 was losing 42 % of the accumulated lines
+(636 783 vs 1 098 211); the fix restores them to within 0.5 % of the old baseline and
+removes every negative. `process-manager` likewise returns to zero.
+
+### What is left (not this regression)
+
+`personio-ipoffice-sync`, `render-pdf`, `backend-for-microscope` and `meko-etl-tool`
+still have negative project cells, unchanged or barely changed — and `render-pdf`'s were
+already there in `082bf15` at the same magnitude. That is a **separate, long-standing
+accounting bug of the same class as B2**, and it is what actually keeps these
+repositories failing. See B1c.
+
+**Note for B2's decision:** it now applies at project scope too, so the choice between
+"fix the accumulator" and "clamp + warn" cannot be scoped to people alone.
+
+---
+
+## B1b — file deletion inside a merge commit emits nothing 🟠
+
+`handleDeletion` (`line_history.go:1018-1063`) suppresses both the removal deltas
+(`file.Update` with `TreeMergeMark`) and the `NewLineHistoryDeletion` marker when
+`analyser.tick == TreeMergeMark`, yet still drops the file from `analyser.files`. Its
+lines stay in `globalHistory` forever.
+
+Same shape in `synchronizeLineHistoryBranch` (`line_history.go:546-566`): the sibling
+branches' files are `Delete()`d and replaced with clones of the merge branch's, and the
+resulting deltas land in `target.changes`, which is then discarded.
+
+Both are _inflation_, never negatives, so the validator cannot catch them — but they are
+the most likely explanation for `render-pdf`'s total growing from 3.17 M to 5.79 M under
+the B1 fix: the merge positives are now kept while these negatives are still dropped, so
+the two no longer partially cancel. Fixing them means touching the `TreeMergeMark`
+invariants in `File.updateTime`, which currently `panic`.
+
+---
+
+## B1c — project-scope negatives predating 0.2.0 🔴
+
+The residue from B1's table. Reproduces on `082bf15` once output clamping is disabled,
+so it is long-standing and was only ever hidden. Mechanically the same problem as B2 and
+should be decided together with it — either way the validator must not abort a
+multi-hour run over it.
+
+**Affected in the corpus:** `backend-for-microscope`, `meko-etl-tool`, `mekorp-backend`,
+`personio-ipoffice-sync`, `render-pdf`.
 
 ---
 
@@ -256,14 +322,21 @@ idle person in the fixture.
 
 ## Suggested order
 
-1. **B2's decision, then the demotion.** Turning `validateBurndownResultBalances`
-   into a warning (or clamping) is a few lines and takes the corpus from 14
-   failures to 1. Everything else is easier to measure once runs complete.
-2. **B1.** Isolated, tiny reproducer (`ewws-wiki`, `-1`), clear before/after
-   against `082bf15` — the most tractable real bug here.
-3. **B4's `--only` fix.** Unblocks all combined charts and is likely small.
-4. **B3.** Two suspected causes, one already confirmed wrong-and-fixed-nowhere.
-5. **B8 commit** + regression test.
+0. ~~**B1.**~~ Done — the merge-resolution regression is fixed and covered by tests.
+1. **B2's decision, then the demotion.** Now also covers B1c, since project-scope
+   negatives turn out to be the same long-standing bug and predate 0.2.0. Turning
+   `validateBurndownResultBalances` into a warning (or clamping) is a few lines and
+   takes the corpus from 14 failures to 1. Everything else is easier to measure once
+   runs complete. Note that whatever is chosen, the old binary's clamped output is
+   _not_ a correctness baseline to compare against.
+2. **B4's `--only` fix.** Unblocks all combined charts and is likely small.
+3. **B3.** Two suspected causes, one already confirmed wrong-and-fixed-nowhere. May
+   have shifted: `ownership_snapshot` consumes the same line-history dependency, so the
+   B1 fix now delivers it the merge deltas it was previously missing — re-measure
+   before digging.
+4. **B8 commit** + regression test.
+5. **B1b.** Inflation only, so nothing fails on it; worth doing before anyone trusts
+   absolute line totals.
 6. **B5, B6, B7.** Lower frequency; B6 may be documentation only.
 
 ## Regression coverage worth adding

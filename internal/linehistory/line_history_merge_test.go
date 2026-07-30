@@ -30,7 +30,8 @@ func newMergePendingAnalyser(t *testing.T) *LineHistoryAnalyser {
 	require.NoError(t, analyser.Configure(map[string]any{core.ConfigLogger: core.NewLogger()}))
 	require.NoError(t, analyser.Initialize(test.Repository))
 
-	analyser.newFile("merged.go", mergeTestAuthor, TreeMergeMark, mergeTestLines)
+	file := analyser.newFile("merged.go", mergeTestAuthor, TreeMergeMark, mergeTestLines)
+	require.NotNil(t, file)
 	require.Empty(t, analyser.changes, "a merge-marked insertion must not emit changes yet")
 
 	analyser.tick = mergeTestTick

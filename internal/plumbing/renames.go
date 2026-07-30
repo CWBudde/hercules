@@ -917,10 +917,15 @@ type sortableChange struct {
 
 type sortableChanges []sortableChange
 
+// Less orders changes by their blob hash. The comparison must stop at the first byte which
+// differs: continuing past it lets a later smaller byte outvote an earlier greater one, so both
+// a.Less(b) and b.Less(a) can hold. sort.Sort then produces an arbitrary order, and because
+// matchExactRenames walks the added and deleted lists as a merge scan, identical hashes end up on
+// opposite sides of the cursor and an exact rename is reported as a delete plus a create instead.
 func (change *sortableChange) Less(other *sortableChange) bool {
-	for x := range 20 {
-		if change.hash[x] < other.hash[x] {
-			return true
+	for x := range len(change.hash) {
+		if change.hash[x] != other.hash[x] {
+			return change.hash[x] < other.hash[x]
 		}
 	}
 

@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path"
@@ -180,6 +181,117 @@ func TestSortableChanges(t *testing.T) {
 	changes.Swap(0, 1)
 	assert.Equal(t, "ffffffffffffffffffffffffffffffffffffffff", changes[0].hash.String())
 	assert.Equal(t, "0000000000000000000000000000000000000000", changes[1].hash.String())
+}
+
+// renameHashList returns hashes in ascending order. They are random rather than hand-crafted on
+// purpose: across 20 uniformly distributed bytes it is almost certain that each of two hashes
+// has some byte smaller than the other's, so a comparison which does not stop at the first
+// differing byte calls both of them the smaller one. Contrived hashes with long zero tails
+// happen to dodge that, which is how the defect stayed hidden here while breaking real blobs.
+func renameHashList() []string {
+	return []string{
+		"210ed7d4e36453fbf7e7421c3a2353176d749f29",
+		"8fd5e88021edf1480d0fb62ef3758976bb656e6c",
+		"ba6aab7d50956699bb80a5d2cb4c43ada70fe81b",
+		"de4816fcfc32c1d313c384f8578b3d9adb8bc01e",
+		"f72fd2a7ff7b0cab15c0937416a98affcd4a8b69",
+	}
+}
+
+// TestSortableChangesIsAntisymmetric pins the ordering property sort.Sort requires. The previous
+// comparator scanned all 20 bytes and returned true on the first byte which happened to be
+// smaller, so a greater leading byte could be outvoted by a smaller trailing one and both
+// a<b and b<a held. The all-zeros/all-ff pair in TestSortableChanges is the one case that
+// mistake gets right, which is why it survived.
+func TestSortableChangesIsAntisymmetric(t *testing.T) {
+	hashes := renameHashList()
+	for i, left := range hashes {
+		for j, right := range hashes {
+			a := sortableChange{nil, plumbing.NewHash(left)}
+			b := sortableChange{nil, plumbing.NewHash(right)}
+
+			assert.Equal(t, i < j, a.Less(&b), "%s < %s", left, right)
+			assert.Equal(t, j < i, b.Less(&a), "%s < %s", right, left)
+		}
+	}
+}
+
+func renameChangeEntry(name, hash string) object.ChangeEntry {
+	return object.ChangeEntry{
+		Name: name,
+		TreeEntry: object.TreeEntry{
+			Name: name,
+			Mode: 0o100644,
+			Hash: plumbing.NewHash(hash),
+		},
+	}
+}
+
+// TestRenameAnalysisConsumeDetectsExactRenames covers the case which made burndown matrices go
+// negative: a commit which moves several files verbatim (git reports them as R100) while also
+// adding and deleting one unrelated file each. matchExactRenames walks the added and deleted
+// lists as a single merge scan, so it only pairs identical hashes when both lists are sorted
+// consistently. When they are not, a pure rename is emitted as a delete plus a create, the
+// deleted file's lines are charged to its age band, and the recreated ones are credited to a
+// fresh band - see PLAN.md B1c.
+func TestRenameAnalysisConsumeDetectsExactRenames(t *testing.T) {
+	ra := fixtureRenameAnalysis()
+
+	hashes := renameHashList()
+	changes := make(object.Changes, 0, len(hashes))
+
+	for i, hash := range hashes[:3] {
+		changes = append(changes, &object.Change{
+			From: renameChangeEntry(fmt.Sprintf("old/%d.txt", i), hash),
+			To:   renameChangeEntry(fmt.Sprintf("new/%d.txt", i), hash),
+		})
+	}
+
+	// One genuine delete and one genuine create, so the two lists hold different hash sets and
+	// an inconsistent sort actually reorders them relative to each other.
+	changes = append(changes, &object.Change{
+		From: renameChangeEntry("gone.txt", hashes[3]),
+		To:   object.ChangeEntry{},
+	}, &object.Change{
+		From: object.ChangeEntry{},
+		To:   renameChangeEntry("fresh.txt", hashes[4]),
+	})
+
+	// Exact matches are resolved by hash alone, so only the two leftovers need to be in the
+	// cache. They are deliberately under RenameAnalysisMinimumSize so the similarity pass skips
+	// them and the assertion below is only about the exact stage.
+	cache := map[plumbing.Hash]*CachedBlob{}
+	for _, hash := range hashes[3:] {
+		parsed := plumbing.NewHash(hash)
+		cache[parsed] = &CachedBlob{
+			Blob: object.Blob{Hash: parsed, Size: 4},
+			Data: []byte("tiny"),
+		}
+	}
+
+	res, err := ra.Consume(map[string]any{
+		DependencyBlobCache:   cache,
+		DependencyTreeChanges: changes,
+	})
+	require.NoError(t, err)
+
+	renamed, ok := res[DependencyTreeChanges].(object.Changes)
+	require.True(t, ok)
+	require.Len(t, renamed, 5, "3 renames + 1 delete + 1 create")
+
+	pairs := map[string]string{}
+
+	for _, change := range renamed {
+		if change.From.Name != "" && change.To.Name != "" {
+			pairs[change.From.Name] = change.To.Name
+		}
+	}
+
+	assert.Equal(t, map[string]string{
+		"old/0.txt": "new/0.txt",
+		"old/1.txt": "new/1.txt",
+		"old/2.txt": "new/2.txt",
+	}, pairs, "every verbatim move must survive as a single rename")
 }
 
 func TestSortableBlobs(t *testing.T) {

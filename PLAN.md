@@ -1,6 +1,7 @@
 # PLAN: correctness regressions blocking real-world use of 0.2.0
 
-**Status:** open — 8 of 13 items fixed; B1c carries the remaining accounting defect
+**Status:** open — 8 of 13 items fixed; B1c's rename half is fixed, its double-removal residue
+carries the remaining accounting defect
 **Filed:** 2026-07-30, against `b330adf` (tag `0.2.0`)
 **Reference build for "worked before":** `082bf15` (the `Version: 0` binary still installed at `/usr/local/bin/hercules`)
 
@@ -25,7 +26,7 @@ Checkbox = done / not done. The emoji is the severity of what is left.
 
 - [x] [**B1**](#b1--merge-resolution-deltas-were-discarded-corrupting-the-project-matrix--fixed) — merge-resolution deltas discarded, project matrix corrupted (`9e570a3`, `1be72df`)
 - [x] [**B1b**](#b1b--file-deletion-inside-a-merge-commit-emits-nothing--fixed) — file deletion inside a merge commit emits nothing (`1abecda`, `9c010ef`)
-- [ ] [**B1c**](#b1c--residual-negatives-the-same-lines-removed-twice-across-branches-) — residual negatives: the same lines removed twice across branches 🔴 (root cause found, fix open)
+- [ ] [**B1c**](#b1c--residual-negatives-the-same-lines-removed-twice-across-branches-) — residual negatives: the same lines removed twice across branches 🟡 (rename comparator fixed; genuine double-removal open)
 - [ ] [**B1d**](#b1d--the-merge-commit-is-consumed-by-only-one-branch-) — merge commit is consumed by only one branch 🟠
 - [x] [**B2** (demotion)](#the-demotion-is-done---the-decision-is-not) — negative balances warn instead of aborting (`ebc8ded`, `a7c8cba`, `0ea3cc0`)
 - [x] [**B2** (decision)](#b2--person-burndown-matrices-have-always-contained-negatives--decided-a) — decided **(a)**: the accounting is wrong; the residual/transient split is now measured and reported
@@ -240,12 +241,70 @@ lines are re-credited to band 416 instead of keeping band 304, so even the *posi
 are wrong. Downstream sees that one without any warning at all, because
 `pb.ToBurndownSparseMatrix` clamps only the negatives.
 
-**Fix is open, and it is not small.** It means reconciling the two branches' line state at the
-merge rather than letting both removals stand — the same territory as B1d. Do not attempt it
-without the corpus regression suite in place first.
+### Half of it was a broken sort comparator ✅ FIXED
 
-**Affected in the corpus:** `backend-for-microscope` (183 cells), `meko-etl-tool` (514),
-`mekorp-backend` (2180), `personio-ipoffice-sync` (6), `render-pdf` (158).
+The rename that "did not carry the file identity across" was not a heuristic falling short —
+`sortableChange.Less` (`internal/plumbing/renames.go`) was not a valid ordering:
+
+```go
+for x := range 20 {
+    if change.hash[x] < other.hash[x] {
+        return true          // never checks whether an earlier byte was already greater
+    }
+}
+```
+
+A greater leading byte could be outvoted by a smaller trailing one, so for two hashes both
+`a.Less(b)` and `b.Less(a)` held. Across 20 uniformly distributed bytes that is the *normal*
+case, not a corner: almost every pair of real blob hashes compares as mutually smaller. So
+`sort.Sort` produced an arbitrary order, and it ordered `added` and `deleted` differently.
+`matchExactRenames` walks those two lists as a single merge scan, which only pairs identical
+hashes when both are sorted consistently — so verbatim moves (git's R100) were emitted as a
+delete plus a create. That is exactly `bc3aea9f`.
+
+The same code is in upstream (`hercules-original/internal/plumbing/renames.go:545`), which is
+why B1c reproduces on `082bf15`.
+
+Fixed by returning at the first differing byte. Pinned by
+`TestSortableChangesIsAntisymmetric` and `TestRenameAnalysisConsumeDetectsExactRenames`; both
+fail against the old comparator. Note the pre-existing `TestSortableChanges` compares all-`00`
+against all-`ff`, the one pair the mistake gets right — which is how it survived. The new
+fixtures use random hashes for that reason.
+
+**Measured over the affected corpus** (`--burndown --burndown-people`, granularity/sampling 30;
+"mass" is the sum of the absolute values of all negative cells):
+
+| repository | cells before | after | mass before | after | worst before | after |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `mekorp-backend` | 2180 | 2226 | 7 745 717 | 7 819 365 | −80 417 | −80 417 |
+| `meko-etl-tool` | 514 | 498 | 259 619 | 233 161 | −2 177 | −2 177 |
+| `backend-for-microscope` | 183 | 183 | 4 044 | 4 044 | −126 | −126 |
+| `render-pdf` | 158 | 47 | 463 735 | **1 114** | −7 386 | **−58** |
+| `personio-ipoffice-sync` | 6 | 6 | 104 | 104 | −18 | −18 |
+
+`render-pdf` — the repository the trace above came from — loses 99.8% of its negative mass and
+its worst cell drops from −7386 to −58. That confirms the mechanism end to end.
+
+It is **not** the whole of B1c. Three repositories are untouched and `mekorp-backend`, by far
+the largest by mass, is unchanged; its cell count even rises slightly, because better rename
+detection redistributes lines between age bands. Cell count is the weaker signal here — mass
+and worst-cell are the ones to watch.
+
+Beware: this changes file identity tracking for *every* analysis, not just burndown. It should
+be strictly an improvement (more true renames detected), but it moves numbers everywhere.
+
+### What remains 🔴
+
+The residue is the genuine double-removal: two sibling branches each delete the same lines from
+their own copy, both feeding the accumulator `ForkSamePipelineItem` shares, and the merge has
+nothing to re-add. Fixing that means reconciling the two branches' line state at the merge
+rather than letting both removals stand — the same territory as B1d. Do not attempt it without
+the corpus regression suite in place first, and re-measure `mekorp-backend` specifically, since
+it is now the only large unexplained case.
+
+**Affected in the corpus, after the comparator fix:** `mekorp-backend` (2226 cells,
+mass 7 819 365), `meko-etl-tool` (498), `backend-for-microscope` (183), `render-pdf` (47),
+`personio-ipoffice-sync` (6).
 
 ---
 
@@ -776,9 +835,11 @@ _observed_ to abort on `MKTools`, `mw_prod_planner` and `mekorp-webclient`.
 - [ ] **6. The corpus regression test**, below. It is now a prerequisite rather than a
       nice-to-have: B1c and B1d both change merge accounting, and there is no way to tell a
       real improvement from a new leak without one.
-- [ ] **7. B1c, then B1d.** Take them together — both are about reconciling branch state at a
-      merge, and B1d's mis-attribution is plausibly the same code path. B1c is the larger
-      defect (2180 bad cells in `mekorp-backend` alone) and also the better-understood one.
+- [ ] **7. B1c's residue, then B1d.** B1c's rename half is fixed (the `sortableChange.Less`
+      comparator); what is left is the genuine double-removal across sibling branches. Take it
+      with B1d — both are about reconciling branch state at a merge, and B1d's mis-attribution
+      is plausibly the same code path. `mekorp-backend` is now the case to drive from: 2226
+      cells and essentially all of the remaining negative mass.
 - [ ] **8. B8's regression test.** The fix itself is committed (`c04d08c`); what is left is a
       fixture with a deliberately idle person.
 - [ ] **9. B5, B6, B7, B9.** Lower frequency; B6 may be documentation only and B9 is a

@@ -1377,7 +1377,7 @@ func drawKnowledgeDistributionBar(axes *core.Axes, editorCount, fileCount float6
 	barColor := renderColor(knowledgeDistributionColor(int(editorCount)))
 	edgeColor := render.Color{R: 1, G: 1, B: 1, A: 1}
 	edgeWidth := 0.5
-	axes.Bar([]float64{editorCount}, []float64{fileCount}, core.BarOptions{
+	_, _ = axes.Bar([]float64{editorCount}, []float64{fileCount}, core.BarOptions{
 		Color: optional.Of(barColor), EdgeColor: optional.Of(edgeColor), EdgeWidth: optional.Of(edgeWidth),
 	})
 	axes.Text(editorCount, fileCount+0.3, fmt.Sprintf("%.0f", fileCount), core.TextOptions{
@@ -1648,7 +1648,7 @@ func configureBusFactorSubsystemAxes(
 	barHeight := 0.6
 	for i, value := range values {
 		barColor := renderColor(busFactorColor(value))
-		ax.Bar([]float64{y[i]}, []float64{barValues[i]}, core.BarOptions{
+		_, _ = ax.Bar([]float64{y[i]}, []float64{barValues[i]}, core.BarOptions{
 			Color:       optional.Of(barColor),
 			Width:       optional.Of(barHeight),
 			Orientation: optional.Of(orientation),
@@ -1830,13 +1830,13 @@ func drawKnowledgeSiloBars(axes *core.Axes, series knowledgeSiloSeries, windowMo
 	totalColor := renderColor(color.RGBA{R: 144, G: 202, B: 249, A: 255})
 	recentColor := renderColor(color.RGBA{R: 21, G: 101, B: 192, A: 255})
 
-	axes.Bar(series.totalY, series.totalValues, core.BarOptions{
+	_, _ = axes.Bar(series.totalY, series.totalValues, core.BarOptions{
 		Color:       optional.Of(totalColor),
 		Width:       optional.Of(barHeight),
 		Orientation: optional.Of(orientation),
 		Label:       "Total unique editors",
 	})
-	axes.Bar(series.recentY, series.recentValues, core.BarOptions{
+	_, _ = axes.Bar(series.recentY, series.recentValues, core.BarOptions{
 		Color:       optional.Of(recentColor),
 		Width:       optional.Of(barHeight),
 		Orientation: optional.Of(orientation),

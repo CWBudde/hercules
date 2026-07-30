@@ -312,11 +312,13 @@ func plotRuntimePercentageMatplotlib(labels []string, values []float64, output s
 	orientation := core.BarHorizontal
 	barHeight := 0.8
 	barColor := renderColor(color.RGBA{R: 228, G: 87, B: 86, A: 255})
-	ax.Bar(y, values, core.BarOptions{
+	if _, err := ax.Bar(y, values, core.BarOptions{
 		Color:       optional.Of(barColor),
 		Width:       optional.Of(barHeight),
 		Orientation: optional.Of(orientation),
-	})
+	}); err != nil {
+		return fmt.Errorf("failed to plot runtime percentage bars: %w", err)
+	}
 	ax.SetXLim(0, maxValue*1.05)
 	ax.SetYLim(-0.89, float64(len(values))-0.11)
 	ax.XAxis.Locator = ticker.FixedLocator{TicksList: []float64{0, 20, 40, 60, 80}}

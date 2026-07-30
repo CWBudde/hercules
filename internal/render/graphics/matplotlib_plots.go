@@ -381,6 +381,7 @@ func addMatplotlibLine(ax *core.Axes, item MatplotlibLineSeries, color render.Co
 			Color: optional.Of(color), Alpha: optional.Of(fillAlpha), EdgeWidth: optional.Of(fillEdge),
 		})
 	}
+
 	_, _ = ax.Plot(item.X, item.Y, core.PlotOptions{
 		Color: optional.Of(color), LineWidth: optional.Of(lineWidth), Dashes: item.Dashes, Label: item.Name,
 	})
@@ -506,7 +507,9 @@ func PlotBarChartMatplotlib(labels []string, values []float64, opts MatplotlibBa
 		barColor = PythonLaboursColorPalette(1)[0]
 	}
 	renderedColor := renderColor(barColor)
-	if _, err := ax.Bar(x, values, core.BarOptions{Color: optional.Of(renderedColor)}); err != nil {
+
+	_, err := ax.Bar(x, values, core.BarOptions{Color: optional.Of(renderedColor)})
+	if err != nil {
 		return fmt.Errorf("failed to plot bars: %w", err)
 	}
 	addMatplotlibBarLabels(ax, x, values, opts)
@@ -741,6 +744,7 @@ func addMatplotlibScatterSeries(
 		if size <= 0 {
 			size = 24
 		}
+
 		_, _ = ax.Scatter(x, y, core.ScatterOptions{Color: optional.Of(renderedColor), Size: optional.Of(size), Label: item.Name})
 		if annotateLabels {
 			addMatplotlibScatterLabels(ax, item.Points, x, y)
@@ -839,6 +843,7 @@ func addMatplotlibStackedBars(
 			seriesColor = item.Color
 		}
 		color := renderColor(seriesColor)
+
 		_, _ = ax.Bar(x, item.Values, core.BarOptions{
 			Color: optional.Of(color), Baselines: append([]float64(nil), baseline...), Label: item.Name,
 		})

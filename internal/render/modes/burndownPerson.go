@@ -42,13 +42,33 @@ func BurndownPersonWithOptions(reader readers.Reader, output string, startDate, 
 	if err != nil {
 		return err
 	}
+	rendered := 0
 	for index, person := range peopleBurndowns {
-		if err := renderPersonBurndown(
+		err := renderPersonBurndown(
 			person, displayNames[index], outputFiles[index], header,
 			usePythonRenderer, startDate, endDate, opts,
-		); err != nil {
+		)
+		// A contributor with no alive lines in the analysed range has nothing to
+		// plot. That is ordinary — a people-dict routinely covers more people
+		// than any single repository set does — so skip them instead of failing
+		// the whole fan-out and losing every other person's chart too.
+		if errors.Is(err, errNoPersonActivity) {
+			if !opts.Quiet {
+				fmt.Fprintf(
+					os.Stderr,
+					"Skipping person burndown for %s: no contributor activity in range\n",
+					displayNames[index],
+				)
+			}
+			continue
+		}
+		if err != nil {
 			return err
 		}
+		rendered++
+	}
+	if rendered == 0 && len(peopleBurndowns) > 0 {
+		return errNoPersonActivity
 	}
 	return nil
 }

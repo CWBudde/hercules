@@ -362,6 +362,26 @@ func consumeLineHistory(analyser *BurndownAnalysis, changes core.LineHistoryChan
 	analyser.fileResolver = analyser.primaryResolver
 }
 
+// consumePendingLineHistory accounts for merge-resolution deltas that were still buffered when
+// the last commit was consumed. That happens when the analysed HEAD is itself a merge commit:
+// LineHistoryAnalyser.Merge() runs after the final Consume(), so there is no commit left to
+// carry its changes.
+func consumePendingLineHistory(analyser *BurndownAnalysis) {
+	if analyser.primaryResolver == nil {
+		return
+	}
+
+	pending := linehistory.PendingChanges(analyser.primaryResolver)
+	if len(pending) == 0 {
+		return
+	}
+
+	consumeLineHistory(analyser, core.LineHistoryChanges{
+		Changes:  pending,
+		Resolver: analyser.primaryResolver,
+	})
+}
+
 // burndownState holds the serializable state for hibernation.
 type burndownState struct {
 	GlobalHistory        map[int]map[int]int64
@@ -550,6 +570,8 @@ func removeBurndownHibernationFile(analyser *BurndownAnalysis) error {
 
 // Finalize returns the result of the analysis. Further calls to Consume() are not expected.
 func (analyser *BurndownAnalysis) Finalize() any {
+	consumePendingLineHistory(analyser)
+
 	globalHistory, lastTick := analyser.groupSparseHistory(analyser.globalHistory, -1)
 	fileHistories := analyser.finalizeFileHistories(lastTick)
 	fileOwnership := map[string]map[int]int{}

@@ -81,6 +81,11 @@ type LineHistoryAnalyser struct {
 	mergePending bool
 
 	changes []core.LineHistoryChange
+	// pendingChanges holds the deltas produced while Merge() resolves TreeMergeMark lines.
+	// Merge() has no way to hand results to the pipeline, so they wait here until the next
+	// Consume() emits them. Leftovers - the analysed HEAD being a merge commit - are read by
+	// the consuming leaves through FileIdResolver.PendingChanges().
+	pendingChanges []core.LineHistoryChange
 
 	l core.Logger
 }
@@ -125,6 +130,31 @@ func (v FileIdResolver) NameOf(id FileId) string {
 	}
 
 	return v.abandonedNameOf(id)
+}
+
+// PendingChanges returns the merge-resolution deltas that no subsequent commit picked up.
+// This is only non-empty when the analysed history ends on a merge commit. The read is
+// non-destructive so that every consuming leaf sees the same leftovers in its Finalize().
+func (v FileIdResolver) PendingChanges() []core.LineHistoryChange {
+	if v.analyser == nil {
+		return nil
+	}
+
+	return v.analyser.pendingChanges
+}
+
+// PendingChanges returns the undelivered merge-resolution deltas behind resolver, if it is
+// backed by a LineHistoryAnalyser. Consumers call this from Finalize() so that a history
+// ending on a merge commit still accounts for the lines that merge resolved.
+func PendingChanges(resolver core.FileIdResolver) []core.LineHistoryChange {
+	provider, ok := resolver.(interface {
+		PendingChanges() []core.LineHistoryChange
+	})
+	if !ok {
+		return nil
+	}
+
+	return provider.PendingChanges()
 }
 
 func (v FileIdResolver) MergedWith(id FileId) (FileId, string, bool) {
@@ -326,6 +356,8 @@ func (analyser *LineHistoryAnalyser) Initialize(repository *git.Repository) erro
 	analyser.previousTick = 0
 	analyser.mergedAuthor = core.AuthorMissing
 	analyser.mergePending = false
+	analyser.changes = nil
+	analyser.pendingChanges = nil
 
 	return nil
 }
@@ -347,7 +379,14 @@ func (analyser *LineHistoryAnalyser) Consume(deps map[string]any) (map[string]an
 
 	analyser.tick = tick
 	analyser.onNewTick()
-	analyser.changes = make([]core.LineHistoryChange, 0, len(treeDiffs)*4)
+	// Deltas buffered by a preceding Merge() ride along with this commit. Every change carries
+	// its own PrevTick/CurrTick, so delivering them late does not move any line between bands.
+	analyser.changes = analyser.pendingChanges
+	analyser.pendingChanges = nil
+
+	if analyser.changes == nil {
+		analyser.changes = make([]core.LineHistoryChange, 0, len(treeDiffs)*4)
+	}
 
 	isMerge, _ := deps[core.DependencyIsMerge].(bool)
 	if isMerge {
@@ -465,6 +504,9 @@ func (analyser *LineHistoryAnalyser) Fork(n int) []core.PipelineItem {
 		}
 
 		clone.changes = nil
+		// The origin keeps the branch slot and will emit its own buffer; duplicating it here
+		// would count the merged lines once per clone.
+		clone.pendingChanges = nil
 
 		result[cloneIndex] = &clone
 	}
@@ -511,6 +553,11 @@ func (analyser *LineHistoryAnalyser) Merge(items []core.PipelineItem) {
 
 	analyser.mergePending = false
 	analyser.mergedAuthor = core.AuthorMissing
+	// file.Merge() above resolved the TreeMergeMark lines and emitted their (positive) deltas
+	// into analyser.changes. Dropping them here would leave those lines missing from every
+	// consumer's history while their later removal is still counted - the project burndown
+	// matrix then goes negative. Hand them to the next Consume() instead.
+	analyser.pendingChanges = append(analyser.pendingChanges, analyser.changes...)
 	analyser.changes = nil
 	analyser.onNewTick()
 }
@@ -563,6 +610,8 @@ func synchronizeLineHistoryBranch(source, target *LineHistoryAnalyser) {
 	target.mergedAuthor = core.AuthorMissing
 	target.mergePending = false
 	target.changes = nil
+	// The merge branch owns the resolution deltas; synchronized siblings must not re-emit them.
+	target.pendingChanges = nil
 }
 
 func mustLineHistoryAnalyser(item core.PipelineItem) *LineHistoryAnalyser {

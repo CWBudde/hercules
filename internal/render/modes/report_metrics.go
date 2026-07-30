@@ -1991,12 +1991,15 @@ func plotHotspotRiskRanked(repoName string, files []readers.HotspotRiskFile, lab
 		return err
 	}
 
-	if err := drawHotspotRiskBars(plot.riskAxes, series, repoName); err != nil {
+	err = drawHotspotRiskBars(plot.riskAxes, series, repoName)
+	if err != nil {
 		return err
 	}
 
 	renderAlpha := hotspotComponentRenderAlpha(output)
-	if err := drawHotspotRiskComponents(plot.componentAxes, series, renderAlpha); err != nil {
+
+	err = drawHotspotRiskComponents(plot.componentAxes, series, renderAlpha)
+	if err != nil {
 		return err
 	}
 
@@ -2157,7 +2160,8 @@ func drawHotspotRiskComponents(axes *core.Axes, series hotspotRiskSeries, alpha 
 		return err
 	}
 	left := append([]float64(nil), series.size...)
-	err := addHotspotComponentBars(
+
+	err = addHotspotComponentBars(
 		axes, series.positions, series.churn, left, "#e74c3c", "Churn", alpha,
 	)
 	if err != nil {
@@ -2165,7 +2169,7 @@ func drawHotspotRiskComponents(axes *core.Axes, series hotspotRiskSeries, alpha 
 	}
 	addHotspotComponentValues(left, series.churn)
 
-	err := addHotspotComponentBars(
+	err = addHotspotComponentBars(
 		axes, series.positions, series.coupling, left, "#f39c12", "Coupling", alpha,
 	)
 	if err != nil {
@@ -2173,7 +2177,7 @@ func drawHotspotRiskComponents(axes *core.Axes, series hotspotRiskSeries, alpha 
 	}
 	addHotspotComponentValues(left, series.coupling)
 
-	err := addHotspotComponentBars(
+	err = addHotspotComponentBars(
 		axes, series.positions, series.ownership, left, "#9b59b6", "Ownership", alpha,
 	)
 	if err != nil {

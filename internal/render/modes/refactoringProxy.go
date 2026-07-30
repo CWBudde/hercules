@@ -55,23 +55,27 @@ func plotRefactoringProxy(repoName string, data *readers.RefactoringProxyData, o
 
 	lineColor := render.Color{R: 0x2e / 255.0, G: 0x86 / 255.0, B: 0xab / 255.0, A: 1}
 	lineWidth := 2.0
-	if _, err := ax.Plot(timestamps, rates, core.PlotOptions{
+
+	_, err = ax.Plot(timestamps, rates, core.PlotOptions{
 		Color:     optional.Of(lineColor),
 		LineWidth: optional.Of(lineWidth),
 		Label:     "Refactoring Rate",
-	}); err != nil {
+	})
+	if err != nil {
 		return fmt.Errorf("failed to plot refactoring rate: %w", err)
 	}
 
 	threshold := float64(data.Threshold)
 	thresholdColor := render.Color{R: 0xe6 / 255.0, G: 0x39 / 255.0, B: 0x46 / 255.0, A: 1}
 	thresholdWidth := 1.5
-	if _, err := ax.Plot([]float64{x[0], x[len(x)-1]}, []float64{threshold, threshold}, core.PlotOptions{
+
+	_, err = ax.Plot([]float64{x[0], x[len(x)-1]}, []float64{threshold, threshold}, core.PlotOptions{
 		Color:     optional.Of(thresholdColor),
 		LineWidth: optional.Of(thresholdWidth),
 		Dashes:    []float64{6, 4},
 		Label:     fmt.Sprintf("Threshold (%.1f%%)", threshold*100),
-	}); err != nil {
+	})
+	if err != nil {
 		return fmt.Errorf("failed to plot refactoring threshold: %w", err)
 	}
 

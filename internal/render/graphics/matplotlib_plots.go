@@ -748,7 +748,9 @@ func addMatplotlibScatterSeries(
 			size = 24
 		}
 
-		_, _ = ax.Scatter(x, y, core.ScatterOptions{Color: optional.Of(renderedColor), Size: optional.Of(size), Label: item.Name})
+		_, _ = ax.Scatter(x, y, core.ScatterOptions{
+			Color: optional.Of(renderedColor), Size: optional.Of(size), Label: item.Name,
+		})
 		if annotateLabels {
 			addMatplotlibScatterLabels(ax, item.Points, x, y)
 		}
@@ -1033,7 +1035,11 @@ func PlotParallelCoordinatesMatplotlib(series []MatplotlibParallelCoordinatesSer
 				t = float64(k) / float64(segments-1)
 			}
 			c := cmap.At(t)
-			if _, err := ax.Plot(px[k:k+2], py[k:k+2], core.PlotOptions{Color: optional.Of(c), LineWidth: optional.Of(lineWidth)}); err != nil {
+
+			_, err := ax.Plot(px[k:k+2], py[k:k+2], core.PlotOptions{
+				Color: optional.Of(c), LineWidth: optional.Of(lineWidth),
+			})
+			if err != nil {
 				return fmt.Errorf("failed to plot parallel coordinates segment: %w", err)
 			}
 		}

@@ -2,6 +2,7 @@ package core
 
 import (
 	"bytes"
+	"fmt"
 	"testing"
 
 	"github.com/go-git/go-git/v5"
@@ -816,4 +817,84 @@ func TestInsertHibernateBootNoOp(t *testing.T) {
 	}
 	result := insertHibernateBoot(plan, 10)
 	assert.Equal(t, plan, result)
+}
+
+// mergePlanCommits builds a history in which two merges are resolved, the second one from parents
+// that both have several children. That second merge is the case mergeBranches used to leave to
+// map iteration order: no parent qualifies for the minBranch promotion, so items[0] was whichever
+// parent Go happened to yield first.
+func mergePlanCommits() []*object.Commit {
+	return []*object.Commit{
+		makeTestCommit("a1"),
+		makeTestCommit("b1", "a1"),
+		makeTestCommit("c1", "a1"),
+		makeTestCommit("d1", "b1", "c1"),
+		makeTestCommit("e1", "b1"),
+		makeTestCommit("f1", "c1"),
+		makeTestCommit("aa", "d1"),
+		makeTestCommit("bb", "e1", "f1"),
+		makeTestCommit("cc", "aa", "bb"),
+	}
+}
+
+// TestPrepareRunPlanIsDeterministic pins the reproducibility of the whole analysis. The plan is
+// derived from a set of parent hashes, and iterating that set directly made the branch order of a
+// merge action differ from run to run - so the same repository produced different burndown numbers,
+// and intermittently aborted with "source line history integrity check failed" hundreds of commits
+// after the merge that caused it.
+func TestPrepareRunPlanIsDeterministic(t *testing.T) {
+	var reference []string
+
+	for attempt := range 32 {
+		plan, _, err := prepareRunPlan(mergePlanCommits(), 0, false)
+		require.NoError(t, err)
+
+		rendered := make([]string, 0, len(plan))
+		for _, action := range plan {
+			rendered = append(rendered, fmt.Sprintf("%d %v %s", action.Action, action.Items, action.String()))
+		}
+
+		if attempt == 0 {
+			reference = rendered
+			require.NotEmpty(t, reference)
+
+			continue
+		}
+
+		require.Equal(t, reference, rendered, "the execution plan must not depend on map iteration order")
+	}
+}
+
+// TestMergeActionLeadsWithTheConsumingBranch guards the invariant LineHistoryAnalyser.Merge relies
+// on: items[0] is the branch that consumed the merge commit, and it decides which paths exist in
+// the merged tree. Resolving a merge against a branch which never saw the commit desynchronises the
+// tracked line history from the repository.
+// It is checked over many plans because the violation it guards against used to depend on map
+// iteration order, and a single plan would only catch it some of the time.
+func TestMergeActionLeadsWithTheConsumingBranch(t *testing.T) {
+	merges := 0
+
+	for range 32 {
+		plan, _, err := prepareRunPlan(mergePlanCommits(), 0, false)
+		require.NoError(t, err)
+
+		consumedOn := map[plumbing.Hash]int{}
+
+		for _, action := range plan {
+			switch action.Action {
+			case runActionCommit:
+				consumedOn[action.Commit.Hash] = action.Items[0]
+			case runActionMerge:
+				merges++
+
+				branch, seen := consumedOn[action.Commit.Hash]
+				require.True(t, seen, "the merge commit must be consumed before its merge action")
+				require.Equal(t, branch, action.Items[0],
+					"merge of %s leads with branch %d but the commit ran on %d",
+					action.Commit.Hash.String()[:7], action.Items[0], branch)
+			}
+		}
+	}
+
+	require.Positive(t, merges, "the fixture must exercise merge actions")
 }

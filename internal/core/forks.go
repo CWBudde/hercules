@@ -921,6 +921,18 @@ func (builder *planBuilder) appendCommitSequence(
 	return head, branch
 }
 
+// mergeBranches returns the branch a merge commit is consumed on, and the branches its merge
+// action has to reconcile.
+//
+// Two properties matter and neither is incidental. The parents are held in a set, so they are
+// walked in sorted order - iterating the map directly made the plan, and therefore the whole
+// analysis, differ from run to run. And the returned branch is promoted to items[0], because
+// LineHistoryAnalyser.Merge treats the first item as the branch which consumed the merge commit
+// and lets it decide which paths exist. Only the minBranch case used to guarantee that; when no
+// parent qualified, items[0] was whichever parent the map happened to yield first, so a merge
+// could be resolved against a branch that never saw the commit. The resulting tree then disagreed
+// with git, and the "source line history integrity check failed" abort surfaced it hundreds of
+// commits later.
 func (builder *planBuilder) mergeBranches(commit *object.Commit, branch int) (int, []int) {
 	parents := builder.parents[commit.Hash]
 	if len(parents) < 2 {
@@ -928,9 +940,9 @@ func (builder *planBuilder) mergeBranches(commit *object.Commit, branch int) (in
 	}
 
 	items := make([]int, 0, len(parents))
-	minBranch, minIndex := math.MaxInt, 0
+	minBranch := math.MaxInt
 
-	for parent := range parents {
+	for _, parent := range sortedHashSet(parents) {
 		parentBranch := builder.branchers[commit.Hash][parent]
 		if !branchExists(parentBranch) {
 			parentBranch = builder.branches[parent]
@@ -940,7 +952,7 @@ func (builder *planBuilder) mergeBranches(commit *object.Commit, branch int) (in
 		}
 
 		if minBranch > parentBranch && len(builder.dag[parent]) == 1 {
-			minBranch, minIndex = parentBranch, len(items)
+			minBranch = parentBranch
 		}
 
 		items = append(items, parentBranch)
@@ -948,10 +960,37 @@ func (builder *planBuilder) mergeBranches(commit *object.Commit, branch int) (in
 
 	if minBranch < math.MaxInt {
 		branch = minBranch
-		items[minIndex], items[0] = items[0], items[minIndex]
 	}
 
+	promoteMergeBranch(items, branch)
+
 	return branch, items
+}
+
+// promoteMergeBranch moves branch to the front of items, leaving the rest in their sorted order.
+// A branch which is not among the parents is left alone: the caller has already established the
+// merge commit runs on one of them, and silently reordering on a broken assumption would hide it.
+func promoteMergeBranch(items []int, branch int) {
+	for index, item := range items {
+		if item == branch {
+			items[0], items[index] = items[index], items[0]
+
+			return
+		}
+	}
+}
+
+// sortedHashSet walks a hash set in a stable order. Go randomizes map iteration, and anything the
+// execution plan derives from it becomes irreproducible.
+func sortedHashSet(set map[plumbing.Hash]bool) []plumbing.Hash {
+	hashes := make([]plumbing.Hash, 0, len(set))
+	for hash := range set {
+		hashes = append(hashes, hash)
+	}
+
+	sort.Slice(hashes, func(i, j int) bool { return hashes[i].String() < hashes[j].String() })
+
+	return hashes
 }
 
 func branchExists(branch int) bool {

@@ -69,14 +69,14 @@ needs no drain — it reads ownership from the live resolver tree. Regression te
 Project matrix with output clamping disabled in all three builds so the raw numbers are
 comparable; default timeouts, `--granularity=30 --sampling=30`:
 
-| repository               | 082bf15                        | 0.2.0                         | 0.2.0 + fix             |
-| ------------------------ | ------------------------------ | ----------------------------- | ----------------------- |
-| `ewws-wiki`              | 22 neg, min −227, Σ 1 098 211   | 14 neg, min −1, Σ 636 783      | **0 neg**, Σ 1 104 135  |
-| `process-manager`        | 0 neg, Σ 241 786                | 3 neg, min −118, Σ 226 776     | **0 neg**, Σ 260 003    |
-| `personio-ipoffice-sync` | 3 neg, min −18                  | 3 neg, min −18                 | 3 neg, min −18          |
-| `render-pdf`             | 53 neg, min −6912, Σ 3 563 642  | 53 neg, min −6817, Σ 3 173 527 | 53 neg, Σ 5 787 185     |
-| `backend-for-microscope` | (old binary produced no output) | 64 neg, min −43                | 64 neg, min −43         |
-| `meko-etl-tool`          | (old binary produced no output) | 86 neg, min −2084              | 44 neg, min −2120       |
+| repository               | 082bf15                         | 0.2.0                          | 0.2.0 + fix            |
+| ------------------------ | ------------------------------- | ------------------------------ | ---------------------- |
+| `ewws-wiki`              | 22 neg, min −227, Σ 1 098 211   | 14 neg, min −1, Σ 636 783      | **0 neg**, Σ 1 104 135 |
+| `process-manager`        | 0 neg, Σ 241 786                | 3 neg, min −118, Σ 226 776     | **0 neg**, Σ 260 003   |
+| `personio-ipoffice-sync` | 3 neg, min −18                  | 3 neg, min −18                 | 3 neg, min −18         |
+| `render-pdf`             | 53 neg, min −6912, Σ 3 563 642  | 53 neg, min −6817, Σ 3 173 527 | 53 neg, Σ 5 787 185    |
+| `backend-for-microscope` | (old binary produced no output) | 64 neg, min −43                | 64 neg, min −43        |
+| `meko-etl-tool`          | (old binary produced no output) | 86 neg, min −2084              | 44 neg, min −2120      |
 
 `ewws-wiki` is the clean case: 0.2.0 was losing 42 % of the accumulated lines
 (636 783 vs 1 098 211); the fix restores them to within 0.5 % of the old baseline and
@@ -125,14 +125,14 @@ next to it discards an empty slice. There is no bug there.
 Same three-build setup as B1 (clamping disabled, default timeouts,
 `--granularity=30 --sampling=30`):
 
-| repository               | 082bf15                        | B1 only                        | B1 + B1b                       |
-| ------------------------ | ------------------------------ | ------------------------------ | ------------------------------ |
-| `ewws-wiki`              | Σ 1 098 211, 22 neg, min −227  | Σ 1 104 135, **0 neg**         | Σ 1 097 779, 22 neg, min −227  |
-| `render-pdf`             | Σ 3 563 642, 53 neg, min −6912 | Σ 5 787 185, 53 neg            | Σ 3 549 470, 53 neg, min −6836 |
-| `process-manager`        | Σ 241 786, 0 neg               | Σ 260 003, 0 neg               | Σ 243 549, **0 neg**           |
-| `meko-etl-tool`          | (old binary produced no output) | Σ 5 003 113, 44 neg            | Σ 4 848 902, 116 neg           |
-| `backend-for-microscope` | (old binary produced no output) | Σ 1 594 601, 64 neg            | Σ 1 594 601, 64 neg            |
-| `personio-ipoffice-sync` | Σ 73 182, 3 neg                | Σ 73 182, 3 neg                | Σ 73 182, 3 neg                |
+| repository               | 082bf15                         | B1 only                | B1 + B1b                       |
+| ------------------------ | ------------------------------- | ---------------------- | ------------------------------ |
+| `ewws-wiki`              | Σ 1 098 211, 22 neg, min −227   | Σ 1 104 135, **0 neg** | Σ 1 097 779, 22 neg, min −227  |
+| `render-pdf`             | Σ 3 563 642, 53 neg, min −6912  | Σ 5 787 185, 53 neg    | Σ 3 549 470, 53 neg, min −6836 |
+| `process-manager`        | Σ 241 786, 0 neg                | Σ 260 003, 0 neg       | Σ 243 549, **0 neg**           |
+| `meko-etl-tool`          | (old binary produced no output) | Σ 5 003 113, 44 neg    | Σ 4 848 902, 116 neg           |
+| `backend-for-microscope` | (old binary produced no output) | Σ 1 594 601, 64 neg    | Σ 1 594 601, 64 neg            |
+| `personio-ipoffice-sync` | Σ 73 182, 3 neg                 | Σ 73 182, 3 neg        | Σ 73 182, 3 neg                |
 
 Every repository with a baseline now lands within 0.5 % of it — `render-pdf`'s 62 %
 overshoot under B1 alone is gone. The inflation was real and this was its cause.

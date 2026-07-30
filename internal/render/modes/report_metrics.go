@@ -1990,10 +1990,14 @@ func plotHotspotRiskRanked(repoName string, files []readers.HotspotRiskFile, lab
 		return err
 	}
 
-	drawHotspotRiskBars(plot.riskAxes, series, repoName)
+	if err := drawHotspotRiskBars(plot.riskAxes, series, repoName); err != nil {
+		return err
+	}
 
 	renderAlpha := hotspotComponentRenderAlpha(output)
-	drawHotspotRiskComponents(plot.componentAxes, series, renderAlpha)
+	if err := drawHotspotRiskComponents(plot.componentAxes, series, renderAlpha); err != nil {
+		return err
+	}
 
 	err = saveReportFigure(plot.figure, output, plot.width, plot.height)
 	if err != nil {
@@ -2097,17 +2101,18 @@ func newHotspotRiskPlot() (hotspotRiskPlot, error) {
 	}, nil
 }
 
-func drawHotspotRiskBars(axes *core.Axes, series hotspotRiskSeries, repoName string) {
+func drawHotspotRiskBars(axes *core.Axes, series hotspotRiskSeries, repoName string) error {
 	orientation := core.BarHorizontal
 	barHeight := 0.8
-	bars, _ := axes.Bar(series.positions, series.risk, core.BarOptions{
+	bars, err := axes.Bar(series.positions, series.risk, core.BarOptions{
 		Width: optional.Of(barHeight), Orientation: optional.Of(orientation),
 	})
-	if bars != nil {
-		bars.Colors = hotspotRiskColors(series.risk, series.maxRisk)
-		bars.EdgeColor = render.Color{R: 0, G: 0, B: 0, A: 1}
-		bars.EdgeWidth = 0.5
+	if err != nil {
+		return fmt.Errorf("failed to plot hotspot risk bars: %w", err)
 	}
+	bars.Colors = hotspotRiskColors(series.risk, series.maxRisk)
+	bars.EdgeColor = render.Color{R: 0, G: 0, B: 0, A: 1}
+	bars.EdgeWidth = 0.5
 
 	axes.SetTitle("Top Risky Files - " + repoName)
 	axes.SetXLabel("Composite Risk Score")
@@ -2117,6 +2122,8 @@ func drawHotspotRiskBars(axes *core.Axes, series hotspotRiskSeries, repoName str
 	axes.AddXGrid()
 	axes.YAxis.Locator = ticker.FixedLocator{TicksList: series.ticks}
 	axes.YAxis.Formatter = ticker.FixedFormatter{Labels: series.displayNames}
+
+	return nil
 }
 
 func configureHotspotRiskXRange(axes *core.Axes, maxRisk float64) {
@@ -2140,15 +2147,33 @@ func hotspotComponentRenderAlpha(output string) float64 {
 	return 1
 }
 
-func drawHotspotRiskComponents(axes *core.Axes, series hotspotRiskSeries, alpha float64) {
-	addHotspotComponentBars(axes, series.positions, series.size, nil, "#3498db", "Size (log)", alpha)
+func drawHotspotRiskComponents(axes *core.Axes, series hotspotRiskSeries, alpha float64) error {
+	if err := addHotspotComponentBars(
+		axes, series.positions, series.size, nil, "#3498db", "Size (log)", alpha,
+	); err != nil {
+		return err
+	}
 	left := append([]float64(nil), series.size...)
-	addHotspotComponentBars(axes, series.positions, series.churn, left, "#e74c3c", "Churn", alpha)
+	if err := addHotspotComponentBars(
+		axes, series.positions, series.churn, left, "#e74c3c", "Churn", alpha,
+	); err != nil {
+		return err
+	}
 	addHotspotComponentValues(left, series.churn)
-	addHotspotComponentBars(axes, series.positions, series.coupling, left, "#f39c12", "Coupling", alpha)
+	if err := addHotspotComponentBars(
+		axes, series.positions, series.coupling, left, "#f39c12", "Coupling", alpha,
+	); err != nil {
+		return err
+	}
 	addHotspotComponentValues(left, series.coupling)
-	addHotspotComponentBars(axes, series.positions, series.ownership, left, "#9b59b6", "Ownership", alpha)
+	if err := addHotspotComponentBars(
+		axes, series.positions, series.ownership, left, "#9b59b6", "Ownership", alpha,
+	); err != nil {
+		return err
+	}
 	configureHotspotComponentAxes(axes, series)
+
+	return nil
 }
 
 func addHotspotComponentValues(left, values []float64) {
@@ -2179,11 +2204,11 @@ func restoreHotspotComponentAlpha(output string, renderAlpha float64) error {
 	return applyHotspotComponentAlpha(output, componentAlpha)
 }
 
-func addHotspotComponentBars(ax *core.Axes, y, values, left []float64, hex, label string, alpha float64) {
+func addHotspotComponentBars(ax *core.Axes, y, values, left []float64, hex, label string, alpha float64) error {
 	orientation := core.BarHorizontal
 	barHeight := 0.8
 	c := renderColor(mustHexColor(hex))
-	bars, _ := ax.Bar(y, values, core.BarOptions{
+	bars, err := ax.Bar(y, values, core.BarOptions{
 		Color:       optional.Of(c),
 		Width:       optional.Of(barHeight),
 		Baselines:   left,
@@ -2191,12 +2216,15 @@ func addHotspotComponentBars(ax *core.Axes, y, values, left []float64, hex, labe
 		Alpha:       optional.Of(alpha),
 		Label:       label,
 	})
-	if bars != nil {
-		bars.Colors = make([]render.Color, len(values))
-		for i := range bars.Colors {
-			bars.Colors[i] = c
-		}
+	if err != nil {
+		return fmt.Errorf("failed to plot hotspot %s bars: %w", label, err)
 	}
+	bars.Colors = make([]render.Color, len(values))
+	for i := range bars.Colors {
+		bars.Colors[i] = c
+	}
+
+	return nil
 }
 
 func applyHotspotComponentAlpha(path string, alpha float64) error {

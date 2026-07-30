@@ -556,8 +556,10 @@ func configureMatplotlibBarAxes(
 	} else {
 		ax.SetYLim(0, math.Max(maxFloat64(values)*1.05, 1))
 	}
+
 	ax.XAxis.Locator = ticker.FixedLocator{TicksList: ticks}
 	ax.XAxis.Formatter = ticker.FixedFormatter{Labels: append([]string(nil), labels...)}
+
 	if opts.RotateX {
 		ax.XAxis.MajorLabelStyle = core.TickLabelStyle{
 			Rotation: 45,
@@ -773,6 +775,7 @@ func configureMatplotlibScatterXAxis(ax *core.Axes, opts MatplotlibScatterOption
 	ax.SetXLim(-0.5, float64(len(opts.XTickLabels))-0.5)
 	ax.XAxis.Locator = ticker.FixedLocator{TicksList: indexPositions(len(opts.XTickLabels))}
 	ax.XAxis.Formatter = ticker.FixedFormatter{Labels: append([]string(nil), opts.XTickLabels...)}
+
 	if opts.RotateX {
 		ax.XAxis.MajorLabelStyle = core.TickLabelStyle{
 			Rotation: 45,

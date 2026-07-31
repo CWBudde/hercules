@@ -23,6 +23,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -440,7 +441,8 @@ func burndownMatrices(t *testing.T, report []byte, scope matrixScope) [][][]int 
 	t.Helper()
 
 	var document map[string]any
-	if err := yaml.Unmarshal(report, &document); err != nil {
+	err := yaml.Unmarshal(report, &document)
+	if err != nil {
 		t.Fatalf("decode analysis YAML: %v", err)
 	}
 
@@ -489,7 +491,7 @@ func parseMatrix(t *testing.T, label, text string) [][]int {
 
 	var matrix [][]int
 
-	for _, line := range strings.Split(text, "\n") {
+	for line := range strings.SplitSeq(text, "\n") {
 		fields := strings.Fields(line)
 		if len(fields) == 0 {
 			continue
@@ -619,13 +621,9 @@ func writeBaseline(t *testing.T, committed baseline, measured, fileMeasured map[
 	committed.FileFlags = fileAnalysisFlags
 	committed.Provenance = currentProvenance(t)
 
-	for name, value := range measured {
-		committed.Repositories[name] = value
-	}
+	maps.Copy(committed.Repositories, measured)
 
-	for name, value := range fileMeasured {
-		committed.FileRepositories[name] = value
-	}
+	maps.Copy(committed.FileRepositories, fileMeasured)
 
 	content, err := json.MarshalIndent(committed, "", "  ")
 	if err != nil {

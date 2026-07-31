@@ -464,11 +464,13 @@ func createRepositoryWithAmbiguousRenames(t *testing.T) string {
 
 		for name, content := range files {
 			target := filepath.Join(path, name)
-			if err := os.MkdirAll(filepath.Dir(target), 0o750); err != nil {
+			err := os.MkdirAll(filepath.Dir(target), 0o750)
+			if err != nil {
 				t.Fatalf("create directory for %s: %v", name, err)
 			}
 
-			if err := os.WriteFile(target, content, 0o600); err != nil {
+			err = os.WriteFile(target, content, 0o600)
+			if err != nil {
 				t.Fatalf("write %s: %v", name, err)
 			}
 

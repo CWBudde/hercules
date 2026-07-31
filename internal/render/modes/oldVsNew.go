@@ -184,10 +184,7 @@ func timeSeriesCalendarRange(timeSeries *readers.DeveloperTimeSeriesData, startU
 	start := dateOnly(time.Unix(startUnix, 0))
 	end := dateOnly(time.Unix(endUnix, 0))
 
-	size := calendarDayCount(start, end) + extraDays
-	if size < 1 {
-		size = 1
-	}
+	size := max(calendarDayCount(start, end)+extraDays, 1)
 
 	for day := range timeSeries.Days {
 		if day < 0 {

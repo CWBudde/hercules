@@ -196,7 +196,7 @@ budget of its commit, is not read and not retained. It is recorded as binary
 content, so it is excluded from line counts, diffs, language detection and
 rename detection exactly as a real binary file is, and the run continues. The
 first such blob is named in a warning; the rest are counted and reported in a
-single end-of-run summary. Hercules still never substitutes *empty text*,
+single end-of-run summary. Hercules still never substitutes _empty text_,
 which would read as a real deletion of every line in the file. Declared Git
 blob sizes are validated before an exact-size allocation, and readers must
 produce exactly that many bytes.
@@ -209,12 +209,12 @@ themselves.
 
 The two limits are not symmetric. Skipping under `--blob-cache-max-blob-size`
 is a property of the blob, so the same blob is skipped wherever it appears.
-Skipping under `--blob-cache-max-commit-size` is a property of the blob *and*
+Skipping under `--blob-cache-max-commit-size` is a property of the blob _and_
 its position within its commit: an over-budget blob is skipped without
 consuming budget, so smaller blobs later in the same commit still fit. Change
 order is tree-diff order, which is deterministic, so runs stay reproducible.
 
-The honest cost: a huge *text* file is counted as binary rather than as text.
+The honest cost: a huge _text_ file is counted as binary rather than as text.
 Its contents were never held, so it cannot be diffed, and its lines do not
 appear in burndown, line statistics or language totals. Raise the limit past
 the file's size to get it back.

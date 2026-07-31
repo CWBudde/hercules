@@ -232,7 +232,8 @@ func TestBurndownPersonSkipNoticeHonorsQuiet(t *testing.T) {
 		opts.Quiet = quiet
 
 		return captureStderr(t, func() {
-			if err := BurndownPersonWithOptions(reader, output, start, end, opts); err != nil {
+			err := BurndownPersonWithOptions(reader, output, start, end, opts)
+			if err != nil {
 				t.Errorf("BurndownPersonWithOptions(quiet=%v) failed: %v", quiet, err)
 			}
 		})

@@ -48,7 +48,7 @@ TRACE bc3aea9f file=510 prev=416 curr=416 delta= 7412
 Band 304 receives +7413 −7396 −7388 = **−7371** and stays there.
 
 Note the second, milder half visible in the same trace: the lines are re-credited to band
-416 instead of keeping band 304, so the *positive* bands are wrong too. Downstream never
+416 instead of keeping band 304, so the _positive_ bands are wrong too. Downstream never
 sees that, because the protobuf serializer clamps only negatives.
 
 ### Current magnitude
@@ -58,17 +58,17 @@ From `test/corpus/baseline.json` (commit `b97f549`, flags `--burndown --burndown
 --granularity=30 --sampling=30`). "Residual" = cells whose age band is still negative in the
 final sampled row.
 
-| repository | negative cells | residual |
-| --- | ---: | ---: |
-| `mekorp-backend` | 1 748 | 67 |
-| `mekorp-webclient` | 1 447 | 45 |
-| `meko-etl-tool` | 553 | 12 |
-| `backend-for-microscope` | 137 | 7 |
-| `ewws-wiki` | 83 | 3 |
-| `process-manager` | 114 | 6 |
-| `personio-ipoffice-sync` | 34 | 2 |
-| `ShelfStockScanner` | 2 | 1 |
-| `MKTools`, `ewws-render`, `ewws-tailscale`, `go-clients`, `render-pdf` | 0 | 0 |
+| repository                                                             | negative cells | residual |
+| ---------------------------------------------------------------------- | -------------: | -------: |
+| `mekorp-backend`                                                       |          1 748 |       67 |
+| `mekorp-webclient`                                                     |          1 447 |       45 |
+| `meko-etl-tool`                                                        |            553 |       12 |
+| `backend-for-microscope`                                               |            137 |        7 |
+| `ewws-wiki`                                                            |             83 |        3 |
+| `process-manager`                                                      |            114 |        6 |
+| `personio-ipoffice-sync`                                               |             34 |        2 |
+| `ShelfStockScanner`                                                    |              2 |        1 |
+| `MKTools`, `ewws-render`, `ewws-tailscale`, `go-clients`, `render-pdf` |              0 |        0 |
 
 `mekorp-backend` carries the overwhelming share of the mass and is the case to drive from.
 These counts exclude `people_interaction:` — a signed interaction matrix whose negatives are
@@ -77,17 +77,17 @@ order of magnitude. **Older tables in git history are not comparable to these.**
 
 ### Phase overview
 
-| phase | what | state |
-| --- | --- | --- |
-| **P0** | trustworthy measurement — corpus suite, determinism, truncation detection | ✅ done |
-| **P1** | merge-resolution deltas reach the accumulator at all (B1, B1b, B1d) | ✅ done |
-| **P2** | rename identity — exact renames must not become delete+create | ✅ done |
-| **P3** | **file identity across a merge** — `adoptMergeCreatedFileIds` | ✅ tested, gates PASS 13/13, −44 % negative file cells — **awaiting merge** |
-| **P4** | **merge buffer hand-over** — `synchronizeLineHistoryBranch` drops a branch's own deltas | 🟡 defect confirmed by test; fix measured and **rejected** |
-| **P5** | **line identity across the fork** — the project-matrix residue itself | 🔴 not started |
-| **P6** | downstream acceptance in `ewws-statistics` | 🔴 blocked on P3–P5 |
+| phase  | what                                                                                    | state                                                                       |
+| ------ | --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| **P0** | trustworthy measurement — corpus suite, determinism, truncation detection               | ✅ done                                                                     |
+| **P1** | merge-resolution deltas reach the accumulator at all (B1, B1b, B1d)                     | ✅ done                                                                     |
+| **P2** | rename identity — exact renames must not become delete+create                           | ✅ done                                                                     |
+| **P3** | **file identity across a merge** — `adoptMergeCreatedFileIds`                           | ✅ tested, gates PASS 13/13, −44 % negative file cells — **awaiting merge** |
+| **P4** | **merge buffer hand-over** — `synchronizeLineHistoryBranch` drops a branch's own deltas | 🟡 defect confirmed by test; fix measured and **rejected**                  |
+| **P5** | **line identity across the fork** — the project-matrix residue itself                   | 🔴 not started                                                              |
+| **P6** | downstream acceptance in `ewws-statistics`                                              | 🔴 blocked on P3–P5                                                         |
 
-P3 and P4 were found by tracing the shared accumulator; they are *prerequisites* that PLAN.md
+P3 and P4 were found by tracing the shared accumulator; they are _prerequisites_ that PLAN.md
 previously flagged as blocking (see "Traps"), not closures of B1c. **Only P5 can close B1c**:
 `updateGlobal` calls `globalHistory.updateDelta(PrevTick, CurrTick, Delta)` with **no
 `FileId`**, so no amount of file-identity work can reach the project or people matrices. P3
@@ -109,7 +109,7 @@ downstream as a workaround.
   lost 99.8 % of its negative mass and its worst cell went −7386 → −58. The same bug is in
   upstream, which is why B1c reproduces on `082bf15`.
 - **B1d** — the merge commit was consumed by only one branch. Fixed, and it does **not**
-  absorb the residue: cell counts fell in three repositories but negative mass *rose* in two.
+  absorb the residue: cell counts fell in three repositories but negative mass _rose_ in two.
   That is B1d working, not regressing — moving merged lines onto their real author relocates
   later removals into bands where the matching positive was never inserted, which makes the
   double-removal more visible.
@@ -125,7 +125,7 @@ downstream as a workaround.
 runs with `analyser.tick == TreeMergeMark`, `abandonedFileID` does not match, and a **fresh
 `FileId` is minted**. Because `File.updateTime` suppresses every updater under
 `TreeMergeMark`, **no insertion is ever emitted for that id** — while the branch that created
-the path already emitted one under *its* id. `matchingMergeFiles` then pairs the two by path,
+the path already emitted one under _its_ id. `matchingMergeFiles` then pairs the two by path,
 synchronization discards the other analyser's file, and the accounting is split across two
 keys: one holding lines nobody will ever remove, one that will receive a removal against an
 insertion that was never sent. This is exactly the "file identity is unresolved one level up"
@@ -133,22 +133,22 @@ trap recorded below, now traced to its line.
 
 **The fix (candidate).** `adoptMergeCreatedFileIds` — record merge-minted files in
 `mergeCreatedFiles`, and before the `file.Merge` loop resolves the marks, re-key each onto the
-id the creating branch used (matching by path *and* equal length, lowest id wins for
+id the creating branch used (matching by path _and_ equal length, lowest id wins for
 determinism). Two parts, both load-bearing:
 
 - re-key before marks resolve, so the resolution deltas land on the surviving id;
 - **do not** register the vacated id as an abandoned name. `abandonedFileID` prefers the
-  *highest* matching id, so leaving it behind lets a later merge resurrect a key that now
+  _highest_ matching id, so leaving it behind lets a later merge resurrect a key that now
   holds no accounting at all and mix its bands into the adopted file. (This is the difference
   between candidate v1 and v2; v1 measurably regressed further.)
 
 **Measured.** Fires **227×** on `meko-etl-tool` with 0 non-matches. Per-file burndown
 (`--burndown-files`, both runs verified untruncated):
 
-| | negative cells | mass | worst cell |
-| --- | ---: | ---: | ---: |
-| HEAD | 12 820 | 1 408 483 | −2 652 |
-| adoption v2 | **3 939** | **149 829** | **−384** |
+|             | negative cells |        mass | worst cell |
+| ----------- | -------------: | ----------: | ---------: |
+| HEAD        |         12 820 |   1 408 483 |     −2 652 |
+| adoption v2 |      **3 939** | **149 829** |   **−384** |
 
 Attribution is clean — the P4 hand-over alone leaves it at 12 820.
 
@@ -157,10 +157,10 @@ Attribution is clean — the P4 hand-over alone leaves it at 12 820.
 which stalled this phase. Re-measured with `--diff-timeout=300000`, both runs verified free of
 the truncation warning, the two binaries produce **identical negativity**:
 
-| | negative cells | mass | worst cell |
-| --- | ---: | ---: | ---: |
-| HEAD | 1 413 | 5 104 060 | −77 421 |
-| adoption v2 | 1 413 | 5 104 060 | −77 421 |
+|             | negative cells |      mass | worst cell |
+| ----------- | -------------: | --------: | ---------: |
+| HEAD        |          1 413 | 5 104 060 |    −77 421 |
+| adoption v2 |          1 413 | 5 104 060 |    −77 421 |
 
 Per matrix (31 of them: `project` + 30 people) the negative statistics are equal
 **cell for cell**; `project` alone is 257 / 2 130 531 / −62 686 in both. The only difference
@@ -176,18 +176,18 @@ the gap between the untruncated 1 413 and `baseline.json`'s 1 447.
 any repository or dimension.** The project dimension is **identical in all 13 repositories** —
 the predicted no-op, now demonstrated rather than argued. The per-file dimension:
 
-| repository | files base | files P3 | Δ | residual base | residual P3 |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| `meko-etl-tool` | 12 267 | 3 386 | −8 881 | 263 | 73 |
-| `mekorp-webclient` | 10 047 | 8 786 | −1 261 | 191 | 172 |
-| `mekorp-backend` | 3 023 | 2 117 | −906 | 73 | 53 |
-| `render-pdf` | 393 | 63 | −330 | 19 | 2 |
-| `process-manager` | 127 | **0** | −127 | 8 | **0** |
-| `backend-for-microscope` | 265 | 174 | −91 | 14 | 10 |
-| `ShelfStockScanner` | 95 | 4 | −91 | 5 | 1 |
-| `MKTools` | 1 | **0** | −1 | 1 | **0** |
-| `go-clients`, `ewws-render`, 3 others | unchanged | | ±0 | | |
-| **total** | **26 718** | **15 030** | **−11 688** | **590** | **327** |
+| repository                            | files base |   files P3 |           Δ | residual base | residual P3 |
+| ------------------------------------- | ---------: | ---------: | ----------: | ------------: | ----------: |
+| `meko-etl-tool`                       |     12 267 |      3 386 |      −8 881 |           263 |          73 |
+| `mekorp-webclient`                    |     10 047 |      8 786 |      −1 261 |           191 |         172 |
+| `mekorp-backend`                      |      3 023 |      2 117 |        −906 |            73 |          53 |
+| `render-pdf`                          |        393 |         63 |        −330 |            19 |           2 |
+| `process-manager`                     |        127 |      **0** |        −127 |             8 |       **0** |
+| `backend-for-microscope`              |        265 |        174 |         −91 |            14 |          10 |
+| `ShelfStockScanner`                   |         95 |          4 |         −91 |             5 |           1 |
+| `MKTools`                             |          1 |      **0** |          −1 |             1 |       **0** |
+| `go-clients`, `ewws-render`, 3 others |  unchanged |            |          ±0 |               |             |
+| **total**                             | **26 718** | **15 030** | **−11 688** |       **590** |     **327** |
 
 **−44 % of all negative file cells and −45 % of the residual ones**, two repositories cleared
 outright, none regressed.
@@ -196,7 +196,7 @@ outright, none regressed.
 
 - [x] Locate the 34 regressing cells — they were an artifact of the default diff timeout.
 - [x] **Pin `--diff-timeout` and re-seed.** Done in `wt-corpus`: `--diff-timeout=300000` in
-      both flag sets, and truncation is now *loud* — the suite matches `not reproducible` on
+      both flag sets, and truncation is now _loud_ — the suite matches `not reproducible` on
       the binary's stderr (hercules exits 0 when it truncates) and fails the repository as
       `MEASUREMENT INVALID`, refusing to parse, gate or record the numbers. Re-seed took
       20.5 min, 13/13, zero truncation. Only two repositories moved, both **improving**:
@@ -212,7 +212,7 @@ outright, none regressed.
       verified to fail with the fix reverted and pass with it applied. The second one prints
       the defect directly: without adoption the path's deltas are `map[1:10 2:-10]` — the
       insertion on the creating branch's id, the removal on the merge-minted id. Note that the
-      *aggregate* net is zero either way, so only the per-`FileId` breakdown discriminates;
+      _aggregate_ net is zero either way, so only the per-`FileId` breakdown discriminates;
       an aggregate assertion would have been a false negative.
 - [x] Extend the corpus to gate `--burndown-files`. Done in `wt-corpus` as a **separate
       dimension** (`file_flags` / `file_repositories` beside the existing keys), measured by a
@@ -225,14 +225,14 @@ outright, none regressed.
 - [ ] Merge `wt-adopt` (fix + 2 tests) and `wt-corpus` (suite + re-seeded `baseline.json`).
       Both are detached scratchpad worktrees based on `77c736b`; nothing is in the main tree.
       The two must land together — the re-seeded baseline is what makes P3 gateable, and the
-      new baseline is *not* comparable to the committed one.
+      new baseline is _not_ comparable to the committed one.
 
 ---
 
 ### P4 — the merge buffer hand-over 🟡
 
 **The defect, confirmed.** `synchronizeLineHistoryBranch` clears `target.pendingChanges`. For
-a synchronized *sibling* that is right — the merging branch owns the resolution deltas. But a
+a synchronized _sibling_ that is right — the merging branch owns the resolution deltas. But a
 target that performed a merge **of its own** and is synchronized before consuming another
 ordinary commit loses those deltas entirely (a merge never drains `pendingChanges`; only an
 ordinary commit does). Previously listed as an unconfirmed thread; now pinned by
@@ -263,13 +263,14 @@ path is the correct key).
       The +20 cells sit in three matrices — `project` +1, one person +2, one person +17 — and
       one of them is *residual*, so this is not transient noise. The hand-over as written is
       rejected on evidence.
+
 - [ ] Keep `TestLinesMergeSiblingBufferSurvivesSynchronize` — it is a valid failing test for a
       real defect and should land even if the fix does not.
 - [ ] Decide whether P4 is reachable at all before P5 carries line identity. The buffered
-      deltas cannot be delivered safely while inner-merge *removals* travel in the same buffer;
+      deltas cannot be delivered safely while inner-merge _removals_ travel in the same buffer;
       dedup by path or by `FileId` both leave a residue.
 
-**Closed negative result — do not redo.** Per-*change* dedup in `foldMergeRemovals` (`seen` is
+**Closed negative result — do not redo.** Per-_change_ dedup in `foldMergeRemovals` (`seen` is
 marked on the first change, not the first branch, so a file spanning several ownership bands
 has only its first band booked out) is a genuine loss and was the top-ranked finding of two
 independent audits. Correcting it makes everything worse at once: on `meko-etl-tool` the head
@@ -302,12 +303,12 @@ and every one that cleared negatives inflated the head count.
 
 Four things it got right, each measured, and all still true:
 
-1. Correct the *count*, never the *band*. `mergeLineValues` adopts the older side's ownership
+1. Correct the _count_, never the _band_. `mergeLineValues` adopts the older side's ownership
    and a later merge can adopt the other side again, so band corrections oscillate — on
    `backend-for-microscope` re-attribution carried 53 505 of mass against a real defect of
    37 444 and drove single cells from −126 to −25 748.
 2. Correcting only the restoring direction is also wrong. A double removal both pushes one
-   band below zero *and* credits the same lines to another.
+   band below zero _and_ credits the same lines to another.
 3. A correction must be booked at the sample the faulty delta landed in, not at the merge
    tick — otherwise every row in between stays wrong and it shows up as a step in the surface.
 4. The mirror must be updated when changes are **emitted**, not when they are produced.
@@ -360,7 +361,7 @@ worth it.**
 ### Traps for whoever picks this up
 
 - **File identity is unresolved one level up.** B1d made `matchingMergeFiles` pair files by
-  *path* across differing `FileId`s, while all accounting keys on `FileId`. Merged-in content
+  _path_ across differing `FileId`s, while all accounting keys on `FileId`. Merged-in content
   is therefore counted under both ids. Any reconciliation has to resolve identity first.
   **This is now traced and has a candidate — see P3.** P5 should not start until P3 lands.
 - **Judge on the corpus suite, never on an ad-hoc repository set.** The five-repository set
@@ -425,7 +426,7 @@ cleanly when unset so `go test ./...` stays green. 13 repositories, ~7 min to se
   was B12 and is fixed, so gating them has become defensible.
 - **Known defect: `analysisFlags` passes no `--diff-timeout`,** so the suite runs at the
   1 000 ms default (the flag is in **milliseconds** — `internal/plumbing/diff.go`). On
-  `mekorp-webclient` that truncates, and `negative_cells` is *gated* while depending on
+  `mekorp-webclient` that truncates, and `negative_cells` is _gated_ while depending on
   machine speed: the same repo measures 1 447 truncated and **1 413** untruncated, and two
   binaries with identical negativity reported 1 447 vs 1 481. Pin a large timeout and re-seed.
   Any ad-hoc run must also pass one and grep its stderr for `time budget`.
@@ -455,21 +456,21 @@ The real acceptance test is the pipeline this sweep was filed from. In `MeKo/eww
 
 Full diagnoses are in the git history of this file and in the merged PRs.
 
-| item | what it was | commits |
-| --- | --- | --- |
-| B1 | merge-resolution deltas discarded, project matrix corrupted | `9e570a3`, `1be72df` |
-| B1b | file deletion inside a merge commit emitted nothing | `1abecda`, `9c010ef` |
-| B1c (half) | `sortableChange.Less` was not a valid ordering, so exact renames became delete+create | — |
-| B1d | the merge commit was consumed by only one branch; merged lines now keep their real author | — |
-| B2 | person matrices have *always* contained negatives; decided **(a) the accounting is wrong** — no negative cell recovers by the final row, so branch divergence explains none of them. Demoted to a warning behind `--strict-burndown-balances`; the accounting defect itself is B1c | `ebc8ded`, `a7c8cba`, `0ea3cc0` |
-| B3 | `OwnershipSnapshot` underflow — a structural consequence of divergent branches sharing one accumulator, not an accounting slip; totals stay signed and only the metric snapshots clamp | `fafb754`, `c04d08c` |
-| B4 | `--only` filtered after the merge; an unmergeable analysis sank the whole combine. `RefactoringProxy` is now mergeable, with tick axes rebased | `2f57e3d` |
-| B5 | `HotspotRisk` merged to empty because `TopN` is 0 on the combine path | — |
-| B6 | `--blob-cache-max-blob-size` was fail-closed; oversized blobs are now recorded as binary and warned about | — |
-| B7 | `--lines-hibernation-disk` serialized an allocator that never hibernated | — |
-| B8 | person burndown aborted on contributors with no activity | `c04d08c` |
-| B9 | YAML burndown serialization panicked on nil `PeopleMatrix`; the `--pb` path panicked too | — |
-| B10 | non-deterministic execution plan; a merge could be resolved against the wrong branch | `5937149` |
-| B11 | `changeHibernation` hibernated per branch index while `ForkSamePipelineItem` shares one instance, so a fork's idle side put its sibling's analyser to sleep mid-run | `0dd3211` |
-| B12 | rename matching raced two non-equivalent greedy matchers and kept whichever finished first | — |
-| suite | opt-in corpus regression test, baseline-relative | `b97f549`, `c329229` |
+| item       | what it was                                                                                                                                                                                                                                                                        | commits                         |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
+| B1         | merge-resolution deltas discarded, project matrix corrupted                                                                                                                                                                                                                        | `9e570a3`, `1be72df`            |
+| B1b        | file deletion inside a merge commit emitted nothing                                                                                                                                                                                                                                | `1abecda`, `9c010ef`            |
+| B1c (half) | `sortableChange.Less` was not a valid ordering, so exact renames became delete+create                                                                                                                                                                                              | —                               |
+| B1d        | the merge commit was consumed by only one branch; merged lines now keep their real author                                                                                                                                                                                          | —                               |
+| B2         | person matrices have _always_ contained negatives; decided **(a) the accounting is wrong** — no negative cell recovers by the final row, so branch divergence explains none of them. Demoted to a warning behind `--strict-burndown-balances`; the accounting defect itself is B1c | `ebc8ded`, `a7c8cba`, `0ea3cc0` |
+| B3         | `OwnershipSnapshot` underflow — a structural consequence of divergent branches sharing one accumulator, not an accounting slip; totals stay signed and only the metric snapshots clamp                                                                                             | `fafb754`, `c04d08c`            |
+| B4         | `--only` filtered after the merge; an unmergeable analysis sank the whole combine. `RefactoringProxy` is now mergeable, with tick axes rebased                                                                                                                                     | `2f57e3d`                       |
+| B5         | `HotspotRisk` merged to empty because `TopN` is 0 on the combine path                                                                                                                                                                                                              | —                               |
+| B6         | `--blob-cache-max-blob-size` was fail-closed; oversized blobs are now recorded as binary and warned about                                                                                                                                                                          | —                               |
+| B7         | `--lines-hibernation-disk` serialized an allocator that never hibernated                                                                                                                                                                                                           | —                               |
+| B8         | person burndown aborted on contributors with no activity                                                                                                                                                                                                                           | `c04d08c`                       |
+| B9         | YAML burndown serialization panicked on nil `PeopleMatrix`; the `--pb` path panicked too                                                                                                                                                                                           | —                               |
+| B10        | non-deterministic execution plan; a merge could be resolved against the wrong branch                                                                                                                                                                                               | `5937149`                       |
+| B11        | `changeHibernation` hibernated per branch index while `ForkSamePipelineItem` shares one instance, so a fork's idle side put its sibling's analyser to sleep mid-run                                                                                                                | `0dd3211`                       |
+| B12        | rename matching raced two non-equivalent greedy matchers and kept whichever finished first                                                                                                                                                                                         | —                               |
+| suite      | opt-in corpus regression test, baseline-relative                                                                                                                                                                                                                                   | `b97f549`, `c329229`            |

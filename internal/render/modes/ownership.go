@@ -691,10 +691,7 @@ func configureOwnershipTimeAxis(ax *core.Axes, dates []time.Time) {
 
 	limit := 8
 
-	step := int(math.Ceil(float64(len(dates)) / float64(limit)))
-	if step < 1 {
-		step = 1
-	}
+	step := max(int(math.Ceil(float64(len(dates))/float64(limit))), 1)
 
 	ticks := make([]float64, 0, limit+1)
 	labels := make([]string, 0, limit+1)

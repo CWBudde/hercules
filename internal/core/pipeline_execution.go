@@ -348,7 +348,8 @@ func (state *pipelineRunState) changeHibernation(items []int, boot bool) error {
 
 	for _, branch := range items {
 		for _, item := range state.branches[branch] {
-			if err := state.changeItemHibernation(item, boot); err != nil {
+			err := state.changeItemHibernation(item, boot)
+			if err != nil {
 				return err
 			}
 		}

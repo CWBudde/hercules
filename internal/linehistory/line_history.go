@@ -1507,6 +1507,7 @@ func (analyser *LineHistoryAnalyser) adoptMergeCreatedFileIds(others []*LineHist
 		// matching id, so leaving this one behind lets a later merge resurrect a key that now holds
 		// no accounting at all and mix its bands into the adopted file.
 		delete(analyser.fileNames, id)
+
 		file.Id = adopted
 		analyser.fileNames[adopted] = name
 	}

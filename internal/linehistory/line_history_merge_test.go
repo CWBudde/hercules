@@ -352,7 +352,8 @@ func TestLinesMergeAdoptedFileIdKeepsRemovalPaired(t *testing.T) {
 	lead.tick = mergeTestTick + 1
 	lead.commitTick = lead.tick
 	lead.files[adoptTestPath].Update(
-		packChangePersonWithTick(mergeTestAuthor, lead.tick), 0, 0, mergeTestLines)
+		packChangePersonWithTick(mergeTestAuthor, lead.tick), 0, 0, mergeTestLines,
+	)
 
 	changes = append(changes, lead.changes...)
 

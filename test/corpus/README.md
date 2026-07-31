@@ -32,10 +32,10 @@ otherwise the suite would be unusable until someone ran a multi-hour seeding job
 Each repository is analysed twice, and the two results are recorded under
 separate counters in `baseline.json`.
 
-| dimension | flags | matrices counted | baseline keys |
-| --- | --- | --- | --- |
-| project | `flags` (burndown, people, devs, couples, …) | `project`, `people[*]`, `repositories[*]` | `flags`, `repositories` |
-| files | `file_flags` (`--burndown --burndown-files`) | `files[*]` | `file_flags`, `file_repositories` |
+| dimension | flags                                        | matrices counted                          | baseline keys                     |
+| --------- | -------------------------------------------- | ----------------------------------------- | --------------------------------- |
+| project   | `flags` (burndown, people, devs, couples, …) | `project`, `people[*]`, `repositories[*]` | `flags`, `repositories`           |
+| files     | `file_flags` (`--burndown --burndown-files`) | `files[*]`                                | `file_flags`, `file_repositories` |
 
 The per-file dimension is separate on purpose:
 
@@ -62,12 +62,12 @@ above:
 
 | Metric           | Meaning                                                  | Gated |
 | ---------------- | -------------------------------------------------------- | ----- |
-| `exit_code`      | Process exit status; expected to be 0.                    | yes   |
-| `negative_cells` | Count of negative cells anywhere in the sampled history.  | yes   |
-| `residual_cells` | Negative cells in the **final** sampled row.              | yes   |
-| `negative_mass`  | Σ\|negative\| over the negative cells.                    | no    |
-| `worst_cell`     | The single most negative value.                           | no    |
-| `matrices`       | How many matrices were inspected (a shape sanity check).  | no    |
+| `exit_code`      | Process exit status; expected to be 0.                   | yes   |
+| `negative_cells` | Count of negative cells anywhere in the sampled history. | yes   |
+| `residual_cells` | Negative cells in the **final** sampled row.             | yes   |
+| `negative_mass`  | Σ\|negative\| over the negative cells.                   | no    |
+| `worst_cell`     | The single most negative value.                          | no    |
+| `matrices`       | How many matrices were inspected (a shape sanity check). | no    |
 
 `residual_cells` is the important one. The residual/transient split is the
 honest measure of the defect: a transient negative that a later sample repairs

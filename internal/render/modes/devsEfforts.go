@@ -238,10 +238,9 @@ func plotProductivityRanking(metrics []EffortMetric, output string, visuals grap
 	}
 
 	// Prepare data for top developers only
-	maxDev := len(metrics)
-	if maxDev > 20 {
-		maxDev = 20 // Show top 20 developers
-	}
+	maxDev := min(len(metrics),
+		// Show top 20 developers
+		20)
 
 	labels := make([]string, maxDev)
 
@@ -634,10 +633,7 @@ func smoothRowsPreserveTail(matrix [][]float64, window []float64) {
 		row := matrix[i]
 		n := len(row)
 
-		endLen := tail
-		if endLen > n {
-			endLen = n
-		}
+		endLen := min(tail, n)
 
 		ending := append([]float64(nil), row[n-endLen:]...)
 		smoothed := convolveSame(row, window)

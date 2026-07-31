@@ -343,10 +343,9 @@ func plotTopCouplingPairsWithOptions(analysis FileCouplingAnalysis, output strin
 	}
 
 	// Prepare data for bar chart
-	maxPairs := len(analysis.TopCoupling)
-	if maxPairs > 15 {
-		maxPairs = 15 // Show top 15 pairs
-	}
+	maxPairs := min(len(analysis.TopCoupling),
+		// Show top 15 pairs
+		15)
 
 	values := make([]float64, maxPairs)
 	rankLabels := make([]string, maxPairs)

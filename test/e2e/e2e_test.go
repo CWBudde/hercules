@@ -351,6 +351,76 @@ func createRepository(t *testing.T) string {
 	return path
 }
 
+// createRepositoryWithLargeFile adds a commit containing a file well above the blob cache limit
+// used by TestOversizedBlobPolicy, so the CLI has to apply the skip-or-abort policy.
+func createRepositoryWithLargeFile(t *testing.T) string {
+	t.Helper()
+	path := createRepository(t)
+	repository, err := git.PlainOpen(path)
+	if err != nil {
+		t.Fatalf("open repository fixture: %v", err)
+	}
+	worktree, err := repository.Worktree()
+	if err != nil {
+		t.Fatalf("open repository worktree: %v", err)
+	}
+	large := filepath.Join(path, "large.txt")
+	payload := bytes.Repeat([]byte("hercules oversized blob fixture\n"), 1024)
+	if err := os.WriteFile(large, payload, 0o600); err != nil {
+		t.Fatalf("write large repository fixture: %v", err)
+	}
+	if _, err := worktree.Add("large.txt"); err != nil {
+		t.Fatalf("stage large repository fixture: %v", err)
+	}
+	signature := &object.Signature{
+		Name:  "Hercules CI",
+		Email: "hercules-ci@example.invalid",
+		When:  time.Date(2026, time.July, 26, 12, 0, 0, 0, time.UTC),
+	}
+	if _, err := worktree.Commit("Add a large file", &git.CommitOptions{
+		Author: signature, Committer: signature,
+	}); err != nil {
+		t.Fatalf("commit large repository fixture: %v", err)
+	}
+	return path
+}
+
+// TestOversizedBlobPolicy pins the exit codes of the blob cache limits. Only an end-to-end run can
+// show that an oversized blob no longer aborts the process, since the symptom was a CLI abort.
+func TestOversizedBlobPolicy(t *testing.T) {
+	hercules := requiredBinary(t, herculesBinaryEnvironment)
+	repository := createRepositoryWithLargeFile(t)
+
+	tolerant := runCommand(
+		t, hercules, "--burndown", "--quiet", "--blob-cache-max-blob-size=1024", repository,
+	)
+	requireSuccess(t, tolerant)
+	if !bytes.Contains(tolerant.stderr, []byte("large.txt")) {
+		t.Fatalf("the oversized blob was skipped without a warning\nstderr:\n%s", tolerant.stderr)
+	}
+	if !bytes.Contains(tolerant.stderr, []byte("--fail-on-oversized-blobs")) {
+		t.Fatalf("the warning does not mention the strict flag\nstderr:\n%s", tolerant.stderr)
+	}
+	if len(bytes.TrimSpace(tolerant.stdout)) == 0 {
+		t.Fatal("the tolerant run produced no analysis output")
+	}
+
+	strict := runCommand(
+		t, hercules, "--burndown", "--quiet", "--blob-cache-max-blob-size=1024",
+		"--fail-on-oversized-blobs", repository,
+	)
+	if strict.exitCode == 0 {
+		t.Fatalf("--fail-on-oversized-blobs did not abort\nstderr:\n%s", strict.stderr)
+	}
+
+	// Without a limit low enough to hit, nothing changes.
+	normal := runCommand(t, hercules, "--burndown", "--quiet", repository)
+	requireSuccess(t, normal)
+	if bytes.Contains(normal.stderr, []byte("--fail-on-oversized-blobs")) {
+		t.Fatalf("an unrelated run warned about oversized blobs\nstderr:\n%s", normal.stderr)
+	}
+}
+
 func repositoryPath(elements ...string) string {
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {

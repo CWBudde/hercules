@@ -136,3 +136,64 @@ func TestLinesStatsConsume(t *testing.T) {
 		Changed: 0,
 	}, nameMap[testHerculesMainPath])
 }
+
+// TestLinesStatsSkipsOversizedPlaceholder pins the downstream meaning of an oversized blob
+// placeholder for line accounting: a modification which involves one produces no LineStats entry
+// at all, rather than a fabricated deletion of every line of the previous revision.
+func TestLinesStatsSkipsOversizedPlaceholder(t *testing.T) {
+	previousHash := plumbing.NewHash("dc248ba2b22048cc730c571a748e8ffcf7085ab9")
+	oversizedHash := plumbing.NewHash("baa64828831d174f40140e4b3cfa77d1e917a2c1")
+
+	cache := map[plumbing.Hash]*items.CachedBlob{}
+	items.AddHash(t, cache, previousHash.String())
+	previousLines, err := cache[previousHash].CountLines()
+	assert.NoError(t, err)
+	assert.Positive(t, previousLines)
+
+	cache[oversizedHash] = &items.CachedBlob{Oversized: true, OriginalSize: 1 << 30}
+
+	treeFrom, _ := test.Repository.TreeObject(plumbing.NewHash(
+		"a1eb2ea76eb7f9bfbde9b243861474421000eb96",
+	))
+	treeTo, _ := test.Repository.TreeObject(plumbing.NewHash(
+		"994eac1cd07235bb9815e547a75c84265dea00f5",
+	))
+	changes := object.Changes{{From: object.ChangeEntry{
+		Name: testAnalyserPath,
+		Tree: treeFrom,
+		TreeEntry: object.TreeEntry{
+			Name: testAnalyserPath,
+			Mode: 0o100644,
+			Hash: previousHash,
+		},
+	}, To: object.ChangeEntry{
+		Name: testAnalyserPath,
+		Tree: treeTo,
+		TreeEntry: object.TreeEntry{
+			Name: testAnalyserPath,
+			Mode: 0o100644,
+			Hash: oversizedHash,
+		},
+	}}}
+
+	deps := map[string]any{}
+	deps[identity.DependencyAuthor] = 0
+	deps[items.DependencyBlobCache] = cache
+	deps[items.DependencyTreeChanges] = changes
+
+	diffResult, err := fixtures.FileDiff().Consume(deps)
+	assert.NoError(t, err)
+	diffs := diffResult[items.DependencyFileDiff].(map[string]items.FileDiffData)
+	assert.Empty(t, diffs, "an opaque revision cannot be diffed")
+
+	deps[items.DependencyFileDiff] = diffResult[items.DependencyFileDiff]
+	deps[core.DependencyCommit], _ = test.Repository.CommitObject(plumbing.NewHash(
+		"cce947b98a050c6d356bc6ba95030254914027b1",
+	))
+	deps[core.DependencyIsMerge] = false
+
+	result, err := (&items.LinesStatsCalculator{}).Consume(deps)
+	assert.NoError(t, err)
+	stats := result[items.DependencyLineStats].(map[object.ChangeEntry]items.LineStats)
+	assert.Empty(t, stats)
+}

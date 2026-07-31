@@ -40,19 +40,32 @@ func TestBlobCacheConfigureInitialize(t *testing.T) {
 	assert.False(t, cache.FailOnMissingSubmodules)
 	assert.Equal(t, DefaultBlobCacheMaxBlobSize, cache.MaxBlobSize)
 	assert.Equal(t, DefaultBlobCacheMaxCommitSize, cache.MaxCommitSize)
+	assert.False(t, cache.FailOnOversizedBlobs)
+	assert.NotNil(t, cache.oversize)
 	facts := map[string]any{}
 	facts[ConfigBlobCacheFailOnMissingSubmodules] = true
+	facts[ConfigBlobCacheFailOnOversizedBlobs] = true
 	facts[ConfigBlobCacheMaxBlobSize] = 1024
 	facts[ConfigBlobCacheMaxCommitSize] = 4096
 	require.NoError(t, cache.Configure(facts))
 	assert.True(t, cache.FailOnMissingSubmodules)
+	assert.True(t, cache.FailOnOversizedBlobs)
 	assert.Equal(t, int64(1024), cache.MaxBlobSize)
 	assert.Equal(t, int64(4096), cache.MaxCommitSize)
 	facts = map[string]any{}
 	require.NoError(t, cache.Configure(facts))
 	assert.True(t, cache.FailOnMissingSubmodules)
+	assert.True(t, cache.FailOnOversizedBlobs)
 	assert.Equal(t, DefaultBlobCacheMaxBlobSize, cache.MaxBlobSize)
 	assert.Equal(t, DefaultBlobCacheMaxCommitSize, cache.MaxCommitSize)
+}
+
+func TestBlobCacheInitializeKeepsConfiguredLogger(t *testing.T) {
+	logger := &recordingLogger{}
+	cache := &BlobCache{}
+	require.NoError(t, cache.Configure(map[string]any{core.ConfigLogger: core.Logger(logger)}))
+	require.NoError(t, cache.Initialize(test.Repository))
+	assert.Same(t, logger, cache.l)
 }
 
 func TestBlobCacheMetadata(t *testing.T) {
@@ -64,12 +77,16 @@ func TestBlobCacheMetadata(t *testing.T) {
 	changes := &TreeDiff{}
 	assert.Equal(t, cache.Requires()[0], changes.Provides()[0])
 	opts := cache.ListConfigurationOptions()
-	assert.Len(t, opts, 3)
+	assert.Len(t, opts, 4)
 	assert.Equal(t, ConfigBlobCacheFailOnMissingSubmodules, opts[0].Name)
 	assert.Equal(t, ConfigBlobCacheMaxBlobSize, opts[1].Name)
 	assert.Equal(t, int(DefaultBlobCacheMaxBlobSize), opts[1].Default)
 	assert.Equal(t, ConfigBlobCacheMaxCommitSize, opts[2].Name)
 	assert.Equal(t, int(DefaultBlobCacheMaxCommitSize), opts[2].Default)
+	assert.Equal(t, ConfigBlobCacheFailOnOversizedBlobs, opts[3].Name)
+	assert.Equal(t, "fail-on-oversized-blobs", opts[3].Flag)
+	assert.Equal(t, core.BoolConfigurationOption, opts[3].Type)
+	assert.Equal(t, false, opts[3].Default)
 }
 
 func TestCachedBlobCacheWithLimitRejectsDeclaredOversize(t *testing.T) {
@@ -100,7 +117,10 @@ func TestReadExactBlobRejectsDeclaredSizeMismatch(t *testing.T) {
 	assert.Equal(t, []byte("abcd"), data)
 }
 
-func TestBlobCacheCommitBudgetIsAggregateUpperBound(t *testing.T) {
+// TestBlobCacheStrictCommitBudgetIsAggregateUpperBound pins the fail-closed policy that
+// --fail-on-oversized-blobs restores. The default policy is covered by
+// TestBlobCacheSkipsBlobOverCommitBudget.
+func TestBlobCacheStrictCommitBudgetIsAggregateUpperBound(t *testing.T) {
 	commit, err := test.Repository.CommitObject(plumbing.NewHash(
 		"af2d8db70f287b52d2428d9887a69a10bc4d1f46",
 	))
@@ -133,6 +153,7 @@ func TestBlobCacheCommitBudgetIsAggregateUpperBound(t *testing.T) {
 	}}
 	cache := fixtureBlobCache()
 	cache.MaxCommitSize = 10_000
+	cache.FailOnOversizedBlobs = true
 
 	result, err := cache.Consume(map[string]any{
 		core.DependencyCommit: commit,
@@ -567,6 +588,9 @@ func TestBlobCacheFork(t *testing.T) {
 	assert.Equal(t, int64(12345), cache2.MaxBlobSize)
 	assert.Equal(t, int64(23456), cache2.MaxCommitSize)
 	assert.Equal(t, cache1.repository, cache2.repository)
+	assert.NotNil(t, cache2.l)
+	assert.Same(t, cache1.l, cache2.l)
+	assert.Same(t, cache1.oversize, cache2.oversize)
 	cache1.cache[plumbing.ZeroHash] = nil
 	assert.Len(t, cache1.cache, 2)
 	assert.Len(t, cache2.cache, 1)

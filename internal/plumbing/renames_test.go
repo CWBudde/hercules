@@ -389,8 +389,8 @@ func TestBlobsAreCloseFlakyBug(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get baa64828831d174f40140e4b3cfa77d1e917a2c1 %v", err)
 	}
-	blob1 := &CachedBlob{*gitBlob1, nil}
-	blob2 := &CachedBlob{*gitBlob2, nil}
+	blob1 := &CachedBlob{Blob: *gitBlob1}
+	blob2 := &CachedBlob{Blob: *gitBlob2}
 	err = blob1.Cache()
 	if err != nil {
 		t.Fatalf("read 29c9fafd6a2fae8cd20298c3f60115bc31a4c0f2 %v", err)

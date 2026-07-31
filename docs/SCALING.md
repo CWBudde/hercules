@@ -186,15 +186,38 @@ describe the state deliberately excluded from incremental tick work.
 
 ## Bounded blob and rename processing
 
-Blob loading is fail-closed and bounded before allocation. By default,
+Blob loading is bounded before allocation. By default,
 `--blob-cache-max-blob-size=104857600` limits one blob to 100 MiB and
 `--blob-cache-max-commit-size=536870912` limits the distinct changed blobs
-retained for one commit to 512 MiB. Both values are byte counts and can be
-lowered for constrained environments. A blob or commit that exceeds its limit
-returns an explicit error; Hercules does not substitute empty content and
-silently alter downstream metrics. Declared Git blob sizes are validated
-before an exact-size allocation, and readers must produce exactly that many
-bytes.
+retained for one commit to 512 MiB. Both values are byte counts.
+
+A blob above the per-blob limit, or one which does not fit the remaining
+budget of its commit, is not read and not retained. It is recorded as binary
+content, so it is excluded from line counts, diffs, language detection and
+rename detection exactly as a real binary file is, and the run continues. The
+first such blob is named in a warning; the rest are counted and reported in a
+single end-of-run summary. Hercules still never substitutes *empty text*,
+which would read as a real deletion of every line in the file. Declared Git
+blob sizes are validated before an exact-size allocation, and readers must
+produce exactly that many bytes.
+
+Because of this, both limits are now safe to lower as a routine memory
+measure: a repository which once committed a large binary no longer aborts a
+multi-hour run. Pass `--fail-on-oversized-blobs` to restore the previous
+fail-closed behaviour, which is what you want when auditing the limits
+themselves.
+
+The two limits are not symmetric. Skipping under `--blob-cache-max-blob-size`
+is a property of the blob, so the same blob is skipped wherever it appears.
+Skipping under `--blob-cache-max-commit-size` is a property of the blob *and*
+its position within its commit: an over-budget blob is skipped without
+consuming budget, so smaller blobs later in the same commit still fit. Change
+order is tree-diff order, which is deterministic, so runs stay reproducible.
+
+The honest cost: a huge *text* file is counted as binary rather than as text.
+Its contents were never held, so it cannot be diffed, and its lines do not
+appear in burndown, line statistics or language totals. Raise the limit past
+the file's size to get it back.
 
 `--renames-timeout` is one deadline shared by both rename-search directions
 and every line- or byte-level comparison in that commit. The first completed

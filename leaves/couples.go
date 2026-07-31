@@ -644,11 +644,13 @@ func (couples *CouplesAnalysis) fileLineCounts(files []string) ([]int, error) {
 
 		err = blob.Cache()
 		if err != nil {
-			err = fmt.Errorf("cannot read blob %s of file %s: %w",
+			// A blob which is too large to hold is counted as zero lines, matching how the
+			// CountLines() error below is swallowed. Aborting the whole analysis over one
+			// oversized file would discard every other result it produced.
+			couples.l.Warnf("cannot read blob %s of file %s, counting it as 0 lines: %v\n",
 				blob.Hash.String(), name, err)
-			couples.l.Critical(err)
 
-			return nil, err
+			continue
 		}
 
 		lines[fileIndex], _ = blob.CountLines()

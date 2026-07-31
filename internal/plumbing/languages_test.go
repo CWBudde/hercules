@@ -6,6 +6,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/cwbudde/hercules/internal/core"
 	"github.com/cwbudde/hercules/internal/test"
@@ -124,4 +125,35 @@ func TestLanguagesDetectionGherkinLowercase(t *testing.T) {
 	ls := &LanguagesDetection{}
 	lang := ls.detectLanguage("login.feature", &CachedBlob{Data: []byte("Feature: Login\n  Scenario: User logs in\n")})
 	assert.Equal(t, "gherkin", lang)
+}
+
+// TestLanguagesDetectionOversizedPlaceholder pins the downstream meaning of an oversized blob
+// placeholder: it is opaque, so no language is attributed to it, exactly as for a real binary.
+func TestLanguagesDetectionOversizedPlaceholder(t *testing.T) {
+	ls := &LanguagesDetection{}
+	treeTo, _ := test.Repository.TreeObject(plumbing.NewHash(
+		"251f2094d7b523d5bcc60e663b6cf38151bf8844",
+	))
+	hash := plumbing.NewHash("db99e1890f581ad69e1527fe8302978c661eb473")
+	changes := object.Changes{{
+		From: object.ChangeEntry{}, To: object.ChangeEntry{
+			Name:      testPipelinePath,
+			Tree:      treeTo,
+			TreeEntry: object.TreeEntry{Name: testPipelinePath, Mode: 0o100644, Hash: hash},
+		},
+	}}
+
+	placeholder, err := oversizedBlobPlaceholder(hash, 1<<30)
+	require.NoError(t, err)
+
+	result, err := ls.Consume(map[string]any{
+		DependencyBlobCache:   map[plumbing.Hash]*CachedBlob{hash: placeholder},
+		DependencyTreeChanges: changes,
+	})
+	require.NoError(t, err)
+
+	langs := result[DependencyLanguages].(map[plumbing.Hash]string)
+	lang, exists := langs[hash]
+	assert.True(t, exists, "the hash must stay in the map")
+	assert.Empty(t, lang, "an oversized .go file must not be attributed to Go")
 }

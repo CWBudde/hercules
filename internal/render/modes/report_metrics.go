@@ -1573,12 +1573,22 @@ func buildTemporalHourCommitSeries(data *readers.TemporalActivityData) []tempora
 	return series
 }
 
+// sampledTab20Colors returns n series colors spread across tab20.
+//
+// The spread is only usable while it stays injective: the step between
+// consecutive entries is len(palette)/(n-1), so once n exceeds the palette size
+// neighbouring series round onto the same entry. A combined run with 25
+// developers put the first two of them on tab20[0], stacked directly on top of
+// each other and indistinguishable. Beyond the palette size, cycle instead.
 func sampledTab20Colors(n int) []render.Color {
 	if n <= 0 {
 		return nil
 	}
 
 	palette := graphics.PythonLaboursColorPalette(20)
+	if n > len(palette) {
+		return cycledPaletteColors(palette, n)
+	}
 
 	colors := make([]render.Color, n)
 	for i := range colors {
@@ -1596,28 +1606,64 @@ func sampledTab20Colors(n int) []render.Color {
 	return colors
 }
 
+// cycledPaletteColors walks the palette in order and darkens it once per
+// completed pass, so a series that has to reuse an entry is still told apart
+// from the earlier series wearing it - and, more importantly, is never the same
+// color as the series stacked next to it.
+func cycledPaletteColors(palette []color.Color, n int) []render.Color {
+	colors := make([]render.Color, n)
+	for i := range colors {
+		colors[i] = darkenColor(renderColor(palette[i%len(palette)]), i/len(palette))
+	}
+
+	return colors
+}
+
+// darkenColor scales a color towards black by one step per pass, with a floor so
+// a third or fourth pass does not collapse everything into black.
+func darkenColor(c render.Color, passes int) render.Color {
+	if passes <= 0 {
+		return c
+	}
+
+	factor := math.Max(math.Pow(0.62, float64(passes)), 0.3)
+
+	return render.Color{R: c.R * factor, G: c.G * factor, B: c.B * factor, A: c.A}
+}
+
 func temporalActivityYTicks(maxValue float64) []float64 {
 	if maxValue <= 0 {
 		return []float64{0, 1}
 	}
 
-	step := 5.0
-	if maxValue > 100 {
-		step = 20
-	} else if maxValue > 50 {
-		step = 10
-	}
+	step := temporalActivityTickStep(maxValue)
 
 	ticks := make([]float64, 0, int(math.Ceil(maxValue/step))+1)
 	for tick := 0.0; tick <= maxValue; tick += step {
 		ticks = append(ticks, tick)
 	}
 
-	if last := ticks[len(ticks)-1]; last < maxValue {
-		ticks = append(ticks, maxValue)
+	return ticks
+}
+
+// temporalActivityTickStep picks a round step that keeps the axis to roughly ten
+// labels at any magnitude. The steps used to be capped at 20, which was fine for
+// a single repository but drew ~110 overlapping labels once a combined run
+// reached a couple of thousand commits - a solid black bar where the axis should
+// be.
+func temporalActivityTickStep(maxValue float64) float64 {
+	const targetTicks = 10
+
+	magnitude := math.Pow(10, math.Floor(math.Log10(maxValue/targetTicks)))
+	for _, multiple := range []float64{1, 2, 5, 10} {
+		// Commits and lines are counts, so never label a fraction of one.
+		step := math.Max(multiple*magnitude, 1)
+		if maxValue/step <= targetTicks {
+			return step
+		}
 	}
 
-	return ticks
+	return math.Max(10*magnitude, 1)
 }
 
 func temporalLegendNote(developers, legendThreshold, singleColumnThreshold int) string {

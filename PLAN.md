@@ -226,6 +226,13 @@ outright, none regressed.
       Landed together in PR #6 (`bfc9445` adoption, `abc217c` corpus suite + timeout pin,
       `8fb2305` the review fix below), merged as `41bced3`. The new baseline is _not_
       comparable to anything older than `abc217c`.
+- [x] **Re-seeded on a clean tree.** The committed baseline recorded `77c736b` plus a
+      six-file dirty working tree, so its provenance named no reproducible state. Re-seeded at
+      `41bced3`, `"working_tree": "clean"`: 13/13 PASS in 56 min, zero truncation. Twelve
+      repositories are **bit-identical** in both dimensions; the one move is `meko-etl-tool` per
+      file, 3 386 → 3 342 cells and 73 → 72 residual. That is not drift — the run reproduces
+      exactly on re-measurement, and measuring `5bfca9f` (the commit before the review fix)
+      against the same baseline gives 3 386, so the −44 is `8fb2305` and it is an improvement.
 - [x] Review follow-up: adoption could take an id that is **still live at another path**, because
       a rename carries the `FileId` with it — a branch that renamed the path away holds that id
       under the new name while the sibling still holds it under the old one. Adopting anyway put

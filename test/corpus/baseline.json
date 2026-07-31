@@ -1,7 +1,7 @@
 {
   "provenance": {
-    "commit": "77c736be96a6423fe74433a1b377dd1d4b51c35f",
-    "working_tree": "M PLAN.md\n M internal/linehistory/line_history.go\n M internal/linehistory/line_history_merge_test.go\n M test/corpus/README.md\n M test/corpus/baseline.json\n M test/corpus/corpus_test.go",
+    "commit": "41bced3c09140300c7efe4cb3ee996614560c26c",
+    "working_tree": "clean",
     "note": "Numbers are only comparable against this tree. Re-seed after any change to burndown or merge accounting."
   },
   "flags": [
@@ -190,10 +190,10 @@
     },
     "meko-etl-tool": {
       "exit_code": 0,
-      "negative_cells": 3386,
-      "negative_mass": 65365,
+      "negative_cells": 3342,
+      "negative_mass": 63922,
       "worst_cell": -228,
-      "residual_cells": 73,
+      "residual_cells": 72,
       "matrices": 305
     },
     "mekorp-backend": {

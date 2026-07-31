@@ -358,8 +358,14 @@ func plotTopCouplingPairs(analysis FileCouplingAnalysis, output string) error {
 }
 
 func plotTopCouplingPairsWithOptions(analysis FileCouplingAnalysis, output string, opts graphics.Options) error {
+	// A repository can legitimately have no coupled pairs - a single-file repository
+	// has none by definition, and neither does one where no two files ever changed in
+	// the same commit. That is an empty result, not a failure: erroring out here failed
+	// the whole couples-files mode and marked the repository as failed downstream.
 	if len(analysis.TopCoupling) == 0 {
-		return errors.New("no coupling pairs data available")
+		fmt.Println("No file coupling pairs found; skipping the top-pairs chart.")
+
+		return nil
 	}
 
 	// Prepare data for bar chart

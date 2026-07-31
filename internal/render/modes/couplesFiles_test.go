@@ -20,6 +20,26 @@ func TestPlotTopCouplingPairsWritesPNG(t *testing.T) {
 	}
 }
 
+// A single-file repository has no coupled pairs by definition. This used to return an
+// error, which failed the whole couples-files mode: mekorp-k8s-monitoring (82 commits,
+// one tracked file) was reported as a failed repository during a downstream chart run.
+func TestPlotTopCouplingPairsSkipsWhenThereAreNoPairs(t *testing.T) {
+	output := t.TempDir()
+
+	analysis := sampleFileCouplingAnalysis()
+	analysis.TopCoupling = nil
+
+	err := plotTopCouplingPairs(analysis, output)
+	if err != nil {
+		t.Fatalf("plotTopCouplingPairs() with no pairs should skip, got: %v", err)
+	}
+
+	outputFile := filepath.Join(output, "top_file_coupling_pairs.png")
+	if _, err := os.Stat(outputFile); !os.IsNotExist(err) {
+		t.Fatalf("expected no plot file at %q, stat returned %v", outputFile, err)
+	}
+}
+
 func sampleFileCouplingAnalysis() FileCouplingAnalysis {
 	pairs := []FileCouplingPair{
 		{File1: "pipeline.go", File2: "pipeline_test.go", CouplingScore: 18, CooccuranceCount: 18},

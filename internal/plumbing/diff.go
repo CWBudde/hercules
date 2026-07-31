@@ -69,6 +69,10 @@ type FileDiff struct {
 	RefineMode        string
 	Timeout           time.Duration
 
+	// truncation counts the diffs that DiffTimeout cut short. Fork hands out the same instance,
+	// so one counter serves every branch.
+	truncation *truncationReport
+
 	l core.Logger
 }
 
@@ -269,7 +273,21 @@ func (*FileDiff) ConfigureUpstream(facts map[string]any) error {
 // calls. The repository which is going to be analysed is supplied as an argument.
 func (diff *FileDiff) Initialize(repository *git.Repository) error {
 	diff.l = core.NewLogger()
+	diff.truncation = newFileDiffTruncationReport()
+
 	return nil
+}
+
+// Dispose flushes the deadline-truncation summary once per run.
+func (diff *FileDiff) Dispose() {
+	diff.truncationReporter().summarise(diff.l)
+}
+
+func newFileDiffTruncationReport() *truncationReport {
+	return newTruncationReport(
+		"file diffing",
+		"Raise --diff-timeout to make the deadline unreachable.",
+	)
 }
 
 func stripWhitespace(str string, ignoreWhitespace bool) string {
@@ -343,7 +361,16 @@ func processModifiedFile(
 		stripWhitespace(string(blobTo.Data), diff.WhitespaceIgnore),
 	)
 
+	// A diff cut short by DiffTimeout is suboptimal rather than wrong, but it is a different
+	// answer than an untruncated run would give, so the run has to say so (PLAN.md B12).
+	// diffmatchpatch reports nothing itself; the elapsed time is the only evidence there is.
+	start := time.Now()
 	diffs := dmp.DiffMainRunes(src, dst, false)
+
+	if dmp.DiffTimeout > 0 && time.Since(start) >= dmp.DiffTimeout {
+		diff.truncationReporter().record(diff.l, "line diff")
+	}
+
 	if !diff.CleanupDisabled {
 		diffs = dmp.DiffCleanupMerge(dmp.DiffCleanupSemanticLossless(diffs))
 	}
@@ -740,6 +767,15 @@ func countNodesInInterval(line2node [][]ast_items.Node, start, end int) int {
 // Fork clones this PipelineItem.
 func (diff *FileDiff) Fork(n int) []core.PipelineItem {
 	return core.ForkSamePipelineItem(diff, n)
+}
+
+// truncationReporter tolerates a FileDiff built directly in a test, without Initialize().
+func (diff *FileDiff) truncationReporter() *truncationReport {
+	if diff.truncation == nil {
+		diff.truncation = newFileDiffTruncationReport()
+	}
+
+	return diff.truncation
 }
 
 func (diff *FileDiff) refineWithTreeSitter(path string, source []byte, original FileDiffData) FileDiffData {

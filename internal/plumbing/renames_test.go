@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path"
+	"sort"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -21,8 +22,6 @@ import (
 	"github.com/cwbudde/hercules/internal/core"
 	"github.com/cwbudde/hercules/internal/test"
 )
-
-var errTestRenameWorker = errors.New("rename worker failed")
 
 func fixtureRenameAnalysis() *RenameAnalysis {
 	ra := RenameAnalysis{SimilarityThreshold: 80}
@@ -310,6 +309,278 @@ func TestSortableBlobs(t *testing.T) {
 	assert.Equal(t, int64(0), blobs[1].size)
 }
 
+// renameAmbiguousFixture builds one deleted blob and two added blobs, all three the same size
+// and all three close enough in content to be renames of one another. The two directions
+// disagree by construction:
+//   - scanning the deleted side sorts the candidates by name distance, so "old/thing.go"
+//     claims "right/thing.go";
+//   - scanning the added side visits the additions in blob order, so "left/zzz.go" gets to
+//     "old/thing.go" first and "right/thing.go" is left unpaired.
+//
+// That disagreement is exactly what the old take-whoever-finishes-first race handed to the Go
+// scheduler.
+func renameAmbiguousFixture() (object.Changes, map[plumbing.Hash]*CachedBlob) {
+	body := func(marker int) []byte {
+		var lines strings.Builder
+
+		lines.WriteString("package main\n\nfunc main() {\n")
+
+		for i := range 10 {
+			suffix := "aaa"
+			if i == marker {
+				suffix = "zzz"
+			}
+
+			fmt.Fprintf(&lines, "\tprintln(%q, %02d)\n", suffix, i)
+		}
+
+		lines.WriteString("}\n")
+
+		return []byte(lines.String())
+	}
+
+	hashes := renameHashList()
+	blobs := []struct {
+		name   string
+		hash   string
+		marker int
+	}{
+		{"old/thing.go", hashes[0], 0},
+		{"left/zzz.go", hashes[1], 3},
+		{"right/thing.go", hashes[2], 7},
+	}
+
+	cache := map[plumbing.Hash]*CachedBlob{}
+
+	for _, blob := range blobs {
+		parsed := plumbing.NewHash(blob.hash)
+		data := body(blob.marker)
+		cache[parsed] = &CachedBlob{
+			Blob: object.Blob{Hash: parsed, Size: int64(len(data))},
+			Data: data,
+		}
+	}
+
+	changes := object.Changes{
+		{From: renameChangeEntry(blobs[0].name, blobs[0].hash), To: object.ChangeEntry{}},
+		{From: object.ChangeEntry{}, To: renameChangeEntry(blobs[1].name, blobs[1].hash)},
+		{From: object.ChangeEntry{}, To: renameChangeEntry(blobs[2].name, blobs[2].hash)},
+	}
+
+	return changes, cache
+}
+
+func renamePairs(t *testing.T, changes object.Changes) map[string]string {
+	t.Helper()
+
+	pairs := map[string]string{}
+
+	for _, change := range changes {
+		if change.From.Name != "" && change.To.Name != "" {
+			pairs[change.From.Name] = change.To.Name
+		}
+	}
+
+	return pairs
+}
+
+// TestRenameAnalysisConsumeIsReproducible is the regression for PLAN.md B12: rename matching
+// used to run two non-equivalent greedy directions concurrently and keep whichever goroutine
+// delivered first, so the pairing - and with it every downstream burndown matrix - varied
+// between identical runs.
+func TestRenameAnalysisConsumeIsReproducible(t *testing.T) {
+	ra := fixtureRenameAnalysis()
+
+	var reference map[string]string
+
+	for attempt := range 50 {
+		changes, cache := renameAmbiguousFixture()
+		res, err := ra.Consume(map[string]any{
+			DependencyBlobCache:   cache,
+			DependencyTreeChanges: changes,
+		})
+		require.NoError(t, err)
+
+		renamed, ok := res[DependencyTreeChanges].(object.Changes)
+		require.True(t, ok)
+
+		pairs := renamePairs(t, renamed)
+		if attempt == 0 {
+			reference = pairs
+			require.Len(t, reference, 1, "the fixture must produce exactly one rename")
+
+			continue
+		}
+
+		require.Equal(t, reference, pairs, "rename matching is not reproducible (attempt %d)", attempt)
+	}
+}
+
+// TestMatchSimilarRenamesPicksDirectionBySetSize pins the replacement for the race: the side
+// with fewer blobs is the one iterated, because it is the cheaper scan. Equal counts go to the
+// deleted side.
+func TestMatchSimilarRenamesPicksDirectionBySetSize(t *testing.T) {
+	run := func(
+		t *testing.T,
+		matcher func(*RenameAnalysis, context.Context, sortableBlobs, sortableBlobs,
+			map[plumbing.Hash]*CachedBlob, int) (object.Changes, sortableBlobs, sortableBlobs, error),
+		swap bool,
+	) object.Changes {
+		t.Helper()
+
+		ra := fixtureRenameAnalysis()
+		changes, cache := renameAmbiguousFixture()
+
+		if swap {
+			// Turn the two additions into deletions and the deletion into an addition, so the
+			// added side becomes the smaller one without changing the blob contents.
+			for _, change := range changes {
+				change.From, change.To = change.To, change.From
+			}
+		}
+
+		var added, deleted object.Changes
+
+		for _, change := range changes {
+			if change.From.Name == "" {
+				added = append(added, change)
+			} else {
+				deleted = append(deleted, change)
+			}
+		}
+
+		addedBlobs, deletedBlobs, _ := classifyRenameBlobs(added, deleted, cache)
+
+		matches, _, _, err := matcher(
+			ra, context.Background(), addedBlobs, deletedBlobs, cache, RenameAnalysisMaxCandidates,
+		)
+		require.NoError(t, err)
+
+		return matches
+	}
+
+	similar := func(ra *RenameAnalysis, ctx context.Context, a, d sortableBlobs,
+		c map[plumbing.Hash]*CachedBlob, m int,
+	) (object.Changes, sortableBlobs, sortableBlobs, error) {
+		return ra.matchSimilarRenames(ctx, a, d, c, m)
+	}
+
+	t.Run("fewer deletions scans the deleted side", func(t *testing.T) {
+		assert.Equal(t,
+			renamePairs(t, run(t, (*RenameAnalysis).matchDeletedBlobs, false)),
+			renamePairs(t, run(t, similar, false)))
+	})
+
+	t.Run("fewer additions scans the added side", func(t *testing.T) {
+		assert.Equal(t,
+			renamePairs(t, run(t, (*RenameAnalysis).matchAddedBlobs, true)),
+			renamePairs(t, run(t, similar, true)))
+	})
+}
+
+// TestRenameTruncationIsReportedOnce covers the third leg of B12: the deadlines that remain
+// after the race is gone. They are allowed to fire, but the run has to say that its numbers
+// depend on machine speed instead of quietly producing different ones.
+func TestRenameTruncationIsReportedOnce(t *testing.T) {
+	logger := &recordingLogger{}
+	report := newRenameTruncationReport()
+
+	report.record(logger, renameTruncationCandidateScan)
+	report.record(logger, renameTruncationCandidateScan)
+	report.record(logger, renameTruncationPairDiff)
+
+	warnings := logger.warningsSnapshot()
+	require.Len(t, warnings, 1, "only the first truncation warns")
+	assert.Contains(t, warnings[0], "not reproducible")
+
+	report.summarise(logger)
+	report.summarise(logger)
+
+	warnings = logger.warningsSnapshot()
+	require.Len(t, warnings, 2, "the summary is emitted exactly once")
+	assert.Contains(t, warnings[1], "3 time(s) in total")
+	assert.Contains(t, warnings[1], "candidate scan: 2")
+	assert.Contains(t, warnings[1], "pair comparison: 1")
+}
+
+// A single truncation is already covered by the warning, so the summary must stay quiet.
+func TestRenameTruncationSummarySkipsSingleOccurrence(t *testing.T) {
+	logger := &recordingLogger{}
+	report := newRenameTruncationReport()
+
+	report.record(logger, renameTruncationCandidateScan)
+	report.summarise(logger)
+
+	assert.Len(t, logger.warningsSnapshot(), 1)
+}
+
+// TestRenameAnalysisConsumeReportsDeadlineTruncation drives the report through the real path.
+func TestRenameAnalysisConsumeReportsDeadlineTruncation(t *testing.T) {
+	ra := fixtureRenameAnalysis()
+	logger := &recordingLogger{}
+	ra.l = logger
+	ra.Timeout = time.Nanosecond
+
+	changes, cache := renameAmbiguousFixture()
+	_, err := ra.Consume(map[string]any{
+		DependencyBlobCache:   cache,
+		DependencyTreeChanges: changes,
+	})
+	require.NoError(t, err)
+
+	ra.Dispose()
+
+	warnings := logger.warningsSnapshot()
+	require.NotEmpty(t, warnings, "an expired rename budget must be announced")
+	assert.Contains(t, warnings[0], "not reproducible")
+}
+
+// TestSortableBlobsIsTotalOrder pins the tie-break which keeps the non-stable sort in
+// classifyRenameBlobs from leaking an arbitrary order into the greedy candidate scan.
+func TestSortableBlobsIsTotalOrder(t *testing.T) {
+	hashes := renameHashList()
+	blobs := sortableBlobs{
+		{change: &object.Change{To: renameChangeEntry("b.txt", hashes[1])}, size: 100},
+		{change: &object.Change{To: renameChangeEntry("a.txt", hashes[0])}, size: 100},
+		{change: &object.Change{To: renameChangeEntry("c.txt", hashes[2])}, size: 100},
+	}
+
+	for i := range blobs {
+		for j := range blobs {
+			if i == j {
+				assert.False(t, blobs.Less(i, j), "a blob must not precede itself")
+
+				continue
+			}
+
+			assert.NotEqual(t, blobs.Less(i, j), blobs.Less(j, i),
+				"equal-sized blobs must have a strict order")
+		}
+	}
+
+	sort.Sort(blobs)
+	assert.Equal(t, []string{"a.txt", "b.txt", "c.txt"},
+		[]string{blobs[0].change.To.Name, blobs[1].change.To.Name, blobs[2].change.To.Name})
+}
+
+// TestSortRenameCandidatesBreaksDistanceTies covers the other non-total order: the first
+// candidate which passes blobsAreClose wins, so equal Levenshtein distances must not be left
+// in whatever order sort.Slice happens to produce.
+func TestSortRenameCandidatesBreaksDistanceTies(t *testing.T) {
+	names := []string{"z/thing.go", "y/thing.go", "x/thing.go", "w/other.go"}
+	nameGetter := func(i int) string { return names[i] }
+
+	first := []int{0, 1, 2, 3}
+	sortRenameCandidates(first, "thing.go", nameGetter)
+
+	second := []int{3, 2, 1, 0}
+	sortRenameCandidates(second, "thing.go", nameGetter)
+
+	assert.Equal(t, []int{0, 1, 2, 3}, first)
+	assert.Equal(t, first, second,
+		"the same candidate set in a different input order must sort identically")
+}
+
 func TestRenameAnalysisFork(t *testing.T) {
 	ra1 := fixtureRenameAnalysis()
 	clones := ra1.Fork(1)
@@ -325,35 +596,6 @@ func TestRenameAnalysisSizesAreClose(t *testing.T) {
 	assert.True(t, ra.sizesAreClose(941, 1150))
 	assert.True(t, ra.sizesAreClose(941, 803))
 	assert.False(t, ra.sizesAreClose(1320, 1668))
-}
-
-func TestRunRenameWorkersSimultaneousErrorsDoNotDeadlock(t *testing.T) {
-	ready := make(chan struct{}, 2)
-	release := make(chan struct{})
-	worker := func(context.Context) renameMatchResult {
-		ready <- struct{}{}
-		<-release
-
-		return renameMatchResult{err: errTestRenameWorker}
-	}
-
-	done := make(chan [2]renameMatchResult, 1)
-	go func() {
-		first, second := runRenameWorkers(context.Background(), worker, worker)
-		done <- [2]renameMatchResult{first, second}
-	}()
-
-	<-ready
-	<-ready
-	close(release)
-
-	select {
-	case results := <-done:
-		require.ErrorIs(t, results[0].err, errTestRenameWorker)
-		require.ErrorIs(t, results[1].err, errTestRenameWorker)
-	case <-time.After(time.Second):
-		t.Fatal("simultaneous rename worker errors deadlocked")
-	}
 }
 
 func TestRenameComparisonHonorsExpiredContext(t *testing.T) {

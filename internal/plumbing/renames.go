@@ -39,6 +39,10 @@ type RenameAnalysis struct {
 
 	repository *git.Repository
 
+	// truncation counts the places where a wall-clock deadline cut rename matching short.
+	// Fork hands out the same instance, so one counter serves every branch.
+	truncation *truncationReport
+
 	l core.Logger
 }
 
@@ -156,8 +160,14 @@ func (ra *RenameAnalysis) Initialize(repository *git.Repository) error {
 	}
 
 	ra.repository = repository
+	ra.truncation = newRenameTruncationReport()
 
 	return nil
+}
+
+// Dispose flushes the deadline-truncation summary once per run, on success and on failure alike.
+func (ra *RenameAnalysis) Dispose() {
+	ra.truncationReporter().summarise(ra.l)
 }
 
 func matchExactRenames(
@@ -305,13 +315,6 @@ func (ra *RenameAnalysis) Consume(deps map[string]any) (map[string]any, error) {
 	return map[string]any{DependencyTreeChanges: reducedChanges}, nil
 }
 
-func cloneSortableBlobs(blobs sortableBlobs) sortableBlobs {
-	cloned := make(sortableBlobs, len(blobs))
-	copy(cloned, blobs)
-
-	return cloned
-}
-
 func appendRenameResults(
 	reduced, matches object.Changes,
 	addedBlobs, deletedBlobs sortableBlobs,
@@ -371,73 +374,35 @@ func (ra *RenameAnalysis) Fork(n int) []core.PipelineItem {
 	return core.ForkSamePipelineItem(ra, n)
 }
 
+// truncationReporter tolerates a RenameAnalysis built directly in a test, without Initialize().
+func (ra *RenameAnalysis) truncationReporter() *truncationReport {
+	if ra.truncation == nil {
+		ra.truncation = newRenameTruncationReport()
+	}
+
+	return ra.truncation
+}
+
+// matchSimilarRenames pairs the leftover added and deleted blobs by content similarity.
+//
+// Matching is greedy and removes each claimed blob from the working set, so scanning the
+// deleted side and scanning the added side are not equivalent: they produce different pairings
+// whenever a blob has more than one plausible partner. This used to run both directions
+// concurrently and keep whichever goroutine finished first, which handed the choice to the Go
+// scheduler and made the whole analysis non-reproducible run to run. The direction is now
+// derived from the data instead: iterating the smaller side is the cheaper one, which is what
+// the race was really approximating. Equal sizes go to the deleted side.
 func (ra *RenameAnalysis) matchSimilarRenames(
 	ctx context.Context,
 	addedBlobs, deletedBlobs sortableBlobs,
 	cache map[plumbing.Hash]*CachedBlob,
 	maxCandidates int,
 ) (object.Changes, sortableBlobs, sortableBlobs, error) {
-	first, second := runRenameWorkers(ctx, func(workerCtx context.Context) renameMatchResult {
-		matches, added, deleted, err := ra.matchDeletedBlobs(
-			workerCtx, addedBlobs, deletedBlobs, cache, maxCandidates,
-		)
-
-		return renameMatchResult{matches, added, deleted, err}
-	}, func(workerCtx context.Context) renameMatchResult {
-		matches, added, deleted, err := ra.matchAddedBlobs(
-			workerCtx,
-			cloneSortableBlobs(addedBlobs),
-			cloneSortableBlobs(deletedBlobs),
-			cache,
-			maxCandidates,
-		)
-
-		return renameMatchResult{matches, added, deleted, err}
-	})
-
-	if first.err != nil {
-		return nil, nil, nil, first.err
+	if len(deletedBlobs) <= len(addedBlobs) {
+		return ra.matchDeletedBlobs(ctx, addedBlobs, deletedBlobs, cache, maxCandidates)
 	}
 
-	if second.err != nil && !isRenameCancellation(second.err) {
-		return nil, nil, nil, second.err
-	}
-
-	return first.matches, first.added, first.deleted, nil
-}
-
-type renameMatchResult struct {
-	matches object.Changes
-	added   sortableBlobs
-	deleted sortableBlobs
-	err     error
-}
-
-type renameWorker func(context.Context) renameMatchResult
-
-func runRenameWorkers(
-	ctx context.Context, firstWorker, secondWorker renameWorker,
-) (renameMatchResult, renameMatchResult) {
-	workerCtx, cancelWorkers := context.WithCancel(ctx)
-	defer cancelWorkers()
-
-	// The channel holds both terminal results, so simultaneous worker failures cannot block.
-	results := make(chan renameMatchResult, 2)
-
-	for _, worker := range []renameWorker{firstWorker, secondWorker} {
-		go func() {
-			results <- worker(workerCtx)
-		}()
-	}
-
-	// Use the direction which completes first and cancel its peer, but join both before returning.
-	first := <-results
-
-	cancelWorkers()
-
-	second := <-results
-
-	return first, second
+	return ra.matchAddedBlobs(ctx, addedBlobs, deletedBlobs, cache, maxCandidates)
 }
 
 func isRenameCancellation(err error) bool {
@@ -480,31 +445,23 @@ func (ra *RenameAnalysis) matchBlobs(
 
 	for primaryIndex := 0; primaryIndex < primary.Len(); primaryIndex++ {
 		if ctx.Err() != nil {
+			ra.truncationReporter().record(ra.l, renameTruncationCandidateScan)
+
 			break
 		}
 
 		blob := cache[renameBlobHash(primary[primaryIndex], matchDeleted)]
-		size := primary[primaryIndex].size
 
-		for secondaryStart < secondary.Len() &&
-			!ra.sizesAreClose(size, secondary[secondaryStart].size) {
-			secondaryStart++
-		}
-
-		candidates := renameCandidates(secondaryStart, secondary.Len(), func(index int) bool {
-			return ra.sizesAreClose(size, secondary[index].size)
-		})
-		sortRenameCandidates(
-			candidates,
-			filepath.Base(renameBlobName(primary[primaryIndex], matchDeleted)),
-			func(index int) string {
-				return renameBlobName(secondary[index], !matchDeleted)
-			},
+		var candidates []int
+		candidates, secondaryStart = ra.rankedCandidates(
+			primary[primaryIndex], secondary, secondaryStart, matchDeleted,
 		)
 
 		match, err := matchCandidate(ctx, blob, candidates, secondary, cache, maxCandidates)
 		if err != nil {
 			if isRenameCancellation(err) {
+				ra.truncationReporter().record(ra.l, renameTruncationCandidateScan)
+
 				break
 			}
 
@@ -525,6 +482,33 @@ func (ra *RenameAnalysis) matchBlobs(
 	}
 
 	return matches, primary, secondary, nil
+}
+
+// rankedCandidates returns the size-compatible partners for one blob, ordered by how close
+// their basename is, along with the advanced scan cursor. Both blob lists are sorted by size,
+// so the cursor only ever moves forward.
+func (ra *RenameAnalysis) rankedCandidates(
+	blob sortableBlob, secondary sortableBlobs, secondaryStart int, matchDeleted bool,
+) ([]int, int) {
+	size := blob.size
+
+	for secondaryStart < secondary.Len() &&
+		!ra.sizesAreClose(size, secondary[secondaryStart].size) {
+		secondaryStart++
+	}
+
+	candidates := renameCandidates(secondaryStart, secondary.Len(), func(index int) bool {
+		return ra.sizesAreClose(size, secondary[index].size)
+	})
+	sortRenameCandidates(
+		candidates,
+		filepath.Base(renameBlobName(blob, matchDeleted)),
+		func(index int) string {
+			return renameBlobName(secondary[index], !matchDeleted)
+		},
+	)
+
+	return candidates, secondaryStart
 }
 
 func (ra *RenameAnalysis) renameMatchDirection(
@@ -639,7 +623,7 @@ func (ra *RenameAnalysis) blobsAreCloseContext(
 
 	src, dst := string(blob1.Data), string(blob2.Data)
 
-	diffs, srcPositions, dstPositions, err := renameLineDiffs(ctx, src, dst)
+	diffs, srcPositions, dstPositions, err := renameLineDiffs(ctx, ra.diffBudget(), src, dst)
 	if err != nil {
 		return false, err
 	}
@@ -655,6 +639,7 @@ func (ra *RenameAnalysis) blobsAreCloseContext(
 }
 
 type renameSimilarityState struct {
+	budget              renameDiffBudget
 	common              int
 	posSrc              int
 	prevPosSrc          int
@@ -668,7 +653,7 @@ func (ra *RenameAnalysis) renameDiffSimilarity(
 	diffs []diffmatchpatch.Diff,
 	srcPositions, dstPositions []int,
 ) (bool, error) {
-	state := renameSimilarityState{}
+	state := renameSimilarityState{budget: ra.diffBudget()}
 	maxSize := internal.Max(1, internal.Max(utf8.RuneCountInString(src), utf8.RuneCountInString(dst)))
 
 	for _, edit := range diffs {
@@ -720,6 +705,7 @@ func (state *renameSimilarityState) applyEdit(
 
 			localCommon, err := delInsCommonRunes(
 				ctx,
+				state.budget,
 				src,
 				dst,
 				srcPositions,
@@ -758,7 +744,7 @@ func (state *renameSimilarityState) applyEqual(text string, srcPositions []int) 
 }
 
 func renameLineDiffs(
-	ctx context.Context, src, dst string,
+	ctx context.Context, budget renameDiffBudget, src, dst string,
 ) ([]diffmatchpatch.Diff, []int, []int, error) {
 	err := ctx.Err()
 	if err != nil {
@@ -768,7 +754,7 @@ func renameLineDiffs(
 	// Compute the line-by-line diff, then the char-level diffs of the del-ins blocks.
 	// The ignored []string mapping is approximate and collides for huge files.
 	dmp := diffmatchpatch.New()
-	dmp.DiffTimeout = remainingRenameTime(ctx)
+	dmp.DiffTimeout = budget.timeout
 	srcLineRunes, dstLineRunes, _ := dmp.DiffLinesToRunes(src, dst)
 
 	err = ctx.Err()
@@ -776,7 +762,9 @@ func renameLineDiffs(
 		return nil, nil, nil, fmt.Errorf("encode rename line diff: %w", err)
 	}
 
-	diffs := dmp.DiffMainRunes(srcLineRunes, dstLineRunes, false)
+	diffs := budget.diffed(dmp, func() []diffmatchpatch.Diff {
+		return dmp.DiffMainRunes(srcLineRunes, dstLineRunes, false)
+	})
 
 	err = ctx.Err()
 	if err != nil {
@@ -786,18 +774,58 @@ func renameLineDiffs(
 	return diffs, calcLinePositions(src), calcLinePositions(dst), nil
 }
 
-func remainingRenameTime(ctx context.Context) time.Duration {
-	deadline, exists := ctx.Deadline()
-	if !exists {
-		return time.Duration(RenameAnalysisDefaultTimeout) * time.Millisecond
+// renameDiffBudget carries the per-diff wall-clock bound and the place to report it firing.
+//
+// The bound used to be whatever was left of the commit's rename budget, which made a pair's
+// similarity verdict depend on how long the *earlier* pairs happened to take. It is now the
+// configured timeout, so a given pair is judged the same way wherever it appears.
+type renameDiffBudget struct {
+	timeout time.Duration
+	report  *truncationReport
+	l       core.Logger
+}
+
+func (ra *RenameAnalysis) diffBudget() renameDiffBudget {
+	timeout := ra.Timeout
+	if timeout <= 0 {
+		timeout = time.Duration(RenameAnalysisDefaultTimeout) * time.Millisecond
 	}
 
-	remaining := time.Until(deadline)
-	if remaining <= 0 {
-		return time.Nanosecond
+	return renameDiffBudget{timeout: timeout, report: ra.truncationReporter(), l: ra.l}
+}
+
+// diffed runs a bounded diff and reports whether the bound was what stopped it. diffmatchpatch
+// gives no signal of its own, so the elapsed time is the only evidence available.
+func (budget renameDiffBudget) diffed(
+	dmp *diffmatchpatch.DiffMatchPatch, run func() []diffmatchpatch.Diff,
+) []diffmatchpatch.Diff {
+	dmp.DiffTimeout = budget.timeout
+
+	start := time.Now()
+	diffs := run()
+
+	if time.Since(start) >= budget.timeout && budget.report != nil {
+		budget.report.record(budget.l, renameTruncationPairDiff)
 	}
 
-	return remaining
+	return diffs
+}
+
+// The two ways a deadline can cut rename detection short. Which files end up reported as
+// renames differs between the truncated and the untruncated run, so both are worth counting
+// separately: one means the candidate scan gave up, the other that a single pair was judged on
+// an incomplete diff.
+const (
+	renameTruncationCandidateScan = "candidate scan"
+	renameTruncationPairDiff      = "pair comparison"
+)
+
+func newRenameTruncationReport() *truncationReport {
+	return newTruncationReport(
+		"rename detection",
+		"Raise --renames-timeout to make the deadline unreachable, or lower --M to cut the "+
+			"search space.",
+	)
 }
 
 func (ra *RenameAnalysis) warnUncleanBlobComparison(cleanReturn *bool, blob1, blob2 *CachedBlob) {
@@ -838,6 +866,7 @@ func (ra *RenameAnalysis) similarityDecision(common, maxSize, srcPendingSize, ds
 
 func delInsCommonRunes(
 	ctx context.Context,
+	budget renameDiffBudget,
 	src, dst string,
 	srcPositions, dstPositions []int,
 	prevPosSrc, posSrc, posDst, nextPosDst int,
@@ -855,12 +884,13 @@ func delInsCommonRunes(
 	}
 
 	localDmp := diffmatchpatch.New()
-	localDmp.DiffTimeout = remainingRenameTime(ctx)
 	localSrc := src[srcPositions[prevPosSrc]:srcPositions[posSrc]]
 	localDst := dst[dstPositions[posDst]:dstPositions[nextPosDst]]
-	localDiffs := localDmp.DiffMainRunes(
-		strToLiteralRunes(localSrc), strToLiteralRunes(localDst), false,
-	)
+	localDiffs := budget.diffed(localDmp, func() []diffmatchpatch.Diff {
+		return localDmp.DiffMainRunes(
+			strToLiteralRunes(localSrc), strToLiteralRunes(localDst), false,
+		)
+	})
 
 	err = ctx.Err()
 	if err != nil {
@@ -951,8 +981,29 @@ type sortableBlob struct {
 
 type sortableBlobs []sortableBlob
 
+// Less orders blobs by size, then by identity. The identity tie-break is what makes this a
+// total order: the sort at classifyRenameBlobs is not stable, and the resulting position
+// decides which candidate the greedy matcher tries first, so equal-sized blobs left in an
+// arbitrary relative order would leak that arbitrariness into the rename pairings.
 func (change *sortableBlob) Less(other *sortableBlob) bool {
-	return change.size < other.size
+	if change.size != other.size {
+		return change.size < other.size
+	}
+
+	return change.identity() < other.identity()
+}
+
+// identity is a stable per-change key. A change is either an addition (From is empty) or a
+// deletion (To is empty), so concatenating both sides yields one comparable string either way.
+func (change *sortableBlob) identity() string {
+	if change.change == nil {
+		return ""
+	}
+
+	from, to := change.change.From, change.change.To
+
+	return from.Name + "\x00" + from.TreeEntry.Hash.String() +
+		"\x00" + to.Name + "\x00" + to.TreeEntry.Hash.String()
 }
 
 func (slice sortableBlobs) Len() int {
@@ -981,8 +1032,15 @@ func sortRenameCandidates(candidates []int, origin string, nameGetter func(int) 
 		distances[i] = candidateDistance{x, ctx.Distance(origin, name)}
 	}
 
+	// Ties are common — moved files often share a basename length — and the first candidate
+	// that passes blobsAreClose wins, so the tie-break on the candidate index is what keeps
+	// the choice reproducible under a non-stable sort.
 	sort.Slice(distances, func(i, j int) bool {
-		return distances[i].Distance < distances[j].Distance
+		if distances[i].Distance != distances[j].Distance {
+			return distances[i].Distance < distances[j].Distance
+		}
+
+		return distances[i].Candidate < distances[j].Candidate
 	})
 
 	for i, cd := range distances {

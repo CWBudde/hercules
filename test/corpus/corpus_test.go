@@ -156,7 +156,18 @@ func TestCorpusBurndownNegativity(t *testing.T) {
 	}
 }
 
-// compare fails on any metric that got worse and logs any that got better.
+// compare fails on any gated metric that got worse and logs every other change.
+//
+// Only the counting metrics are gated. Burndown output is not bit-reproducible
+// on repositories with substantial merge topology: replaying the same commit of
+// hercules over the same clone three times yields three different Burndown
+// sections. Across repeated full corpus passes the counts (negative cells,
+// residual cells) reproduced exactly on every repository, while the magnitudes
+// (negative mass, worst cell) drifted by fractions of a percent. So the counts
+// are a sound gate and the magnitudes are not — gating them would make the suite
+// flaky, and a flaky gate is a gate people learn to ignore. They are still
+// recorded and reported, because a large move in either is worth a human look.
+// Re-gate them once burndown is deterministic on merges.
 func compare(t *testing.T, expected, actual metrics) {
 	t.Helper()
 
@@ -169,10 +180,17 @@ func compare(t *testing.T, expected, actual metrics) {
 		name             string
 		actual, expected int
 		worseWhenSmaller bool
+		gated            bool
 	}{
-		{name: "negative cells", actual: actual.NegativeCells, expected: expected.NegativeCells},
+		{
+			name: "negative cells", actual: actual.NegativeCells,
+			expected: expected.NegativeCells, gated: true,
+		},
+		{
+			name: "residual cells", actual: actual.ResidualCells,
+			expected: expected.ResidualCells, gated: true,
+		},
 		{name: "negative mass", actual: actual.NegativeMass, expected: expected.NegativeMass},
-		{name: "residual cells", actual: actual.ResidualCells, expected: expected.ResidualCells},
 		{
 			name: "worst cell", actual: actual.WorstCell, expected: expected.WorstCell,
 			worseWhenSmaller: true,
@@ -186,8 +204,13 @@ func compare(t *testing.T, expected, actual metrics) {
 		}
 
 		switch {
-		case worse:
+		case worse && check.gated:
 			t.Errorf("%s regressed: %d, baseline %d", check.name, check.actual, check.expected)
+		case worse:
+			t.Logf(
+				"%s worsened (ungated, not reproducible run-to-run): %d, baseline %d",
+				check.name, check.actual, check.expected,
+			)
 		case better:
 			t.Logf(
 				"%s improved: %d, baseline %d — refresh the baseline once the fix lands",

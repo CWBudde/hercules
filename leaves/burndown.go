@@ -426,7 +426,17 @@ func mapToSparseHistory(historyMap map[int]map[int]int64) sparseHistory {
 }
 
 // Hibernate compresses the burndown analysis state to save memory.
+//
+// Repeated calls are safe, as the HibernateablePipelineItem contract requires: hibernating an
+// already-hibernated analyser would otherwise encode the nil state over the good snapshot and
+// lose the whole history.
 func (analyser *BurndownAnalysis) Hibernate() error {
+	// globalHistory is the marker: Initialize always allocates it and Hibernate is the only
+	// thing that nils it.
+	if analyser.globalHistory == nil {
+		return nil
+	}
+
 	state := analyser.hibernationState()
 
 	data, err := compressBurndownState(state)

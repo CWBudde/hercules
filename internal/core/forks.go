@@ -68,6 +68,12 @@ func (*NoopMerger) Merge([]PipelineItem) {
 }
 
 // ForkSamePipelineItem clones items by referencing the same origin.
+//
+// The returned instance is shared by every branch, which is right for items whose state is
+// global rather than per-branch (BurndownAnalysis, RenameAnalysis, FileDiff). One consequence
+// worth knowing: such an item is effectively never hibernated, because hibernation only happens
+// once every branch holding an instance is idle and some branch is always live. There is no
+// per-branch state in it to swap out either way. See changeHibernation and PLAN.md B11.
 func ForkSamePipelineItem(origin PipelineItem, n int) []PipelineItem {
 	clones := make([]PipelineItem, n)
 	for i := range n {

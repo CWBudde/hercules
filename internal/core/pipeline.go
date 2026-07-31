@@ -369,6 +369,13 @@ type pipelineRunState struct {
 	disposables    []DisposablePipelineItem
 	seenDisposable map[DisposablePipelineItem]struct{}
 	disposed       bool
+
+	// Hibernation is scheduled per branch index, but an item is free to share one instance
+	// across branches (ForkSamePipelineItem). Tracking both is what keeps a branch from
+	// hibernating an instance another, still-running branch is about to consume. See
+	// changeHibernation.
+	hibernatedBranches map[int]struct{}
+	hibernatedItems    map[PipelineItem]struct{}
 }
 
 const (

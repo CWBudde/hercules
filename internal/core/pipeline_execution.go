@@ -3,6 +3,7 @@ package core
 import (
 	"fmt"
 	"runtime/debug"
+	"slices"
 	"time"
 
 	"github.com/go-git/go-git/v5/plumbing"
@@ -110,6 +111,9 @@ func (pipeline *Pipeline) newRunState(mergeHashCount int) pipelineRunState {
 		runTimePerItem: map[string]float64{},
 		mergeHashCount: mergeHashCount,
 		seenDisposable: map[DisposablePipelineItem]struct{}{},
+
+		hibernatedBranches: map[int]struct{}{},
+		hibernatedItems:    map[PipelineItem]struct{}{},
 	}
 	state.trackItems(pipeline.items)
 
@@ -321,31 +325,92 @@ func (state *pipelineRunState) dispose() {
 	}
 }
 
+// changeHibernation puts the given branches to sleep, or wakes them up.
+//
+// The plan schedules hibernation per branch index, on the assumption that each branch owns its
+// items. That does not hold: ForkSamePipelineItem hands the same pointer to every branch, which
+// is what BurndownAnalysis does because its history is global rather than per-branch. Calling
+// Hibernate() for one branch then nils out state a sibling branch is still committing into - the
+// nil-map panic of PLAN.md B11.
+//
+// So the state that matters is per *instance*, not per branch: an instance sleeps only once
+// every live branch holding it is asleep, and wakes on the first branch to need it again. An
+// instance shared by all branches therefore never hibernates in practice, which is the honest
+// outcome - there is no per-branch state in it to swap out.
 func (state *pipelineRunState) changeHibernation(items []int, boot bool) error {
 	for _, branch := range items {
+		if boot {
+			delete(state.hibernatedBranches, branch)
+		} else {
+			state.hibernatedBranches[branch] = struct{}{}
+		}
+	}
+
+	for _, branch := range items {
 		for _, item := range state.branches[branch] {
-			hibernatable, ok := item.(HibernateablePipelineItem)
-			if !ok {
-				continue
+			if err := state.changeItemHibernation(item, boot); err != nil {
+				return err
 			}
-
-			startTime := time.Now()
-
-			var err error
-			if boot {
-				err = hibernatable.Boot()
-			} else {
-				err = hibernatable.Hibernate()
-			}
-
-			if err != nil {
-				state.pipeline.l.Errorf("Failed to change hibernation state for %s: %v\n", item.Name(), err)
-				return fmt.Errorf("change hibernation state for %s: %w", item.Name(), err)
-			}
-
-			state.runTimePerItem[item.Name()+".Hibernation"] += time.Since(startTime).Seconds()
 		}
 	}
 
 	return nil
+}
+
+func (state *pipelineRunState) changeItemHibernation(item PipelineItem, boot bool) error {
+	hibernatable, ok := item.(HibernateablePipelineItem)
+	if !ok || !state.shouldChangeHibernation(item, boot) {
+		return nil
+	}
+
+	startTime := time.Now()
+
+	var err error
+	if boot {
+		err = hibernatable.Boot()
+	} else {
+		err = hibernatable.Hibernate()
+	}
+
+	if err != nil {
+		state.pipeline.l.Errorf("Failed to change hibernation state for %s: %v\n", item.Name(), err)
+		return fmt.Errorf("change hibernation state for %s: %w", item.Name(), err)
+	}
+
+	if boot {
+		delete(state.hibernatedItems, item)
+	} else {
+		state.hibernatedItems[item] = struct{}{}
+	}
+
+	state.runTimePerItem[item.Name()+".Hibernation"] += time.Since(startTime).Seconds()
+
+	return nil
+}
+
+// shouldChangeHibernation decides whether this instance actually changes state. Booting is the
+// mirror of hibernating: only an instance that was put to sleep is woken, so the calls stay
+// balanced and an item never sees a Boot() without a preceding Hibernate().
+func (state *pipelineRunState) shouldChangeHibernation(item PipelineItem, boot bool) bool {
+	_, asleep := state.hibernatedItems[item]
+	if boot {
+		return asleep
+	}
+
+	return !asleep && state.allHoldersHibernated(item)
+}
+
+// allHoldersHibernated reports whether every live branch holding this instance is asleep.
+func (state *pipelineRunState) allHoldersHibernated(item PipelineItem) bool {
+	for branch, items := range state.branches {
+		if _, asleep := state.hibernatedBranches[branch]; asleep {
+			continue
+		}
+
+		if slices.Contains(items, item) {
+			return false
+		}
+	}
+
+	return true
 }

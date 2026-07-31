@@ -1218,17 +1218,23 @@ func TestPipelineRunHibernation(t *testing.T) {
 	pipeline.PrintActions = true
 	_, err := pipeline.Run(commits)
 	require.NoError(t, err)
-	assert.True(t, item.Hibernated)
-	assert.True(t, item.Booted)
+
+	// dependingTestPipelineItem.Fork hands the same instance to every branch, so hibernating it
+	// for one branch would nil out state the siblings are still consuming - PLAN.md B11. A
+	// shared instance is only put to sleep when every branch holding it is asleep, which never
+	// happens here, so this run must not touch it at all. The error paths and the positive case
+	// live in hibernation_test.go, on an item that actually clones per branch.
+	assert.False(t, item.Hibernated, "a branch-shared item must not be hibernated")
+	assert.False(t, item.Booted, "a never-hibernated item must not be booted")
+
 	item.RaiseHibernateError = true
 	_, err = pipeline.Run(commits)
-	require.Error(t, err)
+	require.NoError(t, err, "a shared item is never hibernated, so its error cannot fire")
+
 	item.RaiseHibernateError = false
-	_, err = pipeline.Run(commits)
-	require.NoError(t, err)
 	item.RaiseBootError = true
 	_, err = pipeline.Run(commits)
-	assert.Error(t, err)
+	require.NoError(t, err)
 }
 
 // configUpstreamFailItem is a minimal PipelineItem whose ConfigureUpstream always fails.

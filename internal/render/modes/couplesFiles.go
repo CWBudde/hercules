@@ -228,8 +228,10 @@ func (analysis *couplingPairAnalysis) result() ([]commonCouplingPair, commonCoup
 	}
 
 	ranked := make([]commonCouplingPair, analysis.pairs.Len())
-	for range slices.Backward(ranked) {
-		_ = heap.Pop(analysis.pairs).(rankedCouplingPair).commonCouplingPair
+	// The heap keeps the worst retained pair at its root, so draining it back to
+	// front yields the ranked order.
+	for index := range slices.Backward(ranked) {
+		ranked[index] = heap.Pop(analysis.pairs).(rankedCouplingPair).commonCouplingPair
 	}
 
 	return ranked, commonCouplingStats{

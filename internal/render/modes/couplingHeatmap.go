@@ -87,8 +87,10 @@ func topCouplingHeatmapEntries(
 	}
 
 	selected := make([]rankedCouplingIndex, ranked.Len())
-	for range slices.Backward(selected) {
-		_ = heap.Pop(ranked).(rankedCouplingIndex)
+	// The heap keeps the weakest retained index at its root, so draining it back
+	// to front yields the strongest entity first.
+	for index := range slices.Backward(selected) {
+		selected[index] = heap.Pop(ranked).(rankedCouplingIndex)
 	}
 
 	shownNames := make([]string, len(selected))

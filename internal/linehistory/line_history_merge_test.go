@@ -122,6 +122,47 @@ func TestLinesMergeResolutionDeltasNotForkedIntoClones(t *testing.T) {
 		"the origin keeps the buffer")
 }
 
+// TestLinesMergeSiblingBufferSurvivesSynchronize pins PLAN.md's P4: synchronizeLineHistoryBranch
+// clears target.pendingChanges, which is right for a sibling whose resolution deltas the merging
+// branch takes over, but wrong for a target that merged on its own account and was synchronized
+// before an ordinary commit could drain the buffer - a merge never drains it. The trigger shape (a
+// merge commit whose parent is a merge commit) occurs 1 097x in mekorp-webclient alone.
+//
+// Skipped, not deleted: the defect is confirmed and this is its repro, but every fix measured so
+// far regresses the corpus. Handing the buffer to the merging analyser carries inner-merge
+// *removals* along with it and re-emits them, which recreates the very double-removal of B1c
+// (mekorp-webclient 1 413 -> 1 433 negative cells, one of them residual). Deduplicating the
+// buffered removals against the merge's own removal set, keyed by FileId or by path, leaves a
+// residue either way. Drop the skip once P5 carries line identity across the fork.
+func TestLinesMergeSiblingBufferSurvivesSynchronize(t *testing.T) {
+	t.Skip("PLAN.md P4: confirmed defect, no fix that does not regress the corpus")
+
+	sibling := newMergePendingAnalyser(t)
+	sibling.Merge(nil)
+	require.Equal(t, mergeTestLines, totalDelta(sibling.pendingChanges),
+		"the inner merge leaves the branch holding its resolution deltas")
+
+	// The enclosing merge commit is replayed by every parent; a merge commit never drains
+	// the buffer, so the branch still carries it when Merge() runs.
+	deps := emptyConsumeDeps(int(mergeTestTick) + 1)
+	deps[core.DependencyIsMerge] = true
+	_, err := sibling.Consume(deps)
+	require.NoError(t, err)
+	require.Equal(t, mergeTestLines, totalDelta(sibling.pendingChanges))
+
+	lead := &LineHistoryAnalyser{}
+	require.NoError(t, lead.Configure(map[string]any{core.ConfigLogger: core.NewLogger()}))
+	require.NoError(t, lead.Initialize(test.Repository))
+	_, err = lead.Consume(deps)
+	require.NoError(t, err)
+
+	lead.Merge([]core.PipelineItem{sibling})
+
+	delivered := totalDelta(lead.pendingChanges) + totalDelta(sibling.pendingChanges)
+	assert.Equal(t, mergeTestLines, delivered,
+		"a branch's undelivered merge deltas must not be dropped by synchronization")
+}
+
 // TestLinesPendingChangesIgnoresForeignResolver keeps the helper safe for the leaves, which hold a
 // core.FileIdResolver that is not necessarily backed by a LineHistoryAnalyser.
 func TestLinesPendingChangesIgnoresForeignResolver(t *testing.T) {

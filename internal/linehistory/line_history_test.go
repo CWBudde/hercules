@@ -2,6 +2,7 @@ package linehistory
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -547,6 +548,43 @@ func TestLinesHibernateBootSerialize(t *testing.T) {
 	assert.Equal(t, 157, bd.fileAllocator.Size())
 	assert.Equal(t, 155, bd.fileAllocator.Used())
 	assert.Empty(t, bd.hibernatedFileName)
+}
+
+// TestLinesHibernateBelowThresholdSkipsDisk pins the fix for the --lines-hibernation-disk
+// panic: the allocator does not hibernate below the threshold, so no file must be created
+// and Serialize() must not be reached at all.
+func TestLinesHibernateBelowThresholdSkipsDisk(t *testing.T) {
+	bd := bakeBurndownForSerialization(t, 0, 1)
+	bd.HibernationToDisk = true
+	bd.HibernationDirectory = t.TempDir()
+	bd.fileAllocator.HibernationThreshold = 200000
+
+	require.NoError(t, bd.Hibernate())
+	assert.Empty(t, bd.hibernatedFileName)
+
+	entries, err := os.ReadDir(bd.HibernationDirectory)
+	require.NoError(t, err)
+	assert.Empty(t, entries, "no hibernation file must be left behind")
+
+	require.NoError(t, bd.Boot())
+	assert.Equal(t, 157, bd.fileAllocator.Size())
+	assert.Equal(t, 155, bd.fileAllocator.Used())
+}
+
+// TestLinesForkClearsHibernatedFileName makes sure the temporary hibernation file is never
+// shared between a branch and its forks.
+func TestLinesForkClearsHibernatedFileName(t *testing.T) {
+	bd := bakeBurndownForSerialization(t, 0, 1)
+	bd.hibernatedFileName = filepath.Join(t.TempDir(), "parent-hercules.bin")
+
+	clones := bd.Fork(2)
+	require.Len(t, clones, 2)
+
+	for _, clone := range clones {
+		assert.Empty(t, clone.(*LineHistoryAnalyser).hibernatedFileName)
+	}
+
+	assert.NotEmpty(t, bd.hibernatedFileName)
 }
 
 func TestLinesDisposeRemovesHibernationFile(t *testing.T) {

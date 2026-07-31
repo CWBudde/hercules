@@ -533,6 +533,9 @@ func (analyser *LineHistoryAnalyser) Fork(n int) []core.PipelineItem {
 		// would count the merged lines once per clone.
 		clone.pendingChanges = nil
 		clone.replicaChanges = nil
+		// The hibernation file belongs to the branch that wrote it: Boot() removes it, so
+		// sharing the name would leave every other clone unable to deserialize.
+		clone.hibernatedFileName = ""
 
 		result[cloneIndex] = &clone
 	}
@@ -694,7 +697,11 @@ func mustLineHistoryAnalyser(item core.PipelineItem) *LineHistoryAnalyser {
 func (analyser *LineHistoryAnalyser) Hibernate() error {
 	analyser.fileAllocator.Hibernate()
 
-	if analyser.HibernationToDisk {
+	// Allocator.Hibernate() is a no-op below its threshold, on an empty allocator, and when
+	// deinterleaving finds nothing — in all three cases the storage is still live and there
+	// is nothing to serialize. Serializing anyway used to panic; creating the temp file first
+	// would also leak one per skipped hibernation.
+	if analyser.HibernationToDisk && analyser.fileAllocator.Hibernated() {
 		file, err := os.CreateTemp(analyser.HibernationDirectory, "*-hercules.bin")
 		if err != nil {
 			return fmt.Errorf("create line history hibernation file: %w", err)

@@ -2,6 +2,7 @@ package rbtree
 
 import (
 	"os"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strconv"
@@ -619,13 +620,49 @@ func TestAllocatorHibernateBootThreshold(t *testing.T) {
 	assert.Equal(t, 3, alloc.Clone().HibernationThreshold)
 	alloc.Hibernate()
 	assert.Equal(t, 0, alloc.hibernatedStorageLen)
+	// Below the threshold Hibernate() is a no-op, so the allocator is not hibernated and
+	// serializing it must report an error instead of panicking.
+	assert.False(t, alloc.Hibernated())
+	assert.ErrorIs(t, alloc.Serialize(filepath.Join(t.TempDir(), "below-threshold.bin")),
+		ErrAllocatorNotHibernated)
 	alloc.Boot()
 	alloc.malloc()
 	alloc.Hibernate()
 	assert.Equal(t, 3, alloc.hibernatedStorageLen)
+	assert.True(t, alloc.Hibernated())
 	alloc.Boot()
 	assert.Equal(t, 3, alloc.Size())
 	assert.Equal(t, 3, alloc.Used())
+	assert.False(t, alloc.Hibernated())
+}
+
+// TestAllocatorHibernatedEarlyReturns covers the remaining two Hibernate() no-op paths: an
+// empty allocator and one where deinterleave() finds nothing to compress. Both leave the
+// storage in place, which Serialize() must reject with an error.
+func TestAllocatorHibernatedEarlyReturns(t *testing.T) {
+	empty := NewAllocator()
+	assert.False(t, empty.Hibernated())
+	empty.Hibernate()
+	assert.Equal(t, 0, empty.hibernatedStorageLen)
+	assert.False(t, empty.Hibernated())
+	assert.ErrorIs(t, empty.Serialize(filepath.Join(t.TempDir(), "empty.bin")),
+		ErrAllocatorNotHibernated)
+
+	allGaps := NewAllocator()
+	for i := 1; i <= 100; i++ {
+		allGaps.malloc()
+	}
+
+	for i := 1; i <= 100; i++ {
+		allGaps.free(uint32(i))
+	}
+
+	allGaps.Hibernate()
+	assert.Equal(t, 0, allGaps.hibernatedStorageLen)
+	assert.Equal(t, 0, allGaps.Size())
+	assert.False(t, allGaps.Hibernated())
+	assert.ErrorIs(t, allGaps.Serialize(filepath.Join(t.TempDir(), "all-gaps.bin")),
+		ErrAllocatorNotHibernated)
 }
 
 func TestAllocatorSerializeDeserialize(t *testing.T) {
@@ -644,10 +681,9 @@ func TestAllocatorSerializeDeserialize(t *testing.T) {
 		alloc.free(uint32(i))
 	}
 
-	assert.PanicsWithValue(t, "serialization requires the hibernated state",
-		func() { _ = alloc.Serialize("...") })
-	assert.PanicsWithValue(t, "deserialization requires the hibernated state",
-		func() { _ = alloc.Deserialize("...") })
+	assert.False(t, alloc.Hibernated())
+	assert.ErrorIs(t, alloc.Serialize("..."), ErrAllocatorNotHibernated)
+	assert.ErrorIs(t, alloc.Deserialize("..."), ErrAllocatorNotHibernated)
 
 	alloc.Hibernate()
 	file, err := os.CreateTemp(t.TempDir(), "")

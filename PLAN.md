@@ -41,6 +41,7 @@ Checkbox = done / not done. The emoji is the severity of what is left.
 - [x] [**B9**](#b9--yaml-burndown-serialization-panics-on-people-with-no-interactions--fixed) — YAML burndown serialization panicked on nil `PeopleMatrix`; a zero-row matrix panicked on the `--pb` path too
 - [x] [**B10**](#b10--the-execution-plan-was-non-deterministic-and-a-merge-could-be-resolved-against-the-wrong-branch--fixed) — non-deterministic execution plan; merges resolved against the wrong branch (`5937149`)
 - [ ] [**B11**](#b11--a-hibernated-burndown-analyser-consumes-a-commit-) — hibernated burndown analyser consumes a commit, nil-map panic 🟠 (new, found while fixing B7)
+- [ ] [**B12**](#b12--burndown-output-is-not-reproducible-run-to-run-) — burndown output differs between identical runs 🔴 (new; the plan is deterministic, the analysis is not)
 - [x] [**Corpus regression test**](#regression-coverage-worth-adding) — opt-in `HERCULES_CORPUS_DIR` suite, baseline-relative
 
 ---
@@ -1198,6 +1199,60 @@ Worth checking whether the other hibernating leaves (`CodeChurn`, and anything e
 
 ---
 
+## B12 — burndown output is not reproducible run to run 🔴
+
+Not filed originally; found while seeding the corpus baseline, and confirmed independently.
+**This outranks the remaining accounting work, because it invalidates the measurement
+method those items depend on.**
+
+Same binary, same clean checkout, same clone, three runs of `mekorp-backend` with
+`--burndown --burndown-people --granularity=30 --sampling=30`, with `run_time` and the
+timestamps filtered out:
+
+```
+9adb56b06f38a922f00a241283fb841a
+467bbc2a1df61426b8d417d5ddfb9338
+31d95c35fff8e9293ec4b20213e94b01
+```
+
+It is the **project matrix itself** that moves, not just metadata — 28 differing rows
+between two runs of `meko-etl-tool`. Across three corpus passes, `mekorp-webclient` held
+its cell counts (1812/56) while its mass drifted 21 862 418 → 21 878 822 and worst cell
+−302 568 → −302 749; `mekorp-backend` drifted in the **counts** too (1992/73, 1992/73,
+2010/74).
+
+### This is *not* B10 regressing
+
+`--dump-plan` is byte-identical across three runs (5435 lines). B10's `sortedHashSet` /
+`promoteMergeBranch` fix holds; the divergence is downstream of plan construction, in the
+analysis itself.
+
+### Hypotheses tested and ruled out
+
+- **Wall-clock timeouts.** Raising both `--diff-timeout` and `--renames-timeout` to
+  600 000 ms made it **worse**, not better: 362 differing rows against 28 at the defaults.
+  Consistent with more work being done and more opportunities to diverge, not with a
+  deadline being the cause.
+- **Concurrency alone.** `GOMAXPROCS=1` shrinks the drift from 28 rows to 4 but does **not**
+  remove it. So parallelism amplifies the effect without being its only source.
+
+What remains is an ordering dependence in the analysis that survives single-threaded
+execution — most plausibly a map iteration order that decides *which* pairing is made
+rather than merely the order of accumulation (integer accumulation is order-independent, so
+a pure ordering change could not move the totals). Rename matching is the obvious suspect,
+since it selects pairs and B1c already found one broken comparator there; ties on equal
+hashes are still resolved arbitrarily.
+
+### Consequence for B1c
+
+Every single-run measurement of negative cells or mass on the large repositories is
+untrustworthy at the margin. `test/corpus` therefore gates only `exit_code`,
+`negative_cells` and `residual_cells`, and leaves `mekorp-backend` and `mekorp-webclient`
+unbaselined entirely. **Fix this before drawing any further conclusion from a single run**,
+and re-measure B1c's table afterwards.
+
+---
+
 ## Suggested order
 
 - [x] **0. B1, B1b.** Done — merge-resolution deltas are delivered and merge-commit
@@ -1250,7 +1305,13 @@ Worth checking whether the other hibernating leaves (`CodeChurn`, and anything e
       opt-out flag, and two latent `Fork`/`Initialize` logger bugs fixed first), and B9's
       "one-line guard" turned out to be two guards — the `--pb` path was also reachable,
       contrary to the original filing.
-- [ ] **10. B11**, new: a hibernated burndown analyser consumes a commit and panics on a nil
+- [ ] **10. B12 — before anything else that is measured.** Burndown output differs between
+      identical runs, so every single-run figure in B1c's table is untrustworthy at the
+      margin. The plan is byte-identical, so this is not B10 regressing; timeouts and
+      concurrency are both ruled out as the sole cause. Fixing it is what makes the corpus
+      suite able to gate the two large repositories, and what makes a B1c measurement mean
+      anything.
+- [ ] **11. B11**, new: a hibernated burndown analyser consumes a commit and panics on a nil
       map. Found while fixing B7. It lives in the same plan-construction code as B1d, so it is
       worth taking while that context is fresh.
 
@@ -1278,17 +1339,33 @@ clean histories.
       `pb.ToBurndownSparseMatrix` clamps negatives away. `UPDATE_CORPUS_BASELINE=1`
       (`just update-corpus-baseline [REPOS]`) re-seeds, preserving entries not re-measured.
 
-      Verified to actually fail: worsening one baseline entry by hand produces
-      `negative cells regressed: 0, baseline -1`. A repository missing from the corpus
+      Verified to actually fail: worsening `ewws-wiki`'s entry by hand produces
+      `negative cells regressed: 125, baseline 100`. A repository missing from the corpus
       directory is skipped with a log line, so a partial checkout still works.
 
-      **Seeded across all 13 named repositories, and every one exits 0** — the first time
-      the corpus has been clean at the process level. The numbers are much smaller than the
-      tables in B1c/B2 (e.g. `mekorp-backend` 72 cells / mass 6638, against 2226 /
-      7 819 365 there) because they were taken after B1c's comparator fix and B1d landed,
-      and with this suite's flag set. Treat the baseline as the current truth and those
-      tables as history. Re-seed after any change to burndown or merge accounting; the file
-      records the commit and working-tree state it was measured against.
+      **Only `exit_code`, `negative_cells` and `residual_cells` gate the build.**
+      `negative_mass` and `worst_cell` are recorded and reported in both directions but
+      ungated, because they drift between runs — see B12. A flaky gate gets ignored for the
+      same reason a red-from-birth one does.
+
+      **`people_interaction` is excluded from the metrics.** It is a signed interaction
+      matrix, not a band matrix, so its negatives are correct by construction; counting them
+      inflated every figure by roughly an order of magnitude. This is the main reason the
+      baseline sits well below the tables in B1c/B2 — those counts almost certainly included
+      it. Treat the baseline as the current truth and those tables as history.
+
+      **Seeded across 11 of the 13 named repositories, all exiting 0.** `mekorp-backend`
+      and `mekorp-webclient` are deliberately **not** baselined — not for runtime (they take
+      72 s and 325 s; the whole corpus seeds in ~6 min) but because nothing about them can
+      be gated while B12 stands. They are reported and skipped; add them with
+      `just update-corpus-baseline 'mekorp-backend|mekorp-webclient'` once burndown is
+      reproducible.
+
+      The baseline was seeded from a **detached worktree at a clean `efdccf6`**, not from the
+      live tree: a first attempt seeded against the working tree was invalidated when a
+      concurrent change moved `process-manager` from 0 to 25 103 negative mass mid-seed. It
+      should be re-seeded now that this batch has landed. The file records the commit and
+      working-tree state it was measured against.
 
 ## Verification
 

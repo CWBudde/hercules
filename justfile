@@ -58,6 +58,39 @@ test-e2e:
         LABOURS_E2E_BIN="$bin_dir/labours{{exe}}" \
         go test -count=1 -v ./test/e2e
 
+# Run the opt-in burndown corpus regression suite. Needs HERCULES_CORPUS_DIR to
+# point at a directory of real clones (see test/corpus/README.md). The suite
+# asserts no regression against test/corpus/baseline.json, not the absence of
+# negative cells — those exist today in quantity. The timeout is generous
+# because the large repositories replay several thousand commits each.
+test-corpus:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    bin_dir=$(mktemp -d)
+    trap 'rm -rf "$bin_dir"' EXIT
+    go build -o "$bin_dir/hercules{{exe}}" ./cmd/hercules
+    HERCULES_E2E_BIN="$bin_dir/hercules{{exe}}" \
+        HERCULES_CORPUS_DIR="${HERCULES_CORPUS_DIR:?set HERCULES_CORPUS_DIR to a directory of clones}" \
+        go test -count=1 -timeout=3h -v ./test/corpus
+
+# Intentionally refresh test/corpus/baseline.json. Pass REPOS to refresh a
+# subset, e.g. `just update-corpus-baseline render-pdf`; entries that are not
+# re-measured are preserved. Expect hours of wall clock for the whole corpus.
+update-corpus-baseline REPOS="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    bin_dir=$(mktemp -d)
+    trap 'rm -rf "$bin_dir"' EXIT
+    go build -o "$bin_dir/hercules{{exe}}" ./cmd/hercules
+    filter='TestCorpusBurndownNegativity'
+    if [ -n "{{REPOS}}" ]; then
+        filter="TestCorpusBurndownNegativity/({{REPOS}})"
+    fi
+    HERCULES_E2E_BIN="$bin_dir/hercules{{exe}}" \
+        HERCULES_CORPUS_DIR="${HERCULES_CORPUS_DIR:?set HERCULES_CORPUS_DIR to a directory of clones}" \
+        UPDATE_CORPUS_BASELINE=1 \
+        go test -count=1 -timeout=6h -v -run "$filter" ./test/corpus
+
 # Run the plugin compatibility smoke test. Go plugins need cgo, so this
 # overrides the repo-wide CGO_ENABLED=0 default; the test builds a dedicated
 # `-tags purego` hercules binary (the cgo FreeType path is not shipped).

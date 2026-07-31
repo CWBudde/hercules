@@ -32,15 +32,16 @@ Checkbox = done / not done. The emoji is the severity of what is left.
 - [x] [**B2** (decision)](#b2--person-burndown-matrices-have-always-contained-negatives--decided-a) — decided **(a)**: the accounting is wrong; the residual/transient split is now measured and reported
 - [x] [**B3**](#b3--ownershipsnapshot-underflows-killing---bus-factor----ownership-concentration--fixed) — `OwnershipSnapshot` underflow (`fafb754`, `c04d08c`)
 - [x] [**B4**](#b4--unmergeable-analyses-used-to-sink-the-whole-combine--mostly-fixed) — `--only` filters before the merge, unmergeable analyses skipped (`2f57e3d`)
-- [ ] **B4** (rest) — implement `ResultMergeablePipelineItem` for `RefactoringProxy`
-- [ ] [**B5**](#b5--hotspotrisk-merges-to-empty-) — `HotspotRisk` merges to empty 🟠
-- [ ] [**B6**](#b6----blob-cache-max-blob-size-is-fail-closed-and-that-is-a-trap-) — `--blob-cache-max-blob-size` is fail-closed 🟡
-- [ ] [**B7**](#b7----lines-hibernation-disk-panics-during-serialization-) — `--lines-hibernation-disk` panics during serialization 🟡
+- [x] **B4** (rest) — `RefactoringProxy` implements `ResultMergeablePipelineItem`; ratios merge weighted by `total_changes`
+- [x] [**B5**](#b5--hotspotrisk-merges-to-empty--fixed) — `HotspotRisk` merged to empty because `TopN` is 0 on the combine path
+- [x] [**B6**](#b6----blob-cache-max-blob-size-is-fail-closed-and-that-is-a-trap--fixed) — oversized blobs are recorded as binary and warned about instead of aborting the run
+- [x] [**B7**](#b7----lines-hibernation-disk-panics-during-serialization--fixed) — `--lines-hibernation-disk` serialized an allocator that never hibernated
 - [x] [**B8**](#b8--person-burndown-aborted-on-contributors-with-no-activity--fixed) — person burndown aborted on contributors with no activity (`c04d08c`)
-- [ ] **B8** (rest) — regression test with a deliberately idle person in the fixture
-- [ ] [**B9**](#b9--yaml-burndown-serialization-panics-on-people-with-no-interactions-) — YAML burndown serialization panics on nil `PeopleMatrix` 🟡
+- [x] **B8** (rest) — regression test with a deliberately idle person in the fixture
+- [x] [**B9**](#b9--yaml-burndown-serialization-panics-on-people-with-no-interactions--fixed) — YAML burndown serialization panicked on nil `PeopleMatrix`; a zero-row matrix panicked on the `--pb` path too
 - [x] [**B10**](#b10--the-execution-plan-was-non-deterministic-and-a-merge-could-be-resolved-against-the-wrong-branch--fixed) — non-deterministic execution plan; merges resolved against the wrong branch (`5937149`)
-- [ ] [**Corpus regression test**](#regression-coverage-worth-adding) — opt-in `HERCULES_CORPUS_DIR` suite
+- [ ] [**B11**](#b11--a-hibernated-burndown-analyser-consumes-a-commit-) — hibernated burndown analyser consumes a commit, nil-map panic 🟠 (new, found while fixing B7)
+- [x] [**Corpus regression test**](#regression-coverage-worth-adding) — opt-in `HERCULES_CORPUS_DIR` suite, baseline-relative
 
 ---
 
@@ -400,6 +401,71 @@ One genuine win to keep: `render-pdf`'s **project** matrix is clean at both revi
 negative it has left sits in a single person's matrix. Its −7386 project cell was entirely the
 comparator.
 
+### Attempt 1: reconcile the accumulator against the merged tree — not shippable
+
+Tried and reverted. The code is kept at
+`…/scratchpad/b1c-patch/` (`merge_reconcile.go` plus `line_history.diff`); a worktree build sits
+at `…/scratchpad/hercules-t2`. Worth reading before attempting this again — most of it is right,
+and the failure is specific.
+
+**The idea.** The five leaves that consume `DependencyLineHistory` all fork with
+`ForkSamePipelineItem`, so they share one accumulator while the branches feeding it do not. Mirror
+what the consumers have been told (per file, per ownership band), and at every `Merge()` compare
+it against the merged tree. The difference is the accumulated error, whatever produced it; emit it
+as ordinary deltas. No need to enumerate the causes.
+
+**Four things this got right, each measured:**
+
+1. Correcting the _band_ a line is filed under, as opposed to how many lines there are, is a
+   mistake. `mergeLineValues` adopts the older side's ownership for a line both branches rewrote,
+   and a later merge can adopt the other side again — the corrections oscillate. On
+   `backend-for-microscope` re-attribution carried 53 505 of mass against the real defect's
+   37 444, and drove single cells from −126 to −25 748. Correct the count only.
+2. Correcting only the restoring direction is also a mistake, even though only that direction
+   clears negatives. A double removal does not just push one band below zero, it credits the same
+   lines to another band — B1c's own trace has band 304 at −7371 while band 416 holds +7412. Fixing
+   the deficit alone inflated `render-pdf` by exactly the restored 11 498 lines.
+3. A correction must be booked at the sample the faulty delta landed in, not at the merge tick.
+   Otherwise every row in between stays wrong and the correction shows up as a step in the
+   surface. Tracking the last write per (file, band) and booking there is what took `render-pdf`
+   from 29 negative cells to **zero**.
+4. A branch's `pendingChanges` are silently discarded by `synchronizeLineHistoryBranch`. Those
+   deltas never reach any consumer. Pre-existing, unrelated to this attempt, and worth its own
+   item.
+
+**Where it stands** (`--burndown --burndown-people`, granularity/sampling 30; "head" is the
+project matrix final row against `git grep -I -c ''` at HEAD):
+
+| repository | negatives before | after | head before | after |
+| --- | ---: | ---: | ---: | ---: |
+| `render-pdf` | 29 / 8 641 | **0 / 0** | +0.5% | **−0.2%** |
+| `backend-for-microscope` | 137 / 3 708 | 95 / 2 141 | +0.3% | −2.9% |
+| `personio-ipoffice-sync` | 6 / 104 | 6 / 104 | ±0% | ±0% |
+| `meko-etl-tool` | 568 / 331 106 | 469 / **389 249** | +11.1% | **−13.4%** |
+
+Three repositories improve and one is clean outright. `meko-etl-tool` regresses: fewer cells but
+more mass, worst cell −2248 → −4983, and the head count moves from 11% over to 13% under. That is
+why this is not merged.
+
+**Where to resume.** The regression is concentrated: in `meko-etl-tool`'s people matrices three
+authors improve sharply (`clausbissinger` 98 425 → 6 421, `kanngiesser` 29 105 → 108,
+`torben voltmer` 10 361 → 0) while `costa-kolini|emil klahn` alone goes 46 051 → 192 089 and
+carries the −4983. One author's bands are being over-corrected; find out which correction and why
+before touching anything else.
+
+Two further leads, both measured and both dead ends as implemented — the mirror must be updated
+when changes are _emitted_, not when they are produced:
+
+- Recording merge output into the mirror at `Merge()` time leaves it there forever whenever
+  `synchronizeLineHistoryBranch` discards the buffer (see 4 above): `meko-etl-tool`'s head fell to
+  −62%.
+- Adding a _shared_ ledger of outstanding buffers, so a sibling merging in between sees them,
+  fails the same way for the same reason (−62%). It does fix a real double-correction — one file
+  restored 2652 lines on two consecutive merges — so the problem it solves is genuine even though
+  this solution is not.
+
+The corpus regression suite now exists, which is what makes a second attempt reasonable.
+
 **Affected in the corpus, on the current tree:** `mekorp-backend` (1958 cells,
 mass 7 722 174, worst −80 417), `meko-etl-tool` (568 / 331 106), `backend-for-microscope`
 (137 / 3 708), `render-pdf` (29 / 8 641), `personio-ipoffice-sync` (6 / 104).
@@ -708,9 +774,48 @@ Measured on `ewws-tailscale` analysed with `--burndown --devs --file-history
 | `combine --only Burndown …`            | exit 1 | exit 0, contents `[Burndown]`                        |
 | `combine --only FileHistoryAnalysis …` | exit 1 | exit 1, with the reason named                        |
 
-Still open: `RefactoringProxy` has a labours mode and is the one unmergeable leaf
-worth actually implementing `ResultMergeablePipelineItem` for. Everything else in
-that column has no combined rendering, so skipping is the right end state.
+### The rest: `RefactoringProxy` is now mergeable ✅ FIXED
+
+It was the one unmergeable leaf with a labours mode; everything else in that column has no
+combined rendering, so skipping remains the right end state for them.
+
+`Deserialize` already existed and was correct — only `MergeResults` was missing, and the
+embedded `core.NoopMerger` (the *branch* merger) was being mistaken for it.
+
+**The one real design question was the dropped rename count.** `Finalize` stores
+`RenameRatios[i] = Renames/TotalChanges` and discards the raw count, which looks like it
+forces a lossy `round(ratio*total)` reconstruction at merge time. It does not: the merge
+never needs an integer. The count-weighted mean
+
+```
+ratio_merged = (r1*t1 + r2*t2) / (t1 + t2)
+```
+
+keeps `r*t` in `float64`, and it is the *rounding* that would lose information. Residual
+error is ~1e-16 relative, against the ~1e-7 the existing `float32` narrowing in
+`serializeBinary` already costs — so adding a `Renames []int` field to the result and
+`pb.proto` (with its `just pb-go-force`, schema-snapshot refresh, `cmd/schema-guard` review
+and a new raw-vs-derived consistency invariant) would buy nothing measurable. Not done, on
+purpose.
+
+Tick axes are rebased onto the earlier repository's start exactly as `DevsAnalysis` does,
+with two guards devs does not need: nil commons and a zero tick size, both reachable from
+hand-built results. This matters because `pb_reader` plots `start + tickIndex*tickSize` with
+`start` = the merged `BeginTime`, which `CommonAnalysisResult.Merge` sets to the minimum of
+the two — without the offset, the second repository's tick 0 lands on the first
+repository's first day. Mismatching `tickSize` **and** `Threshold` are rejected rather than
+silently taking the first: unlike `WindowDays`-style metadata the threshold is the
+classifier, and labours draws it as a reference line, so inheriting it would re-label the
+other repository's ticks under a threshold it was never analysed with.
+
+`--only`'s help list needed no change — it filters by the type assertion, so the leaf
+appears as soon as the method exists.
+
+Tests: `TestRefactoringProxyMergeResults*` in `leaves/refactoring_proxy_test.go` plus
+`TestRunCombineMergesRefactoringProxy` in `cmd/hercules/combine_test.go`. The one that
+earns its keep is the rebasing test — stubbing the offsets to `0, 0` collapses two
+repositories two days apart from `[0,1,2,3]` with totals `[10,10,20,20]` to `[0,1]` with
+`[30,30]`, silently and without error.
 
 ### Original report
 
@@ -734,9 +839,9 @@ them, so they were pure cost plus a combine failure.
 
 ---
 
-## B5 — `HotspotRisk` merges to empty 🟠
+## B5 — `HotspotRisk` merges to empty ✅ FIXED
 
-Renders correctly from a single repository's `.pb`, produces nothing after
+Renders correctly from a single repository's `.pb`, produced nothing after
 `combine`:
 
 ```bash
@@ -746,15 +851,52 @@ hercules combine hr.pb hr.pb > hr2.pb
 labours -i hr2.pb -f pb -m hotspot-risk -o hr2.svg        # → "no hotspot risk files found"
 ```
 
-The merge drops the file list. Downstream now generates `hotspot-risk` per
-repository only.
+### Root cause: `TopN` is zero on the combine path
+
+Not `Deserialize`, not the protobuf — both carry every field intact. `MergeResults` ended
+with
+
+```go
+if len(allFiles) > hra.TopN {
+    allFiles = allFiles[:hra.TopN]
+}
+```
+
+and `combine` summons the item through `Registry.Summon` → `reflect.New`
+(`internal/core/registry.go:87,91`), which yields a **zero-valued struct**. Neither
+`Configure` nor `Initialize` runs on that path, and `Initialize` is where the
+`if hra.TopN == 0 { hra.TopN = DefaultTopN }` fallback lived. So the condition was
+`len(allFiles) > 0` and every non-empty merge was cut to `[:0]`.
+
+The existing unit test missed it for the same reason the bug survived: it constructs
+`HotspotRiskAnalysis{TopN: 2}` explicitly, which is exactly what the combine path does not
+do.
+
+### Fix
+
+`effectiveTopN()` applies the fallback (on `<= 0`, not `== 0` — a negative `TopN` would
+have panicked the slice) and is called from `Initialize`, `Finalize` and `MergeResults`, so
+the three cannot drift. A `WindowDays` mismatch between inputs is now an error rather than
+silently inheriting `cr1`'s, matching `errDevsMismatchingTickSizes`.
+
+**Deliberately not changed, and recorded in a comment on `MergeResults`:** the merge does
+not deduplicate by `Path`, because across two repositories the same path is two different
+files and `FileRisk` carries no repository qualifier. And the scores are normalized per-run
+by `normalizeAndScore`, so they are not on a common scale across repositories — fixing that
+needs a `FileRisk` schema change and is its own item.
+
+Measured on `/mnt/projekte/Code/MeKo/ewws-render`: `combine hr.pb hr.pb` went from a
+file-less result to 2854 bytes, and `labours -m hotspot-risk` renders a 43 kB SVG where it
+previously reported "no hotspot risk files found". Reverting the truncation makes
+`TestHotspotRiskMergeResultsOnZeroValuedAnalysis` fail with "should have 3 item(s), but has
+0", while the pre-existing test stays green throughout.
 
 ---
 
-## B6 — `--blob-cache-max-blob-size` is fail-closed, and that is a trap 🟡
+## B6 — `--blob-cache-max-blob-size` is fail-closed, and that is a trap ✅ FIXED
 
 Documented in `docs/SCALING.md` as a memory bound, and it reads like one, but a
-blob over the limit **aborts the run**:
+blob over the limit **aborted the run**:
 
 ```
 run pipeline: BlobCache failed to consume commit:
@@ -766,15 +908,78 @@ that has ever committed a binary is a landmine, so the knob cannot be lowered as
 a routine memory measure — which is exactly what SCALING.md's "lowered for
 constrained environments" invites.
 
-This may be deliberate (SCALING.md does say "returns an explicit error … Hercules
-does not substitute empty content"), but then it is misfiled as a tuning knob.
-Suggested: skip-and-warn for the _cache_ (the blob is still readable, it just
-isn't retained), and reserve hard failure for the case where correctness truly
-depends on it. At minimum, say plainly in the flag help that this aborts.
+### The fix: skip-and-warn, with the placeholder typed as *binary*
+
+The obvious skip-and-warn is a trap of its own. The map key cannot simply be dropped —
+almost every consumer indexes `map[plumbing.Hash]*CachedBlob` and dereferences without a
+nil check (`renames.go`, `line_stats.go`, `diff.go`, `languages.go`, `line_history.go`;
+only `leaves/shotness.go` nil-checks). And the placeholder that already exists for missing
+submodules is **empty**, which makes the file read as *text with zero lines*, so every one
+of its lines is charged as a deletion. That is exactly what SCALING.md was right to refuse
+("does not substitute empty content and silently alter downstream metrics").
+
+The way out is that nothing in the tree sniffs `Data` to decide whether a file is text —
+every consumer asks `CachedBlob.CountLines()` and tests `errors.Is(err, ErrBinary)`. So an
+oversized blob can be recorded as **binary**, routing it down the path a real 200 MB binary
+already takes: excluded from line counts, diffs, language detection and rename detection,
+with no fabricated deletions and no nil-safety audit. `CachedBlob` gains `Oversized bool`
+(plus `OriginalSize` for the diagnostic) and `CountLines` short-circuits on it.
+
+Two details are load-bearing:
+
+- The placeholder's `Size` stays **0**. `renames.go` classifies by `blob.Size` and
+  `binaryBlobsAreClose` normalises by `Min64(size1, size2)` — keeping the real, huge size
+  would make a zero-byte payload score ~100 % similar to any real file and manufacture
+  bogus renames. At `0 < RenameAnalysisMinimumSize (32)` it lands in the `small` bucket and
+  is excluded outright. This also rules out a self-describing payload string.
+- `--blob-cache-max-commit-size` gets the same treatment under the same flag.
+  `commitBlobBudget.reserve` already refuses *without consuming*, so an overflowing blob is
+  placeholdered while smaller later blobs still fit, and change order is tree-diff order,
+  which is deterministic. The asymmetry is documented: per-blob skipping is a property of
+  the blob, per-commit skipping is a property of the blob *and* its position in the commit.
+
+Policy: skip-and-warn is the **default**; `--fail-on-oversized-blobs` restores the abort for
+callers who need completeness over completion. One warning names the first offender in
+full, the rest are counted and flushed by a new `BlobCache.Dispose()`.
+
+**Two latent bugs had to be fixed first**, both of which the warning path would have
+detonated: `Fork` did not copy the logger, so a clone's `l` was a nil interface and
+`l.Errorf` would have panicked on *any* error in a forked branch; and `Initialize`
+unconditionally clobbered a `Configure`-installed logger, so an embedder's logger never saw
+anything.
+
+Also fixed: `leaves/couples.go`'s `fileLineCounts` was a second fail-closed site, hard-wiring
+the default limit and turning an unreadable blob into a `Critical` that aborted `Finalize`.
+It now warns and counts zero lines, matching the `CountLines` error it already swallowed.
+
+**Measured** on `/mnt/projekte/Code/MeKo/ewws-events`, which aborted before, now `exit 0`:
+
+```
+[WARN] blob "bin/ewws-events" (d81810d8…, 31412744 bytes) exceeds --blob-cache-max-blob-size;
+       it was not read and is recorded as binary content, so it is excluded from line counts,
+       diffs, language detection and rename detection. The run continues; pass
+       --fail-on-oversized-blobs to abort instead.
+[WARN] 2 blobs (62825488 bytes in total) exceeded the configured blob cache limits and were
+       recorded as binary content; the first one was reported above.
+```
+
+Tests: `internal/plumbing/blob_cache_oversize_test.go` (skip-as-binary, strict abort, budget
+skip, a skipped blob leaving budget for a later smaller one, warn-once plus one `Dispose`
+summary, fork sharing the report), downstream semantics in `languages_test.go` and
+`line_stats_test.go`, `TestOversizedBlobPolicy` in `test/e2e`, and
+`internal/linehistory/line_history_oversized_blob_test.go` — which carries the test that
+justifies the whole design: a text→placeholder→text round trip keeps the file's identity,
+and its companion shows the *empty* dummy blob would instead trip the source integrity
+check.
+
+SCALING.md is rewritten accordingly, including the honest cost: a huge *text* file is now
+counted as binary rather than text. Its content was never held, so it cannot be diffed —
+and the limits are now genuinely safe to lower as a routine memory measure, which is what
+the docs always implied.
 
 ---
 
-## B7 — `--lines-hibernation-disk` panics during serialization 🟡
+## B7 — `--lines-hibernation-disk` panics during serialization ✅ FIXED
 
 ```
 panic: serialization requires the hibernated state
@@ -785,14 +990,48 @@ Hit on `mekorp-backend` with
 `--lines-hibernation-threshold=200000 --lines-hibernation-disk`. Did not
 reproduce on `ewws-auth` with the same flags, so it needs specific state.
 
-`Allocator.Serialize` panics when `allocator.storage != nil`, i.e. it was called
-on a non-hibernated allocator. `LineHistoryAnalyser.Hibernate`
-(`internal/linehistory/line_history.go:577`) does call `fileAllocator.Hibernate()`
-before `Serialize` at line 599, so something re-boots or forks the allocator in
-between — likely a branch `Fork`/`Merge` racing the hibernation, given this only
-shows up on a repository with heavy branching.
+### The `Fork`/`Merge` race hypothesis was wrong
 
-A panic is the wrong failure mode regardless: return an error.
+`Hibernate()` and `Serialize` are consecutive statements in one goroutine; plan steps run
+strictly sequentially, and forked clones each own a distinct `*Allocator` via
+`fileAllocator.Clone()`. There is nothing to race with.
+
+The actual cause is that `Allocator.Hibernate()` has **three no-op early returns that leave
+`storage != nil`**, and `storage` is set to nil only on the success path:
+
+- `len(storage) < HibernationThreshold` — and `NewAllocator` sets `storage: []node{}`, so
+  this fires for **every branch smaller than the threshold**. With
+  `--lines-hibernation-threshold=200000` that is most of them. This is the reported trigger,
+  and it explains the "needs specific state" impression: hibernation steps only exist when
+  `--hibernation-distance > 0`, and which branches are small enough is repository-shaped.
+- an empty allocator (`hibernatedStorageLen == 0`);
+- `deinterleave` reporting empty, which leaves `storage[:0]` — non-nil, zero length.
+
+Note `--preset large-repo` turns on both `lines-hibernation-threshold=200000` and
+`lines-hibernation-disk`, so adding `--hibernation-distance` to it walks straight in.
+
+### Fix
+
+- `Allocator.Hibernated() bool` exposes the state, which was otherwise unobservable outside
+  the package (`Size() == 0` cannot distinguish the three cases from a real hibernation).
+- `LineHistoryAnalyser.Hibernate` enters the disk branch only when the allocator genuinely
+  hibernated. This also stops a temp-file leak: the file was created *before* serializing,
+  so an unguarded skip would have left one behind per skipped hibernation.
+- Both `panic`s became returned errors (`ErrAllocatorNotHibernated`) — `Serialize` and
+  `Deserialize` already return `error`, and PLAN.md called the panic the wrong failure mode.
+- Found alongside: `Fork`'s `clone := *analyser` copied `hibernatedFileName` into every
+  clone and never cleared it, unlike every other per-branch field. Parent and clones would
+  have shared one temp file, and the first `Boot()` removes it. Unreachable under the
+  current plan ordering, but it was an unguarded invariant sitting next to the bug.
+
+Tests: `TestLinesHibernateBelowThresholdSkipsDisk` and `TestLinesForkClearsHibernatedFileName`
+in `internal/linehistory`, plus `TestAllocatorHibernatedEarlyReturns` and the converted
+error assertions in `internal/rbtree`. Verified by reverting: with the guard removed and the
+panic restored, the new test reproduces the original `panic: serialization requires the
+hibernated state` verbatim.
+
+**Measured** on `mekorp-backend`: the serialization failure is gone. The run then hits an
+unrelated pre-existing panic — see B11.
 
 ---
 
@@ -810,21 +1049,49 @@ Fixed in `internal/render/modes/burndownPerson.go`: skip people with no activity
 `CGO_ENABLED=0 go test ./internal/render/...` passes. Result: 18 of 25 groups
 render, 7 skipped cleanly.
 
-Committed in `c04d08c`. Still open: a regression test with a deliberately idle
-person in the fixture — `internal/render/modes/burndownPerson_test.go` currently
-covers `compactPersonBurndown`, not the fan-out skip.
+Committed in `c04d08c`. **The regression test is now in place** ✅ —
+`internal/render/modes/burndownPerson_test.go` covers the fan-out skip itself, not just
+`compactPersonBurndown`: an idle person alongside an active one returns nil and renders
+only the active person's file; an all-idle set still returns `errNoPersonActivity`; and
+`--quiet` suppresses the skip notice. The stub reader takes the legacy path (by returning
+`readers.ErrAnalysisMissing` from `GetProjectBurndownWithHeader`), which needs no header
+fixture. Verified by reverting the skip branch — two of the three cases then fail with
+"person burndown has no contributor activity", which is the original bug.
 
 ---
 
-## B9 — YAML burndown serialization panics on people with no interactions 🟡
+## B9 — YAML burndown serialization panics on people with no interactions ✅ FIXED
 
-Found while writing B2's tests, not yet filed as a run failure. `writeBurndownPeople`
-(`leaves/burndown.go:1257`) prints `result.PeopleMatrix` unconditionally, and
-`yaml.PrintMatrix` indexes `matrix[len(matrix)-1]` — so a result with `PeopleHistories` but a
-nil `PeopleMatrix` panics with `index out of range [-1]`. `finalizePeopleMatrix` returns nil
-whenever `analyser.matrix` is empty, which is reachable with `--burndown-people` on a history
-that records no author interactions at all. The `--pb` path is unaffected. Trivial guard;
-worth doing next time this file is open.
+Found while writing B2's tests. `writeBurndownPeople` prints `result.PeopleMatrix`
+unconditionally, and `yaml.PrintMatrix` indexes `matrix[len(matrix)-1]` — so a result with
+`PeopleHistories` but a nil `PeopleMatrix` panicked with `index out of range [-1]`.
+`finalizePeopleMatrix` returns nil whenever `analyser.matrix` is empty, which is reachable
+with `--burndown-people` on a history that records no author interactions at all.
+
+The guard went into `PrintMatrix` itself rather than the call site: `matrixColumnWidth` and
+`matrixValueBounds` already tolerate an empty matrix, and there are four other unguarded
+callers with the same shape (project, files, per-person history, repositories). An empty
+matrix now emits its block header and nothing else, which keeps the `people_interaction`
+key present — `writeBurndownPeople` prints that header itself before calling `PrintMatrix`
+with an empty name, and the reader tolerates an empty body (`parseBurndownMatrix` returns an
+empty matrix on unparseable input). `LegacyBurndown` needed no separate change; it delegates
+to the same `serializeText`.
+
+### The `--pb` path was **not** unaffected — a second panic, also fixed
+
+The original filing said the protobuf path was safe. It is not, for the neighbouring case: a
+non-nil **zero-row** `PeopleMatrix` passes the serializers' `!= nil` guard and reaches
+`pb.DenseToCompressedSparseRowMatrix`, which dereferences `matrix[0]` and panics with
+`index out of range [0] with length 0`. It is reachable by deserializing a payload whose
+`PeopleInteraction` declares `NumberOfRows == 0` and re-serializing with `--pb`.
+
+Guarded in `DenseToCompressedSparseRowMatrix` itself, for the same reason as `PrintMatrix` —
+it covers every caller at once, and the `!= nil` guards at the call sites are the ones that
+were wrong. Tests: `TestPrintMatrixEmpty` (`internal/yaml`),
+`TestDenseToCompressedSparseRowMatrix{Empty,KeepsNonEmptyBehaviour}` (`internal/pb`),
+`TestBurndownSerializeEmptyPeopleMatrix` and
+`TestBurndownDeserializeEmptyPeopleMatrixSerializes` (`leaves`), plus the legacy equivalent.
+Every one of them panics against the unfixed code.
 
 ---
 
@@ -901,6 +1168,36 @@ _observed_ to abort on `MKTools`, `mw_prod_planner` and `mekorp-webclient`.
 
 ---
 
+## B11 — a hibernated burndown analyser consumes a commit 🟠
+
+Not filed originally; found while fixing B7, on `mekorp-backend`.
+
+```
+panic: assignment to entry in nil map
+  leaves/burndown_shared.go:350  sparseHistory.updateDelta
+  ← BurndownAnalysis.updateGlobal ← consumeLineHistory
+```
+
+Line 350 is `p[curTick] = currentHistory`, so the **receiver map itself is nil** — this is
+not a nil inner `deltas`. `BurndownAnalysis.Hibernate` sets `globalHistory`,
+`fileHistories`, `deletedFileHistories`, `peopleHistories` and `matrix` to nil after
+compressing them, and `Boot` restores them. So a burndown analyser consumed a commit while
+hibernated: either a `Boot` that never ran, or one whose branch went on being used after
+the hibernate step.
+
+Reproduces with plain `--hibernation-distance=100 --lines-hibernation-threshold=200000`,
+**without** `--lines-hibernation-disk`, and not at all without hibernation — so it is a
+hibernate/boot *scheduling* problem, independent of B7's allocator serialization. It sits in
+the same plan-construction code as B1d (`insertHibernateBoot` / `hibernationAddons` in
+`internal/core/forks.go`), which is why it was left alone rather than patched locally: a
+defensive `make(map)` in `updateDelta` would silence the panic and silently discard the
+branch's accumulated history.
+
+Worth checking whether the other hibernating leaves (`CodeChurn`, and anything else with a
+`Hibernate` that nils state) have the same exposure.
+
+---
+
 ## Suggested order
 
 - [x] **0. B1, B1b.** Done — merge-resolution deltas are delivered and merge-commit
@@ -932,10 +1229,12 @@ _observed_ to abort on `MKTools`, `mw_prod_planner` and `mekorp-webclient`.
       negative cell recovers, across five repositories) and now reported by the audit. The
       accounting defect itself moves to B1c, whose root cause is traced to the individual
       commits.
-- [ ] **6. The corpus regression test**, below. It is now a prerequisite rather than a
-      nice-to-have: B1c and B1d both change merge accounting, and there is no way to tell a
-      real improvement from a new leak without one.
-- [ ] **7. B1c's residue.** Both of its neighbours are now fixed — the `sortableChange.Less`
+- [x] **6. The corpus regression test.** Done — `test/corpus`, baseline-relative rather than
+      "no negatives" (which could not pass while B1c's residue exists). Seeded across all 13
+      repositories, all exiting 0. Use it to judge attempt 2 at B1c: re-seed only after a
+      change is understood, never to make a red run green.
+- [ ] **7. B1c's residue.** One attempt made and reverted — read "Attempt 1" in B1c before
+      starting a second one. Both of its neighbours are fixed — the `sortableChange.Less`
       comparator (B1c's rename half) and the merge replay (B1d) — and B1d turned out to share
       the mechanism, since dropping a parent from a file merge is what left the marks unresolved.
       **Re-measured against a pre-B1d build: B1d did not absorb it** (table in B1c). Cell counts
@@ -944,10 +1243,16 @@ _observed_ to abort on `MKTools`, `mw_prod_planner` and `mekorp-webclient`.
       across sibling branches. `mekorp-backend` is the case to drive from: it holds 96% of the
       remaining negative mass, and it is also the one repository whose project matrix B1d moved
       away from the git ground truth.
-- [ ] **8. B8's regression test.** The fix itself is committed (`c04d08c`); what is left is a
-      fixture with a deliberately idle person.
-- [ ] **9. B5, B6, B7, B9.** Lower frequency; B6 may be documentation only and B9 is a
-      one-line guard.
+- [x] **8. B8's regression test.** Done — the fan-out skip is pinned, not just
+      `compactPersonBurndown`.
+- [x] **9. B5, B6, B7, B9 — and B4's rest.** All done. Two of them were larger than this line
+      assumed: B6 was **not** documentation only (it needed a binary-typed placeholder, a new
+      opt-out flag, and two latent `Fork`/`Initialize` logger bugs fixed first), and B9's
+      "one-line guard" turned out to be two guards — the `--pb` path was also reachable,
+      contrary to the original filing.
+- [ ] **10. B11**, new: a hibernated burndown analyser consumes a commit and panics on a nil
+      map. Found while fixing B7. It lives in the same plan-construction code as B1d, so it is
+      worth taking while that context is fresh.
 
 ## Regression coverage worth adding
 
@@ -955,11 +1260,35 @@ None of B1–B7 were caught by the existing suite, and all of them reproduce on
 ordinary repositories. The gap is that the tests use synthetic fixtures with
 clean histories.
 
-- [ ] An opt-in corpus test (`HERCULES_CORPUS_DIR=/path/to/repos go test ./test/corpus`)
-      that runs the full analysis flag set over a handful of real repositories with a
-      `--people-dict`, asserts exit 0, and asserts no negative values in any serialized
-      matrix. The 13 failing repositories named above are a ready-made fixture list.
-      (`test/` currently holds `e2e`, `plugin_smoke` and `visual` only.)
+- [x] An opt-in corpus test — **built**, as `test/corpus` (`just test-corpus`, gated on
+      `HERCULES_CORPUS_DIR`, skipping cleanly when unset so `go test ./...` stays green).
+
+      **It asserts no _regression_ against `test/corpus/baseline.json`, not the absence of
+      negatives.** The original spec — "assert no negative values in any serialized matrix"
+      — cannot pass while B1c's residue exists, so as written the suite would have been red
+      from birth and ignored. Baseline-relative is also the shape the remaining work
+      actually needs: it makes a real improvement distinguishable from a new leak, which is
+      the reason this was promoted to a prerequisite in the first place.
+
+      Per repository it records exit code, negative cell count, negative mass, worst cell,
+      and the **residual** count (cells whose age band is still negative in the final
+      sampled row) — B2's own discriminator, and the strongest signal, since empirically
+      every negative has been residual. Any metric worsening fails; improvements are logged
+      so a fix is visible in the output. It reads YAML rather than `.pb`, because
+      `pb.ToBurndownSparseMatrix` clamps negatives away. `UPDATE_CORPUS_BASELINE=1`
+      (`just update-corpus-baseline [REPOS]`) re-seeds, preserving entries not re-measured.
+
+      Verified to actually fail: worsening one baseline entry by hand produces
+      `negative cells regressed: 0, baseline -1`. A repository missing from the corpus
+      directory is skipped with a log line, so a partial checkout still works.
+
+      **Seeded across all 13 named repositories, and every one exits 0** — the first time
+      the corpus has been clean at the process level. The numbers are much smaller than the
+      tables in B1c/B2 (e.g. `mekorp-backend` 72 cells / mass 6638, against 2226 /
+      7 819 365 there) because they were taken after B1c's comparator fix and B1d landed,
+      and with this suite's flag set. Treat the baseline as the current truth and those
+      tables as history. Re-seed after any change to burndown or merge accounting; the file
+      records the commit and working-tree state it was measured against.
 
 ## Verification
 

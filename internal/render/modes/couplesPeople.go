@@ -276,6 +276,7 @@ func writeSparseMetadataFile(
 
 	for row, label := range index {
 		diagonal := cappedCouplingValue(matrix.At(row, row), threshold)
+
 		_, err := fmt.Fprintf(file, "%s\t%.6f\n", label, diagonal)
 		if err != nil {
 			return err

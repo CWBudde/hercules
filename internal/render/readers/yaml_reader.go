@@ -33,6 +33,7 @@ func (r *YamlReader) Read(file io.Reader) error {
 	}
 
 	var data map[string]any
+
 	err = yaml.Unmarshal(input, &data)
 	if err != nil {
 		progEstimator.FinishOperation()

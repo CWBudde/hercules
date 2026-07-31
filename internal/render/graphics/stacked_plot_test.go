@@ -40,7 +40,8 @@ func TestCreateStackedPlot(t *testing.T) {
 	}
 
 	// Check if output file was created
-	if _, err := os.Stat(outputPath); os.IsNotExist(err) {
+	_, err = os.Stat(outputPath)
+	if os.IsNotExist(err) {
 		t.Errorf("Output file was not created: %s", outputPath)
 	}
 
@@ -97,7 +98,8 @@ func TestCreateStackedPlotSingleSeries(t *testing.T) {
 		t.Errorf("CreateStackedPlot() with single series error = %v", err)
 	}
 
-	if _, err := os.Stat(outputPath); os.IsNotExist(err) {
+	_, err = os.Stat(outputPath)
+	if os.IsNotExist(err) {
 		t.Errorf("Output file was not created: %s", outputPath)
 	}
 }
@@ -138,7 +140,8 @@ func TestCreateBarChart(t *testing.T) {
 		t.Errorf("CreateBarChart() error = %v", err)
 	}
 
-	if _, err := os.Stat(outputPath); os.IsNotExist(err) {
+	_, err = os.Stat(outputPath)
+	if os.IsNotExist(err) {
 		t.Errorf("Output file was not created: %s", outputPath)
 	}
 }

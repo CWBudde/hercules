@@ -185,7 +185,8 @@ func TestRemoteCacheSafety(t *testing.T) {
 	)
 	requireSuccess(t, result)
 	requireRegularFile(t, filepath.Join(cache, remoteCacheMarker))
-	if _, err := os.Stat(staleFile); !errors.Is(err, os.ErrNotExist) {
+	_, err = os.Stat(staleFile)
+	if !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("forced replacement left stale cache data behind: %v", err)
 	}
 
@@ -572,7 +573,8 @@ func repositoryPath(elements ...string) string {
 	if !ok {
 		panic("cannot locate e2e test source")
 	}
-	parts := []string{filepath.Dir(file), "..", ".."}
+	parts := make([]string, 0, 3+len(elements))
+	parts = append(parts, filepath.Dir(file), "..", "..")
 	parts = append(parts, elements...)
 	return filepath.Clean(filepath.Join(parts...))
 }

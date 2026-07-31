@@ -123,7 +123,7 @@ type RuntimeStatistics struct {
 
 // analyzeRuntimeStats performs analysis on runtime statistics.
 func analyzeRuntimeStats(runtimeStats map[string]float64) RuntimeAnalysis {
-	var metrics []RuntimeMetric
+	metrics := make([]RuntimeMetric, 0, len(runtimeStats))
 	totalTime := 0.0
 	maxTime := 0.0
 	minTime := float64(^uint(0) >> 1) // Max float

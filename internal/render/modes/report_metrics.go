@@ -474,6 +474,7 @@ func plotTemporalHeatmap(repoName string, data *readers.TemporalActivityData, mo
 	// then overrides it back to args.size or "16,10", so the effective size
 	// matches the temporal-activity bar charts (1600×1000).
 	heatmapWidth, heatmapHeight := reportPlotInches("temporal-activity.png")
+
 	err = graphics.PlotHeatmapMatplotlib(matrix, rowLabels, colLabels, graphics.MatplotlibHeatmapOptions{
 		Title:        fmt.Sprintf("%s - Activity Heatmap: Weekday × Hour (%s)", repoName, mode),
 		Output:       output,
@@ -1003,6 +1004,7 @@ func OwnershipConcentration(reader readers.Reader, output string) error {
 		latest.Gini, latest.HHI, latest.TotalLines)
 
 	timelineOutput := siblingOutputPath(output, "ownership-concentration.png", "timeline")
+
 	err = plotLineSeries(
 		"Ownership Concentration Over Time",
 		"Tick",
@@ -1205,16 +1207,19 @@ func KnowledgeDiffusion(reader readers.Reader, output string, detail bool) error
 		len(data.Files), len(data.People), data.WindowMonths)
 
 	distributionOutput := siblingOutputPath(output, "knowledge-diffusion.png", "distribution")
+
 	err = plotKnowledgeDistribution(reader.GetName(), labels, values, distributionOutput)
 	if err != nil {
 		return err
 	}
 
-	if err := plotKnowledgeSilos(reader.GetName(), data, siblingOutputPath(output, "knowledge-diffusion.png", "silos")); err != nil {
+	err = plotKnowledgeSilos(reader.GetName(), data, siblingOutputPath(output, "knowledge-diffusion.png", "silos"))
+	if err != nil {
 		return err
 	}
 
-	if err := plotKnowledgeLorenz(reader.GetName(), data, siblingOutputPath(output, "knowledge-diffusion.png", "lorenz")); err != nil {
+	err = plotKnowledgeLorenz(reader.GetName(), data, siblingOutputPath(output, "knowledge-diffusion.png", "lorenz"))
+	if err != nil {
 		return err
 	}
 
@@ -1676,6 +1681,7 @@ func plotFloatBars(title, xLabel, yLabel string, labels []string, values floatSe
 	}
 
 	width, height := reportPlotInches(defaultOutput)
+
 	err = graphics.PlotBarChartMatplotlib(labels, plotValues, graphics.MatplotlibBarOptions{
 		Title:        title,
 		XLabel:       xLabel,
@@ -2592,6 +2598,7 @@ func plotLineSeries(title, xLabel, yLabel string, series []namedSeries, output, 
 	}
 
 	width, height := reportPlotInches(defaultOutput)
+
 	err = graphics.PlotLineChartMatplotlib(plotSeries, graphics.MatplotlibLineOptions{
 		Title:        title,
 		XLabel:       xLabel,

@@ -169,6 +169,8 @@ func TestProtobufReader_InvalidData(t *testing.T) {
 // Helper functions for testing
 
 func createTestProtobufReader(t *testing.T) *ProtobufReader {
+	t.Helper()
+
 	// Create burndown analysis data
 	burndownData := &pb.BurndownAnalysisResults{
 		Project: &pb.BurndownSparseMatrix{

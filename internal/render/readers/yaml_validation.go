@@ -18,6 +18,7 @@ func validateYAMLAnalysis(data map[string]any, limits analysisio.Limits) error {
 	}
 
 	total := 0
+
 	err = validateYAMLRecords(data, &total, limits)
 	if err != nil {
 		return err
@@ -306,10 +307,6 @@ func parseBurndownMatrixChecked(
 		lineIndex++
 	}
 
-	if columns < 0 {
-		columns = 0
-	}
-
 	err = analysisio.ValidateDenseMatrix(name, matrix, limits)
 	if err != nil {
 		return nil, err
@@ -375,6 +372,7 @@ func parseSparseMatrixTextChecked(
 	limits = limits.WithDefaults()
 
 	lineCount := strings.Count(data, "\n") + 1
+
 	err := analysisio.ValidateDimensions(name, int64(lineCount), 1, limits)
 	if err != nil {
 		return SparseMatrix{}, err

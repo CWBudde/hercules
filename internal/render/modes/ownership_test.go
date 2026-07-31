@@ -48,7 +48,8 @@ func TestGenerateOwnershipPlot(t *testing.T) {
 	}
 
 	// Check if output file was created
-	if _, err := os.Stat(outputPath); os.IsNotExist(err) {
+	_, err = os.Stat(outputPath)
+	if os.IsNotExist(err) {
 		t.Errorf("Output file was not created: %s", outputPath)
 	}
 }
@@ -83,7 +84,8 @@ func TestGenerateOwnershipPlotSingleFile(t *testing.T) {
 		t.Errorf("generateOwnershipPlot() with single file error = %v", err)
 	}
 
-	if _, err := os.Stat(outputPath); os.IsNotExist(err) {
+	_, err = os.Stat(outputPath)
+	if os.IsNotExist(err) {
 		t.Errorf("Output file was not created: %s", outputPath)
 	}
 }
@@ -329,7 +331,7 @@ func findTopFilesByOwnershipChanges(ownership map[string][][]int, limit int) []s
 		churn    float64
 	}
 
-	var files []fileChurn
+	files := make([]fileChurn, 0, len(ownership))
 
 	for filename, matrix := range ownership {
 		churn := calculateOwnershipChurn(matrix)

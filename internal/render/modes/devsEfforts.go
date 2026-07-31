@@ -55,7 +55,8 @@ func DevsEffortsWithOptions(reader readers.Reader, output string, opts Options) 
 	// Phase 4: Generate the primary plot.
 	progEstimator.NextOperation("Generating visualization")
 
-	if err := renderDevEffortsPrimary(effortsTimeSeries, developerStats, output, maxPeople, quiet, opts.Graphics); err != nil {
+	err = renderDevEffortsPrimary(effortsTimeSeries, developerStats, output, maxPeople, quiet, opts.Graphics)
+	if err != nil {
 		return err
 	}
 

@@ -40,6 +40,7 @@ func (r *ProtobufReader) Read(file io.Reader) error {
 	progEstimator.UpdateProgress(1)
 
 	var results pb.AnalysisResults
+
 	err = proto.Unmarshal(allBytes, &results)
 	if err != nil {
 		progEstimator.FinishOperation()
@@ -835,7 +836,7 @@ func parseCompressedSparseRowMatrix(matrix *pb.CompressedSparseRowMatrix) [][]in
 	}
 
 	// Convert from CSR format to dense matrix with bounds checking
-	for i := int32(0); i < matrix.GetNumberOfRows(); i++ {
+	for i := range matrix.GetNumberOfRows() {
 		if int(i+1) >= len(matrix.GetIndptr()) {
 			break
 		}

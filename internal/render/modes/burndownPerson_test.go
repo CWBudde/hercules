@@ -195,7 +195,8 @@ func TestBurndownPersonSkipsIdlePeopleAndRendersTheRest(t *testing.T) {
 		t.Fatalf("active contributor chart missing at %s: %v", outputFiles[0], err)
 	}
 
-	if _, err := os.Stat(outputFiles[1]); !os.IsNotExist(err) {
+	_, err = os.Stat(outputFiles[1])
+	if !os.IsNotExist(err) {
 		t.Fatalf("idle contributor chart at %s should not exist, stat err = %v", outputFiles[1], err)
 	}
 }

@@ -117,7 +117,8 @@ func TestSentiment(t *testing.T) {
 
 	for _, filename := range expectedFiles {
 		filepath := tempDir + "/" + filename
-		if _, err := os.Stat(filepath); os.IsNotExist(err) {
+		_, err := os.Stat(filepath)
+		if os.IsNotExist(err) {
 			t.Errorf("Expected output file %s was not created", filename)
 		}
 	}
@@ -147,7 +148,8 @@ func TestSentimentUsesCollectedSentimentWithoutFallback(t *testing.T) {
 		t.Fatalf("Sentiment analysis with collected data failed: %v", err)
 	}
 
-	if _, err := os.Stat(tempDir + "/sentiment-overview.png"); os.IsNotExist(err) {
+	_, err = os.Stat(tempDir + "/sentiment-overview.png")
+	if os.IsNotExist(err) {
 		t.Error("Expected sentiment overview output for collected sentiment data")
 	}
 }
@@ -282,7 +284,8 @@ func TestSentimentWithZeroActivityDoesNotCreateNaNBars(t *testing.T) {
 		t.Fatalf("Sentiment analysis with zero activity failed: %v", err)
 	}
 
-	if _, err := os.Stat(tempDir + "/sentiment-overview.png"); os.IsNotExist(err) {
+	_, err = os.Stat(tempDir + "/sentiment-overview.png")
+	if os.IsNotExist(err) {
 		t.Error("Expected sentiment overview output for zero activity data")
 	}
 }

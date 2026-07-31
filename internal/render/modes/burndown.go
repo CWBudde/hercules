@@ -75,7 +75,8 @@ func generateBurndownPlotWithOptions(name string, matrix [][]int, output string,
 		interpolatedMatrix = normalizeMatrix(interpolatedMatrix)
 	}
 
-	if err := graphics.PlotStackedBurndownMatplotlibWithOptions(interpolatedMatrix, dateRange, output, opts.Relative, opts.Graphics); err != nil {
+	err = graphics.PlotStackedBurndownMatplotlibWithOptions(interpolatedMatrix, dateRange, output, opts.Relative, opts.Graphics)
+	if err != nil {
 		progEstimator.FinishMultiOperation()
 		return fmt.Errorf("error creating burndown plot: %w", err)
 	}

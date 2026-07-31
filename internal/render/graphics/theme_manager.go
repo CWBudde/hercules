@@ -35,6 +35,7 @@ func (tm *ThemeManager) LoadThemeFromFile(filepath string) error {
 	}
 
 	var theme Theme
+
 	err = yaml.Unmarshal(data, &theme)
 	if err != nil {
 		return fmt.Errorf("failed to parse theme file %s: %w", filepath, err)
@@ -196,7 +197,7 @@ func (tm *ThemeManager) ExportTheme(themeName, outputPath string) error {
 	return tm.SaveThemeToFile(theme, outputPath)
 }
 
-// Global theme manager instance.
+// GlobalThemeManager is the process-wide theme manager instance.
 var GlobalThemeManager = NewThemeManager()
 
 // LoadUserThemes loads themes from user directories.
@@ -214,6 +215,7 @@ func LoadUserThemes() error {
 	homeDir, err := os.UserHomeDir()
 	if err == nil {
 		themeDir := filepath.Join(homeDir, ".labours-go", "themes")
+
 		_, err := os.Stat(themeDir)
 		if err == nil {
 			err := GlobalThemeManager.LoadThemesFromDirectory(themeDir)

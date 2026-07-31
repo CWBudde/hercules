@@ -13,6 +13,11 @@ const repositoryJoiner = " & "
 // from. A 36-repository combined run produced a title several times wider than
 // the canvas, spilling off both edges and pushing the plot itself out of view.
 //
+// Naming the first repository and counting the rest ("../a & 35 more
+// repositories") only reads as meaningful if that first one is special, and it
+// is not - it is whichever path happened to be listed first. The count alone
+// says what the chart actually covers.
+//
 // A single repository - the Python-parity case, and every per-repository chart -
 // passes through untouched.
 func titleRepositoryName(name string) string {
@@ -21,10 +26,5 @@ func titleRepositoryName(name string) string {
 		return name
 	}
 
-	noun := "repositories"
-	if len(parts) == 2 {
-		noun = "repository"
-	}
-
-	return fmt.Sprintf("%s & %d more %s", parts[0], len(parts)-1, noun)
+	return fmt.Sprintf("%d combined repositories", len(parts))
 }

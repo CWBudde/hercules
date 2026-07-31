@@ -20,7 +20,14 @@ const (
 	// PythonPlotMonoFontFamily is the monospace face used for code/path labels.
 	PythonPlotMonoFontFamily = "DejaVu Sans Mono"
 	// pythonPlotDefaultFontSize is the fallback when --font-size is unset.
-	pythonPlotDefaultFontSize = 12.0
+	//
+	// Matplotlib's own default is 10 and Python labours never raised it, but
+	// these charts are read projected onto a wall, not in a notebook: at 12 the
+	// axis labels were legible only to whoever was standing at the screen. 14
+	// carries the whole scale with it - style.WithFont derives the title (1.2x),
+	// axis labels, ticks and legend from this one number - so the relationships
+	// are unchanged and only the absolute size moves.
+	pythonPlotDefaultFontSize = 14.0
 	// PythonPlotDefaultWidthInches / PythonPlotDefaultHeightInches are the
 	// fallback figure size (matplotlib labours' 16x12 default) used when both a
 	// mode and the --size flag leave the dimensions unspecified.

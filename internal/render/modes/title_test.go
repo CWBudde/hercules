@@ -22,12 +22,12 @@ func TestTitleRepositoryName(t *testing.T) {
 		{
 			name:  "two repositories",
 			input: "../ewws-auth & ../ewws-sync",
-			want:  "../ewws-auth & 1 more repository",
+			want:  "2 combined repositories",
 		},
 		{
 			name:  "many repositories",
 			input: "../a & ../b & ../c & ../d",
-			want:  "../a & 3 more repositories",
+			want:  "4 combined repositories",
 		},
 		{
 			// " & " is the joiner; a bare ampersand inside a name is not a split.

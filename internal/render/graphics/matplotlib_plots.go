@@ -432,6 +432,10 @@ func addMatplotlibLine(ax *core.Axes, item MatplotlibLineSeries, color render.Co
 	}
 }
 
+// heatmapPaddingBaselineFontSize is the tick size the heatmap's fixed margins
+// were originally measured against.
+const heatmapPaddingBaselineFontSize = 8.0
+
 func PlotHeatmapMatplotlib(matrix [][]float64, rowLabels, colLabels []string, opts MatplotlibHeatmapOptions) error {
 	err := ValidateHeatMap(matrix, rowLabels, colLabels)
 	if err != nil {
@@ -441,12 +445,30 @@ func PlotHeatmapMatplotlib(matrix [][]float64, rowLabels, colLabels []string, op
 	RegisterPythonLaboursHeatmapColormaps()
 
 	width, height := pythonPlotPixelSize(defaultPlotWidth(opts.WidthInches), defaultPlotHeight(opts.HeightInches))
-	fig := core.NewFigure(width, height)
-	fig.RC.XTickLabelFontSize = 8
-	fig.RC.YTickLabelFontSize = 8
+
+	// The heatmap used to build a bare figure and then pin both tick sizes to
+	// 8pt - smaller than the library default, let alone the project's. On a
+	// 1600x1000 canvas with 24 hour columns and 7 weekday rows that left the
+	// labels barely legible with room to spare. WithFont drives title, axis
+	// labels and ticks off one size, the same way every other chart gets them.
+	fontSize := opts.FontSize
+	if fontSize <= 0 {
+		fontSize = PythonPlotFontSize()
+	}
+
+	fig := core.NewFigure(width, height, style.WithFont(PythonPlotFontFamily, fontSize))
+
+	// This figure is saved without a tight layout, so the margins holding the
+	// row and column labels are fixed fractions - and they were measured at the
+	// old 8pt. Scale the two label-bearing sides with the font, or bigger text
+	// simply runs off the left and bottom edges.
+	labelScale := fontSize / heatmapPaddingBaselineFontSize
+	left := math.Min(0.132*labelScale, 0.45)
+	bottom := math.Min(0.087*labelScale, 0.40)
+
 	gs := fig.GridSpec(
 		1, 1,
-		core.WithGridSpecPadding(0.132, 0.893, 0.087, 0.970),
+		core.WithGridSpecPadding(left, 0.893, bottom, 0.970),
 		core.WithGridSpecSpacing(0, 0),
 	)
 

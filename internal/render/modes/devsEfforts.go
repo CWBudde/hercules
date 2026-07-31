@@ -7,7 +7,6 @@ import (
 	"math"
 	"os"
 	"sort"
-	"strconv"
 	"time"
 
 	"github.com/cwbudde/hercules/internal/render/graphics"
@@ -248,7 +247,9 @@ func plotProductivityRanking(metrics []EffortMetric, output string, visuals grap
 	values := make([]float64, maxDev)
 	for i := range maxDev {
 		metric := metrics[i]
-		labels[i] = strconv.Itoa(i + 1)
+		// Ranks 1..20 told the reader nothing the bar heights did not already
+		// say. The names are what makes the chart answerable.
+		labels[i] = peopleChartLabel(metric.Name)
 		values[i] = float64(metric.Commits) + float64(metric.LinesAdded+metric.LinesRemoved+metric.LinesModified)*0.01
 	}
 
@@ -256,7 +257,7 @@ func plotProductivityRanking(metrics []EffortMetric, output string, visuals grap
 
 	err := graphics.PlotBarChartMatplotlib(labels, values, graphics.MatplotlibBarOptions{
 		Title:        "Developer Productivity Ranking",
-		XLabel:       "Developer Rank",
+		XLabel:       "Developer",
 		YLabel:       "Productivity Score (Commits + Lines/100)",
 		Output:       output,
 		WidthInches:  15.36,
@@ -264,11 +265,14 @@ func plotProductivityRanking(metrics []EffortMetric, output string, visuals grap
 		Color:        barColor,
 		DisableGrid:  true,
 		Opaque:       true,
-		DefaultStyle: true,
-		ManualXLim:   true,
-		XMin:         -0.64,
-		XMax:         float64(maxDev) - 0.36,
-		FontSize:     visuals.PlotFontSize(),
+		// Names need the 45-degree tick style, and DefaultStyle would throw the
+		// whole option set away - including FontSize below, which was silently
+		// ignored for as long as it has been set here.
+		RotateX:    true,
+		ManualXLim: true,
+		XMin:       -0.64,
+		XMax:       float64(maxDev) - 0.36,
+		FontSize:   visuals.PlotFontSize(),
 	})
 	if err != nil {
 		return fmt.Errorf("failed to save productivity ranking plot: %w", err)

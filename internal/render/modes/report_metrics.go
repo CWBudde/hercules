@@ -1497,14 +1497,15 @@ func drawSingleEditorSummary(axes *core.Axes, totalFiles, singleEditorFiles int)
 
 func configureKnowledgeDistributionAxes(axes *core.Axes, series knowledgeDistributionSeries) {
 	minimumX, maximumX := rangeWithPadding(series.editorCounts, 0.5)
-	maximumY := math.Ceil(math.Max(series.maxValue, 1)/15) * 15
+	step := temporalActivityTickStep(math.Max(series.maxValue, 1))
+	maximumY := math.Ceil(math.Max(series.maxValue, 1)/step) * step
 	xTicks, xLabels := knowledgeDistributionXTicks(minimumX, maximumX)
 
 	axes.SetXLim(minimumX, maximumX)
 	axes.SetYLim(0, maximumY)
 	axes.XAxis.Locator = ticker.FixedLocator{TicksList: xTicks}
 	axes.XAxis.Formatter = ticker.FixedFormatter{Labels: xLabels}
-	axes.YAxis.Locator = ticker.FixedLocator{TicksList: knowledgeDistributionYTicks(maximumY)}
+	axes.YAxis.Locator = ticker.FixedLocator{TicksList: knowledgeDistributionYTicks(maximumY, step)}
 }
 
 func knowledgeDistributionXTicks(minimum, maximum float64) ([]float64, []string) {
@@ -1519,9 +1520,14 @@ func knowledgeDistributionXTicks(minimum, maximum float64) ([]float64, []string)
 	return ticks, labels
 }
 
-func knowledgeDistributionYTicks(maximum float64) []float64 {
-	ticks := make([]float64, 0, int(maximum/15)+1)
-	for tick := 0.0; tick <= maximum; tick += 15 {
+// knowledgeDistributionYTicks labels the axis every step counts. The step used
+// to be a flat 15, which suited a single repository but drew ~640 overlapping
+// labels once a combined run put nine thousand files in the single-editor
+// bucket - the same solid black bar temporalActivityTickStep was written to
+// cure, so it does the choosing here too.
+func knowledgeDistributionYTicks(maximum, step float64) []float64 {
+	ticks := make([]float64, 0, int(maximum/step)+1)
+	for tick := 0.0; tick <= maximum; tick += step {
 		ticks = append(ticks, tick)
 	}
 

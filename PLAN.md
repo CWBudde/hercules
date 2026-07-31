@@ -593,7 +593,20 @@ run twice and every figure reproduced exactly, so this is not B12 variance:
 | `meko-etl-tool` | 573 / 244 067 | **626 / 250 656** | +14.88% → +13.01% |
 | `mekorp-backend` | 1 809 / 7 112 000 | **1 927 / 7 946 422** | −13.37% → **−14.50%** |
 
-`just test-corpus` fails on it: `mekorp-backend` 1748 → 1877 negative cells, residual 67 → 71.
+`just test-corpus` fails on it, over the full 13-repository corpus: **3 regress, 10 are unchanged,
+none improve.**
+
+| repository | negative cells | residual cells |
+| --- | ---: | ---: |
+| `mekorp-backend` | 1 748 → 1 877 | 67 → 71 |
+| `mekorp-webclient` | 1 447 → **1 724** | 45 → 54 |
+| `meko-etl-tool` | 553 → 606 | 12 → 14 |
+| the other ten | unchanged | unchanged |
+
+`mekorp-webclient` is the worst of them and appears in no ad-hoc measurement in this document —
+worth remembering that the five-repository set used throughout B1/B1b/B1c misses the largest
+regression this change causes. Run the corpus suite, not the ad-hoc set.
+
 Note the head column — an earlier reading of this variant called it "the only one that moves every
 head towards `git`", which was measured on a four-repository set that left `mekorp-backend` out.
 With it in, the head gets worse too. That claim was wrong.

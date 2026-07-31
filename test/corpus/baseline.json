@@ -1,0 +1,125 @@
+{
+  "provenance": {
+    "commit": "b97f5492519c852bc528d92e0b31cb68e7322f89",
+    "working_tree": "M PLAN.md\n?? test/corpus/baseline.json",
+    "note": "Numbers are only comparable against this tree. Re-seed after any change to burndown or merge accounting."
+  },
+  "flags": [
+    "--burndown",
+    "--burndown-people",
+    "--devs",
+    "--couples",
+    "--bus-factor",
+    "--ownership-concentration",
+    "--hotspot-risk",
+    "--skip-blacklist",
+    "--granularity=30",
+    "--sampling=30"
+  ],
+  "repositories": {
+    "MKTools": {
+      "exit_code": 0,
+      "negative_cells": 0,
+      "negative_mass": 0,
+      "worst_cell": 0,
+      "residual_cells": 0,
+      "matrices": 7
+    },
+    "ShelfStockScanner": {
+      "exit_code": 0,
+      "negative_cells": 2,
+      "negative_mass": 30,
+      "worst_cell": -15,
+      "residual_cells": 1,
+      "matrices": 10
+    },
+    "backend-for-microscope": {
+      "exit_code": 0,
+      "negative_cells": 137,
+      "negative_mass": 3754,
+      "worst_cell": -126,
+      "residual_cells": 7,
+      "matrices": 16
+    },
+    "ewws-render": {
+      "exit_code": 0,
+      "negative_cells": 0,
+      "negative_mass": 0,
+      "worst_cell": 0,
+      "residual_cells": 0,
+      "matrices": 11
+    },
+    "ewws-tailscale": {
+      "exit_code": 0,
+      "negative_cells": 0,
+      "negative_mass": 0,
+      "worst_cell": 0,
+      "residual_cells": 0,
+      "matrices": 4
+    },
+    "ewws-wiki": {
+      "exit_code": 0,
+      "negative_cells": 83,
+      "negative_mass": 18869,
+      "worst_cell": -448,
+      "residual_cells": 3,
+      "matrices": 18
+    },
+    "go-clients": {
+      "exit_code": 0,
+      "negative_cells": 0,
+      "negative_mass": 0,
+      "worst_cell": 0,
+      "residual_cells": 0,
+      "matrices": 6
+    },
+    "meko-etl-tool": {
+      "exit_code": 0,
+      "negative_cells": 553,
+      "negative_mass": 84464,
+      "worst_cell": -384,
+      "residual_cells": 12,
+      "matrices": 17
+    },
+    "mekorp-backend": {
+      "exit_code": 0,
+      "negative_cells": 1748,
+      "negative_mass": 5870994,
+      "worst_cell": -81500,
+      "residual_cells": 67,
+      "matrices": 39
+    },
+    "mekorp-webclient": {
+      "exit_code": 0,
+      "negative_cells": 1447,
+      "negative_mass": 19625270,
+      "worst_cell": -301898,
+      "residual_cells": 45,
+      "matrices": 31
+    },
+    "personio-ipoffice-sync": {
+      "exit_code": 0,
+      "negative_cells": 34,
+      "negative_mass": 536,
+      "worst_cell": -52,
+      "residual_cells": 2,
+      "matrices": 7
+    },
+    "process-manager": {
+      "exit_code": 0,
+      "negative_cells": 114,
+      "negative_mass": 26615,
+      "worst_cell": -594,
+      "residual_cells": 6,
+      "matrices": 8
+    },
+    "render-pdf": {
+      "exit_code": 0,
+      "negative_cells": 0,
+      "negative_mass": 0,
+      "worst_cell": 0,
+      "residual_cells": 0,
+      "matrices": 15
+    }
+  }
+}

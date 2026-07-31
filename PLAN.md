@@ -40,8 +40,8 @@ Checkbox = done / not done. The emoji is the severity of what is left.
 - [x] **B8** (rest) — regression test with a deliberately idle person in the fixture
 - [x] [**B9**](#b9--yaml-burndown-serialization-panics-on-people-with-no-interactions--fixed) — YAML burndown serialization panicked on nil `PeopleMatrix`; a zero-row matrix panicked on the `--pb` path too
 - [x] [**B10**](#b10--the-execution-plan-was-non-deterministic-and-a-merge-could-be-resolved-against-the-wrong-branch--fixed) — non-deterministic execution plan; merges resolved against the wrong branch (`5937149`)
-- [ ] [**B11**](#b11--a-hibernated-burndown-analyser-consumes-a-commit-) — hibernated burndown analyser consumes a commit, nil-map panic 🟠 (new, found while fixing B7)
-- [ ] [**B12**](#b12--burndown-output-is-not-reproducible-run-to-run-) — burndown output differs between identical runs 🔴 (new; the plan is deterministic, the analysis is not)
+- [x] [**B11**](#b11--a-hibernated-burndown-analyser-consumes-a-commit--fixed) — a branch hibernated an analyser instance its sibling was still consuming
+- [x] [**B12**](#b12--burndown-output-is-not-reproducible-run-to-run--fixed) — rename matching raced two non-equivalent matchers and kept whichever won
 - [x] [**Corpus regression test**](#regression-coverage-worth-adding) — opt-in `HERCULES_CORPUS_DIR` suite, baseline-relative
 
 ---
@@ -448,11 +448,59 @@ Three repositories improve and one is clean outright. `meko-etl-tool` regresses:
 more mass, worst cell −2248 → −4983, and the head count moves from 11% over to 13% under. That is
 why this is not merged.
 
-**Where to resume.** The regression is concentrated: in `meko-etl-tool`'s people matrices three
-authors improve sharply (`clausbissinger` 98 425 → 6 421, `kanngiesser` 29 105 → 108,
-`torben voltmer` 10 361 → 0) while `costa-kolini|emil klahn` alone goes 46 051 → 192 089 and
-carries the −4983. One author's bands are being over-corrected; find out which correction and why
-before touching anything else.
+**Why it fails — diagnosed, and it is the approach, not a tuning problem.**
+
+The regression concentrates on one author: in `meko-etl-tool`'s people matrices `clausbissinger`
+goes 98 425 → 6 421, `kanngiesser` 29 105 → 108 and `torben voltmer` 10 361 → 0, while
+`costa-kolini|emil klahn` alone goes 46 051 → 192 089 and carries the −4983. Traced to a single
+correction, and then to the project matrix column it lands in:
+
+```
+file id 954, band (author 2, tick 261): believed 5278, tree says 0  ->  emit -5278 at tick 261
+
+project matrix, band column 8:
+  row     8      9     10     20     30     40     52
+  before  9208   6613  6576   5779   307    307    302     <- drawn down by ordinary commits
+  after   3923   1329  1292    494  -4978  -4978  -4983
+  diff   -5285  -5285 -5285  -5285  -5285  -5285  -5285
+```
+
+The band was not wrong. Those 5278 lines were alive in the accumulator at row 8 and were then
+removed normally, decaying to 302 by the end. Subtracting them at row 8 removes them a second
+time, and the constant −5285 offset is that double removal riding through every later row.
+
+So `actual = 0` was the wrong reading. File id 954 was not gone — it was simply not named in the
+tree of the branch performing this merge, and it was still live on a branch that was not party to
+it. **`liveBandHistogram` returning nothing means "not mine", not "does not exist."**
+
+That is fatal to the whole design and not just to the dead-file case, because the mirror is global
+while the tree it is compared against belongs to one branch. Four variants were measured and the
+trade is structural, not tunable:
+
+| variant | `meko-etl-tool` negatives | head | `render-pdf` negatives | head |
+| --- | ---: | ---: | ---: | ---: |
+| none (B1d baseline) | 568 / 331 106 | +11.1% | 29 / 8 641 | +0.5% |
+| dead ids, both directions | 469 / 389 249 | −13.4% | **0 / 0** | −0.2% |
+| dead ids skipped entirely | 446 / 73 468 | +42.5% | 29 / 8 641 | +5.4% |
+| dead ids, restore only | **256 / 31 680** | +152.2% | **0 / 0** | +14.4% |
+
+Every variant that clears negatives inflates the head count and vice versa, because both halves
+are mis-attributions of the same kind. Booking dead-id corrections at the merge tick instead of
+the last band write was also tried: no effect on `meko-etl-tool`, and it cost `render-pdf` its
+zero (0 → 2 cells, −5160 worst).
+
+**The corrected design, for a second attempt.** Drop the global mirror. Reconcile from per-branch
+contributions instead, so a correction can only ever involve the branches actually merging:
+
+- Track `D_i`, the deltas each branch has emitted per file and band since the fork — `touchedFiles`
+  already tracks the file set, so this is the same bookkeeping one level finer.
+- Snapshot `H_pre`, branch 0's band histogram, before the `file.Merge()` loop; `H_m` is the same
+  after it.
+- The correction is `(H_m - H_pre) - Σ_{i≥1} D_i`. No `H_0` term survives, and no global state is
+  needed.
+
+A file that is live on a branch outside the merge contributes to no `D_i` here and is therefore
+left alone, which is exactly the mis-attribution that sank attempt 1.
 
 Two further leads, both measured and both dead ends as implemented — the mirror must be updated
 when changes are _emitted_, not when they are produced:
@@ -466,6 +514,121 @@ when changes are _emitted_, not when they are produced:
   this solution is not.
 
 The corpus regression suite now exists, which is what makes a second attempt reasonable.
+
+### Attempt 2: reconcile from per-branch contributions — also not shippable, but it found the cause
+
+The design above was built and measured. Getting it right took four corrections, each of which is
+worth recording because each is a real property of the pipeline:
+
+1. **Accounting has to be per fork, not per branch object.** A branch that merges below this point
+   has its own accounting zeroed, so an enclosing merge sees no `D_i` for it and re-adds lines that
+   were already booked. Fixed by folding a merged branch's deltas into the branch performing the
+   merge (`absorbBranchAccounting`), and then by making the accounting a stack with one frame per
+   fork — the fork origin keeps its branch slot, so without a frame of its own it offers an
+   enclosing merge deltas from before that fork and cancels work that merge never saw.
+2. **`H_pre` has to be snapshotted in `Consume()`, not in `Merge()`.** Consuming a merge commit
+   overwrites the ownership of every line it touches with `TreeMergeMark`. By the time `Merge()`
+   runs, those lines have no band, so `H_pre` is missing them while `H_m` has them at their
+   resolved band — the count is added and never subtracted. Uncorrected this inflated
+   `backend-for-microscope`'s head by 99%.
+3. **The invariant the whole design rests on is false.** Instrumented against a mirror of what was
+   actually emitted, `H_pre + Σ D_i` matched the real accumulator in **29% of corrections**
+   (350 corrections on `backend-for-microscope`, total drift 69 060). 53 negative corrections drove
+   the true accumulator below zero, 29 339 lines' worth.
+4. The drift is created by `mergeLineValues` (`file.go`). When both branches introduced the same
+   line, it silently adopts the older side's ownership — the tree is re-banded and **no delta is
+   emitted**. So the tree and the accumulated history diverge, permanently and cumulatively, and
+   any correction derived from a tree snapshot inherits the whole accumulated divergence. The
+   clearest single instance:
+
+   ```
+   file 98, band (author 7, tick 325): derived 27894, really accumulated 0      -> books -27894
+   file 98, band (author 3, tick 520): derived     0, really accumulated 25717  -> books +25717
+   ```
+
+   Same lines, two different bands. That is `backend-for-microscope`'s −25 749 cell.
+
+**Measured variants**, all fresh runs, `--burndown --burndown-people`, granularity/sampling 30.
+Negatives are cells / mass across both matrix scopes; head is the final-row sum against
+`git grep -I -c '' HEAD`.
+
+| variant | render-pdf | head | backend-for-microscope | head | meko-etl-tool | head |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| none (current tree) | 29 / 8 641 | +0.5% | 137 / 3 708 | +0.3% | 568 / 331 106 | +11.1% |
+| per-branch, full | 29 / 8 612 | +0.7% | 146 / 949 771 | −21.6% | 375 / 494 311 | +14.7% |
+| per-branch, restore only | 29 / 8 612 | +2.4% | **18 / 54** | +70.5% | 242 / 93 359 | +44.3% |
+| against the emission mirror | 29 / 8 293 | +5.6% | 102 / 173 527 | +58.2% | **83 / 9 106** | +176% |
+| `mergeLineValues` emission only | 29 / 8 641 | **−0.8%** | 137 / 3 708 | **+0.25%** | 647 / 336 486 | +9.3% |
+
+`personio-ipoffice-sync` is 6 / 104 with an exact head under every variant.
+
+Two readings, both firm. **Negatives and head totals still trade against each other** — every
+variant that clears negatives inflates the head, which is what attempt 1 found too, and now has an
+explanation rather than a correlation. And **reconciling at merge time cannot work at all**: the
+tree is not a record of what was accumulated, so no snapshot of it is a valid target.
+
+**Where the fix looked like it had to go.** Emit the delta at the point the ownership actually
+changes, in `mergeLineValues` — book out the version being dropped, since both branches reported
+an insertion and only one survives. That was attempt 3; it does not work either, see below.
+
+**Also found, unfixed.** The emission-mirror variant is defeated by file identity:
+`matchingMergeFiles` now pairs files by path across differing `FileId`s (B1d), while all accounting
+keys on `FileId`, so merged-in content is counted under both ids. Any future reconciliation has to
+resolve identity first.
+
+### Attempt 3: emit the delta in `mergeLineValues` — not shippable, and it closes the question
+
+Built with tests, measured against the corpus baseline seeded at `b97f549`, reverted. The defect it
+targets is real and the unit test pins it: `TestFileMergeDisplacedOwnershipIsReported` fails without
+the emission. It is the measurement that says no.
+
+**One-sided** (book out the destination's claim when it loses to an older version). Both builds were
+run twice and every figure reproduced exactly, so this is not B12 variance:
+
+| repository | baseline | one-sided | head, baseline → one-sided |
+| --- | ---: | ---: | ---: |
+| `render-pdf` | 0 / 0 | 0 / 0 | +0.54% → −0.78% |
+| `personio-ipoffice-sync` | 6 / 104 | 6 / 104 | ±0 |
+| `backend-for-microscope` | 137 / 3 708 | 137 / 3 708 | +0.27% → +0.25% |
+| `meko-etl-tool` | 573 / 244 067 | **626 / 250 656** | +14.88% → +13.01% |
+| `mekorp-backend` | 1 809 / 7 112 000 | **1 927 / 7 946 422** | −13.37% → **−14.50%** |
+
+`just test-corpus` fails on it: `mekorp-backend` 1748 → 1877 negative cells, residual 67 → 71.
+Note the head column — an earlier reading of this variant called it "the only one that moves every
+head towards `git`", which was measured on a four-repository set that left `mekorp-backend` out.
+With it in, the head gets worse too. That claim was wrong.
+
+**Symmetric** (book out whichever side loses, not just this one — the accounting argument applies
+equally to the branch whose version is discarded). Strictly worse:
+
+| repository | baseline | one-sided | symmetric |
+| --- | ---: | ---: | ---: |
+| `render-pdf` | **0 / 0** | **0 / 0** | 23 / 1 473 |
+| `backend-for-microscope` | 137 / 3 708 | 137 / 3 708 | 171 / 41 819 |
+| `meko-etl-tool` | 573 / 244 067 | 626 / 250 656 | 701 / 266 683 |
+
+**Why both fail, and why this closes the approach.** `mergeLineValues` pairs the two files **by
+position**. Lines at the same index are not the same line — they are two files of equal length laid
+side by side. So "both branches introduced this line" is an inference the function is not entitled
+to make, and booking out either side removes lines that were never duplicates. The symmetric
+version makes twice as many of those claims and is twice as wrong, which is the confirmation.
+
+This is the same wall attempt 2 hit from the other side. The tree is not a record of what was
+accumulated, and positional pairing is not a record of line identity, so **neither the merged
+contents nor the merge itself can supply the correction**. Anything that closes B1c has to carry
+line identity across the fork rather than reconstruct it at the merge — which is a change to what
+`File` stores, not to how a merge is accounted. That is a much larger piece of work than any of the
+three attempts, and it should not be started without deciding B1c is worth it.
+
+The symmetric diff (which contains the one-sided version as its first half, plus both unit tests) is
+preserved at `scratchpad/b1c-mergelinevalues/symmetric.diff`. Two existing assertions in
+`TestFileMergeShallow`/`TestFileMergeDeep` had to change for the symmetric variant: they assert
+`status[6] == 10` for a band the merged file no longer holds any lines of — which is the same defect
+seen from the other side, and worth knowing about independently of any fix.
+
+Attempt 2's code is preserved at `scratchpad/b1c-attempt2/` (`merge_reconcile.go` plus a diff
+against `2cb415d` for `line_history.go` and `file.go`); the variants are behind `HCK_RECONCILE`,
+`HCK_RESTORE_ONLY` and `HCK_TRACE`. Nothing was merged.
 
 **Affected in the corpus, on the current tree:** `mekorp-backend` (1958 cells,
 mass 7 722 174, worst −80 417), `meko-etl-tool` (568 / 331 106), `backend-for-microscope`
@@ -1169,7 +1332,7 @@ _observed_ to abort on `MKTools`, `mw_prod_planner` and `mekorp-webclient`.
 
 ---
 
-## B11 — a hibernated burndown analyser consumes a commit 🟠
+## B11 — a hibernated burndown analyser consumes a commit ✅ FIXED
 
 Not filed originally; found while fixing B7, on `mekorp-backend`.
 
@@ -1188,22 +1351,67 @@ the hibernate step.
 
 Reproduces with plain `--hibernation-distance=100 --lines-hibernation-threshold=200000`,
 **without** `--lines-hibernation-disk`, and not at all without hibernation — so it is a
-hibernate/boot *scheduling* problem, independent of B7's allocator serialization. It sits in
-the same plan-construction code as B1d (`insertHibernateBoot` / `hibernationAddons` in
-`internal/core/forks.go`), which is why it was left alone rather than patched locally: a
-defensive `make(map)` in `updateDelta` would silence the panic and silently discard the
-branch's accumulated history.
+hibernate/boot *scheduling* problem, independent of B7's allocator serialization.
 
-Worth checking whether the other hibernating leaves (`CodeChurn`, and anything else with a
-`Hibernate` that nils state) have the same exposure.
+### The cause was not in `forks.go` after all
+
+The filing suspected `insertHibernateBoot` / `hibernationAddons`, which is why this was
+parked next to B1d. Those are correct: the hibernate/boot pairs they emit are properly
+bracketed and non-overlapping *per branch index*.
+
+The fault is one layer down, in `changeHibernation`
+(`internal/core/pipeline_execution.go`), which hibernates by walking
+`state.branches[branch]` and calling `Hibernate()` on everything in it. That is only sound
+if each branch owns its instances — and `BurndownAnalysis.Fork` uses
+`core.ForkSamePipelineItem`, handing **the same pointer** to every branch, because its
+history is global and its `Merge` is a deliberate no-op. A fork counts as a use of both
+sides, so the plan routinely hibernates the idle side and commits on its sibling in the very
+next step:
+
+```
+267: F [2 9]
+268: H 2      <- nils the shared analyser's five maps
+269: C 9 eaa… <- same pointer, commits, panics
+398: B 2
+```
+
+The `0x10c, 0x9` arguments in the panic trace are plan index 268 / branch 9 — exactly that
+pair. Note the quieter half: even without the crash, `B 2` would `restoreBurndownState` the
+snapshot taken before the fork and silently discard everything branch 9 accumulated. That is
+why the defensive `make(map)` really would have been the wrong fix — it converts a crash into
+silent data loss.
+
+### The fix
+
+Hibernation state is now tracked **per item instance** as well as per branch index: an
+instance sleeps only when every live branch holding it is asleep, and wakes on the first
+branch to need it again, which also keeps `Hibernate`/`Boot` calls balanced. Items that clone
+per branch keep hibernating exactly as before. A branch-shared item now never hibernates in
+practice — the honest outcome, since it has no per-branch state to swap out.
+`BurndownAnalysis.Hibernate` is also idempotent now, as the interface has always promised; a
+second call used to encode the nil state over the good snapshot.
+
+**Measured.** The repro exits 0, and on `mekorp-backend` the hibernated run's output is
+byte-identical to the non-hibernated one — hibernation is transparent, which it demonstrably
+was not before.
+
+### The exposure survey asked for
+
+| item | `Fork` | exposed |
+| --- | --- | --- |
+| `BurndownAnalysis` | `ForkSamePipelineItem` | **yes — this was the crash** |
+| `LegacyBurndownAnalysis` | real per-branch clone | no |
+| `LineHistoryAnalyser` | real per-branch clone | no (and it panics loudly on the same misuse) |
+
+Nothing else in the tree implements `HibernateablePipelineItem`; `CodeChurn` does not.
 
 ---
 
-## B12 — burndown output is not reproducible run to run 🔴
+## B12 — burndown output is not reproducible run to run ✅ FIXED
 
 Not filed originally; found while seeding the corpus baseline, and confirmed independently.
-**This outranks the remaining accounting work, because it invalidates the measurement
-method those items depend on.**
+It outranked the remaining accounting work because it invalidated the measurement method
+those items depend on.
 
 Same binary, same clean checkout, same clone, three runs of `mekorp-backend` with
 `--burndown --burndown-people --granularity=30 --sampling=30`, with `run_time` and the
@@ -1236,20 +1444,66 @@ analysis itself.
 - **Concurrency alone.** `GOMAXPROCS=1` shrinks the drift from 28 rows to 4 but does **not**
   remove it. So parallelism amplifies the effect without being its only source.
 
-What remains is an ordering dependence in the analysis that survives single-threaded
-execution — most plausibly a map iteration order that decides *which* pairing is made
-rather than merely the order of accumulation (integer accumulation is order-independent, so
-a pure ordering change could not move the totals). Rename matching is the obvious suspect,
-since it selects pairs and B1c already found one broken comparator there; ties on equal
-hashes are still resolved arbitrarily.
+The guess recorded here — a map iteration order deciding *which* pairing is made — was the
+right shape and the wrong mechanism. There is no map involved.
 
-### Consequence for B1c
+### The cause: rename matching kept whichever of two different answers arrived first
 
-Every single-run measurement of negative cells or mass on the large repositories is
-untrustworthy at the margin. `test/corpus` therefore gates only `exit_code`,
-`negative_cells` and `residual_cells`, and leaves `mekorp-backend` and `mekorp-webclient`
-unbaselined entirely. **Fix this before drawing any further conclusion from a single run**,
-and re-measure B1c's table afterwards.
+`matchSimilarRenames` (`internal/plumbing/renames.go`) ran **two non-equivalent** greedy
+matchers concurrently and adopted whichever goroutine delivered first, cancelling its peer:
+
+```go
+first := <-results   // :434
+cancelWorkers()      // :436
+second := <-results  // :438 — discarded
+…
+return first.matches, first.added, first.deleted   // :406
+```
+
+`matchDeletedBlobs` scans the deleted side and greedily claims the best-named addition;
+`matchAddedBlobs` scans the other way. Both remove claimed blobs as they go, so the two
+directions produce genuinely different pairings whenever a blob has more than one plausible
+partner. The Go scheduler picked the winner. A different rename-vs-(delete + add)
+classification moves lines between age bands and people — which is exactly why totals moved
+and not merely their order.
+
+Inherited verbatim from upstream, where it was a `select` over the two — and Go resolves a
+ready `select` uniformly at random.
+
+The bisection that pinned it: everything is bit-stable at `--M=100`, which forces
+`sizesAreClose` to demand exactly equal sizes so both workers converge on the same
+(essentially empty) fuzzy-rename set. Every threshold that admits fuzzy renames was
+unstable, `GOMAXPROCS` and the timeouts notwithstanding.
+
+### The fix, in three parts
+
+1. **The race is gone.** The direction is now derived from the data — iterate whichever of
+   {deleted, added} is smaller, ties to the deleted side. That is the cheaper scan, which is
+   what the race was really approximating, and it halves the CPU rename matching costs.
+2. **The two greedy tie-breaks are total orders now.** `sortableBlob.Less` compared size
+   alone under a non-stable sort and `sortRenameCandidates` compared Levenshtein distance
+   alone; both decide which partner is tried first, so an arbitrary order leaked into the
+   result. Same class of defect as `sortableChange.Less` in `77171d5`.
+3. **Deadline truncation is no longer silent.** The per-diff bound is no longer derived from
+   the *remaining* commit budget — which made a pair's verdict depend on how long earlier
+   pairs took — and both `RenameAnalysis` and `FileDiff` now warn once and summarise at
+   `Dispose` when a deadline actually cut work short, saying plainly that the run is not
+   reproducible. Flag defaults and meanings are unchanged.
+
+**Measured.** `meko-etl-tool` and `mekorp-backend` are byte-identical across three runs at
+the defaults, at `--M 60`, and under `GOMAXPROCS=1` and `8`. Every one of those
+configurations produced three distinct hashes before.
+
+### Consequence for B1c — resolved
+
+`test/corpus` now baselines **all thirteen** repositories; `mekorp-backend` and
+`mekorp-webclient` were excluded solely because of this. A single-run measurement is
+trustworthy again, so B1c's table can be re-measured and believed.
+
+One caveat survives, and the binary says so out loud: `--diff-timeout` and
+`--renames-timeout` are wall-clock budgets, and hitting one still yields a different (not
+wrong, but different) answer. On `mekorp-backend` at the defaults, 8 file diffs do hit the
+1 s limit. Check stderr for `not reproducible` before trusting a marginal number.
 
 ---
 
@@ -1288,8 +1542,18 @@ and re-measure B1c's table afterwards.
       "no negatives" (which could not pass while B1c's residue exists). Seeded across all 13
       repositories, all exiting 0. Use it to judge attempt 2 at B1c: re-seed only after a
       change is understood, never to make a red run green.
-- [ ] **7. B1c's residue.** One attempt made and reverted — read "Attempt 1" in B1c before
-      starting a second one. Both of its neighbours are fixed — the `sortableChange.Less`
+- [ ] **7. B1c's residue.** Three attempts made and reverted — read "Attempt 1", "Attempt 2" and
+      "Attempt 3" in B1c before starting a fourth, and expect the answer to be that a fourth of the
+      same kind is not worth making. Between them they rule out the whole family: attempt 2 showed
+      the tree is not a record of what was accumulated (the derivation matched the real accumulator
+      in 29% of corrections), and attempt 3 showed `mergeLineValues` pairs lines by position, so it
+      cannot tell a duplicate from a coincidence — booking out either side regresses the corpus
+      gate, and booking out both regresses it twice as far. **Neither the merged contents nor the
+      merge itself can supply the correction.** What is left is carrying line identity across the
+      fork, which is a change to what `File` stores; decide whether B1c is worth that before
+      starting. File identity at the file level needs resolving too: all accounting keys on
+      `FileId` while B1d made file merging match on path.
+      Both of its neighbours are fixed — the `sortableChange.Less`
       comparator (B1c's rename half) and the merge replay (B1d) — and B1d turned out to share
       the mechanism, since dropping a parent from a file merge is what left the marks unresolved.
       **Re-measured against a pre-B1d build: B1d did not absorb it** (table in B1c). Cell counts
@@ -1305,15 +1569,17 @@ and re-measure B1c's table afterwards.
       opt-out flag, and two latent `Fork`/`Initialize` logger bugs fixed first), and B9's
       "one-line guard" turned out to be two guards — the `--pb` path was also reachable,
       contrary to the original filing.
-- [ ] **10. B12 — before anything else that is measured.** Burndown output differs between
-      identical runs, so every single-run figure in B1c's table is untrustworthy at the
-      margin. The plan is byte-identical, so this is not B10 regressing; timeouts and
-      concurrency are both ruled out as the sole cause. Fixing it is what makes the corpus
-      suite able to gate the two large repositories, and what makes a B1c measurement mean
-      anything.
-- [ ] **11. B11**, new: a hibernated burndown analyser consumes a commit and panics on a nil
-      map. Found while fixing B7. It lives in the same plan-construction code as B1d, so it is
-      worth taking while that context is fresh.
+- [x] **10. B12.** Done — rename matching raced two non-equivalent greedy matchers and kept
+      whichever goroutine finished first, so the Go scheduler chose the rename pairing. The
+      direction is now derived from the data, the two greedy tie-breaks are total orders, and
+      the remaining wall-clock truncation announces itself instead of silently changing the
+      numbers. `test/corpus` gates all thirteen repositories now, including the two large
+      ones, so **B1c's table can be re-measured and believed**.
+- [x] **11. B11.** Done — and the filing pointed at the wrong file. `insertHibernateBoot` and
+      `hibernationAddons` are correct; `changeHibernation` hibernated per branch index while
+      `ForkSamePipelineItem` shares one instance across branches, so a fork's idle side put
+      its sibling's analyser to sleep mid-run. Hibernation is now tracked per instance.
+      Nothing in `internal/core/forks.go` had to change.
 
 ## Regression coverage worth adding
 
@@ -1345,8 +1611,9 @@ clean histories.
 
       **Only `exit_code`, `negative_cells` and `residual_cells` gate the build.**
       `negative_mass` and `worst_cell` are recorded and reported in both directions but
-      ungated, because they drift between runs — see B12. A flaky gate gets ignored for the
-      same reason a red-from-birth one does.
+      ungated, because they drifted between runs. That drift was B12 and is now fixed, so
+      gating them has become defensible — left ungated for the moment only because the
+      wall-clock diff timeout can still truncate a run, which the binary now warns about.
 
       **`people_interaction` is excluded from the metrics.** It is a signed interaction
       matrix, not a band matrix, so its negatives are correct by construction; counting them
@@ -1354,18 +1621,21 @@ clean histories.
       baseline sits well below the tables in B1c/B2 — those counts almost certainly included
       it. Treat the baseline as the current truth and those tables as history.
 
-      **Seeded across 11 of the 13 named repositories, all exiting 0.** `mekorp-backend`
-      and `mekorp-webclient` are deliberately **not** baselined — not for runtime (they take
-      72 s and 325 s; the whole corpus seeds in ~6 min) but because nothing about them can
-      be gated while B12 stands. They are reported and skipped; add them with
-      `just update-corpus-baseline 'mekorp-backend|mekorp-webclient'` once burndown is
-      reproducible.
+      **Seeded across all 13 named repositories, all exiting 0**, re-seeded after B11 and
+      B12 landed. `mekorp-backend` and `mekorp-webclient` were originally excluded because
+      nothing about them could be gated while B12 stood; with rename matching deterministic
+      they reproduce byte-for-byte and are gated like the rest. The whole corpus seeds in
+      ~7 min.
 
-      The baseline was seeded from a **detached worktree at a clean `efdccf6`**, not from the
-      live tree: a first attempt seeded against the working tree was invalidated when a
-      concurrent change moved `process-manager` from 0 to 25 103 negative mass mid-seed. It
-      should be re-seeded now that this batch has landed. The file records the commit and
-      working-tree state it was measured against.
+      **`baseline.json` was never actually committed** until now: `.gitignore`'s blanket
+      `*.json` matched it, so the file every other machine compares against did not exist
+      outside the one that seeded it. Fixed with a negation, alongside the two entries
+      already there for `pb.schema.json` and the render goldens.
+
+      The file records the commit and working-tree state it was measured against. Re-seed
+      after any change to burndown or merge accounting — a first attempt seeded against a
+      live working tree was invalidated when a concurrent change moved `process-manager`
+      from 0 to 25 103 negative mass mid-seed.
 
 ## Verification
 

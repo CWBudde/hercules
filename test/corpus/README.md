@@ -57,12 +57,12 @@ correct by construction.
 The suite reads YAML, not `.pb`, on purpose: `pb.ToBurndownSparseMatrix` clamps
 with `max(value, 0)`, so a protobuf report can never show a negative cell.
 
-## `mekorp-backend` and `mekorp-webclient` are deliberately unbaselined
+## All thirteen repositories are baselined (was: eleven)
 
-They are in the repository list but **not** in `baseline.json`, so the suite
-reports and skips them. This is not a seeding shortcut: their output is not
-reproducible. Running the same binary, from the same clean checkout, over the
-same clone three times produces three different `Burndown` sections:
+`mekorp-backend` and `mekorp-webclient` were originally left out of
+`baseline.json` because their output was not reproducible: the same binary, from
+the same clean checkout, over the same clone produced three different `Burndown`
+sections in three runs.
 
 ```
 run1 md5=155f6a49899a96285665e60b6ea7891d
@@ -70,17 +70,17 @@ run2 md5=e41284579eda1f2c02549a0ee02a1752
 run3 md5=fd2de28e13f50154f62b4c72fadf2072
 ```
 
-Across three full corpus passes at the same commit, mekorp-webclient held its
-counts (1812 / 56) but drifted in mass (21 862 418 → 21 878 822) and worst cell
-(−302 568 → −302 749). mekorp-backend drifted in the counts too: 1992 / 73 twice,
-then 2010 / 74. The eleven smaller repositories reproduced their counts exactly
-on every pass; only meko-etl-tool also wobbled in mass.
+That was PLAN.md B12: rename detection ran two non-equivalent greedy matchers
+concurrently and kept whichever goroutine finished first, so the Go scheduler
+decided which files counted as renames. Fixed; both repositories now reproduce
+byte-for-byte and are gated like the rest.
 
-So the drift is a property of the analysis on repositories with substantial
-merge topology, not of this suite, and it grows with merge density. Nothing
-about these two repositories can be gated today. Add them once burndown is
-deterministic on merges, or opt in locally with
-`just update-corpus-baseline 'mekorp-backend|mekorp-webclient'` and expect noise.
+One caveat survives, and the binary now says so out loud. `--diff-timeout` and
+`--renames-timeout` are wall-clock budgets, and a run that hits one produces a
+different — not wrong, but different — answer than an untruncated run. On
+`mekorp-backend` at the defaults, 8 file diffs do hit the 1 s limit. If a
+baseline refuses to settle, check stderr for `not reproducible` and re-measure
+with those two timeouts raised.
 
 ## Refreshing the baseline
 

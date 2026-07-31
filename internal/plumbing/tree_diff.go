@@ -241,7 +241,19 @@ func (treediff *TreeDiff) Consume(deps map[string]any) (map[string]any, error) {
 	}
 
 	if err != nil {
-		return nil, err
+		if !isRejectedTreePath(err) || treediff.repository == nil {
+			return nil, err
+		}
+
+		treediff.l.Warnf(
+			"commit %s carries a path go-git will not walk (%v), diffing its trees directly\n",
+			commit.Hash.String(), err,
+		)
+
+		diffs, err = treediff.diffTreesDirectly(treediff.previousTree, tree)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	diffs, err = treediff.filterDiffs(diffs)
@@ -253,6 +265,29 @@ func (treediff *TreeDiff) Consume(deps map[string]any) (map[string]any, error) {
 	treediff.previousCommit = commit.Hash
 
 	return map[string]any{DependencyTreeChanges: diffs}, nil
+}
+
+// rejectedTreePathMarker is how go-git reports a tree entry its path validation
+// refuses to hand out (internal/pathutil.ErrInvalidPath).
+const rejectedTreePathMarker = "invalid path"
+
+// isRejectedTreePath reports whether err is go-git refusing to walk a tree
+// because one of its entries has a name it considers unsafe to materialise -
+// a lone "\", or one containing a control character such as a newline.
+//
+// Upstream Git commits such names happily, and we have real repositories that
+// contain them, but go-git validates inside TreeWalker.Next, which every tree
+// diff goes through (object.transformChildren builds the merkletrie noders from
+// it). Without this, one such entry anywhere in the history aborts the analysis
+// of the whole repository, which is a far worse outcome than losing the commits
+// that carry it. The check is deliberately narrow: every other diff failure -
+// a missing object, a corrupt pack - stays fatal.
+//
+// Matching on the message is unpleasant but unavoidable: pathutil is internal to
+// go-git, so its sentinel is unreachable, and merkletrie re-wraps the error with
+// %s, which breaks the errors.Is chain before it reaches us.
+func isRejectedTreePath(err error) bool {
+	return err != nil && strings.Contains(err.Error(), rejectedTreePathMarker)
 }
 
 func commitContinuesFrom(commit *object.Commit, previous plumbing.Hash) bool {

@@ -57,6 +57,7 @@ coverage.txt
 *.json
 !internal/pb/pb.schema.json
 !internal/render/testdata/**/*.golden.json
+!test/corpus/baseline.json
 /.run/
 /bench-results/
 /self-analysis/

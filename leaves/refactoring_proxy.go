@@ -16,7 +16,16 @@ import (
 	items "github.com/cwbudde/hercules/internal/plumbing"
 )
 
-var errUnexpectedRefactoringProxyResult = errors.New("result is not a RefactoringProxyResult")
+var (
+	errUnexpectedRefactoringProxyResult = errors.New("result is not a RefactoringProxyResult")
+	// errRefactoringProxyMismatchingTickSizes rejects merges of results produced with different
+	// tick granularities: their tick indices do not describe the same time axis.
+	errRefactoringProxyMismatchingTickSizes = errors.New("mismatching tick sizes")
+	// errRefactoringProxyMismatchingThresholds rejects merges of results classified with different
+	// thresholds. Unlike descriptive metadata the threshold *is* the classifier, and the renderer
+	// draws it as a reference line, so silently picking one would produce a wrong picture.
+	errRefactoringProxyMismatchingThresholds = errors.New("mismatching thresholds")
+)
 
 const (
 	// ConfigRefactoringThreshold is the name of the configuration option.
@@ -259,6 +268,147 @@ func (rp *RefactoringProxy) Deserialize(pbmessage []byte) (any, error) {
 	}
 
 	return result, nil
+}
+
+// refactoringTickAccumulator collects the merge inputs for a single tick of the merged axis.
+type refactoringTickAccumulator struct {
+	// renames is the count-weighted rename mass, ratio*total summed over the sources. It stays a
+	// float64 because Finalize() already dropped the raw integer count; the weighted mean never
+	// needs it back as an integer.
+	renames      float64
+	totalChanges int
+	sources      int
+	// ratio is the verbatim ratio of the last source, used when this tick has exactly one source.
+	ratio float64
+}
+
+// MergeResults combines two RefactoringProxyResult-s together.
+func (rp *RefactoringProxy) MergeResults(result1, result2 any,
+	commonResult1, commonResult2 *core.CommonAnalysisResult,
+) any {
+	cr1, err := requiredResult[RefactoringProxyResult](result1)
+	if err != nil {
+		return fmt.Errorf("merge refactoring proxy first result: %w", err)
+	}
+
+	cr2, err := requiredResult[RefactoringProxyResult](result2)
+	if err != nil {
+		return fmt.Errorf("merge refactoring proxy second result: %w", err)
+	}
+
+	if cr1.tickSize != cr2.tickSize {
+		return fmt.Errorf("%w (r1: %d, r2: %d) received",
+			errRefactoringProxyMismatchingTickSizes, cr1.tickSize, cr2.tickSize)
+	}
+
+	if cr1.Threshold != cr2.Threshold {
+		return fmt.Errorf("%w (r1: %f, r2: %f) received",
+			errRefactoringProxyMismatchingThresholds, cr1.Threshold, cr2.Threshold)
+	}
+
+	offset1, offset2 := refactoringProxyTickOffsets(commonResult1, commonResult2, cr1.tickSize)
+
+	accumulated := map[int]*refactoringTickAccumulator{}
+	accumulateRefactoringTicks(accumulated, &cr1, offset1)
+	accumulateRefactoringTicks(accumulated, &cr2, offset2)
+
+	return buildMergedRefactoringResult(accumulated, cr1.Threshold, cr1.tickSize)
+}
+
+// refactoringProxyTickOffsets rebases both tick axes onto the earlier repository start, which is
+// exactly what CommonAnalysisResult.Merge() records as the merged BeginTime.
+func refactoringProxyTickOffsets(
+	commonResult1, commonResult2 *core.CommonAnalysisResult, tickSize time.Duration,
+) (int, int) {
+	if tickSize <= 0 || commonResult1 == nil || commonResult2 == nil {
+		return 0, 0
+	}
+
+	firstStart := items.FloorTime(commonResult1.BeginTimeAsTime(), tickSize)
+	secondStart := items.FloorTime(commonResult2.BeginTimeAsTime(), tickSize)
+
+	startTime := firstStart
+	if secondStart.Before(startTime) {
+		startTime = secondStart
+	}
+
+	offset1 := int(firstStart.Sub(startTime) / tickSize)
+	offset2 := int(secondStart.Sub(startTime) / tickSize)
+
+	return offset1, offset2
+}
+
+// accumulateRefactoringTicks folds one source into the shifted, merged tick axis.
+func accumulateRefactoringTicks(
+	target map[int]*refactoringTickAccumulator, source *RefactoringProxyResult, offset int,
+) {
+	for tickIndex, tick := range source.Ticks {
+		totalChanges := 0
+		if tickIndex < len(source.TotalChanges) {
+			totalChanges = source.TotalChanges[tickIndex]
+		}
+
+		ratio := 0.0
+		if tickIndex < len(source.RenameRatios) {
+			ratio = source.RenameRatios[tickIndex]
+		}
+
+		targetTick := tick + offset
+
+		accumulator := target[targetTick]
+		if accumulator == nil {
+			accumulator = &refactoringTickAccumulator{}
+			target[targetTick] = accumulator
+		}
+
+		accumulator.renames += ratio * float64(totalChanges)
+		accumulator.totalChanges += totalChanges
+		accumulator.sources++
+		accumulator.ratio = ratio
+	}
+}
+
+// buildMergedRefactoringResult emits the sorted, re-classified merged result.
+func buildMergedRefactoringResult(
+	accumulated map[int]*refactoringTickAccumulator, threshold float64, tickSize time.Duration,
+) RefactoringProxyResult {
+	ticks := make([]int, 0, len(accumulated))
+	for tick := range accumulated {
+		ticks = append(ticks, tick)
+	}
+
+	// serializeText/serializeBinary do not sort, so map iteration order would leak into the output.
+	sort.Ints(ticks)
+
+	merged := RefactoringProxyResult{
+		Ticks:         make([]int, len(ticks)),
+		RenameRatios:  make([]float64, len(ticks)),
+		IsRefactoring: make([]bool, len(ticks)),
+		TotalChanges:  make([]int, len(ticks)),
+		Threshold:     threshold,
+		tickSize:      tickSize,
+	}
+
+	for tickIndex, tick := range ticks {
+		accumulator := accumulated[tick]
+
+		ratio := 0.0
+
+		switch {
+		case accumulator.sources == 1:
+			// (r*t)/t can differ from r by an ulp, so keep a lone source bit-for-bit.
+			ratio = accumulator.ratio
+		case accumulator.totalChanges > 0:
+			ratio = accumulator.renames / float64(accumulator.totalChanges)
+		}
+
+		merged.Ticks[tickIndex] = tick
+		merged.RenameRatios[tickIndex] = ratio
+		merged.IsRefactoring[tickIndex] = ratio > threshold
+		merged.TotalChanges[tickIndex] = accumulator.totalChanges
+	}
+
+	return merged
 }
 
 // getOrCreateTickMetrics retrieves or creates tick metrics.

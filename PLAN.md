@@ -373,9 +373,38 @@ rather than letting both removals stand — the same territory as B1d. Do not at
 the corpus regression suite in place first, and re-measure `mekorp-backend` specifically, since
 it is now the only large unexplained case.
 
-**Affected in the corpus, after the comparator fix:** `mekorp-backend` (2226 cells,
-mass 7 819 365), `meko-etl-tool` (498), `backend-for-microscope` (183), `render-pdf` (47),
-`personio-ipoffice-sync` (6).
+### B1d did not absorb it — measured
+
+B1d shares the mechanism, so it was worth checking whether it closed the residue as a side
+effect. It did not. Both columns below are fresh runs of the same command
+(`--burndown --burndown-people`, granularity/sampling 30): "pre" is a build of `77171d5` (the
+comparator fix, before the merge replay), "now" is the current tree. Figures are
+cells / negative mass, split by matrix scope.
+
+| repository | project pre | project now | people pre | people now |
+| --- | ---: | ---: | ---: | ---: |
+| `mekorp-backend` | 435 / 3 751 055 | 508 / 3 749 220 | 1791 / 4 068 310 | 1450 / 3 972 954 |
+| `meko-etl-tool` | 107 / 100 251 | 167 / **147 164** | 391 / 132 910 | 401 / **183 942** |
+| `backend-for-microscope` | 64 / 946 | **23 / 613** | 119 / 3 098 | 114 / 3 095 |
+| `render-pdf` | 0 / 0 | 0 / 0 | 52 / 2 088 | 29 / **8 641** |
+| `personio-ipoffice-sync` | 3 / 52 | 3 / 52 | 3 / 52 | 3 / 52 |
+
+Cell counts fall in three repositories, but **negative mass rises in two** — `render-pdf`'s
+people scope 2 088 → 8 641 and `meko-etl-tool` throughout. That is consistent with B1d working
+as intended rather than regressing: moving merged lines off the merge author and onto their real
+author relocates the later removals into bands where the matching positive was never inserted,
+which makes the double-removal *more* visible. Worst cell is unchanged everywhere except
+`render-pdf` (−92 → −323) and `meko-etl-tool` (−2177 → −2248).
+
+One genuine win to keep: `render-pdf`'s **project** matrix is clean at both revisions, and every
+negative it has left sits in a single person's matrix. Its −7386 project cell was entirely the
+comparator.
+
+**Affected in the corpus, on the current tree:** `mekorp-backend` (1958 cells,
+mass 7 722 174, worst −80 417), `meko-etl-tool` (568 / 331 106), `backend-for-microscope`
+(137 / 3 708), `render-pdf` (29 / 8 641), `personio-ipoffice-sync` (6 / 104).
+`mekorp-backend` still carries 96% of the mass, and its project matrix alone is
+508 cells / 3 749 220.
 
 ---
 
@@ -909,9 +938,12 @@ _observed_ to abort on `MKTools`, `mw_prod_planner` and `mekorp-webclient`.
 - [ ] **7. B1c's residue.** Both of its neighbours are now fixed — the `sortableChange.Less`
       comparator (B1c's rename half) and the merge replay (B1d) — and B1d turned out to share
       the mechanism, since dropping a parent from a file merge is what left the marks unresolved.
-      What is left is the genuine double-removal across sibling branches. `mekorp-backend` is the
-      case to drive from: it holds essentially all the remaining negative mass, and it is also the
-      one repository whose project matrix B1d moved away from the git ground truth.
+      **Re-measured against a pre-B1d build: B1d did not absorb it** (table in B1c). Cell counts
+      fell, but negative mass rose in two repositories, because correct attribution makes the
+      double-removal more visible rather than less. What is left is the genuine double-removal
+      across sibling branches. `mekorp-backend` is the case to drive from: it holds 96% of the
+      remaining negative mass, and it is also the one repository whose project matrix B1d moved
+      away from the git ground truth.
 - [ ] **8. B8's regression test.** The fix itself is committed (`c04d08c`); what is left is a
       fixture with a deliberately idle person.
 - [ ] **9. B5, B6, B7, B9.** Lower frequency; B6 may be documentation only and B9 is a

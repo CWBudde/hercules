@@ -23,6 +23,16 @@ func SafeString(str string) string {
 // safeguard for legacy callers; analyses should validate their matrices and report invalid
 // internal state instead of relying on output-time correction.
 func PrintMatrix(writer io.Writer, matrix [][]int64, indent int, name string, fixNegative bool) {
+	// An empty matrix has no rows to derive the column count from. Emit just the block
+	// header (when named) so the YAML key stays present with an empty body.
+	if len(matrix) == 0 {
+		if name != "" {
+			_, _ = fmt.Fprintf(writer, "%s%s: |-\n", strings.Repeat(" ", indent), SafeString(name))
+		}
+
+		return
+	}
+
 	width := matrixColumnWidth(matrix, fixNegative)
 	last := len(matrix[len(matrix)-1])
 

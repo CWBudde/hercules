@@ -2,6 +2,7 @@ package leaves
 
 import (
 	"bytes"
+	"fmt"
 	"math"
 	"testing"
 	"time"
@@ -43,6 +44,78 @@ func TestHotspotRiskMergeResultsSortsEqualScoresByPath(t *testing.T) {
 	require.Len(t, result.Files, 2)
 	assert.Equal(t, testAlphaPath, result.Files[0].Path)
 	assert.Equal(t, "zeta.go", result.Files[1].Path)
+}
+
+// TestHotspotRiskMergeResultsOnZeroValuedAnalysis exercises the `hercules combine` path:
+// there the item is summoned via core.Registry.Summon (reflect.New), so neither Configure
+// nor Initialize runs and TopN is 0. Truncating against the raw field emptied every merged
+// result.
+func TestHotspotRiskMergeResultsOnZeroValuedAnalysis(t *testing.T) {
+	hra := &HotspotRiskAnalysis{}
+	require.Zero(t, hra.TopN, "the combine path never initializes the item")
+
+	result, ok := hra.MergeResults(
+		HotspotRiskResult{
+			WindowDays: 90,
+			Files: []FileRisk{
+				{Path: "mid.go", RiskScore: 0.5},
+				{Path: "low.go", RiskScore: 0.1},
+			},
+		},
+		HotspotRiskResult{
+			WindowDays: 90,
+			Files: []FileRisk{
+				{Path: "high.go", RiskScore: 0.9},
+			},
+		},
+		nil,
+		nil,
+	).(HotspotRiskResult)
+	require.True(t, ok, "merging two valid results must not return an error")
+
+	require.Len(t, result.Files, 3, "the merged list must not be truncated to zero")
+	assert.Equal(t, []string{"high.go", "mid.go", "low.go"},
+		[]string{result.Files[0].Path, result.Files[1].Path, result.Files[2].Path})
+	assert.Equal(t, 90, result.WindowDays)
+
+	// More than DefaultTopN files must still be capped at DefaultTopN.
+	const fileCount = DefaultTopN + 7
+
+	first := HotspotRiskResult{WindowDays: 90}
+	second := HotspotRiskResult{WindowDays: 90}
+
+	for i := range fileCount {
+		risk := FileRisk{Path: fmt.Sprintf("file%02d.go", i), RiskScore: float64(fileCount - i)}
+		if i%2 == 0 {
+			first.Files = append(first.Files, risk)
+		} else {
+			second.Files = append(second.Files, risk)
+		}
+	}
+
+	capped, ok := (&HotspotRiskAnalysis{}).MergeResults(first, second, nil, nil).(HotspotRiskResult)
+	require.True(t, ok)
+	require.Len(t, capped.Files, DefaultTopN)
+	assert.Equal(t, "file00.go", capped.Files[0].Path, "the highest score must survive")
+	assert.Equal(t, fmt.Sprintf("file%02d.go", DefaultTopN-1),
+		capped.Files[DefaultTopN-1].Path, "the cap must keep the top scores")
+}
+
+func TestHotspotRiskMergeResultsRejectsWindowMismatch(t *testing.T) {
+	hra := &HotspotRiskAnalysis{}
+
+	merged := hra.MergeResults(
+		HotspotRiskResult{WindowDays: 90, Files: []FileRisk{{Path: testAlphaPath}}},
+		HotspotRiskResult{WindowDays: 30, Files: []FileRisk{{Path: testMainPath}}},
+		nil,
+		nil,
+	)
+
+	err, isErr := merged.(error)
+	require.True(t, isErr, "combine detects failures by type-asserting the returned any to error")
+	require.ErrorIs(t, err, errHotspotRiskWindowMismatch)
+	assert.Contains(t, err.Error(), "r1: 90")
+	assert.Contains(t, err.Error(), "r2: 30")
 }
 
 func TestHotspotRiskNormalizeAndScoreScalesFactors(t *testing.T) {

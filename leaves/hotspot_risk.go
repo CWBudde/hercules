@@ -101,6 +101,7 @@ var (
 	errHotspotRiskWeight         = errors.New("hotspot risk weight must be finite and non-negative")
 	errHotspotRiskWindow         = errors.New("hotspot risk window must be positive")
 	errHotspotRiskWindowTooLarge = errors.New("hotspot risk window is too large")
+	errHotspotRiskWindowMismatch = errors.New("mismatching hotspot risk windows")
 )
 
 // Name of this PipelineItem.
@@ -317,9 +318,7 @@ func (hra *HotspotRiskAnalysis) Initialize(repository *git.Repository) error {
 		)
 	}
 
-	if hra.TopN == 0 {
-		hra.TopN = DefaultTopN
-	}
+	hra.TopN = hra.effectiveTopN()
 
 	if hra.WindowDays == 0 {
 		hra.WindowDays = DefaultWindowDays
@@ -341,6 +340,19 @@ func (hra *HotspotRiskAnalysis) Initialize(repository *git.Repository) error {
 	hra.OneShotMergeProcessor.Initialize()
 
 	return nil
+}
+
+// effectiveTopN returns the number of files to report. It must be used everywhere the
+// report is truncated, because `hercules combine` summons this item through
+// core.Registry.Summon (reflect.New) and calls neither Configure nor Initialize: the
+// struct is zero-valued there, so a bare hra.TopN would truncate every merged result
+// to the empty list.
+func (hra *HotspotRiskAnalysis) effectiveTopN() int {
+	if hra.TopN <= 0 {
+		return DefaultTopN
+	}
+
+	return hra.TopN
 }
 
 func (hra *HotspotRiskAnalysis) applyDefaultWeights() {
@@ -427,8 +439,9 @@ func (hra *HotspotRiskAnalysis) Finalize() any {
 	hra.normalizeAndScore(risks)
 	sortFileRisks(risks)
 
-	if len(risks) > hra.TopN {
-		risks = risks[:hra.TopN]
+	topN := hra.effectiveTopN()
+	if len(risks) > topN {
+		risks = risks[:topN]
 	}
 
 	return HotspotRiskResult{
@@ -555,12 +568,24 @@ func (hra *HotspotRiskAnalysis) Deserialize(pbmessage []byte) (any, error) {
 	return result, nil
 }
 
-// MergeResults combines two HotspotRisk results (not really meaningful, but required by interface).
+// MergeResults combines two HotspotRisk results by concatenating the two file lists and
+// re-ranking them.
+//
+// Two properties are deliberately NOT implemented here:
+//
+//   - No deduplication by Path. The same path in two different repositories denotes two
+//     different files, and FileRisk carries no repository qualifier, so collapsing equal
+//     paths would silently fuse unrelated files.
+//   - No cross-run rescaling. normalizeAndScore normalizes each factor against the maxima
+//     of its own run, so scores from two runs are not on a common scale and the merged
+//     ranking only approximates a global one. Fixing that requires carrying the raw
+//     normalization bounds in the FileRisk schema and is a separate change.
+//
+// Runs with different churn windows are rejected outright, since their Churn numbers are
+// not comparable at all.
 func (hra *HotspotRiskAnalysis) MergeResults(
 	firstResult, secondResult any, _, _ *core.CommonAnalysisResult,
 ) any {
-	// Merging hotspot risk across repositories doesn't make semantic sense,
-	// but we implement it by concatenating and re-sorting
 	cr1, err := requiredResult[HotspotRiskResult](firstResult)
 	if err != nil {
 		return err
@@ -571,12 +596,18 @@ func (hra *HotspotRiskAnalysis) MergeResults(
 		return err
 	}
 
+	if cr1.WindowDays != cr2.WindowDays {
+		return fmt.Errorf("%w (r1: %d, r2: %d) received",
+			errHotspotRiskWindowMismatch, cr1.WindowDays, cr2.WindowDays)
+	}
+
 	allFiles := append([]FileRisk(nil), cr1.Files...)
 	allFiles = append(allFiles, cr2.Files...)
 	sortFileRisks(allFiles)
 
-	if len(allFiles) > hra.TopN {
-		allFiles = allFiles[:hra.TopN]
+	topN := hra.effectiveTopN()
+	if len(allFiles) > topN {
+		allFiles = allFiles[:topN]
 	}
 
 	return HotspotRiskResult{

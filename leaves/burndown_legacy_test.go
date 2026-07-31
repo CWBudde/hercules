@@ -839,6 +839,43 @@ func TestLegacyBurndownSerializeRejectsNegativeBalances(t *testing.T) {
 	}
 }
 
+// TestLegacyBurndownSerializeEmptyPeopleMatrix pins that the legacy serializer, which
+// delegates to BurndownAnalysis.serializeText, also survives a missing people matrix.
+func TestLegacyBurndownSerializeEmptyPeopleMatrix(t *testing.T) {
+	result := BurndownResult{
+		GlobalHistory:      burndown.DenseHistory{{0}},
+		PeopleHistories:    []burndown.DenseHistory{{{0}}},
+		PeopleMatrix:       nil,
+		reversedPeopleDict: []string{"alice"},
+		sampling:           5,
+		granularity:        7,
+		tickSize:           24 * time.Hour,
+	}
+
+	for _, binary := range []bool{false, true} {
+		buffer := &bytes.Buffer{}
+
+		require.NotPanics(t, func() {
+			require.NoError(t, (&LegacyBurndownAnalysis{}).Serialize(result, binary, buffer))
+		})
+
+		if !binary {
+			assert.Equal(t, `  granularity: 7
+  sampling: 5
+  tick_size: 86400
+  "project": |-
+    0
+  people_sequence:
+    - "alice"
+  people:
+    "alice": |-
+      0
+  people_interaction: |-
+`, buffer.String())
+		}
+	}
+}
+
 func TestLegacyBurndownSerializeAuthorMissing(t *testing.T) {
 	out, _ := bakeBurndownForSerialization(t, core.AuthorMissing)
 	bd := &LegacyBurndownAnalysis{}

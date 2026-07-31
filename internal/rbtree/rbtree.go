@@ -15,6 +15,12 @@ var (
 	errIncompleteRead             = errors.New("incomplete read")
 	errInvalidSerializedAllocator = errors.New("invalid serialized allocator")
 	errAllocatorIntegrity         = errors.New("serialized allocator integrity check failed")
+
+	// ErrAllocatorNotHibernated is returned by Serialize() and Deserialize() when the
+	// allocator still holds its in-memory storage. Hibernate() intentionally no-ops for
+	// small or empty allocators, so callers must be able to match this instead of
+	// crashing the whole run.
+	ErrAllocatorNotHibernated = errors.New("(de)serialization requires the hibernated state")
 )
 
 const (
@@ -55,6 +61,14 @@ func NewAllocator() *Allocator {
 // Size returns the currently allocated size.
 func (allocator *Allocator) Size() int {
 	return len(allocator.storage)
+}
+
+// Hibernated reports whether the allocator is currently hibernated, i.e. its storage was
+// compressed away. Hibernate() deliberately does nothing for allocators below the
+// hibernation threshold or without any nodes, so callers which need to distinguish those
+// cases (Serialize() requires the hibernated state) have to ask.
+func (allocator *Allocator) Hibernated() bool {
+	return allocator.storage == nil
 }
 
 // Used returns the number of nodes contained in the allocator.
@@ -174,7 +188,7 @@ func (allocator *Allocator) Boot() {
 // checksum so truncated or corrupted temporary state is rejected deterministically.
 func (allocator *Allocator) Serialize(path string) error {
 	if allocator.storage != nil {
-		panic("serialization requires the hibernated state")
+		return fmt.Errorf("serialize allocator to %q: %w", path, ErrAllocatorNotHibernated)
 	}
 
 	file, err := os.Create(path)
@@ -231,7 +245,7 @@ func (allocator *Allocator) Serialize(path string) error {
 // Deserialize reads a hibernated allocator from disk.
 func (allocator *Allocator) Deserialize(path string) error {
 	if allocator.storage != nil {
-		panic("deserialization requires the hibernated state")
+		return fmt.Errorf("deserialize allocator from %q: %w", path, ErrAllocatorNotHibernated)
 	}
 
 	file, err := os.Open(path)

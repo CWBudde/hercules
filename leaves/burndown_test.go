@@ -775,6 +775,112 @@ func TestBurndownSerializeRejectsNegativeBalances(t *testing.T) {
 	}
 }
 
+// TestBurndownSerializeEmptyPeopleMatrix pins the regression where a result carrying
+// people histories but no people interaction matrix (finalizePeopleMatrix returns nil
+// when no author interactions were recorded) crashed the YAML writer.
+func TestBurndownSerializeEmptyPeopleMatrix(t *testing.T) {
+	tests := map[string]struct {
+		peopleMatrix burndown.DenseHistory
+		binaries     []bool
+	}{
+		"nil": {peopleMatrix: nil, binaries: []bool{false, true}},
+		// A non-nil zero-row matrix is only exercised through the text writer:
+		// pb.DenseToCompressedSparseRowMatrix dereferences matrix[0] and panics on it,
+		// which is a separate defect outside the scope of this change.
+		"zero-rows": {peopleMatrix: burndown.DenseHistory{}, binaries: []bool{false}},
+	}
+
+	for name, testCase := range tests {
+		peopleMatrix := testCase.peopleMatrix
+
+		for _, binary := range testCase.binaries {
+			t.Run(fmt.Sprintf("%s/binary=%t", name, binary), func(t *testing.T) {
+				result := BurndownResult{
+					GlobalHistory:      burndown.DenseHistory{{0}},
+					PeopleHistories:    []burndown.DenseHistory{{{0}}},
+					PeopleMatrix:       peopleMatrix,
+					reversedPeopleDict: []string{"alice"},
+					sampling:           5,
+					granularity:        7,
+					tickSize:           24 * time.Hour,
+				}
+
+				buffer := &bytes.Buffer{}
+				analyser := &BurndownAnalysis{}
+
+				require.NotPanics(t, func() {
+					require.NoError(t, analyser.Serialize(result, binary, buffer))
+				})
+
+				if binary {
+					msg := pb.BurndownAnalysisResults{}
+					require.NoError(t, proto.Unmarshal(buffer.Bytes(), &msg))
+					assert.Empty(t, msg.GetPeopleInteraction().GetNumberOfRows())
+
+					return
+				}
+
+				assert.Equal(t, `  granularity: 7
+  sampling: 5
+  tick_size: 86400
+  "project": |-
+    0
+  people_sequence:
+    - "alice"
+  people:
+    "alice": |-
+      0
+  people_interaction: |-
+`, buffer.String())
+			})
+		}
+	}
+}
+
+// TestBurndownDeserializeEmptyPeopleMatrixSerializes covers the deserialization route
+// which yields a non-nil but zero-row PeopleMatrix when the protobuf carries an empty
+// people_interaction message.
+func TestBurndownDeserializeEmptyPeopleMatrixSerializes(t *testing.T) {
+	message := &pb.BurndownAnalysisResults{
+		Granularity: 7,
+		Sampling:    5,
+		TickSize:    int64(24 * time.Hour),
+		Project: &pb.BurndownSparseMatrix{
+			Name: "project", NumberOfRows: 1, NumberOfColumns: 1,
+			Rows: []*pb.BurndownSparseMatrixRow{{Columns: []uint32{0}}},
+		},
+		People: []*pb.BurndownSparseMatrix{{
+			Name: "alice", NumberOfRows: 1, NumberOfColumns: 1,
+			Rows: []*pb.BurndownSparseMatrixRow{{Columns: []uint32{0}}},
+		}},
+		PeopleInteraction: &pb.CompressedSparseRowMatrix{
+			NumberOfRows: 0, NumberOfColumns: 3, Indptr: []int64{0},
+		},
+	}
+
+	serialized, err := proto.Marshal(message)
+	require.NoError(t, err)
+
+	analysers := []core.ResultMergeablePipelineItem{&BurndownAnalysis{}, &LegacyBurndownAnalysis{}}
+	for _, analyser := range analysers {
+		t.Run(fmt.Sprintf("%T", analyser), func(t *testing.T) {
+			deserialized, err := analyser.Deserialize(serialized)
+			require.NoError(t, err)
+
+			result, ok := deserialized.(BurndownResult)
+			require.True(t, ok)
+			assert.Empty(t, result.PeopleMatrix)
+			assert.Len(t, result.PeopleHistories, 1)
+
+			buffer := &bytes.Buffer{}
+			require.NotPanics(t, func() {
+				require.NoError(t, analyser.Serialize(result, false, buffer))
+			})
+			assert.Contains(t, buffer.String(), "  people_interaction: |-\n")
+		})
+	}
+}
+
 func TestBurndownSerializeAuthorMissing(t *testing.T) {
 	out := prepareBDForSerialization(t, 0, core.AuthorMissing)
 	bd := &BurndownAnalysis{}

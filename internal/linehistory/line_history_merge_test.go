@@ -255,6 +255,8 @@ const (
 	// adoptTestPath is contributed by a sibling branch only; the merge branch never held it.
 	adoptTestPath = testFileOnePath
 	adoptTestBorn = core.TickNumber(4)
+	// adoptTestRenamedPath stands for the name the merge branch renamed adoptTestPath to.
+	adoptTestRenamedPath = "file1_renamed.go"
 )
 
 // newAdoptionBranches reproduces the shape of a merge commit which brings in a path the
@@ -334,6 +336,40 @@ func TestLinesMergeAdoptsCreatingBranchFileId(t *testing.T) {
 		"the vacated id must not stay in the name map")
 	assert.NotContains(t, lead.fileAbandonedNames, minted,
 		"the vacated id holds no accounting and must not be resurrectable")
+}
+
+// TestLinesMergeSkipsAdoptionOfIdLiveAtAnotherPath covers the one case where the sibling's id is
+// not free to take: a rename carries the FileId with it, so a merge branch which renamed the path
+// away already holds that id under the new name while the sibling still holds it under the old one.
+// Adopting it anyway would put two live files on one key and mix their per-file histories.
+func TestLinesMergeSkipsAdoptionOfIdLiveAtAnotherPath(t *testing.T) {
+	lead, sibling, _ := newAdoptionBranches(t)
+
+	adopted := sibling.files[adoptTestPath].Id
+	minted := lead.files[adoptTestPath].Id
+
+	// Stand in for the rename: the lead keeps the sibling's id, under the new name.
+	renamed := lead.newFile(adoptTestRenamedPath, mergeTestAuthor, adoptTestBorn, mergeTestLines)
+	require.NotNil(t, renamed)
+	delete(lead.fileNames, renamed.Id)
+	renamed.Id = adopted
+	lead.fileNames[adopted] = adoptTestRenamedPath
+	lead.changes = nil
+
+	lead.Merge([]core.PipelineItem{sibling})
+
+	assert.Equal(t, minted, lead.files[adoptTestPath].Id,
+		"an id still live at another path must not be adopted")
+	assert.Equal(t, adoptTestRenamedPath, lead.fileNames[adopted],
+		"the renamed file keeps its id and its name mapping")
+
+	holders := map[FileId]string{}
+	for name, file := range lead.files {
+		require.NotContains(t, holders, file.Id,
+			"%q and %q must not share a FileId", holders[file.Id], name)
+
+		holders[file.Id] = name
+	}
 }
 
 // TestLinesMergeAdoptedFileIdKeepsRemovalPaired covers the observable consequence: the removal

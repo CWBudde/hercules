@@ -1,7 +1,7 @@
 {
   "provenance": {
-    "commit": "b97f5492519c852bc528d92e0b31cb68e7322f89",
-    "working_tree": "M PLAN.md\n?? test/corpus/baseline.json",
+    "commit": "77c736be96a6423fe74433a1b377dd1d4b51c35f",
+    "working_tree": "M PLAN.md\n M internal/linehistory/line_history.go\n M internal/linehistory/line_history_merge_test.go\n M test/corpus/README.md\n M test/corpus/baseline.json\n M test/corpus/corpus_test.go",
     "note": "Numbers are only comparable against this tree. Re-seed after any change to burndown or merge accounting."
   },
   "flags": [
@@ -14,7 +14,8 @@
     "--hotspot-risk",
     "--skip-blacklist",
     "--granularity=30",
-    "--sampling=30"
+    "--sampling=30",
+    "--diff-timeout=300000"
   ],
   "repositories": {
     "MKTools": {
@@ -35,10 +36,10 @@
     },
     "backend-for-microscope": {
       "exit_code": 0,
-      "negative_cells": 137,
-      "negative_mass": 3754,
+      "negative_cells": 100,
+      "negative_mass": 3059,
       "worst_cell": -126,
-      "residual_cells": 7,
+      "residual_cells": 6,
       "matrices": 16
     },
     "ewws-render": {
@@ -91,10 +92,10 @@
     },
     "mekorp-webclient": {
       "exit_code": 0,
-      "negative_cells": 1447,
-      "negative_mass": 19625270,
-      "worst_cell": -301898,
-      "residual_cells": 45,
+      "negative_cells": 1413,
+      "negative_mass": 5104060,
+      "worst_cell": -77421,
+      "residual_cells": 43,
       "matrices": 31
     },
     "personio-ipoffice-sync": {
@@ -120,6 +121,120 @@
       "worst_cell": 0,
       "residual_cells": 0,
       "matrices": 15
+    }
+  },
+  "file_flags": [
+    "--burndown",
+    "--burndown-files",
+    "--skip-blacklist",
+    "--granularity=30",
+    "--sampling=30",
+    "--diff-timeout=300000"
+  ],
+  "file_repositories": {
+    "MKTools": {
+      "exit_code": 0,
+      "negative_cells": 0,
+      "negative_mass": 0,
+      "worst_cell": 0,
+      "residual_cells": 0,
+      "matrices": 204
+    },
+    "ShelfStockScanner": {
+      "exit_code": 0,
+      "negative_cells": 4,
+      "negative_mass": 4,
+      "worst_cell": -1,
+      "residual_cells": 1,
+      "matrices": 138
+    },
+    "backend-for-microscope": {
+      "exit_code": 0,
+      "negative_cells": 174,
+      "negative_mass": 2755,
+      "worst_cell": -51,
+      "residual_cells": 10,
+      "matrices": 53
+    },
+    "ewws-render": {
+      "exit_code": 0,
+      "negative_cells": 21,
+      "negative_mass": 47,
+      "worst_cell": -3,
+      "residual_cells": 1,
+      "matrices": 275
+    },
+    "ewws-tailscale": {
+      "exit_code": 0,
+      "negative_cells": 0,
+      "negative_mass": 0,
+      "worst_cell": 0,
+      "residual_cells": 0,
+      "matrices": 29
+    },
+    "ewws-wiki": {
+      "exit_code": 0,
+      "negative_cells": 0,
+      "negative_mass": 0,
+      "worst_cell": 0,
+      "residual_cells": 0,
+      "matrices": 127
+    },
+    "go-clients": {
+      "exit_code": 0,
+      "negative_cells": 479,
+      "negative_mass": 5593,
+      "worst_cell": -40,
+      "residual_cells": 15,
+      "matrices": 45
+    },
+    "meko-etl-tool": {
+      "exit_code": 0,
+      "negative_cells": 3386,
+      "negative_mass": 65365,
+      "worst_cell": -228,
+      "residual_cells": 73,
+      "matrices": 305
+    },
+    "mekorp-backend": {
+      "exit_code": 0,
+      "negative_cells": 2117,
+      "negative_mass": 175311,
+      "worst_cell": -1206,
+      "residual_cells": 53,
+      "matrices": 185
+    },
+    "mekorp-webclient": {
+      "exit_code": 0,
+      "negative_cells": 8786,
+      "negative_mass": 201273,
+      "worst_cell": -1149,
+      "residual_cells": 172,
+      "matrices": 194
+    },
+    "personio-ipoffice-sync": {
+      "exit_code": 0,
+      "negative_cells": 0,
+      "negative_mass": 0,
+      "worst_cell": 0,
+      "residual_cells": 0,
+      "matrices": 56
+    },
+    "process-manager": {
+      "exit_code": 0,
+      "negative_cells": 0,
+      "negative_mass": 0,
+      "worst_cell": 0,
+      "residual_cells": 0,
+      "matrices": 72
+    },
+    "render-pdf": {
+      "exit_code": 0,
+      "negative_cells": 63,
+      "negative_mass": 857,
+      "worst_cell": -33,
+      "residual_cells": 2,
+      "matrices": 233
     }
   }
 }

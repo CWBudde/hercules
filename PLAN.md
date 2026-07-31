@@ -1,9 +1,16 @@
 # PLAN: what is still wrong in the burndown accounting
 
-**Status:** one open item — **B1c**, residual negative burndown cells from the same lines
-being removed twice across sibling branches. Everything else filed in the original 0.2.0
-regression sweep (B1, B1b, B1d, B2–B12, plus the corpus regression suite) is fixed and
-covered by tests; see the appendix for the one-line record.
+**Status:** one open item.
+
+- **B1c**, residual negative burndown cells from the same lines being removed twice across
+  sibling branches.
+
+**B13** — combined bus-factor and ownership-concentration results reporting a single repository
+instead of the corpus — was filed 2026-08-01 and is **fixed**; the diagnosis and the fix are kept
+below because the tick-alignment and identity-reconciliation decisions it settled are reusable.
+
+Everything else filed in the original 0.2.0 regression sweep (B1, B1b, B1d, B2–B12, plus the
+corpus regression suite) is fixed and covered by tests; see the appendix for the one-line record.
 
 B1c is split into phases below: **P0–P3 are done and merged**, **P4 is a confirmed defect with
 no shippable fix, its repro landed as a skipped test**, **P5 is the actual remaining residue —
@@ -507,6 +514,146 @@ Nothing was merged. All three attempts live only in the session scratchpad:
 
 Worktree builds need `GOFLAGS=-buildvcs=false` **and** `CGO_ENABLED=0` (the render packages
 pull in freetype via matplotlib-go and fail on a missing `ft2build.h`).
+
+---
+
+## B13 — combined bus factor and ownership report one repository, not the corpus ✅
+
+**Filed:** 2026-08-01 against `653f236`, from the `ewws-statistics` mid-2026 deck. **Fixed
+2026-08-01**; see "The fix" at the end of this section.
+
+### The defect
+
+`BusFactorAnalysis.MergeResults` (`leaves/bus_factor.go:355-362`) and
+`OwnershipConcentrationAnalysis.MergeResults` (`leaves/ownership_concentration.go:316-323`)
+both merge their per-tick snapshots by **taking the one with the larger `TotalLines`**:
+
+```go
+for tick, snapshot := range bfr2.Snapshots {
+    if existing, ok := merged.Snapshots[tick]; !ok || snapshot.TotalLines > existing.TotalLines {
+        merged.Snapshots[tick] = snapshot
+    }
+}
+```
+
+Ownership is additive across repositories — two repositories' lines are *both* in the corpus —
+so the merge of N repositories has to sum per identity, not pick a winner. As written, a
+combined run reports whichever single repository holds the most lines at the latest tick.
+Every other repository contributes nothing to the headline number, the ownership percentages,
+or the bus factor itself.
+
+`SubsystemBusFactor` takes `max` across repositories, which is defensible for a worst-case
+subsystem reading; `SubsystemConcentration` keeps first-seen and drops the rest, which is not.
+
+### The measurement
+
+Three combined runs over deliberately different repository sets, `ewws-statistics` at
+`079b0bc` with hercules `653f236`:
+
+| set                                | repos | knowledge diffusion | bus factor total lines |
+| ---------------------------------- | ----- | ------------------- | ---------------------- |
+| `.core-repos`                      | 36    | 17 284 files        | **819 673**            |
+| topic `ewws` + 2026 commits        | 46    | 17 470 files        | **819 673**            |
+| the same, + 2 k8s/manual additions | 48    | 17 635 files        | **819 673**            |
+
+The sets are not nested — 36 vs 46 differ by 20 out and 28 in. Knowledge diffusion tracks the
+set correctly, so the merge itself is fine and the input really does change. Ownership does
+not move at all, to the line, and `gini=0.799 hhi=0.294` are likewise identical across all three.
+
+Single repositories, same binary:
+
+```
+mekorp-backend   alone: latest=4, total lines=819673   <- equals all three combined runs
+mekorp-webclient alone: latest=3, total lines=704393
+```
+
+and on a deliberately tiny 3-repository merge (`ewws-auth`, `ewws-files`, `ewws-render`),
+which returns `latest=2, total lines=85154`:
+
+```
+ewws-auth   alone: latest=2, total lines=85154   <- equals the 3-repo merge
+ewws-files  alone: latest=2, total lines=10017
+ewws-render alone: latest=1, total lines=117258  <- larger overall, but its history ends earlier
+```
+
+`ewws-render` has more lines in total yet loses, which pins the selection to the *latest tick*
+specifically rather than to the largest repository — consistent with the code above.
+
+### What it costs downstream
+
+`all_project_bus_factor_gauge.svg`, `all_project_bus_factor_timeline.svg`,
+`all_project_ownership_concentration_timeline.svg` and the ownership pie behind them are all
+single-repository charts wearing an "N combined repositories" title. Anything read off them —
+"the bus factor is 4", "Christian owns 48.8%" — is a statement about `mekorp-backend`, not
+about EWWS.
+
+### Fix sketch
+
+Sum per identity per tick instead of selecting. The snapshot holds per-person line counts, so
+the merge is a per-tick, per-identity add, with the identity dictionaries reconciled the way
+the burndown people merge already does. Two things to settle while doing it:
+
+- **Tick alignment.** Repositories start and end at different ticks; `ewws-render` above ends
+  early. A sum has to decide whether a repository that has stopped contributing still carries
+  its last known ownership forward (it should — those lines still exist) or drops to zero.
+  This is the same rebasing problem `RefactoringProxy` solved in B4.
+- **Bus factor is not mergeable from merged snapshots alone** if it is recomputed per tick:
+  it is a threshold over the summed distribution, so it has to be derived *after* the sum,
+  not merged from the parts.
+
+`TestBusFactorMergeResults` (`leaves/bus_factor_test.go:301`) and
+`TestOwnershipConcentrationMergeResults` (`leaves/ownership_concentration_test.go:303`) encode
+the current select-the-larger behaviour and will need rewriting, not just extending — they are
+asserting the defect.
+
+### The fix
+
+Both merges now sum. The shared part lives in `leaves/ownership_merge.go`:
+`mergeOwnershipTicks` rebases the two tick axes, translates the author indices and adds the
+distributions; each leaf recomputes its metrics from the sum. Both questions the sketch left
+open are settled the way it proposed:
+
+- **Tick alignment** reuses the B4 rebasing — `mergedTickOffsets`, extracted verbatim out of
+  `RefactoringProxy` (which now calls it) onto the earlier repository's start, i.e. the merged
+  `BeginTime`. A repository that stops producing snapshots **carries its last distribution
+  forward** — those lines still exist — and contributes nothing before its first snapshot. This
+  composes across a reduce over N repositories: the aggregate's carried value at any tick is the
+  sum of each part's carried value, so the result does not depend on the merge order.
+- **Derived metrics come after the sum**, never merged from the parts: the bus factor is a
+  threshold over the summed distribution, Gini and HHI are shape metrics over it.
+- **Identities** go through `join.PeopleIdentities`, the same alias-graph join the burndown
+  people merge uses, and the merged result now carries the *merged* dictionary. It previously
+  kept the first result's dictionary while copying the second result's author indices verbatim,
+  so the ownership pie was mislabelled as well as single-repository.
+- Mismatching tick sizes (both leaves) and mismatching thresholds (bus factor) are now merge
+  errors, mirroring `RefactoringProxy`. Neither is comparable across repositories, and both come
+  from one global flag, so a mismatch is a bug rather than a configuration.
+
+**Verified** on the same tiny 3-repository merge the defect was measured on, hercules at this
+commit, `--diff-timeout=300000`, no truncation:
+
+```
+ewws-auth    latest=831 bus_factor=2 total_lines= 85128 people=16
+ewws-files   latest=601 bus_factor=2 total_lines= 10180 people= 8
+ewws-render  latest=645 bus_factor=1 total_lines=133955 people=10
+combined     latest=831 bus_factor=2 total_lines=229263 people=18   <- 85128+10180+133955
+```
+
+The combined total is now the sum to the line, including the two repositories whose history ends
+earlier, and the people dictionary is the union rather than the first repository's.
+
+**What was deliberately not done.** `SubsystemConcentration` now keeps the *more concentrated* of
+two readings of a directory, matching the max `SubsystemBusFactor` already takes, instead of
+first-seen. It cannot be summed: the result carries the per-directory Gini/HHI but not the
+per-directory distributions they were computed from. Making the subsystem numbers additive means
+adding those distributions to both the result and `pb.proto` — worth doing only if a subsystem
+reading of a *combined* run is actually wanted, and note that summing a directory named `src`
+across unrelated repositories is a questionable statistic in itself.
+
+**One cost worth knowing.** The merged tick axis is the union of all repositories' ticks and each
+tick carries a per-identity map, so a combined `.pb` grows roughly as (union of ticks) × (union of
+people) instead of holding one repository's snapshots. That is the correct data, but it is not the
+old size.
 
 ---
 

@@ -1,6 +1,7 @@
 package leaves
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -13,10 +14,20 @@ import (
 	"github.com/gogo/protobuf/proto"
 
 	"github.com/cwbudde/hercules/internal/core"
+	"github.com/cwbudde/hercules/internal/join"
 	"github.com/cwbudde/hercules/internal/pb"
 	items "github.com/cwbudde/hercules/internal/plumbing"
 	"github.com/cwbudde/hercules/internal/plumbing/identity"
 	"github.com/cwbudde/hercules/internal/yaml"
+)
+
+var (
+	// errBusFactorMismatchingTickSizes rejects merges of results produced with different tick
+	// sizes: their tick axes cannot be rebased onto one another.
+	errBusFactorMismatchingTickSizes = errors.New("mismatching tick sizes")
+	// errBusFactorMismatchingThresholds rejects merges of results computed against different
+	// ownership thresholds, which are not comparable.
+	errBusFactorMismatchingThresholds = errors.New("mismatching bus factor thresholds")
 )
 
 // BusFactorAnalysis computes the bus factor of a repository over time.
@@ -331,6 +342,10 @@ func (bf *BusFactorAnalysis) Deserialize(pbmessage []byte) (any, error) {
 }
 
 // MergeResults combines two BusFactorResult-s together.
+//
+// Ownership is additive across repositories, so the per-tick distributions are summed per identity
+// on a common tick axis and the bus factor is recomputed from each sum. It is a threshold over the
+// combined distribution and cannot be merged from the per-repository factors.
 func (bf *BusFactorAnalysis) MergeResults(
 	result1, result2 any, common1, common2 *core.CommonAnalysisResult,
 ) any {
@@ -344,24 +359,41 @@ func (bf *BusFactorAnalysis) MergeResults(
 		return fmt.Errorf("merge bus factor second result: %w", err)
 	}
 
+	if bfr1.tickSize != bfr2.tickSize {
+		return fmt.Errorf("%w (r1: %d, r2: %d) received",
+			errBusFactorMismatchingTickSizes, bfr1.tickSize, bfr2.tickSize)
+	}
+
+	if bfr1.Threshold != bfr2.Threshold {
+		return fmt.Errorf("%w (r1: %f, r2: %f) received",
+			errBusFactorMismatchingThresholds, bfr1.Threshold, bfr2.Threshold)
+	}
+
+	people, mergedPeopleDict := join.PeopleIdentities(bfr1.reversedPeopleDict, bfr2.reversedPeopleDict)
+	offset1, offset2 := mergedTickOffsets(common1, common2, bfr1.tickSize)
+
 	merged := BusFactorResult{
 		Snapshots:          make(map[int]*BusFactorSnapshot),
 		SubsystemBusFactor: make(map[string]int),
 		Threshold:          bfr1.Threshold,
-		reversedPeopleDict: bfr1.reversedPeopleDict,
+		reversedPeopleDict: mergedPeopleDict,
 		tickSize:           bfr1.tickSize,
 	}
 
-	// Merge snapshots: take the snapshot with the larger total lines for overlapping ticks
-	maps.Copy(merged.Snapshots, bfr1.Snapshots)
-
-	for tick, snapshot := range bfr2.Snapshots {
-		if existing, ok := merged.Snapshots[tick]; !ok || snapshot.TotalLines > existing.TotalLines {
-			merged.Snapshots[tick] = snapshot
+	summed := mergeOwnershipTicks(
+		busFactorOwnership(bfr1.Snapshots), busFactorOwnership(bfr2.Snapshots),
+		offset1, offset2, people,
+	)
+	for tick, lines := range summed {
+		merged.Snapshots[tick] = &BusFactorSnapshot{
+			BusFactor:   computeBusFactor(lines.AuthorLines, lines.TotalLines, merged.Threshold),
+			TotalLines:  lines.TotalLines,
+			AuthorLines: lines.AuthorLines,
 		}
 	}
 
-	// Merge subsystem bus factors: take the max (worst case)
+	// Merge subsystem bus factors: take the max (worst case). The per-directory distributions
+	// are not part of the result, so they cannot be summed the way the per-tick ones are.
 	maps.Copy(merged.SubsystemBusFactor, bfr1.SubsystemBusFactor)
 
 	for dir, bf := range bfr2.SubsystemBusFactor {
@@ -371,6 +403,19 @@ func (bf *BusFactorAnalysis) MergeResults(
 	}
 
 	return merged
+}
+
+// busFactorOwnership views the per-tick snapshots as bare ownership distributions.
+func busFactorOwnership(snapshots map[int]*BusFactorSnapshot) map[int]ownershipTickLines {
+	lines := make(map[int]ownershipTickLines, len(snapshots))
+	for tick, snapshot := range snapshots {
+		lines[tick] = ownershipTickLines{
+			TotalLines:  snapshot.TotalLines,
+			AuthorLines: snapshot.AuthorLines,
+		}
+	}
+
+	return lines
 }
 
 func (bf *BusFactorAnalysis) takeSnapshot(tick int, totals ownershipTotals) {

@@ -306,36 +306,13 @@ func (rp *RefactoringProxy) MergeResults(result1, result2 any,
 			errRefactoringProxyMismatchingThresholds, cr1.Threshold, cr2.Threshold)
 	}
 
-	offset1, offset2 := refactoringProxyTickOffsets(commonResult1, commonResult2, cr1.tickSize)
+	offset1, offset2 := mergedTickOffsets(commonResult1, commonResult2, cr1.tickSize)
 
 	accumulated := map[int]*refactoringTickAccumulator{}
 	accumulateRefactoringTicks(accumulated, &cr1, offset1)
 	accumulateRefactoringTicks(accumulated, &cr2, offset2)
 
 	return buildMergedRefactoringResult(accumulated, cr1.Threshold, cr1.tickSize)
-}
-
-// refactoringProxyTickOffsets rebases both tick axes onto the earlier repository start, which is
-// exactly what CommonAnalysisResult.Merge() records as the merged BeginTime.
-func refactoringProxyTickOffsets(
-	commonResult1, commonResult2 *core.CommonAnalysisResult, tickSize time.Duration,
-) (int, int) {
-	if tickSize <= 0 || commonResult1 == nil || commonResult2 == nil {
-		return 0, 0
-	}
-
-	firstStart := items.FloorTime(commonResult1.BeginTimeAsTime(), tickSize)
-	secondStart := items.FloorTime(commonResult2.BeginTimeAsTime(), tickSize)
-
-	startTime := firstStart
-	if secondStart.Before(startTime) {
-		startTime = secondStart
-	}
-
-	offset1 := int(firstStart.Sub(startTime) / tickSize)
-	offset2 := int(secondStart.Sub(startTime) / tickSize)
-
-	return offset1, offset2
 }
 
 // accumulateRefactoringTicks folds one source into the shifted, merged tick axis.

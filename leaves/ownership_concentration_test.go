@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/cwbudde/hercules/internal/core"
 	items "github.com/cwbudde/hercules/internal/plumbing"
@@ -300,13 +301,15 @@ func TestOwnershipConcentrationFork(t *testing.T) {
 	assert.Equal(t, oc.snapshots, oc3.snapshots)
 }
 
-func TestOwnershipConcentrationMergeResults(t *testing.T) {
-	oc := OwnershipConcentrationAnalysis{}
-
-	r1 := OwnershipConcentrationResult{
+// ownershipConcentrationMergeInputs returns two results whose people dictionaries overlap
+// partially, so the merge has to reconcile the identity indices as well as add the line counts.
+func ownershipConcentrationMergeInputs() (
+	OwnershipConcentrationResult, OwnershipConcentrationResult,
+) {
+	first := OwnershipConcentrationResult{
 		Snapshots: map[int]*OwnershipConcentrationSnapshot{
 			0: {Gini: 0.0, HHI: 1.0, TotalLines: 100, AuthorLines: map[int]int64{0: 100}},
-			5: {Gini: 0.2, HHI: 0.5, TotalLines: 200, AuthorLines: map[int]int64{0: 120, 1: 80}},
+			5: {Gini: 0.2, HHI: 0.52, TotalLines: 200, AuthorLines: map[int]int64{0: 120, 1: 80}},
 		},
 		SubsystemConcentration: map[string]*SubsystemConcentration{
 			testSourceDirectory: {Gini: 0.3, HHI: 0.6},
@@ -315,33 +318,125 @@ func TestOwnershipConcentrationMergeResults(t *testing.T) {
 		tickSize:           24 * time.Hour,
 	}
 
-	r2 := OwnershipConcentrationResult{
+	second := OwnershipConcentrationResult{
 		Snapshots: map[int]*OwnershipConcentrationSnapshot{
-			5:  {Gini: 0.3, HHI: 0.4, TotalLines: 300, AuthorLines: map[int]int64{0: 150, 1: 100, 2: 50}},
-			10: {Gini: 0.1, HHI: 0.5, TotalLines: 50, AuthorLines: map[int]int64{2: 50}},
+			5:  {Gini: 0.17, HHI: 0.56, TotalLines: 150, AuthorLines: map[int]int64{0: 100, 1: 50}},
+			10: {Gini: 0.0, HHI: 1.0, TotalLines: 50, AuthorLines: map[int]int64{1: 50}},
 		},
 		SubsystemConcentration: map[string]*SubsystemConcentration{
 			testSourceDirectory: {Gini: 0.4, HHI: 0.7},
 			testDocsDirectory:   {Gini: 0.0, HHI: 0.5},
 		},
-		reversedPeopleDict: []string{testPersonAlice, testPersonBob, testPersonCharlie},
+		reversedPeopleDict: []string{testPersonBob, testPersonCharlie},
 		tickSize:           24 * time.Hour,
 	}
 
-	c1 := &core.CommonAnalysisResult{}
-	c2 := &core.CommonAnalysisResult{}
+	return first, second
+}
 
-	merged := oc.MergeResults(r1, r2, c1, c2).(OwnershipConcentrationResult)
+func TestOwnershipConcentrationMergeResultsSumsOwnership(t *testing.T) {
+	oc := OwnershipConcentrationAnalysis{}
+	r1, r2 := ownershipConcentrationMergeInputs()
 
-	// Tick 0 only from r1
-	assert.InDelta(t, 0.0, merged.Snapshots[0].Gini, 0.001)
-	// Tick 5: r2 has more total lines (300 > 200), so r2 wins
-	assert.InDelta(t, 0.3, merged.Snapshots[5].Gini, 0.001)
-	assert.Equal(t, int64(300), merged.Snapshots[5].TotalLines)
-	// Tick 10 only from r2
-	assert.InDelta(t, 0.1, merged.Snapshots[10].Gini, 0.001)
+	common := &core.CommonAnalysisResult{BeginTime: ownershipMergeBeginTime}
 
-	// Subsystem: r1 takes priority for "src", r2 adds "docs"
-	assert.InDelta(t, 0.3, merged.SubsystemConcentration[testSourceDirectory].Gini, 0.001)
-	assert.InDelta(t, 0.0, merged.SubsystemConcentration[testDocsDirectory].Gini, 0.001)
+	merged, ok := oc.MergeResults(r1, r2, common, common).(OwnershipConcentrationResult)
+	require.True(t, ok)
+
+	assert.Equal(t,
+		[]string{testPersonAlice, testPersonBob, testPersonCharlie}, merged.reversedPeopleDict)
+
+	// Tick 0: the second repository has not started yet, so only the first contributes.
+	assert.Equal(t, int64(100), merged.Snapshots[0].TotalLines)
+	assert.InDelta(t, 0.0, merged.Snapshots[0].Gini, 0.0001)
+	assert.InDelta(t, 1.0, merged.Snapshots[0].HHI, 0.0001)
+
+	// Tick 5: both repositories are alive, so their per-identity counts add up. Bob is index 1
+	// in the first dictionary and index 0 in the second. The metrics are recomputed from the
+	// summed distribution rather than merged from the parts.
+	tick5 := map[int]int64{0: 120, 1: 180, 2: 50}
+	assert.Equal(t, int64(350), merged.Snapshots[5].TotalLines)
+	assert.Equal(t, tick5, merged.Snapshots[5].AuthorLines)
+	assert.InDelta(t, computeGini(tick5, 350), merged.Snapshots[5].Gini, 0.0001)
+	assert.InDelta(t, computeHHI(tick5, 350), merged.Snapshots[5].HHI, 0.0001)
+
+	// Tick 10: the first repository stopped producing snapshots but its lines still exist, so
+	// its last known distribution is carried forward.
+	tick10 := map[int]int64{0: 120, 1: 80, 2: 50}
+	assert.Equal(t, int64(250), merged.Snapshots[10].TotalLines)
+	assert.Equal(t, tick10, merged.Snapshots[10].AuthorLines)
+	assert.InDelta(t, computeGini(tick10, 250), merged.Snapshots[10].Gini, 0.0001)
+
+	// Subsystem: the more concentrated of the two, a worst-case reading.
+	assert.InDelta(t, 0.4, merged.SubsystemConcentration[testSourceDirectory].Gini, 0.0001)
+	assert.InDelta(t, 0.7, merged.SubsystemConcentration[testSourceDirectory].HHI, 0.0001)
+	assert.InDelta(t, 0.0, merged.SubsystemConcentration[testDocsDirectory].Gini, 0.0001)
+}
+
+func TestOwnershipConcentrationMergeResultsIsCommutative(t *testing.T) {
+	oc := OwnershipConcentrationAnalysis{}
+	r1, r2 := ownershipConcentrationMergeInputs()
+
+	common := &core.CommonAnalysisResult{BeginTime: ownershipMergeBeginTime}
+
+	forward, ok := oc.MergeResults(r1, r2, common, common).(OwnershipConcentrationResult)
+	require.True(t, ok)
+
+	backward, ok := oc.MergeResults(r2, r1, common, common).(OwnershipConcentrationResult)
+	require.True(t, ok)
+
+	for tick, snapshot := range forward.Snapshots {
+		require.Contains(t, backward.Snapshots, tick)
+		assert.Equal(t, snapshot.TotalLines, backward.Snapshots[tick].TotalLines)
+		assert.InDelta(t, snapshot.Gini, backward.Snapshots[tick].Gini, 0.0001)
+		assert.InDelta(t, snapshot.HHI, backward.Snapshots[tick].HHI, 0.0001)
+	}
+
+	assert.Len(t, backward.Snapshots, len(forward.Snapshots))
+}
+
+func TestOwnershipConcentrationMergeResultsRebasesTicks(t *testing.T) {
+	oc := OwnershipConcentrationAnalysis{}
+
+	r1 := OwnershipConcentrationResult{
+		Snapshots: map[int]*OwnershipConcentrationSnapshot{
+			0: {Gini: 0.0, HHI: 1.0, TotalLines: 100, AuthorLines: map[int]int64{0: 100}},
+		},
+		reversedPeopleDict: []string{testPersonAlice},
+		tickSize:           24 * time.Hour,
+	}
+
+	r2 := OwnershipConcentrationResult{
+		Snapshots: map[int]*OwnershipConcentrationSnapshot{
+			0: {Gini: 0.0, HHI: 1.0, TotalLines: 100, AuthorLines: map[int]int64{0: 100}},
+		},
+		reversedPeopleDict: []string{testPersonBob},
+		tickSize:           24 * time.Hour,
+	}
+
+	c1 := &core.CommonAnalysisResult{BeginTime: ownershipMergeBeginTime}
+	c2 := &core.CommonAnalysisResult{BeginTime: ownershipMergeBeginTime + 2*24*3600}
+
+	merged, ok := oc.MergeResults(r1, r2, c1, c2).(OwnershipConcentrationResult)
+	require.True(t, ok)
+
+	// The second repository starts two ticks later, so its tick 0 lands on the merged tick 2,
+	// where the two equal owners make the distribution perfectly equal.
+	assert.Equal(t, int64(100), merged.Snapshots[0].TotalLines)
+	assert.Equal(t, int64(200), merged.Snapshots[2].TotalLines)
+	assert.InDelta(t, 0.0, merged.Snapshots[2].Gini, 0.0001)
+	assert.InDelta(t, 0.5, merged.Snapshots[2].HHI, 0.0001)
+	assert.Len(t, merged.Snapshots, 2)
+}
+
+func TestOwnershipConcentrationMergeResultsRejectsMismatchingTickSizes(t *testing.T) {
+	oc := OwnershipConcentrationAnalysis{}
+	common := &core.CommonAnalysisResult{BeginTime: ownershipMergeBeginTime}
+
+	r1, r2 := ownershipConcentrationMergeInputs()
+	r2.tickSize = 48 * time.Hour
+
+	err, ok := oc.MergeResults(r1, r2, common, common).(error)
+	require.True(t, ok)
+	require.ErrorIs(t, err, errOwnershipConcentrationMismatchingTickSizes)
 }

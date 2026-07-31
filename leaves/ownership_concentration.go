@@ -1,9 +1,9 @@
 package leaves
 
 import (
+	"errors"
 	"fmt"
 	"io"
-	"maps"
 	"math"
 	"slices"
 	"sort"
@@ -13,11 +13,16 @@ import (
 	"github.com/gogo/protobuf/proto"
 
 	"github.com/cwbudde/hercules/internal/core"
+	"github.com/cwbudde/hercules/internal/join"
 	"github.com/cwbudde/hercules/internal/pb"
 	items "github.com/cwbudde/hercules/internal/plumbing"
 	"github.com/cwbudde/hercules/internal/plumbing/identity"
 	"github.com/cwbudde/hercules/internal/yaml"
 )
+
+// errOwnershipConcentrationMismatchingTickSizes rejects merges of results produced with different
+// tick sizes: their tick axes cannot be rebased onto one another.
+var errOwnershipConcentrationMismatchingTickSizes = errors.New("mismatching tick sizes")
 
 // OwnershipConcentrationAnalysis computes the Gini coefficient and
 // Herfindahl-Hirschman Index (HHI) of code ownership over time.
@@ -293,8 +298,12 @@ func (oc *OwnershipConcentrationAnalysis) Deserialize(pbmessage []byte) (any, er
 }
 
 // MergeResults combines two OwnershipConcentrationResult-s together.
+//
+// Ownership is additive across repositories, so the per-tick distributions are summed per identity
+// on a common tick axis and Gini and HHI are recomputed from each sum. Both are shape metrics over
+// the combined distribution and cannot be merged from the per-repository values.
 func (oc *OwnershipConcentrationAnalysis) MergeResults(
-	firstResult, secondResult any, _, _ *core.CommonAnalysisResult,
+	firstResult, secondResult any, common1, common2 *core.CommonAnalysisResult,
 ) any {
 	ocr1, err := requiredResult[OwnershipConcentrationResult](firstResult)
 	if err != nil {
@@ -306,32 +315,69 @@ func (oc *OwnershipConcentrationAnalysis) MergeResults(
 		return err
 	}
 
+	if ocr1.tickSize != ocr2.tickSize {
+		return fmt.Errorf("%w (r1: %d, r2: %d) received",
+			errOwnershipConcentrationMismatchingTickSizes, ocr1.tickSize, ocr2.tickSize)
+	}
+
+	people, mergedPeopleDict := join.PeopleIdentities(ocr1.reversedPeopleDict, ocr2.reversedPeopleDict)
+	offset1, offset2 := mergedTickOffsets(common1, common2, ocr1.tickSize)
+
 	merged := OwnershipConcentrationResult{
 		Snapshots:              make(map[int]*OwnershipConcentrationSnapshot),
 		SubsystemConcentration: make(map[string]*SubsystemConcentration),
-		reversedPeopleDict:     ocr1.reversedPeopleDict,
+		reversedPeopleDict:     mergedPeopleDict,
 		tickSize:               ocr1.tickSize,
 	}
 
-	// Merge snapshots: take the snapshot with the larger total lines for overlapping ticks
-	maps.Copy(merged.Snapshots, ocr1.Snapshots)
-
-	for tick, snapshot := range ocr2.Snapshots {
-		if existing, ok := merged.Snapshots[tick]; !ok || snapshot.TotalLines > existing.TotalLines {
-			merged.Snapshots[tick] = snapshot
+	summed := mergeOwnershipTicks(
+		ownershipConcentrationOwnership(ocr1.Snapshots),
+		ownershipConcentrationOwnership(ocr2.Snapshots),
+		offset1, offset2, people,
+	)
+	for tick, lines := range summed {
+		merged.Snapshots[tick] = &OwnershipConcentrationSnapshot{
+			Gini:        computeGini(lines.AuthorLines, lines.TotalLines),
+			HHI:         computeHHI(lines.AuthorLines, lines.TotalLines),
+			TotalLines:  lines.TotalLines,
+			AuthorLines: lines.AuthorLines,
 		}
 	}
 
-	// Merge subsystem concentration: take from the result with more data (higher Gini as tiebreaker)
-	maps.Copy(merged.SubsystemConcentration, ocr1.SubsystemConcentration)
-
-	for dir, sc := range ocr2.SubsystemConcentration {
-		if _, ok := merged.SubsystemConcentration[dir]; !ok {
-			merged.SubsystemConcentration[dir] = sc
-		}
-	}
+	mergeSubsystemConcentration(merged.SubsystemConcentration, ocr1.SubsystemConcentration)
+	mergeSubsystemConcentration(merged.SubsystemConcentration, ocr2.SubsystemConcentration)
 
 	return merged
+}
+
+// ownershipConcentrationOwnership views the per-tick snapshots as bare ownership distributions.
+func ownershipConcentrationOwnership(
+	snapshots map[int]*OwnershipConcentrationSnapshot,
+) map[int]ownershipTickLines {
+	lines := make(map[int]ownershipTickLines, len(snapshots))
+	for tick, snapshot := range snapshots {
+		lines[tick] = ownershipTickLines{
+			TotalLines:  snapshot.TotalLines,
+			AuthorLines: snapshot.AuthorLines,
+		}
+	}
+
+	return lines
+}
+
+// mergeSubsystemConcentration keeps the more concentrated of two readings of the same directory,
+// matching the worst-case max the subsystem bus factor takes. Summing is not possible here: the
+// result carries the metrics but not the per-directory distributions they were computed from.
+func mergeSubsystemConcentration(target, source map[string]*SubsystemConcentration) {
+	for dir, concentration := range source {
+		existing, known := target[dir]
+		if known && (existing.Gini > concentration.Gini ||
+			(existing.Gini == concentration.Gini && existing.HHI >= concentration.HHI)) {
+			continue
+		}
+
+		target[dir] = &SubsystemConcentration{Gini: concentration.Gini, HHI: concentration.HHI}
+	}
 }
 
 func (oc *OwnershipConcentrationAnalysis) serializeBinary(

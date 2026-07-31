@@ -6,12 +6,16 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/cwbudde/hercules/internal/core"
 	items "github.com/cwbudde/hercules/internal/plumbing"
 	"github.com/cwbudde/hercules/internal/plumbing/identity"
 	"github.com/cwbudde/hercules/internal/test"
 )
+
+// ownershipMergeBeginTime is the repository start used by the ownership merge tests.
+const ownershipMergeBeginTime = 1556224895
 
 func TestBusFactorMeta(t *testing.T) {
 	bf := BusFactorAnalysis{}
@@ -298,10 +302,10 @@ func TestBusFactorFork(t *testing.T) {
 	assert.Equal(t, bf.snapshots, bf3.snapshots)
 }
 
-func TestBusFactorMergeResults(t *testing.T) {
-	bf := BusFactorAnalysis{}
-
-	r1 := BusFactorResult{
+// busFactorMergeInputs returns two results whose people dictionaries overlap partially, so the
+// merge has to reconcile the identity indices as well as add the line counts.
+func busFactorMergeInputs() (BusFactorResult, BusFactorResult) {
+	first := BusFactorResult{
 		Snapshots: map[int]*BusFactorSnapshot{
 			0: {BusFactor: 1, TotalLines: 100, AuthorLines: map[int]int64{0: 100}},
 			5: {BusFactor: 2, TotalLines: 200, AuthorLines: map[int]int64{0: 120, 1: 80}},
@@ -312,31 +316,126 @@ func TestBusFactorMergeResults(t *testing.T) {
 		tickSize:           24 * time.Hour,
 	}
 
-	r2 := BusFactorResult{
+	second := BusFactorResult{
 		Snapshots: map[int]*BusFactorSnapshot{
-			5:  {BusFactor: 3, TotalLines: 300, AuthorLines: map[int]int64{0: 150, 1: 100, 2: 50}},
-			10: {BusFactor: 1, TotalLines: 50, AuthorLines: map[int]int64{2: 50}},
+			5:  {BusFactor: 2, TotalLines: 150, AuthorLines: map[int]int64{0: 100, 1: 50}},
+			10: {BusFactor: 1, TotalLines: 50, AuthorLines: map[int]int64{1: 50}},
 		},
 		SubsystemBusFactor: map[string]int{testSourceDirectory: 2, testDocsDirectory: 1},
 		Threshold:          0.8,
-		reversedPeopleDict: []string{testPersonAlice, testPersonBob, testPersonCharlie},
+		reversedPeopleDict: []string{testPersonBob, testPersonCharlie},
 		tickSize:           24 * time.Hour,
 	}
 
-	c1 := &core.CommonAnalysisResult{}
-	c2 := &core.CommonAnalysisResult{}
+	return first, second
+}
 
-	merged := bf.MergeResults(r1, r2, c1, c2).(BusFactorResult)
+func TestBusFactorMergeResultsSumsOwnership(t *testing.T) {
+	bf := BusFactorAnalysis{}
+	r1, r2 := busFactorMergeInputs()
 
-	// Tick 0 only from r1
+	common := &core.CommonAnalysisResult{BeginTime: ownershipMergeBeginTime}
+
+	merged, ok := bf.MergeResults(r1, r2, common, common).(BusFactorResult)
+	require.True(t, ok)
+
+	assert.Equal(t,
+		[]string{testPersonAlice, testPersonBob, testPersonCharlie}, merged.reversedPeopleDict)
+
+	// Tick 0: the second repository has not started yet, so only the first contributes.
+	assert.Equal(t, int64(100), merged.Snapshots[0].TotalLines)
+	assert.Equal(t, map[int]int64{0: 100}, merged.Snapshots[0].AuthorLines)
 	assert.Equal(t, 1, merged.Snapshots[0].BusFactor)
-	// Tick 5: r2 has more total lines (300 > 200), so r2 wins
-	assert.Equal(t, 3, merged.Snapshots[5].BusFactor)
-	assert.Equal(t, int64(300), merged.Snapshots[5].TotalLines)
-	// Tick 10 only from r2
-	assert.Equal(t, 1, merged.Snapshots[10].BusFactor)
 
-	// Subsystem: max of both
+	// Tick 5: both repositories are alive, so their per-identity counts add up. Bob is index 1
+	// in the first dictionary and index 0 in the second.
+	assert.Equal(t, int64(350), merged.Snapshots[5].TotalLines)
+	assert.Equal(t, map[int]int64{0: 120, 1: 180, 2: 50}, merged.Snapshots[5].AuthorLines)
+	// ceil(350 * 0.8) = 280; 180 + 120 covers it, 180 alone does not.
+	assert.Equal(t, 2, merged.Snapshots[5].BusFactor)
+
+	// Tick 10: the first repository stopped producing snapshots but its lines still exist, so
+	// its last known distribution is carried forward.
+	assert.Equal(t, int64(250), merged.Snapshots[10].TotalLines)
+	assert.Equal(t, map[int]int64{0: 120, 1: 80, 2: 50}, merged.Snapshots[10].AuthorLines)
+	assert.Equal(t, 2, merged.Snapshots[10].BusFactor)
+
+	// Subsystem: max of both, a worst-case reading.
 	assert.Equal(t, 2, merged.SubsystemBusFactor[testSourceDirectory])
 	assert.Equal(t, 1, merged.SubsystemBusFactor[testDocsDirectory])
+}
+
+func TestBusFactorMergeResultsIsCommutative(t *testing.T) {
+	bf := BusFactorAnalysis{}
+	r1, r2 := busFactorMergeInputs()
+
+	common := &core.CommonAnalysisResult{BeginTime: ownershipMergeBeginTime}
+
+	forward, ok := bf.MergeResults(r1, r2, common, common).(BusFactorResult)
+	require.True(t, ok)
+
+	backward, ok := bf.MergeResults(r2, r1, common, common).(BusFactorResult)
+	require.True(t, ok)
+
+	for tick, snapshot := range forward.Snapshots {
+		require.Contains(t, backward.Snapshots, tick)
+		assert.Equal(t, snapshot.TotalLines, backward.Snapshots[tick].TotalLines)
+		assert.Equal(t, snapshot.BusFactor, backward.Snapshots[tick].BusFactor)
+	}
+
+	assert.Len(t, backward.Snapshots, len(forward.Snapshots))
+	assert.ElementsMatch(t, forward.reversedPeopleDict, backward.reversedPeopleDict)
+}
+
+func TestBusFactorMergeResultsRebasesTicks(t *testing.T) {
+	bf := BusFactorAnalysis{}
+
+	r1 := BusFactorResult{
+		Snapshots: map[int]*BusFactorSnapshot{
+			0: {BusFactor: 1, TotalLines: 100, AuthorLines: map[int]int64{0: 100}},
+		},
+		Threshold:          0.8,
+		reversedPeopleDict: []string{testPersonAlice},
+		tickSize:           24 * time.Hour,
+	}
+
+	r2 := BusFactorResult{
+		Snapshots: map[int]*BusFactorSnapshot{
+			0: {BusFactor: 1, TotalLines: 40, AuthorLines: map[int]int64{0: 40}},
+		},
+		Threshold:          0.8,
+		reversedPeopleDict: []string{testPersonBob},
+		tickSize:           24 * time.Hour,
+	}
+
+	c1 := &core.CommonAnalysisResult{BeginTime: ownershipMergeBeginTime}
+	c2 := &core.CommonAnalysisResult{BeginTime: ownershipMergeBeginTime + 2*24*3600}
+
+	merged, ok := bf.MergeResults(r1, r2, c1, c2).(BusFactorResult)
+	require.True(t, ok)
+
+	// The second repository starts two ticks later, so its tick 0 lands on the merged tick 2.
+	assert.Equal(t, int64(100), merged.Snapshots[0].TotalLines)
+	assert.Equal(t, int64(140), merged.Snapshots[2].TotalLines)
+	assert.Equal(t, map[int]int64{0: 100, 1: 40}, merged.Snapshots[2].AuthorLines)
+	assert.Len(t, merged.Snapshots, 2)
+}
+
+func TestBusFactorMergeResultsRejectsMismatchingConfiguration(t *testing.T) {
+	bf := BusFactorAnalysis{}
+	common := &core.CommonAnalysisResult{BeginTime: ownershipMergeBeginTime}
+
+	r1, r2 := busFactorMergeInputs()
+	r2.tickSize = 48 * time.Hour
+
+	err, ok := bf.MergeResults(r1, r2, common, common).(error)
+	require.True(t, ok)
+	require.ErrorIs(t, err, errBusFactorMismatchingTickSizes)
+
+	r1, r2 = busFactorMergeInputs()
+	r2.Threshold = 0.5
+
+	err, ok = bf.MergeResults(r1, r2, common, common).(error)
+	require.True(t, ok)
+	require.ErrorIs(t, err, errBusFactorMismatchingThresholds)
 }

@@ -64,6 +64,17 @@ func ToBurndownSparseMatrix(matrix [][]int64, name string) *BurndownSparseMatrix
 // DenseToCompressedSparseRowMatrix takes an integer matrix and converts it to a Protobuf CSR.
 // CSR format: https://en.wikipedia.org/wiki/Sparse_matrix#Compressed_sparse_row_.28CSR.2C_CRS_or_Yale_format.29
 func DenseToCompressedSparseRowMatrix(matrix [][]int64) *CompressedSparseRowMatrix {
+	// A zero-row matrix has no first row to measure. It is reachable: the callers guard on
+	// `!= nil`, and deserializing a payload whose PeopleInteraction declares NumberOfRows == 0
+	// yields a non-nil, empty matrix that passes that guard.
+	if len(matrix) == 0 {
+		return &CompressedSparseRowMatrix{
+			Data:    make([]int64, 0),
+			Indices: make([]int32, 0),
+			Indptr:  make([]int64, 1),
+		}
+	}
+
 	result := CompressedSparseRowMatrix{
 		NumberOfRows:    checkedInt32(len(matrix), "dense matrix row count"),
 		NumberOfColumns: checkedInt32(len(matrix[0]), "dense matrix column count"),

@@ -784,10 +784,10 @@ func TestBurndownSerializeEmptyPeopleMatrix(t *testing.T) {
 		binaries     []bool
 	}{
 		"nil": {peopleMatrix: nil, binaries: []bool{false, true}},
-		// A non-nil zero-row matrix is only exercised through the text writer:
-		// pb.DenseToCompressedSparseRowMatrix dereferences matrix[0] and panics on it,
-		// which is a separate defect outside the scope of this change.
-		"zero-rows": {peopleMatrix: burndown.DenseHistory{}, binaries: []bool{false}},
+		// A non-nil zero-row matrix passes the serializers' `!= nil` guard and used to
+		// panic in pb.DenseToCompressedSparseRowMatrix on matrix[0]; that function now
+		// returns an empty CSR instead, so both writers are exercised here.
+		"zero-rows": {peopleMatrix: burndown.DenseHistory{}, binaries: []bool{false, true}},
 	}
 
 	for name, testCase := range tests {

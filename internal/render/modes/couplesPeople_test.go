@@ -157,7 +157,7 @@ func TestSparseCouplingOutlierThreshold(t *testing.T) {
 	matrix, err := readers.NewSparseMatrix(101, 101, entries)
 	require.NoError(t, err)
 	require.Equal(t, 100, sparseCouplingOutlierThreshold(matrix))
-	require.Equal(t, 100.0, cappedCouplingValue(1_000, 100))
+	require.InDelta(t, 100.0, cappedCouplingValue(1_000, 100), 1e-9)
 }
 
 func TestSparseEmbeddingWriterNormalizesRows(t *testing.T) {

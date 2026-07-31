@@ -45,9 +45,7 @@ func generateBurndownPlotWithOptions(name string, matrix [][]int, output string,
 
 	progEstimator.NextOperation("Setting up resampling")
 
-	if opts.Resample == "" {
-		opts.Resample = "year"
-	}
+	opts.Resample = defaultBurndownResample(opts.Resample)
 
 	printBurndownResampling(opts.Resample, quiet)
 	start, end := burndownTimeRange(matrix, startTime, endTime, opts.Resample)

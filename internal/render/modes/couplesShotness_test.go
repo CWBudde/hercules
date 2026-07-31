@@ -45,7 +45,7 @@ func TestAnalyzeShotnessCouplingUsesHeatmapMatrixForRankedPairs(t *testing.T) {
 		i := indexOfEntity(t, names, pair.Entity1)
 		j := indexOfEntity(t, names, pair.Entity2)
 		require.Equal(t, matrix[i][j], pair.CooccuranceCount)
-		require.Equal(t, float64(matrix[i][j]), pair.CouplingScore)
+		require.InDelta(t, float64(matrix[i][j]), pair.CouplingScore, 1e-9)
 	}
 }
 

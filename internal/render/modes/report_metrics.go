@@ -2410,7 +2410,7 @@ func normalizeHotspotComponentImage(img image.Image, targetAlpha uint8) (*image.
 
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			pixel := color.NRGBAModel.Convert(img.At(x, y)).(color.NRGBA)
+			pixel, _ := color.NRGBAModel.Convert(img.At(x, y)).(color.NRGBA)
 			pixel, pixelChanged := normalizeHotspotComponentPixel(pixel, targetAlpha)
 			changed = changed || pixelChanged
 
@@ -2783,7 +2783,7 @@ func whitenTransparentImage(img image.Image) (*image.NRGBA, bool) {
 
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			pixel := color.NRGBAModel.Convert(img.At(x, y)).(color.NRGBA)
+			pixel, _ := color.NRGBAModel.Convert(img.At(x, y)).(color.NRGBA)
 			pixel, pixelChanged := whitenTransparentPixel(pixel)
 			changed = changed || pixelChanged
 

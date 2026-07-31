@@ -899,7 +899,7 @@ func normalizedOwnershipImage(img image.Image) (*image.NRGBA, bool) {
 
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			pixel := color.NRGBAModel.Convert(img.At(x, y)).(color.NRGBA)
+			pixel, _ := color.NRGBAModel.Convert(img.At(x, y)).(color.NRGBA)
 			pixel, pixelChanged := normalizeOwnershipPixel(pixel)
 			changed = changed || pixelChanged
 

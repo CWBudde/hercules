@@ -232,7 +232,7 @@ func (analysis *couplingPairAnalysis) result() ([]commonCouplingPair, commonCoup
 	// The heap keeps the worst retained pair at its root, so draining it back to
 	// front yields the ranked order.
 	for index := range slices.Backward(ranked) {
-		ranked[index] = heap.Pop(analysis.pairs).(rankedCouplingPair).commonCouplingPair
+		ranked[index] = analysis.pairs.popRanked().commonCouplingPair
 	}
 
 	return ranked, commonCouplingStats{
@@ -253,13 +253,22 @@ type rankedCouplingPair struct {
 // couplingPairHeap keeps the worst retained pair at its root.
 type couplingPairHeap []rankedCouplingPair
 
-func (pairs couplingPairHeap) Len() int { return len(pairs) }
-func (pairs couplingPairHeap) Less(i, j int) bool {
-	return betterCouplingPair(pairs[j], pairs[i])
+func (pairs *couplingPairHeap) Len() int { return len(*pairs) }
+func (pairs *couplingPairHeap) Less(i, j int) bool {
+	return betterCouplingPair((*pairs)[j], (*pairs)[i])
 }
-func (pairs couplingPairHeap) Swap(i, j int) { pairs[i], pairs[j] = pairs[j], pairs[i] }
+
+func (pairs *couplingPairHeap) Swap(i, j int) {
+	(*pairs)[i], (*pairs)[j] = (*pairs)[j], (*pairs)[i]
+}
+
 func (pairs *couplingPairHeap) Push(value any) {
-	*pairs = append(*pairs, value.(rankedCouplingPair))
+	pair, ok := value.(rankedCouplingPair)
+	if !ok {
+		panic(fmt.Sprintf("couplingPairHeap: unexpected element type %T", value))
+	}
+
+	*pairs = append(*pairs, pair)
 }
 
 func (pairs *couplingPairHeap) Pop() any {
@@ -269,6 +278,16 @@ func (pairs *couplingPairHeap) Pop() any {
 	*pairs = old[:last]
 
 	return value
+}
+
+// popRanked drains the heap root, restoring the heap invariant.
+func (pairs *couplingPairHeap) popRanked() rankedCouplingPair {
+	pair, ok := heap.Pop(pairs).(rankedCouplingPair)
+	if !ok {
+		panic("couplingPairHeap: corrupted heap element")
+	}
+
+	return pair
 }
 
 func betterCouplingPair(left, right rankedCouplingPair) bool {

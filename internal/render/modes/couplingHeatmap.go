@@ -3,6 +3,7 @@ package modes
 import (
 	"container/heap"
 	"errors"
+	"fmt"
 	"slices"
 
 	"github.com/cwbudde/hercules/internal/render/graphics"
@@ -90,7 +91,7 @@ func topCouplingHeatmapEntries(
 	// The heap keeps the weakest retained index at its root, so draining it back
 	// to front yields the strongest entity first.
 	for index := range slices.Backward(selected) {
-		selected[index] = heap.Pop(ranked).(rankedCouplingIndex)
+		selected[index] = ranked.popRanked()
 	}
 
 	shownNames := make([]string, len(selected))
@@ -111,13 +112,22 @@ type rankedCouplingIndex struct {
 
 type couplingIndexHeap []rankedCouplingIndex
 
-func (entries couplingIndexHeap) Len() int { return len(entries) }
-func (entries couplingIndexHeap) Less(i, j int) bool {
-	return betterCouplingIndex(entries[j], entries[i])
+func (entries *couplingIndexHeap) Len() int { return len(*entries) }
+func (entries *couplingIndexHeap) Less(i, j int) bool {
+	return betterCouplingIndex((*entries)[j], (*entries)[i])
 }
-func (entries couplingIndexHeap) Swap(i, j int) { entries[i], entries[j] = entries[j], entries[i] }
+
+func (entries *couplingIndexHeap) Swap(i, j int) {
+	(*entries)[i], (*entries)[j] = (*entries)[j], (*entries)[i]
+}
+
 func (entries *couplingIndexHeap) Push(value any) {
-	*entries = append(*entries, value.(rankedCouplingIndex))
+	entry, ok := value.(rankedCouplingIndex)
+	if !ok {
+		panic(fmt.Sprintf("couplingIndexHeap: unexpected element type %T", value))
+	}
+
+	*entries = append(*entries, entry)
 }
 
 func (entries *couplingIndexHeap) Pop() any {
@@ -127,6 +137,16 @@ func (entries *couplingIndexHeap) Pop() any {
 	*entries = old[:last]
 
 	return value
+}
+
+// popRanked drains the heap root, restoring the heap invariant.
+func (entries *couplingIndexHeap) popRanked() rankedCouplingIndex {
+	entry, ok := heap.Pop(entries).(rankedCouplingIndex)
+	if !ok {
+		panic("couplingIndexHeap: corrupted heap element")
+	}
+
+	return entry
 }
 
 func betterCouplingIndex(left, right rankedCouplingIndex) bool {

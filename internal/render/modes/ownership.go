@@ -691,10 +691,7 @@ func configureOwnershipTimeAxis(ax *core.Axes, dates []time.Time) {
 
 	limit := 8
 
-	step := int(math.Ceil(float64(len(dates)) / float64(limit)))
-	if step < 1 {
-		step = 1
-	}
+	step := max(int(math.Ceil(float64(len(dates))/float64(limit))), 1)
 
 	ticks := make([]float64, 0, limit+1)
 	labels := make([]string, 0, limit+1)
@@ -764,7 +761,8 @@ func ownershipPlotPixelSize(defaultWidth, defaultHeight float64, configuredSize 
 	}
 
 	if sizeStr != "" {
-		if parsedWidth, parsedHeight, err := parseOwnershipPlotSize(sizeStr); err == nil {
+		parsedWidth, parsedHeight, err := parseOwnershipPlotSize(sizeStr)
+		if err == nil {
 			width, height = parsedWidth, parsedHeight
 		} else {
 			fmt.Fprintf(os.Stderr, "Warning: %v, using default size\n", err)
@@ -901,7 +899,7 @@ func normalizedOwnershipImage(img image.Image) (*image.NRGBA, bool) {
 
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			pixel := color.NRGBAModel.Convert(img.At(x, y)).(color.NRGBA)
+			pixel, _ := color.NRGBAModel.Convert(img.At(x, y)).(color.NRGBA)
 			pixel, pixelChanged := normalizeOwnershipPixel(pixel)
 			changed = changed || pixelChanged
 
@@ -948,7 +946,8 @@ func writeOwnershipPNG(path string, img image.Image) error {
 		return fmt.Errorf("failed to encode ownership PNG matte: %w", err)
 	}
 
-	if err := file.Close(); err != nil {
+	err = file.Close()
+	if err != nil {
 		return fmt.Errorf("failed to close ownership PNG matte: %w", err)
 	}
 
@@ -991,7 +990,8 @@ func saveOwnershipBurndownAsJSON(output string, names []string, people [][]float
 	encoder := json.NewEncoder(file)
 	encoder.SetIndent("", "  ")
 
-	if err := encoder.Encode(data); err != nil {
+	err = encoder.Encode(data)
+	if err != nil {
 		return fmt.Errorf("failed to write JSON data: %w", err)
 	}
 

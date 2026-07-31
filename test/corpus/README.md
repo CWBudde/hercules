@@ -27,19 +27,47 @@ with a log line, so a partial checkout works. A repository present in the corpus
 but absent from `baseline.json` is likewise reported and skipped, never failed —
 otherwise the suite would be unusable until someone ran a multi-hour seeding job.
 
+## Two measured dimensions, two runs per repository
+
+Each repository is analysed twice, and the two results are recorded under
+separate counters in `baseline.json`.
+
+| dimension | flags                                        | matrices counted                          | baseline keys                     |
+| --------- | -------------------------------------------- | ----------------------------------------- | --------------------------------- |
+| project   | `flags` (burndown, people, devs, couples, …) | `project`, `people[*]`, `repositories[*]` | `flags`, `repositories`           |
+| files     | `file_flags` (`--burndown --burndown-files`) | `files[*]`                                | `file_flags`, `file_repositories` |
+
+The per-file dimension is separate on purpose:
+
+- **Separate counters**, so the long-standing project/people numbers keep meaning
+  what they meant. Folding per-file negatives into `negative_cells` would make
+  every historical figure incomparable.
+- **A separate run**, because `--burndown-files` emits one band matrix per file
+  that ever existed — thousands of matrices and an order of magnitude more YAML
+  on the large repositories — and pairing that with `--couples`/`--devs`/
+  `--burndown-people` in one process multiplies peak memory for nothing: none of
+  those leaves influences the per-file matrices. The cost is a second pass per
+  repository, so the suite takes roughly twice as long as before.
+- The per-file run also emits a `project` matrix. It is **not** counted, or the
+  first run's project matrix would be counted twice.
+
+A repository with a `repositories` entry but no `file_repositories` entry is
+measured only in the project dimension, with a log line — so a corpus baselined
+before this dimension existed does not silently double in runtime.
+
 ## Metrics
 
-Computed over every project, per-person, per-file and per-repository burndown
-band matrix in the YAML report:
+The same metric set is computed per dimension, over the band matrices listed
+above:
 
 | Metric           | Meaning                                                  | Gated |
 | ---------------- | -------------------------------------------------------- | ----- |
-| `exit_code`      | Process exit status; expected to be 0.                    | yes   |
-| `negative_cells` | Count of negative cells anywhere in the sampled history.  | yes   |
-| `residual_cells` | Negative cells in the **final** sampled row.              | yes   |
-| `negative_mass`  | Σ\|negative\| over the negative cells.                    | no    |
-| `worst_cell`     | The single most negative value.                           | no    |
-| `matrices`       | How many matrices were inspected (a shape sanity check).  | no    |
+| `exit_code`      | Process exit status; expected to be 0.                   | yes   |
+| `negative_cells` | Count of negative cells anywhere in the sampled history. | yes   |
+| `residual_cells` | Negative cells in the **final** sampled row.             | yes   |
+| `negative_mass`  | Σ\|negative\| over the negative cells.                   | no    |
+| `worst_cell`     | The single most negative value.                          | no    |
+| `matrices`       | How many matrices were inspected (a shape sanity check). | no    |
 
 `residual_cells` is the important one. The residual/transient split is the
 honest measure of the defect: a transient negative that a later sample repairs
@@ -75,12 +103,28 @@ concurrently and kept whichever goroutine finished first, so the Go scheduler
 decided which files counted as renames. Fixed; both repositories now reproduce
 byte-for-byte and are gated like the rest.
 
-One caveat survives, and the binary now says so out loud. `--diff-timeout` and
-`--renames-timeout` are wall-clock budgets, and a run that hits one produces a
-different — not wrong, but different — answer than an untruncated run. On
-`mekorp-backend` at the defaults, 8 file diffs do hit the 1 s limit. If a
-baseline refuses to settle, check stderr for `not reproducible` and re-measure
-with those two timeouts raised.
+## Wall-clock truncation: pinned, and fatal if it happens anyway
+
+`--diff-timeout` and `--renames-timeout` are wall-clock budgets, and a run that
+hits one produces a different — not wrong, but different — answer than an
+untruncated run. `--diff-timeout` is in **milliseconds** and defaults to **1000**,
+which the corpus exceeds routinely: at the default, `mekorp-webclient` measures
+1447 negative cells truncated against 1413 untruncated, and two binaries with
+provably identical negativity reported 1447 and 1481. That is the same order of
+magnitude as the regressions this suite exists to catch, so at the default the
+gate was partly measuring machine speed.
+
+The suite therefore runs with `--diff-timeout=300000` (5 minutes per single file
+diff — verified to leave `mekorp-webclient`, the slowest repository, untruncated)
+in **both** flag sets, so the deadline is unreachable rather than merely generous.
+
+Truncation is also no longer silent. hercules warns on stderr and still exits 0,
+and the numbers of a truncated run look like ordinary numbers, so the suite
+scans stderr for `not reproducible`. When it matches, that repository's
+measurement in that dimension is declared **invalid**: the subtest fails with the
+stderr tail, the numbers are not gated, and `UPDATE_CORPUS_BASELINE=1` refuses to
+write them. A deadline firing on a busy machine can therefore no longer be
+mistaken for a burndown regression — or be seeded into the baseline as one.
 
 ## Refreshing the baseline
 
@@ -97,6 +141,27 @@ changes the numbers, and record why in the commit message. `provenance` in
 `baseline.json` records the commit and `git status --short` of the tree the
 numbers were measured against; numbers are only comparable against that tree.
 
-The `flags` list in the baseline is checked against the flag set the suite runs.
-Changing the flags invalidates every committed number and the suite says so
-rather than comparing apples to oranges.
+The `flags` and `file_flags` lists in the baseline are checked against the flag
+sets the suite runs. Changing either invalidates every committed number in that
+dimension and the suite says so rather than comparing apples to oranges.
+
+### The baseline must be re-seeded
+
+Adding `--diff-timeout=300000` changed `flags`, so **every number recorded before
+it is void** — including the ones quoted in `PLAN.md`. Until the corpus is
+re-seeded the suite fails immediately with the flag-set mismatch; it does not
+compare against the stale figures. `file_repositories` starts out empty and is
+filled by the same re-seed.
+
+```sh
+HERCULES_CORPUS_DIR=/path/to/clones just update-corpus-baseline
+```
+
+Expect roughly twice the previous wall clock, since every repository is now
+analysed twice.
+
+Re-seed the **whole** corpus after a flag change. Entries recorded under the old
+flags are void, so an update run that finds a changed flag list discards them
+instead of preserving them — a subset re-seed would otherwise leave a baseline
+half of which meant something else. (With the flags unchanged, the usual
+"entries not re-measured are preserved" behaviour applies.)

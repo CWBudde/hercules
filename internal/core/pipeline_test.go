@@ -286,7 +286,8 @@ func (item *dependingTestPipelineItem) Consume(deps map[string]any) (map[string]
 	if !item.TestNilConsumeReturn {
 		return map[string]any{"test2": item}, nil
 	}
-	return nil, nil //nolint:nilnil // Intentionally exercise the pipeline's invalid-result handling.
+	// Intentionally exercise the pipeline's invalid-result handling.
+	return nil, nil
 }
 
 func (item *dependingTestPipelineItem) Fork(n int) []PipelineItem {

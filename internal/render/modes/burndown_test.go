@@ -29,7 +29,8 @@ func TestGenerateBurndownPlot(t *testing.T) {
 	}
 
 	// Check if output file was created
-	if _, err := os.Stat(outputPath); os.IsNotExist(err) {
+	_, err = os.Stat(outputPath)
+	if os.IsNotExist(err) {
 		t.Errorf("Output file was not created: %s", outputPath)
 	}
 }
@@ -53,7 +54,8 @@ func TestGenerateBurndownPlotRelative(t *testing.T) {
 		t.Errorf("generateBurndownPlot() with relative=true error = %v", err)
 	}
 
-	if _, err := os.Stat(outputPath); os.IsNotExist(err) {
+	_, err = os.Stat(outputPath)
+	if os.IsNotExist(err) {
 		t.Errorf("Output file was not created: %s", outputPath)
 	}
 }
@@ -81,7 +83,8 @@ func TestGenerateBurndownPlotResamplingModes(t *testing.T) {
 				t.Errorf("generateBurndownPlot() with resample=%s error = %v", mode, err)
 			}
 
-			if _, err := os.Stat(outputPath); os.IsNotExist(err) {
+			_, err = os.Stat(outputPath)
+			if os.IsNotExist(err) {
 				t.Errorf("Output file was not created for resample mode %s: %s", mode, outputPath)
 			}
 		})

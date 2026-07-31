@@ -416,11 +416,13 @@ func (couples *CouplesAnalysis) MergeResults(
 	addMergedFileLines(merged.FilesLines, cr1.FilesLines, files.First)
 	addMergedFileLines(merged.FilesLines, cr2.FilesLines, files.Second)
 
-	if err := mergeCouplesPeopleFiles(&merged, cr1, cr2, people, files); err != nil {
+	err = mergeCouplesPeopleFiles(&merged, cr1, cr2, people, files)
+	if err != nil {
 		return err
 	}
 
-	if err := mergeCouplesMatrices(&merged, cr1, cr2, people, files); err != nil {
+	err = mergeCouplesMatrices(&merged, cr1, cr2, people, files)
+	if err != nil {
 		return err
 	}
 
@@ -438,11 +440,13 @@ func couplesMergeInputs(result1, result2 any) (CouplesResult, CouplesResult, err
 		return CouplesResult{}, CouplesResult{}, fmt.Errorf("merge couples second result: %w", err)
 	}
 
-	if err := validateCouplesMergeResult(first); err != nil {
+	err = validateCouplesMergeResult(first)
+	if err != nil {
 		return CouplesResult{}, CouplesResult{}, fmt.Errorf("merge couples first result: %w", err)
 	}
 
-	if err := validateCouplesMergeResult(second); err != nil {
+	err = validateCouplesMergeResult(second)
+	if err != nil {
 		return CouplesResult{}, CouplesResult{}, fmt.Errorf("merge couples second result: %w", err)
 	}
 

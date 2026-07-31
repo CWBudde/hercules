@@ -14,7 +14,8 @@ func TestPlotTopCouplingPairsWritesPNG(t *testing.T) {
 	}
 
 	outputFile := filepath.Join(output, "top_file_coupling_pairs.png")
-	if _, err := os.Stat(outputFile); err != nil {
+	_, err = os.Stat(outputFile)
+	if err != nil {
 		t.Fatalf("expected plot file %q: %v", outputFile, err)
 	}
 }

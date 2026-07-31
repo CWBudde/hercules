@@ -207,7 +207,8 @@ func parseOnboardingWindows(value string) ([]int, error) {
 			return nil, fmt.Errorf("invalid window days value '%s': %w", part, err)
 		}
 
-		if _, err := onboardingWindowDuration(days); err != nil {
+		_, err = onboardingWindowDuration(days)
+		if err != nil {
 			return nil, err
 		}
 

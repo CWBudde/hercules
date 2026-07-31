@@ -329,7 +329,8 @@ func (analyser *LineHistoryLoader) loadChangesFromYaml(decoder *yaml.Decoder) er
 		return err
 	}
 
-	if err := reconstructFileStates(loadedFiles, loadedCommits); err != nil {
+	err = reconstructFileStates(loadedFiles, loadedCommits)
+	if err != nil {
 		return err
 	}
 

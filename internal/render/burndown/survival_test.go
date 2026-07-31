@@ -142,7 +142,8 @@ func TestLoadBurndownSurvivalGoldenRawAndResampled(t *testing.T) {
 				t.Fatalf("LoadBurndown() error = %v", err)
 			}
 			var output bytes.Buffer
-			if err := WriteSurvivalFunction(&output, processed.Survival, header.Sampling); err != nil {
+			err = WriteSurvivalFunction(&output, processed.Survival, header.Sampling)
+			if err != nil {
 				t.Fatalf("WriteSurvivalFunction() error = %v", err)
 			}
 			expected, err := os.ReadFile(filepath.Join("testdata", test.golden))

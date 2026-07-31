@@ -48,7 +48,8 @@ func TestGenerateOwnershipPlot(t *testing.T) {
 	}
 
 	// Check if output file was created
-	if _, err := os.Stat(outputPath); os.IsNotExist(err) {
+	_, err = os.Stat(outputPath)
+	if os.IsNotExist(err) {
 		t.Errorf("Output file was not created: %s", outputPath)
 	}
 }
@@ -83,7 +84,8 @@ func TestGenerateOwnershipPlotSingleFile(t *testing.T) {
 		t.Errorf("generateOwnershipPlot() with single file error = %v", err)
 	}
 
-	if _, err := os.Stat(outputPath); os.IsNotExist(err) {
+	_, err = os.Stat(outputPath)
+	if os.IsNotExist(err) {
 		t.Errorf("Output file was not created: %s", outputPath)
 	}
 }
@@ -98,7 +100,8 @@ func TestSaveOwnershipMatplotlibFigurePreservesTransparency(t *testing.T) {
 		style.WithAxesBackground(background),
 	)
 
-	if err := saveOwnershipMatplotlibFigure(fig, outputPath, 100, 100, background); err != nil {
+	err := saveOwnershipMatplotlibFigure(fig, outputPath, 100, 100, background)
+	if err != nil {
 		t.Fatalf("save ownership figure: %v", err)
 	}
 
@@ -328,7 +331,7 @@ func findTopFilesByOwnershipChanges(ownership map[string][][]int, limit int) []s
 		churn    float64
 	}
 
-	var files []fileChurn
+	files := make([]fileChurn, 0, len(ownership))
 
 	for filename, matrix := range ownership {
 		churn := calculateOwnershipChurn(matrix)
@@ -436,10 +439,11 @@ func TestPlotOwnershipBurndownKeepsTickLabelsInsideCanvas(t *testing.T) {
 	}
 
 	output := filepath.Join(t.TempDir(), "ownership.png")
-	if err := plotOwnershipBurndown(
+	err := plotOwnershipBurndown(
 		".", []string{"Alice"}, [][]float64{owned}, dates, dates[points-1], output,
 		Options{Graphics: graphics.Options{Size: "16,10"}},
-	); err != nil {
+	)
+	if err != nil {
 		t.Fatalf("plotOwnershipBurndown: %v", err)
 	}
 

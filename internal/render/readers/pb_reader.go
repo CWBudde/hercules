@@ -40,12 +40,15 @@ func (r *ProtobufReader) Read(file io.Reader) error {
 	progEstimator.UpdateProgress(1)
 
 	var results pb.AnalysisResults
-	if err := proto.Unmarshal(allBytes, &results); err != nil {
+
+	err = proto.Unmarshal(allBytes, &results)
+	if err != nil {
 		progEstimator.FinishOperation()
 		return fmt.Errorf("%w: unmarshal protobuf envelope: %w", ErrAnalysisMalformed, err)
 	}
 
-	if err := analysisio.ValidateAndMigrateAnalysisResults(&results, r.Limits); err != nil {
+	err = analysisio.ValidateAndMigrateAnalysisResults(&results, r.Limits)
+	if err != nil {
 		progEstimator.FinishOperation()
 		return err
 	}
@@ -833,13 +836,13 @@ func parseCompressedSparseRowMatrix(matrix *pb.CompressedSparseRowMatrix) [][]in
 	}
 
 	// Convert from CSR format to dense matrix with bounds checking
-	for i := int32(0); i < matrix.GetNumberOfRows(); i++ {
-		if int(i+1) >= len(matrix.GetIndptr()) {
+	for row := range matrix.GetNumberOfRows() {
+		if int(row+1) >= len(matrix.GetIndptr()) {
 			break
 		}
 
-		start := matrix.GetIndptr()[i]
-		end := matrix.GetIndptr()[i+1]
+		start := matrix.GetIndptr()[row]
+		end := matrix.GetIndptr()[row+1]
 
 		for j := start; j < end; j++ {
 			if int(j) >= len(matrix.GetIndices()) || int(j) >= len(matrix.GetData()) {
@@ -852,7 +855,7 @@ func parseCompressedSparseRowMatrix(matrix *pb.CompressedSparseRowMatrix) [][]in
 			}
 
 			value := matrix.GetData()[j]
-			result[i][col] = int(value)
+			result[row][col] = int(value)
 		}
 	}
 

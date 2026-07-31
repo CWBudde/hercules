@@ -134,6 +134,18 @@ path = '_test\.go'
 linters = ['forcetypeassert']
 path = '_test\.go'
 
+# Reader mocks stub out the whole Reader interface; the methods a test does not
+# exercise return (nil, nil) on purpose rather than inventing sentinel errors.
+[[linters.exclusions.rules]]
+linters = ['nilnil']
+path = '_test\.go'
+
+# These fixtures are deliberately non-ASCII: they pin the rune-safe truncation
+# and collision behaviour of the output-path slugger.
+[[linters.exclusions.rules]]
+linters = ['gosmopolitan']
+path = 'internal/render/outputpath/outputpath_test\.go'
+
 # These comments and expected strings are compact snapshots of the line-history
 # tree. Keeping each snapshot on one line makes state transitions comparable.
 [[linters.exclusions.rules]]

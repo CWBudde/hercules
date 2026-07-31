@@ -66,7 +66,8 @@ func runCouplingMode(
 	progEstimator.NextOperation("Analyzing coupling patterns")
 	progEstimator.NextOperation("Generating visualization")
 
-	if err := plot(names, matrix, output); err != nil {
+	err = plot(names, matrix, output)
+	if err != nil {
 		progEstimator.FinishMultiOperation()
 		return fmt.Errorf("failed to generate %s plots: %w", label, err)
 	}
@@ -228,8 +229,10 @@ func (analysis *couplingPairAnalysis) result() ([]commonCouplingPair, commonCoup
 	}
 
 	ranked := make([]commonCouplingPair, analysis.pairs.Len())
-	for range slices.Backward(ranked) {
-		_ = heap.Pop(analysis.pairs).(rankedCouplingPair).commonCouplingPair
+	// The heap keeps the worst retained pair at its root, so draining it back to
+	// front yields the ranked order.
+	for index := range slices.Backward(ranked) {
+		ranked[index] = analysis.pairs.popRanked().commonCouplingPair
 	}
 
 	return ranked, commonCouplingStats{
@@ -250,13 +253,22 @@ type rankedCouplingPair struct {
 // couplingPairHeap keeps the worst retained pair at its root.
 type couplingPairHeap []rankedCouplingPair
 
-func (pairs couplingPairHeap) Len() int { return len(pairs) }
-func (pairs couplingPairHeap) Less(i, j int) bool {
-	return betterCouplingPair(pairs[j], pairs[i])
+func (pairs *couplingPairHeap) Len() int { return len(*pairs) }
+func (pairs *couplingPairHeap) Less(i, j int) bool {
+	return betterCouplingPair((*pairs)[j], (*pairs)[i])
 }
-func (pairs couplingPairHeap) Swap(i, j int) { pairs[i], pairs[j] = pairs[j], pairs[i] }
+
+func (pairs *couplingPairHeap) Swap(i, j int) {
+	(*pairs)[i], (*pairs)[j] = (*pairs)[j], (*pairs)[i]
+}
+
 func (pairs *couplingPairHeap) Push(value any) {
-	*pairs = append(*pairs, value.(rankedCouplingPair))
+	pair, ok := value.(rankedCouplingPair)
+	if !ok {
+		panic(fmt.Sprintf("couplingPairHeap: unexpected element type %T", value))
+	}
+
+	*pairs = append(*pairs, pair)
 }
 
 func (pairs *couplingPairHeap) Pop() any {
@@ -266,6 +278,16 @@ func (pairs *couplingPairHeap) Pop() any {
 	*pairs = old[:last]
 
 	return value
+}
+
+// popRanked drains the heap root, restoring the heap invariant.
+func (pairs *couplingPairHeap) popRanked() rankedCouplingPair {
+	pair, ok := heap.Pop(pairs).(rankedCouplingPair)
+	if !ok {
+		panic("couplingPairHeap: corrupted heap element")
+	}
+
+	return pair
 }
 
 func betterCouplingPair(left, right rankedCouplingPair) bool {
@@ -341,10 +363,9 @@ func plotTopCouplingPairsWithOptions(analysis FileCouplingAnalysis, output strin
 	}
 
 	// Prepare data for bar chart
-	maxPairs := len(analysis.TopCoupling)
-	if maxPairs > 15 {
-		maxPairs = 15 // Show top 15 pairs
-	}
+	maxPairs := min(len(analysis.TopCoupling),
+		// Show top 15 pairs
+		15)
 
 	values := make([]float64, maxPairs)
 	rankLabels := make([]string, maxPairs)

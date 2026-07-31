@@ -123,7 +123,7 @@ type RuntimeStatistics struct {
 
 // analyzeRuntimeStats performs analysis on runtime statistics.
 func analyzeRuntimeStats(runtimeStats map[string]float64) RuntimeAnalysis {
-	var metrics []RuntimeMetric
+	metrics := make([]RuntimeMetric, 0, len(runtimeStats))
 	totalTime := 0.0
 	maxTime := 0.0
 	minTime := float64(^uint(0) >> 1) // Max float
@@ -202,10 +202,7 @@ func plotRuntimeBreakdown(analysis RuntimeAnalysis, output string, visuals graph
 	}
 
 	// Prepare data for bar chart (show top 15 operations)
-	maxOps := len(analysis.Metrics)
-	if maxOps > 15 {
-		maxOps = 15
-	}
+	maxOps := min(len(analysis.Metrics), 15)
 
 	labels := make([]string, maxOps)
 
@@ -263,10 +260,7 @@ func plotRuntimePieChart(analysis RuntimeAnalysis, output string) error {
 	}
 
 	// Prepare data for stacked representation (top 10 operations)
-	maxOps := len(analysis.Metrics)
-	if maxOps > 10 {
-		maxOps = 10
-	}
+	maxOps := min(len(analysis.Metrics), 10)
 
 	labels := make([]string, maxOps)
 

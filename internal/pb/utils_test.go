@@ -19,11 +19,11 @@ func TestDenseToCompressedSparseRowMatrixEmpty(t *testing.T) {
 	})
 
 	require.NotNil(t, result)
-	assert.Equal(t, int32(0), result.NumberOfRows)
-	assert.Equal(t, int32(0), result.NumberOfColumns)
-	assert.Empty(t, result.Data)
-	assert.Empty(t, result.Indices)
-	assert.Equal(t, []int64{0}, result.Indptr)
+	assert.Equal(t, int32(0), result.GetNumberOfRows())
+	assert.Equal(t, int32(0), result.GetNumberOfColumns())
+	assert.Empty(t, result.GetData())
+	assert.Empty(t, result.GetIndices())
+	assert.Equal(t, []int64{0}, result.GetIndptr())
 }
 
 // TestDenseToCompressedSparseRowMatrixKeepsNonEmptyBehaviour guards the fast path from
@@ -36,9 +36,9 @@ func TestDenseToCompressedSparseRowMatrixKeepsNonEmptyBehaviour(t *testing.T) {
 	})
 
 	require.NotNil(t, result)
-	assert.Equal(t, int32(3), result.NumberOfRows)
-	assert.Equal(t, int32(3), result.NumberOfColumns)
-	assert.Equal(t, []int64{1, 2, 3}, result.Data)
-	assert.Equal(t, []int32{0, 2, 1}, result.Indices)
-	assert.Equal(t, []int64{0, 2, 2, 3}, result.Indptr)
+	assert.Equal(t, int32(3), result.GetNumberOfRows())
+	assert.Equal(t, int32(3), result.GetNumberOfColumns())
+	assert.Equal(t, []int64{1, 2, 3}, result.GetData())
+	assert.Equal(t, []int32{0, 2, 1}, result.GetIndices())
+	assert.Equal(t, []int64{0, 2, 2, 3}, result.GetIndptr())
 }

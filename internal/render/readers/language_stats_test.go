@@ -76,7 +76,8 @@ func TestYamlReaderGetLanguageStatsFromCompactDevsTicks(t *testing.T) {
 	defer func() { _ = file.Close() }()
 
 	reader := &YamlReader{}
-	if err := reader.Read(file); err != nil {
+	err = reader.Read(file)
+	if err != nil {
 		t.Fatalf("Read() unexpected error: %v", err)
 	}
 
@@ -102,7 +103,8 @@ func TestProtobufReaderGetLanguageStatsFromRealHerculesFixture(t *testing.T) {
 	defer func() { _ = file.Close() }()
 
 	reader := &ProtobufReader{}
-	if err := reader.Read(file); err != nil {
+	err = reader.Read(file)
+	if err != nil {
 		t.Fatalf("Read() unexpected error: %v", err)
 	}
 

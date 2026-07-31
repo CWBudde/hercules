@@ -79,7 +79,8 @@ func TestGenerateDevsPlot(t *testing.T) {
 	}
 
 	// Check if output file was created
-	if _, err := os.Stat(outputPath); os.IsNotExist(err) {
+	_, err = os.Stat(outputPath)
+	if os.IsNotExist(err) {
 		t.Errorf("Output file was not created: %s", outputPath)
 	}
 }
@@ -118,7 +119,8 @@ func TestGenerateDevsPlotSingleDeveloper(t *testing.T) {
 		t.Errorf("generateDevsPlot() with single developer error = %v", err)
 	}
 
-	if _, err := os.Stat(outputPath); os.IsNotExist(err) {
+	_, err = os.Stat(outputPath)
+	if os.IsNotExist(err) {
 		t.Errorf("Output file was not created: %s", outputPath)
 	}
 }
@@ -132,7 +134,8 @@ func TestBuildDeveloperSeriesRowsUsesAllTicks(t *testing.T) {
 	defer func() { _ = file.Close() }()
 
 	reader := &readers.YamlReader{}
-	if err := reader.Read(file); err != nil {
+	err = reader.Read(file)
+	if err != nil {
 		t.Fatalf("Read() unexpected error: %v", err)
 	}
 

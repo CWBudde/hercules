@@ -150,13 +150,15 @@ func captureStderr(t *testing.T, fn func()) string {
 
 	fn()
 
-	if err := writeEnd.Close(); err != nil {
+	err = writeEnd.Close()
+	if err != nil {
 		t.Fatalf("close stderr pipe: %v", err)
 	}
 
 	captured := <-done
 
-	if err := readEnd.Close(); err != nil {
+	err = readEnd.Close()
+	if err != nil {
 		t.Fatalf("close stderr read end: %v", err)
 	}
 
@@ -183,15 +185,18 @@ func TestBurndownPersonSkipsIdlePeopleAndRendersTheRest(t *testing.T) {
 	opts := defaultOptions()
 	opts.Quiet = true
 
-	if err := BurndownPersonWithOptions(reader, output, start, end, opts); err != nil {
+	err = BurndownPersonWithOptions(reader, output, start, end, opts)
+	if err != nil {
 		t.Fatalf("BurndownPersonWithOptions() failed on an idle contributor: %v", err)
 	}
 
-	if _, err := os.Stat(outputFiles[0]); err != nil {
+	_, err = os.Stat(outputFiles[0])
+	if err != nil {
 		t.Fatalf("active contributor chart missing at %s: %v", outputFiles[0], err)
 	}
 
-	if _, err := os.Stat(outputFiles[1]); !os.IsNotExist(err) {
+	_, err = os.Stat(outputFiles[1])
+	if !os.IsNotExist(err) {
 		t.Fatalf("idle contributor chart at %s should not exist, stat err = %v", outputFiles[1], err)
 	}
 }
@@ -232,7 +237,8 @@ func TestBurndownPersonSkipNoticeHonorsQuiet(t *testing.T) {
 		opts.Quiet = quiet
 
 		return captureStderr(t, func() {
-			if err := BurndownPersonWithOptions(reader, output, start, end, opts); err != nil {
+			err := BurndownPersonWithOptions(reader, output, start, end, opts)
+			if err != nil {
 				t.Errorf("BurndownPersonWithOptions(quiet=%v) failed: %v", quiet, err)
 			}
 		})

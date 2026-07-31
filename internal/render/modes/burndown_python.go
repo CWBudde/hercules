@@ -64,13 +64,15 @@ func GenerateBurndownProjectPythonWithOptions(reader readers.Reader, output stri
 		return fmt.Errorf("failed to process burndown data: %w", err)
 	}
 
-	if err := reportProjectBurndown(processedData, header.Sampling, opts.Quiet); err != nil {
+	err = reportProjectBurndown(processedData, header.Sampling, opts.Quiet)
+	if err != nil {
 		return err
 	}
 
 	progEstimator.NextOperation("Generating Python-style visualization")
 
-	if err := graphics.PlotBurndownMatplotlibWithOptions(processedData, output, opts.Relative, opts.Graphics); err != nil {
+	err = graphics.PlotBurndownMatplotlibWithOptions(processedData, output, opts.Relative, opts.Graphics)
+	if err != nil {
 		return fmt.Errorf("error creating Python-style burndown plot: %w", err)
 	}
 
@@ -192,7 +194,8 @@ func renderFileBurndown(
 		return fmt.Errorf("process %s: %w", file.Filename, err)
 	}
 
-	if err := graphics.PlotBurndownMatplotlibWithOptions(data, output, opts.Relative, opts.Graphics); err != nil {
+	err = graphics.PlotBurndownMatplotlibWithOptions(data, output, opts.Relative, opts.Graphics)
+	if err != nil {
 		return fmt.Errorf("create plot for %s: %w", file.Filename, err)
 	}
 
@@ -274,7 +277,8 @@ func repositoryBurndownOutputPaths(
 		output = "."
 	}
 
-	if err := os.MkdirAll(output, 0o750); err != nil {
+	err := os.MkdirAll(output, 0o750)
+	if err != nil {
 		return nil, fmt.Errorf("failed to create output directory %s: %w", output, err)
 	}
 
@@ -311,11 +315,13 @@ func renderRepositoryBurndown(
 		return fmt.Errorf("process repository %s: %w", repository.Repository, err)
 	}
 
-	if err := graphics.PlotBurndownMatplotlibWithOptions(data, outputs[0], opts.Relative, opts.Graphics); err != nil {
+	err = graphics.PlotBurndownMatplotlibWithOptions(data, outputs[0], opts.Relative, opts.Graphics)
+	if err != nil {
 		return fmt.Errorf("create plot for repository %s: %w", repository.Repository, err)
 	}
 
-	if err := graphics.PlotBurndownMatplotlibWithOptions(data, outputs[1], opts.Relative, opts.Graphics); err != nil {
+	err = graphics.PlotBurndownMatplotlibWithOptions(data, outputs[1], opts.Relative, opts.Graphics)
+	if err != nil {
 		return fmt.Errorf("create SVG plot for repository %s: %w", repository.Repository, err)
 	}
 
@@ -355,7 +361,8 @@ func GenerateBurndownReposCombinedPythonWithOptions(reader readers.Reader, outpu
 		return err
 	}
 
-	if err := graphics.PlotBurndownMatplotlibWithOptions(processedData, output, opts.Relative, opts.Graphics); err != nil {
+	err = graphics.PlotBurndownMatplotlibWithOptions(processedData, output, opts.Relative, opts.Graphics)
+	if err != nil {
 		return fmt.Errorf("error creating combined repository burndown plot: %w", err)
 	}
 

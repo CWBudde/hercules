@@ -134,7 +134,8 @@ func TestProtobufReaderGetBurndownParametersPreservesHerculesTiming(t *testing.T
 		t.Fatalf("Failed to marshal analysis results: %v", err)
 	}
 	reader := &ProtobufReader{}
-	if err := reader.Read(bytes.NewReader(data)); err != nil {
+	err = reader.Read(bytes.NewReader(data))
+	if err != nil {
 		t.Fatalf("Read() error = %v", err)
 	}
 
@@ -168,6 +169,8 @@ func TestProtobufReader_InvalidData(t *testing.T) {
 // Helper functions for testing
 
 func createTestProtobufReader(t *testing.T) *ProtobufReader {
+	t.Helper()
+
 	// Create burndown analysis data
 	burndownData := &pb.BurndownAnalysisResults{
 		Project: &pb.BurndownSparseMatrix{

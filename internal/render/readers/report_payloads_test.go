@@ -204,7 +204,7 @@ func TestProtobufReader_CurrentHerculesReportPayloads(t *testing.T) {
 
 	sentiment, err := reader.GetSentimentByTick()
 	require.NoError(t, err)
-	require.Equal(t, float32(0.75), sentiment[3].Value)
+	require.InDelta(t, float32(0.75), sentiment[3].Value, 1e-6)
 
 	temporal, err := reader.GetTemporalActivity()
 	require.NoError(t, err)
@@ -232,8 +232,8 @@ func TestProtobufReader_CurrentHerculesReportPayloads(t *testing.T) {
 
 	ownership, err := reader.GetOwnershipConcentration()
 	require.NoError(t, err)
-	require.Equal(t, 0.3, ownership.Snapshots[1].Gini)
-	require.Equal(t, 0.5, ownership.SubsystemHHI["cmd"])
+	require.InDelta(t, 0.3, ownership.Snapshots[1].Gini, 1e-9)
+	require.InDelta(t, 0.5, ownership.SubsystemHHI["cmd"], 1e-9)
 
 	diffusion, err := reader.GetKnowledgeDiffusion()
 	require.NoError(t, err)
@@ -247,7 +247,7 @@ func TestProtobufReader_CurrentHerculesReportPayloads(t *testing.T) {
 
 	refactoring, err := reader.GetRefactoringProxy()
 	require.NoError(t, err)
-	require.Equal(t, float32(0.4), refactoring.Ticks[0].RefactoringRate)
+	require.InDelta(t, float32(0.4), refactoring.Ticks[0].RefactoringRate, 1e-6)
 	require.True(t, refactoring.Ticks[0].IsRefactoring)
 
 	commits, err := reader.GetCommits()

@@ -224,13 +224,13 @@ func configureBurndownStackAxes(
 }
 
 func pythonBurndownAxesPadding(matrix [][]float64, relative bool) (left, right, bottom, top float64) {
-	left = 0.036
-	if relative {
+	switch {
+	case relative:
 		left = 0.045
-	} else if maxStackY(matrix) >= 1000 {
+	case maxStackY(matrix) >= 1000:
 		// Full line-count labels need more room than the old scaled labels.
 		left = 0.075
-	} else {
+	default:
 		left = 0.041
 	}
 
@@ -607,7 +607,8 @@ func saveMatplotlibFigureWithConfig(fig *core.Figure, output string, config back
 			return fmt.Errorf("failed to create AGG renderer: %w", err)
 		}
 
-		if err := core.SavePNG(fig, renderer, output); err != nil {
+		err = core.SavePNG(fig, renderer, output)
+		if err != nil {
 			return err
 		}
 

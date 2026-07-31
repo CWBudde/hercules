@@ -48,7 +48,8 @@ func DetectAndReadInputWithOptions(input, format string, quiet bool) (Reader, er
 	}
 
 	// Read the input using the Reader
-	if err := reader.Read(file); err != nil {
+	err = reader.Read(file)
+	if err != nil {
 		return nil, fmt.Errorf("error reading input with %s reader: %w", format, err)
 	}
 

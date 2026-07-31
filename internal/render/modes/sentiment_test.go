@@ -90,17 +90,13 @@ func (m *MockSentimentReader) GetLanguageStats() ([]readers.LanguageStat, error)
 
 func TestSentiment(t *testing.T) {
 	// Create temporary output directory
-	tempDir, err := os.MkdirTemp("", "sentiment_test")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer func() { _ = os.RemoveAll(tempDir) }()
+	tempDir := t.TempDir()
 
 	// Create mock reader with test data
 	reader := &MockSentimentReader{}
 
 	// Run heuristic fallback analysis for legacy fixtures without collected sentiment data.
-	err = Sentiment(reader, tempDir, true)
+	err := Sentiment(reader, tempDir, true)
 	if err != nil {
 		t.Fatalf("Sentiment analysis failed: %v", err)
 	}
@@ -117,7 +113,8 @@ func TestSentiment(t *testing.T) {
 
 	for _, filename := range expectedFiles {
 		filepath := tempDir + "/" + filename
-		if _, err := os.Stat(filepath); os.IsNotExist(err) {
+		_, err := os.Stat(filepath)
+		if os.IsNotExist(err) {
 			t.Errorf("Expected output file %s was not created", filename)
 		}
 	}
@@ -135,18 +132,16 @@ func (c *CollectedSentimentReader) GetSentimentByTick() (map[int]readers.Sentime
 }
 
 func TestSentimentUsesCollectedSentimentWithoutFallback(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "sentiment_collected_test")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer func() { _ = os.RemoveAll(tempDir) }()
+	tempDir := t.TempDir()
 
 	reader := &CollectedSentimentReader{NoDataReader: &NoDataReader{}}
-	if err := Sentiment(reader, tempDir, false); err != nil {
+	err := Sentiment(reader, tempDir, false)
+	if err != nil {
 		t.Fatalf("Sentiment analysis with collected data failed: %v", err)
 	}
 
-	if _, err := os.Stat(tempDir + "/sentiment-overview.png"); os.IsNotExist(err) {
+	_, err = os.Stat(tempDir + "/sentiment-overview.png")
+	if os.IsNotExist(err) {
 		t.Error("Expected sentiment overview output for collected sentiment data")
 	}
 }
@@ -240,14 +235,10 @@ func TestSentimentWithNoData(t *testing.T) {
 	noDataReader := &NoDataReader{}
 
 	// Create temp dir
-	tempDir, err := os.MkdirTemp("", "sentiment_no_data_test")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer func() { _ = os.RemoveAll(tempDir) }()
+	tempDir := t.TempDir()
 
 	// This should return an error when no data is available
-	err = Sentiment(noDataReader, tempDir, false)
+	err := Sentiment(noDataReader, tempDir, false)
 	if !errors.Is(err, readers.ErrAnalysisMissing) {
 		t.Fatalf("Expected missing-analysis error when no sentiment data is available, got %v", err)
 	}
@@ -269,18 +260,16 @@ func (z *ZeroActivitySentimentReader) GetLanguageStats() ([]readers.LanguageStat
 }
 
 func TestSentimentWithZeroActivityDoesNotCreateNaNBars(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "sentiment_zero_activity_test")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer func() { _ = os.RemoveAll(tempDir) }()
+	tempDir := t.TempDir()
 
 	reader := &ZeroActivitySentimentReader{NoDataReader: &NoDataReader{}}
-	if err := Sentiment(reader, tempDir, true); err != nil {
+	err := Sentiment(reader, tempDir, true)
+	if err != nil {
 		t.Fatalf("Sentiment analysis with zero activity failed: %v", err)
 	}
 
-	if _, err := os.Stat(tempDir + "/sentiment-overview.png"); os.IsNotExist(err) {
+	_, err = os.Stat(tempDir + "/sentiment-overview.png")
+	if os.IsNotExist(err) {
 		t.Error("Expected sentiment overview output for zero activity data")
 	}
 }

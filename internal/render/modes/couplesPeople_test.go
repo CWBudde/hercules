@@ -101,7 +101,8 @@ func TestCouplesPeopleEmbeddings(t *testing.T) {
 
 	for _, filename := range expectedFiles {
 		filepath := filepath.Join(tempDir, filename)
-		if _, err := os.Stat(filepath); os.IsNotExist(err) {
+		_, err := os.Stat(filepath)
+		if os.IsNotExist(err) {
 			t.Errorf("Expected file not created: %s", filepath)
 		}
 	}
@@ -128,14 +129,16 @@ func TestCouplesPeopleWithDisabledProjector(t *testing.T) {
 
 	for _, filename := range expectedFiles {
 		filepath := filepath.Join(tempDir, filename)
-		if _, err := os.Stat(filepath); os.IsNotExist(err) {
+		_, err := os.Stat(filepath)
+		if os.IsNotExist(err) {
 			t.Errorf("Expected file not created: %s", filepath)
 		}
 	}
 
 	// Verify metadata file is NOT created when projector is disabled
 	metadataPath := filepath.Join(tempDir, "people_metadata.tsv")
-	if _, err := os.Stat(metadataPath); !os.IsNotExist(err) {
+	_, err = os.Stat(metadataPath)
+	if !os.IsNotExist(err) {
 		t.Errorf("Metadata file should not exist when projector is disabled: %s", metadataPath)
 	}
 }
@@ -154,7 +157,7 @@ func TestSparseCouplingOutlierThreshold(t *testing.T) {
 	matrix, err := readers.NewSparseMatrix(101, 101, entries)
 	require.NoError(t, err)
 	require.Equal(t, 100, sparseCouplingOutlierThreshold(matrix))
-	require.Equal(t, 100.0, cappedCouplingValue(1_000, 100))
+	require.InDelta(t, 100.0, cappedCouplingValue(1_000, 100), 1e-9)
 }
 
 func TestSparseEmbeddingWriterNormalizesRows(t *testing.T) {

@@ -222,12 +222,14 @@ func WriteSurvivalFunction(writer io.Writer, curve []SurvivalPoint, sampling int
 		}
 	}
 
-	if _, err := fmt.Fprintf(writer, "%s%s\n", strings.Repeat(" ", indexWidth+2), survivalColumnTitle); err != nil {
+	_, err := fmt.Fprintf(writer, "%s%s\n", strings.Repeat(" ", indexWidth+2), survivalColumnTitle)
+	if err != nil {
 		return fmt.Errorf("write survival header: %w", err)
 	}
 
 	for index, point := range rows {
-		if _, err := fmt.Fprintf(writer, "%-*s  %23.6f\n", indexWidth, labels[index], point.Ratio); err != nil {
+		_, err := fmt.Fprintf(writer, "%-*s  %23.6f\n", indexWidth, labels[index], point.Ratio)
+		if err != nil {
 			return fmt.Errorf("write survival row: %w", err)
 		}
 	}

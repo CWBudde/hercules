@@ -268,12 +268,14 @@ func saveJSONResults(results map[string]any, outputPath string) error {
 		"results": results,
 	}
 
-	if err := encoder.Encode(output); err != nil {
+	err = encoder.Encode(output)
+	if err != nil {
 		_ = file.Close()
 		return fmt.Errorf("encode JSON output: %w", err)
 	}
 
-	if err := file.Close(); err != nil {
+	err = file.Close()
+	if err != nil {
 		return fmt.Errorf("close JSON output: %w", err)
 	}
 

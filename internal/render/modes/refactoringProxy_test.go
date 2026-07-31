@@ -30,7 +30,8 @@ func TestRefactoringProxyWritesChart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RefactoringProxy() unexpected error: %v", err)
 	}
-	if _, err := os.Stat(output); err != nil {
+	_, err = os.Stat(output)
+	if err != nil {
 		t.Fatalf("Expected refactoring proxy chart at %s: %v", output, err)
 	}
 }

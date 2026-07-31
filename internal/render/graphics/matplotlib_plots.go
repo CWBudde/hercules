@@ -189,7 +189,8 @@ func PlotTimeAreasMatplotlib(dates []time.Time, series []MatplotlibTimeAreaSerie
 		alpha = 1
 	}
 
-	if err := plotTimeAreaSeries(ax, x, series, colors, matrix, labels, opts, alpha); err != nil {
+	err = plotTimeAreaSeries(ax, x, series, colors, matrix, labels, opts, alpha)
+	if err != nil {
 		return err
 	}
 
@@ -1247,7 +1248,8 @@ func nonNegativeNiceTicks(maxValue float64) []float64 {
 	raw := maxValue / target
 	magnitude := math.Pow(10, math.Floor(math.Log10(raw)))
 
-	step := magnitude
+	var step float64
+
 	switch norm := raw / magnitude; {
 	case norm <= 1:
 		step = magnitude

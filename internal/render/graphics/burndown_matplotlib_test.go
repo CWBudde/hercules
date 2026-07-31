@@ -76,7 +76,8 @@ func TestPlotBurndownMatplotlibUsesBackends(t *testing.T) {
 	dir := t.TempDir()
 	pngPath := filepath.Join(dir, "burndown.png")
 	opts := Options{Size: "2,1.5", Background: "white"}
-	if err := PlotBurndownMatplotlibWithOptions(data, pngPath, false, opts); err != nil {
+	err := PlotBurndownMatplotlibWithOptions(data, pngPath, false, opts)
+	if err != nil {
 		t.Fatalf("plot png: %v", err)
 	}
 	pngFile, err := os.Open(pngPath) // #nosec G304 - test path is under t.TempDir.
@@ -93,7 +94,8 @@ func TestPlotBurndownMatplotlibUsesBackends(t *testing.T) {
 	}
 
 	svgPath := filepath.Join(dir, "burndown.svg")
-	if err := PlotBurndownMatplotlibWithOptions(data, svgPath, true, opts); err != nil {
+	err = PlotBurndownMatplotlibWithOptions(data, svgPath, true, opts)
+	if err != nil {
 		t.Fatalf("plot svg: %v", err)
 	}
 	svgBytes, err := os.ReadFile(svgPath) // #nosec G304 - test path is under t.TempDir.

@@ -185,7 +185,8 @@ func TestRemoteCacheSafety(t *testing.T) {
 	)
 	requireSuccess(t, result)
 	requireRegularFile(t, filepath.Join(cache, remoteCacheMarker))
-	if _, err := os.Stat(staleFile); !errors.Is(err, os.ErrNotExist) {
+	_, err = os.Stat(staleFile)
+	if !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("forced replacement left stale cache data behind: %v", err)
 	}
 
@@ -329,14 +330,16 @@ func createRepository(t *testing.T) string {
 		t.Fatalf("initialize Git repository: %v", err)
 	}
 	readme := filepath.Join(path, "README.md")
-	if err := os.WriteFile(readme, []byte("# E2E fixture\n"), 0o600); err != nil {
+	err = os.WriteFile(readme, []byte("# E2E fixture\n"), 0o600)
+	if err != nil {
 		t.Fatalf("write repository fixture: %v", err)
 	}
 	worktree, err := repository.Worktree()
 	if err != nil {
 		t.Fatalf("open repository worktree: %v", err)
 	}
-	if _, err := worktree.Add("README.md"); err != nil {
+	_, err = worktree.Add("README.md")
+	if err != nil {
 		t.Fatalf("stage repository fixture: %v", err)
 	}
 	signature := &object.Signature{
@@ -344,9 +347,10 @@ func createRepository(t *testing.T) string {
 		Email: "hercules-ci@example.invalid",
 		When:  time.Date(2026, time.July, 25, 12, 0, 0, 0, time.UTC),
 	}
-	if _, err := worktree.Commit("Initial commit", &git.CommitOptions{
+	_, err = worktree.Commit("Initial commit", &git.CommitOptions{
 		Author: signature, Committer: signature,
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("commit repository fixture: %v", err)
 	}
 	return path
@@ -367,10 +371,12 @@ func createRepositoryWithLargeFile(t *testing.T) string {
 	}
 	large := filepath.Join(path, "large.txt")
 	payload := bytes.Repeat([]byte("hercules oversized blob fixture\n"), 1024)
-	if err := os.WriteFile(large, payload, 0o600); err != nil {
+	err = os.WriteFile(large, payload, 0o600)
+	if err != nil {
 		t.Fatalf("write large repository fixture: %v", err)
 	}
-	if _, err := worktree.Add("large.txt"); err != nil {
+	_, err = worktree.Add("large.txt")
+	if err != nil {
 		t.Fatalf("stage large repository fixture: %v", err)
 	}
 	signature := &object.Signature{
@@ -378,9 +384,10 @@ func createRepositoryWithLargeFile(t *testing.T) string {
 		Email: "hercules-ci@example.invalid",
 		When:  time.Date(2026, time.July, 26, 12, 0, 0, 0, time.UTC),
 	}
-	if _, err := worktree.Commit("Add a large file", &git.CommitOptions{
+	_, err = worktree.Commit("Add a large file", &git.CommitOptions{
 		Author: signature, Committer: signature,
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("commit large repository fixture: %v", err)
 	}
 	return path
@@ -464,21 +471,25 @@ func createRepositoryWithAmbiguousRenames(t *testing.T) string {
 
 		for name, content := range files {
 			target := filepath.Join(path, name)
-			if err := os.MkdirAll(filepath.Dir(target), 0o750); err != nil {
+			err := os.MkdirAll(filepath.Dir(target), 0o750)
+			if err != nil {
 				t.Fatalf("create directory for %s: %v", name, err)
 			}
 
-			if err := os.WriteFile(target, content, 0o600); err != nil {
+			err = os.WriteFile(target, content, 0o600)
+			if err != nil {
 				t.Fatalf("write %s: %v", name, err)
 			}
 
-			if _, err := worktree.Add(name); err != nil {
+			_, err = worktree.Add(name)
+			if err != nil {
 				t.Fatalf("stage %s: %v", name, err)
 			}
 		}
 
 		for _, name := range removed {
-			if _, err := worktree.Remove(name); err != nil {
+			_, err := worktree.Remove(name)
+			if err != nil {
 				t.Fatalf("remove %s: %v", name, err)
 			}
 		}
@@ -488,9 +499,10 @@ func createRepositoryWithAmbiguousRenames(t *testing.T) string {
 			Email: "hercules-ci@example.invalid",
 			When:  time.Date(2026, time.July, day, 12, 0, 0, 0, time.UTC),
 		}
-		if _, err := worktree.Commit(message, &git.CommitOptions{
+		_, err := worktree.Commit(message, &git.CommitOptions{
 			Author: signature, Committer: signature,
-		}); err != nil {
+		})
+		if err != nil {
 			t.Fatalf("commit %q: %v", message, err)
 		}
 	}
@@ -561,7 +573,8 @@ func repositoryPath(elements ...string) string {
 	if !ok {
 		panic("cannot locate e2e test source")
 	}
-	parts := []string{filepath.Dir(file), "..", ".."}
+	parts := make([]string, 0, 3+len(elements))
+	parts = append(parts, filepath.Dir(file), "..", "..")
 	parts = append(parts, elements...)
 	return filepath.Clean(filepath.Join(parts...))
 }

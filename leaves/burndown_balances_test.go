@@ -165,7 +165,8 @@ func TestBurndownBalancesSeparatesResidualFromTransient(t *testing.T) {
 
 	logger := &recordingLogger{Logger: core.NewLogger()}
 	require.NoError(t, reportBurndownBalances(
-		logger, false, nil, &result, "finalization"))
+		logger, false, nil, &result, "finalization",
+	))
 	require.Len(t, logger.warnings, 1)
 	assert.Contains(t, logger.warnings[0], "2 of them still negative in the final sampled row")
 }

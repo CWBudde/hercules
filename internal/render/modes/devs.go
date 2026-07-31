@@ -65,7 +65,8 @@ func DevsWithOptions(reader readers.Reader, output string, opts Options) error {
 
 	progEstimator.NextOperation("Generating visualization")
 
-	if err := plotDevs(developerStats, devSeries, output, opts.Graphics); err != nil {
+	err = plotDevs(developerStats, devSeries, output, opts.Graphics)
+	if err != nil {
 		return fmt.Errorf("failed to generate developer plots: %w", err)
 	}
 
@@ -93,9 +94,10 @@ func plotDeveloperTimeSeries(reader readers.Reader, output string, opts Options)
 		return false, nil
 	}
 
-	if err := plotDevsPythonStyle(
+	err = plotDevsPythonStyle(
 		timeSeries, startUnix, endUnix, output, opts.MaxPeople, opts.Graphics,
-	); err != nil {
+	)
+	if err != nil {
 		return false, fmt.Errorf("failed to generate Python-style developer plot: %w", err)
 	}
 

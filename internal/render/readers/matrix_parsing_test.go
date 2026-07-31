@@ -35,6 +35,8 @@ func TestMatrixParsingCompatibility(t *testing.T) {
 // testBurndownMatrixParsing verifies BurndownSparseMatrix parsing matches Python's
 // _parse_burndown_matrix behavior (row/column format).
 func testBurndownMatrixParsing(t *testing.T, testFile string) {
+	t.Helper()
+
 	t.Run("BurndownSparseMatrix", func(t *testing.T) {
 		reader := &ProtobufReader{}
 		file, err := os.Open(testFile) // #nosec G304 - test fixture path is passed by table setup.
@@ -84,6 +86,8 @@ func testBurndownMatrixParsing(t *testing.T, testFile string) {
 // testCompressedSparseRowMatrixParsing verifies CSR matrix parsing matches Python's
 // _parse_sparse_matrix behavior.
 func testCompressedSparseRowMatrixParsing(t *testing.T, testFile string) {
+	t.Helper()
+
 	t.Run("CompressedSparseRowMatrix", func(t *testing.T) {
 		reader := &ProtobufReader{}
 		file, err := os.Open(testFile) // #nosec G304 - test fixture path is passed by table setup.
@@ -128,6 +132,8 @@ func testCompressedSparseRowMatrixParsing(t *testing.T, testFile string) {
 // testMatrixFormatSelection verifies that Go correctly chooses between matrix parsing
 // methods based on data type (critical compatibility issue).
 func testMatrixFormatSelection(t *testing.T, testFile string) {
+	t.Helper()
+
 	t.Run("FormatSelection", func(t *testing.T) {
 		// Load raw protobuf data to inspect structure
 		allBytes, err := os.ReadFile(testFile) // #nosec G304 - test fixture path is passed by table setup.
@@ -212,6 +218,8 @@ func TestYamlReaderLabelsUnknownPeopleCouplingRow(t *testing.T) {
 
 // verifyBurndownFormatSelection checks that burndown data uses correct matrix format.
 func verifyBurndownFormatSelection(t *testing.T, data []byte) {
+	t.Helper()
+
 	var burndownData pb.BurndownAnalysisResults
 	err := proto.Unmarshal(data, &burndownData)
 	if err != nil {
@@ -239,6 +247,8 @@ func verifyBurndownFormatSelection(t *testing.T, data []byte) {
 
 // verifyCouplesFormatSelection checks couples data matrix format.
 func verifyCouplesFormatSelection(t *testing.T, data []byte) {
+	t.Helper()
+
 	var couplesData pb.CouplesAnalysisResults
 	err := proto.Unmarshal(data, &couplesData)
 	if err != nil {
@@ -262,6 +272,8 @@ func verifyCouplesFormatSelection(t *testing.T, data []byte) {
 
 // verifyDevsFormatSelection checks developer data structure.
 func verifyDevsFormatSelection(t *testing.T, data []byte) {
+	t.Helper()
+
 	var devsData pb.DevsAnalysisResults
 	err := proto.Unmarshal(data, &devsData)
 	if err != nil {
@@ -283,6 +295,8 @@ func verifyDevsFormatSelection(t *testing.T, data []byte) {
 
 // verifyShotnessFormatSelection checks shotness data structure.
 func verifyShotnessFormatSelection(t *testing.T, data []byte) {
+	t.Helper()
+
 	var shotnessData pb.ShotnessAnalysisResults
 	err := proto.Unmarshal(data, &shotnessData)
 	if err != nil {
@@ -296,6 +310,8 @@ func verifyShotnessFormatSelection(t *testing.T, data []byte) {
 
 // testContentsAccessPattern verifies Contents map access matches Python's dynamic parsing.
 func testContentsAccessPattern(t *testing.T, testFile string) {
+	t.Helper()
+
 	t.Run("ContentsAccess", func(t *testing.T) {
 		// This test specifically validates that Go's Contents access pattern
 		// produces the same results as Python's PB_MESSAGES dynamic parsing

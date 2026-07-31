@@ -9,6 +9,11 @@
 // number going up fails, a number going down is reported so a real fix is
 // visible.
 //
+// Each repository is measured in two independent dimensions, recorded under separate counters:
+// the project/people/repository matrices of the historical flag set, and the per-file matrices of
+// a second --burndown-files run. The per-file dimension is the one a change to file-identity
+// accounting moves, and it was invisible to the suite until it got its own run.
+//
 // There are no build tags here on purpose (matching the rest of test/): gating is
 // a t.Skip on HERCULES_CORPUS_DIR, so `go test ./...` stays green and fast.
 package corpus
@@ -18,6 +23,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -36,8 +42,22 @@ const (
 	updateBaselineEnvironment  = "UPDATE_CORPUS_BASELINE"
 )
 
-// analysisFlags is the flag set PLAN.md's negativity measurements used. Keep it
-// in sync with the baseline: changing it invalidates every committed number.
+// diffTimeoutFlag pins the per-file diff deadline far out of reach.
+//
+// --diff-timeout is in MILLISECONDS and defaults to 1000 (internal/plumbing/diff.go). At that
+// default the file diff stage truncates on the larger repositories, and a truncated diff is a
+// different answer than an untruncated one: the measurement then depends on how fast the machine
+// is rather than on hercules. Measured on mekorp-webclient, the slowest repository in the corpus:
+// 1447 negative cells truncated against 1413 untruncated, and two binaries with provably
+// identical negativity reported 1447 and 1481. That is the same order as the regressions this
+// suite exists to catch, so the deadline has to be unreachable rather than merely generous.
+// 300000 ms (5 min per single file diff) was verified to leave mekorp-webclient untruncated.
+const diffTimeoutFlag = "--diff-timeout=300000"
+
+// analysisFlags is the flag set PLAN.md's negativity measurements used, plus the pinned diff
+// deadline. Keep it in sync with the baseline: changing it invalidates every committed number —
+// adding diffTimeoutFlag did exactly that, so every entry recorded before it is void and the
+// baseline has to be re-seeded (test/corpus/README.md says so too).
 var analysisFlags = []string{
 	"--burndown",
 	"--burndown-people",
@@ -49,7 +69,48 @@ var analysisFlags = []string{
 	"--skip-blacklist",
 	"--granularity=30",
 	"--sampling=30",
+	diffTimeoutFlag,
 }
+
+// fileAnalysisFlags measures the per-file burndown dimension, in a SECOND run per repository.
+//
+// Two reasons it is not folded into analysisFlags. First, the existing numbers stay produced by
+// the command that produced them before, so they keep meaning what they meant. Second,
+// --burndown-files emits one band matrix per file that ever existed: on the large repositories
+// that is thousands of matrices and a report an order of magnitude bigger, and pairing that cost
+// with --couples/--devs/--burndown-people in one process multiplies peak memory for no gain —
+// none of those leaves influences the per-file matrices. The price is a second pass over each
+// repository, which roughly doubles the suite's wall clock.
+var fileAnalysisFlags = []string{
+	"--burndown",
+	"--burndown-files",
+	"--skip-blacklist",
+	"--granularity=30",
+	"--sampling=30",
+	diffTimeoutFlag,
+}
+
+// matrixScope selects which parts of the Burndown section a run is measured over.
+//
+// people_interaction is in neither scope: it is a signed added/removed interaction matrix, not a
+// band matrix, so its negatives are correct by construction and would drown the signal.
+type matrixScope struct {
+	name    string
+	project bool
+	groups  []string
+}
+
+var (
+	// projectScope is the historical scope: the project matrix plus the per-person and
+	// per-repository ones. "files" is absent because analysisFlags does not request it.
+	projectScope = matrixScope{
+		name: "project", project: true, groups: []string{"people", "repositories"},
+	}
+	// fileScope is the new dimension, kept strictly disjoint from projectScope so the two sets
+	// of counters never mix — the per-file run also emits a project matrix, and counting it
+	// would double-count what the first run already measured.
+	fileScope = matrixScope{name: "files", groups: []string{"files"}}
+)
 
 // corpusRepositories are the repositories PLAN.md names, resolved relative to
 // HERCULES_CORPUS_DIR. Missing ones are skipped, so a partial checkout works.
@@ -77,21 +138,33 @@ var corpusRepositories = []string{
 // transient/residual split PLAN.md uses as its discriminator, and the honest
 // measure of the defect. Empirically every negative is residual today, so a rise
 // in ResidualCells is the strongest available regression signal.
+//
+// Truncated is not a measurement but a verdict on one: it is set when the binary reported that a
+// wall-clock deadline changed the analysis, which makes every other field in the struct a
+// property of this machine rather than of hercules. Such a measurement is never gated and never
+// written to the baseline.
 type metrics struct {
-	ExitCode      int `json:"exit_code"`
-	NegativeCells int `json:"negative_cells"`
-	NegativeMass  int `json:"negative_mass"`
-	WorstCell     int `json:"worst_cell"`
-	ResidualCells int `json:"residual_cells"`
-	Matrices      int `json:"matrices"`
+	ExitCode      int  `json:"exit_code"`
+	NegativeCells int  `json:"negative_cells"`
+	NegativeMass  int  `json:"negative_mass"`
+	WorstCell     int  `json:"worst_cell"`
+	ResidualCells int  `json:"residual_cells"`
+	Matrices      int  `json:"matrices"`
+	Truncated     bool `json:"truncated,omitempty"`
 }
 
 // baseline is the committed manifest. Provenance records the tree the numbers
 // were measured against, because the numbers only mean something relative to it.
+//
+// The per-file dimension is a separate run with a separate flag set, so it gets separate
+// counters: file_flags/file_repositories mirror flags/repositories rather than folding into
+// them, and the numbers under repositories keep meaning exactly what they meant before.
 type baseline struct {
-	Provenance   provenance         `json:"provenance"`
-	Flags        []string           `json:"flags"`
-	Repositories map[string]metrics `json:"repositories"`
+	Provenance       provenance         `json:"provenance"`
+	Flags            []string           `json:"flags"`
+	Repositories     map[string]metrics `json:"repositories"`
+	FileFlags        []string           `json:"file_flags"`
+	FileRepositories map[string]metrics `json:"file_repositories"`
 }
 
 type provenance struct {
@@ -120,6 +193,7 @@ func TestCorpusBurndownNegativity(t *testing.T) {
 
 	committed := readBaseline(t)
 	measured := map[string]metrics{}
+	fileMeasured := map[string]metrics{}
 
 	for _, name := range corpusRepositories {
 		path := filepath.Join(corpus, name)
@@ -129,7 +203,9 @@ func TestCorpusBurndownNegativity(t *testing.T) {
 		}
 
 		expected, known := committed.Repositories[name]
-		if !known && !updating {
+		fileExpected, fileKnown := committed.FileRepositories[name]
+
+		if !known && !fileKnown && !updating {
 			t.Logf(
 				"%s: no baseline entry; skipping. Run `just update-corpus-baseline` to add it.",
 				name,
@@ -139,20 +215,50 @@ func TestCorpusBurndownNegativity(t *testing.T) {
 		}
 
 		t.Run(name, func(t *testing.T) {
-			actual := measure(t, hercules, path)
-			t.Logf("%s: %s", name, describe(actual))
+			if known || updating {
+				actual := measure(t, hercules, path, analysisFlags, projectScope)
+				t.Logf("%s: %s", name, describe(actual))
 
-			if updating {
-				measured[name] = actual
+				switch {
+				case actual.Truncated:
+					// measure already failed the subtest; refuse to seed or gate a
+					// number that only describes this machine.
+				case updating:
+					measured[name] = actual
+				default:
+					compare(t, projectScope.name, expected, actual)
+				}
+			}
+
+			// The per-file dimension is a second, much larger run. Skip it when there is
+			// nothing to compare against, so a corpus baselined before this dimension
+			// existed does not silently double in runtime.
+			if !fileKnown && !updating {
+				t.Logf(
+					"%s: no per-file baseline entry; skipping the --burndown-files run. "+
+						"Run `just update-corpus-baseline` to add it.",
+					name,
+				)
+
 				return
 			}
 
-			compare(t, expected, actual)
+			fileActual := measure(t, hercules, path, fileAnalysisFlags, fileScope)
+			t.Logf("%s (files): %s", name, describe(fileActual))
+
+			switch {
+			case fileActual.Truncated:
+				// As above: an invalid measurement is neither seeded nor gated.
+			case updating:
+				fileMeasured[name] = fileActual
+			default:
+				compare(t, fileScope.name, fileExpected, fileActual)
+			}
 		})
 	}
 
 	if updating {
-		writeBaseline(t, committed, measured)
+		writeBaseline(t, committed, measured, fileMeasured)
 	}
 }
 
@@ -168,11 +274,11 @@ func TestCorpusBurndownNegativity(t *testing.T) {
 // flaky, and a flaky gate is a gate people learn to ignore. They are still
 // recorded and reported, because a large move in either is worth a human look.
 // Re-gate them once burndown is deterministic on merges.
-func compare(t *testing.T, expected, actual metrics) {
+func compare(t *testing.T, dimension string, expected, actual metrics) {
 	t.Helper()
 
 	if actual.ExitCode != expected.ExitCode {
-		t.Errorf("exit code = %d, baseline %d", actual.ExitCode, expected.ExitCode)
+		t.Errorf("[%s] exit code = %d, baseline %d", dimension, actual.ExitCode, expected.ExitCode)
 	}
 
 	// WorstCell is the most negative value, so "worse" means smaller.
@@ -205,33 +311,51 @@ func compare(t *testing.T, expected, actual metrics) {
 
 		switch {
 		case worse && check.gated:
-			t.Errorf("%s regressed: %d, baseline %d", check.name, check.actual, check.expected)
+			t.Errorf(
+				"[%s] %s regressed: %d, baseline %d",
+				dimension, check.name, check.actual, check.expected,
+			)
 		case worse:
 			t.Logf(
-				"%s worsened (ungated, not reproducible run-to-run): %d, baseline %d",
-				check.name, check.actual, check.expected,
+				"[%s] %s worsened (ungated, not reproducible run-to-run): %d, baseline %d",
+				dimension, check.name, check.actual, check.expected,
 			)
 		case better:
 			t.Logf(
-				"%s improved: %d, baseline %d — refresh the baseline once the fix lands",
-				check.name, check.actual, check.expected,
+				"[%s] %s improved: %d, baseline %d — refresh the baseline once the fix lands",
+				dimension, check.name, check.actual, check.expected,
 			)
 		}
 	}
 }
 
 func describe(m metrics) string {
+	if m.Truncated {
+		return "INVALID (truncated by a wall-clock deadline; nothing was measured)"
+	}
+
 	return fmt.Sprintf(
 		"exit=%d matrices=%d negative_cells=%d negative_mass=%d worst_cell=%d residual_cells=%d",
 		m.ExitCode, m.Matrices, m.NegativeCells, m.NegativeMass, m.WorstCell, m.ResidualCells,
 	)
 }
 
-// measure runs the analysis and reduces its YAML burndown matrices to metrics.
-func measure(t *testing.T, hercules, repository string) metrics {
+// truncationMarker is the substring both wall-clock truncation warnings in
+// internal/plumbing/truncation.go end on. Matching the message rather than the exit status is
+// deliberate: hercules treats truncation as a warning and still exits 0, so nothing else
+// distinguishes a truncated run from a clean one.
+const truncationMarker = "not reproducible"
+
+// measure runs the analysis and reduces the YAML burndown matrices in `scope` to metrics.
+//
+// A run whose stderr admits truncation fails the subtest. Truncation is invisible in the output
+// itself — the numbers look like ordinary numbers — so if the suite ignored the warning, a
+// deadline that fired on a busy machine would arrive as a burndown regression and be debugged as
+// one. That already happened once (see diffTimeoutFlag), which is why this is loud.
+func measure(t *testing.T, hercules, repository string, flags []string, scope matrixScope) metrics {
 	t.Helper()
 
-	arguments := append(append([]string{}, analysisFlags...), repository)
+	arguments := append(append([]string{}, flags...), repository)
 	command := exec.Command(hercules, arguments...)
 
 	var stdout, stderr bytes.Buffer
@@ -250,14 +374,27 @@ func measure(t *testing.T, hercules, repository string) metrics {
 
 		result.ExitCode = exitError.ExitCode()
 		t.Errorf(
-			"analysis exit code = %d\nstderr:\n%s",
-			result.ExitCode, tail(stderr.Bytes()),
+			"[%s] analysis exit code = %d\nstderr:\n%s",
+			scope.name, result.ExitCode, tail(stderr.Bytes()),
 		)
 
 		return result
 	}
 
-	for _, matrix := range burndownMatrices(t, stdout.Bytes()) {
+	if bytes.Contains(stderr.Bytes(), []byte(truncationMarker)) {
+		result.Truncated = true
+
+		t.Errorf(
+			"[%s] MEASUREMENT INVALID: a wall-clock deadline truncated this run, so its numbers "+
+				"describe this machine and not hercules. They are neither gated nor recorded. "+
+				"Raise --diff-timeout/--renames-timeout and re-run.\nstderr:\n%s",
+			scope.name, tail(stderr.Bytes()),
+		)
+
+		return result
+	}
+
+	for _, matrix := range burndownMatrices(t, stdout.Bytes(), scope) {
 		result.Matrices++
 		accumulate(&result, matrix)
 	}
@@ -292,20 +429,20 @@ func accumulate(result *metrics, matrix [][]int) {
 	}
 }
 
-// burndownMatrices extracts every burndown band matrix from the YAML report:
-// the project matrix plus the per-person, per-file and per-repository ones.
+// burndownMatrices extracts the burndown band matrices `scope` selects from the YAML report.
 //
-// people_interaction is deliberately excluded. It is a signed added/removed
-// interaction matrix, not a band matrix, so its negatives are correct by
-// construction and would drown the signal we care about.
+// people_interaction is deliberately excluded from every scope. It is a signed added/removed
+// interaction matrix, not a band matrix, so its negatives are correct by construction and would
+// drown the signal we care about.
 //
 // leaves/burndown_shared.go has an equivalent audit, but it is unexported and
 // therefore unreachable from here; this stays small and local on purpose.
-func burndownMatrices(t *testing.T, report []byte) [][][]int {
+func burndownMatrices(t *testing.T, report []byte, scope matrixScope) [][][]int {
 	t.Helper()
 
 	var document map[string]any
-	if err := yaml.Unmarshal(report, &document); err != nil {
+	err := yaml.Unmarshal(report, &document)
+	if err != nil {
 		t.Fatalf("decode analysis YAML: %v", err)
 	}
 
@@ -316,11 +453,13 @@ func burndownMatrices(t *testing.T, report []byte) [][][]int {
 
 	var matrices [][][]int
 
-	if project, ok := section["project"].(string); ok {
-		matrices = append(matrices, parseMatrix(t, "project", project))
+	if scope.project {
+		if project, ok := section["project"].(string); ok {
+			matrices = append(matrices, parseMatrix(t, "project", project))
+		}
 	}
 
-	for _, group := range []string{"people", "files", "repositories"} {
+	for _, group := range scope.groups {
 		entries, ok := section[group].(map[string]any)
 		if !ok {
 			continue
@@ -337,7 +476,10 @@ func burndownMatrices(t *testing.T, report []byte) [][][]int {
 	}
 
 	if len(matrices) == 0 {
-		t.Fatal("Burndown section contained no matrices")
+		t.Fatalf(
+			"Burndown section contained no %s matrices (keys: %v)",
+			scope.name, sortedKeys(section),
+		)
 	}
 
 	return matrices
@@ -349,7 +491,7 @@ func parseMatrix(t *testing.T, label, text string) [][]int {
 
 	var matrix [][]int
 
-	for _, line := range strings.Split(text, "\n") {
+	for line := range strings.SplitSeq(text, "\n") {
 		fields := strings.Fields(line)
 		if len(fields) == 0 {
 			continue
@@ -378,14 +520,20 @@ func readBaseline(t *testing.T) baseline {
 	content, err := os.ReadFile(baselinePath())
 	if err != nil {
 		if os.Getenv(updateBaselineEnvironment) == "1" && errors.Is(err, os.ErrNotExist) {
-			return baseline{Flags: analysisFlags, Repositories: map[string]metrics{}}
+			return baseline{
+				Flags:            analysisFlags,
+				Repositories:     map[string]metrics{},
+				FileFlags:        fileAnalysisFlags,
+				FileRepositories: map[string]metrics{},
+			}
 		}
 
 		t.Fatalf("read corpus baseline: %v", err)
 	}
 
 	var committed baseline
-	if err := json.Unmarshal(content, &committed); err != nil {
+	err = json.Unmarshal(content, &committed)
+	if err != nil {
 		t.Fatalf("decode corpus baseline: %v", err)
 	}
 
@@ -393,33 +541,90 @@ func readBaseline(t *testing.T) baseline {
 		committed.Repositories = map[string]metrics{}
 	}
 
-	if len(committed.Flags) != 0 && !equalStrings(committed.Flags, analysisFlags) {
-		t.Fatalf(
-			"baseline was recorded with a different flag set and cannot be compared:\n"+
-				"baseline: %s\ncurrent:  %s",
-			strings.Join(committed.Flags, " "), strings.Join(analysisFlags, " "),
-		)
+	if committed.FileRepositories == nil {
+		committed.FileRepositories = map[string]metrics{}
 	}
+
+	updating := os.Getenv(updateBaselineEnvironment) == "1"
+	committed.Repositories = checkFlags(
+		t, updating, "flags", committed.Flags, analysisFlags, committed.Repositories,
+	)
+	committed.FileRepositories = checkFlags(
+		t, updating, "file_flags", committed.FileFlags, fileAnalysisFlags,
+		committed.FileRepositories,
+	)
 
 	return committed
 }
 
-// writeBaseline merges the freshly measured repositories into the committed
-// manifest, so refreshing a subset never drops the entries it did not run.
-func writeBaseline(t *testing.T, committed baseline, measured map[string]metrics) {
+// checkFlags refuses to compare numbers against a differently-flagged run, and returns the
+// entries that survive the check.
+//
+// An empty flag list is tolerated only while the dimension holds no entries, which is how a
+// baseline that predates the per-file dimension reads. When re-seeding, a flag change does not
+// abort — that would make a deliberate flag change impossible to record without deleting the file
+// by hand — but the entries recorded under the old flags are dropped rather than preserved: they
+// are void by definition, and merging them with freshly measured ones would produce a baseline
+// half of which means something else. Preserve-what-you-did-not-measure still holds for the
+// ordinary case where the flags are unchanged.
+func checkFlags(
+	t *testing.T,
+	updating bool,
+	field string,
+	committed, current []string,
+	entries map[string]metrics,
+) map[string]metrics {
 	t.Helper()
 
-	if len(measured) == 0 {
+	if len(committed) == 0 {
+		if len(entries) != 0 {
+			t.Fatalf("baseline records %d measurements but no %s to interpret them by",
+				len(entries), field)
+		}
+
+		return entries
+	}
+
+	if equalStrings(committed, current) {
+		return entries
+	}
+
+	if updating {
+		t.Logf(
+			"%s changed since the baseline was recorded; discarding %d void entries.\n"+
+				"baseline: %s\ncurrent:  %s",
+			field, len(entries), strings.Join(committed, " "), strings.Join(current, " "),
+		)
+
+		return map[string]metrics{}
+	}
+
+	t.Fatalf(
+		"baseline %s differ from the flag set the suite runs, so the numbers cannot be "+
+			"compared and the baseline has to be re-seeded:\nbaseline: %s\ncurrent:  %s",
+		field, strings.Join(committed, " "), strings.Join(current, " "),
+	)
+
+	return entries
+}
+
+// writeBaseline merges the freshly measured repositories into the committed
+// manifest, so refreshing a subset never drops the entries it did not run.
+func writeBaseline(t *testing.T, committed baseline, measured, fileMeasured map[string]metrics) {
+	t.Helper()
+
+	if len(measured) == 0 && len(fileMeasured) == 0 {
 		t.Log("no repositories measured; leaving the baseline untouched")
 		return
 	}
 
 	committed.Flags = analysisFlags
+	committed.FileFlags = fileAnalysisFlags
 	committed.Provenance = currentProvenance(t)
 
-	for name, value := range measured {
-		committed.Repositories[name] = value
-	}
+	maps.Copy(committed.Repositories, measured)
+
+	maps.Copy(committed.FileRepositories, fileMeasured)
 
 	content, err := json.MarshalIndent(committed, "", "  ")
 	if err != nil {
@@ -431,7 +636,10 @@ func writeBaseline(t *testing.T, committed baseline, measured map[string]metrics
 		t.Fatalf("write corpus baseline: %v", err)
 	}
 
-	t.Logf("refreshed %d baseline entries in %s", len(measured), baselinePath())
+	t.Logf(
+		"refreshed %d project and %d per-file baseline entries in %s",
+		len(measured), len(fileMeasured), baselinePath(),
+	)
 }
 
 func currentProvenance(t *testing.T) provenance {

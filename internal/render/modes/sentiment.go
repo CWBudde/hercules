@@ -387,15 +387,9 @@ func movingAverage(values []float64, window int) []float64 {
 
 	half := window / 2
 	for i := range values {
-		start := i - half
-		if start < 0 {
-			start = 0
-		}
+		start := max(i-half, 0)
 
-		end := i + half + 1
-		if end > len(values) {
-			end = len(values)
-		}
+		end := min(i+half+1, len(values))
 
 		sum := 0.0
 		for _, value := range values[start:end] {

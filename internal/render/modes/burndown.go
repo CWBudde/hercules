@@ -45,9 +45,7 @@ func generateBurndownPlotWithOptions(name string, matrix [][]int, output string,
 
 	progEstimator.NextOperation("Setting up resampling")
 
-	if opts.Resample == "" {
-		opts.Resample = "year"
-	}
+	opts.Resample = defaultBurndownResample(opts.Resample)
 
 	printBurndownResampling(opts.Resample, quiet)
 	start, end := burndownTimeRange(matrix, startTime, endTime, opts.Resample)
@@ -65,7 +63,8 @@ func generateBurndownPlotWithOptions(name string, matrix [][]int, output string,
 	)
 	progEstimator.NextOperation("Generating visualization")
 
-	if err := writeBurndownSurvival(survival, quiet); err != nil {
+	err = writeBurndownSurvival(survival, quiet)
+	if err != nil {
 		progEstimator.FinishMultiOperation()
 		return err
 	}
@@ -74,7 +73,8 @@ func generateBurndownPlotWithOptions(name string, matrix [][]int, output string,
 		interpolatedMatrix = normalizeMatrix(interpolatedMatrix)
 	}
 
-	if err := graphics.PlotStackedBurndownMatplotlibWithOptions(interpolatedMatrix, dateRange, output, opts.Relative, opts.Graphics); err != nil {
+	err = graphics.PlotStackedBurndownMatplotlibWithOptions(interpolatedMatrix, dateRange, output, opts.Relative, opts.Graphics)
+	if err != nil {
 		progEstimator.FinishMultiOperation()
 		return fmt.Errorf("error creating burndown plot: %w", err)
 	}

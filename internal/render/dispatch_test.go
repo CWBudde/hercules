@@ -142,7 +142,8 @@ func TestRunAllModesUsesPythonAllComposition(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := renderer.runAllModes(stubReader{}, t.TempDir(), nil, nil); err != nil {
+	err = renderer.runAllModes(stubReader{}, t.TempDir(), nil, nil)
+	if err != nil {
 		t.Fatalf("runAllModes() unexpected error: %v", err)
 	}
 	if strings.Join(called, ",") != strings.Join(pythonAllModes, ",") {
@@ -173,7 +174,8 @@ func TestExecuteModesJSONWritesReaderData(t *testing.T) {
 			Message        string                  `json:"message"`
 		} `json:"results"`
 	}
-	if err := json.Unmarshal(raw, &payload); err != nil {
+	err = json.Unmarshal(raw, &payload)
+	if err != nil {
 		t.Fatalf("invalid JSON output: %v\n%s", err, raw)
 	}
 	stats := payload.Results["devs"].DeveloperStats
@@ -197,13 +199,15 @@ func captureStdout(t *testing.T, fn func()) string {
 
 	fn()
 
-	if err := writePipe.Close(); err != nil {
+	err = writePipe.Close()
+	if err != nil {
 		t.Fatalf("failed to close stdout pipe: %v", err)
 	}
 	os.Stdout = original
 
 	var buf bytes.Buffer
-	if _, err := io.Copy(&buf, readPipe); err != nil {
+	_, err = io.Copy(&buf, readPipe)
+	if err != nil {
 		t.Fatalf("failed to capture stdout: %v", err)
 	}
 	return buf.String()
@@ -221,13 +225,15 @@ func captureStderr(t *testing.T, fn func()) string {
 
 	fn()
 
-	if err := writePipe.Close(); err != nil {
+	err = writePipe.Close()
+	if err != nil {
 		t.Fatalf("failed to close stderr pipe: %v", err)
 	}
 	os.Stderr = original
 
 	var buf bytes.Buffer
-	if _, err := io.Copy(&buf, readPipe); err != nil {
+	_, err = io.Copy(&buf, readPipe)
+	if err != nil {
 		t.Fatalf("failed to capture stderr: %v", err)
 	}
 	return buf.String()

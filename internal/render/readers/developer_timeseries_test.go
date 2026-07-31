@@ -35,7 +35,7 @@ func TestDeveloperTimeSeriesFixVerification(t *testing.T) {
 	assert.Greater(t, len(devData.Days), 1, "Should have multiple time ticks, not synthetic single day")
 
 	// Log all time tick keys to verify they're real temporal indices
-	var tickKeys []int
+	tickKeys := make([]int, 0, len(devData.Days))
 	for tickKey := range devData.Days {
 		tickKeys = append(tickKeys, tickKey)
 	}

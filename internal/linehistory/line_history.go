@@ -93,6 +93,12 @@ type LineHistoryAnalyser struct {
 	// another branch accounts for. Merge() folds them into the authoritative branch, one per file,
 	// so a file several parents hold is not removed once per parent.
 	replicaChanges []core.LineHistoryChange
+	// mergeCreatedFiles holds the ids this branch minted while replaying the current merge commit
+	// for paths it did not previously track. Their lines are written with TreeMergeMark, so no
+	// insertion was ever emitted for them; Merge() re-keys them onto the id the branch that really
+	// created the path used, so the removal that eventually arrives cancels that branch's insertion
+	// instead of a delta nobody ever sent.
+	mergeCreatedFiles map[FileId]string
 
 	l core.Logger
 }
@@ -366,6 +372,7 @@ func (analyser *LineHistoryAnalyser) Initialize(repository *git.Repository) erro
 	analyser.mergePending = false
 	analyser.changes = nil
 	analyser.pendingChanges = nil
+	analyser.mergeCreatedFiles = nil
 
 	return nil
 }
@@ -533,6 +540,7 @@ func (analyser *LineHistoryAnalyser) Fork(n int) []core.PipelineItem {
 		// would count the merged lines once per clone.
 		clone.pendingChanges = nil
 		clone.replicaChanges = nil
+		clone.mergeCreatedFiles = nil
 		// The hibernation file belongs to the branch that wrote it: Boot() removes it, so
 		// sharing the name would leave every other clone unable to deserialize.
 		clone.hibernatedFileName = ""
@@ -569,6 +577,8 @@ func (analyser *LineHistoryAnalyser) Merge(items []core.PipelineItem) {
 	}
 
 	if analyser.mergePending {
+		analyser.adoptMergeCreatedFileIds(branches[1:])
+
 		for name, file := range analyser.files {
 			others := matchingMergeFiles(branches[1:], name, file)
 			file.Merge(packPersonWithTick(analyser.mergedAuthor, analyser.tick), others...)
@@ -582,6 +592,7 @@ func (analyser *LineHistoryAnalyser) Merge(items []core.PipelineItem) {
 		synchronizeLineHistoryBranch(analyser, branch)
 	}
 
+	analyser.mergeCreatedFiles = nil
 	analyser.mergePending = false
 	analyser.mergedAuthor = core.AuthorMissing
 	// file.Merge() above resolved the TreeMergeMark lines and emitted their (positive) deltas
@@ -682,6 +693,7 @@ func synchronizeLineHistoryBranch(source, target *LineHistoryAnalyser) {
 	// The merge branch owns the resolution deltas; synchronized siblings must not re-emit them.
 	target.pendingChanges = nil
 	target.replicaChanges = nil
+	target.mergeCreatedFiles = nil
 }
 
 func mustLineHistoryAnalyser(item core.PipelineItem) *LineHistoryAnalyser {
@@ -1069,6 +1081,14 @@ func (analyser *LineHistoryAnalyser) newFile(
 	fileId, found := analyser.abandonedFileID(name)
 	if tick != TreeMergeMark || !found {
 		fileId = analyser.fileIdCounter.next()
+	}
+
+	if tick == TreeMergeMark && !found {
+		if analyser.mergeCreatedFiles == nil {
+			analyser.mergeCreatedFiles = map[FileId]string{}
+		}
+
+		analyser.mergeCreatedFiles[fileId] = name
 	}
 
 	delete(analyser.fileAbandonedNames, fileId)

@@ -88,12 +88,14 @@ func TestLanguages(t *testing.T) {
 
 	// Check if output files were created
 	pngFile := filepath.Join(tmpDir, "languages.png")
-	if _, err := os.Stat(pngFile); os.IsNotExist(err) {
+	_, err = os.Stat(pngFile)
+	if os.IsNotExist(err) {
 		t.Errorf("PNG output file was not created: %s", pngFile)
 	}
 
 	svgFile := filepath.Join(tmpDir, "languages.svg")
-	if _, err := os.Stat(svgFile); os.IsNotExist(err) {
+	_, err = os.Stat(svgFile)
+	if os.IsNotExist(err) {
 		t.Errorf("SVG output file was not created: %s", svgFile)
 	}
 }
@@ -136,7 +138,8 @@ func TestLanguagesSingleLanguage(t *testing.T) {
 
 	// Check if output files were created
 	pngFile := filepath.Join(tmpDir, "languages.png")
-	if _, err := os.Stat(pngFile); os.IsNotExist(err) {
+	_, err = os.Stat(pngFile)
+	if os.IsNotExist(err) {
 		t.Errorf("PNG output file was not created: %s", pngFile)
 	}
 }
@@ -150,7 +153,8 @@ func TestBuildLanguageEvolutionIncludesLastTickAcrossDST(t *testing.T) {
 	defer func() { _ = file.Close() }()
 
 	reader := &readers.YamlReader{}
-	if err := reader.Read(file); err != nil {
+	err = reader.Read(file)
+	if err != nil {
 		t.Fatalf("Read() unexpected error = %v", err)
 	}
 
@@ -201,7 +205,8 @@ func TestLanguagesSorting(t *testing.T) {
 
 	// The function should handle sorting internally, so we just verify it completes successfully
 	pngFile := filepath.Join(tmpDir, "languages.png")
-	if _, err := os.Stat(pngFile); os.IsNotExist(err) {
+	_, err = os.Stat(pngFile)
+	if os.IsNotExist(err) {
 		t.Errorf("PNG output file was not created: %s", pngFile)
 	}
 }

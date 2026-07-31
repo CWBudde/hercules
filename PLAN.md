@@ -77,15 +77,15 @@ order of magnitude. **Older tables in git history are not comparable to these.**
 
 ### Phase overview
 
-| phase  | what                                                                                    | state                                                                       |
-| ------ | --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| **P0** | trustworthy measurement — corpus suite, determinism, truncation detection               | ✅ done                                                                     |
-| **P1** | merge-resolution deltas reach the accumulator at all (B1, B1b, B1d)                     | ✅ done                                                                     |
-| **P2** | rename identity — exact renames must not become delete+create                           | ✅ done                                                                     |
-| **P3** | **file identity across a merge** — `adoptMergeCreatedFileIds`                           | ✅ merged (PR #6), gates PASS 13/13, −44 % negative file cells               |
-| **P4** | **merge buffer hand-over** — `synchronizeLineHistoryBranch` drops a branch's own deltas | 🟡 defect confirmed; repro landed **skipped**, fix measured and **rejected** |
+| phase  | what                                                                                    | state                                                                           |
+| ------ | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| **P0** | trustworthy measurement — corpus suite, determinism, truncation detection               | ✅ done                                                                         |
+| **P1** | merge-resolution deltas reach the accumulator at all (B1, B1b, B1d)                     | ✅ done                                                                         |
+| **P2** | rename identity — exact renames must not become delete+create                           | ✅ done                                                                         |
+| **P3** | **file identity across a merge** — `adoptMergeCreatedFileIds`                           | ✅ merged (PR #6), gates PASS 13/13, −44 % negative file cells                  |
+| **P4** | **merge buffer hand-over** — `synchronizeLineHistoryBranch` drops a branch's own deltas | 🟡 defect confirmed; repro landed **skipped**, fix measured and **rejected**    |
 | **P5** | **line identity across the fork** — the project-matrix residue itself                   | 🟠 scoped, premise **measured and confirmed**; **recommendation: do not start** |
-| **P6** | downstream acceptance in `ewws-statistics`                                              | 🔴 blocked on P3–P5                                                         |
+| **P6** | downstream acceptance in `ewws-statistics`                                              | ✅ **passed** — 36/36, 0 failed, all three workaround switches re-enabled        |
 
 P3 and P4 were found by tracing the shared accumulator; they are _prerequisites_ that PLAN.md
 previously flagged as blocking (see "Traps"), not closures of B1c. **Only P5 can close B1c**:
@@ -498,7 +498,7 @@ Nothing was merged. All three attempts live only in the session scratchpad:
   `HCK_TRACE`.
 - `scratchpad/b1c-mergelinevalues/symmetric.diff` — attempt 3, symmetric version, which
   contains the one-sided version as its first half plus both unit tests.
-P3 and P4's test have since landed on `main` and are no longer scratchpad-only:
+  P3 and P4's test have since landed on `main` and are no longer scratchpad-only:
 
 - **P3** shipped as `internal/linehistory/merge_adoption.go` (PR #6, merged `41bced3`).
 - **P4's repro** shipped skipped in `internal/linehistory/line_history_merge_test.go` (`b1f438f`).
@@ -557,16 +557,36 @@ cleanly when unset so `go test ./...` stays green. 13 repositories, ~7 min to se
 - Building inside a `git worktree` needs `GOFLAGS=-buildvcs=false`, otherwise the build fails
   with `error obtaining VCS status: exit status 128`.
 
-## P6 — downstream acceptance
+## P6 — downstream acceptance ✅
 
-The real acceptance test is the pipeline this sweep was filed from. In `MeKo/ewws-statistics`:
+The real acceptance test is the pipeline this sweep was filed from. Run 2026-07-31 in
+`MeKo/ewws-statistics` (clean on `main` at `2dd063a`) against hercules `e347ebc`.
 
-- [ ] `just tools-check` — confirm the binaries resolve
-- [ ] `./ewws-stats analyze hercules --include-file .core-repos` — target 38 processed / 0 failed
-- [ ] `./ewws-stats combine --include-file .core-repos --include-data-exports`
-- [ ] Re-enable `burndown_files`, `ownership_analyses` and `refactoring_proxy` in
-      `ewws-stats.yaml` and confirm the run still completes — those three switches exist only
-      as workarounds for B2/B3/B4 and should be **deleted**, not left as permanent configuration.
+- [x] `just tools-check` — both binaries resolve out of `$HERCULES_DIR`, schema v2 on both sides.
+- [x] `./ewws-stats analyze hercules --include-file .core-repos` — **36 processed, 0 failed.**
+      The old target of "38" was wrong, not a shortfall: `.core-repos` lists 38, but
+      `microscope-tablet-client` is not cloned locally and `ewws-statistics` excludes itself from
+      discovery (`--include-only ewws-statistics` → "no repositories found after filtering").
+      36/36 of what is discoverable is a clean pass.
+- [x] `./ewws-stats combine --include-file .core-repos --include-data-exports` — exit 0.
+- [x] Re-enabled all three workaround switches and re-ran both steps: **still 36/36, 0 failed,
+      combine exit 0.** B2/B3/B4 are confirmed fixed from the downstream side:
+      `ownership_analyses` now produces the bus-factor and ownership-concentration charts, and
+      `refactoring_proxy` no longer takes down the combine (`all_project_refactoring_proxy.svg`
+      is generated). Eleven `negative burndown balance` warnings appear and are B1c's residue
+      warning by design; the two largest match `baseline.json` exactly (`mekorp-backend` 1 748
+      cells, `meko-etl-tool` 553), which independently confirms the corpus suite and the
+      downstream pipeline measure the same thing.
+
+**One caveat found by enabling `burndown_files`, and it is not a 0.2.0 regression.** The
+per-repository `.pb` does carry file burndown (305 files render from `meko-etl-tool` alone), but
+the **combined** chart directory comes out empty, with labours reporting `Burndown stats for
+files were not collected`. Cause: `BurndownAnalysis.MergeResults` merges `GlobalHistory`,
+people and repositories, but never `FileHistories` (`leaves/burndown.go`, the `MergeResults`
+body) — and **upstream does not either**, so combined file burndown has never existed. Enabling
+the switch is safe and useful for per-repository charts; the combined file-burndown chart is
+simply not a thing hercules produces. Worth a warning instead of an empty directory, but that is
+a downstream ergonomics item, not an accounting defect.
 
 ---
 

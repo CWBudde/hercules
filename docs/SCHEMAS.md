@@ -719,6 +719,15 @@ YAML fields:
 
 PB: `RefactoringProxyResults`
 
+When partial results are merged, the tick axes are rebased onto the earlier repository start, so
+tick indices from the later repository are shifted by the distance between the two starts. Per
+merged tick `total_changes` is summed and `rename_ratio` is the mean weighted by `total_changes`,
+which is equivalent to recomputing the ratio from the pooled rename and change counts; a tick with
+a single source keeps its ratio unchanged, and a tick with no changes gets ratio 0. `is_refactoring`
+is re-derived from the merged ratio and threshold rather than combined from the inputs. Results with
+mismatching `tick_size` or `threshold` are rejected: their tick indices do not describe the same
+axis, and the threshold is the classifier itself.
+
 Example:
 
 ```yaml

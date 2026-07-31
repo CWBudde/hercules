@@ -6,8 +6,10 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/spf13/cobra"
@@ -17,6 +19,13 @@ import (
 )
 
 const combineTestDevs = "Devs"
+
+// combineTestRefactoring is a mergeable leaf whose merge rebases tick axes.
+const (
+	combineTestRefactoring          = "RefactoringProxy"
+	combineTestRefactoringThreshold = 0.5
+	combineTestBeginTime            = 1556224895
+)
 
 // combineTestUnmergeable is a registered leaf which does not implement
 // ResultMergeablePipelineItem, so combine can never merge it.
@@ -248,6 +257,72 @@ func TestMergeResultsUpdatesMetadataOnlyAfterResultSuccess(t *testing.T) {
 	if mergedMetadata.CommitsNumber != 0 {
 		t.Fatalf("metadata merged without a successful result: %#v", mergedMetadata)
 	}
+}
+
+// TestRunCombineMergesRefactoringProxy pins PLAN.md B4: RefactoringProxy implements
+// ResultMergeablePipelineItem, so --only must accept it and combine must actually merge the two
+// tick axes rather than reject the request.
+func TestRunCombineMergesRefactoringProxy(t *testing.T) {
+	const day = 24 * 3600
+	first := writeCombineRefactoringInput(t, "first", combineTestBeginTime,
+		[]int32{0, 1}, []float32{0.1, 0.2}, []int32{10, 10})
+	second := writeCombineRefactoringInput(t, "second", combineTestBeginTime+2*day,
+		[]int32{0, 1}, []float32{0.3, 0.4}, []int32{20, 20})
+	var output bytes.Buffer
+
+	err := runCombine(newCombineTestCommand(&output, combineTestRefactoring), []string{first, second})
+	if err != nil {
+		t.Fatalf("runCombine() failed for --only %s: %v", combineTestRefactoring, err)
+	}
+
+	contents := unmarshalCombineOutput(t, &output)
+	payload, exists := contents[combineTestRefactoring]
+	if !exists {
+		t.Fatalf("combined output lacks %s: %v", combineTestRefactoring, contents)
+	}
+
+	var merged pb.RefactoringProxyResults
+	if err := proto.Unmarshal(payload, &merged); err != nil {
+		t.Fatalf("merged %s is malformed: %v", combineTestRefactoring, err)
+	}
+	if want := []int32{0, 1, 2, 3}; !slices.Equal(merged.GetTicks(), want) {
+		t.Fatalf("merged ticks = %v, want %v", merged.GetTicks(), want)
+	}
+	if want := []int32{10, 10, 20, 20}; !slices.Equal(merged.GetTotalChanges(), want) {
+		t.Fatalf("merged total changes = %v, want %v", merged.GetTotalChanges(), want)
+	}
+}
+
+func writeCombineRefactoringInput(
+	t *testing.T, repository string, beginTime int64,
+	ticks []int32, ratios []float32, totals []int32,
+) string {
+	t.Helper()
+
+	isRefactoring := make([]bool, len(ticks))
+	for i, ratio := range ratios {
+		isRefactoring[i] = ratio > combineTestRefactoringThreshold
+	}
+	message := pb.AnalysisResults{
+		Header: &pb.Metadata{
+			Version:       pb.SchemaVersion,
+			Repository:    repository,
+			Commits:       1,
+			BeginUnixTime: beginTime,
+			EndUnixTime:   beginTime + 4*24*3600,
+		},
+		Contents: map[string][]byte{
+			combineTestRefactoring: marshalCombineProto(t, &pb.RefactoringProxyResults{
+				Ticks:         ticks,
+				RenameRatios:  ratios,
+				IsRefactoring: isRefactoring,
+				TotalChanges:  totals,
+				Threshold:     combineTestRefactoringThreshold,
+				TickSize:      int64(24 * time.Hour),
+			}),
+		},
+	}
+	return writeCombineEnvelope(t, &message)
 }
 
 type errorWriter struct{}

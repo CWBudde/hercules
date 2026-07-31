@@ -3,6 +3,7 @@ package e2e
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"net/url"
 	"os"
 	"os/exec"
@@ -418,6 +419,140 @@ func TestOversizedBlobPolicy(t *testing.T) {
 	requireSuccess(t, normal)
 	if bytes.Contains(normal.stderr, []byte("--fail-on-oversized-blobs")) {
 		t.Fatalf("an unrelated run warned about oversized blobs\nstderr:\n%s", normal.stderr)
+	}
+}
+
+// createRepositoryWithAmbiguousRenames builds a history whose last commit deletes one file and
+// adds two near-identical successors, so rename detection has to choose between two plausible
+// partners. That choice used to be made by whichever of two concurrent matchers finished first.
+func createRepositoryWithAmbiguousRenames(t *testing.T) string {
+	t.Helper()
+
+	path := createRepository(t)
+
+	repository, err := git.PlainOpen(path)
+	if err != nil {
+		t.Fatalf("open repository fixture: %v", err)
+	}
+
+	worktree, err := repository.Worktree()
+	if err != nil {
+		t.Fatalf("open repository worktree: %v", err)
+	}
+
+	body := func(marker int) []byte {
+		var text bytes.Buffer
+
+		text.WriteString("package main\n\nfunc main() {\n")
+
+		for i := range 40 {
+			suffix := "aaa"
+			if i == marker {
+				suffix = "zzz"
+			}
+
+			fmt.Fprintf(&text, "\tprintln(%q, %02d)\n", suffix, i)
+		}
+
+		text.WriteString("}\n")
+
+		return text.Bytes()
+	}
+
+	commit := func(day int, message string, files map[string][]byte, removed ...string) {
+		t.Helper()
+
+		for name, content := range files {
+			target := filepath.Join(path, name)
+			if err := os.MkdirAll(filepath.Dir(target), 0o750); err != nil {
+				t.Fatalf("create directory for %s: %v", name, err)
+			}
+
+			if err := os.WriteFile(target, content, 0o600); err != nil {
+				t.Fatalf("write %s: %v", name, err)
+			}
+
+			if _, err := worktree.Add(name); err != nil {
+				t.Fatalf("stage %s: %v", name, err)
+			}
+		}
+
+		for _, name := range removed {
+			if _, err := worktree.Remove(name); err != nil {
+				t.Fatalf("remove %s: %v", name, err)
+			}
+		}
+
+		signature := &object.Signature{
+			Name:  "Hercules CI",
+			Email: "hercules-ci@example.invalid",
+			When:  time.Date(2026, time.July, day, 12, 0, 0, 0, time.UTC),
+		}
+		if _, err := worktree.Commit(message, &git.CommitOptions{
+			Author: signature, Committer: signature,
+		}); err != nil {
+			t.Fatalf("commit %q: %v", message, err)
+		}
+	}
+
+	commit(26, "Add thing.go", map[string][]byte{"old/thing.go": body(0)})
+	commit(27, "Split thing.go in two", map[string][]byte{
+		"left/zzz.go":    body(3),
+		"right/thing.go": body(7),
+	}, "old/thing.go")
+
+	return path
+}
+
+// TestBurndownOutputIsReproducible checks the whole CLI pipeline end to end: the same binary on
+// the same repository must produce the same burndown, which is what PLAN.md B12 broke.
+//
+// It is deliberately not the gate for B12's own cause. Verified by reintroducing the racing
+// matcher pair: this test still passed, because on a fixture this small one goroutine wins every
+// time. A timing race cannot be gated by repetition without being flaky. The gates for the race
+// itself are TestMatchSimilarRenamesPicksDirectionBySetSize and
+// TestRenameAnalysisConsumeIsReproducible in internal/plumbing, both of which do fail when the
+// race is restored. What this test covers that they cannot is everything downstream of rename
+// matching - line history, burndown accumulation, identities, serialization - going unstable.
+func TestBurndownOutputIsReproducible(t *testing.T) {
+	hercules := requiredBinary(t, herculesBinaryEnvironment)
+	repository := createRepositoryWithAmbiguousRenames(t)
+
+	// run_time is a measured duration and is expected to differ; nothing else may.
+	stripVolatile := func(output []byte) string {
+		var kept []string
+
+		for line := range strings.SplitSeq(string(output), "\n") {
+			if strings.Contains(line, "run_time") {
+				continue
+			}
+
+			kept = append(kept, line)
+		}
+
+		return strings.Join(kept, "\n")
+	}
+
+	var reference string
+
+	for attempt := range 3 {
+		result := runCommand(t, hercules, "--burndown", "--burndown-people", "--quiet", repository)
+		requireSuccess(t, result)
+
+		output := stripVolatile(result.stdout)
+		if attempt == 0 {
+			if len(strings.TrimSpace(output)) == 0 {
+				t.Fatal("the run produced no analysis output")
+			}
+
+			reference = output
+
+			continue
+		}
+
+		if output != reference {
+			t.Fatalf("run %d differs from run 1; burndown output is not reproducible", attempt+1)
+		}
 	}
 }
 

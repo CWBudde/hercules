@@ -93,6 +93,12 @@ type LineHistoryAnalyser struct {
 	// another branch accounts for. Merge() folds them into the authoritative branch, one per file,
 	// so a file several parents hold is not removed once per parent.
 	replicaChanges []core.LineHistoryChange
+	// mergeCreatedFiles holds the ids this branch minted while replaying the current merge commit
+	// for paths it did not previously track. Their lines are written with TreeMergeMark, so no
+	// insertion was ever emitted for them; Merge() re-keys them onto the id the branch that really
+	// created the path used, so the removal that eventually arrives cancels that branch's insertion
+	// instead of a delta nobody ever sent.
+	mergeCreatedFiles map[FileId]string
 
 	l core.Logger
 }
@@ -366,6 +372,7 @@ func (analyser *LineHistoryAnalyser) Initialize(repository *git.Repository) erro
 	analyser.mergePending = false
 	analyser.changes = nil
 	analyser.pendingChanges = nil
+	analyser.mergeCreatedFiles = nil
 
 	return nil
 }
@@ -533,6 +540,7 @@ func (analyser *LineHistoryAnalyser) Fork(n int) []core.PipelineItem {
 		// would count the merged lines once per clone.
 		clone.pendingChanges = nil
 		clone.replicaChanges = nil
+		clone.mergeCreatedFiles = nil
 		// The hibernation file belongs to the branch that wrote it: Boot() removes it, so
 		// sharing the name would leave every other clone unable to deserialize.
 		clone.hibernatedFileName = ""
@@ -569,6 +577,8 @@ func (analyser *LineHistoryAnalyser) Merge(items []core.PipelineItem) {
 	}
 
 	if analyser.mergePending {
+		analyser.adoptMergeCreatedFileIds(branches[1:])
+
 		for name, file := range analyser.files {
 			others := matchingMergeFiles(branches[1:], name, file)
 			file.Merge(packPersonWithTick(analyser.mergedAuthor, analyser.tick), others...)
@@ -582,6 +592,7 @@ func (analyser *LineHistoryAnalyser) Merge(items []core.PipelineItem) {
 		synchronizeLineHistoryBranch(analyser, branch)
 	}
 
+	analyser.mergeCreatedFiles = nil
 	analyser.mergePending = false
 	analyser.mergedAuthor = core.AuthorMissing
 	// file.Merge() above resolved the TreeMergeMark lines and emitted their (positive) deltas
@@ -682,6 +693,7 @@ func synchronizeLineHistoryBranch(source, target *LineHistoryAnalyser) {
 	// The merge branch owns the resolution deltas; synchronized siblings must not re-emit them.
 	target.pendingChanges = nil
 	target.replicaChanges = nil
+	target.mergeCreatedFiles = nil
 }
 
 func mustLineHistoryAnalyser(item core.PipelineItem) *LineHistoryAnalyser {
@@ -1071,6 +1083,14 @@ func (analyser *LineHistoryAnalyser) newFile(
 		fileId = analyser.fileIdCounter.next()
 	}
 
+	if tick == TreeMergeMark && !found {
+		if analyser.mergeCreatedFiles == nil {
+			analyser.mergeCreatedFiles = map[FileId]string{}
+		}
+
+		analyser.mergeCreatedFiles[fileId] = name
+	}
+
 	delete(analyser.fileAbandonedNames, fileId)
 	analyser.fileNames[fileId] = name
 	file := NewFile(
@@ -1442,3 +1462,52 @@ func (analyser *LineHistoryAnalyser) handleRename(sourceName, targetName string)
 }
 
 var _ = core.RegisterPipelineItem(&LineHistoryAnalyser{})
+
+// adoptMergeCreatedFileIds re-keys the files this branch minted while replaying the merge commit
+// onto the id the branch that really created the path is using.
+//
+// A merge commit that brings in a path this branch never held is reported as an insertion, so
+// newFile() mints a fresh id - and because merge-commit edits carry TreeMergeMark, File.updateTime
+// suppresses the insertion, so nothing is ever emitted for that id. The branch that added the path
+// did emit its insertion, under its own id. matchingMergeFiles then pairs the two by path
+// (PLAN.md B1d), the other branch's file is discarded by synchronization, and the accounting ends
+// up split across two keys: the old id carries lines nobody will ever remove, while a removal
+// against the new id cancels an insertion that was never sent and drives the file history negative.
+//
+// Adopting the other branch's id keeps both halves on one key. Ids come from a counter shared by
+// every branch, so they are globally unique and adoption cannot collide. The lowest matching id
+// wins, for determinism (PLAN.md B12).
+func (analyser *LineHistoryAnalyser) adoptMergeCreatedFileIds(others []*LineHistoryAnalyser) {
+	for _, id := range slices.Sorted(maps.Keys(analyser.mergeCreatedFiles)) {
+		name := analyser.mergeCreatedFiles[id]
+
+		file := analyser.files[name]
+		if file == nil || file.Id != id {
+			continue
+		}
+
+		adopted, found := FileId(0), false
+
+		for _, branch := range others {
+			candidate := branch.files[name]
+			if candidate == nil || candidate.Id == id || candidate.Len() != file.Len() {
+				continue
+			}
+
+			if !found || candidate.Id < adopted {
+				adopted, found = candidate.Id, true
+			}
+		}
+
+		if !found {
+			continue
+		}
+
+		// Deliberately not recorded as an abandoned name: abandonedFileID() prefers the highest
+		// matching id, so leaving this one behind lets a later merge resurrect a key that now holds
+		// no accounting at all and mix its bands into the adopted file.
+		delete(analyser.fileNames, id)
+		file.Id = adopted
+		analyser.fileNames[adopted] = name
+	}
+}

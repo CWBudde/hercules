@@ -1,6 +1,7 @@
 package linehistory
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing"
@@ -248,4 +249,118 @@ func TestLinesDeletionOfUnresolvedMergeLinesDefers(t *testing.T) {
 
 	require.NoError(t, analyser.handleDeletion(deleteChange(), mergeTestAuthor, cache))
 	assert.Empty(t, analyser.changes)
+}
+
+const (
+	// adoptTestPath is contributed by a sibling branch only; the merge branch never held it.
+	adoptTestPath = testFileOnePath
+	adoptTestBorn = core.TickNumber(4)
+)
+
+// newAdoptionBranches reproduces the shape of a merge commit which brings in a path the
+// authoritative branch never held: the sibling branch created it under its own FileId and emitted
+// the insertion, while the merge branch mints a fresh id whose lines all carry TreeMergeMark - so
+// File.updateTime suppressed every updater and nothing was ever emitted for that id.
+func newAdoptionBranches(t *testing.T) (
+	lead, sibling *LineHistoryAnalyser, siblingChanges []core.LineHistoryChange,
+) {
+	t.Helper()
+
+	lead = &LineHistoryAnalyser{}
+	require.NoError(t, lead.Configure(map[string]any{core.ConfigLogger: core.NewLogger()}))
+	require.NoError(t, lead.Initialize(test.Repository))
+
+	forks := lead.Fork(1)
+	require.Len(t, forks, 1)
+
+	sibling = mustLineHistoryAnalyser(forks[0])
+
+	// The branch which really adds the path: an ordinary insertion, emitted under its own id.
+	sibling.tick = adoptTestBorn
+	sibling.commitTick = adoptTestBorn
+	require.NotNil(t, sibling.newFile(adoptTestPath, mergeTestAuthor, adoptTestBorn, mergeTestLines))
+	require.Equal(t, mergeTestLines, totalDelta(sibling.changes))
+
+	siblingChanges = sibling.changes
+
+	// The merge branch replays the merge commit: the path is new to it, so newFile() mints a fresh
+	// id, and TreeMergeMark keeps the insertion from being emitted for it.
+	require.NotNil(t, lead.newFile(adoptTestPath, mergeTestAuthor, TreeMergeMark, mergeTestLines))
+	require.Empty(t, lead.changes, "a merge-marked insertion must not emit changes yet")
+	require.NotEqual(t, sibling.files[adoptTestPath].Id, lead.files[adoptTestPath].Id,
+		"the fixture is only meaningful while the two branches disagree on the id")
+
+	lead.tick = mergeTestTick
+	lead.commitTick = mergeTestTick
+	lead.mergedAuthor = mergeTestAuthor
+	lead.mergePending = true
+
+	return lead, sibling, siblingChanges
+}
+
+// deltasByFileId sums the deltas of the non-marker changes per file id.
+func deltasByFileId(changes []core.LineHistoryChange) map[FileId]int {
+	totals := map[FileId]int{}
+
+	for _, change := range changes {
+		if change.IsDelete() {
+			continue
+		}
+
+		totals[change.FileId] += change.Delta
+	}
+
+	return totals
+}
+
+// TestLinesMergeAdoptsCreatingBranchFileId pins the id adoption: a merge commit which brings in a
+// path the merge branch never held used to leave the file on the freshly minted id, while the
+// branch that created the path had already emitted its insertion under its own. The two halves of
+// the accounting then lived on different keys.
+func TestLinesMergeAdoptsCreatingBranchFileId(t *testing.T) {
+	lead, sibling, _ := newAdoptionBranches(t)
+
+	adopted := sibling.files[adoptTestPath].Id
+	minted := lead.files[adoptTestPath].Id
+
+	lead.Merge([]core.PipelineItem{sibling})
+
+	merged := lead.files[adoptTestPath]
+	require.NotNil(t, merged)
+	assert.Equal(t, adopted, merged.Id,
+		"the merged file must keep the id the branch which created the path used")
+	assert.Equal(t, adoptTestPath, lead.fileNames[adopted])
+	assert.NotContains(t, lead.fileNames, minted,
+		"the vacated id must not stay in the name map")
+	assert.NotContains(t, lead.fileAbandonedNames, minted,
+		"the vacated id holds no accounting and must not be resurrectable")
+}
+
+// TestLinesMergeAdoptedFileIdKeepsRemovalPaired covers the observable consequence: the removal
+// which eventually arrives must cancel the insertion the creating branch emitted. Without
+// adoption it lands on the merge-minted id, whose insertion was never sent, and that file id ends
+// up net negative - a negative burndown cell.
+func TestLinesMergeAdoptedFileIdKeepsRemovalPaired(t *testing.T) {
+	lead, sibling, siblingChanges := newAdoptionBranches(t)
+
+	lead.Merge([]core.PipelineItem{sibling})
+
+	// The lines the merge resolved plus whatever the branches emitted before it.
+	changes := append(slices.Clone(siblingChanges), FileIdResolver{lead}.PendingChanges()...)
+
+	// A later commit deletes the path again.
+	lead.tick = mergeTestTick + 1
+	lead.commitTick = lead.tick
+	lead.files[adoptTestPath].Update(
+		packChangePersonWithTick(mergeTestAuthor, lead.tick), 0, 0, mergeTestLines)
+
+	changes = append(changes, lead.changes...)
+
+	totals := deltasByFileId(changes)
+	assert.Len(t, totals, 1, "the path's accounting must live on a single file id: %v", totals)
+	assert.Zero(t, totalDelta(changes), "the removal must cancel the insertion")
+
+	for id, total := range totals {
+		assert.Zero(t, total, "file id %d must not end up net negative", id)
+	}
 }

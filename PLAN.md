@@ -578,6 +578,11 @@ The real acceptance test is the pipeline this sweep was filed from. Run 2026-07-
       cells, `meko-etl-tool` 553), which independently confirms the corpus suite and the
       downstream pipeline measure the same thing.
 
+The switches are now **deleted** rather than left as configuration, in `ewws-statistics` `079b0bc`.
+Deleting the keys alone would have re-disabled the analyses — all three defaulted to `false` in
+`internal/config/config.go` — so the fields came out end to end and the flags are requested
+unconditionally. `burndown_files` survives as a switch, but on cost rather than breakage.
+
 **One caveat found by enabling `burndown_files`, and it is not a 0.2.0 regression.** The
 per-repository `.pb` does carry file burndown (305 files render from `meko-etl-tool` alone), but
 the **combined** chart directory comes out empty, with labours reporting `Burndown stats for

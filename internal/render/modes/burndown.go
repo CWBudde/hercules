@@ -65,7 +65,8 @@ func generateBurndownPlotWithOptions(name string, matrix [][]int, output string,
 	)
 	progEstimator.NextOperation("Generating visualization")
 
-	if err := writeBurndownSurvival(survival, quiet); err != nil {
+	err = writeBurndownSurvival(survival, quiet)
+	if err != nil {
 		progEstimator.FinishMultiOperation()
 		return err
 	}

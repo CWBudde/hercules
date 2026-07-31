@@ -197,7 +197,8 @@ func (hra *HotspotRiskAnalysis) configureHotspotLimits(facts map[string]any) err
 	}
 
 	if val, exists := facts[ConfigHotspotRiskWindow].(int); exists {
-		if _, err := hotspotRiskWindowDuration(val); err != nil {
+		_, err := hotspotRiskWindowDuration(val)
+		if err != nil {
 			return err
 		}
 

@@ -291,7 +291,8 @@ func readSerializedAllocatorMetadata(reader io.Reader, fileSize int64) (serializ
 	}
 
 	header := make([]byte, serializedAllocatorHeaderSize)
-	if _, err := io.ReadFull(reader, header); err != nil {
+	_, err := io.ReadFull(reader, header)
+	if err != nil {
 		return serializedAllocatorMetadata{}, fmt.Errorf("%w: allocator header: %w", errIncompleteRead, err)
 	}
 
@@ -367,7 +368,8 @@ func readSerializedAllocatorBuffers(
 		bufferLengthInt := int(bufferLength) //nolint:gosec // validated against maxIntValue above
 
 		hibernatedData[bufferIndex] = make([]byte, bufferLengthInt)
-		if _, err := io.ReadFull(reader, hibernatedData[bufferIndex]); err != nil {
+		_, err := io.ReadFull(reader, hibernatedData[bufferIndex])
+		if err != nil {
 			return [serializedAllocatorBufferCount][]byte{}, fmt.Errorf("%w: allocator buffer %d: %w",
 				errIncompleteRead, bufferIndex, err)
 		}

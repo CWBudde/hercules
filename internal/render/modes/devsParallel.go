@@ -68,7 +68,8 @@ func DevsParallelWithOptions(reader readers.Reader, output string, opts Options)
 	}
 
 	// Primary output: the Python-parity parallel-coordinates "Developers" chart.
-	if err := plotDevsParallelCoordinates(parallelData, output, opts.Graphics); err != nil {
+	err = plotDevsParallelCoordinates(parallelData, output, opts.Graphics)
+	if err != nil {
 		return fmt.Errorf("failed to create parallel coordinates plot: %w", err)
 	}
 

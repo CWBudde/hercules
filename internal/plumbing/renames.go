@@ -612,7 +612,8 @@ func (ra *RenameAnalysis) blobsAreCloseContext(
 		}
 	}()
 
-	if err := ctx.Err(); err != nil {
+	err := ctx.Err()
+	if err != nil {
 		return false, fmt.Errorf("compare rename blobs: %w", err)
 	}
 
@@ -657,11 +658,12 @@ func (ra *RenameAnalysis) renameDiffSimilarity(
 	maxSize := internal.Max(1, internal.Max(utf8.RuneCountInString(src), utf8.RuneCountInString(dst)))
 
 	for _, edit := range diffs {
-		if err := ctx.Err(); err != nil {
+		err := ctx.Err()
+		if err != nil {
 			return false, fmt.Errorf("evaluate rename similarity: %w", err)
 		}
 
-		err := state.applyEdit(ctx, edit, src, dst, srcPositions, dstPositions)
+		err = state.applyEdit(ctx, edit, src, dst, srcPositions, dstPositions)
 		if err != nil {
 			return false, err
 		}

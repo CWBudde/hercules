@@ -607,7 +607,8 @@ func saveMatplotlibFigureWithConfig(fig *core.Figure, output string, config back
 			return fmt.Errorf("failed to create AGG renderer: %w", err)
 		}
 
-		if err := core.SavePNG(fig, renderer, output); err != nil {
+		err = core.SavePNG(fig, renderer, output)
+		if err != nil {
 			return err
 		}
 

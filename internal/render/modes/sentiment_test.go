@@ -142,7 +142,8 @@ func TestSentimentUsesCollectedSentimentWithoutFallback(t *testing.T) {
 	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	reader := &CollectedSentimentReader{NoDataReader: &NoDataReader{}}
-	if err := Sentiment(reader, tempDir, false); err != nil {
+	err = Sentiment(reader, tempDir, false)
+	if err != nil {
 		t.Fatalf("Sentiment analysis with collected data failed: %v", err)
 	}
 
@@ -276,7 +277,8 @@ func TestSentimentWithZeroActivityDoesNotCreateNaNBars(t *testing.T) {
 	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	reader := &ZeroActivitySentimentReader{NoDataReader: &NoDataReader{}}
-	if err := Sentiment(reader, tempDir, true); err != nil {
+	err = Sentiment(reader, tempDir, true)
+	if err != nil {
 		t.Fatalf("Sentiment analysis with zero activity failed: %v", err)
 	}
 

@@ -189,7 +189,8 @@ func PlotTimeAreasMatplotlib(dates []time.Time, series []MatplotlibTimeAreaSerie
 		alpha = 1
 	}
 
-	if err := plotTimeAreaSeries(ax, x, series, colors, matrix, labels, opts, alpha); err != nil {
+	err = plotTimeAreaSeries(ax, x, series, colors, matrix, labels, opts, alpha)
+	if err != nil {
 		return err
 	}
 

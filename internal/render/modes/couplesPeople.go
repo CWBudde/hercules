@@ -47,9 +47,10 @@ func CouplesPeopleWithOptions(reader readers.Reader, output string, opts Options
 	// Phase 3: Generate embeddings
 	progEstimator.NextOperation("Training embeddings")
 
-	if err := writeSparseEmbeddings(
+	err = writeSparseEmbeddings(
 		"people", output, peopleNames, couplingMatrix, outlierThreshold, opts,
-	); err != nil {
+	)
+	if err != nil {
 		progEstimator.FinishMultiOperation()
 		return fmt.Errorf("failed to write people embeddings: %w", err)
 	}
@@ -168,7 +169,8 @@ func writeSparseVocabularyFile(filename string, index []string) error {
 	defer func() { _ = file.Close() }()
 
 	for _, label := range index {
-		if _, err := file.WriteString(label + "\n"); err != nil {
+		_, err := file.WriteString(label + "\n")
+		if err != nil {
 			return err
 		}
 	}
@@ -244,7 +246,8 @@ func sparseRowNorm(values []int, threshold int) float64 {
 
 func writeSparseRowValue(writer io.Writer, column int, value float64) error {
 	if column > 0 {
-		if _, err := fmt.Fprint(writer, "\t"); err != nil {
+		_, err := fmt.Fprint(writer, "\t")
+		if err != nil {
 			return err
 		}
 	}
@@ -266,13 +269,15 @@ func writeSparseMetadataFile(
 	}
 	defer func() { _ = file.Close() }()
 
-	if _, err := file.WriteString("Name\tDiagonal\n"); err != nil {
+	_, err = file.WriteString("Name\tDiagonal\n")
+	if err != nil {
 		return err
 	}
 
 	for row, label := range index {
 		diagonal := cappedCouplingValue(matrix.At(row, row), threshold)
-		if _, err := fmt.Fprintf(file, "%s\t%.6f\n", label, diagonal); err != nil {
+		_, err := fmt.Fprintf(file, "%s\t%.6f\n", label, diagonal)
+		if err != nil {
 			return err
 		}
 	}

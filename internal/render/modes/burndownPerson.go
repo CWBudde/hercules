@@ -142,13 +142,15 @@ func renderPersonBurndown(
 		return fmt.Errorf("failed to process burndown for person %s: %w", person.Person, err)
 	}
 
-	if err := compactPersonBurndown(processedData); err != nil {
+	err = compactPersonBurndown(processedData)
+	if err != nil {
 		return fmt.Errorf("compact burndown for person %s: %w", person.Person, err)
 	}
 
-	if err := graphics.PlotBurndownMatplotlibWithOptions(
+	err = graphics.PlotBurndownMatplotlibWithOptions(
 		processedData, outputFile, opts.Relative, opts.Graphics,
-	); err != nil {
+	)
+	if err != nil {
 		return fmt.Errorf("failed to generate burndown for person %s: %w", person.Person, err)
 	}
 
@@ -166,9 +168,10 @@ func renderLegacyPersonBurndown(
 		return fmt.Errorf("compact burndown for person %s: %w", person.Person, err)
 	}
 
-	if err := generateBurndownPlotWithOptions(
+	err = generateBurndownPlotWithOptions(
 		displayName, compactedMatrix, outputFile, startDate, endDate, opts,
-	); err != nil {
+	)
+	if err != nil {
 		return fmt.Errorf("failed to generate burndown for person %s: %w", person.Person, err)
 	}
 

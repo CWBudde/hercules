@@ -572,7 +572,8 @@ func (blobCache *BlobCache) cacheDummyBlob(
 		return fmt.Errorf("create placeholder for missing blob %s: %w", hash, err)
 	}
 
-	if err := blobCache.validateAndReserve(blob, budget); err != nil {
+	err = blobCache.validateAndReserve(blob, budget)
+	if err != nil {
 		return err
 	}
 

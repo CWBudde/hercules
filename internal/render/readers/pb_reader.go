@@ -40,12 +40,14 @@ func (r *ProtobufReader) Read(file io.Reader) error {
 	progEstimator.UpdateProgress(1)
 
 	var results pb.AnalysisResults
-	if err := proto.Unmarshal(allBytes, &results); err != nil {
+	err = proto.Unmarshal(allBytes, &results)
+	if err != nil {
 		progEstimator.FinishOperation()
 		return fmt.Errorf("%w: unmarshal protobuf envelope: %w", ErrAnalysisMalformed, err)
 	}
 
-	if err := analysisio.ValidateAndMigrateAnalysisResults(&results, r.Limits); err != nil {
+	err = analysisio.ValidateAndMigrateAnalysisResults(&results, r.Limits)
+	if err != nil {
 		progEstimator.FinishOperation()
 		return err
 	}

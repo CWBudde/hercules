@@ -66,7 +66,8 @@ func runCouplingMode(
 	progEstimator.NextOperation("Analyzing coupling patterns")
 	progEstimator.NextOperation("Generating visualization")
 
-	if err := plot(names, matrix, output); err != nil {
+	err = plot(names, matrix, output)
+	if err != nil {
 		progEstimator.FinishMultiOperation()
 		return fmt.Errorf("failed to generate %s plots: %w", label, err)
 	}

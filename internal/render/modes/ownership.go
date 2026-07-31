@@ -761,7 +761,8 @@ func ownershipPlotPixelSize(defaultWidth, defaultHeight float64, configuredSize 
 	}
 
 	if sizeStr != "" {
-		if parsedWidth, parsedHeight, err := parseOwnershipPlotSize(sizeStr); err == nil {
+		parsedWidth, parsedHeight, err := parseOwnershipPlotSize(sizeStr)
+		if err == nil {
 			width, height = parsedWidth, parsedHeight
 		} else {
 			fmt.Fprintf(os.Stderr, "Warning: %v, using default size\n", err)
@@ -945,7 +946,8 @@ func writeOwnershipPNG(path string, img image.Image) error {
 		return fmt.Errorf("failed to encode ownership PNG matte: %w", err)
 	}
 
-	if err := file.Close(); err != nil {
+	err = file.Close()
+	if err != nil {
 		return fmt.Errorf("failed to close ownership PNG matte: %w", err)
 	}
 
@@ -988,7 +990,8 @@ func saveOwnershipBurndownAsJSON(output string, names []string, people [][]float
 	encoder := json.NewEncoder(file)
 	encoder.SetIndent("", "  ")
 
-	if err := encoder.Encode(data); err != nil {
+	err = encoder.Encode(data)
+	if err != nil {
 		return fmt.Errorf("failed to write JSON data: %w", err)
 	}
 

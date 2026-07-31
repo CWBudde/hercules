@@ -44,7 +44,8 @@ func OverwritesMatrixWithOptions(reader readers.Reader, output string, opts Opti
 	}
 
 	// Step 4: Visualize the matrix
-	if err := plotOverwritesMatrixWithOptions(people, colLabels, normalizedMatrix, output, opts.Graphics); err != nil {
+	err = plotOverwritesMatrixWithOptions(people, colLabels, normalizedMatrix, output, opts.Graphics)
+	if err != nil {
 		return fmt.Errorf("failed to plot overwrites matrix: %w", err)
 	}
 
@@ -290,7 +291,8 @@ func saveOverwritesMatplotlibFigure(fig *core.Figure, output string, width, heig
 			return fmt.Errorf("failed to create AGG renderer: %w", err)
 		}
 
-		if err := core.SavePNG(fig, renderer, output); err != nil {
+		err = core.SavePNG(fig, renderer, output)
+		if err != nil {
 			return err
 		}
 

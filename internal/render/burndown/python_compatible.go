@@ -229,7 +229,8 @@ func FloorDateTime(dt time.Time, tickSize float64) time.Time {
 
 // LoadBurndown is the main function that replicates Python's load_burndown.
 func LoadBurndown(header BurndownHeader, name string, matrix [][]int, resample string, reportSurvival, interpolationProgress bool) (*ProcessedBurndown, error) {
-	if err := validateBurndownInput(header, matrix); err != nil {
+	err := validateBurndownInput(header, matrix)
+	if err != nil {
 		return nil, err
 	}
 
@@ -294,7 +295,8 @@ func loadBurndownSurvival(matrix [][]int, report bool) ([]SurvivalPoint, error) 
 		return survival, nil
 	}
 
-	if _, err := validateSurvivalMatrix(matrix); err != nil {
+	_, err := validateSurvivalMatrix(matrix)
+	if err != nil {
 		return nil, fmt.Errorf("validate burndown: %w", err)
 	}
 

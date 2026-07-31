@@ -18,15 +18,18 @@ func validateYAMLAnalysis(data map[string]any, limits analysisio.Limits) error {
 	}
 
 	total := 0
-	if err := validateYAMLRecords(data, &total, limits); err != nil {
+	err = validateYAMLRecords(data, &total, limits)
+	if err != nil {
 		return err
 	}
 
-	if err := validateYAMLBurndown(data, limits); err != nil {
+	err = validateYAMLBurndown(data, limits)
+	if err != nil {
 		return err
 	}
 
-	if err := validateYAMLCouples(data, limits); err != nil {
+	err = validateYAMLCouples(data, limits)
+	if err != nil {
 		return err
 	}
 
@@ -89,9 +92,10 @@ func validateYAMLBurndownCollection(
 			)
 		}
 
-		if _, err := parseBurndownMatrixChecked(
+		_, err := parseBurndownMatrixChecked(
 			fmt.Sprintf("Burndown.%s[%q]", field, name), text, limits,
-		); err != nil {
+		)
+		if err != nil {
 			return err
 		}
 	}
@@ -286,9 +290,10 @@ func parseBurndownMatrixChecked(
 			continue
 		}
 
-		if err := analysisio.ValidateDimensions(
+		err = analysisio.ValidateDimensions(
 			name, int64(len(matrix)+1), int64(columns), limits,
-		); err != nil {
+		)
+		if err != nil {
 			return nil, err
 		}
 
@@ -370,7 +375,8 @@ func parseSparseMatrixTextChecked(
 	limits = limits.WithDefaults()
 
 	lineCount := strings.Count(data, "\n") + 1
-	if err := analysisio.ValidateDimensions(name, int64(lineCount), 1, limits); err != nil {
+	err := analysisio.ValidateDimensions(name, int64(lineCount), 1, limits)
+	if err != nil {
 		return SparseMatrix{}, err
 	}
 
@@ -391,9 +397,10 @@ func parseSparseMatrixTextChecked(
 			continue
 		}
 
-		if err := analysisio.ValidateDimensions(
+		err = analysisio.ValidateDimensions(
 			name, int64(rows+1), int64(columns), limits,
-		); err != nil {
+		)
+		if err != nil {
 			return SparseMatrix{}, err
 		}
 

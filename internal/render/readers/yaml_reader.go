@@ -33,12 +33,14 @@ func (r *YamlReader) Read(file io.Reader) error {
 	}
 
 	var data map[string]any
-	if err := yaml.Unmarshal(input, &data); err != nil {
+	err = yaml.Unmarshal(input, &data)
+	if err != nil {
 		progEstimator.FinishOperation()
 		return fmt.Errorf("%w: decode YAML: %w", ErrAnalysisMalformed, err)
 	}
 
-	if err := validateYAMLAnalysis(data, r.Limits); err != nil {
+	err = validateYAMLAnalysis(data, r.Limits)
+	if err != nil {
 		progEstimator.FinishOperation()
 		return err
 	}
@@ -819,9 +821,10 @@ func parseBurndownMatrix(data string) [][]int {
 func parseSparseCooccurrenceRows(
 	data []any, size int, limits analysisio.Limits,
 ) (SparseMatrix, error) {
-	if err := validateYAMLSparseRows(
+	err := validateYAMLSparseRows(
 		"YAML co-occurrence matrix", data, limits,
-	); err != nil {
+	)
+	if err != nil {
 		return SparseMatrix{}, err
 	}
 
@@ -877,7 +880,8 @@ func convertToInt(val any) (int, bool) {
 	case float64:
 		return int(v), true
 	case string:
-		if i, err := strconv.Atoi(v); err == nil {
+		i, err := strconv.Atoi(v)
+		if err == nil {
 			return i, true
 		}
 	}

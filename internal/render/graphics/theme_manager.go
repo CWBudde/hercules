@@ -35,11 +35,13 @@ func (tm *ThemeManager) LoadThemeFromFile(filepath string) error {
 	}
 
 	var theme Theme
-	if err := yaml.Unmarshal(data, &theme); err != nil {
+	err = yaml.Unmarshal(data, &theme)
+	if err != nil {
 		return fmt.Errorf("failed to parse theme file %s: %w", filepath, err)
 	}
 
-	if err := theme.Validate(); err != nil {
+	err = theme.Validate()
+	if err != nil {
 		return fmt.Errorf("invalid theme in file %s: %w", filepath, err)
 	}
 
@@ -120,7 +122,8 @@ func (tm *ThemeManager) SaveThemeToFile(theme *Theme, filepath string) error {
 		return fmt.Errorf("failed to marshal theme: %w", err)
 	}
 
-	if err := os.WriteFile(filepath, data, 0o600); err != nil {
+	err = os.WriteFile(filepath, data, 0o600)
+	if err != nil {
 		return fmt.Errorf("failed to write theme file %s: %w", filepath, err)
 	}
 
@@ -199,7 +202,8 @@ var GlobalThemeManager = NewThemeManager()
 // LoadUserThemes loads themes from user directories.
 func LoadUserThemes() error {
 	// Try to load from current directory themes/
-	if _, err := os.Stat("themes"); err == nil {
+	_, err := os.Stat("themes")
+	if err == nil {
 		err := GlobalThemeManager.LoadThemesFromDirectory("themes")
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to load themes from ./themes: %v\n", err)
@@ -210,7 +214,8 @@ func LoadUserThemes() error {
 	homeDir, err := os.UserHomeDir()
 	if err == nil {
 		themeDir := filepath.Join(homeDir, ".labours-go", "themes")
-		if _, err := os.Stat(themeDir); err == nil {
+		_, err := os.Stat(themeDir)
+		if err == nil {
 			err := GlobalThemeManager.LoadThemesFromDirectory(themeDir)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: failed to load themes from %s: %v\n", themeDir, err)

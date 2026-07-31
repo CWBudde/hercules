@@ -131,7 +131,8 @@ func testReportMetricModesCreateOutputFiles(t *testing.T, ext string) {
 func TestBusFactorSubsystemOutputPreservesTransparentBackground(t *testing.T) {
 	dir := t.TempDir()
 	output := filepath.Join(dir, "bus-factor.png")
-	if err := BusFactor(&reportMetricsReader{}, output); err != nil {
+	err := BusFactor(&reportMetricsReader{}, output)
+	if err != nil {
 		t.Fatalf("BusFactor() unexpected error: %v", err)
 	}
 

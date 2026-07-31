@@ -532,7 +532,8 @@ func readBaseline(t *testing.T) baseline {
 	}
 
 	var committed baseline
-	if err := json.Unmarshal(content, &committed); err != nil {
+	err = json.Unmarshal(content, &committed)
+	if err != nil {
 		t.Fatalf("decode corpus baseline: %v", err)
 	}
 

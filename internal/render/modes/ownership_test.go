@@ -98,7 +98,8 @@ func TestSaveOwnershipMatplotlibFigurePreservesTransparency(t *testing.T) {
 		style.WithAxesBackground(background),
 	)
 
-	if err := saveOwnershipMatplotlibFigure(fig, outputPath, 100, 100, background); err != nil {
+	err := saveOwnershipMatplotlibFigure(fig, outputPath, 100, 100, background)
+	if err != nil {
 		t.Fatalf("save ownership figure: %v", err)
 	}
 
@@ -436,10 +437,11 @@ func TestPlotOwnershipBurndownKeepsTickLabelsInsideCanvas(t *testing.T) {
 	}
 
 	output := filepath.Join(t.TempDir(), "ownership.png")
-	if err := plotOwnershipBurndown(
+	err := plotOwnershipBurndown(
 		".", []string{"Alice"}, [][]float64{owned}, dates, dates[points-1], output,
 		Options{Graphics: graphics.Options{Size: "16,10"}},
-	); err != nil {
+	)
+	if err != nil {
 		t.Fatalf("plotOwnershipBurndown: %v", err)
 	}
 

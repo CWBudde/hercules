@@ -98,7 +98,8 @@ func plotRefactoringProxy(repoName string, data *readers.RefactoringProxyData, o
 
 	configureRefactoringProxyAxes(ax, repoName, maxRate, threshold)
 
-	if err := saveReportFigureWithoutTightLayout(fig, output, width, height); err != nil {
+	err = saveReportFigureWithoutTightLayout(fig, output, width, height)
+	if err != nil {
 		return fmt.Errorf("failed to save refactoring proxy chart: %w", err)
 	}
 

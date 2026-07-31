@@ -150,7 +150,8 @@ func TestBuildLanguageEvolutionIncludesLastTickAcrossDST(t *testing.T) {
 	defer func() { _ = file.Close() }()
 
 	reader := &readers.YamlReader{}
-	if err := reader.Read(file); err != nil {
+	err = reader.Read(file)
+	if err != nil {
 		t.Fatalf("Read() unexpected error = %v", err)
 	}
 

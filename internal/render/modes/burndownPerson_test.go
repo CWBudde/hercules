@@ -150,13 +150,15 @@ func captureStderr(t *testing.T, fn func()) string {
 
 	fn()
 
-	if err := writeEnd.Close(); err != nil {
+	err = writeEnd.Close()
+	if err != nil {
 		t.Fatalf("close stderr pipe: %v", err)
 	}
 
 	captured := <-done
 
-	if err := readEnd.Close(); err != nil {
+	err = readEnd.Close()
+	if err != nil {
 		t.Fatalf("close stderr read end: %v", err)
 	}
 
@@ -183,11 +185,13 @@ func TestBurndownPersonSkipsIdlePeopleAndRendersTheRest(t *testing.T) {
 	opts := defaultOptions()
 	opts.Quiet = true
 
-	if err := BurndownPersonWithOptions(reader, output, start, end, opts); err != nil {
+	err = BurndownPersonWithOptions(reader, output, start, end, opts)
+	if err != nil {
 		t.Fatalf("BurndownPersonWithOptions() failed on an idle contributor: %v", err)
 	}
 
-	if _, err := os.Stat(outputFiles[0]); err != nil {
+	_, err = os.Stat(outputFiles[0])
+	if err != nil {
 		t.Fatalf("active contributor chart missing at %s: %v", outputFiles[0], err)
 	}
 

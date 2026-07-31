@@ -474,13 +474,14 @@ func plotTemporalHeatmap(repoName string, data *readers.TemporalActivityData, mo
 	// then overrides it back to args.size or "16,10", so the effective size
 	// matches the temporal-activity bar charts (1600×1000).
 	heatmapWidth, heatmapHeight := reportPlotInches("temporal-activity.png")
-	if err := graphics.PlotHeatmapMatplotlib(matrix, rowLabels, colLabels, graphics.MatplotlibHeatmapOptions{
+	err = graphics.PlotHeatmapMatplotlib(matrix, rowLabels, colLabels, graphics.MatplotlibHeatmapOptions{
 		Title:        fmt.Sprintf("%s - Activity Heatmap: Weekday × Hour (%s)", repoName, mode),
 		Output:       output,
 		Colormap:     "YlOrRd",
 		WidthInches:  heatmapWidth,
 		HeightInches: heatmapHeight,
-	}); err != nil {
+	})
+	if err != nil {
 		return fmt.Errorf("failed to plot temporal heatmap: %w", err)
 	}
 
@@ -1002,7 +1003,7 @@ func OwnershipConcentration(reader readers.Reader, output string) error {
 		latest.Gini, latest.HHI, latest.TotalLines)
 
 	timelineOutput := siblingOutputPath(output, "ownership-concentration.png", "timeline")
-	if err := plotLineSeries(
+	err = plotLineSeries(
 		"Ownership Concentration Over Time",
 		"Tick",
 		"Concentration",
@@ -1012,7 +1013,8 @@ func OwnershipConcentration(reader readers.Reader, output string) error {
 		},
 		timelineOutput,
 		"ownership-concentration-timeline.png",
-	); err != nil {
+	)
+	if err != nil {
 		return err
 	}
 
@@ -1203,7 +1205,8 @@ func KnowledgeDiffusion(reader readers.Reader, output string, detail bool) error
 		len(data.Files), len(data.People), data.WindowMonths)
 
 	distributionOutput := siblingOutputPath(output, "knowledge-diffusion.png", "distribution")
-	if err := plotKnowledgeDistribution(reader.GetName(), labels, values, distributionOutput); err != nil {
+	err = plotKnowledgeDistribution(reader.GetName(), labels, values, distributionOutput)
+	if err != nil {
 		return err
 	}
 
@@ -1673,7 +1676,7 @@ func plotFloatBars(title, xLabel, yLabel string, labels []string, values floatSe
 	}
 
 	width, height := reportPlotInches(defaultOutput)
-	if err := graphics.PlotBarChartMatplotlib(labels, plotValues, graphics.MatplotlibBarOptions{
+	err = graphics.PlotBarChartMatplotlib(labels, plotValues, graphics.MatplotlibBarOptions{
 		Title:        title,
 		XLabel:       xLabel,
 		YLabel:       yLabel,
@@ -1681,7 +1684,8 @@ func plotFloatBars(title, xLabel, yLabel string, labels []string, values floatSe
 		WidthInches:  width,
 		HeightInches: height,
 		RotateX:      len(labels) > 8,
-	}); err != nil {
+	})
+	if err != nil {
 		return err
 	}
 
@@ -1706,7 +1710,8 @@ func plotBusFactorSubsystemsMatplotlib(repoName string, labels []string, values 
 
 	configureBusFactorSubsystemAxes(ax, repoName, labels, values, threshold)
 
-	if err := saveReportFigure(fig, output, width, height); err != nil { // TightLayout ~ Python tight_layout
+	err = saveReportFigure(fig, output, width, height)
+	if err != nil { // TightLayout ~ Python tight_layout
 		return err
 	}
 
@@ -2587,7 +2592,7 @@ func plotLineSeries(title, xLabel, yLabel string, series []namedSeries, output, 
 	}
 
 	width, height := reportPlotInches(defaultOutput)
-	if err := graphics.PlotLineChartMatplotlib(plotSeries, graphics.MatplotlibLineOptions{
+	err = graphics.PlotLineChartMatplotlib(plotSeries, graphics.MatplotlibLineOptions{
 		Title:        title,
 		XLabel:       xLabel,
 		YLabel:       yLabel,
@@ -2596,7 +2601,8 @@ func plotLineSeries(title, xLabel, yLabel string, series []namedSeries, output, 
 		HeightInches: height,
 		ShowGrid:     true,
 		Legend:       true,
-	}); err != nil {
+	})
+	if err != nil {
 		return err
 	}
 
@@ -2740,7 +2746,8 @@ func saveReportFigureDirect(fig *core.Figure, output string, width, height int) 
 			return fmt.Errorf("failed to create AGG renderer: %w", err)
 		}
 
-		if err := core.SavePNG(fig, renderer, output); err != nil {
+		err = core.SavePNG(fig, renderer, output)
+		if err != nil {
 			return err
 		}
 

@@ -7,7 +7,7 @@ covered by tests; see the appendix for the one-line record.
 
 B1c is split into phases below: **P0–P3 are done and merged**, **P4 is a confirmed defect with
 no shippable fix, its repro landed as a skipped test**, **P5 is the actual remaining residue —
-now scoped, with a recommendation not to start it, awaiting a decision**.
+scoped, its premise measured and confirmed, with a recommendation not to build it on price**.
 
 **Filed:** 2026-07-30 against `b330adf` (tag `0.2.0`). **Corpus:** `/mnt/projekte/Code/MeKo/*`,
 the repositories listed in `ewws-statistics/.core-repos`.
@@ -84,7 +84,7 @@ order of magnitude. **Older tables in git history are not comparable to these.**
 | **P2** | rename identity — exact renames must not become delete+create                           | ✅ done                                                                     |
 | **P3** | **file identity across a merge** — `adoptMergeCreatedFileIds`                           | ✅ merged (PR #6), gates PASS 13/13, −44 % negative file cells               |
 | **P4** | **merge buffer hand-over** — `synchronizeLineHistoryBranch` drops a branch's own deltas | 🟡 defect confirmed; repro landed **skipped**, fix measured and **rejected** |
-| **P5** | **line identity across the fork** — the project-matrix residue itself                   | 🟠 scoped, not started — **recommendation: do not start** (see below)        |
+| **P5** | **line identity across the fork** — the project-matrix residue itself                   | 🟠 scoped, premise **measured and confirmed**; **recommendation: do not start** |
 | **P6** | downstream acceptance in `ewws-statistics`                                              | 🔴 blocked on P3–P5                                                         |
 
 P3 and P4 were found by tracing the shared accumulator; they are _prerequisites_ that PLAN.md
@@ -417,7 +417,36 @@ then **inherits attempt 2 wholesale**: at the merge you still have to decide whi
 are real, and without line identity the only thing left to compare against is the merged tree.
 Same wall, more code.
 
-**Recommendation: do not start B1c.** Only (a) is mechanically sound, and its honest price is a
+#### The premise, now measured — the double removal is real and is the right size
+
+Everything above rested on an unverified premise: that the residue _is_ the double removal. Measured
+2026-07-31 with throwaway instrumentation (mirror `map[FileId]map[PrevTick]int64` of the running line
+count, hooked into `updateGlobal` at `burndown.go:989` and reported at `Finalize`; it records the
+part of each removal the band could not cover, then clamps at zero so one over-removal does not
+cascade). The instrumented binary reproduces `baseline.json` cell for cell, so it is not perturbing
+what it measures. Corpus flags, `--diff-timeout=300000`, neither run truncated.
+
+| repository       | over-removed (file, band) pairs | events | **excess mass** | project residual mass | all-matrix residual mass |
+| ---------------- | ------------------------------: | -----: | --------------: | --------------------: | -----------------------: |
+| `mekorp-backend` |                             624 |  2 739 |     **123 611** |               107 392 |                  217 766 |
+| `meko-etl-tool`  |                             283 |  1 176 |       **3 937** |                   984 |                    2 269 |
+
+Compare against the **residual** mass — the final sampled row — not the total negative mass, because
+burndown rows are cumulative and one over-removal shows up in every later row. On the case to drive
+from, over-removal accounts for **115 % of the project residue**; on the cross-check, 4×. Excess
+exceeding the residue is exactly what the mechanism predicts: some over-removed lines are later
+re-inserted and the cell recovers, so the excess is an upper bound on what survives to the last row.
+Note also that the people matrices' residual mass (110 374) tracks the project's (107 392), which is
+the same residue counted per author rather than a second, independent one.
+
+**Verdict: P5 is aimed at the right mechanism.** The caveat worth stating: the mirror detects
+over-removal of _any_ origin, not specifically two siblings doing it. But over-removal at this scale,
+in an accumulator that is shared across branches by `ForkSamePipelineItem` and reconciled by nothing
+(`burndown.go:308-318`), is the signature that mechanism predicts, and no other candidate has been
+proposed that would produce it.
+
+**Recommendation: do not start B1c anyway.** The premise holds, so the recommendation is now about
+price rather than aim. Only (a) is mechanically sound, and its honest price is a
 20–50× blowup of the hottest structure in the program times the branch fan-out, plus a hibernation
 format change. What is left after the rename fix and P3 is **327 residual file cells and ~4 100
 project cells corpus-wide**, concentrated in one repository, on a metric that now warns rather than
@@ -425,16 +454,18 @@ fails. That is not a trade worth making on the evidence in hand.
 
 **What would settle it, in order** — nothing below should be skipped if B1c is reopened:
 
-1. **Is the double removal actually the residue?** Mirror the shared leaf on
-   `(FileId, PrevTick, PrevAuthor)` and count removals that drive a band below its own live count,
-   on `mekorp-backend` at `--diff-timeout=300000`. If that does not explain most of its 1 748 / 67,
-   P5 is aimed at the wrong mechanism and the rest is moot.
+1. ~~Is the double removal actually the residue?~~ **Done, 2026-07-31 — yes.** See the table above.
 2. **Is the price real?** Prototype (a) as _ids only, no behaviour change_ — mint, store, shift,
    assert invariance — and measure peak RSS and wall clock on `mekorp-webclient` (1 097
    merge-of-merge commits) and `mekorp-backend`. Inside ~2× current, (a) becomes arguable.
+   **This is now the deciding measurement**, and it is the one that can still kill (a) outright.
 3. **Gate on both metrics, on all 13 repositories.** `negative_cells` _and_ `residual_cells`, plus
    the project matrix's final-row sum against `git grep -I -c '' HEAD`. Negatives and head totals
    trade against each other; every variant so far that fixed one broke the other.
+
+The instrumentation is not kept in the tree — it is ~110 lines and re-deriving it from this
+description is cheaper than carrying a debug hook the product does not otherwise have (`os.Getenv`
+appears nowhere in `leaves/` or `internal/linehistory/`, and `core.Logger` has no Debug level).
 
 Note also that `TestFileMergeShallow` (`file_test.go:639`) and `TestFileMergeDeep` (`:678`) assert
 `status[6] == 10` (lines `674` and `713`) for a band the merged dump holds no line of — confirmed.

@@ -84,3 +84,5 @@ require (
 	gopkg.in/toqueteos/substring.v1 v1.0.2 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 )
+
+replace github.com/cwbudde/matplotlib-go => /mnt/projekte/Code/matplotlib-go

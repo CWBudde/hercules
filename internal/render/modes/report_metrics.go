@@ -103,7 +103,7 @@ func TemporalActivity(reader readers.Reader, output string, legendThreshold, sin
 		len(data.Activities), totalCommits, totalLines, legendNote)
 
 	return renderTemporalActivity(
-		reader.GetName(), data, output, legendThreshold, singleColumnThreshold,
+		titleRepositoryName(reader.GetName()), data, output, legendThreshold, singleColumnThreshold,
 	)
 }
 
@@ -657,12 +657,12 @@ func BusFactor(reader readers.Reader, output string) error {
 		return err
 	}
 
-	err = plotBusFactorLatest(reader.GetName(), data, latest, output)
+	err = plotBusFactorLatest(titleRepositoryName(reader.GetName()), data, latest, output)
 	if err != nil {
 		return fmt.Errorf("failed to plot bus factor gauge: %w", err)
 	}
 
-	return plotBusFactorSubsystemSummary(reader.GetName(), data, output)
+	return plotBusFactorSubsystemSummary(titleRepositoryName(reader.GetName()), data, output)
 }
 
 func plotBusFactorTimeline(data *readers.BusFactorData, ticks []int, output string) error {
@@ -1023,7 +1023,7 @@ func OwnershipConcentration(reader readers.Reader, output string) error {
 	if len(data.SubsystemGini) > 0 {
 		subsystemOutput := siblingOutputPath(output, "ownership-concentration.png", "subsystems")
 
-		err := plotOwnershipSubsystemsBar(reader.GetName(), data.SubsystemGini, data.SubsystemHHI, subsystemOutput)
+		err := plotOwnershipSubsystemsBar(titleRepositoryName(reader.GetName()), data.SubsystemGini, data.SubsystemHHI, subsystemOutput)
 		if err != nil {
 			return fmt.Errorf("failed to plot subsystem ownership concentration: %w", err)
 		}
@@ -1208,17 +1208,17 @@ func KnowledgeDiffusion(reader readers.Reader, output string, detail bool) error
 
 	distributionOutput := siblingOutputPath(output, "knowledge-diffusion.png", "distribution")
 
-	err = plotKnowledgeDistribution(reader.GetName(), labels, values, distributionOutput)
+	err = plotKnowledgeDistribution(titleRepositoryName(reader.GetName()), labels, values, distributionOutput)
 	if err != nil {
 		return err
 	}
 
-	err = plotKnowledgeSilos(reader.GetName(), data, siblingOutputPath(output, "knowledge-diffusion.png", "silos"))
+	err = plotKnowledgeSilos(titleRepositoryName(reader.GetName()), data, siblingOutputPath(output, "knowledge-diffusion.png", "silos"))
 	if err != nil {
 		return err
 	}
 
-	err = plotKnowledgeLorenz(reader.GetName(), data, siblingOutputPath(output, "knowledge-diffusion.png", "lorenz"))
+	err = plotKnowledgeLorenz(titleRepositoryName(reader.GetName()), data, siblingOutputPath(output, "knowledge-diffusion.png", "lorenz"))
 	if err != nil {
 		return err
 	}
@@ -1332,7 +1332,7 @@ func HotspotRisk(reader readers.Reader, output string) error {
 	_, _ = fmt.Fprintf(os.Stdout, "Hotspot risk: %d files, window=%d days, top risk=%.3f (%s)\n",
 		len(data.Files), data.WindowDays, files[0].RiskScore, files[0].Path)
 
-	err = plotHotspotRiskRanked(reader.GetName(), files, labels, values, output)
+	err = plotHotspotRiskRanked(titleRepositoryName(reader.GetName()), files, labels, values, output)
 	if err != nil {
 		return err
 	}

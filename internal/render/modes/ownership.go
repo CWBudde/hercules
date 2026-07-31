@@ -80,7 +80,7 @@ func OwnershipBurndownWithOptions(reader readers.Reader, output string, opts Opt
 	}
 
 	err = plotOwnershipBurndown(
-		reader.GetName(), names, peopleMatrix, dateRange, input.lastTime, output, opts,
+		titleRepositoryName(reader.GetName()), names, peopleMatrix, dateRange, input.lastTime, output, opts,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to plot ownership burndown: %w", err)

@@ -164,7 +164,7 @@ func plotSentimentResults(
 	if len(ticks) > 0 {
 		start, _ := reader.GetHeader()
 
-		err := plotCollectedSentimentTimelineWithOptions(reader.GetName(), start, ticks, output, visuals)
+		err := plotCollectedSentimentTimelineWithOptions(titleRepositoryName(reader.GetName()), start, ticks, output, visuals)
 		if err != nil {
 			return fmt.Errorf("failed to generate collected sentiment timeline: %w", err)
 		}

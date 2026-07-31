@@ -29,7 +29,7 @@ func RefactoringProxy(reader readers.Reader, output string) error {
 		return fmt.Errorf("%w: RefactoringProxy", readers.ErrAnalysisMissing)
 	}
 
-	return plotRefactoringProxy(reader.GetName(), data, output)
+	return plotRefactoringProxy(titleRepositoryName(reader.GetName()), data, output)
 }
 
 func plotRefactoringProxy(repoName string, data *readers.RefactoringProxyData, output string) error {

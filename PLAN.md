@@ -5,9 +5,9 @@ being removed twice across sibling branches. Everything else filed in the origin
 regression sweep (B1, B1b, B1d, B2–B12, plus the corpus regression suite) is fixed and
 covered by tests; see the appendix for the one-line record.
 
-B1c is split into phases below: **P0–P2 are done**, **P3 has a measured candidate awaiting a
-gate decision**, **P4 is a confirmed defect with no shippable fix**, **P5 is the actual
-remaining residue and is not started**.
+B1c is split into phases below: **P0–P3 are done and merged**, **P4 is a confirmed defect with
+no shippable fix, its repro landed as a skipped test**, **P5 is the actual remaining residue —
+now scoped, with a recommendation not to start it, awaiting a decision**.
 
 **Filed:** 2026-07-30 against `b330adf` (tag `0.2.0`). **Corpus:** `/mnt/projekte/Code/MeKo/*`,
 the repositories listed in `ewws-statistics/.core-repos`.
@@ -82,9 +82,9 @@ order of magnitude. **Older tables in git history are not comparable to these.**
 | **P0** | trustworthy measurement — corpus suite, determinism, truncation detection               | ✅ done                                                                     |
 | **P1** | merge-resolution deltas reach the accumulator at all (B1, B1b, B1d)                     | ✅ done                                                                     |
 | **P2** | rename identity — exact renames must not become delete+create                           | ✅ done                                                                     |
-| **P3** | **file identity across a merge** — `adoptMergeCreatedFileIds`                           | ✅ tested, gates PASS 13/13, −44 % negative file cells — **awaiting merge** |
-| **P4** | **merge buffer hand-over** — `synchronizeLineHistoryBranch` drops a branch's own deltas | 🟡 defect confirmed by test; fix measured and **rejected**                  |
-| **P5** | **line identity across the fork** — the project-matrix residue itself                   | 🔴 not started                                                              |
+| **P3** | **file identity across a merge** — `adoptMergeCreatedFileIds`                           | ✅ merged (PR #6), gates PASS 13/13, −44 % negative file cells               |
+| **P4** | **merge buffer hand-over** — `synchronizeLineHistoryBranch` drops a branch's own deltas | 🟡 defect confirmed; repro landed **skipped**, fix measured and **rejected** |
+| **P5** | **line identity across the fork** — the project-matrix residue itself                   | 🟠 scoped, not started — **recommendation: do not start** (see below)        |
 | **P6** | downstream acceptance in `ewws-statistics`                                              | 🔴 blocked on P3–P5                                                         |
 
 P3 and P4 were found by tracing the shared accumulator; they are _prerequisites_ that PLAN.md
@@ -222,10 +222,15 @@ outright, none regressed.
       0 → 393, `ewws-render` 0 → 21. `render-pdf`'s celebrated 0/0 after the rename fix holds
       only at project scope. Corpus-wide the file dimension carries ~26 700 negative cells
       against ~4 100 at project scope, so **most of the accounting damage was never measured**.
-- [ ] Merge `wt-adopt` (fix + 2 tests) and `wt-corpus` (suite + re-seeded `baseline.json`).
-      Both are detached scratchpad worktrees based on `77c736b`; nothing is in the main tree.
-      The two must land together — the re-seeded baseline is what makes P3 gateable, and the
-      new baseline is _not_ comparable to the committed one.
+- [x] Merge `wt-adopt` (fix + 2 tests) and `wt-corpus` (suite + re-seeded `baseline.json`).
+      Landed together in PR #6 (`bfc9445` adoption, `abc217c` corpus suite + timeout pin,
+      `8fb2305` the review fix below), merged as `41bced3`. The new baseline is _not_
+      comparable to anything older than `abc217c`.
+- [x] Review follow-up: adoption could take an id that is **still live at another path**, because
+      a rename carries the `FileId` with it — a branch that renamed the path away holds that id
+      under the new name while the sibling still holds it under the old one. Adopting anyway put
+      two live files on one key. Fixed in `8fb2305` (`adoptableFileId` consults a `liveFileIds`
+      map), pinned by `TestLinesMergeSkipsAdoptionOfIdLiveAtAnotherPath`.
 
 ---
 
@@ -264,11 +269,15 @@ path is the correct key).
       one of them is *residual*, so this is not transient noise. The hand-over as written is
       rejected on evidence.
 
-- [ ] Keep `TestLinesMergeSiblingBufferSurvivesSynchronize` — it is a valid failing test for a
-      real defect and should land even if the fix does not.
-- [ ] Decide whether P4 is reachable at all before P5 carries line identity. The buffered
-      deltas cannot be delivered safely while inner-merge _removals_ travel in the same buffer;
-      dedup by path or by `FileId` both leave a residue.
+- [x] Keep `TestLinesMergeSiblingBufferSurvivesSynchronize`. Landed on `main` in `b1f438f`,
+      **skipped** with the reasoning inline, and re-verified against post-P3 `main`: remove the
+      skip and it still fails `expected 10, actual 0`.
+- [x] Decide whether P4 is reachable before P5 carries line identity. **It is not.** The
+      buffered deltas cannot be delivered while inner-merge _removals_ travel in the same
+      buffer, and dedup by path or by `FileId` both leave a residue — the same wall P5 hits,
+      because both need to recognise two branches' removal of one line as one removal. P4 is
+      therefore a dependent of P5, not an independent phase, and dies with it if B1c is closed
+      as won't-fix.
 
 **Closed negative result — do not redo.** Per-_change_ dedup in `foldMergeRemovals` (`seen` is
 marked on the first change, not the first branch, so a file spanning several ownership bands
@@ -358,12 +367,79 @@ a change to what `File` stores, not to how a merge is accounted. That is substan
 than any of the three attempts and **should not be started without first deciding B1c is
 worth it.**
 
+#### What "carrying line identity" would cost — scoped, not built
+
+`File` stores no lines. It is `{tree *rbtree.RBTree; updaters []Updater; Id FileId}`
+(`file.go:29-33`) over a tree of **run boundaries**: `rbtree.Item{Key, Value uint32}`
+(`rbtree.go:38-41`), `Key` = the run's first line index, `Value` = the packed owner (tick in the
+low 14 bits, author above — `line_history.go:926-937`). A 1 000-line file with 20 ownership runs
+costs 21 nodes of 24 B, not 1 000. `Value` has **no spare bit**: 14 tick + 18 author, with three
+author values and one tick value already reserved. The only output is
+`updateTime(curr, prev, delta)` (`file.go:554-571`) — a count, with no position and no identity.
+
+Three mechanisms were considered against that.
+
+**(a) A stable per-line id minted at insertion.** The only one that is not an inference. Mint from
+the counter that already survives `Fork` by pointer (`line_history.go:57`, `525-527`), shift ids
+with the tree, and fold two branches' removals on `(FileId, lineId)`. It is the only option that
+also repairs the mis-credited _positive_ bands, because with real ids `mergeLineValues` could emit
+an honest re-band delta instead of silently overwriting (`file.go:411-436`).
+The price is structural: ids are unique per line, so **runs stop compressing** — the hottest
+structure in the program goes from O(runs) to O(lines) nodes, 20–50× on typical source, ×24-32 B,
+**multiplied by every live branch** because `Allocator.Clone` copies storage eagerly
+(`rbtree.go:91`). It also needs a seventh hibernation buffer and a format-version bump
+(`rbtree.go:190-380`), and it invalidates `mergeLineValues`' index pairing and length-equality
+panic (`file.go:417-420`) — with ids a merge is a set union and the parents need not be equal
+length. Keep the ids **internal** and fold buffered removals at `Merge` (as `foldMergeRemovals`
+already folds by `FileId`, `line_history.go:617-633`); putting the id into
+`core.LineHistoryChange` instead would break the coalescing at `line_history.go:1060-1069`, the
+`linedump` text format and all of `line_loader.go`, for no gain. Deferred folding is legal because
+burndown accumulates order-independently (`burndown.go:989-991` into a sparse map, grouped only at
+`Finalize`) — the same property `pendingChanges` already relies on.
+
+**(b) A per-`(fork, file, band)` removal budget.** Cheap, no `File` change — and it cannot express
+"the same line", only "the siblings between them removed more than the band held". That makes it a
+clamp, and clamps walk straight into the Traps below: suppressing a removal raises the head total.
+Every variant already measured and rejected has this shape.
+
+**(c) Per-branch accumulators — abandon `ForkSamePipelineItem` for the five leaves.** Costs
+memory ×branches on `globalHistory`/`peopleHistories`/`matrix`/`fileHistories`, revives B11's
+hibernation hazard, needs a real `Fork`/`Merge` on all five leaves (`MergeResults` is a different
+operation and cannot be reused — sibling histories share a tick axis and must not be rebased), and
+then **inherits attempt 2 wholesale**: at the merge you still have to decide which sibling's deltas
+are real, and without line identity the only thing left to compare against is the merged tree.
+Same wall, more code.
+
+**Recommendation: do not start B1c.** Only (a) is mechanically sound, and its honest price is a
+20–50× blowup of the hottest structure in the program times the branch fan-out, plus a hibernation
+format change. What is left after the rename fix and P3 is **327 residual file cells and ~4 100
+project cells corpus-wide**, concentrated in one repository, on a metric that now warns rather than
+fails. That is not a trade worth making on the evidence in hand.
+
+**What would settle it, in order** — nothing below should be skipped if B1c is reopened:
+
+1. **Is the double removal actually the residue?** Mirror the shared leaf on
+   `(FileId, PrevTick, PrevAuthor)` and count removals that drive a band below its own live count,
+   on `mekorp-backend` at `--diff-timeout=300000`. If that does not explain most of its 1 748 / 67,
+   P5 is aimed at the wrong mechanism and the rest is moot.
+2. **Is the price real?** Prototype (a) as _ids only, no behaviour change_ — mint, store, shift,
+   assert invariance — and measure peak RSS and wall clock on `mekorp-webclient` (1 097
+   merge-of-merge commits) and `mekorp-backend`. Inside ~2× current, (a) becomes arguable.
+3. **Gate on both metrics, on all 13 repositories.** `negative_cells` _and_ `residual_cells`, plus
+   the project matrix's final-row sum against `git grep -I -c '' HEAD`. Negatives and head totals
+   trade against each other; every variant so far that fixed one broke the other.
+
+Note also that `TestFileMergeShallow` (`file_test.go:639`) and `TestFileMergeDeep` (`:678`) assert
+`status[6] == 10` (lines `674` and `713`) for a band the merged dump holds no line of — confirmed.
+Those assertions encode
+the `mergeLineValues` re-banding defect and would have to change under (a).
+
 ### Traps for whoever picks this up
 
 - **File identity is unresolved one level up.** B1d made `matchingMergeFiles` pair files by
   _path_ across differing `FileId`s, while all accounting keys on `FileId`. Merged-in content
   is therefore counted under both ids. Any reconciliation has to resolve identity first.
-  **This is now traced and has a candidate — see P3.** P5 should not start until P3 lands.
+  **Traced, fixed and merged — see P3.**
 - **Judge on the corpus suite, never on an ad-hoc repository set.** The five-repository set
   used throughout the older measurements (`render-pdf`, `personio-ipoffice-sync`,
   `backend-for-microscope`, `meko-etl-tool`, `mekorp-backend`) misses `mekorp-webclient`,
@@ -384,10 +460,12 @@ Nothing was merged. All three attempts live only in the session scratchpad:
   `HCK_TRACE`.
 - `scratchpad/b1c-mergelinevalues/symmetric.diff` — attempt 3, symmetric version, which
   contains the one-sided version as its first half plus both unit tests.
-- `scratchpad/wt-adopt/` — **P3** candidate v2 (`adoptMergeCreatedFileIds`), a detached
-  worktree based on `77c736b`. The shipping candidate.
-- `scratchpad/wt-pending/` — **P4**: `TestLinesMergeSiblingBufferSurvivesSynchronize` (keep)
-  plus `adoptBranchPendingChanges` and the path-keyed `foldMergeRemovals` dedup (do not ship).
+P3 and P4's test have since landed on `main` and are no longer scratchpad-only:
+
+- **P3** shipped as `internal/linehistory/merge_adoption.go` (PR #6, merged `41bced3`).
+- **P4's repro** shipped skipped in `internal/linehistory/line_history_merge_test.go` (`b1f438f`).
+  Its rejected fix — `adoptBranchPendingChanges` plus the path-keyed `foldMergeRemovals` dedup —
+  was **not** kept; the measurements that killed it are recorded under P4 above.
 
 Worktree builds need `GOFLAGS=-buildvcs=false` **and** `CGO_ENABLED=0` (the render packages
 pull in freetype via matplotlib-go and fail on a missing `ft2build.h`).
@@ -424,12 +502,14 @@ cleanly when unset so `go test ./...` stays green. 13 repositories, ~7 min to se
   worst cell are reported in both directions but ungated, because the wall-clock diff timeout
   can still truncate a run (the binary now warns when it does). Their older run-to-run drift
   was B12 and is fixed, so gating them has become defensible.
-- **Known defect: `analysisFlags` passes no `--diff-timeout`,** so the suite runs at the
-  1 000 ms default (the flag is in **milliseconds** — `internal/plumbing/diff.go`). On
-  `mekorp-webclient` that truncates, and `negative_cells` is _gated_ while depending on
-  machine speed: the same repo measures 1 447 truncated and **1 413** untruncated, and two
-  binaries with identical negativity reported 1 447 vs 1 481. Pin a large timeout and re-seed.
-  Any ad-hoc run must also pass one and grep its stderr for `time budget`.
+- **Fixed in `abc217c`: the suite now pins `--diff-timeout=300000`** and treats truncation as
+  fatal — it matches `not reproducible` on the binary's stderr (hercules exits 0 when it
+  truncates) and fails the repository as `MEASUREMENT INVALID`, refusing to parse, gate or record
+  the numbers. Before that the suite ran at the 1 000 ms default (the flag is in **milliseconds** —
+  `internal/plumbing/diff.go`) and `negative_cells` was gated while depending on machine speed:
+  `mekorp-webclient` measured 1 447 truncated and **1 413** untruncated, and two binaries with
+  identical negativity reported 1 447 vs 1 481. **Ad-hoc runs are still on their own** — pass a
+  large timeout and grep stderr for `time budget` before believing any number.
 - It reads YAML, not `.pb`, because `pb.ToBurndownSparseMatrix` clamps negatives away.
 - `people_interaction` is excluded — see the note under "Current magnitude".
 - `UPDATE_CORPUS_BASELINE=1` / `just update-corpus-baseline [REPOS]` re-seeds, preserving

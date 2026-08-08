@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/cwbudde/hercules"
 	"github.com/cwbudde/hercules/internal/pb"
+	"github.com/cwbudde/hercules/leaves"
 )
 
 const combineTestDevs = "Devs"
@@ -30,6 +32,19 @@ const (
 // combineTestUnmergeable is a registered leaf which does not implement
 // ResultMergeablePipelineItem, so combine can never merge it.
 const combineTestUnmergeable = "FileHistoryAnalysis"
+
+// combineTestCouples is a mergeable leaf whose result is keyed by file path.
+const (
+	combineTestCouples = "Couples"
+	combineTestReadme  = "README.md"
+)
+
+// combineTestHotspotRisk is a mergeable leaf which carries its own configuration, because
+// combine summons it zero-valued. The length is deliberately above leaves.DefaultTopN.
+const (
+	combineTestHotspotRisk = "HotspotRisk"
+	combineTestHotspotTopN = 30
+)
 
 func TestRunCombineValidatesSingleInput(t *testing.T) {
 	input := filepath.Join(t.TempDir(), "invalid.pb")
@@ -198,6 +213,246 @@ func TestRunCombineSkipsUnmergeableAnalyses(t *testing.T) {
 	if _, exists := contents[combineTestDevs]; !exists {
 		t.Fatalf("combined output lacks the mergeable analysis: %v", contents)
 	}
+}
+
+// TestRunCombineQualifiesPathsWithTheirRepository covers the reason combine can rank files at all
+// once several repositories are involved: the same path in two repositories is two files, and
+// nothing but the repository name distinguishes them.
+func TestRunCombineQualifiesPathsWithTheirRepository(t *testing.T) {
+	alpha := writeCombineCouplesInput(t, "alpha", []string{combineTestReadme, "alpha.go"})
+	beta := writeCombineCouplesInput(t, "beta", []string{combineTestReadme, "beta.go"})
+	var output bytes.Buffer
+
+	if err := runCombine(newCombineTestCommand(&output, ""), []string{alpha, beta}); err != nil {
+		t.Fatalf("runCombine() failed: %v", err)
+	}
+
+	index := combinedCouplesIndex(t, &output)
+	want := []string{"alpha:" + combineTestReadme, "alpha:alpha.go", "beta:" + combineTestReadme, "beta:beta.go"}
+	if !slices.Equal(index, want) {
+		t.Fatalf("combined file index = %v, want %v", index, want)
+	}
+}
+
+// TestRunCombineLeavesCombinedInputQualifiedOnce guards against nesting one prefix inside another:
+// a file which is itself the output of combine already carries qualified paths and says so in its
+// header. The single-input case is the one a header heuristic gets wrong - its header names one
+// repository and is indistinguishable from a plain analysis - so both are covered.
+func TestRunCombineLeavesCombinedInputQualifiedOnce(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		sources []string
+		want    []string
+	}{
+		{
+			name:    "two inputs",
+			sources: []string{"alpha", "beta"},
+			want:    []string{"alpha:" + combineTestReadme, "beta:" + combineTestReadme},
+		},
+		{
+			name:    "one input",
+			sources: []string{"alpha"},
+			want:    []string{"alpha:" + combineTestReadme},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			inputs := make([]string, len(test.sources))
+			for index, repository := range test.sources {
+				inputs[index] = writeCombineCouplesInput(t, repository, []string{combineTestReadme})
+			}
+			var combined bytes.Buffer
+			if err := runCombine(newCombineTestCommand(&combined, ""), inputs); err != nil {
+				t.Fatalf("runCombine() failed: %v", err)
+			}
+
+			recombinedInput := filepath.Join(t.TempDir(), "combined.pb")
+			if err := os.WriteFile(recombinedInput, combined.Bytes(), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			var output bytes.Buffer
+			if err := runCombine(newCombineTestCommand(&output, ""), []string{recombinedInput}); err != nil {
+				t.Fatalf("runCombine() failed over a combined input: %v", err)
+			}
+
+			if index := combinedCouplesIndex(t, &output); !slices.Equal(index, test.want) {
+				t.Fatalf("re-combined file index = %v, want %v", index, test.want)
+			}
+		})
+	}
+}
+
+// TestRunCombineQualifiesFilesWrittenBeforeTheHeaderFlag covers the other half: a file which does
+// not carry the flag has unqualified paths whatever its header names, so it must be qualified.
+func TestRunCombineQualifiesFilesWrittenBeforeTheHeaderFlag(t *testing.T) {
+	input := writeCombineCouplesInput(t, "alpha & beta", []string{combineTestReadme})
+	var output bytes.Buffer
+
+	if err := runCombine(newCombineTestCommand(&output, ""), []string{input}); err != nil {
+		t.Fatalf("runCombine() failed: %v", err)
+	}
+
+	index := combinedCouplesIndex(t, &output)
+	want := []string{"alpha & beta:" + combineTestReadme}
+	if !slices.Equal(index, want) {
+		t.Fatalf("file index = %v, want %v", index, want)
+	}
+}
+
+func combinedCouplesIndex(t *testing.T, output *bytes.Buffer) []string {
+	t.Helper()
+
+	payload, exists := unmarshalCombineOutput(t, output)[combineTestCouples]
+	if !exists {
+		t.Fatal("combined output lacks the couples result")
+	}
+	var merged pb.CouplesAnalysisResults
+	if err := proto.Unmarshal(payload, &merged); err != nil {
+		t.Fatalf("merged %s is malformed: %v", combineTestCouples, err)
+	}
+	return merged.GetFileCouples().GetIndex()
+}
+
+// writeCombineCouplesInput serializes a couples result through the leaf itself, so the envelope
+// matches what a real run writes.
+func writeCombineCouplesInput(t *testing.T, repository string, files []string) string {
+	t.Helper()
+
+	result := leaves.CouplesResult{
+		Files:       files,
+		FilesLines:  make([]int, len(files)),
+		FilesMatrix: make([]map[int]int64, len(files)),
+		// One row for the unknown author, which is what a people-less result carries.
+		PeopleMatrix: []map[int]int64{{}},
+	}
+	for index := range files {
+		result.FilesLines[index] = 1
+		result.FilesMatrix[index] = map[int]int64{index: 1}
+	}
+	serialized := bytes.Buffer{}
+	if err := (&leaves.CouplesAnalysis{}).Serialize(result, true, &serialized); err != nil {
+		t.Fatal(err)
+	}
+
+	return writeCombineEnvelope(t, &pb.AnalysisResults{
+		Header: &pb.Metadata{
+			Version:       pb.SchemaVersion,
+			Repository:    repository,
+			Commits:       1,
+			BeginUnixTime: combineTestBeginTime,
+			EndUnixTime:   combineTestBeginTime + 4*24*3600,
+		},
+		Contents: map[string][]byte{combineTestCouples: serialized.Bytes()},
+	})
+}
+
+// TestRunCombineHotspotRiskIsSoundAcrossRepositories covers T1.2 end to end. On the org-wide merge
+// the combined report came out truncated to DefaultTopN whatever the runs were configured with,
+// with README.md present twice and every RiskScore exactly 1.0.
+func TestRunCombineHotspotRiskIsSoundAcrossRepositories(t *testing.T) {
+	const topN = combineTestHotspotTopN
+
+	inputs := []string{
+		writeCombineHotspotInput(t, "alpha", 1),
+		writeCombineHotspotInput(t, "beta", 100),
+	}
+	var output bytes.Buffer
+
+	if err := runCombine(newCombineTestCommand(&output, ""), inputs); err != nil {
+		t.Fatalf("runCombine() failed: %v", err)
+	}
+
+	merged := combinedHotspotRisk(t, &output)
+	if got := merged.GetTopN(); got != topN {
+		t.Fatalf("merged top_n = %d, want %d", got, topN)
+	}
+
+	files := merged.GetFiles()
+	if len(files) <= leaves.DefaultTopN {
+		t.Fatalf("merged file count = %d, want more than DefaultTopN (%d): "+
+			"the configured length was not honoured", len(files), leaves.DefaultTopN)
+	}
+
+	seen := map[string]bool{}
+	distinctScores := map[float64]bool{}
+	for _, file := range files {
+		if seen[file.GetPath()] {
+			t.Fatalf("path %q appears twice in the merged report", file.GetPath())
+		}
+		seen[file.GetPath()] = true
+		distinctScores[file.GetRiskScore()] = true
+
+		if !strings.HasPrefix(file.GetPath(), "alpha:") &&
+			!strings.HasPrefix(file.GetPath(), "beta:") {
+			t.Fatalf("path %q is not qualified with its repository", file.GetPath())
+		}
+	}
+	if len(distinctScores) < 2 {
+		t.Fatalf("every merged RiskScore is %v: the two runs were not rescaled onto one scale",
+			files[0].GetRiskScore())
+	}
+
+	// beta's files are a hundred times larger than alpha's, so after rescaling they must lead.
+	if !strings.HasPrefix(files[0].GetPath(), "beta:") {
+		t.Fatalf("top merged file is %q, want one of beta's", files[0].GetPath())
+	}
+}
+
+func combinedHotspotRisk(t *testing.T, output *bytes.Buffer) *pb.HotspotRiskResults {
+	t.Helper()
+
+	payload, exists := unmarshalCombineOutput(t, output)[combineTestHotspotRisk]
+	if !exists {
+		t.Fatal("combined output lacks the hotspot risk result")
+	}
+	merged := &pb.HotspotRiskResults{}
+	if err := proto.Unmarshal(payload, merged); err != nil {
+		t.Fatalf("merged %s is malformed: %v", combineTestHotspotRisk, err)
+	}
+	return merged
+}
+
+// writeCombineHotspotInput serializes a hotspot risk result through the leaf itself, so the
+// envelope matches what a real run writes. scale multiplies the raw factors, which is how the
+// two repositories are given incomparable per-run maxima.
+func writeCombineHotspotInput(t *testing.T, repository string, scale int) string {
+	t.Helper()
+
+	result := leaves.HotspotRiskResult{
+		WindowDays: 90,
+		TopN:       combineTestHotspotTopN,
+		Weights: leaves.HotspotRiskWeights{
+			Size: 1, Churn: 1, Coupling: 1, Ownership: 1,
+		},
+	}
+	// Every repository contributes a README.md, which is what collapsed the org-wide report.
+	paths := make([]string, 0, combineTestHotspotTopN)
+	paths = append(paths, combineTestReadme)
+	for i := range combineTestHotspotTopN - 1 {
+		paths = append(paths, fmt.Sprintf("file%02d.go", i))
+	}
+	for index, path := range paths {
+		result.Files = append(result.Files, leaves.FileRisk{
+			Path:  path,
+			Size:  (len(paths) - index) * scale,
+			Churn: (len(paths) - index) * scale,
+		})
+	}
+
+	serialized := bytes.Buffer{}
+	if err := (&leaves.HotspotRiskAnalysis{}).Serialize(result, true, &serialized); err != nil {
+		t.Fatal(err)
+	}
+
+	return writeCombineEnvelope(t, &pb.AnalysisResults{
+		Header: &pb.Metadata{
+			Version:       pb.SchemaVersion,
+			Repository:    repository,
+			Commits:       1,
+			BeginUnixTime: combineTestBeginTime,
+			EndUnixTime:   combineTestBeginTime + 4*24*3600,
+		},
+		Contents: map[string][]byte{combineTestHotspotRisk: serialized.Bytes()},
+	})
 }
 
 // TestRunCombineRejectsUnmergeableOnly keeps the skip from swallowing an explicit request: naming

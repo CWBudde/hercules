@@ -55,9 +55,44 @@ type fileRiskMetrics struct {
 }
 
 // HotspotRiskResult is returned by Finalize().
+//
+// TopN and Weights record the configuration the run was produced with. They exist for the
+// benefit of MergeResults: `hercules combine` summons the analysis through
+// core.Registry.Summon (reflect.New) and calls neither Configure nor Initialize, so the
+// receiver is zero-valued there and the merge can only read what the results carry. This
+// mirrors how BusFactorResult carries its tick size and threshold.
 type HotspotRiskResult struct {
-	Files      []FileRisk // Top-N risky files, sorted by score descending
-	WindowDays int        // Time window used for churn calculation
+	Files      []FileRisk         // Top-N risky files, sorted by score descending
+	WindowDays int                // Time window used for churn calculation
+	TopN       int                // Number of files the run was configured to report
+	Weights    HotspotRiskWeights // Factor weights the scores were computed with
+}
+
+// HotspotRiskWeights holds the four factor weights of a run.
+//
+// A zero value means "unset" rather than "every factor disabled": results written before
+// the weights were serialized decode this way, and a run with all four weights at zero
+// produces nothing but zero scores anyway. effectiveWeights applies the defaults.
+type HotspotRiskWeights struct {
+	Size      float32
+	Churn     float32
+	Coupling  float32
+	Ownership float32
+}
+
+// effectiveWeights returns the weights to score with, substituting DefaultWeight for a
+// wholly unset value. See HotspotRiskWeights for why zero is read as unset.
+func (weights HotspotRiskWeights) effectiveWeights() HotspotRiskWeights {
+	if weights == (HotspotRiskWeights{}) {
+		return HotspotRiskWeights{
+			Size:      DefaultWeight,
+			Churn:     DefaultWeight,
+			Coupling:  DefaultWeight,
+			Ownership: DefaultWeight,
+		}
+	}
+
+	return weights
 }
 
 // FileRisk contains the risk assessment for a single file.
@@ -102,6 +137,7 @@ var (
 	errHotspotRiskWindow         = errors.New("hotspot risk window must be positive")
 	errHotspotRiskWindowTooLarge = errors.New("hotspot risk window is too large")
 	errHotspotRiskWindowMismatch = errors.New("mismatching hotspot risk windows")
+	errHotspotRiskWeightMismatch = errors.New("mismatching hotspot risk weights")
 )
 
 // Name of this PipelineItem.
@@ -414,13 +450,13 @@ func (hra *HotspotRiskAnalysis) Consume(deps map[string]any) (map[string]any, er
 
 func (hra *HotspotRiskAnalysis) Finalize() any {
 	if hra.lastCommit == nil {
-		return HotspotRiskResult{Files: []FileRisk{}, WindowDays: hra.WindowDays}
+		return hra.emptyResult()
 	}
 
 	tree, err := hra.lastCommit.Tree()
 	if err != nil {
 		hra.l.Errorf("Failed to get tree: %v", err)
-		return HotspotRiskResult{Files: []FileRisk{}, WindowDays: hra.WindowDays}
+		return hra.emptyResult()
 	}
 
 	var risks []FileRisk
@@ -437,7 +473,7 @@ func (hra *HotspotRiskAnalysis) Finalize() any {
 		hra.l.Errorf("Failed to iterate files: %v", err)
 	}
 
-	hra.normalizeAndScore(risks)
+	normalizeAndScore(risks, hra.weights())
 	sortFileRisks(risks)
 
 	topN := hra.effectiveTopN()
@@ -445,10 +481,10 @@ func (hra *HotspotRiskAnalysis) Finalize() any {
 		risks = risks[:topN]
 	}
 
-	return HotspotRiskResult{
-		Files:      risks,
-		WindowDays: hra.WindowDays,
-	}
+	result := hra.emptyResult()
+	result.Files = risks
+
+	return result
 }
 
 func sortFileRisks(risks []FileRisk) {
@@ -548,7 +584,14 @@ func (hra *HotspotRiskAnalysis) Deserialize(pbmessage []byte) (any, error) {
 
 	result := HotspotRiskResult{
 		WindowDays: int(message.GetWindowDays()),
-		Files:      make([]FileRisk, len(message.GetFiles())),
+		TopN:       int(message.GetTopN()),
+		Weights: HotspotRiskWeights{
+			Size:      message.GetWeightSize(),
+			Churn:     message.GetWeightChurn(),
+			Coupling:  message.GetWeightCoupling(),
+			Ownership: message.GetWeightOwnership(),
+		},
+		Files: make([]FileRisk, len(message.GetFiles())),
 	}
 
 	for i, file := range message.GetFiles() {
@@ -569,21 +612,48 @@ func (hra *HotspotRiskAnalysis) Deserialize(pbmessage []byte) (any, error) {
 	return result, nil
 }
 
-// MergeResults combines two HotspotRisk results by concatenating the two file lists and
-// re-ranking them.
+// QualifyPaths prefixes every FileRisk.Path with the repository it was observed in. `hercules
+// combine` applies it to each input before merging, so that a path in one repository cannot collide
+// with the same path in another.
 //
-// Two properties are deliberately NOT implemented here:
+// It is what makes MergeResults' deduplication safe: once the paths are qualified, two equal paths
+// do denote the same file.
+func (hra *HotspotRiskAnalysis) QualifyPaths(result any, repository string) any {
+	riskResult, err := requiredResult[HotspotRiskResult](result)
+	if err != nil {
+		return fmt.Errorf("qualify hotspot risk paths: %w", err)
+	}
+
+	files := make([]FileRisk, len(riskResult.Files))
+	copy(files, riskResult.Files)
+
+	for index := range files {
+		files[index].Path = core.QualifyRepositoryPath(repository, files[index].Path)
+	}
+
+	riskResult.Files = files
+
+	return riskResult
+}
+
+// MergeResults combines two HotspotRisk results into one globally comparable ranking:
+// concatenate, rescale every factor against the union's maxima, deduplicate by path, rank,
+// and only then truncate. That order is load-bearing - see the comment at the rescaling.
 //
-//   - No deduplication by Path. The same path in two different repositories denotes two
-//     different files, and FileRisk carries no repository qualifier, so collapsing equal
-//     paths would silently fuse unrelated files.
-//   - No cross-run rescaling. normalizeAndScore normalizes each factor against the maxima
-//     of its own run, so scores from two runs are not on a common scale and the merged
-//     ranking only approximates a global one. Fixing that requires carrying the raw
-//     normalization bounds in the FileRisk schema and is a separate change.
+// It reads no receiver state. `hercules combine` summons the analysis through
+// core.Registry.Summon and calls neither Configure nor Initialize, so everything it needs -
+// the churn window, the report length and the factor weights - comes from the results
+// themselves. Runs whose windows or weights disagree are rejected outright, since their
+// numbers are not comparable at all; the same treatment BusFactorAnalysis gives a
+// mismatching threshold.
 //
-// Runs with different churn windows are rejected outright, since their Churn numbers are
-// not comparable at all.
+// Two limits of the rescaling, both accepted:
+//
+//   - Each input was already truncated to its own TopN in Finalize, so the maxima are those
+//     of the surviving files, not of every file that ever existed. Closer to a global scale
+//     than per-run maxima, but not one.
+//   - combine reduces pairwise and truncates at every step, so which files survive can
+//     depend on merge order. Pre-existing, and not made worse here.
 func (hra *HotspotRiskAnalysis) MergeResults(
 	firstResult, secondResult any, _, _ *core.CommonAnalysisResult,
 ) any {
@@ -602,11 +672,23 @@ func (hra *HotspotRiskAnalysis) MergeResults(
 			errHotspotRiskWindowMismatch, cr1.WindowDays, cr2.WindowDays)
 	}
 
-	allFiles := append([]FileRisk(nil), cr1.Files...)
-	allFiles = append(allFiles, cr2.Files...)
+	weights, err := mergedHotspotRiskWeights(cr1.Weights, cr2.Weights)
+	if err != nil {
+		return err
+	}
+
+	allFiles := append(append([]FileRisk(nil), cr1.Files...), cr2.Files...)
+
+	// Rescale before deduplicating, not after: the incoming scores were normalized against
+	// each run's own maxima, so comparing them to pick a winner would compare exactly the
+	// incomparable numbers this rescaling exists to remove. Duplicates do not move the
+	// maxima, so doing it in this order costs nothing.
+	normalizeAndScore(allFiles, weights)
+
+	allFiles = dedupFileRisks(allFiles)
 	sortFileRisks(allFiles)
 
-	topN := hra.effectiveTopN()
+	topN := mergedTopN(cr1.TopN, cr2.TopN)
 	if len(allFiles) > topN {
 		allFiles = allFiles[:topN]
 	}
@@ -614,7 +696,87 @@ func (hra *HotspotRiskAnalysis) MergeResults(
 	return HotspotRiskResult{
 		Files:      allFiles,
 		WindowDays: cr1.WindowDays,
+		TopN:       topN,
+		Weights:    weights,
 	}
+}
+
+// emptyResult is the result shape every Finalize return shares: no files, but the run's
+// configuration, which MergeResults needs even from a repository that produced nothing.
+func (hra *HotspotRiskAnalysis) emptyResult() HotspotRiskResult {
+	return HotspotRiskResult{
+		Files:      []FileRisk{},
+		WindowDays: hra.WindowDays,
+		TopN:       hra.effectiveTopN(),
+		Weights:    hra.weights(),
+	}
+}
+
+// weights collects the configured factor weights into the value the result carries.
+func (hra *HotspotRiskAnalysis) weights() HotspotRiskWeights {
+	return HotspotRiskWeights{
+		Size:      hra.WeightSize,
+		Churn:     hra.WeightChurn,
+		Coupling:  hra.WeightCoupling,
+		Ownership: hra.WeightOwnership,
+	}
+}
+
+// mergedHotspotRiskWeights reconciles the two runs' weights. An unset side - a result
+// written before the weights were serialized - adopts the other's rather than erroring,
+// which is the only way results from two hercules versions can be combined at all.
+func mergedHotspotRiskWeights(first, second HotspotRiskWeights) (HotspotRiskWeights, error) {
+	switch {
+	case first == (HotspotRiskWeights{}):
+		return second.effectiveWeights(), nil
+	case second == (HotspotRiskWeights{}):
+		return first.effectiveWeights(), nil
+	case first != second:
+		return HotspotRiskWeights{}, fmt.Errorf("%w (r1: %+v, r2: %+v) received",
+			errHotspotRiskWeightMismatch, first, second)
+	}
+
+	return first.effectiveWeights(), nil
+}
+
+// mergedTopN is the longer of the two runs' report lengths, so that combining a run
+// configured with --hotspot-risk-top=200 does not silently fall back to DefaultTopN.
+// A zero on both sides means neither result carries the setting - see HotspotRiskResult.
+func mergedTopN(first, second int) int {
+	topN := max(first, second)
+	if topN <= 0 {
+		return DefaultTopN
+	}
+
+	return topN
+}
+
+// dedupFileRisks collapses equal paths onto the higher-scoring entry, in place. Paths are
+// qualified with their repository before the merge (see QualifyPaths), so an equal path
+// denotes the same file; without qualification - an input whose header names no repository,
+// or one written before the qualified_paths flag - this is what keeps the same path from
+// appearing as two rows.
+//
+// It must run after normalizeAndScore, so that the scores it compares are on one scale.
+func dedupFileRisks(risks []FileRisk) []FileRisk {
+	deduped := risks[:0]
+	positions := make(map[string]int, len(risks))
+
+	for _, risk := range risks {
+		position, seen := positions[risk.Path]
+		if !seen {
+			positions[risk.Path] = len(deduped)
+			deduped = append(deduped, risk)
+
+			continue
+		}
+
+		if risk.RiskScore > deduped[position].RiskScore {
+			deduped[position] = risk
+		}
+	}
+
+	return deduped
 }
 
 func (hra *HotspotRiskAnalysis) updateFileRisk(
@@ -792,7 +954,12 @@ func (hra *HotspotRiskAnalysis) fileRisk(file *object.File, authorLines map[int]
 }
 
 // normalizeAndScore normalizes all factors to [0,1] and calculates risk scores.
-func (hra *HotspotRiskAnalysis) normalizeAndScore(risks []FileRisk) {
+//
+// It derives everything from the raw Size/Churn/CouplingDegree/OwnershipGini fields, so it
+// is idempotent and may be applied again to an already-scored set - which is what lets
+// MergeResults rescale two runs onto a common scale. The weights are a parameter rather
+// than receiver state for the same reason: the merge runs on a zero-valued receiver.
+func normalizeAndScore(risks []FileRisk, weights HotspotRiskWeights) {
 	if len(risks) == 0 {
 		return
 	}
@@ -818,17 +985,17 @@ func (hra *HotspotRiskAnalysis) normalizeAndScore(risks []FileRisk) {
 		// factors. A zero weight removes the factor from both numerator and
 		// denominator.
 		factors := [...]float64{sizeNorm, churnNorm, couplingNorm, ownershipNorm}
-		weights := [...]float64{
-			float64(hra.WeightSize),
-			float64(hra.WeightChurn),
-			float64(hra.WeightCoupling),
-			float64(hra.WeightOwnership),
+		factorWeights := [...]float64{
+			float64(weights.Size),
+			float64(weights.Churn),
+			float64(weights.Coupling),
+			float64(weights.Ownership),
 		}
 
 		var weightedScore, enabledWeight float64
 		for index, factor := range factors {
-			weightedScore += weights[index] * factor
-			enabledWeight += weights[index]
+			weightedScore += factorWeights[index] * factor
+			enabledWeight += factorWeights[index]
 		}
 
 		risks[riskIndex].RiskScore = 0
@@ -868,6 +1035,12 @@ func normalizedLinearFactor(value int, maximum float64) float64 {
 
 func (hra *HotspotRiskAnalysis) serializeText(result *HotspotRiskResult, writer io.Writer) {
 	_, _ = fmt.Fprintln(writer, "  window_days:", result.WindowDays)
+	_, _ = fmt.Fprintln(writer, "  top_n:", result.TopN)
+	_, _ = fmt.Fprintln(writer, "  weights:")
+	_, _ = fmt.Fprintf(writer, "    size: %.6f\n", result.Weights.Size)
+	_, _ = fmt.Fprintf(writer, "    churn: %.6f\n", result.Weights.Churn)
+	_, _ = fmt.Fprintf(writer, "    coupling: %.6f\n", result.Weights.Coupling)
+	_, _ = fmt.Fprintf(writer, "    ownership: %.6f\n", result.Weights.Ownership)
 	_, _ = fmt.Fprintln(writer, "  files:")
 
 	for _, file := range result.Files {
@@ -891,38 +1064,25 @@ func (hra *HotspotRiskAnalysis) serializeBinary(result *HotspotRiskResult, write
 		return err
 	}
 
+	topN, err := intToProtoInt32(result.TopN, "hotspot-risk top N")
+	if err != nil {
+		return err
+	}
+
 	message := pb.HotspotRiskResults{
-		WindowDays: windowDays,
-		Files:      make([]*pb.FileRisk, len(result.Files)),
+		WindowDays:      windowDays,
+		TopN:            topN,
+		WeightSize:      result.Weights.Size,
+		WeightChurn:     result.Weights.Churn,
+		WeightCoupling:  result.Weights.Coupling,
+		WeightOwnership: result.Weights.Ownership,
+		Files:           make([]*pb.FileRisk, len(result.Files)),
 	}
 
 	for fileIndex, file := range result.Files {
-		size, err := intToProtoInt32(file.Size, "hotspot-risk file size")
+		message.Files[fileIndex], err = fileRiskToProto(file)
 		if err != nil {
 			return err
-		}
-
-		churn, err := intToProtoInt32(file.Churn, "hotspot-risk file churn")
-		if err != nil {
-			return err
-		}
-
-		couplingDegree, err := intToProtoInt32(file.CouplingDegree, "hotspot-risk coupling degree")
-		if err != nil {
-			return err
-		}
-
-		message.Files[fileIndex] = &pb.FileRisk{
-			Path:                file.Path,
-			RiskScore:           file.RiskScore,
-			Size_:               size,
-			Churn:               churn,
-			CouplingDegree:      couplingDegree,
-			OwnershipGini:       file.OwnershipGini,
-			SizeNormalized:      file.SizeNormalized,
-			ChurnNormalized:     file.ChurnNormalized,
-			CouplingNormalized:  file.CouplingNormalized,
-			OwnershipNormalized: file.OwnershipNormalized,
 		}
 	}
 
@@ -937,6 +1097,36 @@ func (hra *HotspotRiskAnalysis) serializeBinary(result *HotspotRiskResult, write
 	}
 
 	return nil
+}
+
+func fileRiskToProto(file FileRisk) (*pb.FileRisk, error) {
+	size, err := intToProtoInt32(file.Size, "hotspot-risk file size")
+	if err != nil {
+		return nil, err
+	}
+
+	churn, err := intToProtoInt32(file.Churn, "hotspot-risk file churn")
+	if err != nil {
+		return nil, err
+	}
+
+	couplingDegree, err := intToProtoInt32(file.CouplingDegree, "hotspot-risk coupling degree")
+	if err != nil {
+		return nil, err
+	}
+
+	return &pb.FileRisk{
+		Path:                file.Path,
+		RiskScore:           file.RiskScore,
+		Size_:               size,
+		Churn:               churn,
+		CouplingDegree:      couplingDegree,
+		OwnershipGini:       file.OwnershipGini,
+		SizeNormalized:      file.SizeNormalized,
+		ChurnNormalized:     file.ChurnNormalized,
+		CouplingNormalized:  file.CouplingNormalized,
+		OwnershipNormalized: file.OwnershipNormalized,
+	}, nil
 }
 
 var _ = core.RegisterPipelineItem(&HotspotRiskAnalysis{})

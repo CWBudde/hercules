@@ -31,6 +31,9 @@ var combineCmd = &cobra.Command{
 	RunE:  runCombine,
 }
 
+// repositorySeparator joins the repository names of a combined result in its header.
+const repositorySeparator = " & "
+
 type combineAccumulator struct {
 	repositories []string
 	errors       map[string][]string
@@ -47,6 +50,9 @@ type loadedMessage struct {
 	results    map[string]any
 	metadata   *hercules.CommonAnalysisResult
 	repository string
+	// qualifiedPaths reports the header flag of the same name: the file's path keys already name
+	// the repository they belong to, so they must not be qualified a second time.
+	qualifiedPaths bool
 	// failures fail the whole run: the file could not be read or parsed, or an analysis it does
 	// carry could not be deserialized.
 	failures []string
@@ -151,6 +157,9 @@ func (accumulator *combineAccumulator) mergeFile(fileName, only string) {
 	}
 
 	initializeBurndownRepository(loaded.results, loaded.repository)
+	if !loaded.qualifiedPaths {
+		messages = append(messages, qualifyRepositoryPaths(loaded.results, loaded.repository)...)
+	}
 	merged, mergeErrors := mergeResults(
 		accumulator.results, accumulator.metadata, loaded.results, loaded.metadata, only,
 	)
@@ -189,12 +198,53 @@ func initializeBurndownRepository(results map[string]any, repository string) {
 	results["Burndown"] = burndownResult
 }
 
+// qualifyRepositoryPaths rewrites the path keys of every loaded result which carries them, so that
+// the same path in two repositories stays two paths through the merge. Burndown gets the same
+// treatment through its own repository axis (see initializeBurndownRepository); the analyses here
+// have no such axis and would otherwise fuse their keys.
+//
+// Whether a file has been through this already is read off its header flag, not guessed from the
+// repository name: the output of combine carries qualified keys whether it was built from one input
+// or from thirty, and files written before the flag existed carry none whatever their header says.
+//
+// A file whose header names no repository keeps its bare keys - there is nothing to qualify them
+// with - and stays exposed to the collision this prevents.
+func qualifyRepositoryPaths(results map[string]any, repository string) []string {
+	if repository == "" {
+		return nil
+	}
+
+	var failures []string
+
+	for key, value := range results {
+		summoned := hercules.Registry.Summon(key)
+		if len(summoned) == 0 {
+			continue
+		}
+		item, ok := summoned[0].(hercules.RepositoryQualifiablePipelineItem)
+		if !ok {
+			continue
+		}
+		qualified := item.QualifyPaths(value, repository)
+		if err, isErr := qualified.(error); isErr {
+			failures = append(failures, "could not qualify "+key+" paths: "+err.Error())
+			continue
+		}
+		results[key] = qualified
+	}
+	sort.Strings(failures)
+	return failures
+}
+
 func writeCombinedResult(destination io.Writer, accumulator *combineAccumulator) error {
 	message := pb.AnalysisResults{
 		Header: &pb.Metadata{
 			Version:    pb.SchemaVersion,
 			Hash:       hercules.BinaryGitHash,
-			Repository: strings.Join(accumulator.repositories, " & "),
+			Repository: strings.Join(accumulator.repositories, repositorySeparator),
+			// Every merged input went through qualifyRepositoryPaths, so combining this output
+			// again must not prefix its keys a second time.
+			QualifiedPaths: true,
 		},
 		Contents: map[string][]byte{},
 	}
@@ -241,6 +291,7 @@ func loadMessage(fileName, only string) loadedMessage {
 	loaded := deserializeAnalysisContents(fileName, only, message.GetContents())
 	loaded.metadata = hercules.MetadataToCommonAnalysisResult(message.GetHeader())
 	loaded.repository = message.GetHeader().GetRepository()
+	loaded.qualifiedPaths = message.GetHeader().GetQualifiedPaths()
 	return loaded
 }
 

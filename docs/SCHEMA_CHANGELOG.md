@@ -16,7 +16,24 @@ Each entry should include:
 
 ## Unreleased
 
-No changes yet.
+- PB and YAML: `HotspotRiskResults` gains `top_n` (field 3, int32) and `weight_size`,
+  `weight_churn`, `weight_coupling`, `weight_ownership` (fields 4-7, float); the YAML output
+  gains the matching `top_n` and `weights` keys. They record the configuration the run was
+  produced with, because `hercules combine` summons the analysis zero-valued and could not
+  otherwise honour `--hotspot-risk-top` or rescale the merged scores. Combining runs whose
+  weights disagree is now an error, mirroring the existing churn-window check.
+  Compatibility: compatible — all-zero is read as "unset" and falls back to the defaults,
+  which is exactly what every file written so far carries. No `SchemaVersion` bump.
+  User action: none; older readers ignore the fields. Note that combined Hotspot Risk
+  rankings change, because the merge now rescales both runs onto one scale and deduplicates
+  equal paths instead of concatenating.
+- PB: `Metadata` gains `qualified_paths` (field 9, bool). It records whether the path keys inside
+  the contents already name the repository they belong to (`repository:path`), which is what
+  `hercules combine` now writes so that the same path in two repositories does not fuse into one
+  key. Combine sets it on its output and skips qualification for inputs which carry it.
+  Compatibility: compatible — the field is optional and absent means "not qualified", which is
+  exactly what every file written so far is. No `SchemaVersion` bump. User action: none; older
+  readers ignore the field.
 
 ## 0.2.0 - 2026-07-28
 

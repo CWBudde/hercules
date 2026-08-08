@@ -56,6 +56,19 @@ type LeafPipelineItem = core.LeafPipelineItem
 // ResultMergeablePipelineItem specifies the methods to combine several analysis results together.
 type ResultMergeablePipelineItem = core.ResultMergeablePipelineItem
 
+// RepositoryQualifiablePipelineItem produces results keyed by repository-local paths.
+type RepositoryQualifiablePipelineItem = core.RepositoryQualifiablePipelineItem
+
+// RepositoryPathSeparator separates the repository from the path in a qualified path key.
+const RepositoryPathSeparator = core.RepositoryPathSeparator
+
+// QualifyRepositoryPath prefixes a repository-local path with the repository which contains it.
+// Implementations of RepositoryQualifiablePipelineItem must build their keys with it rather than
+// concatenating the separator themselves.
+func QualifyRepositoryPath(repository, path string) string {
+	return core.QualifyRepositoryPath(repository, path)
+}
+
 // CommonAnalysisResult holds the information which is always extracted at Pipeline.Run().
 type CommonAnalysisResult = core.CommonAnalysisResult
 

@@ -341,6 +341,25 @@ func (bf *BusFactorAnalysis) Deserialize(pbmessage []byte) (any, error) {
 	return result, nil
 }
 
+// QualifyPaths prefixes every subsystem - a directory prefix - with the repository it was observed
+// in. Without it the worst-case max below compares "cmd" in one repository against "cmd" in another
+// and reports a single bus factor for both.
+func (bf *BusFactorAnalysis) QualifyPaths(result any, repository string) any {
+	busFactorResult, err := requiredResult[BusFactorResult](result)
+	if err != nil {
+		return fmt.Errorf("qualify bus factor paths: %w", err)
+	}
+
+	subsystems := make(map[string]int, len(busFactorResult.SubsystemBusFactor))
+	for directory, factor := range busFactorResult.SubsystemBusFactor {
+		subsystems[core.QualifyRepositoryPath(repository, directory)] = factor
+	}
+
+	busFactorResult.SubsystemBusFactor = subsystems
+
+	return busFactorResult
+}
+
 // MergeResults combines two BusFactorResult-s together.
 //
 // Ownership is additive across repositories, so the per-tick distributions are summed per identity

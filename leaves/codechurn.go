@@ -409,6 +409,35 @@ func (analyser *CodeChurnAnalysis) Deserialize(message []byte) (any, error) {
 	return result, nil
 }
 
+// QualifyPaths prefixes every per-author file key with the repository it was observed in, so that
+// mergeCodeChurnAuthors does not add up two repositories' files of the same name.
+func (analyser *CodeChurnAnalysis) QualifyPaths(result any, repository string) any {
+	churnResult, err := requiredResult[CodeChurnResult](result)
+	if err != nil {
+		return fmt.Errorf("qualify code churn paths: %w", err)
+	}
+
+	authors := make([]CodeChurnAuthorResult, len(churnResult.Authors))
+	for index, author := range churnResult.Authors {
+		if author.Files == nil {
+			authors[index] = author
+
+			continue
+		}
+
+		files := make(map[string]CodeChurnFileResult, len(author.Files))
+		for path, file := range author.Files {
+			files[core.QualifyRepositoryPath(repository, path)] = file
+		}
+
+		authors[index] = CodeChurnAuthorResult{Files: files}
+	}
+
+	churnResult.Authors = authors
+
+	return churnResult
+}
+
 // MergeResults combines two BurndownResult-s together.
 func (analyser *CodeChurnAnalysis) MergeResults(
 	result1, result2 any, common1, common2 *core.CommonAnalysisResult,

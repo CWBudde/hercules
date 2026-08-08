@@ -29,6 +29,10 @@ message Metadata {
     int64 run_time = 7;
     // time taken by each pipeline item in seconds
     map<string, double> run_time_per_item = 8;
+    // whether the path keys inside the contents already name the repository they
+    // belong to ("repository:path"). Set by `hercules combine`; a single-repository
+    // analysis leaves it false because its paths need no qualifier.
+    bool qualified_paths = 9;
 }
 
 message BurndownSparseMatrixRow {
@@ -400,10 +404,20 @@ message FileRisk {
     double ownership_normalized = 10;
 }
 
-// Hotspot risk analysis results
+// Hotspot risk analysis results.
+//
+// top_n and the four weights record the configuration the run was produced with, because
+// `hercules combine` summons the analysis zero-valued and cannot otherwise know it. Files
+// written before these fields existed decode as all-zero, which is read as "unset" and
+// falls back to the defaults - not as "configured to zero".
 message HotspotRiskResults {
     int32 window_days = 1;
     repeated FileRisk files = 2;
+    int32 top_n = 3;
+    float weight_size = 4;
+    float weight_churn = 5;
+    float weight_coupling = 6;
+    float weight_ownership = 7;
 }
 
 message RefactoringProxyResults {

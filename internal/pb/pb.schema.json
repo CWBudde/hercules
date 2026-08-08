@@ -667,6 +667,31 @@
           "name": "files",
           "type": "FileRisk",
           "label": "repeated"
+        },
+        {
+          "number": 3,
+          "name": "top_n",
+          "type": "int32"
+        },
+        {
+          "number": 4,
+          "name": "weight_size",
+          "type": "float"
+        },
+        {
+          "number": 5,
+          "name": "weight_churn",
+          "type": "float"
+        },
+        {
+          "number": 6,
+          "name": "weight_coupling",
+          "type": "float"
+        },
+        {
+          "number": 7,
+          "name": "weight_ownership",
+          "type": "float"
         }
       ]
     },
@@ -855,6 +880,11 @@
           "type": "map",
           "key": "string",
           "value": "double"
+        },
+        {
+          "number": 9,
+          "name": "qualified_paths",
+          "type": "bool"
         }
       ]
     },

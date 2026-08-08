@@ -28,6 +28,16 @@ var rejectedTreePaths = []struct {
 	{"embedded newline", "service-frps-control\nfrps-vhost.yaml"},
 }
 
+// The two rejected-path error shapes go-git actually produces, as seen in the wild.
+// isRejectedTreePath matches on the message, so these stand in for errors go-git
+// constructs rather than any this package defines.
+var (
+	errGoGitInvalidPath     = errors.New(`to: invalid path: "\\"`)
+	errGoGitControlCharPath = errors.New(
+		`invalid path "service-frps-control\nfrps-vhost.yaml": contains control character`,
+	)
+)
+
 // The changes still have to come out: dropping them leaves the items downstream
 // of TreeDiff describing files that have since moved on, and LineHistory fails
 // the run on the mismatch a few commits later.
@@ -36,7 +46,8 @@ func TestTreeDiffProducesChangesForTreesGoGitWillNotWalk(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			repository := newMemoryRepository(t)
 			blob := storeBlob(t, repository, "package main\n")
-			treeHash := storeTree(t, repository,
+			treeHash := storeTree(
+				t, repository,
 				object.TreeEntry{Name: testCase.path, Mode: filemode.Regular, Hash: blob},
 				object.TreeEntry{Name: "ordinary.go", Mode: filemode.Regular, Hash: blob},
 			)
@@ -83,19 +94,23 @@ func TestDiffTreesDirectlyMatchesGoGit(t *testing.T) {
 	before := storeBlob(t, repository, "before\n")
 	after := storeBlob(t, repository, "after\n")
 
-	nestedBefore := storeTree(t, repository,
+	nestedBefore := storeTree(
+		t, repository,
 		object.TreeEntry{Name: "kept.go", Mode: filemode.Regular, Hash: before},
 		object.TreeEntry{Name: "removed.go", Mode: filemode.Regular, Hash: before},
 	)
-	nestedAfter := storeTree(t, repository,
+	nestedAfter := storeTree(
+		t, repository,
 		object.TreeEntry{Name: "kept.go", Mode: filemode.Regular, Hash: before},
 	)
 
-	fromHash := storeTree(t, repository,
+	fromHash := storeTree(
+		t, repository,
 		object.TreeEntry{Name: "changed.go", Mode: filemode.Regular, Hash: before},
 		object.TreeEntry{Name: "nested", Mode: filemode.Dir, Hash: nestedBefore},
 	)
-	toHash := storeTree(t, repository,
+	toHash := storeTree(
+		t, repository,
 		object.TreeEntry{Name: "added.go", Mode: filemode.Regular, Hash: after},
 		object.TreeEntry{Name: "changed.go", Mode: filemode.Regular, Hash: after},
 		object.TreeEntry{Name: "nested", Mode: filemode.Dir, Hash: nestedAfter},
@@ -142,9 +157,8 @@ func TestIsRejectedTreePath(t *testing.T) {
 	assert.False(t, isRejectedTreePath(object.ErrEntryNotFound))
 
 	// The two shapes go-git actually produces, as seen in the wild.
-	assert.True(t, isRejectedTreePath(errors.New(`to: invalid path: "\\"`)))
-	assert.True(t, isRejectedTreePath(
-		errors.New(`invalid path "service-frps-control\nfrps-vhost.yaml": contains control character`)))
+	assert.True(t, isRejectedTreePath(errGoGitInvalidPath))
+	assert.True(t, isRejectedTreePath(errGoGitControlCharPath))
 }
 
 // describeChanges reduces changes to what TreeDiff's consumers actually read off

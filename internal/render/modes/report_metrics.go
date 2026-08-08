@@ -1297,6 +1297,11 @@ func plotKnowledgeLorenz(repoName string, data *readers.KnowledgeDiffusionData, 
 	)
 }
 
+// hotspotRiskChartedFiles is how many bars the ranked chart draws. It bounds the chart only:
+// hotspot-risk_table.tsv carries every file the run reported, however large
+// --hotspot-risk-top was.
+const hotspotRiskChartedFiles = 20
+
 func HotspotRisk(reader readers.Reader, output string) error {
 	hotspotReader, ok := reader.(readers.HotspotRiskReader)
 	if !ok {
@@ -1317,14 +1322,18 @@ func HotspotRisk(reader readers.Reader, output string) error {
 		return files[i].RiskScore > files[j].RiskScore
 	})
 
-	if len(files) > 20 {
-		files = files[:20]
+	// The table gets every file the run reported; the chart gets a readable prefix of them.
+	// The figure is a fixed size and does not grow with the bar count, so honouring a large
+	// --hotspot-risk-top here would only overcrowd it - the full ranking is in the TSV.
+	charted := files
+	if len(charted) > hotspotRiskChartedFiles {
+		charted = charted[:hotspotRiskChartedFiles]
 	}
 
-	labels := make([]string, len(files))
+	labels := make([]string, len(charted))
 
-	values := make(floatSeries, len(files))
-	for i, file := range files {
+	values := make(floatSeries, len(charted))
+	for i, file := range charted {
 		labels[i] = compactPathLabel(file.Path)
 		values[i] = file.RiskScore
 	}
@@ -1332,7 +1341,7 @@ func HotspotRisk(reader readers.Reader, output string) error {
 	_, _ = fmt.Fprintf(os.Stdout, "Hotspot risk: %d files, window=%d days, top risk=%.3f (%s)\n",
 		len(data.Files), data.WindowDays, files[0].RiskScore, files[0].Path)
 
-	err = plotHotspotRiskRanked(titleRepositoryName(reader.GetName()), files, labels, values, output)
+	err = plotHotspotRiskRanked(titleRepositoryName(reader.GetName()), charted, labels, values, output)
 	if err != nil {
 		return err
 	}

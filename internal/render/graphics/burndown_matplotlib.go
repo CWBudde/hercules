@@ -191,14 +191,28 @@ func configureBurndownStackAxes(
 	}
 
 	ax.SetXLabel("Time")
-	ax.SetYLabel("Lines of code")
+
+	// Python labels this "Lines of code" in both views (burndown.py:57), which reads as a mistake
+	// once the axis runs 0 to 1 - part of the same deviation as the normalization below.
+	if relative {
+		ax.SetYLabel("Fraction of lines")
+	} else {
+		ax.SetYLabel("Lines of code")
+	}
 
 	plotMatrix := matrix
 	if relative {
-		// Python lets matplotlib clip the unnormalized stackplot after ylim(0, 1).
-		// matplotlib-go's AGG backend currently drops those out-of-range fills,
-		// so pre-clip the stacked layers to the same visible result.
-		plotMatrix = clippedStackMatrix(matrix, 0, 1)
+		// --relative means "each band as a fraction of that column's total", so
+		// the matrix has to be normalized per time column *before* the stackplot
+		// polygons are built.
+		//
+		// Deliberate deviation from Python: labours/modes/burndown.py:47-52
+		// normalizes after pyplot.stackplot() has already built its polygons, so
+		// the upstream chart only ever shows the first band clipped to 1.0. That
+		// is an upstream bug, not an intended look — do not "restore parity" by
+		// clipping here. internal/render/modes/ownership.go already deviates the
+		// same way (normalizeOwnershipColumns).
+		plotMatrix = normalizedStackMatrix(matrix)
 	}
 
 	ax.StackPlot(timeValues, plotMatrix, core.StackPlotOptions{
@@ -237,42 +251,52 @@ func pythonBurndownAxesPadding(matrix [][]float64, relative bool) (left, right, 
 	return left, 0.991, 0.049, 0.968
 }
 
-func clippedStackMatrix(matrix [][]float64, minY, maxY float64) [][]float64 {
+// normalizedStackMatrix returns a copy of the per-band matrix where every time
+// column sums to 1, mirroring normalizeOwnershipColumns. Columns that sum to
+// zero are copied unchanged instead of producing NaN. The result is a copy
+// because the input aliases ProcessedBurndown.Matrix, which callers plot more
+// than once.
+func normalizedStackMatrix(matrix [][]float64) [][]float64 {
 	if len(matrix) == 0 {
 		return nil
 	}
 
+	normalized := make([][]float64, len(matrix))
 	points := 0
-	for _, row := range matrix {
-		if points == 0 || len(row) < points {
-			points = len(row)
-		}
-	}
 
-	if points == 0 {
-		return nil
-	}
-
-	clipped := make([][]float64, len(matrix))
-
-	cumulative := make([]float64, points)
 	for i, row := range matrix {
-		clipped[i] = make([]float64, points)
-		for j := range points {
-			lower := cumulative[j]
-			upper := lower + row[j]
-			clippedLower := clampFloat(lower, minY, maxY)
+		normalized[i] = append([]float64(nil), row...)
+		points = max(points, len(row))
+	}
 
-			clippedUpper := clampFloat(upper, minY, maxY)
-			if clippedUpper > clippedLower {
-				clipped[i][j] = clippedUpper - clippedLower
+	for col := range points {
+		total := stackColumnTotal(normalized, col)
+		if total == 0 {
+			continue
+		}
+
+		for _, row := range normalized {
+			if col < len(row) {
+				row[col] /= total
 			}
-
-			cumulative[j] = upper
 		}
 	}
 
-	return clipped
+	return normalized
+}
+
+// stackColumnTotal sums one time column across every band. Rows may be short - the bands of a
+// combined result are built independently - so a missing entry counts as zero rather than panicking.
+func stackColumnTotal(matrix [][]float64, col int) float64 {
+	total := 0.0
+
+	for _, row := range matrix {
+		if col < len(row) {
+			total += row[col]
+		}
+	}
+
+	return total
 }
 
 func configureMatplotlibBurndownYAxis(axes *core.Axes, matrix [][]float64) {
@@ -658,18 +682,6 @@ func atLeastOne(value int) int {
 	}
 
 	return value
-}
-
-func clampFloat(v, minVal, maxVal float64) float64 {
-	if v < minVal {
-		return minVal
-	}
-
-	if v > maxVal {
-		return maxVal
-	}
-
-	return v
 }
 
 func setTransparentPNGRGB(path string, background render.Color) error {

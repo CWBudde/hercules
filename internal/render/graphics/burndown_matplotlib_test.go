@@ -107,6 +107,65 @@ func TestPlotBurndownMatplotlibUsesBackends(t *testing.T) {
 	}
 }
 
+// TestNormalizedStackMatrixScalesEveryColumnToOne pins plan item T2.2: the
+// --relative burndown path must normalize the per-band matrix column-wise
+// instead of clipping the raw line counts to [0, 1]. Clipping left every band
+// after the first at zero, which rendered as a single solid area at 1.0.
+func TestNormalizedStackMatrixScalesEveryColumnToOne(t *testing.T) {
+	matrix := [][]float64{
+		{12345, 500, 0},
+		{2345, 250, 0},
+		{310, 250, 0},
+	}
+	original := [][]float64{
+		{12345, 500, 0},
+		{2345, 250, 0},
+		{310, 250, 0},
+	}
+
+	got := normalizedStackMatrix(matrix)
+
+	const epsilon = 1e-9
+
+	for col := range 2 {
+		total := 0.0
+		nonZero := 0
+
+		for _, row := range got {
+			total += row[col]
+
+			if row[col] > epsilon {
+				nonZero++
+			}
+		}
+
+		if diff := total - 1.0; diff > epsilon || diff < -epsilon {
+			t.Fatalf("column %d sums to %v, want 1.0", col, total)
+		}
+
+		if nonZero < 2 {
+			t.Fatalf("column %d has %d non-zero bands, want more than one", col, nonZero)
+		}
+	}
+
+	// An all-zero column must be left alone rather than dividing by zero.
+	for i, row := range got {
+		if row[2] != 0 {
+			t.Fatalf("zero column band %d = %v, want 0", i, row[2])
+		}
+	}
+
+	// The input aliases ProcessedBurndown.Matrix and is plotted more than once,
+	// so normalization must not happen in place.
+	for i, row := range matrix {
+		for j, v := range row {
+			if v != original[i][j] {
+				t.Fatalf("input matrix[%d][%d] = %v, want %v (must not be modified)", i, j, v, original[i][j])
+			}
+		}
+	}
+}
+
 func TestLineCountYAxisTicksContainFullMagnitude(t *testing.T) {
 	ticks, labels := lineCountYAxisTicks(25800 * 1.05)
 	wantTicks := []float64{0, 5000, 10000, 15000, 20000, 25000}

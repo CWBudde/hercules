@@ -37,9 +37,14 @@ const repositorySeparator = " & "
 type combineAccumulator struct {
 	repositories []string
 	errors       map[string][]string
-	// warnings names what was stepped over without failing the run - analyses which cannot take
-	// part in a merge at all.
-	warnings     map[string][]string
+	// skipped counts, per analysis, how many input files carried one which cannot take part in a
+	// merge at all. Counted rather than listed per file because an org-wide run repeats the same
+	// handful of analyses across hundreds of inputs, and a warning that long is a warning nobody
+	// reads.
+	skipped map[string]int
+	// inputCount is how many files the run was handed, so a skip can be reported as a share of the
+	// whole rather than as a bare number.
+	inputCount   int
 	results      map[string]any
 	metadata     *hercules.CommonAnalysisResult
 	mergedInputs int
@@ -56,7 +61,8 @@ type loadedMessage struct {
 	// failures fail the whole run: the file could not be read or parsed, or an analysis it does
 	// carry could not be deserialized.
 	failures []string
-	// skipped names analyses which do not implement ResultMergeablePipelineItem.
+	// skipped names the analyses which do not implement ResultMergeablePipelineItem. Names, not
+	// sentences: what the user is told about them is decided once, at print time.
 	skipped []string
 }
 
@@ -76,8 +82,9 @@ func runCombine(cmd *cobra.Command, files []string) error {
 
 	accumulator := newCombineAccumulator()
 	accumulator.mergeFiles(files, only)
-	printMessages("Skipped:", accumulator.warnings)
-	printMessages("Errors:", accumulator.errors)
+	diagnostics := cmd.ErrOrStderr()
+	printSkipped(diagnostics, accumulator.skipped, accumulator.inputCount)
+	printMessages(diagnostics, "Errors:", accumulator.errors)
 	if only != "" {
 		if _, exists := accumulator.results[only]; !exists {
 			return errors.Join(
@@ -117,7 +124,7 @@ func startCombineProfileServer() {
 func newCombineAccumulator() *combineAccumulator {
 	return &combineAccumulator{
 		errors:   map[string][]string{},
-		warnings: map[string][]string{},
+		skipped:  map[string]int{},
 		results:  map[string]any{},
 		metadata: &hercules.CommonAnalysisResult{},
 	}
@@ -125,6 +132,7 @@ func newCombineAccumulator() *combineAccumulator {
 
 func (accumulator *combineAccumulator) mergeFiles(files []string, only string) {
 	currentFile := ""
+	accumulator.inputCount = len(files)
 	bar := newCombineProgress(len(files), &currentFile)
 	for _, currentFile = range files {
 		bar.Increment()
@@ -147,8 +155,8 @@ func newCombineProgress(fileCount int, currentFile *string) *progress.ProgressBa
 
 func (accumulator *combineAccumulator) mergeFile(fileName, only string) {
 	loaded := loadMessage(fileName, only)
-	if len(loaded.skipped) > 0 {
-		accumulator.warnings[fileName] = loaded.skipped
+	for _, analysis := range loaded.skipped {
+		accumulator.skipped[analysis]++
 	}
 	messages := loaded.failures
 	if loaded.metadata == nil {
@@ -357,11 +365,11 @@ func deserializeAnalysisContents(
 		}
 		mpi, ok := summoned[0].(hercules.ResultMergeablePipelineItem)
 		if !ok {
-			message := key + ": ResultMergeablePipelineItem is not implemented"
 			if only != "" {
-				loaded.failures = append(loaded.failures, fileName+": "+message)
+				loaded.failures = append(loaded.failures,
+					fileName+": "+key+": ResultMergeablePipelineItem is not implemented")
 			} else {
-				loaded.skipped = append(loaded.skipped, message+"; not merged")
+				loaded.skipped = append(loaded.skipped, key)
 			}
 			continue
 		}
@@ -378,7 +386,33 @@ func deserializeAnalysisContents(
 	return loaded
 }
 
-func printMessages(title string, perFile map[string][]string) {
+// printSkipped names the analyses which were dropped, once each, in the words of someone who cares
+// about the report rather than about the interface which was not implemented: whatever was computed
+// for these analyses is not in the combined file. Repeating that per input file would bury it -
+// hundreds of repositories share the same few unmergeable leaves.
+func printSkipped(destination io.Writer, skipped map[string]int, inputCount int) {
+	if len(skipped) == 0 {
+		return
+	}
+	analyses := make([]string, 0, len(skipped))
+	for analysis := range skipped {
+		analyses = append(analyses, analysis)
+	}
+	// Map iteration order is random, so sort to keep a run's diagnostics reproducible.
+	sort.Strings(analyses)
+
+	subject := "analyses cannot be merged, so their data is"
+	if len(analyses) == 1 {
+		subject = "analysis cannot be merged, so its data is"
+	}
+	_, _ = fmt.Fprintf(destination, "Skipped: %d %s not in the combined output.\n", len(analyses), subject)
+	for _, analysis := range analyses {
+		_, _ = fmt.Fprintf(destination, "  %s - dropped from %d of %d inputs\n",
+			analysis, skipped[analysis], inputCount)
+	}
+}
+
+func printMessages(destination io.Writer, title string, perFile map[string][]string) {
 	anything := false
 	for _, messages := range perFile {
 		if len(messages) > 0 {
@@ -389,7 +423,7 @@ func printMessages(title string, perFile map[string][]string) {
 	if !anything {
 		return
 	}
-	fmt.Fprintln(os.Stderr, title)
+	_, _ = fmt.Fprintln(destination, title)
 	files := make([]string, 0, len(perFile))
 	for fileName := range perFile {
 		files = append(files, fileName)
@@ -398,9 +432,9 @@ func printMessages(title string, perFile map[string][]string) {
 	for _, key := range files {
 		messages := perFile[key]
 		if len(messages) > 0 {
-			fmt.Fprintln(os.Stderr, "  "+key)
+			_, _ = fmt.Fprintln(destination, "  "+key)
 			for _, message := range messages {
-				fmt.Fprintln(os.Stderr, "    "+message)
+				_, _ = fmt.Fprintln(destination, "    "+message)
 			}
 		}
 	}

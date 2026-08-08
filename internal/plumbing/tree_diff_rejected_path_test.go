@@ -36,7 +36,8 @@ func TestTreeDiffProducesChangesForTreesGoGitWillNotWalk(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			repository := newMemoryRepository(t)
 			blob := storeBlob(t, repository, "package main\n")
-			treeHash := storeTree(t, repository,
+			treeHash := storeTree(
+				t, repository,
 				object.TreeEntry{Name: testCase.path, Mode: filemode.Regular, Hash: blob},
 				object.TreeEntry{Name: "ordinary.go", Mode: filemode.Regular, Hash: blob},
 			)
@@ -83,19 +84,23 @@ func TestDiffTreesDirectlyMatchesGoGit(t *testing.T) {
 	before := storeBlob(t, repository, "before\n")
 	after := storeBlob(t, repository, "after\n")
 
-	nestedBefore := storeTree(t, repository,
+	nestedBefore := storeTree(
+		t, repository,
 		object.TreeEntry{Name: "kept.go", Mode: filemode.Regular, Hash: before},
 		object.TreeEntry{Name: "removed.go", Mode: filemode.Regular, Hash: before},
 	)
-	nestedAfter := storeTree(t, repository,
+	nestedAfter := storeTree(
+		t, repository,
 		object.TreeEntry{Name: "kept.go", Mode: filemode.Regular, Hash: before},
 	)
 
-	fromHash := storeTree(t, repository,
+	fromHash := storeTree(
+		t, repository,
 		object.TreeEntry{Name: "changed.go", Mode: filemode.Regular, Hash: before},
 		object.TreeEntry{Name: "nested", Mode: filemode.Dir, Hash: nestedBefore},
 	)
-	toHash := storeTree(t, repository,
+	toHash := storeTree(
+		t, repository,
 		object.TreeEntry{Name: "added.go", Mode: filemode.Regular, Hash: after},
 		object.TreeEntry{Name: "changed.go", Mode: filemode.Regular, Hash: after},
 		object.TreeEntry{Name: "nested", Mode: filemode.Dir, Hash: nestedAfter},
@@ -144,7 +149,8 @@ func TestIsRejectedTreePath(t *testing.T) {
 	// The two shapes go-git actually produces, as seen in the wild.
 	assert.True(t, isRejectedTreePath(errors.New(`to: invalid path: "\\"`)))
 	assert.True(t, isRejectedTreePath(
-		errors.New(`invalid path "service-frps-control\nfrps-vhost.yaml": contains control character`)))
+		errors.New(`invalid path "service-frps-control\nfrps-vhost.yaml": contains control character`),
+	))
 }
 
 // describeChanges reduces changes to what TreeDiff's consumers actually read off

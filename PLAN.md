@@ -141,6 +141,15 @@ the largest file at 1307 lines, out of the top 8). Unit coverage in `leaves/hots
 per defect plus the upgrade path, and `TestRunCombineHotspotRiskIsSoundAcrossRepositories` end to
 end in `cmd/hercules/combine_test.go`.
 
+**A fourth instance of (a) lived in the renderer** and was found by that verification, which is why
+the fix was invisible in the chart at first: `HotspotRisk` (`internal/render/modes/report_metrics.go`)
+hardcoded `files[:20]` before both the plot _and_ the TSV table. The table now receives every file
+the run reported; the chart keeps a readable prefix, `hotspotRiskChartedFiles = 20`, because the
+figure is a fixed size and does not grow with the bar count. So `--hotspot-risk-top=50` yields a
+50-row `hotspot-risk_table.tsv` and an unchanged-looking 20-bar chart. Rendering the merge confirms
+it: 50 table rows (44 `ewws-auth`, 6 `ewws-wiki`) and a legible chart with `ewws-wiki` present at
+rank 13.
+
 ### T1.3 — non-mergeable leaves are dropped silently (M2) 🟡
 
 `cmd/hercules/combine.go:305-315`: a failed `ResultMergeablePipelineItem` assertion appends the
@@ -182,7 +191,7 @@ at the extreme left (93 % and 18 % respectively) against a single x-tick reading
 `time.Time` produces after a wrong unit conversion.
 
 - [ ] Reproduce: `labours -f pb -i output/data/hercules-pb/ewws-auth-burndown.pb -m
-  refactoring-proxy -o /tmp/x.svg`
+refactoring-proxy -o /tmp/x.svg`
 - [ ] Fix the unit conversion between `[]time.Time` and the plotter's x values.
 
 ### T2.2 — `--relative` collapses `burndown-project` to a single band (M5) 🔴

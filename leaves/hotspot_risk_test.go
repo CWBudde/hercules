@@ -21,20 +21,26 @@ import (
 	items "github.com/cwbudde/hercules/internal/plumbing"
 )
 
+// MergeResults rescales every factor against the union's maxima, so the fixtures below rank
+// by the raw factors a real run carries rather than by a hand-set RiskScore, which the merge
+// recomputes. OwnershipGini is the convenient one: it is already in [0,1] and passes through
+// normalization unchanged, so it orders the merged list on its own.
 func TestHotspotRiskMergeResultsSortsEqualScoresByPath(t *testing.T) {
 	hra := HotspotRiskAnalysis{TopN: 2}
 
 	result := hra.MergeResults(
 		HotspotRiskResult{
 			WindowDays: 90,
+			TopN:       2,
 			Files: []FileRisk{
-				{Path: "zeta.go", RiskScore: 0.5},
+				{Path: "zeta.go", OwnershipGini: 0.5},
 			},
 		},
 		HotspotRiskResult{
 			WindowDays: 90,
+			TopN:       2,
 			Files: []FileRisk{
-				{Path: testAlphaPath, RiskScore: 0.5},
+				{Path: testAlphaPath, OwnershipGini: 0.5},
 			},
 		},
 		nil,
@@ -58,14 +64,14 @@ func TestHotspotRiskMergeResultsOnZeroValuedAnalysis(t *testing.T) {
 		HotspotRiskResult{
 			WindowDays: 90,
 			Files: []FileRisk{
-				{Path: "mid.go", RiskScore: 0.5},
-				{Path: "low.go", RiskScore: 0.1},
+				{Path: "mid.go", OwnershipGini: 0.5},
+				{Path: "low.go", OwnershipGini: 0.1},
 			},
 		},
 		HotspotRiskResult{
 			WindowDays: 90,
 			Files: []FileRisk{
-				{Path: "high.go", RiskScore: 0.9},
+				{Path: "high.go", OwnershipGini: 0.9},
 			},
 		},
 		nil,
@@ -85,7 +91,10 @@ func TestHotspotRiskMergeResultsOnZeroValuedAnalysis(t *testing.T) {
 	second := HotspotRiskResult{WindowDays: 90}
 
 	for i := range fileCount {
-		risk := FileRisk{Path: fmt.Sprintf("file%02d.go", i), RiskScore: float64(fileCount - i)}
+		risk := FileRisk{
+			Path:          fmt.Sprintf("file%02d.go", i),
+			OwnershipGini: float64(fileCount-i) / float64(fileCount),
+		}
 		if i%2 == 0 {
 			first.Files = append(first.Files, risk)
 		} else {
@@ -118,6 +127,159 @@ func TestHotspotRiskMergeResultsRejectsWindowMismatch(t *testing.T) {
 	assert.Contains(t, err.Error(), "r2: 30")
 }
 
+// TestHotspotRiskMergeResultsHonoursConfiguredTopN pins T1.2(a): combine summons the item
+// zero-valued, so before the results carried TopN a run configured with
+// --hotspot-risk-top=200 was still truncated to DefaultTopN.
+func TestHotspotRiskMergeResultsHonoursConfiguredTopN(t *testing.T) {
+	const configuredTopN = DefaultTopN + 13
+
+	weights := HotspotRiskWeights{Size: 1, Churn: 1, Coupling: 1, Ownership: 1}
+	first := HotspotRiskResult{WindowDays: 90, TopN: configuredTopN, Weights: weights}
+	second := HotspotRiskResult{WindowDays: 90, TopN: configuredTopN, Weights: weights}
+
+	for i := range configuredTopN + 5 {
+		risk := FileRisk{
+			Path:          fmt.Sprintf("file%02d.go", i),
+			OwnershipGini: float64(configuredTopN+5-i) / float64(configuredTopN+5),
+		}
+		if i%2 == 0 {
+			first.Files = append(first.Files, risk)
+		} else {
+			second.Files = append(second.Files, risk)
+		}
+	}
+
+	merged, ok := (&HotspotRiskAnalysis{}).MergeResults(first, second, nil, nil).(HotspotRiskResult)
+	require.True(t, ok)
+	assert.Len(t, merged.Files, configuredTopN,
+		"the merge must truncate to the configured length, not to DefaultTopN")
+	assert.Equal(t, configuredTopN, merged.TopN, "the merged result carries the setting on")
+}
+
+// TestHotspotRiskMergeResultsDeduplicatesEqualPaths pins T1.2(b). Paths are repository
+// qualified before the merge (QualifyPaths), so an equal path denotes the same file; the
+// org-wide report showed README.md twice because nothing collapsed them.
+func TestHotspotRiskMergeResultsDeduplicatesEqualPaths(t *testing.T) {
+	weights := HotspotRiskWeights{Size: 1, Churn: 1, Coupling: 1, Ownership: 1}
+
+	merged, ok := (&HotspotRiskAnalysis{}).MergeResults(
+		HotspotRiskResult{
+			WindowDays: 90,
+			Weights:    weights,
+			Files: []FileRisk{
+				{Path: testAlphaPath, Size: 10, OwnershipGini: 0.2},
+				{Path: testBetaPath, Size: 5, OwnershipGini: 0.1},
+			},
+		},
+		HotspotRiskResult{
+			WindowDays: 90,
+			Weights:    weights,
+			Files: []FileRisk{
+				{Path: testAlphaPath, Size: 40, OwnershipGini: 0.9},
+			},
+		},
+		nil,
+		nil,
+	).(HotspotRiskResult)
+	require.True(t, ok)
+
+	require.Len(t, merged.Files, 2, "the two alpha.go rows must collapse into one")
+	assert.Equal(t, testAlphaPath, merged.Files[0].Path)
+	assert.Equal(t, 40, merged.Files[0].Size, "the higher-scoring entry wins")
+	assert.Equal(t, testBetaPath, merged.Files[1].Path)
+}
+
+// TestHotspotRiskMergeResultsRescalesAcrossRuns pins T1.2(c). Each run normalizes against
+// its own maxima, so on the 231-repository merge every surviving RiskScore was exactly 1.0.
+// The merge must rescale against the union before ranking.
+func TestHotspotRiskMergeResultsRescalesAcrossRuns(t *testing.T) {
+	weights := HotspotRiskWeights{Size: 1, Churn: 1, Coupling: 1, Ownership: 1}
+	small := FileRisk{Path: "small-repo-top.go", Size: 100, Churn: 10, RiskScore: 1}
+	large := FileRisk{Path: "large-repo-top.go", Size: 10000, Churn: 1000, RiskScore: 1}
+
+	merged, ok := (&HotspotRiskAnalysis{}).MergeResults(
+		HotspotRiskResult{WindowDays: 90, Weights: weights, Files: []FileRisk{small}},
+		HotspotRiskResult{WindowDays: 90, Weights: weights, Files: []FileRisk{large}},
+		nil,
+		nil,
+	).(HotspotRiskResult)
+	require.True(t, ok)
+
+	require.Len(t, merged.Files, 2)
+	assert.Equal(t, large.Path, merged.Files[0].Path,
+		"the larger repository's file outranks the smaller one's after rescaling")
+	assert.Greater(t, merged.Files[0].RiskScore, merged.Files[1].RiskScore,
+		"both files came in at 1.0; rescaling must separate them")
+	assert.InDelta(t, 1.0, merged.Files[0].ChurnNormalized, 1e-12,
+		"the union maximum defines the top of the scale")
+	assert.InDelta(t, 0.01, merged.Files[1].ChurnNormalized, 1e-12)
+}
+
+func TestHotspotRiskMergeResultsRejectsWeightMismatch(t *testing.T) {
+	merged := (&HotspotRiskAnalysis{}).MergeResults(
+		HotspotRiskResult{
+			WindowDays: 90,
+			Weights:    HotspotRiskWeights{Size: 1, Churn: 1, Coupling: 1, Ownership: 1},
+		},
+		HotspotRiskResult{
+			WindowDays: 90,
+			Weights:    HotspotRiskWeights{Size: 1, Churn: 1, Coupling: 0, Ownership: 1},
+		},
+		nil,
+		nil,
+	)
+
+	err, isErr := merged.(error)
+	require.True(t, isErr, "combine detects failures by type-asserting the returned any to error")
+	require.ErrorIs(t, err, errHotspotRiskWeightMismatch)
+}
+
+// TestHotspotRiskMergeResultsAdoptsWeightsFromCarryingSide covers the upgrade path: a `.pb`
+// written before the weights were serialized decodes as all-zero, which means "unset", not
+// "every factor disabled". Erroring on it would make results from two hercules versions
+// impossible to combine.
+func TestHotspotRiskMergeResultsAdoptsWeightsFromCarryingSide(t *testing.T) {
+	configured := HotspotRiskWeights{Size: 1, Churn: 0, Coupling: 0, Ownership: 0}
+
+	merged, ok := (&HotspotRiskAnalysis{}).MergeResults(
+		HotspotRiskResult{
+			WindowDays: 90,
+			Files:      []FileRisk{{Path: testAlphaPath, Size: 100}},
+		},
+		HotspotRiskResult{
+			WindowDays: 90,
+			Weights:    configured,
+			Files:      []FileRisk{{Path: testBetaPath, Size: 10}},
+		},
+		nil,
+		nil,
+	).(HotspotRiskResult)
+	require.True(t, ok, "an unset side must not be a merge error")
+
+	assert.Equal(t, configured, merged.Weights)
+	assert.InDelta(t, merged.Files[0].SizeNormalized, merged.Files[0].RiskScore, 1e-12,
+		"size is the only enabled factor, so it is the whole score")
+}
+
+// TestHotspotRiskMergeResultsDefaultsWeightsWhenNeitherSideCarriesThem covers two
+// pre-upgrade inputs: with no weights anywhere the merge must fall back to DefaultWeight
+// rather than score every file zero.
+func TestHotspotRiskMergeResultsDefaultsWeightsWhenNeitherSideCarriesThem(t *testing.T) {
+	merged, ok := (&HotspotRiskAnalysis{}).MergeResults(
+		HotspotRiskResult{WindowDays: 90, Files: []FileRisk{{Path: testAlphaPath, Size: 100}}},
+		HotspotRiskResult{WindowDays: 90, Files: []FileRisk{{Path: testBetaPath, Size: 10}}},
+		nil,
+		nil,
+	).(HotspotRiskResult)
+	require.True(t, ok)
+
+	assert.Equal(t, HotspotRiskWeights{
+		Size: DefaultWeight, Churn: DefaultWeight,
+		Coupling: DefaultWeight, Ownership: DefaultWeight,
+	}, merged.Weights)
+	assert.Positive(t, merged.Files[0].RiskScore, "defaults must produce a real ranking")
+}
+
 func TestHotspotRiskNormalizeAndScoreScalesFactors(t *testing.T) {
 	hra := HotspotRiskAnalysis{
 		WeightSize:      1,
@@ -130,7 +292,7 @@ func TestHotspotRiskNormalizeAndScoreScalesFactors(t *testing.T) {
 		{Path: "small.go", Size: 9, Churn: 2, CouplingDegree: 1, OwnershipGini: 0.25},
 	}
 
-	hra.normalizeAndScore(risks)
+	normalizeAndScore(risks, hra.weights())
 
 	assert.InDelta(t, 1.0, risks[0].SizeNormalized, 1e-12)
 	assert.InDelta(t, 1.0, risks[0].ChurnNormalized, 1e-12)
@@ -160,7 +322,7 @@ func TestHotspotRiskDisabledFactorsRemainDisabled(t *testing.T) {
 		{Path: "large.go", Size: 100, Churn: 0, CouplingDegree: 0, OwnershipGini: 0},
 		{Path: "small.go", Size: 9, Churn: 100, CouplingDegree: 10, OwnershipGini: 1},
 	}
-	hra.normalizeAndScore(risks)
+	normalizeAndScore(risks, hra.weights())
 
 	assert.InDelta(t, 1, risks[0].RiskScore, 1e-12)
 	assert.InDelta(t, risks[1].SizeNormalized, risks[1].RiskScore, 1e-12)
@@ -174,7 +336,7 @@ func TestHotspotRiskDisabledFactorsRemainDisabled(t *testing.T) {
 		items.FactTickSize:               6 * time.Hour,
 	}))
 	require.NoError(t, allDisabled.Initialize(nil))
-	allDisabled.normalizeAndScore(risks)
+	normalizeAndScore(risks, allDisabled.weights())
 	assert.Zero(t, risks[0].RiskScore)
 	assert.Zero(t, risks[1].RiskScore)
 }
@@ -350,6 +512,13 @@ func TestHotspotRiskSerializationShapes(t *testing.T) {
 	hra := HotspotRiskAnalysis{}
 	result := HotspotRiskResult{
 		WindowDays: 30,
+		TopN:       50,
+		Weights: HotspotRiskWeights{
+			Size:      1,
+			Churn:     2,
+			Coupling:  0,
+			Ownership: 0.5,
+		},
 		Files: []FileRisk{
 			{
 				Path:                testMainPath,
@@ -369,6 +538,9 @@ func TestHotspotRiskSerializationShapes(t *testing.T) {
 	var text bytes.Buffer
 	require.NoError(t, hra.Serialize(result, false, &text))
 	assert.Contains(t, text.String(), "  window_days: 30\n")
+	assert.Contains(t, text.String(), "  top_n: 50\n")
+	assert.Contains(t, text.String(), "    churn: 2.000000\n")
+	assert.Contains(t, text.String(), "    ownership: 0.500000\n")
 	assert.Contains(t, text.String(), "    - path: \"main.go\"\n")
 	assert.Contains(t, text.String(), "      risk_score: 0.250000\n")
 	assert.Contains(t, text.String(), "      normalized:\n")
@@ -379,6 +551,11 @@ func TestHotspotRiskSerializationShapes(t *testing.T) {
 	message := pb.HotspotRiskResults{}
 	require.NoError(t, proto.Unmarshal(binary.Bytes(), &message))
 	assert.Equal(t, int32(30), message.GetWindowDays())
+	assert.Equal(t, int32(50), message.GetTopN())
+	assert.InDelta(t, 1.0, message.GetWeightSize(), 0.00001)
+	assert.InDelta(t, 2.0, message.GetWeightChurn(), 0.00001)
+	assert.Zero(t, message.GetWeightCoupling())
+	assert.InDelta(t, 0.5, message.GetWeightOwnership(), 0.00001)
 	require.Len(t, message.GetFiles(), 1)
 	assert.Equal(t, testMainPath, message.GetFiles()[0].GetPath())
 	assert.InDelta(t, 0.25, message.GetFiles()[0].GetRiskScore(), 0.00001)
@@ -387,6 +564,11 @@ func TestHotspotRiskSerializationShapes(t *testing.T) {
 	assert.Equal(t, int32(2), message.GetFiles()[0].GetCouplingDegree())
 	assert.InDelta(t, 0.75, message.GetFiles()[0].GetOwnershipGini(), 0.00001)
 	assert.InDelta(t, 1.0, message.GetFiles()[0].GetSizeNormalized(), 0.00001)
+
+	roundTripped, err := hra.Deserialize(binary.Bytes())
+	require.NoError(t, err)
+	assert.Equal(t, result, roundTripped,
+		"the configuration MergeResults reads must survive the protobuf round trip")
 }
 
 func writeFixtureFile(t *testing.T, fs billy.Filesystem, name, content string) {

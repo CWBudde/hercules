@@ -4,7 +4,7 @@
 
 | phase                                                 | items                | state                                      |
 | ----------------------------------------------------- | -------------------- | ------------------------------------------ |
-| [Phase 1 — combine correctness](#phase-1)             | T1.1–T1.3 (M7/M6/M2) | T1.1 landed (corpus check open)            |
+| [Phase 1 — combine correctness](#phase-1)             | T1.1–T1.3 (M7/M6/M2) | T1.1 + T1.2 landed; T1.3 open              |
 | [Phase 2 — rendering defects](#phase-2)               | T2.1–T2.3 (M4/M5/M3) | not started, small and visible             |
 | [Phase 3 — unexposed analyses](#phase-3)              | T3.1–T3.3 (M1/M8/M9) | not started, largest new work              |
 | [Phase 4 — burndown residue (B1c/P5)](#phase-4)       | T4.1–T4.3            | **on hold — recommendation: do not start** |
@@ -88,28 +88,58 @@ Two decisions worth keeping:
 - **An empty header repository leaves paths bare**, so a result of unknown origin does not gain a
   leading `:`.
 
-### T1.2 — combined `hotspot-risk` is unsound in three independent ways (M6) 🟡
+### T1.2 — combined `hotspot-risk` is unsound in three independent ways (M6) 🟢 landed 2026-08-08
 
-Rendering it on the 231-repo merge succeeds and produces something worse than an error: 20 rows,
+Rendering it on the 231-repo merge succeeded and produced something worse than an error: 20 rows,
 alphabetically ordered, **every `RiskScore` exactly 1.0**, `README.md` present twice as two rows.
-(a) and (c) are fixable independently of (b).
 
-- [ ] **(a) Truncated to 20 regardless of configuration.** `cmd/hercules/combine.go:302` summons
-      the item via `Registry.Summon` and calls neither `Configure` nor `Initialize`, so `TopN`
-      (`leaves/hotspot_risk.go:32`) is zero-valued and `effectiveTopN()` (`:346-357`) falls back to
-      `DefaultTopN = 20` (`:92`); truncation at `:609-612`. A user who ran every repository with
-      `TopN=200` still gets 20. The guard's own doc comment (`:346-350`) already names the cause.
-- [ ] **(b) No dedup** — `:606-607` concatenates and re-sorts. The comment at `:577-579` states
-      why: _"the same path in two different repositories denotes two different files, and
-      `FileRisk` carries no repository qualifier."_ Correct reasoning, unreadable output.
-      **Unblocked by T1.1 as of 2026-08-08** — `FileRisk.Path` now carries the repository, so equal
-      paths do denote the same file and `MergeResults` may dedup them. The doc comment above
-      `MergeResults` (`leaves/hotspot_risk.go`) still states the old reasoning and has to change
-      with the fix.
-- [ ] **(c) No cross-run rescaling.** `normalizeAndScore` (`:795`, writing the four `*Normalized`
-      fields at `:812-815`) is called only from `Finalize` (`:440`), never from `MergeResults`, so
-      each repository's factors are normalised against its own maxima and the merged ranking
-      compares incomparable numbers — which is why every surviving score is 1.0.
+- [x] **(a) Truncated to 20 regardless of configuration.** `cmd/hercules/combine.go` summons the
+      item via `Registry.Summon` and calls neither `Configure` nor `Initialize`, so `TopN` was
+      zero-valued and `effectiveTopN()` fell back to `DefaultTopN = 20`. A user who ran every
+      repository with `TopN=200` still got 20.
+- [x] **(b) No dedup** — `MergeResults` concatenated and re-sorted. Its doc comment justified this
+      by _"the same path in two different repositories denotes two different files, and `FileRisk`
+      carries no repository qualifier."_ T1.1 removed that justification.
+- [x] **(c) No cross-run rescaling.** `normalizeAndScore` was called only from `Finalize`, never
+      from `MergeResults`, so each repository's factors were normalised against its own maxima and
+      the merged ranking compared incomparable numbers — which is why every surviving score was 1.0.
+
+**The fix follows B13's pattern**: `MergeResults` now reads **no receiver state at all**, the way
+`BusFactorAnalysis` and `OwnershipConcentrationAnalysis` do. `HotspotRiskResult` carries the
+configuration the run was produced with — `TopN` and a `HotspotRiskWeights` value — round-tripped
+through `HotspotRiskResults.top_n` and `weight_*` (`internal/pb/pb.proto` fields 3–7, compatible
+additions, **no `SchemaVersion` bump**, recorded in `docs/SCHEMA_CHANGELOG.md`). All-zero is read as
+_unset_ and falls back to `DefaultTopN`/`DefaultWeight`, so pre-upgrade `.pb` files still merge; a
+side which carries weights lends them to a side which does not, and two sides which carry
+_disagreeing_ weights are a merge error (`errHotspotRiskWeightMismatch`), mirroring the existing
+churn-window check.
+
+The merge order is load-bearing: **concatenate → rescale → dedup → rank → truncate**. Rescaling
+must precede dedup, because the incoming scores were normalised against each run's own maxima, so
+picking a winner by score before rescaling would compare exactly the incomparable numbers the
+rescaling exists to remove. `normalizeAndScore` became a free function taking the weights, shared
+with `Finalize`; it derives everything from the **raw** `Size`/`Churn`/`CouplingDegree`/
+`OwnershipGini` fields, which makes it idempotent under combine's pairwise reduce.
+
+**One correction to this file's own diagnosis:** (c) claimed the fix "requires carrying the raw
+normalization bounds in the `FileRisk` schema". It does not — `FileRisk` always carried the raw
+factors. Only the weights and `TopN` were missing, because they live on the analysis item.
+
+Two accepted approximations, both recorded at `MergeResults`:
+
+- Each input was already truncated to its own `TopN` in `Finalize`, so the merge renormalises
+  against the maxima of the **survivors**, not of every file that ever existed.
+- combine reduces pairwise and truncates at every step, so which files survive can depend on merge
+  order. Pre-existing; not made worse.
+
+**Verified** on `ewws-auth` + `ewws-wiki` (`--hotspot-risk --hotspot-risk-top=50 --pb
+--diff-timeout=300000`, neither run truncated). Before: **20** rows, every score a verbatim copy of
+its per-run value, and **`ewws-wiki` absent entirely** — its files could not compete against
+`ewws-auth`'s own-run-normalised scores. After: **50** rows drawn from both repositories, all paths
+distinct, and the ranking genuinely changed (`PLAN.md` #1 → #2; `server/components/main_templ.go`,
+the largest file at 1307 lines, out of the top 8). Unit coverage in `leaves/hotspot_risk_test.go`
+per defect plus the upgrade path, and `TestRunCombineHotspotRiskIsSoundAcrossRepositories` end to
+end in `cmd/hercules/combine_test.go`.
 
 ### T1.3 — non-mergeable leaves are dropped silently (M2) 🟡
 
@@ -152,7 +182,7 @@ at the extreme left (93 % and 18 % respectively) against a single x-tick reading
 `time.Time` produces after a wrong unit conversion.
 
 - [ ] Reproduce: `labours -f pb -i output/data/hercules-pb/ewws-auth-burndown.pb -m
-    refactoring-proxy -o /tmp/x.svg`
+  refactoring-proxy -o /tmp/x.svg`
 - [ ] Fix the unit conversion between `[]time.Time` and the plotter's x values.
 
 ### T2.2 — `--relative` collapses `burndown-project` to a single band (M5) 🔴

@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -36,6 +37,13 @@ const combineTestUnmergeable = "FileHistoryAnalysis"
 const (
 	combineTestCouples = "Couples"
 	combineTestReadme  = "README.md"
+)
+
+// combineTestHotspotRisk is a mergeable leaf which carries its own configuration, because
+// combine summons it zero-valued. The length is deliberately above leaves.DefaultTopN.
+const (
+	combineTestHotspotRisk = "HotspotRisk"
+	combineTestHotspotTopN = 30
 )
 
 func TestRunCombineValidatesSingleInput(t *testing.T) {
@@ -334,6 +342,116 @@ func writeCombineCouplesInput(t *testing.T, repository string, files []string) s
 			EndUnixTime:   combineTestBeginTime + 4*24*3600,
 		},
 		Contents: map[string][]byte{combineTestCouples: serialized.Bytes()},
+	})
+}
+
+// TestRunCombineHotspotRiskIsSoundAcrossRepositories covers T1.2 end to end. On the org-wide merge
+// the combined report came out truncated to DefaultTopN whatever the runs were configured with,
+// with README.md present twice and every RiskScore exactly 1.0.
+func TestRunCombineHotspotRiskIsSoundAcrossRepositories(t *testing.T) {
+	const topN = combineTestHotspotTopN
+
+	inputs := []string{
+		writeCombineHotspotInput(t, "alpha", 1),
+		writeCombineHotspotInput(t, "beta", 100),
+	}
+	var output bytes.Buffer
+
+	if err := runCombine(newCombineTestCommand(&output, ""), inputs); err != nil {
+		t.Fatalf("runCombine() failed: %v", err)
+	}
+
+	merged := combinedHotspotRisk(t, &output)
+	if got := merged.GetTopN(); got != topN {
+		t.Fatalf("merged top_n = %d, want %d", got, topN)
+	}
+
+	files := merged.GetFiles()
+	if len(files) <= leaves.DefaultTopN {
+		t.Fatalf("merged file count = %d, want more than DefaultTopN (%d): "+
+			"the configured length was not honoured", len(files), leaves.DefaultTopN)
+	}
+
+	seen := map[string]bool{}
+	distinctScores := map[float64]bool{}
+	for _, file := range files {
+		if seen[file.GetPath()] {
+			t.Fatalf("path %q appears twice in the merged report", file.GetPath())
+		}
+		seen[file.GetPath()] = true
+		distinctScores[file.GetRiskScore()] = true
+
+		if !strings.HasPrefix(file.GetPath(), "alpha:") &&
+			!strings.HasPrefix(file.GetPath(), "beta:") {
+			t.Fatalf("path %q is not qualified with its repository", file.GetPath())
+		}
+	}
+	if len(distinctScores) < 2 {
+		t.Fatalf("every merged RiskScore is %v: the two runs were not rescaled onto one scale",
+			files[0].GetRiskScore())
+	}
+
+	// beta's files are a hundred times larger than alpha's, so after rescaling they must lead.
+	if !strings.HasPrefix(files[0].GetPath(), "beta:") {
+		t.Fatalf("top merged file is %q, want one of beta's", files[0].GetPath())
+	}
+}
+
+func combinedHotspotRisk(t *testing.T, output *bytes.Buffer) *pb.HotspotRiskResults {
+	t.Helper()
+
+	payload, exists := unmarshalCombineOutput(t, output)[combineTestHotspotRisk]
+	if !exists {
+		t.Fatal("combined output lacks the hotspot risk result")
+	}
+	merged := &pb.HotspotRiskResults{}
+	if err := proto.Unmarshal(payload, merged); err != nil {
+		t.Fatalf("merged %s is malformed: %v", combineTestHotspotRisk, err)
+	}
+	return merged
+}
+
+// writeCombineHotspotInput serializes a hotspot risk result through the leaf itself, so the
+// envelope matches what a real run writes. scale multiplies the raw factors, which is how the
+// two repositories are given incomparable per-run maxima.
+func writeCombineHotspotInput(t *testing.T, repository string, scale int) string {
+	t.Helper()
+
+	result := leaves.HotspotRiskResult{
+		WindowDays: 90,
+		TopN:       combineTestHotspotTopN,
+		Weights: leaves.HotspotRiskWeights{
+			Size: 1, Churn: 1, Coupling: 1, Ownership: 1,
+		},
+	}
+	// Every repository contributes a README.md, which is what collapsed the org-wide report.
+	paths := make([]string, 0, combineTestHotspotTopN)
+	paths = append(paths, combineTestReadme)
+	for i := range combineTestHotspotTopN - 1 {
+		paths = append(paths, fmt.Sprintf("file%02d.go", i))
+	}
+	for index, path := range paths {
+		result.Files = append(result.Files, leaves.FileRisk{
+			Path:  path,
+			Size:  (len(paths) - index) * scale,
+			Churn: (len(paths) - index) * scale,
+		})
+	}
+
+	serialized := bytes.Buffer{}
+	if err := (&leaves.HotspotRiskAnalysis{}).Serialize(result, true, &serialized); err != nil {
+		t.Fatal(err)
+	}
+
+	return writeCombineEnvelope(t, &pb.AnalysisResults{
+		Header: &pb.Metadata{
+			Version:       pb.SchemaVersion,
+			Repository:    repository,
+			Commits:       1,
+			BeginUnixTime: combineTestBeginTime,
+			EndUnixTime:   combineTestBeginTime + 4*24*3600,
+		},
+		Contents: map[string][]byte{combineTestHotspotRisk: serialized.Bytes()},
 	})
 }
 

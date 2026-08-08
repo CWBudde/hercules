@@ -28,6 +28,16 @@ var rejectedTreePaths = []struct {
 	{"embedded newline", "service-frps-control\nfrps-vhost.yaml"},
 }
 
+// The two rejected-path error shapes go-git actually produces, as seen in the wild.
+// isRejectedTreePath matches on the message, so these stand in for errors go-git
+// constructs rather than any this package defines.
+var (
+	errGoGitInvalidPath     = errors.New(`to: invalid path: "\\"`)
+	errGoGitControlCharPath = errors.New(
+		`invalid path "service-frps-control\nfrps-vhost.yaml": contains control character`,
+	)
+)
+
 // The changes still have to come out: dropping them leaves the items downstream
 // of TreeDiff describing files that have since moved on, and LineHistory fails
 // the run on the mismatch a few commits later.
@@ -147,10 +157,8 @@ func TestIsRejectedTreePath(t *testing.T) {
 	assert.False(t, isRejectedTreePath(object.ErrEntryNotFound))
 
 	// The two shapes go-git actually produces, as seen in the wild.
-	assert.True(t, isRejectedTreePath(errors.New(`to: invalid path: "\\"`)))
-	assert.True(t, isRejectedTreePath(
-		errors.New(`invalid path "service-frps-control\nfrps-vhost.yaml": contains control character`),
-	))
+	assert.True(t, isRejectedTreePath(errGoGitInvalidPath))
+	assert.True(t, isRejectedTreePath(errGoGitControlCharPath))
 }
 
 // describeChanges reduces changes to what TreeDiff's consumers actually read off

@@ -630,8 +630,6 @@ func plotLanguages(
 }
 
 // printLanguageChurnSummary writes the per-language breakdown to stdout.
-//
-//nolint:forbidigo // The CLI summary on stdout is a deliberate output of this mode.
 func printLanguageChurnSummary(languageStats []readers.LanguageStat) {
 	fmt.Println("\nLanguage Statistics (churn: added + removed + changed lines):")
 	fmt.Println("============================================================")

@@ -19,6 +19,20 @@ disable = [
 enable = ['gomodguard_v2', 'wsl_v5', "revive"]
 
 [linters.settings]
+[linters.settings.wrapcheck]
+# wrapcheck cannot tell this module's own packages from third-party ones, so it
+# reports every error crossing an internal package boundary. Those errors are
+# already contextualised where they originate, and re-wrapping each of the
+# one-line dispatch arms in internal/render would only repeat the mode name.
+# Genuinely foreign errors (os, encoding/json, image/png, matplotlib-go) are
+# still reported and still wrapped.
+ignore-package-globs = ['github.com/cwbudde/hercules/*']
+
+[linters.settings.goconst]
+# Table-driven fixtures repeat mode names and expected payload keys by design;
+# hoisting them behind constants would hide what each case actually asserts.
+ignore-tests = true
+
 [linters.settings.errcheck]
 # Blank assignments are the required call-site marker for intentionally
 # discarded errors; unassigned error returns remain repository-wide failures.
@@ -53,7 +67,18 @@ min-complexity = 4
 json = 'camel'
 
 [linters.settings.varnamelen]
-ignore-names = ['rx', 'tx', 'db', 'ok', 'mw', 'gw', 'rt', 'id']
+# The renderer is plotting and geometry code: `ax` is the matplotlib-go axes
+# handle (the name it carries in matplotlib-go itself), x/y/x1..y2/px/py/dx/dy
+# are coordinates, a/b/c/d are polynomial coefficients, and bg/bw are the
+# background and border width. Spelling these out obscures the formula rather
+# than explaining it.
+ignore-names = [
+    'rx', 'tx', 'db', 'ok', 'mw', 'gw', 'rt', 'id',
+    'ax', 'x', 'y', 'z', 'w', 'h', 'i', 'j', 'k', 'n',
+    'a', 'b', 'c', 'd', 'r', 'g', 'f', 'v', 't', 's', 'm', 'o',
+    'dx', 'dy', 'dt', 'x1', 'x2', 'y1', 'y2', 'v2', 'px', 'py',
+    'bg', 'bw', 'gs', 'ts', 'tm', 'wi',
+]
 ignore-decls = ['w http.ResponseWriter', 'r *http.Request', 'g *Gateway']
 
 [linters.settings.wsl_v5]
@@ -101,9 +126,53 @@ linters = ['gochecknoglobals']
 path = '(^|/)(core|version|internal/core/registry)\.go$'
 text = '(Registry|BinaryGitHash|BinaryVersion) is a global variable'
 
+# Package-level lookup tables: the mode dispatch/validation maps, the built-in
+# colour palettes and themes, and the default size and limit tables. They are
+# populated once and read-only thereafter, the same rationale as the pipeline
+# Registry above.
+[[linters.exclusions.rules]]
+linters = ['gochecknoglobals']
+path = '(^internal/render/|^internal/analysisio/)'
+
+# Test fixtures share flag sets and corpus definitions across table-driven cases.
+[[linters.exclusions.rules]]
+linters = ['gochecknoglobals']
+path = '_test\.go'
+
 [[linters.exclusions.rules]]
 linters = ['err113', 'wrapcheck']
 path = 'cmd/.*\.go'
+
+# Test helpers raise one-off assertion errors that no caller inspects, and
+# propagate os/png errors verbatim where the failure already names the fixture.
+# The sentinel and wrapping conventions apply to production error paths.
+[[linters.exclusions.rules]]
+linters = ['err113', 'wrapcheck']
+path = '_test\.go'
+
+# The renderer is a port of Python `labours`: its modes write their textual
+# report, progress lines and "chart saved to ..." notices to stdout, and
+# cmd/labours prints its theme and mode listings. That output is the product,
+# not a debug trace. Everywhere else a stray fmt.Print still fails.
+[[linters.exclusions.rules]]
+linters = ['forbidigo']
+path = '(^internal/render/|^cmd/labours/)'
+
+# Geometry and colour helpers return several same-typed values, and the result
+# names are the only thing distinguishing (left, right, bottom, top) or
+# (background, foreground) from each other. None of these use naked returns or
+# mutate results in a defer, so nakedret still covers the actual hazard.
+[[linters.exclusions.rules]]
+linters = ['nonamedreturns']
+path = '(^internal/render/|^cmd/labours/|_test\.go)'
+
+# These struct tags are pinned to formats outside this repository: user-authored
+# theme files that theme_manager round-trips by name, the documented JSON
+# analysis output that downstream tools parse, and the committed
+# test/corpus/baseline.json manifest. camelCase remains the default for new types.
+[[linters.exclusions.rules]]
+linters = ['tagliatelle']
+path = '(internal/render/graphics/theme\.go|internal/render/modes/ownership\.go|internal/render/dispatch_test\.go|test/corpus/corpus_test\.go)'
 
 # cmd/ is CLI glue; inline error handling is its established style and wsl's
 # blank-line demands there conflict with gofumpt.
@@ -151,6 +220,20 @@ path = 'internal/render/outputpath/outputpath_test\.go'
 [[linters.exclusions.rules]]
 linters = ['lll']
 path = 'internal/linehistory/file_test\.go'
+
+# The theme table is dense tabular data: each theme is one row of rgba() columns
+# and the palette is a single aligned list. Wrapping them would destroy the
+# alignment that makes the themes comparable at a glance.
+[[linters.exclusions.rules]]
+linters = ['lll']
+path = 'internal/render/graphics/theme\.go'
+
+# Legacy integration suites keep their shared stateful fixtures together;
+# production files remain subject to revive's length limit.
+[[linters.exclusions.rules]]
+linters = ['revive']
+path = '_test\.go'
+text = 'file-length-limit'
 
 # This legacy integration suite intentionally keeps its shared stateful fixture
 # tests together; production files remain subject to revive's length limit.

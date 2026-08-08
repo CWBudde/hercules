@@ -82,6 +82,48 @@ These counts exclude `people_interaction:` — a signed interaction matrix whose
 correct by construction; counting it inflated every figure in the older tables by roughly an
 order of magnitude. **Older tables in git history are not comparable to these.**
 
+### What this costs in the people matrix, measured against `git blame`
+
+**Measured:** 2026-08-01 against `ca66fff`. Until now the magnitude of B2 ("person matrices
+have _always_ contained negatives") was only ever stated as a cell count. It is worse than a
+count suggests: on the worst-affected repositories **whole authors change places**.
+
+The check is independent of hercules — `git blame --line-porcelain` over every tracked file at
+HEAD, aggregated through `ewws-statistics/ewws-developers.identities`, against the bus-factor
+gauge's latest snapshot for the same `.pb`.
+
+`mekorp-webclient` (551 448 lines blamed, hercules reports 704 393):
+
+| person       | git blame | hercules |                                |
+| ------------ | --------: | -------: | ------------------------------ |
+| Christian    |     22.4% |    19.2% | ok                             |
+| **Fabienne** | **21.4%** | **—**    | 2nd largest owner, not in top 8 |
+| Hannes       |     16.3% |    13.6% | ok                             |
+| Emil         |     10.4% |     5.1% | halved                         |
+| Rüdiger      |      7.7% |     4.8% | understated                    |
+| Lukas N.     |      5.3% |     5.2% | ok                             |
+| Katharina    |      4.1% |     —    | absent                         |
+| **Ionut**    |  **2.6%** | **40.8%**| credited ~287 k lines he does not own |
+
+The shares missing from Fabienne, Katharina, Emil and Rüdiger sum to roughly Ionut's excess,
+so this reads as several authors' lines collapsing onto one — not as noise spread thinly.
+Fabienne's ownership is not marginal or hard to see: 38 159 lines of
+`src/__generated__/apiTypes.ts` and 7 341 of `src/gql/graphql.ts` are hers by blame, and those
+two generated files alone are 248 k of the repository's 580 k lines.
+
+**It is not systematic, and that is the useful part.** The same comparison on `ewws-auth` is
+essentially exact — Christian 67.8 % vs 66 %, Lukas N. 28.5 % vs 30 %, Emil 2.1 % vs 2 %, totals
+within 0.1 % (85 154 vs 85 236). `ewws-auth` has **0** negative burndown cells in the table
+above; `mekorp-webclient` has 1 447, second only to `mekorp-backend`. The distortion tracks
+B1c damage rather than repository size or age, which is what makes it B1c's cost rather than a
+separate defect.
+
+**Consequences.** Any downstream reading of ownership on an affected repository is wrong at the
+level of who, not just how much: bus factor, the ownership gauge, `code_ownership.svg`, and
+anything built on them. It also means B1c cannot be judged closed on negative-cell counts
+alone — this comparison is the acceptance test that actually reflects what users see, and it is
+cheap to run on any repository in the corpus.
+
 ### Phase overview
 
 | phase  | what                                                                                    | state                                                                           |
@@ -657,6 +699,223 @@ old size.
 
 ---
 
+## M — charts and metrics that do not exist yet
+
+Filed 2026-08-06 from a sweep over the org-wide corpus in `MeKo/ewws-statistics`: 231
+non-archived MeKo-Tech repositories, 10.9 M lines, 31 508 commits, 38 identity groups, merged
+into one `.pb`. Everything below was measured against that corpus, or against
+`output/data/hercules-pb/ewws-auth-burndown.pb` as the single-repository control.
+
+This is a different class of item from B1c–B13: nothing here is an accounting defect. These are
+things hercules **collects and throws away**, renders **wrongly**, or does not model at all. They
+are ordered by value-per-effort, not by severity.
+
+### M1 — `--onboarding` is computed on every default report run and then discarded 🔴
+
+The single biggest gap. `OnboardingAnalysis` measures time-to-first-meaningful-change, per-author
+ramp-up snapshots at fixed day windows, and join cohorts — for a 38-person organisation with a
+steady AZUBI intake, that is the one question none of the existing charts answer.
+
+- Leaf: `leaves/onboarding.go:86`, `Name()` `:117`, `Flag()` `"onboarding"` `:229`, registered
+  `:889`.
+- Results (`OnboardingResult`, `leaves/onboarding.go:76-84`): `Authors map[int]*AuthorOnboardingData`,
+  `Cohorts map[string]*CohortStats`, `WindowDays []int`, `MeaningfulThreshold int`.
+  `AuthorOnboardingData` (`:58-64`) carries `FirstCommitTick`, `JoinCohort` (`"YYYY-MM"`) and
+  `Snapshots` keyed by window; `OnboardingSnapshot` (`:43-56`) separates total from *meaningful*
+  commits/files/lines.
+- Protobuf exists: `OnboardingResults` at `internal/pb/pb.proto:371`, emitted at
+  `leaves/onboarding.go:793`.
+- It is in `reportDefaultAnalysisFlags` (`cmd/hercules/report.go:61`) — **every** default
+  `hercules report` pays for it.
+- Nothing renders it: no `"onboarding"` key in `internal/render/dispatch.go:18-43`, no entry in
+  `cmd/labours/helpers.go:87-112`, no reader in `internal/render/readers/`. `grep -ri onboarding
+  cmd/labours/ internal/render/` is empty. The charts only ever existed in the retired Python
+  renderer.
+
+**Work**: a `.pb` reader, an `"onboarding"` mode handler, and a mode→analyses entry. Two charts
+worth having: a ramp-up curve per join cohort (meaningful lines against days-since-join), and a
+time-to-first-meaningful-commit distribution.
+
+**Per repository it works today; org-wide it is blocked on M2.** `OnboardingAnalysis` embeds
+`core.NoopMerger` (`leaves/onboarding.go:87`) and defines no `MergeResults`, so it fails the
+`ResultMergeablePipelineItem` assertion at `cmd/hercules/combine.go:305` and is dropped.
+
+### M2 — non-mergeable leaves are dropped silently, and `report` contradicts itself 🟡
+
+`cmd/hercules/combine.go:305-315`: a failed `ResultMergeablePipelineItem` assertion appends the
+analysis to `loaded.skipped` with `"; not merged"` and carries on — surfaced only when the user
+named it via `--only`. So `hercules report` (which enables `--onboarding` by default,
+`report.go:61`) followed by `hercules combine` loses the data without saying so.
+
+Two separable fixes: **(a)** always warn on a dropped analysis, not only under `--only`;
+**(b)** reconcile `reportDefaultAnalysisFlags` (`report.go:52-65`) with `reportDefaultModes`
+(`:84-101`) — today the former computes `onboarding` and the latter has no mode for it.
+
+Current non-mergeable set (all embed `core.NoopMerger`, none define `MergeResults`):
+`Onboarding`, `Shotness`, `CommitsStat` (`leaves/commits.go:22`), `FileHistoryAnalysis`
+(`leaves/file_history.go:24`), `ImportsPerDeveloper` (`leaves/imports_printer.go:31`).
+`CodeChurn` is the exception — real merge at `leaves/codechurn.go:413`.
+
+### M3 — three charts label an axis "Tick" while the data holds real dates 🟡
+
+`oldVsNew` proves the renderer can do it: `internal/render/modes/oldVsNew.go:64` takes
+`reader.GetHeader()` (`internal/render/readers/pb_reader.go:73-79`, begin/end unix), then
+`timeSeriesCalendarRange` (`oldVsNew.go:183`) and `dates[i] = start.AddDate(0, 0, i)` (`:171-174`).
+
+These three do not, and plot a bare integer index instead:
+
+| mode | x assignment | axis label |
+| --- | --- | --- |
+| `busFactor` | `internal/render/modes/report_metrics.go:670-671` | `"Tick"` `:676` |
+| `ownershipConcentration` | `report_metrics.go:996,998` | `"Tick"` `:1010` |
+| `knowledgeDiffusion` trend | `report_metrics.go:2094-2103` | `"Tick"` `:2103` |
+
+**The inputs are already there** — `readers.BusFactorData.TickSize` (`readers/reader.go:168-174`),
+`OwnershipConcentrationData.TickSize` (`:183-189`), `KnowledgeDiffusionData.TickSize` (`:198-204`),
+plus `reader.GetHeader()`. `date = begin + tick × tickSize` is the whole fix.
+
+Worth doing in the same pass: `busFactor`, `ownershipConcentration`, `hotspotRisk` and
+`refactoringProxy` discard the `startTime`/`endTime` dispatch parameters — note the `_, _ *time.Time`
+signatures at `internal/render/dispatch.go:362`, `:366`, `:374`, `:382`, against `oldVsNew` at
+`:342` and `temporalActivity` at `:349`. None of them can honour `--start-date`/`--end-date`.
+
+**Downstream**: the bus-factor timeline is otherwise the best unused chart in the corpus (1 → 9
+over five years, with a dip to 3 held from 2021-08 to 2024-04), and the tick axis is the only
+thing keeping it off a slide unexplained.
+
+### M4 — `refactoring-proxy` renders one spike at year −242464 🔴
+
+**Not a combine defect** — reproduced identically on a single repository, so B4's "tick axes
+rebased" is not the cause.
+
+The data is correct. `labours -m refactoring-proxy -o out.json` on the 231-repo merge gives 1526
+ticks, `Timestamp` min 1612793078 (2021-02-08), max 1785938678 (2026-08-05), **zero** timestamps
+below 1e9, with `TickSizeDays: 1`, `StartDate` and `EndDate` populated.
+
+The chart is not. Both the combined and the `ewws-auth` single-repo SVG plot **one** vertical
+spike at the extreme left (93 % and 18 % respectively) against a single x-tick reading
+`-242464`/`-242460`, with the whole five-year series collapsed into it. The axis is labelled
+`"Date"` (`internal/render/modes/refactoringProxy.go:112`) and the conversion at `:41-51`
+(`timestamps[i] = time.Unix(tick.Timestamp, 0).UTC()`) is right, so the loss sits between that
+`[]time.Time` and the plotter's x values — a year-−242464 label is what an epoch-relative
+`time.Time` produces after a wrong unit conversion.
+
+Cheapest reproduction: `labours -f pb -i output/data/hercules-pb/ewws-auth-burndown.pb -m
+refactoring-proxy -o /tmp/x.svg`.
+
+### M5 — `--relative` collapses `burndown-project` to a single band 🔴
+
+Also reproduced on a single repository, so also not scope-dependent.
+
+`labours -m burndown-project --relative` renders one solid colour filling the plot at a constant
+1.0 across the whole history, with a full and correct legend beside it (23 bands on the merge, 11
+on `ewws-auth`). Only the first band is drawn; the rest sit at zero. Without `--relative` the same
+input renders correctly.
+
+This matters because the relative view is the *right* one at org-wide scale — the absolute
+burndown is dominated by corpus growth. Note that `--relative` on **`ownership`** works correctly,
+and produces the best code-ownership chart in the set. That localises the defect to the burndown
+normalisation path rather than to `--relative` itself.
+
+### M6 — combined `hotspot-risk` is unsound in three independent ways 🟡
+
+Rendering it on the 231-repo merge succeeds and produces something worse than an error: 20 rows,
+alphabetically ordered, **every `RiskScore` exactly 1.0**, and `README.md` present twice as two
+separate rows.
+
+1. **Truncated to 20 regardless of configuration.** `cmd/hercules/combine.go:302` summons the item
+   via `Registry.Summon` and calls neither `Configure` nor `Initialize`, so `TopN`
+   (`leaves/hotspot_risk.go:32`) is zero-valued and `effectiveTopN()` (`:346-357`) falls back to
+   `DefaultTopN = 20` (`:92`); truncation at `:609-612`. A user who ran every repository with
+   `TopN=200` still gets 20. The guard's own doc comment (`:346-350`) already names this cause.
+2. **No dedup, by design.** `leaves/hotspot_risk.go:606-607` concatenates and re-sorts; the
+   comment at `:577-579` states why — *"the same path in two different repositories denotes two
+   different files, and `FileRisk` carries no repository qualifier."* Correct reasoning,
+   unreadable output. This is M7.
+3. **No cross-run rescaling.** `normalizeAndScore` (`:795`, writing the four `*Normalized` fields
+   at `:812-815`) is called only from `Finalize` (`:440`), never from `MergeResults`. Each
+   repository's factors are normalised against its own maxima, so the merged ranking compares
+   incomparable numbers — which is exactly why every surviving score is 1.0.
+
+(1) and (3) are fixable independently of (2).
+
+### M7 — no repository qualifier on any path key in the combine 🔴
+
+The root cause behind both M6(2) and the collapse of the org-wide coupling charts.
+
+`leaves/couples.go:413` merges the file index with
+`join.LiteralIdentities(cr1.Files, cr2.Files)`, which keys `destinations map[string]int` on the raw
+string (`internal/join/join.go:17-29`, `:35`) and sums co-occurrence via `mergeCouplesMatrices`
+(`leaves/couples.go:424`). No prefix, no tag. Measured consequence on the 231-repo corpus: 31 077
+distinct files reduce to **20 coupling relationships**, led by `manifest.json`,
+`CHANGELOG.md`↔`package.json` and `go.mod`↔`go.sum`. The charts are not noisy — they answer a
+question nobody asked ("do many repositories have a `package.json`?").
+
+`FileRisk.Path` (`leaves/hotspot_risk.go:65`), `FileHistoryResult.Files`
+(`leaves/file_history.go:34-36`) and `CodeChurnFileResult` via `Files map[string]...`
+(`leaves/codechurn.go:78-80`) all key the same way.
+
+**The repository identity is already in the combine pipeline** and is simply never threaded into a
+path key. It reaches `Burndown` as a separate axis — `cmd/hercules/combine.go:182,187-188`
+(`ReversedRepositoryDict`, `RepositoryHistories`) — and the header (`:197,243`). Qualifying paths
+as `repo:path` at merge time would make couples *and* hotspot-risk work org-wide in one change.
+Highest-leverage item in this section.
+
+### M8 — `knowledge-diffusion` has the silo data and sorts it alphabetically 🟡
+
+`knowledge_diffusion_silos` looks like the actionable companion to the headline number (78 % of
+all files have exactly one editor) and is useless: at org-wide scale it lists `.claude/`,
+`.cursor/` and `.devcontainer/` config files in alphabetical order, every one with one editor.
+
+The inputs for a real ranking are already collected — lines per file and editor count, with the
+tick axis supplying recency and churn. Ranking by `lines × single-editor × recency × churn` turns
+the chart into the one that answers *which* silos are dangerous. Small, self-contained, high value.
+
+### M9 — analyses that are collected but have no mode at all 🟢
+
+| leaf | `Name()` | `Flag()` | reader | mode | mergeable |
+| --- | --- | --- | --- | --- | --- |
+| `leaves/codechurn.go` | `CodeChurn` `:116` | `codechurn` `:175` | no | no | **yes**, `:413` |
+| `leaves/commits.go` | `CommitsStat` `:58` | `commits-stat` `:101` | yes, `pb_reader.go:1152` | no¹ | no |
+| `leaves/file_history.go` | `FileHistoryAnalysis` `:47` | `file-history` `:71` | yes, `pb_reader.go:633,1167` | no | no |
+| `leaves/imports_printer.go` | `ImportsPerDeveloper` `:54` | `imports-per-dev` `:78` | no | no | no |
+
+¹ `commits-stat` is not *entirely* unrendered — `cmd/labours/helpers.go:106` maps `"run-times"` onto
+it — but nothing surfaces the per-commit/per-file line stats it actually carries.
+
+**`CodeChurn` is the pick of these**: the only mergeable one, so it works org-wide today, and
+`CodeChurnFileResult` (`leaves/codechurn.go:83-89`) carries `InsertedLines` against `OwnedLines`
+per author per file — lifetime contribution against surviving contribution, a genuinely different
+statement from anything the burndown charts make. Caveats: it merges by bare path (M7) and panics
+on differing tick sizes (`:429`).
+
+### M10 — metrics hercules cannot answer at all 🟢
+
+Recorded so they are not repeatedly re-proposed as hercules features.
+
+- **Everything from the forge.** Review latency, review coverage, who-reviews-whom, PR size,
+  time-to-merge. Hercules reads git; none of this is in git. For a 38-person organisation this is
+  probably the most valuable missing dimension, and it belongs in a separate collector feeding
+  alongside hercules, not in a leaf.
+- **Test against production code.** `LanguagesDetection.detectLanguage`
+  (`internal/plumbing/languages.go:126-135`) calls `enry.GetLanguage(path.Base(name), blob.Data)`
+  at `:131` — content-aware, but language-only. No leaf, plumbing item or mode anywhere records a
+  test/non-test distinction. `enry` already exposes `IsTest`/`IsVendor`; this fork never calls
+  them. A test-ratio-over-time chart is close to free once one of them is wired into the languages
+  leaf.
+- **Cross-repo dependency/import graph.** `ImportsPerDeveloper` sees imports per developer, never
+  per repository, and is not mergeable (M9). "Which repositories depend on which" needs a manifest
+  parser, not a git walk.
+
+### Suggested order
+
+M7 unlocks M6(2) and the coupling charts, and is one change at one merge site. M3 and M8 are
+small, self-contained and immediately visible in a deck. M4 and M5 are outright rendering bugs and
+should be fixed before anyone trusts either chart. M1 is the largest piece of new work and the
+largest payoff; M2 should land with it, so the loss stops being silent.
+
+---
+
 ## Smaller open threads
 
 Each is independent of B1c's main line and none currently fails anything.
@@ -752,7 +1011,7 @@ Full diagnoses are in the git history of this file and in the merged PRs.
 | B1b        | file deletion inside a merge commit emitted nothing                                                                                                                                                                                                                                | `1abecda`, `9c010ef`            |
 | B1c (half) | `sortableChange.Less` was not a valid ordering, so exact renames became delete+create                                                                                                                                                                                              | —                               |
 | B1d        | the merge commit was consumed by only one branch; merged lines now keep their real author                                                                                                                                                                                          | —                               |
-| B2         | person matrices have _always_ contained negatives; decided **(a) the accounting is wrong** — no negative cell recovers by the final row, so branch divergence explains none of them. Demoted to a warning behind `--strict-burndown-balances`; the accounting defect itself is B1c | `ebc8ded`, `a7c8cba`, `0ea3cc0` |
+| B2         | person matrices have _always_ contained negatives; decided **(a) the accounting is wrong** — no negative cell recovers by the final row, so branch divergence explains none of them. Demoted to a warning behind `--strict-burndown-balances`; the accounting defect itself is B1c. **Magnitude measured 2026-08-01** — see "What this costs in the people matrix" under B1c: on `mekorp-webclient` it moves whole authors, not just cells | `ebc8ded`, `a7c8cba`, `0ea3cc0` |
 | B3         | `OwnershipSnapshot` underflow — a structural consequence of divergent branches sharing one accumulator, not an accounting slip; totals stay signed and only the metric snapshots clamp                                                                                             | `fafb754`, `c04d08c`            |
 | B4         | `--only` filtered after the merge; an unmergeable analysis sank the whole combine. `RefactoringProxy` is now mergeable, with tick axes rebased                                                                                                                                     | `2f57e3d`                       |
 | B5         | `HotspotRisk` merged to empty because `TopN` is 0 on the combine path                                                                                                                                                                                                              | —                               |

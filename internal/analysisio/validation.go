@@ -7,7 +7,11 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"os"
 	"reflect"
+	"strconv"
+	"strings"
+	"sync"
 
 	"github.com/gogo/protobuf/proto"
 
@@ -35,14 +39,76 @@ type NamedLength struct {
 	Length int
 }
 
+// Environment variables that raise (or lower) the corresponding built-in limit.
+// They exist because the limits are sized for a single repository, while a
+// combined analysis over a whole organization legitimately exceeds them — a
+// 230-repository merge carries roughly 7M nested couples records against the 4Mi
+// default, and every reader validates the full envelope before any mode runs, so
+// one oversized analysis blocks charts that never touch it.
+//
+// Overriding is deliberately explicit: the defaults stay the safety net for
+// untrusted input, and an unset, unparseable, or non-positive value keeps them.
+const (
+	EnvMaxInputBytes    = "HERCULES_MAX_INPUT_BYTES"
+	EnvMaxDecodedCells  = "HERCULES_MAX_DECODED_CELLS"
+	EnvMaxNestedRecords = "HERCULES_MAX_NESTED_RECORDS"
+)
+
+var builtinLimits = Limits{
+	MaxInputBytes:    256 << 20,
+	MaxDecodedCells:  64 << 20,
+	MaxRows:          1 << 20,
+	MaxColumns:       1 << 20,
+	MaxNestedRecords: 4 << 20,
+}
+
+// defaultLimits is resolved once so a long render does not re-read the
+// environment for every message it decodes.
+var defaultLimits = sync.OnceValue(func() Limits {
+	return limitsFromEnv(os.Getenv)
+})
+
 func DefaultLimits() Limits {
-	return Limits{
-		MaxInputBytes:    256 << 20,
-		MaxDecodedCells:  64 << 20,
-		MaxRows:          1 << 20,
-		MaxColumns:       1 << 20,
-		MaxNestedRecords: 4 << 20,
+	return defaultLimits()
+}
+
+// limitsFromEnv applies the environment overrides to the built-in limits.
+// It takes a lookup function so the behavior is testable without mutating the
+// process environment.
+func limitsFromEnv(lookup func(string) string) Limits {
+	limits := builtinLimits
+
+	if value, ok := positiveEnvInt(lookup, EnvMaxInputBytes); ok {
+		limits.MaxInputBytes = value
 	}
+
+	if value, ok := positiveEnvInt(lookup, EnvMaxDecodedCells); ok {
+		limits.MaxDecodedCells = value
+	}
+
+	if value, ok := positiveEnvInt(lookup, EnvMaxNestedRecords); ok {
+		limits.MaxNestedRecords = int(value)
+	}
+
+	return limits
+}
+
+func positiveEnvInt(lookup func(string) string, name string) (int64, bool) {
+	raw := strings.TrimSpace(lookup(name))
+	if raw == "" {
+		return 0, false
+	}
+
+	value, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || value <= 0 {
+		return 0, false
+	}
+
+	if value > math.MaxInt {
+		return 0, false
+	}
+
+	return value, true
 }
 
 func (limits Limits) WithDefaults() Limits {
@@ -115,8 +181,8 @@ func ValidateRecordCount(name string, count int, limits Limits) error {
 
 	if count > limits.MaxNestedRecords {
 		return fmt.Errorf(
-			"%w: %s has %d records, limit is %d",
-			ErrAnalysisTooLarge, name, count, limits.MaxNestedRecords,
+			"%w: %s has %d records, limit is %d (raise with %s)",
+			ErrAnalysisTooLarge, name, count, limits.MaxNestedRecords, EnvMaxNestedRecords,
 		)
 	}
 

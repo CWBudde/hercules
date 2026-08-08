@@ -243,3 +243,50 @@ func FuzzUnmarshalCSR(f *testing.F) {
 		}
 	})
 }
+
+func TestLimitsFromEnvOverridesBuiltins(t *testing.T) {
+	env := map[string]string{
+		EnvMaxNestedRecords: "33554432",
+		EnvMaxInputBytes:    "1073741824",
+		EnvMaxDecodedCells:  "134217728",
+	}
+
+	limits := limitsFromEnv(func(name string) string { return env[name] })
+
+	if limits.MaxNestedRecords != 33554432 {
+		t.Errorf("MaxNestedRecords = %d, want 33554432", limits.MaxNestedRecords)
+	}
+
+	if limits.MaxInputBytes != 1073741824 {
+		t.Errorf("MaxInputBytes = %d, want 1073741824", limits.MaxInputBytes)
+	}
+
+	if limits.MaxDecodedCells != 134217728 {
+		t.Errorf("MaxDecodedCells = %d, want 134217728", limits.MaxDecodedCells)
+	}
+
+	// Rows and columns have no override and must keep their built-in values.
+	if limits.MaxRows != builtinLimits.MaxRows || limits.MaxColumns != builtinLimits.MaxColumns {
+		t.Errorf("MaxRows/MaxColumns = %d/%d, want %d/%d",
+			limits.MaxRows, limits.MaxColumns, builtinLimits.MaxRows, builtinLimits.MaxColumns)
+	}
+}
+
+// An unset, malformed, or non-positive override must leave the safety net in
+// place rather than disabling the limit.
+func TestLimitsFromEnvIgnoresUnusableValues(t *testing.T) {
+	for _, value := range []string{"", "  ", "not-a-number", "0", "-1", "99999999999999999999"} {
+		limits := limitsFromEnv(func(name string) string {
+			if name == EnvMaxNestedRecords {
+				return value
+			}
+
+			return ""
+		})
+
+		if limits.MaxNestedRecords != builtinLimits.MaxNestedRecords {
+			t.Errorf("%q: MaxNestedRecords = %d, want built-in %d",
+				value, limits.MaxNestedRecords, builtinLimits.MaxNestedRecords)
+		}
+	}
+}

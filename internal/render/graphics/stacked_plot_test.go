@@ -34,7 +34,7 @@ func TestCreateStackedPlot(t *testing.T) {
 		timePoints[i] = startTime.AddDate(0, 0, i)
 	}
 
-	err := mockCreateStackedPlot(testData, labels, timePoints, "Test Stacked Plot", "Lines of Code", outputPath)
+	err := mockCreateStackedPlot(testData, labels, timePoints, "Test Stacked Plot", outputPath)
 	if err != nil {
 		t.Errorf("CreateStackedPlot() error = %v", err)
 	}
@@ -72,7 +72,7 @@ func TestCreateStackedPlotEmptyData(t *testing.T) {
 	emptyLabels := []string{}
 	emptyTimes := []time.Time{}
 
-	err := mockCreateStackedPlot(emptyData, emptyLabels, emptyTimes, "Empty Plot", "Value", outputPath)
+	err := mockCreateStackedPlot(emptyData, emptyLabels, emptyTimes, "Empty Plot", outputPath)
 	if err == nil {
 		t.Error("Expected error for empty data, but got nil")
 	}
@@ -93,7 +93,7 @@ func TestCreateStackedPlotSingleSeries(t *testing.T) {
 		timePoints[i] = startTime.AddDate(0, 0, i)
 	}
 
-	err := mockCreateStackedPlot(testData, labels, timePoints, "Single Series Plot", "Value", outputPath)
+	err := mockCreateStackedPlot(testData, labels, timePoints, "Single Series Plot", outputPath)
 	if err != nil {
 		t.Errorf("CreateStackedPlot() with single series error = %v", err)
 	}
@@ -121,7 +121,7 @@ func TestCreateStackedPlotMismatchedData(t *testing.T) {
 		timePoints[i] = startTime.AddDate(0, 0, i)
 	}
 
-	err := mockCreateStackedPlot(testData, labels, timePoints, "Mismatched Plot", "Value", outputPath)
+	err := mockCreateStackedPlot(testData, labels, timePoints, "Mismatched Plot", outputPath)
 	if err == nil {
 		t.Error("Expected error for mismatched data lengths, but got nil")
 	}
@@ -135,7 +135,7 @@ func TestCreateBarChart(t *testing.T) {
 	values := []float64{100, 80, 60, 40, 20}
 	labels := []string{"Alice", "Bob", "Charlie", "Dave", "Eve"}
 
-	err := mockCreateBarChart(values, labels, "Developer Commits", "Commits", outputPath)
+	err := mockCreateBarChart(values, labels, "Developer Commits", outputPath)
 	if err != nil {
 		t.Errorf("CreateBarChart() error = %v", err)
 	}
@@ -150,7 +150,7 @@ func TestCreateBarChartEmptyData(t *testing.T) {
 	tmpDir := t.TempDir()
 	outputPath := filepath.Join(tmpDir, "test_bar_chart_empty.png")
 
-	err := mockCreateBarChart([]float64{}, []string{}, "Empty Chart", "Value", outputPath)
+	err := mockCreateBarChart([]float64{}, []string{}, "Empty Chart", outputPath)
 	if err == nil {
 		t.Error("Expected error for empty bar chart data, but got nil")
 	}
@@ -441,7 +441,7 @@ func hsvToRGB(h, s, v float64) color.Color {
 
 // Mock functions for testing
 
-func mockCreateStackedPlot(data [][]float64, labels []string, timePoints []time.Time, title, yLabel, outputPath string) error {
+func mockCreateStackedPlot(data [][]float64, labels []string, timePoints []time.Time, title, outputPath string) error {
 	if len(data) == 0 || len(labels) == 0 || len(timePoints) == 0 {
 		return errors.New("empty data provided")
 	}
@@ -462,7 +462,7 @@ func mockCreateStackedPlot(data [][]float64, labels []string, timePoints []time.
 	return os.WriteFile(outputPath, []byte(content), 0o600)
 }
 
-func mockCreateBarChart(values []float64, labels []string, title, yLabel, outputPath string) error {
+func mockCreateBarChart(values []float64, labels []string, title, outputPath string) error {
 	if len(values) == 0 || len(labels) == 0 {
 		return errors.New("empty data provided")
 	}

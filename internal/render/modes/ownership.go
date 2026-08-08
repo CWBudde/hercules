@@ -810,7 +810,7 @@ func saveOwnershipMatplotlibFigure(fig *core.Figure, output string, width, heigh
 	}
 
 	switch strings.ToLower(filepath.Ext(output)) {
-	case ".svg":
+	case extensionSVG:
 		return saveOwnershipSVG(fig, output, config)
 	default:
 		return saveOwnershipPNG(fig, output, config, background)

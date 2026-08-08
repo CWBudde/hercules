@@ -103,7 +103,7 @@ func prepareProjectBurndownOutput(output string, quiet bool) (string, error) {
 
 func defaultBurndownResample(resample string) string {
 	if resample == "" {
-		return "year"
+		return resampleYear
 	}
 
 	return resample
@@ -288,7 +288,7 @@ func repositoryBurndownOutputPaths(
 	}
 
 	outputFiles, err := outputpath.AssetFanoutPaths(
-		output, "burndown-repository", identities, []string{".png", ".svg"},
+		output, "burndown-repository", identities, []string{extensionPNG, extensionSVG},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("plan repository burndown outputs: %w", err)

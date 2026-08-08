@@ -482,7 +482,7 @@ func plotDevs(
 
 	err := graphics.PlotTimeAreasMatplotlib(dates, series, graphics.MatplotlibTimeAreaOptions{
 		Title:        "Developer Contributions Over Time",
-		XLabel:       "Time",
+		XLabel:       timeAxisLabel,
 		YLabel:       "Commits",
 		Output:       output,
 		WidthInches:  32,

@@ -604,34 +604,6 @@ func (analyser *LineHistoryAnalyser) Merge(items []core.PipelineItem) {
 	analyser.onNewTick()
 }
 
-// foldMergeRemovals collects the removals every parent branch produced while it replayed the merge
-// commit and keeps one per file.
-//
-// A merge commit is consumed once per parent so that Merge() can pair the files up, which means a
-// file the merge deletes is reported gone by every parent that held it. Letting all of those
-// through would remove the same lines several times over and drive the burndown matrix negative -
-// the same shape as PLAN.md B1c. Dropping them all instead would lose the file a single parent
-// held, whose removal no other branch can see, and its lines would stay alive forever.
-//
-// The authoritative branch comes first in branches, so its version of a shared removal wins.
-func (analyser *LineHistoryAnalyser) foldMergeRemovals(branches []*LineHistoryAnalyser) {
-	seen := map[FileId]bool{}
-
-	for _, branch := range branches {
-		for _, change := range branch.replicaChanges {
-			if seen[change.FileId] {
-				continue
-			}
-
-			seen[change.FileId] = true
-
-			analyser.changes = append(analyser.changes, change)
-		}
-
-		branch.replicaChanges = nil
-	}
-}
-
 func matchingMergeFiles(
 	branches []*LineHistoryAnalyser, name string, target *File,
 ) []*File {
@@ -775,6 +747,34 @@ func (analyser *LineHistoryAnalyser) Boot() error {
 // Dispose removes temporary hibernation state left by a completed or failed run.
 func (analyser *LineHistoryAnalyser) Dispose() {
 	_ = removeLineHistoryHibernationFile(analyser)
+}
+
+// foldMergeRemovals collects the removals every parent branch produced while it replayed the merge
+// commit and keeps one per file.
+//
+// A merge commit is consumed once per parent so that Merge() can pair the files up, which means a
+// file the merge deletes is reported gone by every parent that held it. Letting all of those
+// through would remove the same lines several times over and drive the burndown matrix negative -
+// the same shape as PLAN.md B1c. Dropping them all instead would lose the file a single parent
+// held, whose removal no other branch can see, and its lines would stay alive forever.
+//
+// The authoritative branch comes first in branches, so its version of a shared removal wins.
+func (analyser *LineHistoryAnalyser) foldMergeRemovals(branches []*LineHistoryAnalyser) {
+	seen := map[FileId]bool{}
+
+	for _, branch := range branches {
+		for _, change := range branch.replicaChanges {
+			if seen[change.FileId] {
+				continue
+			}
+
+			seen[change.FileId] = true
+
+			analyser.changes = append(analyser.changes, change)
+		}
+
+		branch.replicaChanges = nil
+	}
 }
 
 func removeLineHistoryHibernationFile(analyser *LineHistoryAnalyser) error {

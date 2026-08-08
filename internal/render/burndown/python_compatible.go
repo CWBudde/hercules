@@ -9,6 +9,24 @@ import (
 	"time"
 )
 
+// Resample unit aliases accepted by the Python-compatible loader.
+const (
+	resampleDay   = "day"
+	resampleMonth = "month"
+)
+
+var (
+	errEmptyMatrix                  = errors.New("empty matrix")
+	errInvalidSamplingOrGranularity = errors.New("invalid sampling or granularity")
+	errInvalidTickSize              = errors.New("invalid tick size")
+	errTooLooseResampling           = errors.New("too loose resampling")
+	errUnsupportedResampleMode      = errors.New("unsupported resample mode")
+	errNoResamplingPeriods          = errors.New("no valid resampling periods generated")
+	errNoSamplingRange              = errors.New("no valid sampling range generated")
+	errInvalidResampleMultiplier    = errors.New("invalid multiplier")
+	errUnsupportedFrequency         = errors.New("unsupported frequency")
+)
+
 // BurndownParameters matches Python's burndown parameters structure.
 type BurndownParameters struct {
 	Sampling    int     // Sampling interval
@@ -41,7 +59,7 @@ type ProcessedBurndown struct {
 // This implements burndown semantics: code persists until explicitly modified/deleted.
 func InterpolateBurndownMatrix(matrix [][]int, granularity, sampling int, progress bool) ([][]float64, error) {
 	if len(matrix) == 0 || len(matrix[0]) == 0 {
-		return [][]float64{}, errors.New("empty matrix")
+		return [][]float64{}, errEmptyMatrix
 	}
 
 	rows := len(matrix)
@@ -228,7 +246,13 @@ func FloorDateTime(dt time.Time, tickSize float64) time.Time {
 }
 
 // LoadBurndown is the main function that replicates Python's load_burndown.
-func LoadBurndown(header BurndownHeader, name string, matrix [][]int, resample string, reportSurvival, interpolationProgress bool) (*ProcessedBurndown, error) {
+func LoadBurndown(
+	header BurndownHeader,
+	name string,
+	matrix [][]int,
+	resample string,
+	reportSurvival, interpolationProgress bool,
+) (*ProcessedBurndown, error) {
 	err := validateBurndownInput(header, matrix)
 	if err != nil {
 		return nil, err
@@ -271,15 +295,18 @@ func LoadBurndown(header BurndownHeader, name string, matrix [][]int, resample s
 
 func validateBurndownInput(header BurndownHeader, matrix [][]int) error {
 	if header.Sampling <= 0 || header.Granularity <= 0 {
-		return fmt.Errorf("invalid sampling (%d) or granularity (%d)", header.Sampling, header.Granularity)
+		return fmt.Errorf(
+			"%w: sampling (%d), granularity (%d)",
+			errInvalidSamplingOrGranularity, header.Sampling, header.Granularity,
+		)
 	}
 
 	if header.TickSize <= 0 || math.IsNaN(header.TickSize) || math.IsInf(header.TickSize, 0) {
-		return fmt.Errorf("invalid tick size %v", header.TickSize)
+		return fmt.Errorf("%w %v", errInvalidTickSize, header.TickSize)
 	}
 
 	if len(matrix) == 0 || len(matrix[0]) == 0 {
-		return errors.New("empty matrix")
+		return errEmptyMatrix
 	}
 
 	return nil
@@ -365,11 +392,11 @@ func loadBurndownFallback(
 	interpolationProgress bool,
 ) (*ProcessedBurndown, error) {
 	_, base, err := parseResampleFreq(resample)
-	fallbackModes := map[string]string{"YE": "month", "ME": "day", "W": "day"}
+	fallbackModes := map[string]string{"YE": resampleMonth, "ME": resampleDay, "W": resampleDay}
 
 	fallbackMode, ok := fallbackModes[base]
 	if err != nil || !ok {
-		return nil, fmt.Errorf("too loose resampling: %s. Try finer", resample)
+		return nil, fmt.Errorf("%w: %s. Try finer", errTooLooseResampling, resample)
 	}
 
 	fmt.Printf("too loose resampling - by %s, trying by %s\n", resample, fallbackMode)
@@ -385,7 +412,11 @@ func loadBurndownFallback(
 }
 
 // resampleBurndownData implements pandas-like resampling logic.
-func resampleBurndownData(daily [][]float64, start, finish time.Time, resample string) ([]time.Time, [][]float64, []string, error) {
+func resampleBurndownData(
+	daily [][]float64,
+	start, finish time.Time,
+	resample string,
+) ([]time.Time, [][]float64, []string, error) {
 	// Parse the resample frequency into a multiplier and a canonical base
 	// frequency (D, W, ME, YE). This mirrors pandas offset aliases such as
 	// "3M" (every third month-end), "W" (weekly) and "year"/"month"/"day".
@@ -396,20 +427,20 @@ func resampleBurndownData(daily [][]float64, start, finish time.Time, resample s
 
 	dateGranularitySampling, err := pythonDateRangeUntil(start, finish, mult, base)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("unsupported resample mode: %s", resample)
+		return nil, nil, nil, fmt.Errorf("%w: %s", errUnsupportedResampleMode, resample)
 	}
 
 	if len(dateGranularitySampling) == 0 {
-		return nil, nil, nil, errors.New("no valid resampling periods generated")
+		return nil, nil, nil, errNoResamplingPeriods
 	}
 
 	if dateGranularitySampling[0].After(finish) {
-		return nil, nil, nil, errors.New("resampling period too loose")
+		return nil, nil, nil, fmt.Errorf("%w: resampling period", errTooLooseResampling)
 	}
 
 	samplingDays := int(finish.Sub(dateGranularitySampling[0]) / (24 * time.Hour))
 	if samplingDays <= 0 {
-		return nil, nil, nil, errors.New("no valid sampling range generated")
+		return nil, nil, nil, errNoSamplingRange
 	}
 
 	dateRangeSampling := make([]time.Time, samplingDays)
@@ -504,14 +535,14 @@ func burndownResampleLabels(dates []time.Time, base string) []string {
 func parseResampleFreq(resample string) (int, string, error) {
 	s := strings.TrimSpace(resample)
 
-	wordAliases := map[string]string{"year": "YE", "month": "ME", "week": "W", "day": "D"}
+	wordAliases := map[string]string{"year": "YE", resampleMonth: "ME", "week": "W", resampleDay: "D"}
 	if base, ok := wordAliases[strings.ToLower(s)]; ok {
 		return 1, base, nil
 	}
 
 	mult, unitStart, err := parseResampleMultiplier(s)
 	if err != nil {
-		return 0, "", fmt.Errorf("unsupported resample mode: %s", resample)
+		return 0, "", fmt.Errorf("%w: %s", errUnsupportedResampleMode, resample)
 	}
 
 	unit := strings.ToUpper(s[unitStart:])
@@ -530,7 +561,7 @@ func parseResampleFreq(resample string) (int, string, error) {
 
 	base, ok := baseByUnit[unit]
 	if !ok {
-		return 0, "", fmt.Errorf("unsupported resample mode: %s", resample)
+		return 0, "", fmt.Errorf("%w: %s", errUnsupportedResampleMode, resample)
 	}
 
 	return mult, base, nil
@@ -548,7 +579,7 @@ func parseResampleMultiplier(value string) (int, int, error) {
 
 	multiplier, err := strconv.Atoi(value[:index])
 	if err != nil || multiplier <= 0 {
-		return 0, 0, errors.New("invalid multiplier")
+		return 0, 0, errInvalidResampleMultiplier
 	}
 
 	return multiplier, index, nil
@@ -593,7 +624,7 @@ func pythonDateRange(start time.Time, periods, mult int, base string) ([]time.Ti
 
 	generate, ok := generators[base]
 	if !ok {
-		return nil, fmt.Errorf("unsupported frequency %q", base)
+		return nil, fmt.Errorf("%w %q", errUnsupportedFrequency, base)
 	}
 
 	return generate(start, periods, mult), nil
@@ -666,5 +697,10 @@ func yearEnd(year int, ref time.Time) time.Time {
 }
 
 func monthEnd(year int, month time.Month, ref time.Time) time.Time {
-	return time.Date(year, month+1, 1, ref.Hour(), ref.Minute(), ref.Second(), ref.Nanosecond(), ref.Location()).Add(-24 * time.Hour)
+	firstOfNextMonth := time.Date(
+		year, month+1, 1,
+		ref.Hour(), ref.Minute(), ref.Second(), ref.Nanosecond(), ref.Location(),
+	)
+
+	return firstOfNextMonth.Add(-24 * time.Hour)
 }

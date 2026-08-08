@@ -39,7 +39,7 @@ func BurndownPersonWithOptions(reader readers.Reader, output string, startDate, 
 	}
 
 	if opts.Resample == "" {
-		opts.Resample = "year"
+		opts.Resample = resampleYear
 	}
 
 	displayNames, outputFiles, err := personBurndownOutputPaths(peopleBurndowns, output)

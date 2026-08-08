@@ -12,6 +12,11 @@ import (
 // contains values which cannot represent line counts.
 var ErrInvalidSurvivalMatrix = errors.New("invalid burndown survival matrix")
 
+var (
+	errNilSurvivalWriter       = errors.New("write survival function: nil writer")
+	errInvalidSurvivalSampling = errors.New("write survival function: invalid sampling")
+)
+
 const survivalColumnTitle = "Ratio of survived lines"
 
 // SurvivalPoint is one point of the Kaplan-Meier survival function. Duration
@@ -192,11 +197,11 @@ func validateSurvivalMatrix(matrix [][]int) (int, error) {
 // intentionally omitted, matching the historical slice-step behavior.
 func WriteSurvivalFunction(writer io.Writer, curve []SurvivalPoint, sampling int) error {
 	if writer == nil {
-		return errors.New("write survival function: nil writer")
+		return errNilSurvivalWriter
 	}
 
 	if sampling <= 0 {
-		return fmt.Errorf("write survival function: invalid sampling %d", sampling)
+		return fmt.Errorf("%w %d", errInvalidSurvivalSampling, sampling)
 	}
 
 	step := len(curve) / 6

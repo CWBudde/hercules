@@ -16,30 +16,30 @@ import (
 type modeHandler func(reader readers.Reader, output string, startTime, endTime *time.Time, opts modes.Options) error
 
 var modeHandlers = map[string]modeHandler{
-	"burndown-project":        burndownProject,
-	"burndown-file":           burndownFile,
-	"burndown-person":         burndownPerson,
-	"burndown-repository":     burndownRepository,
-	"burndown-repos-combined": burndownReposCombined,
-	"overwrites-matrix":       overwritesMatrix,
-	"ownership":               ownershipBurndown,
-	"couples-files":           couplesFiles,
-	"couples-people":          couplesPeople,
-	"couples-shotness":        couplesShotness,
-	"shotness":                shotness,
-	"devs":                    devs,
-	"devs-efforts":            devsEfforts,
-	"old-vs-new":              oldVsNew,
-	"languages":               languages,
-	"temporal-activity":       temporalActivity,
-	"devs-parallel":           devsParallel,
-	"run-times":               runTimes,
-	"bus-factor":              busFactor,
-	"ownership-concentration": ownershipConcentration,
-	"knowledge-diffusion":     knowledgeDiffusion,
-	"hotspot-risk":            hotspotRisk,
-	"sentiment":               sentiment,
-	"refactoring-proxy":       refactoringProxy,
+	ModeBurndownProject:        burndownProject,
+	ModeBurndownFile:           burndownFile,
+	ModeBurndownPerson:         burndownPerson,
+	ModeBurndownRepository:     burndownRepository,
+	ModeBurndownReposCombined:  burndownReposCombined,
+	ModeOverwritesMatrix:       overwritesMatrix,
+	ModeOwnership:              ownershipBurndown,
+	ModeCouplesFiles:           couplesFiles,
+	ModeCouplesPeople:          couplesPeople,
+	ModeCouplesShotness:        couplesShotness,
+	ModeShotness:               shotness,
+	ModeDevs:                   devs,
+	ModeDevsEfforts:            devsEfforts,
+	ModeOldVsNew:               oldVsNew,
+	ModeLanguages:              languages,
+	ModeTemporalActivity:       temporalActivity,
+	ModeDevsParallel:           devsParallel,
+	ModeRunTimes:               runTimes,
+	ModeBusFactor:              busFactor,
+	ModeOwnershipConcentration: ownershipConcentration,
+	ModeKnowledgeDiffusion:     knowledgeDiffusion,
+	ModeHotspotRisk:            hotspotRisk,
+	ModeSentiment:              sentiment,
+	ModeRefactoringProxy:       refactoringProxy,
 }
 
 func executeModes(modeNames []string, reader readers.Reader, output string, startTime, endTime *time.Time) Result {
@@ -221,7 +221,7 @@ func missingAnalysisWarning(mode string, err error) (string, bool) {
 		return "", false
 	}
 
-	if mode == "devs-parallel" {
+	if mode == ModeDevsParallel {
 		return devsParallelMissingAnalysisWarning(err), true
 	}
 
@@ -241,28 +241,28 @@ func standardMissingAnalysisWarnings() map[string]string {
 	)
 
 	return map[string]string{
-		"burndown-project":        "project: " + burndown,
-		"burndown-file":           "files: " + burndownFiles,
-		"burndown-person":         "people: " + burndownPeople,
-		"ownership":               "ownership: " + burndownPeople,
-		"overwrites-matrix":       "overwrites_matrix: " + burndownPeople,
-		"burndown-repository":     "repositories: burndown data not available or repositories not tracked",
-		"burndown-repos-combined": "repositories-combined: burndown data not available or repositories not tracked",
-		"couples-files":           couples,
-		"couples-people":          couples,
-		"couples-shotness":        shotness,
-		"shotness":                shotness,
-		"sentiment":               "Sentiment stats were not collected. Re-run hercules with --sentiment.",
-		"devs":                    devs,
-		"devs-efforts":            devs,
-		"old-vs-new":              devs,
-		"languages":               devs,
-		"temporal-activity":       "Temporal activity stats were not collected. Re-run hercules with --temporal-activity.",
-		"bus-factor":              "Bus factor stats were not collected. Re-run hercules with --bus-factor.",
-		"ownership-concentration": "Ownership concentration stats were not collected. Re-run hercules with --ownership-concentration.",
-		"knowledge-diffusion":     "Knowledge diffusion stats were not collected. Re-run hercules with --knowledge-diffusion.",
-		"hotspot-risk":            "Hotspot risk scores were not collected. Re-run hercules with --hotspot-risk.",
-		"refactoring-proxy":       "Refactoring proxy data was not collected. Re-run hercules with --refactoring-proxy.",
+		ModeBurndownProject:        "project: " + burndown,
+		ModeBurndownFile:           "files: " + burndownFiles,
+		ModeBurndownPerson:         "people: " + burndownPeople,
+		ModeOwnership:              "ownership: " + burndownPeople,
+		ModeOverwritesMatrix:       "overwrites_matrix: " + burndownPeople,
+		ModeBurndownRepository:     "repositories: burndown data not available or repositories not tracked",
+		ModeBurndownReposCombined:  "repositories-combined: burndown data not available or repositories not tracked",
+		ModeCouplesFiles:           couples,
+		ModeCouplesPeople:          couples,
+		ModeCouplesShotness:        shotness,
+		ModeShotness:               shotness,
+		ModeSentiment:              "Sentiment stats were not collected. Re-run hercules with --sentiment.",
+		ModeDevs:                   devs,
+		ModeDevsEfforts:            devs,
+		ModeOldVsNew:               devs,
+		ModeLanguages:              devs,
+		ModeTemporalActivity:       "Temporal activity stats were not collected. Re-run hercules with --temporal-activity.",
+		ModeBusFactor:              "Bus factor stats were not collected. Re-run hercules with --bus-factor.",
+		ModeOwnershipConcentration: "Ownership concentration stats were not collected. Re-run hercules with --ownership-concentration.",
+		ModeKnowledgeDiffusion:     "Knowledge diffusion stats were not collected. Re-run hercules with --knowledge-diffusion.",
+		ModeHotspotRisk:            "Hotspot risk scores were not collected. Re-run hercules with --hotspot-risk.",
+		ModeRefactoringProxy:       "Refactoring proxy data was not collected. Re-run hercules with --refactoring-proxy.",
 	}
 }
 

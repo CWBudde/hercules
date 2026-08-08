@@ -12,6 +12,10 @@ import (
 	"github.com/cwbudde/hercules/internal/render/burndown"
 )
 
+// The expected palette is spelled out here on purpose rather than read from
+// tab20Palette(): it is the independent transcription of matplotlib's tab20
+// color cycle that the production table is checked against. Sharing the table
+// would make the assertion tautological and let a typo in tab20Palette() pass.
 func TestPythonLaboursColorPaletteMatchesTab20Cycle(t *testing.T) {
 	// Python labours applies the requested matplotlib style and then overrides
 	// axes.prop_cycle with pyplot.cm.tab20.colors in plotting.import_pyplot().

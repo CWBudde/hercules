@@ -30,6 +30,7 @@ var (
 	errChartMostlyWhite        = errors.New("chart is mostly white")
 	errChartMostlyBlack        = errors.New("chart is mostly black")
 	errImageDimensionsMismatch = errors.New("image dimensions don't match")
+	errUnexpectedArtifactCount = errors.New("expected exactly one chart artifact")
 )
 
 // ChartGenerator handles chart generation for visual testing.
@@ -54,7 +55,7 @@ func (cg *ChartGenerator) GenerateChart(t *testing.T, mode, inputFile string) (s
 	}
 
 	if len(artifacts) != 1 {
-		return "", fmt.Errorf("%s generated %d artifacts, expected one", mode, len(artifacts))
+		return "", fmt.Errorf("%w: %s generated %d artifacts", errUnexpectedArtifactCount, mode, len(artifacts))
 	}
 
 	for _, path := range artifacts {

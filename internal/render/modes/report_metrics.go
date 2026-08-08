@@ -2348,7 +2348,7 @@ func configureHotspotRiskXRange(axes *core.Axes, maxRisk float64) {
 }
 
 func hotspotComponentRenderAlpha(output string) float64 {
-	if strings.EqualFold(filepath.Ext(output), ".svg") {
+	if strings.EqualFold(filepath.Ext(output), extensionSVG) {
 		return 0.8
 	}
 
@@ -2801,7 +2801,7 @@ func saveReportFigureDirect(fig *core.Figure, output string, width, height int) 
 	}
 
 	switch strings.ToLower(filepath.Ext(output)) {
-	case ".svg":
+	case extensionSVG:
 		renderer, _, err := backends.NewRenderer("svg", config, nil)
 		if err != nil {
 			return fmt.Errorf("failed to create SVG renderer: %w", err)

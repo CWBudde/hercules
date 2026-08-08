@@ -72,12 +72,15 @@ func registerLaboursColormap(name string, colors []render.Color) {
 
 func ValidateHeatMap(matrix [][]float64, rows, cols []string) error {
 	if len(matrix) != len(rows) {
-		return fmt.Errorf("heatmap row count mismatch: matrix has %d rows, labels have %d", len(matrix), len(rows))
+		return fmt.Errorf("%w: matrix has %d rows, labels have %d", errHeatmapRowCountMismatch, len(matrix), len(rows))
 	}
 
 	for i, row := range matrix {
 		if len(row) != len(cols) {
-			return fmt.Errorf("heatmap column count mismatch on row %d: matrix has %d columns, labels have %d", i, len(row), len(cols))
+			return fmt.Errorf(
+				"%w on row %d: matrix has %d columns, labels have %d",
+				errHeatmapColumnCountMismatch, i, len(row), len(cols),
+			)
 		}
 	}
 

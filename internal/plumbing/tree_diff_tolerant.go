@@ -30,13 +30,13 @@ type treeFile struct {
 // both trees whole rather than pruning subtrees whose hashes match. That is the
 // wrong trade for every commit and the right one here, where it runs on the
 // handful that would otherwise abort the entire repository.
-func (treediff *TreeDiff) diffTreesDirectly(from, to *object.Tree) (object.Changes, error) {
-	fromFiles, err := treediff.collectTreeFiles(from)
+func (treediff *TreeDiff) diffTreesDirectly(fromTree, toTree *object.Tree) (object.Changes, error) {
+	fromFiles, err := treediff.collectTreeFiles(fromTree)
 	if err != nil {
 		return nil, err
 	}
 
-	toFiles, err := treediff.collectTreeFiles(to)
+	toFiles, err := treediff.collectTreeFiles(toTree)
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +102,8 @@ func (treediff *TreeDiff) collectTreeFilesUnder(
 			return fmt.Errorf("load subtree %s at %q: %w", entry.Hash, path, err)
 		}
 
-		if err := treediff.collectTreeFilesUnder(subtree, path, files); err != nil {
+		err = treediff.collectTreeFilesUnder(subtree, path, files)
+		if err != nil {
 			return err
 		}
 	}
@@ -116,14 +117,14 @@ func newChangeEntry(path string, file treeFile) object.ChangeEntry {
 
 // sortedUnionOfPaths keeps the change order deterministic and path-sorted, as
 // object.DiffTree's depth-first walk produces it.
-func sortedUnionOfPaths(from, to map[string]treeFile) []string {
-	paths := make([]string, 0, len(from)+len(to))
-	for path := range from {
+func sortedUnionOfPaths(fromFiles, toFiles map[string]treeFile) []string {
+	paths := make([]string, 0, len(fromFiles)+len(toFiles))
+	for path := range fromFiles {
 		paths = append(paths, path)
 	}
 
-	for path := range to {
-		if _, duplicate := from[path]; !duplicate {
+	for path := range toFiles {
+		if _, duplicate := fromFiles[path]; !duplicate {
 			paths = append(paths, path)
 		}
 	}

@@ -347,25 +347,6 @@ func (analyser *LegacyBurndownAnalysis) Consume(deps map[string]any) (map[string
 	return noDependencies(), nil
 }
 
-func (analyser *LegacyBurndownAnalysis) consumeLegacyTreeChange(
-	change *object.Change,
-	author int,
-	cache map[plumbing.Hash]*items.CachedBlob,
-	fileDiffs map[string]items.FileDiffData,
-) error {
-	action, _ := change.Action()
-	switch action {
-	case merkletrie.Insert:
-		return analyser.handleInsertion(change, author, cache)
-	case merkletrie.Delete:
-		return analyser.handleDeletion(change, author, cache)
-	case merkletrie.Modify:
-		return analyser.handleModification(change, author, cache, fileDiffs)
-	default:
-		return nil
-	}
-}
-
 func legacyBurndownDependencies(
 	deps map[string]any,
 ) (
@@ -604,6 +585,25 @@ func (analyser *LegacyBurndownAnalysis) Boot() error {
 // Dispose removes temporary hibernation state left by a completed or failed run.
 func (analyser *LegacyBurndownAnalysis) Dispose() {
 	_ = removeLegacyHibernationFile(analyser)
+}
+
+func (analyser *LegacyBurndownAnalysis) consumeLegacyTreeChange(
+	change *object.Change,
+	author int,
+	cache map[plumbing.Hash]*items.CachedBlob,
+	fileDiffs map[string]items.FileDiffData,
+) error {
+	action, _ := change.Action()
+	switch action {
+	case merkletrie.Insert:
+		return analyser.handleInsertion(change, author, cache)
+	case merkletrie.Delete:
+		return analyser.handleDeletion(change, author, cache)
+	case merkletrie.Modify:
+		return analyser.handleModification(change, author, cache, fileDiffs)
+	default:
+		return nil
+	}
 }
 
 func removeLegacyHibernationFile(analyser *LegacyBurndownAnalysis) error {

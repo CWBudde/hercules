@@ -278,7 +278,7 @@ func saveOverwritesMatplotlibFigure(fig *core.Figure, output string, width, heig
 	}
 
 	switch strings.ToLower(filepath.Ext(output)) {
-	case ".svg":
+	case extensionSVG:
 		renderer, _, err := backends.NewRenderer("svg", config, nil)
 		if err != nil {
 			return fmt.Errorf("failed to create SVG renderer: %w", err)

@@ -25,6 +25,13 @@ const (
 	resampleYear  = "year"
 	resampleMonth = "month"
 	resampleWeek  = "week"
+	resampleDay   = "day"
+)
+
+// Chart file extensions this package writes and dispatches on.
+const (
+	extensionSVG = ".svg"
+	extensionPNG = ".png"
 )
 
 // Languages generates language statistics and visualization showing the distribution
@@ -445,7 +452,7 @@ func normalizeLanguageFrequency(frequency string) string {
 		return "YE"
 	case resampleMonth:
 		return "ME"
-	case "day", "raw", "no":
+	case resampleDay, "raw", "no":
 		return "D"
 	case resampleWeek:
 		return "W"

@@ -15,6 +15,13 @@ import (
 	"github.com/cwbudde/hercules/internal/render/progress"
 )
 
+var (
+	errNoRuntimeStatsHeader = errors.New("no header found for runtime stats")
+	errInvalidCSRDimensions = errors.New("invalid CSR dimensions or row offsets")
+	errInvalidCSROffsets    = errors.New("invalid CSR offsets")
+	errCSRValueOverflow     = errors.New("CSR value overflows int")
+)
+
 type ProtobufReader struct {
 	data   *pb.AnalysisResults
 	Limits analysisio.Limits
@@ -321,7 +328,7 @@ func (r *ProtobufReader) GetLanguageStats() ([]LanguageStat, error) {
 // GetRuntimeStats retrieves runtime statistics.
 func (r *ProtobufReader) GetRuntimeStats() (map[string]float64, error) {
 	if r.data.GetHeader() == nil {
-		return nil, errors.New("no header found for runtime stats")
+		return nil, errNoRuntimeStatsHeader
 	}
 
 	runtimeStats := make(map[string]float64)
@@ -872,7 +879,7 @@ func parseCompressedSparseCouplingMatrix(
 	rows, columns := int(matrix.GetNumberOfRows()), int(matrix.GetNumberOfColumns())
 	if rows < 0 || columns < 0 || len(matrix.GetIndptr()) != rows+1 {
 		return SparseMatrix{}, fmt.Errorf(
-			"invalid CSR dimensions or row offsets for %dx%d matrix", rows, columns,
+			"%w for %dx%d matrix", errInvalidCSRDimensions, rows, columns,
 		)
 	}
 
@@ -892,14 +899,14 @@ func parseCompressedSparseCouplingMatrix(
 func parseCompressedSparseRow(matrix *pb.CompressedSparseRowMatrix, row int) ([]SparseEntry, error) {
 	start, end := int(matrix.GetIndptr()[row]), int(matrix.GetIndptr()[row+1])
 	if start < 0 || end < start || end > len(matrix.GetData()) || end > len(matrix.GetIndices()) {
-		return nil, fmt.Errorf("invalid CSR offsets [%d:%d] for row %d", start, end, row)
+		return nil, fmt.Errorf("%w: [%d:%d] for row %d", errInvalidCSROffsets, start, end, row)
 	}
 
 	entries := make([]SparseEntry, 0, end-start)
 	for index := start; index < end; index++ {
 		value := int(matrix.GetData()[index])
 		if int64(value) != matrix.GetData()[index] {
-			return nil, fmt.Errorf("CSR value at index %d overflows int", index)
+			return nil, fmt.Errorf("%w: index %d", errCSRValueOverflow, index)
 		}
 
 		entries = append(entries, SparseEntry{
@@ -908,22 +915,6 @@ func parseCompressedSparseRow(matrix *pb.CompressedSparseRowMatrix, row int) ([]
 	}
 
 	return entries, nil
-}
-
-// parseBurndownAnalysisResults extracts and parses burndown data from the Contents map.
-func (r *ProtobufReader) parseBurndownAnalysisResults() (*pb.BurndownAnalysisResults, error) {
-	if r.data == nil || r.data.Contents == nil {
-		return nil, fmt.Errorf("%w: Burndown", ErrAnalysisMissing)
-	}
-
-	var burndownData pb.BurndownAnalysisResults
-
-	err := r.unmarshalContent("Burndown", &burndownData)
-	if err != nil {
-		return nil, err
-	}
-
-	return &burndownData, nil
 }
 
 // GetBurndownParameters retrieves burndown parameters in Python-compatible format.
@@ -986,6 +977,22 @@ func (r *ProtobufReader) GetProjectBurndownWithHeader() (burndown.BurndownHeader
 	name, matrix := r.GetProjectBurndown()
 
 	return header, name, matrix, nil
+}
+
+// parseBurndownAnalysisResults extracts and parses burndown data from the Contents map.
+func (r *ProtobufReader) parseBurndownAnalysisResults() (*pb.BurndownAnalysisResults, error) {
+	if r.data == nil || r.data.Contents == nil {
+		return nil, fmt.Errorf("%w: Burndown", ErrAnalysisMissing)
+	}
+
+	var burndownData pb.BurndownAnalysisResults
+
+	err := r.unmarshalContent("Burndown", &burndownData)
+	if err != nil {
+		return nil, err
+	}
+
+	return &burndownData, nil
 }
 
 // parseCouplesAnalysisResults extracts and parses couples data from the Contents map.

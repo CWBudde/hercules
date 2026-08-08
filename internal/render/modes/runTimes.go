@@ -219,7 +219,7 @@ func plotRuntimeBreakdown(analysis RuntimeAnalysis, output string, visuals graph
 	err := graphics.PlotBarChartMatplotlib(labels, values, graphics.MatplotlibBarOptions{
 		Title:        "Runtime Analysis Breakdown",
 		XLabel:       "Operations (by time)",
-		YLabel:       "Time",
+		YLabel:       timeAxisLabel,
 		Output:       output,
 		WidthInches:  15.36,
 		HeightInches: 7.68,
@@ -365,7 +365,7 @@ func saveRuntimeFigure(fig *core.Figure, output string, width, height int) error
 	}
 
 	switch strings.ToLower(filepath.Ext(output)) {
-	case ".svg":
+	case extensionSVG:
 		renderer, _, err := backends.NewRenderer("svg", config, nil)
 		if err != nil {
 			return fmt.Errorf("failed to create SVG renderer: %w", err)

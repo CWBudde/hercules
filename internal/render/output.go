@@ -65,83 +65,83 @@ type outputConvention struct {
 }
 
 var modeOutputConventions = map[string]outputConvention{
-	"burndown-project": {
+	ModeBurndownProject: {
 		Kind:        outputSingleFile,
 		Description: "writes exactly the requested chart file",
 		Assets:      []string{"<output>"},
 	},
-	"burndown-file": {
+	ModeBurndownFile: {
 		Kind:        outputFileFanout,
 		Description: "uses the requested file path as a basename and writes one chart per file with a stable identity hash",
 		Assets:      []string{"<base>_<rune-safe-file-slug>-<hash><ext>"},
 	},
-	"burndown-person": {
+	ModeBurndownPerson: {
 		Kind: outputFileFanout,
 		Description: "uses the requested file path as a basename and writes one chart per person " +
 			"with a public canonical-name slug and stable identity hash",
 		Assets: []string{"<base>_<canonical-person-slug>-<identity-hash><ext>"},
 	},
-	"burndown-repository": {
+	ModeBurndownRepository: {
 		Kind:        outputAssetDir,
 		Description: "writes one PNG and SVG per repository using stable identity hashes",
 		Assets:      []string{"burndown-repository_<rune-safe-repository-slug>-<hash>.png", "burndown-repository_<rune-safe-repository-slug>-<hash>.svg"},
 	},
-	"burndown-repos-combined": {
+	ModeBurndownReposCombined: {
 		Kind:        outputSingleFile,
 		Description: "writes exactly the requested combined repository chart file",
 		Assets:      []string{"<output>"},
 	},
-	"overwrites-matrix": {
+	ModeOverwritesMatrix: {
 		Kind:        outputSingleFile,
 		Description: "writes exactly the requested matrix chart file",
 		Assets:      []string{"<output>"},
 	},
-	"ownership": {
+	ModeOwnership: {
 		Kind:        outputSingleFile,
 		Description: "writes exactly the requested ownership chart file",
 		Assets:      []string{"<output>"},
 	},
-	"couples-files": {
+	ModeCouplesFiles: {
 		Kind:        outputAssetDir,
 		Description: "writes TensorBoard-style file coupling projector assets into the requested directory",
 		Assets:      []string{"files_vocabulary.tsv", "files_vectors.tsv", "files_metadata.tsv"},
 	},
-	"couples-people": {
+	ModeCouplesPeople: {
 		Kind:        outputAssetDir,
 		Description: "writes TensorBoard-style people coupling projector assets into the requested directory",
 		Assets:      []string{"people_vocabulary.tsv", "people_vectors.tsv", "people_metadata.tsv"},
 	},
-	"couples-shotness": {
+	ModeCouplesShotness: {
 		Kind:        outputAssetDir,
 		Description: "writes shotness coupling charts into the requested directory",
 		Assets:      []string{"shotness_coupling_heatmap.png", "shotness_coupling_heatmap.svg", "top_shotness_coupling_pairs.png", "top_shotness_coupling_pairs.svg"},
 	},
-	"shotness": {
+	ModeShotness: {
 		Kind:        outputAssetDir,
 		Description: "prints statistics and writes PNG/SVG charts into the requested directory",
 		Assets:      []string{"shotness.png", "shotness.svg"},
 	},
-	"devs": {
+	ModeDevs: {
 		Kind:        outputSingleFile,
 		Description: "writes exactly the requested developer chart file",
 		Assets:      []string{"<output>"},
 	},
-	"devs-efforts": {
+	ModeDevsEfforts: {
 		Kind:        outputSingleFile,
 		Description: "writes the requested developer efforts chart file; --devs-efforts-detail also writes a Go-only productivity ranking sibling",
 		Assets:      []string{"<output>", "<base>_productivity_ranking<ext> (only with --devs-efforts-detail)"},
 	},
-	"old-vs-new": {
+	ModeOldVsNew: {
 		Kind:        outputSingleFile,
 		Description: "writes exactly the requested additions-vs-changes chart file",
 		Assets:      []string{"<output>"},
 	},
-	"languages": {
+	ModeLanguages: {
 		Kind:        outputSingleFile,
 		Description: "writes the requested chart file; direct directory calls write languages.png and languages.svg",
 		Assets:      []string{"<output>"},
 	},
-	"temporal-activity": {
+	ModeTemporalActivity: {
 		Kind:        outputCompanions,
 		Description: "writes the Python labours sibling set: eight stacked bar charts (weekdays/hours/months/weeks × commits/lines) plus two weekday×hour heatmaps",
 		Assets: []string{
@@ -150,42 +150,42 @@ var modeOutputConventions = map[string]outputConvention{
 			"<base>_heatmap_commits<ext>", "<base>_heatmap_lines<ext>",
 		},
 	},
-	"devs-parallel": {
+	ModeDevsParallel: {
 		Kind:        outputSingleFile,
 		Description: "writes the parallel-coordinates developer chart and prints a parallel-development summary; --devs-parallel-detail also writes a Go-only concurrency timeline sibling",
 		Assets:      []string{"<output>", "<base>_concurrency_timeline<ext> (only with --devs-parallel-detail)"},
 	},
-	"run-times": {
+	ModeRunTimes: {
 		Kind:        outputSingleFile,
 		Description: "prints the runtime summary; the Go-only breakdown chart is written only with --run-times-detail (Python parity: text-only)",
 		Assets:      []string{"<output> (only with --run-times-detail)"},
 	},
-	"bus-factor": {
+	ModeBusFactor: {
 		Kind:        outputCompanions,
 		Description: "writes timeline, gauge, and subsystem bus-factor sibling charts",
 		Assets:      []string{"<base>_timeline<ext>", "<base>_gauge<ext>", "<base>_subsystems<ext>"},
 	},
-	"ownership-concentration": {
+	ModeOwnershipConcentration: {
 		Kind:        outputCompanions,
 		Description: "writes timeline and subsystem ownership concentration charts as sibling files",
 		Assets:      []string{"<base>_timeline<ext>", "<base>_subsystems<ext>"},
 	},
-	"knowledge-diffusion": {
+	ModeKnowledgeDiffusion: {
 		Kind:        outputCompanions,
 		Description: "writes distribution, silos, and Lorenz-curve sibling charts; --knowledge-diffusion-detail also writes a Go-only trend sibling",
 		Assets:      []string{"<base>_distribution<ext>", "<base>_silos<ext>", "<base>_lorenz<ext>", "<base>_trend<ext> (only with --knowledge-diffusion-detail)"},
 	},
-	"hotspot-risk": {
+	ModeHotspotRisk: {
 		Kind:        outputCompanions,
 		Description: "writes the requested risk chart plus a TSV table sibling",
 		Assets:      []string{"<output>", "<base>_table.tsv"},
 	},
-	"sentiment": {
+	ModeSentiment: {
 		Kind:        outputAssetDir,
 		Description: "writes sentiment charts into the requested directory",
 		Assets:      []string{"sentiment-overview.png", "sentiment-overview.svg", "sentiment-developers.png", "sentiment-developers.svg", "sentiment-languages.png", "sentiment-languages.svg"},
 	},
-	"refactoring-proxy": {
+	ModeRefactoringProxy: {
 		Kind:        outputSingleFile,
 		Description: "writes exactly the requested refactoring proxy chart file",
 		Assets:      []string{"<output>"},

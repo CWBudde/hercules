@@ -338,7 +338,7 @@ func collectedSentimentOptions(name string, visuals graphics.Options) graphics.M
 	return graphics.MatplotlibTimeAreaOptions{
 		Title:        titleName + " sentiment",
 		Subtitle:     experimentalSentimentSubtitle,
-		XLabel:       "Time",
+		XLabel:       timeAxisLabel,
 		YLabel:       "Comment sentiment",
 		WidthInches:  16,
 		HeightInches: 12,
@@ -769,7 +769,7 @@ func plotSentimentForTypeWithOptions(
 		return fmt.Errorf("failed to save %s: %w", filename, err)
 	}
 
-	svgFile := filepath.Join(output, filename+".svg")
+	svgFile := filepath.Join(output, filename+extensionSVG)
 
 	opts.Output = svgFile
 

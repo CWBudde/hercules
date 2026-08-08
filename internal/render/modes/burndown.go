@@ -130,8 +130,8 @@ func burndownTimeRange(
 	}
 
 	tickSizes := map[string]time.Duration{
-		"month": 30 * 24 * time.Hour,
-		"day":   24 * time.Hour,
+		resampleMonth: 30 * 24 * time.Hour,
+		resampleDay:   24 * time.Hour,
 	}
 
 	tickSize := 365 * 24 * time.Hour
@@ -153,13 +153,13 @@ func writeBurndownSurvival(survival []burndown.SurvivalPoint, quiet bool) error 
 // resampleDateRange creates a date range based on the given resampling interval.
 func resampleDateRange(start, end time.Time, resample string) []time.Time {
 	generators := map[string]func(time.Time, time.Time) []time.Time{
-		"year":  yearlyDateRange,
-		"month": monthlyDateRange,
-		"M":     monthlyDateRange,
-		"week":  weeklyDateRange,
-		"W":     weeklyDateRange,
-		"day":   dailyDateRange,
-		"D":     dailyDateRange,
+		resampleYear: yearlyDateRange,
+		"month":      monthlyDateRange,
+		"M":          monthlyDateRange,
+		"week":       weeklyDateRange,
+		"W":          weeklyDateRange,
+		resampleDay:  dailyDateRange,
+		"D":          dailyDateRange,
 	}
 
 	generate, ok := generators[resample]

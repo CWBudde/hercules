@@ -31,8 +31,7 @@ var combineCmd = &cobra.Command{
 	RunE:  runCombine,
 }
 
-// repositorySeparator joins the repository names of a combined result in its header. Its presence
-// is what marks a header as naming several repositories rather than one.
+// repositorySeparator joins the repository names of a combined result in its header.
 const repositorySeparator = " & "
 
 type combineAccumulator struct {
@@ -51,6 +50,9 @@ type loadedMessage struct {
 	results    map[string]any
 	metadata   *hercules.CommonAnalysisResult
 	repository string
+	// qualifiedPaths reports the header flag of the same name: the file's path keys already name
+	// the repository they belong to, so they must not be qualified a second time.
+	qualifiedPaths bool
 	// failures fail the whole run: the file could not be read or parsed, or an analysis it does
 	// carry could not be deserialized.
 	failures []string
@@ -155,7 +157,9 @@ func (accumulator *combineAccumulator) mergeFile(fileName, only string) {
 	}
 
 	initializeBurndownRepository(loaded.results, loaded.repository)
-	messages = append(messages, qualifyRepositoryPaths(loaded.results, loaded.repository)...)
+	if !loaded.qualifiedPaths {
+		messages = append(messages, qualifyRepositoryPaths(loaded.results, loaded.repository)...)
+	}
 	merged, mergeErrors := mergeResults(
 		accumulator.results, accumulator.metadata, loaded.results, loaded.metadata, only,
 	)
@@ -199,11 +203,14 @@ func initializeBurndownRepository(results map[string]any, repository string) {
 // treatment through its own repository axis (see initializeBurndownRepository); the analyses here
 // have no such axis and would otherwise fuse their keys.
 //
-// A file which is itself the output of combine already carries qualified keys, and its header names
-// every repository it was built from - re-qualifying it would nest one prefix inside another, so it
-// is left as it is.
+// Whether a file has been through this already is read off its header flag, not guessed from the
+// repository name: the output of combine carries qualified keys whether it was built from one input
+// or from thirty, and files written before the flag existed carry none whatever their header says.
+//
+// A file whose header names no repository keeps its bare keys - there is nothing to qualify them
+// with - and stays exposed to the collision this prevents.
 func qualifyRepositoryPaths(results map[string]any, repository string) []string {
-	if repository == "" || strings.Contains(repository, repositorySeparator) {
+	if repository == "" {
 		return nil
 	}
 
@@ -235,6 +242,9 @@ func writeCombinedResult(destination io.Writer, accumulator *combineAccumulator)
 			Version:    pb.SchemaVersion,
 			Hash:       hercules.BinaryGitHash,
 			Repository: strings.Join(accumulator.repositories, repositorySeparator),
+			// Every merged input went through qualifyRepositoryPaths, so combining this output
+			// again must not prefix its keys a second time.
+			QualifiedPaths: true,
 		},
 		Contents: map[string][]byte{},
 	}
@@ -281,6 +291,7 @@ func loadMessage(fileName, only string) loadedMessage {
 	loaded := deserializeAnalysisContents(fileName, only, message.GetContents())
 	loaded.metadata = hercules.MetadataToCommonAnalysisResult(message.GetHeader())
 	loaded.repository = message.GetHeader().GetRepository()
+	loaded.qualifiedPaths = message.GetHeader().GetQualifiedPaths()
 	return loaded
 }
 

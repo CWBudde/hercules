@@ -227,29 +227,66 @@ func TestRunCombineQualifiesPathsWithTheirRepository(t *testing.T) {
 }
 
 // TestRunCombineLeavesCombinedInputQualifiedOnce guards against nesting one prefix inside another:
-// a file which is itself the output of combine already carries qualified paths.
+// a file which is itself the output of combine already carries qualified paths and says so in its
+// header. The single-input case is the one a header heuristic gets wrong - its header names one
+// repository and is indistinguishable from a plain analysis - so both are covered.
 func TestRunCombineLeavesCombinedInputQualifiedOnce(t *testing.T) {
-	alpha := writeCombineCouplesInput(t, "alpha", []string{combineTestReadme})
-	beta := writeCombineCouplesInput(t, "beta", []string{combineTestReadme})
-	var combined bytes.Buffer
+	for _, test := range []struct {
+		name    string
+		sources []string
+		want    []string
+	}{
+		{
+			name:    "two inputs",
+			sources: []string{"alpha", "beta"},
+			want:    []string{"alpha:" + combineTestReadme, "beta:" + combineTestReadme},
+		},
+		{
+			name:    "one input",
+			sources: []string{"alpha"},
+			want:    []string{"alpha:" + combineTestReadme},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			inputs := make([]string, len(test.sources))
+			for index, repository := range test.sources {
+				inputs[index] = writeCombineCouplesInput(t, repository, []string{combineTestReadme})
+			}
+			var combined bytes.Buffer
+			if err := runCombine(newCombineTestCommand(&combined, ""), inputs); err != nil {
+				t.Fatalf("runCombine() failed: %v", err)
+			}
 
-	if err := runCombine(newCombineTestCommand(&combined, ""), []string{alpha, beta}); err != nil {
+			recombinedInput := filepath.Join(t.TempDir(), "combined.pb")
+			if err := os.WriteFile(recombinedInput, combined.Bytes(), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			var output bytes.Buffer
+			if err := runCombine(newCombineTestCommand(&output, ""), []string{recombinedInput}); err != nil {
+				t.Fatalf("runCombine() failed over a combined input: %v", err)
+			}
+
+			if index := combinedCouplesIndex(t, &output); !slices.Equal(index, test.want) {
+				t.Fatalf("re-combined file index = %v, want %v", index, test.want)
+			}
+		})
+	}
+}
+
+// TestRunCombineQualifiesFilesWrittenBeforeTheHeaderFlag covers the other half: a file which does
+// not carry the flag has unqualified paths whatever its header names, so it must be qualified.
+func TestRunCombineQualifiesFilesWrittenBeforeTheHeaderFlag(t *testing.T) {
+	input := writeCombineCouplesInput(t, "alpha & beta", []string{combineTestReadme})
+	var output bytes.Buffer
+
+	if err := runCombine(newCombineTestCommand(&output, ""), []string{input}); err != nil {
 		t.Fatalf("runCombine() failed: %v", err)
 	}
 
-	recombinedInput := filepath.Join(t.TempDir(), "combined.pb")
-	if err := os.WriteFile(recombinedInput, combined.Bytes(), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	var output bytes.Buffer
-	if err := runCombine(newCombineTestCommand(&output, ""), []string{recombinedInput}); err != nil {
-		t.Fatalf("runCombine() failed over a combined input: %v", err)
-	}
-
 	index := combinedCouplesIndex(t, &output)
-	want := []string{"alpha:" + combineTestReadme, "beta:" + combineTestReadme}
+	want := []string{"alpha & beta:" + combineTestReadme}
 	if !slices.Equal(index, want) {
-		t.Fatalf("re-combined file index = %v, want %v", index, want)
+		t.Fatalf("file index = %v, want %v", index, want)
 	}
 }
 

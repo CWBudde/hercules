@@ -855,6 +855,11 @@
           "type": "map",
           "key": "string",
           "value": "double"
+        },
+        {
+          "number": 9,
+          "name": "qualified_paths",
+          "type": "bool"
         }
       ]
     },

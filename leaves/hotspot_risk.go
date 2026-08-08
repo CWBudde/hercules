@@ -584,9 +584,13 @@ func (hra *HotspotRiskAnalysis) Deserialize(pbmessage []byte) (any, error) {
 //
 // Runs with different churn windows are rejected outright, since their Churn numbers are
 // not comparable at all.
-// QualifyPaths prefixes every FileRisk.Path with the repository it was observed in. This is what
-// the "no deduplication by Path" note above asks for: once the paths are qualified, equal paths do
-// denote the same file and merging may treat them as one.
+// QualifyPaths prefixes every FileRisk.Path with the repository it was observed in. `hercules
+// combine` applies it to each input before merging, so that a path in one repository cannot collide
+// with the same path in another.
+//
+// It does not by itself change MergeResults, which still concatenates without deduplicating by
+// path. What it changes is that deduplication becomes possible: once the paths are qualified, two
+// equal paths do denote the same file.
 func (hra *HotspotRiskAnalysis) QualifyPaths(result any, repository string) any {
 	riskResult, err := requiredResult[HotspotRiskResult](result)
 	if err != nil {

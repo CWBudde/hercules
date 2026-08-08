@@ -77,10 +77,14 @@ path key: it reaches `Burndown` as a separate axis (`cmd/hercules/combine.go:182
 
 Two decisions worth keeping:
 
-- **Re-combining is guarded.** A file whose header contains ` & ` (`repositorySeparator`) is
-  already a combine output with qualified keys, so it is passed through unqualified rather than
-  nested one prefix inside another. Covered by
-  `TestRunCombineLeavesCombinedInputQualifiedOnce`.
+- **Re-combining is guarded by an explicit header flag**, `Metadata.qualified_paths`
+  (`internal/pb/pb.proto` field 9, added compatibly — no `SchemaVersion` bump). `hercules combine`
+  sets it on its output and skips qualification for any input which carries it. It is deliberately
+  **not** inferred from the repository string: a combine of one input has a header naming one
+  repository and is indistinguishable from a plain analysis, while files written before the flag
+  have unqualified paths whatever their header says. Both directions are covered by
+  `TestRunCombineLeavesCombinedInputQualifiedOnce` and
+  `TestRunCombineQualifiesFilesWrittenBeforeTheHeaderFlag`.
 - **An empty header repository leaves paths bare**, so a result of unknown origin does not gain a
   leading `:`.
 

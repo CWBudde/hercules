@@ -16,7 +16,13 @@ Each entry should include:
 
 ## Unreleased
 
-No changes yet.
+- PB: `Metadata` gains `qualified_paths` (field 9, bool). It records whether the path keys inside
+  the contents already name the repository they belong to (`repository:path`), which is what
+  `hercules combine` now writes so that the same path in two repositories does not fuse into one
+  key. Combine sets it on its output and skips qualification for inputs which carry it.
+  Compatibility: compatible — the field is optional and absent means "not qualified", which is
+  exactly what every file written so far is. No `SchemaVersion` bump. User action: none; older
+  readers ignore the field.
 
 ## 0.2.0 - 2026-07-28
 

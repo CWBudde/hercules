@@ -4,8 +4,8 @@
 
 | phase                                                 | items                | state                                      |
 | ----------------------------------------------------- | -------------------- | ------------------------------------------ |
-| [Phase 1 — combine correctness](#phase-1)             | T1.1–T1.3 (M7/M6/M2) | T1.1 + T1.2 landed; T1.3 open              |
-| [Phase 2 — rendering defects](#phase-2)               | T2.1–T2.3 (M4/M5/M3) | not started, small and visible             |
+| [Phase 1 — combine correctness](#phase-1)             | T1.1–T1.3 (M7/M6/M2) | T1.1, T1.2, T1.3(a) landed; T1.3(b) → T3.1 |
+| [Phase 2 — rendering defects](#phase-2)               | T2.1–T2.3 (M4/M5/M3) | T2.1 + T2.2 landed; T2.3 open              |
 | [Phase 3 — unexposed analyses](#phase-3)              | T3.1–T3.3 (M1/M8/M9) | not started, largest new work              |
 | [Phase 4 — burndown residue (B1c/P5)](#phase-4)       | T4.1–T4.3            | **on hold — recommendation: do not start** |
 | [Phase 5 — recorded, deliberately not done](#phase-5) | —                    | reference only                             |
@@ -150,19 +150,34 @@ figure is a fixed size and does not grow with the bar count. So `--hotspot-risk-
 it: 50 table rows (44 `ewws-auth`, 6 `ewws-wiki`) and a legible chart with `ewws-wiki` present at
 rank 13.
 
-### T1.3 — non-mergeable leaves are dropped silently (M2) 🟡
+### T1.3 — non-mergeable leaves are dropped silently (M2) 🟡 (a) landed 2026-08-08, (b) open
 
-`cmd/hercules/combine.go:305-315`: a failed `ResultMergeablePipelineItem` assertion appends the
-analysis to `loaded.skipped` with `"; not merged"` and carries on — surfaced only when the user
-named it via `--only`. So `hercules report` (which enables `--onboarding` by default,
-`report.go:61`) followed by `hercules combine` loses the data without saying so.
+**Correction to this item's own diagnosis.** It said a dropped analysis was "surfaced only when the
+user named it via `--only`". That was already untrue when it was filed: `2f57e3d` (2026-07-30) added
+an unconditional `Skipped:` block. The real defect was that the block was unreadable —
+`ResultMergeablePipelineItem is not implemented` names a Go interface rather than the loss, and it
+was printed **per input file**, so the org-wide merge buried five analyses under ~1150 lines
+scrolling past behind the progress bar. Nothing tested it either, so it could have been deleted
+silently.
 
 Current non-mergeable set (all embed `core.NoopMerger`, none define `MergeResults`): `Onboarding`,
 `Shotness`, `CommitsStat` (`leaves/commits.go:22`), `FileHistoryAnalysis`
 (`leaves/file_history.go:24`), `ImportsPerDeveloper` (`leaves/imports_printer.go:31`). `CodeChurn`
 is the exception — real merge at `leaves/codechurn.go:413`.
 
-- [ ] **(a)** Always warn on a dropped analysis, not only under `--only`.
+- [x] **(a)** Say what was dropped, once, in the user's terms. `loadedMessage.skipped` now carries
+      analysis **names**; `combineAccumulator` counts them per analysis against the input count; and
+      `printSkipped` renders one block:
+
+      Skipped: 1 analysis cannot be merged, so its data is not in the combined output.
+        Onboarding - dropped from 2 of 2 inputs
+
+      `printMessages`/`printSkipped` take an `io.Writer` (`cmd.ErrOrStderr()`) so the diagnostics are
+      testable at all — that is what the three new `cmd/hercules/combine_test.go` cases read.
+      Unchanged on purpose: the `--only` branch still fails hard with the literal interface name
+      (a caller who asked for exactly that analysis wants the failure), and the exit code still
+      ignores skips — a non-mergeable leaf is a property of the analysis, not a defect in the file.
+
 - [ ] **(b)** Reconcile `reportDefaultAnalysisFlags` (`report.go:52-65`) with `reportDefaultModes`
       (`:84-101`) — today the former computes `onboarding` and the latter has no mode for it.
       Land this together with T3.1.
@@ -173,10 +188,10 @@ is the exception — real merge at `leaves/codechurn.go:413`.
 
 ## Phase 2 — rendering defects
 
-T2.1 and T2.2 are outright bugs and should be fixed before anyone trusts either chart. All three
-reproduce on a **single** repository, so none is scope- or combine-dependent.
+T2.1 and T2.2 were outright bugs and are fixed; T2.3 remains. All three reproduce on a **single**
+repository, so none is scope- or combine-dependent.
 
-### T2.1 — `refactoring-proxy` renders one spike at year −242464 (M4) 🔴
+### T2.1 — `refactoring-proxy` renders one spike at year −242464 (M4) 🟢 landed 2026-08-08
 
 The data is correct: `labours -m refactoring-proxy -o out.json` on the 231-repo merge gives 1526
 ticks, `Timestamp` min 1612793078 (2021-02-08), max 1785938678 (2026-08-05), **zero** timestamps
@@ -190,11 +205,25 @@ at the extreme left (93 % and 18 % respectively) against a single x-tick reading
 `[]time.Time` and the plotter's x values** — a year-−242464 label is what an epoch-relative
 `time.Time` produces after a wrong unit conversion.
 
-- [ ] Reproduce: `labours -f pb -i output/data/hercules-pb/ewws-auth-burndown.pb -m
+- [x] Reproduce: `labours -f pb -i output/data/hercules-pb/ewws-auth-burndown.pb -m
 refactoring-proxy -o /tmp/x.svg`
-- [ ] Fix the unit conversion between `[]time.Time` and the plotter's x values.
+- [x] Fix the unit conversion between `[]time.Time` and the plotter's x values. **Done 2026-08-08.**
 
-### T2.2 — `--relative` collapses `burndown-project` to a single band (M5) 🔴
+The axis carried **two unit systems at once**. The series went through `ax.Plot(timestamps, rates)`
+with a `[]time.Time`, which matplotlib-go converts with `dates.Date2Num` (`core/units.go:385`) —
+days since the epoch, ~20 300 for 2025. The threshold line and the `AxVSpan` regions were drawn from
+`refactoringProxyDateNumber`, which returned **unix seconds**, ~1.7e9. The axis stretched to the
+larger of the two and the whole series collapsed into the spike. `-242464` was the confirmation, not
+a red herring: the formatter converts 1.7e9 _days_ back to a `time.Time`, whose int64 nanosecond
+field spans only ~292 years and wraps negative.
+
+Fix: `refactoringProxyDateNumbers` builds both the timestamps and their x coordinates with
+`dates.Date2Num`, so the overlays share the series' units. `TestRefactoringProxyKeepsThresholdOnTheDataDateRange`
+round-trips every x value through `dates.Num2Date` and requires it within a day of its tick — it
+fails on the old code with `x[0] round-trips to -290308-12-21`. Verified on `ewws-auth`: an axis
+reading 2024–2026 with the series spread across it and the threshold spanning the full width.
+
+### T2.2 — `--relative` collapses `burndown-project` to a single band (M5) 🟢 landed 2026-08-08
 
 `labours -m burndown-project --relative` renders one solid colour filling the plot at a constant
 1.0 across the whole history, with a full and correct legend beside it (23 bands on the merge, 11
@@ -206,7 +235,34 @@ is dominated by corpus growth. **`--relative` on `ownership` works correctly** a
 code-ownership chart in the set, which localises the defect to the burndown normalisation path
 rather than to `--relative` itself.
 
-- [ ] Fix the burndown normalisation path; use the working `ownership` path as the reference.
+- [x] Fix the burndown normalisation path; use the working `ownership` path as the reference.
+      **Done 2026-08-08.**
+
+**Correction: there was no burndown normalisation path to fix.** `-m burndown-project` does not go
+through `modes/burndownProject.go` at all — `dispatch.go:286` routes it to
+`GenerateBurndownProjectPythonWithOptions` → `graphics.PlotBurndownMatplotlibWithOptions`. On that
+path `--relative` only **clipped**: `clippedStackMatrix(matrix, 0, 1)` walked the bands cumulatively
+and clamped each to `[0,1]`, so band 0 (thousands of lines) came out at height 1.0 and every band
+above it started past the ceiling and came out at 0. Hence one solid colour and a complete legend.
+
+This was a faithful port of an upstream **Python** bug: `labours/modes/burndown.py:47-52` normalises
+_after_ `pyplot.stackplot` has already built its polygons, so the original renders the same broken
+chart. `ownership.py:82-85` has it too — but the Go `ownership` deviated and normalises before
+stacking, which is why that mode works and was the right reference.
+
+Fix: `normalizedStackMatrix` (a non-destructive counterpart of `normalizeOwnershipColumns`; the
+input aliases `ProcessedBurndown.Matrix`, which `renderRepositoryBurndown` plots twice) replaces the
+clip, and the y axis is labelled `"Fraction of lines"` rather than `"Lines of code"` when the scale
+runs 0–1. `clippedStackMatrix`/`clampFloat` are gone. Recorded in `docs/RENDER_PARITY.md` as a
+deliberate deviation so nobody restores it.
+
+**One fix, four modes** — `burndown-file`, `burndown-repository` and `burndown-repos-combined` share
+this code and were equally broken. Verified on `ewws-auth`: all three year bands stacked to 1.0.
+
+**Cleanup filed by this work:** `modes/burndownProject.go`, `generateBurndownPlot`,
+`normalizeMatrix` (`modes/burndown.go`) and `PlotStackedBurndownMatplotlibWithOptions` are
+unreachable from `dispatch.go`, and `TestGenerateBurndownPlotRelative` tests that dead code. It
+nearly sent this fix to the wrong function. Delete it in its own pass.
 
 ### T2.3 — three charts label an axis "Tick" while the data holds real dates (M3) 🟡
 

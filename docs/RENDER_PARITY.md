@@ -91,6 +91,39 @@ that at-most `60×60` submatrix. TensorFlow Projector vectors are a dense file
 format, so `couples-people` streams each output row from CSR while retaining
 only sparse input plus row-sized working state in memory.
 
+### Stale rows
+
+The `refactoring-proxy` figure (0.117) predates the 2026-08-08 axis fix (PLAN.md T2.1): the chart
+was plotting unix seconds on a date axis, so the whole series collapsed into a spike at the left
+edge. Whatever that row measured, it was not a correct chart — re-measure before citing it.
+
+### Deliberate deviations from Python
+
+Two modes render the `--relative` view **differently from Python on purpose**, because the
+Python original is wrong there and a faithful port reproduces the artefact rather than the
+intent.
+
+`labours/modes/burndown.py:47-52` normalises the matrix _after_ `pyplot.stackplot` has
+already built its polygons:
+
+```python
+pyplot.stackplot(date_range_sampling, matrix, labels=labels)
+if args.relative:
+    for i in range(matrix.shape[1]):
+        matrix[:, i] /= matrix[:, i].sum()
+    pyplot.ylim(0, 1)
+```
+
+so the stack is drawn from raw line counts and only the axis is rescaled — the first band
+fills the plot at a constant 1.0 and every other band is clipped away. `ownership.py:82-85`
+has the identical bug.
+
+Both Go modes normalise **before** stacking (`normalizedStackMatrix` in
+`internal/render/graphics/burndown_matplotlib.go`, `normalizeOwnershipColumns` in
+`internal/render/modes/ownership.go`). A relative chart that shows its bands is the point of
+the flag, so these two pairs are expected to differ from the historical Python references
+and must not be "restored to parity".
+
 ## How to re-run
 
 In this repository:

@@ -2,11 +2,28 @@ package render
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"time"
 
 	"github.com/cwbudde/hercules/internal/render/readers"
+)
+
+// errJSONOutputUnsupported reports a mode that has no JSON extractor.
+var errJSONOutputUnsupported = errors.New("JSON output is not implemented")
+
+// Keys and tag values of the JSON payload written when --output ends in
+// ".json". They are the JSON wire contract and are deliberately kept separate
+// from the render mode names in modenames.go: jsonTypeBurndown happens to
+// spell the same as ModeBurndown, but it tags the payload family shared by the
+// four burndown extractors below, not the mode that produced it.
+const (
+	jsonKeyType           = "type"
+	jsonKeyTarget         = "target"
+	jsonKeyCouplingMatrix = "coupling_matrix"
+
+	jsonTypeBurndown = "burndown"
 )
 
 type jsonModeExtractor func(readers.Reader) (any, error)
@@ -42,7 +59,7 @@ var jsonModeExtractors = map[string]jsonModeExtractor{
 func extractModeDataForJSON(reader readers.Reader, mode string) (any, error) {
 	extract, ok := jsonModeExtractors[mode]
 	if !ok {
-		return nil, fmt.Errorf("JSON output is not implemented for mode %s", mode)
+		return nil, fmt.Errorf("%w for mode %s", errJSONOutputUnsupported, mode)
 	}
 
 	return extract(reader)
@@ -65,7 +82,8 @@ func extractProjectBurndownJSON(reader readers.Reader) (any, error) {
 	}
 
 	return map[string]any{
-		"type": "burndown", "target": "project", "header": header, "name": name, "matrix": matrix,
+		jsonKeyType: jsonTypeBurndown, jsonKeyTarget: "project",
+		"header": header, "name": name, "matrix": matrix,
 	}, nil
 }
 
@@ -75,7 +93,7 @@ func extractFileBurndownJSON(reader readers.Reader) (any, error) {
 		return nil, err
 	}
 
-	return map[string]any{"type": "burndown", "target": "file", "files": files}, nil
+	return map[string]any{jsonKeyType: jsonTypeBurndown, jsonKeyTarget: "file", "files": files}, nil
 }
 
 func extractPeopleBurndownJSON(reader readers.Reader) (any, error) {
@@ -84,7 +102,7 @@ func extractPeopleBurndownJSON(reader readers.Reader) (any, error) {
 		return nil, err
 	}
 
-	return map[string]any{"type": "burndown", "target": "person", "people": people}, nil
+	return map[string]any{jsonKeyType: jsonTypeBurndown, jsonKeyTarget: "person", "people": people}, nil
 }
 
 func extractRepositoryBurndownJSON(reader readers.Reader) (any, error) {
@@ -99,7 +117,7 @@ func extractRepositoryBurndownJSON(reader readers.Reader) (any, error) {
 	}
 
 	return map[string]any{
-		"type": "burndown", "target": "repository", "repositories": repositories,
+		jsonKeyType: jsonTypeBurndown, jsonKeyTarget: "repository", "repositories": repositories,
 	}, nil
 }
 
@@ -109,7 +127,7 @@ func extractOwnershipJSON(reader readers.Reader) (any, error) {
 		return nil, err
 	}
 
-	return map[string]any{"type": "ownership", "file_names": names, "matrices": matrices}, nil
+	return map[string]any{jsonKeyType: "ownership", "file_names": names, "matrices": matrices}, nil
 }
 
 func extractOverwritesJSON(reader readers.Reader) (any, error) {
@@ -118,7 +136,7 @@ func extractOverwritesJSON(reader readers.Reader) (any, error) {
 		return nil, err
 	}
 
-	return map[string]any{"type": "overwrites_matrix", "people": people, "matrix": matrix}, nil
+	return map[string]any{jsonKeyType: "overwrites_matrix", "people": people, "matrix": matrix}, nil
 }
 
 func extractFileCouplingJSON(reader readers.Reader) (any, error) {
@@ -127,7 +145,7 @@ func extractFileCouplingJSON(reader readers.Reader) (any, error) {
 		return nil, err
 	}
 
-	return map[string]any{"file_names": names, "coupling_matrix": matrix}, nil
+	return map[string]any{"file_names": names, jsonKeyCouplingMatrix: matrix}, nil
 }
 
 func extractPeopleCouplingJSON(reader readers.Reader) (any, error) {
@@ -136,7 +154,7 @@ func extractPeopleCouplingJSON(reader readers.Reader) (any, error) {
 		return nil, err
 	}
 
-	return map[string]any{"people_names": names, "coupling_matrix": matrix}, nil
+	return map[string]any{"people_names": names, jsonKeyCouplingMatrix: matrix}, nil
 }
 
 func extractShotnessCouplingJSON(reader readers.Reader) (any, error) {
@@ -145,7 +163,7 @@ func extractShotnessCouplingJSON(reader readers.Reader) (any, error) {
 		return nil, err
 	}
 
-	return map[string]any{"entity_names": names, "coupling_matrix": matrix}, nil
+	return map[string]any{"entity_names": names, jsonKeyCouplingMatrix: matrix}, nil
 }
 
 func extractShotnessJSON(reader readers.Reader) (any, error) {

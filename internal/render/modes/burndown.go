@@ -12,19 +12,34 @@ import (
 	"github.com/cwbudde/hercules/internal/render/progress"
 )
 
+var errEmptyBurndownMatrix = errors.New("empty burndown matrix")
+
 // generateBurndownPlot creates the burndown plot with stacking, resampling, and survival ratio output.
-func generateBurndownPlot(name string, matrix [][]int, output string, relative bool, startTime, endTime *time.Time, resample string) error {
+func generateBurndownPlot(
+	name string,
+	matrix [][]int,
+	output string,
+	relative bool,
+	startTime, endTime *time.Time,
+	resample string,
+) error {
 	opts := defaultOptions()
 	opts.Relative, opts.Resample = relative, resample
 
 	return generateBurndownPlotWithOptions(name, matrix, output, startTime, endTime, opts)
 }
 
-func generateBurndownPlotWithOptions(name string, matrix [][]int, output string, startTime, endTime *time.Time, opts Options) error {
+func generateBurndownPlotWithOptions(
+	name string,
+	matrix [][]int,
+	output string,
+	startTime, endTime *time.Time,
+	opts Options,
+) error {
 	fmt.Println("Running: burndown-project")
 
 	if len(matrix) == 0 || len(matrix[0]) == 0 {
-		return errors.New("empty burndown matrix")
+		return errEmptyBurndownMatrix
 	}
 
 	// Initialize progress tracking
@@ -52,9 +67,29 @@ func generateBurndownPlotWithOptions(name string, matrix [][]int, output string,
 
 	progEstimator.NextOperation("Interpolating burndown data")
 
-	survival, err := burndown.FitKaplanMeier(matrix)
+	err = renderInterpolatedBurndown(matrix, start, end, output, opts, progEstimator)
 	if err != nil {
 		progEstimator.FinishMultiOperation()
+		return err
+	}
+
+	progEstimator.FinishMultiOperation()
+	printBurndownChartSaved(output, quiet)
+
+	return nil
+}
+
+// renderInterpolatedBurndown reports the survival function and plots the
+// interpolated, optionally normalized, burndown matrix.
+func renderInterpolatedBurndown(
+	matrix [][]int,
+	start, end time.Time,
+	output string,
+	opts Options,
+	progEstimator *progress.ProgressEstimator,
+) error {
+	survival, err := burndown.FitKaplanMeier(matrix)
+	if err != nil {
 		return fmt.Errorf("calculate survival: %w", err)
 	}
 
@@ -63,9 +98,8 @@ func generateBurndownPlotWithOptions(name string, matrix [][]int, output string,
 	)
 	progEstimator.NextOperation("Generating visualization")
 
-	err = writeBurndownSurvival(survival, quiet)
+	err = writeBurndownSurvival(survival, opts.Quiet)
 	if err != nil {
-		progEstimator.FinishMultiOperation()
 		return err
 	}
 
@@ -73,14 +107,12 @@ func generateBurndownPlotWithOptions(name string, matrix [][]int, output string,
 		interpolatedMatrix = normalizeMatrix(interpolatedMatrix)
 	}
 
-	err = graphics.PlotStackedBurndownMatplotlibWithOptions(interpolatedMatrix, dateRange, output, opts.Relative, opts.Graphics)
+	err = graphics.PlotStackedBurndownMatplotlibWithOptions(
+		interpolatedMatrix, dateRange, output, opts.Relative, opts.Graphics,
+	)
 	if err != nil {
-		progEstimator.FinishMultiOperation()
 		return fmt.Errorf("error creating burndown plot: %w", err)
 	}
-
-	progEstimator.FinishMultiOperation()
-	printBurndownChartSaved(output, quiet)
 
 	return nil
 }
@@ -232,7 +264,12 @@ func dailyDateRange(start, end time.Time) []time.Time {
 }
 
 // interpolateBurndownMatrixWithProgress interpolates and resamples the matrix with progress tracking.
-func interpolateBurndownMatrixWithProgress(matrix [][]int, startTime, endTime time.Time, resample string, progEstimator *progress.ProgressEstimator) ([][]float64, []time.Time) {
+func interpolateBurndownMatrixWithProgress(
+	matrix [][]int,
+	startTime, endTime time.Time,
+	resample string,
+	progEstimator *progress.ProgressEstimator,
+) ([][]float64, []time.Time) {
 	if len(matrix) == 0 || len(matrix[0]) == 0 {
 		return [][]float64{}, []time.Time{}
 	}

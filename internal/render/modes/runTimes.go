@@ -20,6 +20,14 @@ import (
 	"github.com/cwbudde/hercules/internal/render/readers"
 )
 
+var errNoRuntimeMetrics = errors.New("no runtime metrics available")
+
+// errRuntimePercentageAxes belongs to plotRuntimePercentageMatplotlib, which is
+// scaffolding for a future `--run-times-detail` flag and has no caller yet.
+//
+//nolint:unused
+var errRuntimePercentageAxes = errors.New("failed to create runtime percentage axes")
+
 // RunTimes generates runtime analysis. Python labours is text-only for this
 // mode, so by default we only print the summary; the Go-only breakdown chart is
 // gated behind detail (--run-times-detail).
@@ -198,7 +206,7 @@ func printRuntimeSummary(analysis RuntimeAnalysis) {
 // plotRuntimeBreakdown creates a bar chart showing runtime for each operation.
 func plotRuntimeBreakdown(analysis RuntimeAnalysis, output string, visuals graphics.Options) error {
 	if len(analysis.Metrics) == 0 {
-		return errors.New("no runtime metrics available")
+		return errNoRuntimeMetrics
 	}
 
 	// Prepare data for bar chart (show top 15 operations)
@@ -256,7 +264,7 @@ func compactRuntimeLabel(label string, limit int) string {
 //nolint:unused
 func plotRuntimePieChart(analysis RuntimeAnalysis, output string) error {
 	if len(analysis.Metrics) == 0 {
-		return errors.New("no runtime metrics available")
+		return errNoRuntimeMetrics
 	}
 
 	// Prepare data for stacked representation (top 10 operations)
@@ -266,7 +274,10 @@ func plotRuntimePieChart(analysis RuntimeAnalysis, output string) error {
 
 	values := make([]float64, maxOps)
 	for i := range maxOps {
-		labels[i] = fmt.Sprintf("%s (%.1f%%)", compactRuntimeLabel(analysis.Metrics[i].Operation, 18), analysis.Metrics[i].Percentage)
+		labels[i] = fmt.Sprintf(
+			"%s (%.1f%%)",
+			compactRuntimeLabel(analysis.Metrics[i].Operation, 18), analysis.Metrics[i].Percentage,
+		)
 		values[i] = analysis.Metrics[i].Percentage
 	}
 
@@ -312,7 +323,7 @@ func plotRuntimePercentageMatplotlib(labels []string, values []float64, output s
 
 	grid := fig.Subplots(1, 1, core.WithSubplotPadding(0.149, 0.991, 0.058, 0.964))
 	if len(grid) == 0 || len(grid[0]) == 0 || grid[0][0] == nil {
-		return errors.New("failed to create runtime percentage axes")
+		return errRuntimePercentageAxes
 	}
 
 	ax := grid[0][0]
@@ -371,13 +382,23 @@ func saveRuntimeFigure(fig *core.Figure, output string, width, height int) error
 			return fmt.Errorf("failed to create SVG renderer: %w", err)
 		}
 
-		return core.SaveSVG(fig, renderer, output)
+		err = core.SaveSVG(fig, renderer, output)
+		if err != nil {
+			return fmt.Errorf("failed to save SVG to %s: %w", output, err)
+		}
+
+		return nil
 	default:
 		renderer, _, err := backends.NewRenderer("agg", config, backends.TextCapabilities)
 		if err != nil {
 			return fmt.Errorf("failed to create AGG renderer: %w", err)
 		}
 
-		return core.SavePNG(fig, renderer, output)
+		err = core.SavePNG(fig, renderer, output)
+		if err != nil {
+			return fmt.Errorf("failed to save PNG to %s: %w", output, err)
+		}
+
+		return nil
 	}
 }

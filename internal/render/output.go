@@ -8,6 +8,18 @@ import (
 	"github.com/cwbudde/hercules/internal/render/outputpath"
 )
 
+// Rendering formats understood by --backend and derived from the output file
+// extension. The values double as the extension appended by GenerateOutputPath.
+const (
+	formatPDF = "pdf"
+	formatSVG = "svg"
+	formatPNG = "png"
+)
+
+// assetRequestedOutput is the outputConvention placeholder for "whatever path
+// the caller asked for", as opposed to a derived sibling or fan-out name.
+const assetRequestedOutput = "<output>"
+
 // DetectOutputFormat determines the output format ("png", "svg", or "pdf")
 // from the output path's file extension.
 func DetectOutputFormat(outputPath string) string {
@@ -16,20 +28,20 @@ func DetectOutputFormat(outputPath string) string {
 
 func detectOutputFormat(outputPath, backend string) string {
 	normalizedBackend := strings.ToLower(backend)
-	if normalizedBackend == "pdf" || normalizedBackend == "png" || normalizedBackend == "svg" {
+	if normalizedBackend == formatPDF || normalizedBackend == formatPNG || normalizedBackend == formatSVG {
 		return normalizedBackend
 	}
 
 	ext := strings.ToLower(filepath.Ext(outputPath))
 	switch ext {
-	case ".pdf":
-		return "pdf"
-	case ".svg":
-		return "svg"
-	case ".png", "":
-		return "png" // Default to PNG
+	case "." + formatPDF:
+		return formatPDF
+	case "." + formatSVG:
+		return formatSVG
+	case "." + formatPNG, "":
+		return formatPNG // Default to PNG
 	default:
-		return "png" // Default to PNG for unknown extensions
+		return formatPNG // Default to PNG for unknown extensions
 	}
 }
 
@@ -68,7 +80,7 @@ var modeOutputConventions = map[string]outputConvention{
 	ModeBurndownProject: {
 		Kind:        outputSingleFile,
 		Description: "writes exactly the requested chart file",
-		Assets:      []string{"<output>"},
+		Assets:      []string{assetRequestedOutput},
 	},
 	ModeBurndownFile: {
 		Kind:        outputFileFanout,
@@ -84,22 +96,25 @@ var modeOutputConventions = map[string]outputConvention{
 	ModeBurndownRepository: {
 		Kind:        outputAssetDir,
 		Description: "writes one PNG and SVG per repository using stable identity hashes",
-		Assets:      []string{"burndown-repository_<rune-safe-repository-slug>-<hash>.png", "burndown-repository_<rune-safe-repository-slug>-<hash>.svg"},
+		Assets: []string{
+			"burndown-repository_<rune-safe-repository-slug>-<hash>.png",
+			"burndown-repository_<rune-safe-repository-slug>-<hash>.svg",
+		},
 	},
 	ModeBurndownReposCombined: {
 		Kind:        outputSingleFile,
 		Description: "writes exactly the requested combined repository chart file",
-		Assets:      []string{"<output>"},
+		Assets:      []string{assetRequestedOutput},
 	},
 	ModeOverwritesMatrix: {
 		Kind:        outputSingleFile,
 		Description: "writes exactly the requested matrix chart file",
-		Assets:      []string{"<output>"},
+		Assets:      []string{assetRequestedOutput},
 	},
 	ModeOwnership: {
 		Kind:        outputSingleFile,
 		Description: "writes exactly the requested ownership chart file",
-		Assets:      []string{"<output>"},
+		Assets:      []string{assetRequestedOutput},
 	},
 	ModeCouplesFiles: {
 		Kind:        outputAssetDir,
@@ -114,7 +129,10 @@ var modeOutputConventions = map[string]outputConvention{
 	ModeCouplesShotness: {
 		Kind:        outputAssetDir,
 		Description: "writes shotness coupling charts into the requested directory",
-		Assets:      []string{"shotness_coupling_heatmap.png", "shotness_coupling_heatmap.svg", "top_shotness_coupling_pairs.png", "top_shotness_coupling_pairs.svg"},
+		Assets: []string{
+			"shotness_coupling_heatmap.png", "shotness_coupling_heatmap.svg",
+			"top_shotness_coupling_pairs.png", "top_shotness_coupling_pairs.svg",
+		},
 	},
 	ModeShotness: {
 		Kind:        outputAssetDir,
@@ -124,41 +142,54 @@ var modeOutputConventions = map[string]outputConvention{
 	ModeDevs: {
 		Kind:        outputSingleFile,
 		Description: "writes exactly the requested developer chart file",
-		Assets:      []string{"<output>"},
+		Assets:      []string{assetRequestedOutput},
 	},
 	ModeDevsEfforts: {
-		Kind:        outputSingleFile,
-		Description: "writes the requested developer efforts chart file; --devs-efforts-detail also writes a Go-only productivity ranking sibling",
-		Assets:      []string{"<output>", "<base>_productivity_ranking<ext> (only with --devs-efforts-detail)"},
+		Kind: outputSingleFile,
+		Description: "writes the requested developer efforts chart file; " +
+			"--devs-efforts-detail also writes a Go-only productivity ranking sibling",
+		Assets: []string{
+			assetRequestedOutput,
+			"<base>_productivity_ranking<ext> (only with --devs-efforts-detail)",
+		},
 	},
 	ModeOldVsNew: {
 		Kind:        outputSingleFile,
 		Description: "writes exactly the requested additions-vs-changes chart file",
-		Assets:      []string{"<output>"},
+		Assets:      []string{assetRequestedOutput},
 	},
 	ModeLanguages: {
 		Kind:        outputSingleFile,
 		Description: "writes the requested chart file; direct directory calls write languages.png and languages.svg",
-		Assets:      []string{"<output>"},
+		Assets:      []string{assetRequestedOutput},
 	},
 	ModeTemporalActivity: {
-		Kind:        outputCompanions,
-		Description: "writes the Python labours sibling set: eight stacked bar charts (weekdays/hours/months/weeks × commits/lines) plus two weekday×hour heatmaps",
+		Kind: outputCompanions,
+		Description: "writes the Python labours sibling set: eight stacked bar charts " +
+			"(weekdays/hours/months/weeks × commits/lines) plus two weekday×hour heatmaps",
 		Assets: []string{
-			"<base>_weekdays_commits<ext>", "<base>_hours_commits<ext>", "<base>_months_commits<ext>", "<base>_weeks_commits<ext>",
-			"<base>_weekdays_lines<ext>", "<base>_hours_lines<ext>", "<base>_months_lines<ext>", "<base>_weeks_lines<ext>",
+			"<base>_weekdays_commits<ext>", "<base>_hours_commits<ext>",
+			"<base>_months_commits<ext>", "<base>_weeks_commits<ext>",
+			"<base>_weekdays_lines<ext>", "<base>_hours_lines<ext>",
+			"<base>_months_lines<ext>", "<base>_weeks_lines<ext>",
 			"<base>_heatmap_commits<ext>", "<base>_heatmap_lines<ext>",
 		},
 	},
 	ModeDevsParallel: {
-		Kind:        outputSingleFile,
-		Description: "writes the parallel-coordinates developer chart and prints a parallel-development summary; --devs-parallel-detail also writes a Go-only concurrency timeline sibling",
-		Assets:      []string{"<output>", "<base>_concurrency_timeline<ext> (only with --devs-parallel-detail)"},
+		Kind: outputSingleFile,
+		Description: "writes the parallel-coordinates developer chart and prints a " +
+			"parallel-development summary; --devs-parallel-detail also writes a " +
+			"Go-only concurrency timeline sibling",
+		Assets: []string{
+			assetRequestedOutput,
+			"<base>_concurrency_timeline<ext> (only with --devs-parallel-detail)",
+		},
 	},
 	ModeRunTimes: {
-		Kind:        outputSingleFile,
-		Description: "prints the runtime summary; the Go-only breakdown chart is written only with --run-times-detail (Python parity: text-only)",
-		Assets:      []string{"<output> (only with --run-times-detail)"},
+		Kind: outputSingleFile,
+		Description: "prints the runtime summary; the Go-only breakdown chart is written " +
+			"only with --run-times-detail (Python parity: text-only)",
+		Assets: []string{"<output> (only with --run-times-detail)"},
 	},
 	ModeBusFactor: {
 		Kind:        outputCompanions,
@@ -171,24 +202,32 @@ var modeOutputConventions = map[string]outputConvention{
 		Assets:      []string{"<base>_timeline<ext>", "<base>_subsystems<ext>"},
 	},
 	ModeKnowledgeDiffusion: {
-		Kind:        outputCompanions,
-		Description: "writes distribution, silos, and Lorenz-curve sibling charts; --knowledge-diffusion-detail also writes a Go-only trend sibling",
-		Assets:      []string{"<base>_distribution<ext>", "<base>_silos<ext>", "<base>_lorenz<ext>", "<base>_trend<ext> (only with --knowledge-diffusion-detail)"},
+		Kind: outputCompanions,
+		Description: "writes distribution, silos, and Lorenz-curve sibling charts; " +
+			"--knowledge-diffusion-detail also writes a Go-only trend sibling",
+		Assets: []string{
+			"<base>_distribution<ext>", "<base>_silos<ext>", "<base>_lorenz<ext>",
+			"<base>_trend<ext> (only with --knowledge-diffusion-detail)",
+		},
 	},
 	ModeHotspotRisk: {
 		Kind:        outputCompanions,
 		Description: "writes the requested risk chart plus a TSV table sibling",
-		Assets:      []string{"<output>", "<base>_table.tsv"},
+		Assets:      []string{assetRequestedOutput, "<base>_table.tsv"},
 	},
 	ModeSentiment: {
 		Kind:        outputAssetDir,
 		Description: "writes sentiment charts into the requested directory",
-		Assets:      []string{"sentiment-overview.png", "sentiment-overview.svg", "sentiment-developers.png", "sentiment-developers.svg", "sentiment-languages.png", "sentiment-languages.svg"},
+		Assets: []string{
+			"sentiment-overview.png", "sentiment-overview.svg",
+			"sentiment-developers.png", "sentiment-developers.svg",
+			"sentiment-languages.png", "sentiment-languages.svg",
+		},
 	},
 	ModeRefactoringProxy: {
 		Kind:        outputSingleFile,
 		Description: "writes exactly the requested refactoring proxy chart file",
-		Assets:      []string{"<output>"},
+		Assets:      []string{assetRequestedOutput},
 	},
 }
 
@@ -275,7 +314,7 @@ func outputConventionFor(mode string) outputConvention {
 	return outputConvention{
 		Kind:        outputSingleFile,
 		Description: "writes exactly the requested chart file",
-		Assets:      []string{"<output>"},
+		Assets:      []string{assetRequestedOutput},
 	}
 }
 

@@ -162,7 +162,12 @@ func TestSentimentResultsFromTicksUsesPythonConvention(t *testing.T) {
 	assertSentimentResult(t, results[2], "tick 30", 0.00, 0.00, 1.00, 0.00)
 }
 
-func assertSentimentResult(t *testing.T, got SentimentResult, entity string, score, positive, neutral, negative float64) {
+func assertSentimentResult(
+	t *testing.T,
+	got SentimentResult,
+	entity string,
+	score, positive, neutral, negative float64,
+) {
 	t.Helper()
 	if got.Entity != entity {
 		t.Fatalf("expected entity %q, got %q", entity, got.Entity)

@@ -21,6 +21,11 @@ import (
 	"github.com/cwbudde/hercules/internal/render/readers"
 )
 
+var (
+	errOverwritesAxes        = errors.New("failed to create overwrites axes")
+	errOverwritesMatrixImage = errors.New("failed to create overwrites matrix image")
+)
+
 func OverwritesMatrix(reader readers.Reader, output string) error {
 	return OverwritesMatrixWithOptions(reader, output, defaultOptions())
 }
@@ -54,7 +59,12 @@ func OverwritesMatrixWithOptions(reader readers.Reader, output string, opts Opti
 	return nil
 }
 
-func processOverwritesMatrix(people []string, matrix [][]int, maxPeople int, normalize bool) ([]string, []string, [][]float64) {
+func processOverwritesMatrix(
+	people []string,
+	matrix [][]int,
+	maxPeople int,
+	normalize bool,
+) ([]string, []string, [][]float64) {
 	// Python labours stores column 0 as row total, column 1 as "Unidentified",
 	// and developer overwrite columns at 2 + developer index.
 	if len(people) > maxPeople {
@@ -127,7 +137,7 @@ func plotOverwritesMatrixWithOptions(
 
 	fig, ax := newOverwritesFigure(width, height, background, foreground, opts.PlotFontSize())
 	if ax == nil {
-		return errors.New("failed to create overwrites axes")
+		return errOverwritesAxes
 	}
 
 	cmap := "OrRd"
@@ -136,7 +146,7 @@ func plotOverwritesMatrixWithOptions(
 		VMin:     optional.Of(minValue),
 		VMax:     optional.Of(maxValue),
 	}); img == nil {
-		return errors.New("failed to create overwrites matrix image")
+		return errOverwritesMatrixImage
 	}
 
 	configureOverwritesMatrixAxes(ax, people, colLabels, foreground)
@@ -284,7 +294,12 @@ func saveOverwritesMatplotlibFigure(fig *core.Figure, output string, width, heig
 			return fmt.Errorf("failed to create SVG renderer: %w", err)
 		}
 
-		return core.SaveSVG(fig, renderer, output)
+		err = core.SaveSVG(fig, renderer, output)
+		if err != nil {
+			return fmt.Errorf("failed to save SVG to %s: %w", output, err)
+		}
+
+		return nil
 	default:
 		renderer, _, err := backends.NewRenderer("agg", config, backends.TextCapabilities)
 		if err != nil {
@@ -293,7 +308,7 @@ func saveOverwritesMatplotlibFigure(fig *core.Figure, output string, width, heig
 
 		err = core.SavePNG(fig, renderer, output)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to save PNG to %s: %w", output, err)
 		}
 
 		if transparentBackground.A == 0 {
@@ -346,7 +361,12 @@ func saveMatrixAsJSON(output string, people []string, matrix [][]float64) error 
 	encoder := json.NewEncoder(file)
 	encoder.SetIndent("", "  ")
 
-	return encoder.Encode(data)
+	err = encoder.Encode(data)
+	if err != nil {
+		return fmt.Errorf("failed to encode overwrites JSON to %s: %w", output, err)
+	}
+
+	return nil
 }
 
 func truncateOverwritesMatrix(matrix [][]int, indices []int) [][]int {

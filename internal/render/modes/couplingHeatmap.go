@@ -15,6 +15,10 @@ import (
 // then materialized as an at-most 60x60 chart.
 const MaxDenseCouplingChartEntries = 60
 
+// errNoCouplingMatrix is shared by every coupling mode that refuses to plot an
+// empty co-occurrence matrix (files, shotness and the generic heatmap).
+var errNoCouplingMatrix = errors.New("no coupling matrix data available")
+
 func plotPythonCouplingHeatmap(
 	title, output string,
 	names []string,
@@ -28,7 +32,7 @@ func plotPythonCouplingHeatmap(
 	}
 
 	if len(names) == 0 || matrix.Rows == 0 {
-		return errors.New("no coupling matrix data available")
+		return errNoCouplingMatrix
 	}
 
 	shownNames, shownMatrix := topCouplingHeatmapEntries(

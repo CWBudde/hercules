@@ -221,6 +221,14 @@ path = 'internal/render/outputpath/outputpath_test\.go'
 linters = ['lll']
 path = 'internal/linehistory/file_test\.go'
 
+# Reader is the analysis-format abstraction: one method per analysis section,
+# implemented in full by both the YAML and the protobuf reader. Its width is the
+# number of analyses hercules emits, so splitting it would fragment a single
+# format contract across several interfaces without removing a single method.
+[[linters.exclusions.rules]]
+linters = ['interfacebloat']
+path = 'internal/render/readers/reader\.go'
+
 # The theme table is dense tabular data: each theme is one row of rgba() columns
 # and the palette is a single aligned list. Wrapping them would destroy the
 # alignment that makes the themes comparable at a glance.

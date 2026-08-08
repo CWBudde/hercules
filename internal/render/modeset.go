@@ -1,9 +1,18 @@
 package render
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
+)
+
+var (
+	// errUnknownMode reports a --mode value that is not in validModeNames.
+	errUnknownMode = errors.New("unknown mode")
+	// errUnsupportedInputFormat reports an --input-format value that is
+	// neither auto, yaml, nor pb.
+	errUnsupportedInputFormat = errors.New("unsupported input format")
 )
 
 var validModeNames = map[string]struct{}{
@@ -65,7 +74,7 @@ func ResolveModes(rawModes []string) ([]string, error) {
 
 	for _, mode := range modes {
 		if !isValidMode(mode) {
-			return nil, fmt.Errorf("unknown mode: %s", mode)
+			return nil, fmt.Errorf("%w: %s", errUnknownMode, mode)
 		}
 
 		switch mode {
@@ -127,6 +136,6 @@ func NormalizeInputFormat(inputFormat string) (string, error) {
 	case "auto", "yaml", "pb":
 		return format, nil
 	default:
-		return "", fmt.Errorf("unsupported input format %q: expected auto, yaml, or pb", inputFormat)
+		return "", fmt.Errorf("%w %q: expected auto, yaml, or pb", errUnsupportedInputFormat, inputFormat)
 	}
 }

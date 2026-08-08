@@ -34,6 +34,14 @@ const (
 	extensionPNG = ".png"
 )
 
+var (
+	errNoLanguageStats = errors.New(
+		"no language statistics found in the data - the input file may not contain language analysis results",
+	)
+	errNoTemporalData = errors.New("no temporal data to plot")
+	errNoLanguageData = errors.New("no language data to plot")
+)
+
 // Languages generates language statistics and visualization showing the distribution
 // of programming languages used in the repository.
 func Languages(reader readers.Reader, output string) error {
@@ -50,7 +58,7 @@ func LanguagesWithOptions(reader readers.Reader, output string, opts Options) er
 	}
 
 	if len(languageStats) == 0 {
-		return errors.New("no language statistics found in the data - the input file may not contain language analysis results")
+		return errNoLanguageStats
 	}
 
 	// Step 2: Sort languages by line count (descending)
@@ -109,8 +117,14 @@ type languageSelection struct {
 	index     map[string]int
 }
 
-func plotLanguageEvolution(timeSeries *readers.DeveloperTimeSeriesData, startUnix, endUnix int64, resample, output string) error {
-	return plotLanguageEvolutionWithOptions(timeSeries, startUnix, endUnix, resample, output, graphics.DefaultOptions())
+func plotLanguageEvolution(
+	timeSeries *readers.DeveloperTimeSeriesData,
+	startUnix, endUnix int64,
+	resample, output string,
+) error {
+	return plotLanguageEvolutionWithOptions(
+		timeSeries, startUnix, endUnix, resample, output, graphics.DefaultOptions(),
+	)
 }
 
 func plotLanguageEvolutionWithOptions(
@@ -227,15 +241,19 @@ func formatPercent(share float64) string {
 	return fmt.Sprintf("%.0f%%", share*100)
 }
 
-func buildLanguageEvolution(timeSeries *readers.DeveloperTimeSeriesData, startUnix, endUnix int64, resample string) (languageEvolution, error) {
+func buildLanguageEvolution(
+	timeSeries *readers.DeveloperTimeSeriesData,
+	startUnix, endUnix int64,
+	resample string,
+) (languageEvolution, error) {
 	start, end, totalDays := timeSeriesCalendarRange(timeSeries, startUnix, endUnix, 0)
 	if totalDays <= 0 {
-		return languageEvolution{}, errors.New("no temporal data to plot")
+		return languageEvolution{}, errNoTemporalData
 	}
 
 	totals, unclassifiedShare := netLanguageTotals(timeSeries.Days)
 	if len(totals) == 0 {
-		return languageEvolution{}, errors.New("no language data to plot")
+		return languageEvolution{}, errNoLanguageData
 	}
 
 	selection := selectEvolutionLanguages(totals, 10)
@@ -501,7 +519,10 @@ func languageSampleDates(daily [][]float64, start, end time.Time, frequency stri
 func languageYearEndDates(start, end time.Time) []time.Time {
 	dates := make([]time.Time, 0, end.Year()-start.Year()+1)
 	for year := start.Year(); year <= end.Year(); year++ {
-		date := time.Date(year, time.December, 31, start.Hour(), start.Minute(), start.Second(), start.Nanosecond(), start.Location())
+		date := time.Date(
+			year, time.December, 31,
+			start.Hour(), start.Minute(), start.Second(), start.Nanosecond(), start.Location(),
+		)
 		if !date.Before(start) && !date.After(end) {
 			dates = append(dates, date)
 		}
@@ -545,7 +566,10 @@ func sampleLanguageMatrix(daily [][]float64, start time.Time, dates []time.Time)
 }
 
 func languageMonthEnd(year int, month time.Month, ref time.Time) time.Time {
-	return time.Date(year, month+1, 1, ref.Hour(), ref.Minute(), ref.Second(), ref.Nanosecond(), ref.Location()).AddDate(0, 0, -1)
+	return time.Date(
+		year, month+1, 1,
+		ref.Hour(), ref.Minute(), ref.Second(), ref.Nanosecond(), ref.Location(),
+	).AddDate(0, 0, -1)
 }
 
 // formatFloatWithCommas renders a line count with thousands separators. Line

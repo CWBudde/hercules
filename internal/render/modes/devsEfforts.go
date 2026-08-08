@@ -14,6 +14,11 @@ import (
 	"github.com/cwbudde/hercules/internal/render/readers"
 )
 
+var (
+	errNotEnoughEffortDays   = errors.New("not enough days for an effort time series")
+	errNoDeveloperEffortData = errors.New("no developer effort data")
+)
+
 // DevsEfforts generates the "Efforts through time" chart: a stackplot of
 // cumulative changed lines of code per developer over time. When per-day time
 // series are unavailable it falls back to a commits-vs-lines scatter. With
@@ -164,8 +169,10 @@ func analyzeDevEfforts(stats []readers.DeveloperStat) []EffortMetric {
 
 	// Sort by combined productivity score (commits + lines changed)
 	sort.Slice(metrics, func(i, j int) bool {
-		scoreI := float64(metrics[i].Commits) + float64(metrics[i].LinesAdded+metrics[i].LinesRemoved+metrics[i].LinesModified)*0.01
-		scoreJ := float64(metrics[j].Commits) + float64(metrics[j].LinesAdded+metrics[j].LinesRemoved+metrics[j].LinesModified)*0.01
+		scoreI := float64(metrics[i].Commits) +
+			float64(metrics[i].LinesAdded+metrics[i].LinesRemoved+metrics[i].LinesModified)*0.01
+		scoreJ := float64(metrics[j].Commits) +
+			float64(metrics[j].LinesAdded+metrics[j].LinesRemoved+metrics[j].LinesModified)*0.01
 
 		return scoreI > scoreJ
 	})
@@ -299,17 +306,22 @@ type rankedDevEffort struct {
 // buildDevEffortsMatrix builds per-day changed-lines per developer, selects the
 // top contributors by total effort with an aggregated "others" row, computes
 // cumulative sums, and applies Slepian/DPSS smoothing.
-func buildDevEffortsMatrix(ts *readers.DeveloperTimeSeriesData, startUnix, endUnix int64, maxPeople int, quiet bool) (devEffortsMatrix, error) {
+func buildDevEffortsMatrix(
+	ts *readers.DeveloperTimeSeriesData,
+	startUnix, endUnix int64,
+	maxPeople int,
+	quiet bool,
+) (devEffortsMatrix, error) {
 	start := dateOnly(time.Unix(startUnix, 0))
 
 	numDays := calendarDayCount(start, dateOnly(time.Unix(endUnix, 0)))
 	if numDays < 2 {
-		return devEffortsMatrix{}, errors.New("not enough days for an effort time series")
+		return devEffortsMatrix{}, errNotEnoughEffortDays
 	}
 
 	ranked := rankDeveloperEfforts(ts.Days)
 	if len(ranked) == 0 {
-		return devEffortsMatrix{}, errors.New("no developer effort data")
+		return devEffortsMatrix{}, errNoDeveloperEffortData
 	}
 
 	chosen := chooseDeveloperEfforts(ranked, maxPeople, quiet)

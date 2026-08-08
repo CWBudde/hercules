@@ -34,7 +34,9 @@ func (r stubReader) GetBurndownParameters() (burndown.BurndownParameters, error)
 }
 
 func (r stubReader) GetProjectBurndownWithHeader() (burndown.BurndownHeader, string, [][]int, error) {
-	return burndown.BurndownHeader{Start: 0, Last: 86400, Sampling: 1, Granularity: 1, TickSize: 86400}, "test-repo", [][]int{{1, 2}, {3, 4}}, nil
+	header := burndown.BurndownHeader{Start: 0, Last: 86400, Sampling: 1, Granularity: 1, TickSize: 86400}
+
+	return header, "test-repo", [][]int{{1, 2}, {3, 4}}, nil
 }
 
 func (r stubReader) GetFilesBurndown() ([]readers.FileBurndown, error) {
@@ -90,7 +92,7 @@ func (r stubReader) GetDeveloperTimeSeriesData() (*readers.DeveloperTimeSeriesDa
 
 func TestExecuteModesWithNoModesIsNoop(t *testing.T) {
 	output := captureStdout(t, func() {
-		executeModes(nil, stubReader{}, "", nil, nil)
+		executeModes(nil, stubReader{}, "")
 	})
 	if output != "" {
 		t.Fatalf("executeModes() wrote %q, want no output", output)
@@ -99,7 +101,7 @@ func TestExecuteModesWithNoModesIsNoop(t *testing.T) {
 
 func TestExecuteModesPrintsPythonMissingDataWarning(t *testing.T) {
 	output := captureStderr(t, func() {
-		executeModes([]string{"devs"}, stubReader{}, filepath.Join(t.TempDir(), "devs.png"), nil, nil)
+		executeModes([]string{"devs"}, stubReader{}, filepath.Join(t.TempDir(), "devs.png"))
 	})
 
 	if !strings.Contains(output, "Devs stats were not collected. Re-run hercules with --devs.") {
@@ -112,10 +114,12 @@ func TestExecuteModesPrintsPythonMissingDataWarning(t *testing.T) {
 
 func TestExecuteModesPrintsDevsParallelPeopleBurndownWarning(t *testing.T) {
 	output := captureStderr(t, func() {
-		executeModes([]string{"devs-parallel"}, stubReader{}, filepath.Join(t.TempDir(), "devs-parallel.png"), nil, nil)
+		executeModes([]string{"devs-parallel"}, stubReader{}, filepath.Join(t.TempDir(), "devs-parallel.png"))
 	})
 
-	if !strings.Contains(output, "devs-parallel: Burndown stats for people were not collected. Re-run hercules with --burndown --burndown-people.") {
+	wantWarning := "devs-parallel: Burndown stats for people were not collected. " +
+		"Re-run hercules with --burndown --burndown-people."
+	if !strings.Contains(output, wantWarning) {
 		t.Fatalf("missing devs-parallel people burndown warning in output: %q", output)
 	}
 	if strings.Contains(output, "Error in mode devs-parallel") {
@@ -162,7 +166,7 @@ func TestExecuteModesJSONWritesReaderData(t *testing.T) {
 		}},
 	}
 
-	executeModes([]string{"devs"}, reader, outputPath, nil, nil)
+	executeModes([]string{"devs"}, reader, outputPath)
 
 	raw, err := os.ReadFile(outputPath) // #nosec G304 - test path is under t.TempDir.
 	if err != nil {
@@ -251,7 +255,11 @@ func TestRunWithResultsClassifiesOutcomes(t *testing.T) {
 	}{
 		{name: "success", handlerErr: nil, wantErr: false, wantWarning: false},
 		{name: "hard failure", handlerErr: errors.New("render exploded"), wantErr: true, wantWarning: false},
-		{name: "downgraded warning", handlerErr: fmt.Errorf("failed: %w", readers.ErrAnalysisMissing), wantErr: false, wantWarning: true},
+		{
+			name:       "downgraded warning",
+			handlerErr: fmt.Errorf("failed: %w", readers.ErrAnalysisMissing),
+			wantErr:    false, wantWarning: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -310,7 +318,10 @@ func TestRunWithResultsReportsUnimplementedModeAsWarning(t *testing.T) {
 }
 
 func TestMissingAnalysisWarningClassifiesTypedErrors(t *testing.T) {
-	warning, ok := missingAnalysisWarning("temporal-activity", fmt.Errorf("failed to get temporal activity data: %w", readers.ErrAnalysisMissing))
+	warning, ok := missingAnalysisWarning(
+		"temporal-activity",
+		fmt.Errorf("failed to get temporal activity data: %w", readers.ErrAnalysisMissing),
+	)
 	if !ok {
 		t.Fatal("expected typed missing analysis error to become a warning")
 	}

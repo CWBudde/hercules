@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -77,6 +78,33 @@ func resolveModes() ([]string, error) {
 	return modes, nil
 }
 
+// Hercules analysis names, i.e. the `--<analysis>` flags passed to the
+// hercules binary by --from-repo. Several of them spell the same as a
+// render.Mode* value, but they are a separate vocabulary owned by the hercules
+// CLI: a mode may require more than one analysis, and an analysis may feed
+// several modes. Do not substitute render.Mode* constants here.
+const (
+	analysisBurndown               = "burndown"
+	analysisBurndownFiles          = "burndown-files"
+	analysisBurndownPeople         = "burndown-people"
+	analysisCouples                = "couples"
+	analysisShotness               = "shotness"
+	analysisDevs                   = "devs"
+	analysisTemporalActivity       = "temporal-activity"
+	analysisCommitsStat            = "commits-stat"
+	analysisBusFactor              = "bus-factor"
+	analysisOwnershipConcentration = "ownership-concentration"
+	analysisKnowledgeDiffusion     = "knowledge-diffusion"
+	analysisHotspotRisk            = "hotspot-risk"
+	analysisSentiment              = "sentiment"
+	analysisRefactoringProxy       = "refactoring-proxy"
+)
+
+// unsupportedMultiRepositoryInput explains why the two multi-repository
+// burndown modes cannot be served by a single --from-repo run.
+const unsupportedMultiRepositoryInput = "requires combined multi-repository input, " +
+	"which --from-repo cannot produce"
+
 type repositoryModeRequirement struct {
 	Analyses    []string
 	Unsupported string
@@ -85,30 +113,32 @@ type repositoryModeRequirement struct {
 // repositoryModeRequirements is the single mode-to-analysis dependency table
 // for --from-repo. Entries are concrete modes returned by render.ResolveModes.
 var repositoryModeRequirements = map[string]repositoryModeRequirement{
-	render.ModeBurndownProject:        {Analyses: []string{"burndown"}},
-	render.ModeBurndownFile:           {Analyses: []string{"burndown", "burndown-files"}},
-	render.ModeBurndownPerson:         {Analyses: []string{"burndown", "burndown-people"}},
-	render.ModeBurndownRepository:     {Unsupported: "requires combined multi-repository input, which --from-repo cannot produce"},
-	render.ModeBurndownReposCombined:  {Unsupported: "requires combined multi-repository input, which --from-repo cannot produce"},
-	render.ModeOverwritesMatrix:       {Analyses: []string{"burndown", "burndown-people"}},
-	render.ModeOwnership:              {Analyses: []string{"burndown", "burndown-people"}},
-	render.ModeCouplesFiles:           {Analyses: []string{"couples"}},
-	render.ModeCouplesPeople:          {Analyses: []string{"couples"}},
-	render.ModeCouplesShotness:        {Analyses: []string{"shotness"}},
-	render.ModeShotness:               {Analyses: []string{"shotness"}},
-	render.ModeDevs:                   {Analyses: []string{"devs"}},
-	render.ModeDevsEfforts:            {Analyses: []string{"devs"}},
-	render.ModeOldVsNew:               {Analyses: []string{"devs"}},
-	render.ModeLanguages:              {Analyses: []string{"devs"}},
-	render.ModeTemporalActivity:       {Analyses: []string{"temporal-activity"}},
-	render.ModeDevsParallel:           {Analyses: []string{"burndown", "burndown-people", "couples", "devs"}},
-	render.ModeRunTimes:               {Analyses: []string{"commits-stat"}},
-	render.ModeBusFactor:              {Analyses: []string{"bus-factor"}},
-	render.ModeOwnershipConcentration: {Analyses: []string{"ownership-concentration"}},
-	render.ModeKnowledgeDiffusion:     {Analyses: []string{"knowledge-diffusion"}},
-	render.ModeHotspotRisk:            {Analyses: []string{"hotspot-risk"}},
-	render.ModeSentiment:              {Analyses: []string{"sentiment"}},
-	render.ModeRefactoringProxy:       {Analyses: []string{"refactoring-proxy"}},
+	render.ModeBurndownProject:       {Analyses: []string{analysisBurndown}},
+	render.ModeBurndownFile:          {Analyses: []string{analysisBurndown, analysisBurndownFiles}},
+	render.ModeBurndownPerson:        {Analyses: []string{analysisBurndown, analysisBurndownPeople}},
+	render.ModeBurndownRepository:    {Unsupported: unsupportedMultiRepositoryInput},
+	render.ModeBurndownReposCombined: {Unsupported: unsupportedMultiRepositoryInput},
+	render.ModeOverwritesMatrix:      {Analyses: []string{analysisBurndown, analysisBurndownPeople}},
+	render.ModeOwnership:             {Analyses: []string{analysisBurndown, analysisBurndownPeople}},
+	render.ModeCouplesFiles:          {Analyses: []string{analysisCouples}},
+	render.ModeCouplesPeople:         {Analyses: []string{analysisCouples}},
+	render.ModeCouplesShotness:       {Analyses: []string{analysisShotness}},
+	render.ModeShotness:              {Analyses: []string{analysisShotness}},
+	render.ModeDevs:                  {Analyses: []string{analysisDevs}},
+	render.ModeDevsEfforts:           {Analyses: []string{analysisDevs}},
+	render.ModeOldVsNew:              {Analyses: []string{analysisDevs}},
+	render.ModeLanguages:             {Analyses: []string{analysisDevs}},
+	render.ModeTemporalActivity:      {Analyses: []string{analysisTemporalActivity}},
+	render.ModeDevsParallel: {Analyses: []string{
+		analysisBurndown, analysisBurndownPeople, analysisCouples, analysisDevs,
+	}},
+	render.ModeRunTimes:               {Analyses: []string{analysisCommitsStat}},
+	render.ModeBusFactor:              {Analyses: []string{analysisBusFactor}},
+	render.ModeOwnershipConcentration: {Analyses: []string{analysisOwnershipConcentration}},
+	render.ModeKnowledgeDiffusion:     {Analyses: []string{analysisKnowledgeDiffusion}},
+	render.ModeHotspotRisk:            {Analyses: []string{analysisHotspotRisk}},
+	render.ModeSentiment:              {Analyses: []string{analysisSentiment}},
+	render.ModeRefactoringProxy:       {Analyses: []string{analysisRefactoringProxy}},
 }
 
 var (
@@ -150,7 +180,7 @@ func requiredAnalysesForModes(modes []string) ([]string, error) {
 	return result, nil
 }
 
-func discoverGitRepository(path string) (string, error) {
+func discoverGitRepository(ctx context.Context, path string) (string, error) {
 	absolutePath, err := filepath.Abs(path)
 	if err != nil {
 		return "", fmt.Errorf("resolve repository path %q: %w", path, err)
@@ -160,27 +190,28 @@ func discoverGitRepository(path string) (string, error) {
 		return "", fmt.Errorf("find git executable: %w", err)
 	}
 
-	bare, err := runGitRepositoryDiscovery(gitPath, absolutePath, "--is-bare-repository")
+	bare, err := runGitRepositoryDiscovery(ctx, gitPath, absolutePath, "--is-bare-repository")
 	if err != nil {
 		return "", fmt.Errorf("%q is not a Git repository: %w", path, err)
 	}
 	if strings.TrimSpace(bare) == "true" {
-		gitDir, gitErr := runGitRepositoryDiscovery(gitPath, absolutePath, "--absolute-git-dir")
+		gitDir, gitErr := runGitRepositoryDiscovery(ctx, gitPath, absolutePath, "--absolute-git-dir")
 		if gitErr != nil {
 			return "", fmt.Errorf("discover bare repository %q: %w", path, gitErr)
 		}
 		return filepath.Clean(strings.TrimSpace(gitDir)), nil
 	}
 
-	topLevel, err := runGitRepositoryDiscovery(gitPath, absolutePath, "--show-toplevel")
+	topLevel, err := runGitRepositoryDiscovery(ctx, gitPath, absolutePath, "--show-toplevel")
 	if err != nil {
 		return "", fmt.Errorf("discover worktree repository %q: %w", path, err)
 	}
 	return filepath.Clean(strings.TrimSpace(topLevel)), nil
 }
 
-func runGitRepositoryDiscovery(gitPath, path, argument string) (string, error) {
-	cmd := exec.Command(gitPath, "-C", path, "rev-parse", argument) // #nosec G204 -- executable is resolved with exec.LookPath.
+func runGitRepositoryDiscovery(ctx context.Context, gitPath, path, argument string) (string, error) {
+	// #nosec G204 -- executable is resolved with exec.LookPath.
+	cmd := exec.CommandContext(ctx, gitPath, "-C", path, "rev-parse", argument)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		message := strings.TrimSpace(string(output))
@@ -193,7 +224,7 @@ func runGitRepositoryDiscovery(gitPath, path, argument string) (string, error) {
 }
 
 func runHerculesForRepository(
-	herculesPath, repoPath string, analyses []string,
+	ctx context.Context, herculesPath, repoPath string, analyses []string,
 ) (reader readers.Reader, err error) {
 	output, err := os.CreateTemp(viper.GetString("tmpdir"), "labours-hercules-*.pb")
 	if err != nil {
@@ -216,7 +247,8 @@ func runHerculesForRepository(
 	arguments = append(arguments, "--", repoPath)
 
 	var stderr bytes.Buffer
-	cmd := exec.Command(herculesPath, arguments...) // #nosec G204 -- executable is resolved with exec.LookPath or explicitly configured.
+	// #nosec G204 -- executable is resolved with exec.LookPath or explicitly configured.
+	cmd := exec.CommandContext(ctx, herculesPath, arguments...)
 	cmd.Stdout = output
 	cmd.Stderr = &stderr
 	if runErr := cmd.Run(); runErr != nil {
@@ -239,10 +271,10 @@ func runHerculesForRepository(
 }
 
 func runHerculesAndVisualize(
-	herculesPath, repoPath string, modes, analyses []string,
+	ctx context.Context, herculesPath, repoPath string, modes, analyses []string,
 	rendererOptions ...render.Options,
 ) error {
-	reader, err := runRepositoryHercules(herculesPath, repoPath, analyses)
+	reader, err := runRepositoryHercules(ctx, herculesPath, repoPath, analyses)
 	if err != nil {
 		return err
 	}
@@ -269,7 +301,7 @@ func runHerculesAndVisualize(
 	} else {
 		themeName := viper.GetString("theme")
 		if viper.GetBool("matplotlib-colors") {
-			themeName = "matplotlib"
+			themeName = themeMatplotlib
 		}
 		opts, err = renderOptionsFromViper(themeName)
 		if err != nil {

@@ -15,6 +15,8 @@ import (
 	"github.com/cwbudde/hercules/internal/render/readers"
 )
 
+var errRefactoringProxyAxes = errors.New("failed to create refactoring proxy axes")
+
 func RefactoringProxy(reader readers.Reader, output string) error {
 	proxyReader, ok := reader.(readers.RefactoringProxyReader)
 	if !ok {
@@ -53,15 +55,42 @@ func plotRefactoringProxy(repoName string, data *readers.RefactoringProxyData, o
 
 	grid := fig.Subplots(1, 1, core.WithSubplotPadding(0.080, 0.950, 0.140, 0.900))
 	if len(grid) == 0 || len(grid[0]) == 0 || grid[0][0] == nil {
-		return errors.New("failed to create refactoring proxy axes")
+		return errRefactoringProxyAxes
 	}
 
 	ax := grid[0][0]
+	threshold := float64(data.Threshold)
 
+	err = drawRefactoringProxySeries(ax, data, timestamps, rates, dateNumbers, threshold)
+	if err != nil {
+		return err
+	}
+
+	configureRefactoringProxyAxes(ax, repoName, maxRate, threshold)
+
+	err = saveReportFigureWithoutTightLayout(fig, output, width, height)
+	if err != nil {
+		return fmt.Errorf("failed to save refactoring proxy chart: %w", err)
+	}
+
+	fmt.Printf("Saved refactoring proxy chart to %s\n", output)
+
+	return nil
+}
+
+// drawRefactoringProxySeries plots the refactoring rate, the threshold
+// reference line and the shaded above-threshold spans onto ax.
+func drawRefactoringProxySeries(
+	ax *core.Axes,
+	data *readers.RefactoringProxyData,
+	timestamps []time.Time,
+	rates, dateNumbers []float64,
+	threshold float64,
+) error {
 	lineColor := render.Color{R: 0x2e / 255.0, G: 0x86 / 255.0, B: 0xab / 255.0, A: 1}
 	lineWidth := 2.0
 
-	_, err = ax.Plot(timestamps, rates, core.PlotOptions{
+	_, err := ax.Plot(timestamps, rates, core.PlotOptions{
 		Color:     optional.Of(lineColor),
 		LineWidth: optional.Of(lineWidth),
 		Label:     "Refactoring Rate",
@@ -70,7 +99,6 @@ func plotRefactoringProxy(repoName string, data *readers.RefactoringProxyData, o
 		return fmt.Errorf("failed to plot refactoring rate: %w", err)
 	}
 
-	threshold := float64(data.Threshold)
 	thresholdColor := render.Color{R: 0xe6 / 255.0, G: 0x39 / 255.0, B: 0x46 / 255.0, A: 1}
 	thresholdWidth := 1.5
 
@@ -96,15 +124,6 @@ func plotRefactoringProxy(repoName string, data *readers.RefactoringProxyData, o
 		})
 	}
 
-	configureRefactoringProxyAxes(ax, repoName, maxRate, threshold)
-
-	err = saveReportFigureWithoutTightLayout(fig, output, width, height)
-	if err != nil {
-		return fmt.Errorf("failed to save refactoring proxy chart: %w", err)
-	}
-
-	fmt.Printf("Saved refactoring proxy chart to %s\n", output)
-
 	return nil
 }
 
@@ -128,7 +147,11 @@ type refactoringProxyRegion struct {
 	End   float64
 }
 
-func refactoringProxyRegions(ticks []readers.RefactoringProxyTick, threshold float64, x []float64) []refactoringProxyRegion {
+func refactoringProxyRegions(
+	ticks []readers.RefactoringProxyTick,
+	threshold float64,
+	x []float64,
+) []refactoringProxyRegion {
 	regions := []refactoringProxyRegion{}
 	currentStart := math.NaN()
 

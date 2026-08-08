@@ -291,7 +291,10 @@ func TestCalculateOwnershipConcentration(t *testing.T) {
 	distributed := calculateOwnershipConcentration(distributedMatrix)
 
 	if concentrated <= distributed {
-		t.Errorf("Expected concentrated ownership (%f) to have higher concentration than distributed (%f)", concentrated, distributed)
+		t.Errorf(
+			"Expected concentrated ownership (%f) to have higher concentration than distributed (%f)",
+			concentrated, distributed,
+		)
 	}
 }
 

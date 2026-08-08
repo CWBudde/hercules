@@ -11,6 +11,11 @@ import (
 	"github.com/cwbudde/hercules/internal/render/readers"
 )
 
+var (
+	errOldVsNewSeriesLength = errors.New("new code and modified code series must have the same length")
+	errOldVsNewDatesLength  = errors.New("dates and series must have the same length")
+)
+
 // OldVsNew generates an analysis showing the evolution of new code vs modifications to existing code over time.
 // This provides insights into development patterns - whether the project is in growth mode (lots of new code)
 // vs maintenance mode (lots of modifications to existing code).
@@ -146,7 +151,10 @@ func generateOldVsNewTimeSeries(totalLines, length int, changeType string) []flo
 	return series
 }
 
-func oldVsNewDailySeries(timeSeries *readers.DeveloperTimeSeriesData, startUnix, endUnix int64) ([]float64, []float64, []time.Time) {
+func oldVsNewDailySeries(
+	timeSeries *readers.DeveloperTimeSeriesData,
+	startUnix, endUnix int64,
+) ([]float64, []float64, []time.Time) {
 	start, _, seriesLength := timeSeriesCalendarRange(timeSeries, startUnix, endUnix, 1)
 
 	newLines := make([]float64, seriesLength)
@@ -180,7 +188,11 @@ func dateOnly(t time.Time) time.Time {
 	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
 }
 
-func timeSeriesCalendarRange(timeSeries *readers.DeveloperTimeSeriesData, startUnix, endUnix int64, extraDays int) (time.Time, time.Time, int) {
+func timeSeriesCalendarRange(
+	timeSeries *readers.DeveloperTimeSeriesData,
+	startUnix, endUnix int64,
+	extraDays int,
+) (time.Time, time.Time, int) {
 	start := dateOnly(time.Unix(startUnix, 0))
 	end := dateOnly(time.Unix(endUnix, 0))
 
@@ -282,11 +294,11 @@ func generateOldVsNewPlot(
 
 	length := len(newCodeSeries)
 	if len(modifiedCodeSeries) != length {
-		return errors.New("new code and modified code series must have the same length")
+		return errOldVsNewSeriesLength
 	}
 
 	if len(dates) != length {
-		return errors.New("dates and series must have the same length")
+		return errOldVsNewDatesLength
 	}
 
 	series := []graphics.MatplotlibTimeAreaSeries{

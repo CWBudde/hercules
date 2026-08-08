@@ -8,7 +8,13 @@ import (
 )
 
 // BurndownFile generates burndown charts for individual files.
-func BurndownFile(reader readers.Reader, output string, relative bool, startDate, endDate *time.Time, resample string) error {
+func BurndownFile(
+	reader readers.Reader,
+	output string,
+	relative bool,
+	startDate, endDate *time.Time,
+	resample string,
+) error {
 	fileBurndowns, err := reader.GetFilesBurndown()
 	if err != nil {
 		return fmt.Errorf("failed to get files burndown data: %w", err)

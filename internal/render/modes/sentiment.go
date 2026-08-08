@@ -23,6 +23,14 @@ const experimentalSentimentSubtitle = "[EXPERIMENTAL] Sentiment analysis is expe
 const heuristicSentimentNotice = "Collected sentiment data is missing; using heuristic fallback " +
 	"because --sentiment-fallback is enabled."
 
+// errNoCollectedSentimentTicks reports a collected-sentiment timeline request
+// with no ticks to plot.
+var errNoCollectedSentimentTicks = errors.New("no collected sentiment ticks")
+
+// sentimentTypeDeveloper is the SentimentResult.Type payload value for the
+// per-developer sentiment series.
+const sentimentTypeDeveloper = "developer"
+
 // SentimentResult represents sentiment analysis for a developer or file.
 type SentimentResult struct {
 	Entity   string
@@ -122,7 +130,7 @@ func heuristicSentimentData(reader readers.Reader) ([]SentimentResult, error) {
 	var failures []error
 
 	developers, err := analyzeDeveloperSentiment(reader)
-	results, failures = addSentimentFallback(results, failures, "developer", developers, err)
+	results, failures = addSentimentFallback(results, failures, sentimentTypeDeveloper, developers, err)
 
 	languages, err := analyzeLanguageSentiment(reader)
 	results, failures = addSentimentFallback(results, failures, "language", languages, err)
@@ -224,7 +232,12 @@ func sentimentResultsFromTicks(ticks map[int]readers.SentimentTick) []SentimentR
 	return results
 }
 
-func plotCollectedSentimentTimeline(name string, startUnix int64, ticks map[int]readers.SentimentTick, output string) error {
+func plotCollectedSentimentTimeline(
+	name string,
+	startUnix int64,
+	ticks map[int]readers.SentimentTick,
+	output string,
+) error {
 	return plotCollectedSentimentTimelineWithOptions(name, startUnix, ticks, output, graphics.DefaultOptions())
 }
 
@@ -236,7 +249,7 @@ func plotCollectedSentimentTimelineWithOptions(
 	visuals graphics.Options,
 ) error {
 	if len(ticks) == 0 {
-		return errors.New("no collected sentiment ticks")
+		return errNoCollectedSentimentTicks
 	}
 
 	output, err := prepareSentimentOutput(output)
@@ -435,54 +448,60 @@ func analyzeDeveloperSentiment(reader readers.Reader) ([]SentimentResult, error)
 	}
 
 	for _, dev := range devStats {
-		// Calculate activity ratios
-		commitRatio := float64(dev.Commits) / float64(totalCommits)
-		changeRatio := float64(dev.LinesAdded) / float64(dev.LinesAdded+dev.LinesRemoved+1)
-
-		// Sentiment heuristics based on activity patterns:
-		// - High commit activity = positive engagement
-		// - Balanced add/remove ratio = positive code quality focus
-		// - Many languages = positive exploration/learning
-		// - Many files touched = positive collaboration
-
-		positive := commitRatio*0.3 + changeRatio*0.3 +
-			float64(len(dev.Languages))/10.0*0.2 +
-			float64(dev.FilesTouched)/100.0*0.2
-
-		// Factors that might indicate negative sentiment:
-		// - Very high removal ratio (frustration/cleanup)
-		// - Very low commit activity (disengagement)
-		negative := 0.0
-		if dev.LinesRemoved > dev.LinesAdded*2 {
-			negative += 0.3 // High removal ratio
-		}
-
-		if commitRatio < 0.01 && len(devStats) > 5 {
-			negative += 0.2 // Very low activity
-		}
-
-		neutral := 1.0 - positive - negative
-		if neutral < 0 {
-			// Normalize if we went over 1.0
-			total := positive + negative
-			positive /= total
-			negative /= total
-			neutral = 0.0
-		}
-
-		score := positive - negative // Overall sentiment score
-
-		results = append(results, normalizeSentimentResult(SentimentResult{
-			Entity:   dev.Name,
-			Type:     "developer",
-			Positive: positive,
-			Neutral:  neutral,
-			Negative: negative,
-			Score:    score,
-		}))
+		results = append(results, developerSentimentResult(dev, totalCommits, len(devStats)))
 	}
 
 	return results, nil
+}
+
+// developerSentimentResult scores one developer from their activity ratios. It
+// carries the per-developer half of analyzeDeveloperSentiment's heuristic.
+func developerSentimentResult(dev readers.DeveloperStat, totalCommits, developerCount int) SentimentResult {
+	// Calculate activity ratios
+	commitRatio := float64(dev.Commits) / float64(totalCommits)
+	changeRatio := float64(dev.LinesAdded) / float64(dev.LinesAdded+dev.LinesRemoved+1)
+
+	// Sentiment heuristics based on activity patterns:
+	// - High commit activity = positive engagement
+	// - Balanced add/remove ratio = positive code quality focus
+	// - Many languages = positive exploration/learning
+	// - Many files touched = positive collaboration
+
+	positive := commitRatio*0.3 + changeRatio*0.3 +
+		float64(len(dev.Languages))/10.0*0.2 +
+		float64(dev.FilesTouched)/100.0*0.2
+
+	// Factors that might indicate negative sentiment:
+	// - Very high removal ratio (frustration/cleanup)
+	// - Very low commit activity (disengagement)
+	negative := 0.0
+	if dev.LinesRemoved > dev.LinesAdded*2 {
+		negative += 0.3 // High removal ratio
+	}
+
+	if commitRatio < 0.01 && developerCount > 5 {
+		negative += 0.2 // Very low activity
+	}
+
+	neutral := 1.0 - positive - negative
+	if neutral < 0 {
+		// Normalize if we went over 1.0
+		total := positive + negative
+		positive /= total
+		negative /= total
+		neutral = 0.0
+	}
+
+	score := positive - negative // Overall sentiment score
+
+	return normalizeSentimentResult(SentimentResult{
+		Entity:   dev.Name,
+		Type:     sentimentTypeDeveloper,
+		Positive: positive,
+		Neutral:  neutral,
+		Negative: negative,
+		Score:    score,
+	})
 }
 
 // analyzeLanguageSentiment analyzes sentiment based on language usage patterns.
@@ -692,7 +711,7 @@ func plotSentimentByTypeWithOptions(results []SentimentResult, output string, vi
 
 	for _, result := range results {
 		switch result.Type {
-		case "developer":
+		case sentimentTypeDeveloper:
 			developers = append(developers, result)
 		case "language":
 			languages = append(languages, result)
@@ -701,7 +720,9 @@ func plotSentimentByTypeWithOptions(results []SentimentResult, output string, vi
 
 	// Plot developer sentiment if available
 	if len(developers) > 0 {
-		err := plotSentimentForTypeWithOptions(developers, "Developer Sentiment Analysis", output, "sentiment-developers", visuals)
+		err := plotSentimentForTypeWithOptions(
+			developers, "Developer Sentiment Analysis", output, "sentiment-developers", visuals,
+		)
 		if err != nil {
 			return fmt.Errorf("failed to plot developer sentiment: %w", err)
 		}
@@ -709,7 +730,9 @@ func plotSentimentByTypeWithOptions(results []SentimentResult, output string, vi
 
 	// Plot language sentiment if available
 	if len(languages) > 0 {
-		err := plotSentimentForTypeWithOptions(languages, "Language Sentiment Analysis", output, "sentiment-languages", visuals)
+		err := plotSentimentForTypeWithOptions(
+			languages, "Language Sentiment Analysis", output, "sentiment-languages", visuals,
+		)
 		if err != nil {
 			return fmt.Errorf("failed to plot language sentiment: %w", err)
 		}
@@ -798,7 +821,7 @@ func printSentimentSummary(results []SentimentResult) {
 		totalNeutral += result.Neutral
 		totalNegative += result.Negative
 
-		if result.Type == "developer" {
+		if result.Type == sentimentTypeDeveloper {
 			devCount++
 		} else {
 			langCount++

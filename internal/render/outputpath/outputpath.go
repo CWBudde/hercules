@@ -16,7 +16,10 @@ const (
 	hashLength   = 10
 )
 
-var errFanoutInputLength = errors.New("fan-out labels and identities differ in length")
+var (
+	errFanoutInputLength   = errors.New("fan-out labels and identities differ in length")
+	errDuplicateOutputPath = errors.New("duplicate planned output path")
+)
 
 // StableSlug returns a filesystem-safe, rune-aware label with a stable hash
 // derived from the complete, unmodified identity. The hash prevents distinct
@@ -138,7 +141,7 @@ func RejectDuplicates(paths []string) error {
 	for _, path := range paths {
 		key := strings.ToLower(filepath.Clean(path))
 		if previous, exists := seen[key]; exists {
-			return fmt.Errorf("duplicate planned output path %q (also planned as %q)", path, previous)
+			return fmt.Errorf("%w %q (also planned as %q)", errDuplicateOutputPath, path, previous)
 		}
 
 		seen[key] = path

@@ -56,6 +56,9 @@ type LeafPipelineItem = core.LeafPipelineItem
 // ResultMergeablePipelineItem specifies the methods to combine several analysis results together.
 type ResultMergeablePipelineItem = core.ResultMergeablePipelineItem
 
+// RepositoryQualifiablePipelineItem produces results keyed by repository-local paths.
+type RepositoryQualifiablePipelineItem = core.RepositoryQualifiablePipelineItem
+
 // CommonAnalysisResult holds the information which is always extracted at Pipeline.Run().
 type CommonAnalysisResult = core.CommonAnalysisResult
 

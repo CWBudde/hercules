@@ -4,7 +4,7 @@
 
 | phase                                             | items                | state                                 |
 | ------------------------------------------------- | -------------------- | ------------------------------------- |
-| [Phase 1 — combine correctness](#phase-1)         | T1.1–T1.3 (M7/M6/M2) | not started, highest leverage         |
+| [Phase 1 — combine correctness](#phase-1)         | T1.1–T1.3 (M7/M6/M2) | T1.1 landed (corpus check open)       |
 | [Phase 2 — rendering defects](#phase-2)           | T2.1–T2.3 (M4/M5/M3) | not started, small and visible        |
 | [Phase 3 — unexposed analyses](#phase-3)          | T3.1–T3.3 (M1/M8/M9) | not started, largest new work         |
 | [Phase 4 — burndown residue (B1c/P5)](#phase-4)   | T4.1–T4.3            | **on hold — recommendation: do not start** |
@@ -35,7 +35,7 @@ The org-wide corpus (231 non-archived MeKo-Tech repositories, 10.9 M lines, 31 5
 identity groups, merged into one `.pb`) exposes three defects in `hercules combine`. None is an
 accounting defect; these are things hercules collects and then merges wrongly or drops silently.
 
-### T1.1 — qualify path keys with the repository (M7) 🔴
+### T1.1 — qualify path keys with the repository (M7) 🟢 landed, corpus check open
 
 Root cause behind T1.2(b) and the collapse of the org-wide coupling charts. **One change at one
 merge site unlocks both.**
@@ -51,12 +51,38 @@ The repository identity **is already in the combine pipeline** and is simply nev
 path key: it reaches `Burndown` as a separate axis (`cmd/hercules/combine.go:182,187-188` —
 `ReversedRepositoryDict`, `RepositoryHistories`) and the header (`:197,243`).
 
-- [ ] Thread the repository qualifier (`repo:path`) into path keys at merge time.
-- [ ] Apply to the other bare-path keys: `FileRisk.Path` (`leaves/hotspot_risk.go:65`),
-      `FileHistoryResult.Files` (`leaves/file_history.go:34-36`), `CodeChurnFileResult` via
-      `Files map[string]...` (`leaves/codechurn.go:78-80`).
+- [x] Thread the repository qualifier (`repo:path`) into path keys at merge time. **Done
+      2026-08-08.** `core.RepositoryQualifiablePipelineItem` (`internal/core/pipeline.go`) adds one
+      optional method, `QualifyPaths(result, repository)`; `qualifyRepositoryPaths`
+      (`cmd/hercules/combine.go`) applies it to every loaded result before the merge, next to
+      `initializeBurndownRepository`. The prefix is built by `core.QualifyRepositoryPath` with
+      `core.RepositoryPathSeparator = ":"`.
+- [x] Apply to the other bare-path keys. Implemented for `Couples.Files`, `FileRisk.Path`,
+      `CodeChurnAuthorResult.Files`, and — same defect, not in the original list —
+      `KnowledgeDiffusionResult.Files`, `BusFactorResult.SubsystemBusFactor` and
+      `OwnershipConcentrationResult.SubsystemConcentration` (the last two key on a directory
+      prefix, so `cmd` from 231 repositories was collapsing into one worst-case reading).
+      `FileHistoryResult.Files` is **not** qualified: `FileHistoryAnalysis` is non-mergeable, so
+      combine never deserializes it (see T1.3); it needs qualification only if that changes.
+      `BurndownResult.FileHistories`/`FileOwnership` are likewise untouched — burndown's merge
+      drops them (Phase 5, combined file burndown).
 - [ ] Verify on the 231-repo corpus that coupling relationships rise from 20 to something with
-      per-repository structure.
+      per-repository structure. **Not run — no per-repository `.pb` corpus on disk, and rebuilding
+      231 of them is hours.** Verified instead on a real two-repository sample (`ewws-auth` +
+      `ewws-wiki`, `--couples --pb --diff-timeout=300000`): merged index 572 files = 342 + 230 with
+      no fusion, 54 650 coupling relationships, **0 cross-repository**. The two repositories share
+      11 identical paths (`.gitignore`, `.github/workflows/*`, `README.md`) which previously fused
+      into 11 keys with summed co-occurrence — that is the org-wide `manifest.json` /
+      `go.mod`↔`go.sum` result in miniature.
+
+Two decisions worth keeping:
+
+- **Re-combining is guarded.** A file whose header contains ` & ` (`repositorySeparator`) is
+  already a combine output with qualified keys, so it is passed through unqualified rather than
+  nested one prefix inside another. Covered by
+  `TestRunCombineLeavesCombinedInputQualifiedOnce`.
+- **An empty header repository leaves paths bare**, so a result of unknown origin does not gain a
+  leading `:`.
 
 ### T1.2 — combined `hotspot-risk` is unsound in three independent ways (M6) 🟡
 
@@ -72,7 +98,10 @@ alphabetically ordered, **every `RiskScore` exactly 1.0**, `README.md` present t
 - [ ] **(b) No dedup** — `:606-607` concatenates and re-sorts. The comment at `:577-579` states
       why: *"the same path in two different repositories denotes two different files, and
       `FileRisk` carries no repository qualifier."* Correct reasoning, unreadable output.
-      **Blocked on T1.1**, and closed by it.
+      **Unblocked by T1.1 as of 2026-08-08** — `FileRisk.Path` now carries the repository, so equal
+      paths do denote the same file and `MergeResults` may dedup them. The doc comment above
+      `MergeResults` (`leaves/hotspot_risk.go`) still states the old reasoning and has to change
+      with the fix.
 - [ ] **(c) No cross-run rescaling.** `normalizeAndScore` (`:795`, writing the four `*Normalized`
       fields at `:812-815`) is called only from `Finalize` (`:440`), never from `MergeResults`, so
       each repository's factors are normalised against its own maxima and the merged ranking

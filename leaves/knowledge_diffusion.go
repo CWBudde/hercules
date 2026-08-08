@@ -328,6 +328,24 @@ func (kd *KnowledgeDiffusionAnalysis) Deserialize(pbmessage []byte) (any, error)
 	return result, nil
 }
 
+// QualifyPaths prefixes every file key with the repository it was observed in. Distribution is a
+// histogram over editor counts and carries no paths, so it is left alone.
+func (kd *KnowledgeDiffusionAnalysis) QualifyPaths(result any, repository string) any {
+	diffusionResult, err := requiredResult[KnowledgeDiffusionResult](result)
+	if err != nil {
+		return fmt.Errorf("qualify knowledge diffusion paths: %w", err)
+	}
+
+	files := make(map[string]*KnowledgeDiffusionFileResult, len(diffusionResult.Files))
+	for path, file := range diffusionResult.Files {
+		files[core.QualifyRepositoryPath(repository, path)] = file
+	}
+
+	diffusionResult.Files = files
+
+	return diffusionResult
+}
+
 // MergeResults combines two KnowledgeDiffusionResult-s together.
 func (kd *KnowledgeDiffusionAnalysis) MergeResults(
 	firstResult, secondResult any, _, _ *core.CommonAnalysisResult,

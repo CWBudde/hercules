@@ -16,6 +16,7 @@ import (
 
 	"github.com/cwbudde/hercules"
 	"github.com/cwbudde/hercules/internal/pb"
+	"github.com/cwbudde/hercules/leaves"
 )
 
 const combineTestDevs = "Devs"
@@ -30,6 +31,12 @@ const (
 // combineTestUnmergeable is a registered leaf which does not implement
 // ResultMergeablePipelineItem, so combine can never merge it.
 const combineTestUnmergeable = "FileHistoryAnalysis"
+
+// combineTestCouples is a mergeable leaf whose result is keyed by file path.
+const (
+	combineTestCouples = "Couples"
+	combineTestReadme  = "README.md"
+)
 
 func TestRunCombineValidatesSingleInput(t *testing.T) {
 	input := filepath.Join(t.TempDir(), "invalid.pb")
@@ -198,6 +205,99 @@ func TestRunCombineSkipsUnmergeableAnalyses(t *testing.T) {
 	if _, exists := contents[combineTestDevs]; !exists {
 		t.Fatalf("combined output lacks the mergeable analysis: %v", contents)
 	}
+}
+
+// TestRunCombineQualifiesPathsWithTheirRepository covers the reason combine can rank files at all
+// once several repositories are involved: the same path in two repositories is two files, and
+// nothing but the repository name distinguishes them.
+func TestRunCombineQualifiesPathsWithTheirRepository(t *testing.T) {
+	alpha := writeCombineCouplesInput(t, "alpha", []string{combineTestReadme, "alpha.go"})
+	beta := writeCombineCouplesInput(t, "beta", []string{combineTestReadme, "beta.go"})
+	var output bytes.Buffer
+
+	if err := runCombine(newCombineTestCommand(&output, ""), []string{alpha, beta}); err != nil {
+		t.Fatalf("runCombine() failed: %v", err)
+	}
+
+	index := combinedCouplesIndex(t, &output)
+	want := []string{"alpha:" + combineTestReadme, "alpha:alpha.go", "beta:" + combineTestReadme, "beta:beta.go"}
+	if !slices.Equal(index, want) {
+		t.Fatalf("combined file index = %v, want %v", index, want)
+	}
+}
+
+// TestRunCombineLeavesCombinedInputQualifiedOnce guards against nesting one prefix inside another:
+// a file which is itself the output of combine already carries qualified paths.
+func TestRunCombineLeavesCombinedInputQualifiedOnce(t *testing.T) {
+	alpha := writeCombineCouplesInput(t, "alpha", []string{combineTestReadme})
+	beta := writeCombineCouplesInput(t, "beta", []string{combineTestReadme})
+	var combined bytes.Buffer
+
+	if err := runCombine(newCombineTestCommand(&combined, ""), []string{alpha, beta}); err != nil {
+		t.Fatalf("runCombine() failed: %v", err)
+	}
+
+	recombinedInput := filepath.Join(t.TempDir(), "combined.pb")
+	if err := os.WriteFile(recombinedInput, combined.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	if err := runCombine(newCombineTestCommand(&output, ""), []string{recombinedInput}); err != nil {
+		t.Fatalf("runCombine() failed over a combined input: %v", err)
+	}
+
+	index := combinedCouplesIndex(t, &output)
+	want := []string{"alpha:" + combineTestReadme, "beta:" + combineTestReadme}
+	if !slices.Equal(index, want) {
+		t.Fatalf("re-combined file index = %v, want %v", index, want)
+	}
+}
+
+func combinedCouplesIndex(t *testing.T, output *bytes.Buffer) []string {
+	t.Helper()
+
+	payload, exists := unmarshalCombineOutput(t, output)[combineTestCouples]
+	if !exists {
+		t.Fatal("combined output lacks the couples result")
+	}
+	var merged pb.CouplesAnalysisResults
+	if err := proto.Unmarshal(payload, &merged); err != nil {
+		t.Fatalf("merged %s is malformed: %v", combineTestCouples, err)
+	}
+	return merged.GetFileCouples().GetIndex()
+}
+
+// writeCombineCouplesInput serializes a couples result through the leaf itself, so the envelope
+// matches what a real run writes.
+func writeCombineCouplesInput(t *testing.T, repository string, files []string) string {
+	t.Helper()
+
+	result := leaves.CouplesResult{
+		Files:       files,
+		FilesLines:  make([]int, len(files)),
+		FilesMatrix: make([]map[int]int64, len(files)),
+		// One row for the unknown author, which is what a people-less result carries.
+		PeopleMatrix: []map[int]int64{{}},
+	}
+	for index := range files {
+		result.FilesLines[index] = 1
+		result.FilesMatrix[index] = map[int]int64{index: 1}
+	}
+	serialized := bytes.Buffer{}
+	if err := (&leaves.CouplesAnalysis{}).Serialize(result, true, &serialized); err != nil {
+		t.Fatal(err)
+	}
+
+	return writeCombineEnvelope(t, &pb.AnalysisResults{
+		Header: &pb.Metadata{
+			Version:       pb.SchemaVersion,
+			Repository:    repository,
+			Commits:       1,
+			BeginUnixTime: combineTestBeginTime,
+			EndUnixTime:   combineTestBeginTime + 4*24*3600,
+		},
+		Contents: map[string][]byte{combineTestCouples: serialized.Bytes()},
+	})
 }
 
 // TestRunCombineRejectsUnmergeableOnly keeps the skip from swallowing an explicit request: naming

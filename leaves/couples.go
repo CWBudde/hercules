@@ -429,6 +429,25 @@ func (couples *CouplesAnalysis) MergeResults(
 	return merged
 }
 
+// QualifyPaths prefixes every file name with the repository it was observed in, so that equal
+// paths in different repositories stay distinct through join.LiteralIdentities. Only Files carries
+// names; PeopleFiles and FilesMatrix index into it and are unaffected.
+func (couples *CouplesAnalysis) QualifyPaths(result any, repository string) any {
+	couplesResult, err := requiredResult[CouplesResult](result)
+	if err != nil {
+		return fmt.Errorf("qualify couples paths: %w", err)
+	}
+
+	files := make([]string, len(couplesResult.Files))
+	for index, file := range couplesResult.Files {
+		files[index] = core.QualifyRepositoryPath(repository, file)
+	}
+
+	couplesResult.Files = files
+
+	return couplesResult
+}
+
 func couplesMergeInputs(result1, result2 any) (CouplesResult, CouplesResult, error) {
 	first, err := requiredResult[CouplesResult](result1)
 	if err != nil {

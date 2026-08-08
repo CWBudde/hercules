@@ -208,6 +208,33 @@ type ResultMergeablePipelineItem interface {
 	MergeResults(r1, r2 any, c1, c2 *CommonAnalysisResult) any
 }
 
+// RepositoryQualifiablePipelineItem is implemented by analyses whose results are keyed by a path -
+// a file path or a directory prefix - which only identifies something within a single repository.
+//
+// Merging such results across repositories without a qualifier fuses unrelated paths: every
+// repository's README.md becomes one file. QualifyPaths is therefore applied to each result before
+// it enters a merge, so that the keys carry the repository they were observed in.
+type RepositoryQualifiablePipelineItem interface {
+	ResultMergeablePipelineItem
+	// QualifyPaths returns the result with every path key rewritten by QualifyRepositoryPath.
+	// The receiver's configuration is not consulted, so an unconfigured instance is enough.
+	QualifyPaths(result any, repository string) any
+}
+
+// RepositoryPathSeparator separates the repository from the path in a qualified path key.
+const RepositoryPathSeparator = ":"
+
+// QualifyRepositoryPath prefixes a repository-local path with the repository which contains it.
+// An empty repository leaves the path untouched, so results without a known origin keep their
+// bare keys instead of gaining a meaningless prefix.
+func QualifyRepositoryPath(repository, path string) string {
+	if repository == "" {
+		return path
+	}
+
+	return repository + RepositoryPathSeparator + path
+}
+
 // HibernateablePipelineItem is the interface to allow pipeline items to be frozen (compacted, unloaded)
 // while they are not needed in the hosting branch.
 type HibernateablePipelineItem interface {

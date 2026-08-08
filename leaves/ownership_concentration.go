@@ -297,6 +297,27 @@ func (oc *OwnershipConcentrationAnalysis) Deserialize(pbmessage []byte) (any, er
 	return result, nil
 }
 
+// QualifyPaths prefixes every subsystem - a directory prefix - with the repository it was observed
+// in, so that mergeSubsystemConcentration keeps one reading per repository instead of the worst one
+// across all of them.
+func (oc *OwnershipConcentrationAnalysis) QualifyPaths(result any, repository string) any {
+	concentrationResult, err := requiredResult[OwnershipConcentrationResult](result)
+	if err != nil {
+		return fmt.Errorf("qualify ownership concentration paths: %w", err)
+	}
+
+	subsystems := make(
+		map[string]*SubsystemConcentration, len(concentrationResult.SubsystemConcentration),
+	)
+	for directory, concentration := range concentrationResult.SubsystemConcentration {
+		subsystems[core.QualifyRepositoryPath(repository, directory)] = concentration
+	}
+
+	concentrationResult.SubsystemConcentration = subsystems
+
+	return concentrationResult
+}
+
 // MergeResults combines two OwnershipConcentrationResult-s together.
 //
 // Ownership is additive across repositories, so the per-tick distributions are summed per identity

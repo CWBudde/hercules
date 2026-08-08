@@ -584,6 +584,27 @@ func (hra *HotspotRiskAnalysis) Deserialize(pbmessage []byte) (any, error) {
 //
 // Runs with different churn windows are rejected outright, since their Churn numbers are
 // not comparable at all.
+// QualifyPaths prefixes every FileRisk.Path with the repository it was observed in. This is what
+// the "no deduplication by Path" note above asks for: once the paths are qualified, equal paths do
+// denote the same file and merging may treat them as one.
+func (hra *HotspotRiskAnalysis) QualifyPaths(result any, repository string) any {
+	riskResult, err := requiredResult[HotspotRiskResult](result)
+	if err != nil {
+		return fmt.Errorf("qualify hotspot risk paths: %w", err)
+	}
+
+	files := make([]FileRisk, len(riskResult.Files))
+	copy(files, riskResult.Files)
+
+	for index := range files {
+		files[index].Path = core.QualifyRepositoryPath(repository, files[index].Path)
+	}
+
+	riskResult.Files = files
+
+	return riskResult
+}
+
 func (hra *HotspotRiskAnalysis) MergeResults(
 	firstResult, secondResult any, _, _ *core.CommonAnalysisResult,
 ) any {

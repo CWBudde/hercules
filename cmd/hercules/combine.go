@@ -31,6 +31,10 @@ var combineCmd = &cobra.Command{
 	RunE:  runCombine,
 }
 
+// repositorySeparator joins the repository names of a combined result in its header. Its presence
+// is what marks a header as naming several repositories rather than one.
+const repositorySeparator = " & "
+
 type combineAccumulator struct {
 	repositories []string
 	errors       map[string][]string
@@ -151,6 +155,7 @@ func (accumulator *combineAccumulator) mergeFile(fileName, only string) {
 	}
 
 	initializeBurndownRepository(loaded.results, loaded.repository)
+	messages = append(messages, qualifyRepositoryPaths(loaded.results, loaded.repository)...)
 	merged, mergeErrors := mergeResults(
 		accumulator.results, accumulator.metadata, loaded.results, loaded.metadata, only,
 	)
@@ -189,12 +194,47 @@ func initializeBurndownRepository(results map[string]any, repository string) {
 	results["Burndown"] = burndownResult
 }
 
+// qualifyRepositoryPaths rewrites the path keys of every loaded result which carries them, so that
+// the same path in two repositories stays two paths through the merge. Burndown gets the same
+// treatment through its own repository axis (see initializeBurndownRepository); the analyses here
+// have no such axis and would otherwise fuse their keys.
+//
+// A file which is itself the output of combine already carries qualified keys, and its header names
+// every repository it was built from - re-qualifying it would nest one prefix inside another, so it
+// is left as it is.
+func qualifyRepositoryPaths(results map[string]any, repository string) []string {
+	if repository == "" || strings.Contains(repository, repositorySeparator) {
+		return nil
+	}
+
+	var failures []string
+
+	for key, value := range results {
+		summoned := hercules.Registry.Summon(key)
+		if len(summoned) == 0 {
+			continue
+		}
+		item, ok := summoned[0].(hercules.RepositoryQualifiablePipelineItem)
+		if !ok {
+			continue
+		}
+		qualified := item.QualifyPaths(value, repository)
+		if err, isErr := qualified.(error); isErr {
+			failures = append(failures, "could not qualify "+key+" paths: "+err.Error())
+			continue
+		}
+		results[key] = qualified
+	}
+	sort.Strings(failures)
+	return failures
+}
+
 func writeCombinedResult(destination io.Writer, accumulator *combineAccumulator) error {
 	message := pb.AnalysisResults{
 		Header: &pb.Metadata{
 			Version:    pb.SchemaVersion,
 			Hash:       hercules.BinaryGitHash,
-			Repository: strings.Join(accumulator.repositories, " & "),
+			Repository: strings.Join(accumulator.repositories, repositorySeparator),
 		},
 		Contents: map[string][]byte{},
 	}

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/cwbudde/matplotlib-go/core"
+	"github.com/cwbudde/matplotlib-go/dates"
 	"github.com/cwbudde/matplotlib-go/optional"
 	"github.com/cwbudde/matplotlib-go/render"
 	"github.com/cwbudde/matplotlib-go/ticker"
@@ -38,14 +39,11 @@ func plotRefactoringProxy(repoName string, data *readers.RefactoringProxyData, o
 		return err
 	}
 
-	timestamps := make([]time.Time, len(data.Ticks))
-	x := make([]float64, len(data.Ticks))
+	timestamps, dateNumbers := refactoringProxyDateNumbers(data.Ticks)
 	rates := make([]float64, len(data.Ticks))
 	maxRate := 0.0
 
 	for i, tick := range data.Ticks {
-		timestamps[i] = time.Unix(tick.Timestamp, 0).UTC()
-		x[i] = refactoringProxyDateNumber(timestamps[i])
 		rates[i] = float64(tick.RefactoringRate)
 		maxRate = math.Max(maxRate, rates[i])
 	}
@@ -76,7 +74,9 @@ func plotRefactoringProxy(repoName string, data *readers.RefactoringProxyData, o
 	thresholdColor := render.Color{R: 0xe6 / 255.0, G: 0x39 / 255.0, B: 0x46 / 255.0, A: 1}
 	thresholdWidth := 1.5
 
-	_, err = ax.Plot([]float64{x[0], x[len(x)-1]}, []float64{threshold, threshold}, core.PlotOptions{
+	firstDate, lastDate := dateNumbers[0], dateNumbers[len(dateNumbers)-1]
+
+	_, err = ax.Plot([]float64{firstDate, lastDate}, []float64{threshold, threshold}, core.PlotOptions{
 		Color:     optional.Of(thresholdColor),
 		LineWidth: optional.Of(thresholdWidth),
 		Dashes:    []float64{6, 4},
@@ -89,7 +89,7 @@ func plotRefactoringProxy(repoName string, data *readers.RefactoringProxyData, o
 	spanColor := render.Color{R: 0xa8 / 255.0, G: 0xda / 255.0, B: 0xdc / 255.0, A: 1}
 
 	spanAlpha := 0.2
-	for _, region := range refactoringProxyRegions(data.Ticks, threshold, x) {
+	for _, region := range refactoringProxyRegions(data.Ticks, threshold, dateNumbers) {
 		ax.AxVSpan(region.Start, region.End, core.VSpanOptions{
 			Color: optional.Of(spanColor),
 			Alpha: optional.Of(spanAlpha),
@@ -150,7 +150,20 @@ func refactoringProxyRegions(ticks []readers.RefactoringProxyTick, threshold flo
 	return regions
 }
 
-func refactoringProxyDateNumber(t time.Time) float64 {
-	t = t.UTC()
-	return float64(t.Unix()) + float64(t.Nanosecond())/1e9
+// refactoringProxyDateNumbers returns the tick timestamps together with their
+// axis coordinates. Plotting a []time.Time series switches the axis to date
+// units, so every overlay drawn from raw float64 x values (the threshold line,
+// the vertical spans) has to use the same dates.Date2Num conversion the series
+// went through. Unix seconds here would stretch the axis by five orders of
+// magnitude and collapse the series into a spike at the left edge.
+func refactoringProxyDateNumbers(ticks []readers.RefactoringProxyTick) ([]time.Time, []float64) {
+	timestamps := make([]time.Time, len(ticks))
+	dateNumbers := make([]float64, len(ticks))
+
+	for i, tick := range ticks {
+		timestamps[i] = time.Unix(tick.Timestamp, 0).UTC()
+		dateNumbers[i] = dates.Date2Num(timestamps[i])
+	}
+
+	return timestamps, dateNumbers
 }

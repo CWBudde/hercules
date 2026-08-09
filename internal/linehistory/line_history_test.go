@@ -377,8 +377,14 @@ func TestLinesConsume(t *testing.T) {
 	}
 }
 
-func bakeBurndownForSerialization(t *testing.T, firstAuthor, secondAuthor int) *LineHistoryAnalyser {
+func bakeBurndownForSerialization(t *testing.T) *LineHistoryAnalyser {
 	t.Helper()
+
+	const (
+		firstAuthor  = 0
+		secondAuthor = 1
+	)
+
 	bd := &LineHistoryAnalyser{}
 	require.NoError(t, bd.Initialize(test.Repository))
 	deps := map[string]any{}
@@ -522,7 +528,7 @@ func bakeBurndownForSerialization(t *testing.T, firstAuthor, secondAuthor int) *
 }
 
 func TestLinesHibernateBoot(t *testing.T) {
-	bd := bakeBurndownForSerialization(t, 0, 1)
+	bd := bakeBurndownForSerialization(t)
 	assert.Equal(t, 157, bd.fileAllocator.Size())
 	assert.Equal(t, 155, bd.fileAllocator.Used())
 	require.NoError(t, bd.Hibernate())
@@ -535,7 +541,7 @@ func TestLinesHibernateBoot(t *testing.T) {
 }
 
 func TestLinesHibernateBootSerialize(t *testing.T) {
-	bd := bakeBurndownForSerialization(t, 0, 1)
+	bd := bakeBurndownForSerialization(t)
 	assert.Equal(t, 157, bd.fileAllocator.Size())
 	assert.Equal(t, 155, bd.fileAllocator.Used())
 	bd.HibernationToDisk = true
@@ -554,7 +560,7 @@ func TestLinesHibernateBootSerialize(t *testing.T) {
 // panic: the allocator does not hibernate below the threshold, so no file must be created
 // and Serialize() must not be reached at all.
 func TestLinesHibernateBelowThresholdSkipsDisk(t *testing.T) {
-	bd := bakeBurndownForSerialization(t, 0, 1)
+	bd := bakeBurndownForSerialization(t)
 	bd.HibernationToDisk = true
 	bd.HibernationDirectory = t.TempDir()
 	bd.fileAllocator.HibernationThreshold = 200000
@@ -574,7 +580,7 @@ func TestLinesHibernateBelowThresholdSkipsDisk(t *testing.T) {
 // TestLinesForkClearsHibernatedFileName makes sure the temporary hibernation file is never
 // shared between a branch and its forks.
 func TestLinesForkClearsHibernatedFileName(t *testing.T) {
-	bd := bakeBurndownForSerialization(t, 0, 1)
+	bd := bakeBurndownForSerialization(t)
 	bd.hibernatedFileName = filepath.Join(t.TempDir(), "parent-hercules.bin")
 
 	clones := bd.Fork(2)
@@ -588,7 +594,7 @@ func TestLinesForkClearsHibernatedFileName(t *testing.T) {
 }
 
 func TestLinesDisposeRemovesHibernationFile(t *testing.T) {
-	bd := bakeBurndownForSerialization(t, 0, 1)
+	bd := bakeBurndownForSerialization(t)
 	bd.HibernationToDisk = true
 	bd.HibernationDirectory = t.TempDir()
 	require.NoError(t, bd.Hibernate())

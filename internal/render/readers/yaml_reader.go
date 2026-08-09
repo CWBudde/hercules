@@ -14,6 +14,8 @@ import (
 	"github.com/cwbudde/hercules/internal/render/progress"
 )
 
+var errRuntimeStatsUnsupported = errors.New("runtime stats not implemented for YAML")
+
 type YamlReader struct {
 	data   map[string]any
 	Limits analysisio.Limits
@@ -222,43 +224,6 @@ func (r *YamlReader) GetPeopleCooccurrence() ([]string, SparseMatrix, error) {
 	return r.getCouplesCooccurrence(
 		"people_coocc", "people_couples_index", "people_couples_matrix", true,
 	)
-}
-
-func (r *YamlReader) getCouplesCooccurrence(
-	nestedKey, flatIndexKey, flatMatrixKey string, allowUnknown bool,
-) ([]string, SparseMatrix, error) {
-	couplesData, ok := r.data["Couples"].(map[string]any)
-	if !ok {
-		return nil, SparseMatrix{}, fmt.Errorf("%w: Couples", ErrAnalysisMissing)
-	}
-
-	if nested, exists := couplesData[nestedKey].(map[string]any); exists {
-		return parseNestedCooccurrence(nested, r.Limits, allowUnknown)
-	}
-
-	index, ok := stringSlice(couplesData[flatIndexKey])
-	if !ok {
-		return nil, SparseMatrix{}, fmt.Errorf("%w: %s", ErrAnalysisMissing, flatIndexKey)
-	}
-
-	matrixData, ok := couplesData[flatMatrixKey].(string)
-	if !ok {
-		return nil, SparseMatrix{}, fmt.Errorf("%w: %s", ErrAnalysisMissing, flatMatrixKey)
-	}
-
-	matrix, err := parseSparseMatrixTextChecked(
-		"Couples."+flatMatrixKey, matrixData, r.Limits,
-	)
-	if err != nil {
-		return nil, SparseMatrix{}, err
-	}
-
-	index, err = alignCouplingLabels(index, matrix, allowUnknown)
-	if err != nil {
-		return nil, SparseMatrix{}, err
-	}
-
-	return index, matrix, nil
 }
 
 func parseNestedCooccurrence(
@@ -802,7 +767,7 @@ func (r *YamlReader) GetLanguageStats() ([]LanguageStat, error) {
 
 func (r *YamlReader) GetRuntimeStats() (map[string]float64, error) {
 	// Stub: Runtime stats are typically not present in YAML files.
-	return nil, errors.New("runtime stats not implemented for YAML")
+	return nil, errRuntimeStatsUnsupported
 }
 
 // Helper function to parse burndown matrices.
@@ -1102,4 +1067,41 @@ func (r *YamlReader) GetProjectBurndownWithHeader() (burndown.BurndownHeader, st
 	}
 
 	return header, name, matrix, nil
+}
+
+func (r *YamlReader) getCouplesCooccurrence(
+	nestedKey, flatIndexKey, flatMatrixKey string, allowUnknown bool,
+) ([]string, SparseMatrix, error) {
+	couplesData, ok := r.data["Couples"].(map[string]any)
+	if !ok {
+		return nil, SparseMatrix{}, fmt.Errorf("%w: Couples", ErrAnalysisMissing)
+	}
+
+	if nested, exists := couplesData[nestedKey].(map[string]any); exists {
+		return parseNestedCooccurrence(nested, r.Limits, allowUnknown)
+	}
+
+	index, ok := stringSlice(couplesData[flatIndexKey])
+	if !ok {
+		return nil, SparseMatrix{}, fmt.Errorf("%w: %s", ErrAnalysisMissing, flatIndexKey)
+	}
+
+	matrixData, ok := couplesData[flatMatrixKey].(string)
+	if !ok {
+		return nil, SparseMatrix{}, fmt.Errorf("%w: %s", ErrAnalysisMissing, flatMatrixKey)
+	}
+
+	matrix, err := parseSparseMatrixTextChecked(
+		"Couples."+flatMatrixKey, matrixData, r.Limits,
+	)
+	if err != nil {
+		return nil, SparseMatrix{}, err
+	}
+
+	index, err = alignCouplingLabels(index, matrix, allowUnknown)
+	if err != nil {
+		return nil, SparseMatrix{}, err
+	}
+
+	return index, matrix, nil
 }

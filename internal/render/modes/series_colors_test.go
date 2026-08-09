@@ -1,7 +1,7 @@
 package modes
 
 import (
-	"fmt"
+	"strconv"
 	"testing"
 )
 
@@ -10,7 +10,7 @@ import (
 // where the old spread formula started rounding two developers onto one color.
 func TestSampledTab20ColorsGivesEverySeriesItsOwnColor(t *testing.T) {
 	for _, n := range []int{1, 2, 8, 19, 20, 21, 25, 41, 60} {
-		t.Run(fmt.Sprint(n), func(t *testing.T) {
+		t.Run(strconv.Itoa(n), func(t *testing.T) {
 			colors := sampledTab20Colors(n)
 			if len(colors) != n {
 				t.Fatalf("got %d colors, want %d", len(colors), n)
@@ -45,7 +45,7 @@ func TestSampledTab20ColorsDarkensRepeatedPaletteEntries(t *testing.T) {
 	const paletteSize = 20
 
 	colors := sampledTab20Colors(paletteSize * 2)
-	for i := 0; i < paletteSize; i++ {
+	for i := range paletteSize {
 		first, repeat := colors[i], colors[i+paletteSize]
 		if repeat.R >= first.R || repeat.G >= first.G || repeat.B >= first.B {
 			t.Fatalf("series %d (%v) is not darker than series %d (%v)", i+paletteSize, repeat, i, first)

@@ -506,27 +506,6 @@ func (analyser *BurndownAnalysis) Boot() error {
 	return nil
 }
 
-func (analyser *BurndownAnalysis) loadBurndownHibernationData() ([]byte, error) {
-	if analyser.hibernatedFileName == "" {
-		data := analyser.hibernatedData
-		analyser.hibernatedData = nil
-
-		return data, nil
-	}
-
-	hibernatedFileName := analyser.hibernatedFileName
-	data, readErr := os.ReadFile(hibernatedFileName)
-	removeErr := removeBurndownHibernationFile(analyser)
-
-	if readErr != nil {
-		readErr = fmt.Errorf(
-			"read burndown hibernation file %q: %w", hibernatedFileName, readErr,
-		)
-	}
-
-	return data, errors.Join(readErr, removeErr)
-}
-
 func decodeBurndownState(data []byte) (burndownState, error) {
 	fr := flate.NewReader(bytes.NewReader(data))
 	var state burndownState
@@ -542,24 +521,6 @@ func decodeBurndownState(data []byte) (burndownState, error) {
 	}
 
 	return state, nil
-}
-
-func (analyser *BurndownAnalysis) restoreBurndownState(state burndownState) {
-	analyser.globalHistory = mapToSparseHistory(state.GlobalHistory)
-	analyser.matrix = state.Matrix
-	analyser.fileHistories = restoreSparseHistories(state.FileHistories)
-
-	analyser.deletedFileHistories = restoreSparseHistories(state.DeletedFileHistories)
-	if analyser.deletedFileHistories == nil {
-		analyser.deletedFileHistories = map[core.FileId]sparseHistory{}
-	}
-
-	if state.PeopleHistories != nil {
-		analyser.peopleHistories = make([]sparseHistory, len(state.PeopleHistories))
-		for i, v := range state.PeopleHistories {
-			analyser.peopleHistories[i] = mapToSparseHistory(v)
-		}
-	}
 }
 
 func restoreSparseHistories(source map[core.FileId]map[int]map[int]int64) map[core.FileId]sparseHistory {
@@ -792,6 +753,45 @@ func (analyser *BurndownAnalysis) MergeResults(
 	}
 
 	return merged
+}
+
+func (analyser *BurndownAnalysis) loadBurndownHibernationData() ([]byte, error) {
+	if analyser.hibernatedFileName == "" {
+		data := analyser.hibernatedData
+		analyser.hibernatedData = nil
+
+		return data, nil
+	}
+
+	hibernatedFileName := analyser.hibernatedFileName
+	data, readErr := os.ReadFile(hibernatedFileName)
+	removeErr := removeBurndownHibernationFile(analyser)
+
+	if readErr != nil {
+		readErr = fmt.Errorf(
+			"read burndown hibernation file %q: %w", hibernatedFileName, readErr,
+		)
+	}
+
+	return data, errors.Join(readErr, removeErr)
+}
+
+func (analyser *BurndownAnalysis) restoreBurndownState(state burndownState) {
+	analyser.globalHistory = mapToSparseHistory(state.GlobalHistory)
+	analyser.matrix = state.Matrix
+	analyser.fileHistories = restoreSparseHistories(state.FileHistories)
+
+	analyser.deletedFileHistories = restoreSparseHistories(state.DeletedFileHistories)
+	if analyser.deletedFileHistories == nil {
+		analyser.deletedFileHistories = map[core.FileId]sparseHistory{}
+	}
+
+	if state.PeopleHistories != nil {
+		analyser.peopleHistories = make([]sparseHistory, len(state.PeopleHistories))
+		for i, v := range state.PeopleHistories {
+			analyser.peopleHistories[i] = mapToSparseHistory(v)
+		}
+	}
 }
 
 // checkBalances reports negative alive-line counts according to the configured policy.

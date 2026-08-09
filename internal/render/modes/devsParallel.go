@@ -12,6 +12,8 @@ import (
 	"github.com/cwbudde/hercules/internal/render/readers"
 )
 
+var errNoParallelDeveloperData = errors.New("no developer data for parallel coordinates")
+
 type ParallelismMetrics struct {
 	TotalPeriods       int
 	ParallelPeriods    int
@@ -114,7 +116,7 @@ func plotDevsParallelCoordinates(
 
 	n := len(data)
 	if n == 0 {
-		return errors.New("no developer data for parallel coordinates")
+		return errNoParallelDeveloperData
 	}
 
 	series := make([]graphics.MatplotlibParallelCoordinatesSeries, 0, n)
@@ -147,7 +149,10 @@ func plotDevsParallelCoordinates(
 	return nil
 }
 
-func loadDevsParallelData(reader readers.Reader, maxPeople int) ([]ParallelDeveloperData, *readers.DeveloperTimeSeriesData, error) {
+func loadDevsParallelData(
+	reader readers.Reader,
+	maxPeople int,
+) ([]ParallelDeveloperData, *readers.DeveloperTimeSeriesData, error) {
 	people, ownership, err := reader.GetOwnershipBurndown()
 	if err != nil {
 		return nil, nil, fmt.Errorf("devs-parallel ownership burndown: %w", err)
@@ -163,7 +168,11 @@ func loadDevsParallelData(reader readers.Reader, maxPeople int) ([]ParallelDevel
 		return nil, nil, fmt.Errorf("devs-parallel devs time series: %w", err)
 	}
 
-	return calculateParallelDeveloperData(people, ownership, couplingPeople, couplingMatrix, timeSeries, maxPeople), timeSeries, nil
+	data := calculateParallelDeveloperData(
+		people, ownership, couplingPeople, couplingMatrix, timeSeries, maxPeople,
+	)
+
+	return data, timeSeries, nil
 }
 
 func calculateParallelDeveloperData(
@@ -463,7 +472,10 @@ func activeDayJaccard(left, right map[int]bool) float64 {
 	return float64(intersection) / float64(union)
 }
 
-func calculateParallelismMetricsFromParallelData(data []ParallelDeveloperData, timeSeries *readers.DeveloperTimeSeriesData) ParallelismMetrics {
+func calculateParallelismMetricsFromParallelData(
+	data []ParallelDeveloperData,
+	timeSeries *readers.DeveloperTimeSeriesData,
+) ParallelismMetrics {
 	activeDaysByName := activeDaysForParallelDevelopers(data, timeSeries)
 
 	allDays := sortedActiveDays(data, activeDaysByName)
@@ -542,7 +554,10 @@ func developerOverlap(left, right string, activeDaysByName map[string]map[int]bo
 	return activeDayJaccard(activeDaysByName[left], activeDaysByName[right])
 }
 
-func activeDaysForParallelDevelopers(data []ParallelDeveloperData, timeSeries *readers.DeveloperTimeSeriesData) map[string]map[int]bool {
+func activeDaysForParallelDevelopers(
+	data []ParallelDeveloperData,
+	timeSeries *readers.DeveloperTimeSeriesData,
+) map[string]map[int]bool {
 	active := make(map[string]map[int]bool, len(data))
 	for _, dev := range data {
 		active[dev.Name] = make(map[int]bool)
@@ -598,21 +613,10 @@ func sortedActiveDays(data []ParallelDeveloperData, activeDaysByName map[string]
 	return days
 }
 
-// plotParallelActivity creates a timeline showing concurrent developer activity.
-func plotParallelActivity(
-	metrics ParallelismMetrics,
-	output string,
-	optionValues ...graphics.Options,
-) error {
-	visuals := graphics.DefaultOptions()
-	if len(optionValues) > 0 {
-		visuals = optionValues[0]
-	}
-
-	if len(metrics.PeriodConcurrency) == 0 {
-		metrics.PeriodConcurrency = []int{0}
-	}
-
+// buildParallelActivitySeries turns the per-period concurrency counts into the
+// filled concurrency line plus, when meaningful, a dashed average reference
+// line that shows up in the legend.
+func buildParallelActivitySeries(metrics ParallelismMetrics) []graphics.MatplotlibLineSeries {
 	x := make([]float64, len(metrics.PeriodConcurrency))
 
 	y := make([]float64, len(metrics.PeriodConcurrency))
@@ -631,8 +635,6 @@ func plotParallelActivity(
 		},
 	}
 
-	// Add horizontal line for average concurrency as a flat dashed series so it
-	// appears in the legend.
 	if metrics.AverageConcurrency > 0 {
 		avgY := make([]float64, len(x))
 		for i := range avgY {
@@ -647,6 +649,26 @@ func plotParallelActivity(
 			Dashes: []float64{5, 5},
 		})
 	}
+
+	return series
+}
+
+// plotParallelActivity creates a timeline showing concurrent developer activity.
+func plotParallelActivity(
+	metrics ParallelismMetrics,
+	output string,
+	optionValues ...graphics.Options,
+) error {
+	visuals := graphics.DefaultOptions()
+	if len(optionValues) > 0 {
+		visuals = optionValues[0]
+	}
+
+	if len(metrics.PeriodConcurrency) == 0 {
+		metrics.PeriodConcurrency = []int{0}
+	}
+
+	series := buildParallelActivitySeries(metrics)
 
 	// Save to the user's requested output path (Python parity: single file).
 	if output == "" {

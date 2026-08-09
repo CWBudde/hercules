@@ -16,7 +16,10 @@ import (
 	"github.com/cwbudde/hercules/internal/render/readers"
 )
 
-var errNoRepositoryData = errors.New("no repository data available")
+var (
+	errNoRepositoryData        = errors.New("no repository data available")
+	errEmptyCombinedRepoMatrix = errors.New("empty combined repository burndown matrix")
+)
 
 // GenerateBurndownProjectPython creates a Python-compatible burndown chart.
 func GenerateBurndownProjectPython(reader readers.Reader, output string, relative bool, resample string) error {
@@ -59,7 +62,9 @@ func GenerateBurndownProjectPythonWithOptions(reader readers.Reader, output stri
 	// labours' burndown-project mode: plot_burndown(args, "project", ...)),
 	// regardless of how many repositories were combined. Using the reader's
 	// name here (a "&"-joined list of every repo) overflows the title.
-	processedData, err := burndown.LoadBurndown(header, "project", matrix, defaultBurndownResample(opts.Resample), true, true)
+	processedData, err := burndown.LoadBurndown(
+		header, "project", matrix, defaultBurndownResample(opts.Resample), true, true,
+	)
 	if err != nil {
 		return fmt.Errorf("failed to process burndown data: %w", err)
 	}
@@ -103,7 +108,7 @@ func prepareProjectBurndownOutput(output string, quiet bool) (string, error) {
 
 func defaultBurndownResample(resample string) string {
 	if resample == "" {
-		return "year"
+		return resampleYear
 	}
 
 	return resample
@@ -288,7 +293,7 @@ func repositoryBurndownOutputPaths(
 	}
 
 	outputFiles, err := outputpath.AssetFanoutPaths(
-		output, "burndown-repository", identities, []string{".png", ".svg"},
+		output, "burndown-repository", identities, []string{extensionPNG, extensionSVG},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("plan repository burndown outputs: %w", err)
@@ -336,7 +341,13 @@ func renderRepositoryBurndown(
 // maxRepos limits how many repositories are shown as individual bands; the
 // remaining (smallest) repositories are aggregated into a single "Other" band.
 // A value <= 0 disables the limit and shows every repository.
-func GenerateBurndownReposCombinedPython(reader readers.Reader, output string, relative bool, resample string, maxRepos int) error {
+func GenerateBurndownReposCombinedPython(
+	reader readers.Reader,
+	output string,
+	relative bool,
+	resample string,
+	maxRepos int,
+) error {
 	opts := defaultOptions()
 	opts.Relative, opts.Resample, opts.MaxRepos = relative, resample, maxRepos
 
@@ -409,7 +420,7 @@ func combinedRepositoryBurndownData(
 	// lines at every sample point, matching Python labours.
 	repoMatrix, labels := repositoryBands(repositories)
 	if len(repoMatrix) == 0 || len(repoMatrix[0]) == 0 {
-		return nil, errors.New("empty combined repository burndown matrix")
+		return nil, errEmptyCombinedRepoMatrix
 	}
 
 	repoMatrix, labels = limitRepositoryBands(repoMatrix, labels, opts.MaxRepos)

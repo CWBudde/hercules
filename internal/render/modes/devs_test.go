@@ -259,7 +259,10 @@ func TestCalculateTeamMetrics(t *testing.T) {
 	}
 
 	if metrics.AverageCommitsPerDeveloper != float64(expectedTotalCommits)/2 {
-		t.Errorf("Expected average commits per developer %f, got %f", float64(expectedTotalCommits)/2, metrics.AverageCommitsPerDeveloper)
+		t.Errorf(
+			"Expected average commits per developer %f, got %f",
+			float64(expectedTotalCommits)/2, metrics.AverageCommitsPerDeveloper,
+		)
 	}
 }
 

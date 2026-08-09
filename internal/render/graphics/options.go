@@ -20,6 +20,17 @@ func DefaultOptions() Options {
 	}
 }
 
+// PlotFontSize returns the configured font size.
+func (opts Options) PlotFontSize() float64 {
+	return float64(opts.normalized().FontSize)
+}
+
+// Palette returns a fresh copy of the configured theme palette.
+func (opts Options) Palette() []color.Color {
+	normalized := opts.normalized()
+	return normalized.Theme.GetColorPalette()
+}
+
 func (opts Options) normalized() Options {
 	defaults := DefaultOptions()
 	if opts.Theme.Name == "" {
@@ -35,15 +46,4 @@ func (opts Options) normalized() Options {
 	}
 
 	return opts
-}
-
-// PlotFontSize returns the configured font size.
-func (opts Options) PlotFontSize() float64 {
-	return float64(opts.normalized().FontSize)
-}
-
-// Palette returns a fresh copy of the configured theme palette.
-func (opts Options) Palette() []color.Color {
-	normalized := opts.normalized()
-	return normalized.Theme.GetColorPalette()
 }

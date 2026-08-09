@@ -13,6 +13,8 @@ import (
 	"github.com/cwbudde/hercules/internal/render/readers"
 )
 
+var errEmptyMatrixOrIndex = errors.New("empty matrix or index")
+
 // CouplesPeople generates people coupling embeddings (Python-compatible).
 func CouplesPeople(reader readers.Reader, output string) error {
 	return CouplesPeopleWithOptions(reader, output, defaultOptions())
@@ -107,10 +109,8 @@ func writeSparseEmbeddings(
 		opts = optionValues[0]
 	}
 
-	tmpdir := opts.TempDir
-
 	if len(index) == 0 || matrix.Rows == 0 {
-		return errors.New("empty matrix or index")
+		return errEmptyMatrixOrIndex
 	}
 
 	err := os.MkdirAll(outputDir, 0o750)
@@ -132,9 +132,10 @@ func writeSparseEmbeddings(
 		return fmt.Errorf("failed to write vector file: %w", err)
 	}
 
-	disableProjector := opts.DisableProjector
-	if !disableProjector {
-		metadataFile := filepath.Join(outputDir, prefix+"_metadata.tsv")
+	metadataFile := ""
+
+	if !opts.DisableProjector {
+		metadataFile = filepath.Join(outputDir, prefix+"_metadata.tsv")
 
 		err := writeSparseMetadataFile(
 			metadataFile, index, matrix, outlierThreshold,
@@ -142,36 +143,42 @@ func writeSparseEmbeddings(
 		if err != nil {
 			return fmt.Errorf("failed to write metadata file: %w", err)
 		}
+	}
 
-		fmt.Printf("Embeddings written to:\n")
-		fmt.Printf("  Vocabulary: %s\n", vocabFile)
-		fmt.Printf("  Vectors: %s\n", vectorFile)
+	reportSparseEmbeddingFiles(vocabFile, vectorFile, metadataFile, opts.TempDir)
+
+	return nil
+}
+
+// reportSparseEmbeddingFiles prints the embedding file locations. An empty
+// metadataFile means the projector files were disabled.
+func reportSparseEmbeddingFiles(vocabFile, vectorFile, metadataFile, tmpdir string) {
+	fmt.Printf("Embeddings written to:\n")
+	fmt.Printf("  Vocabulary: %s\n", vocabFile)
+	fmt.Printf("  Vectors: %s\n", vectorFile)
+
+	if metadataFile != "" {
 		fmt.Printf("  Metadata: %s\n", metadataFile)
 	} else {
-		fmt.Printf("Embeddings written to:\n")
-		fmt.Printf("  Vocabulary: %s\n", vocabFile)
-		fmt.Printf("  Vectors: %s\n", vectorFile)
 		fmt.Printf("  (Projector files disabled)\n")
 	}
 
 	if tmpdir != "" {
 		fmt.Printf("  Using tmpdir: %s\n", tmpdir)
 	}
-
-	return nil
 }
 
 func writeSparseVocabularyFile(filename string, index []string) error {
 	file, err := os.Create(filename) // #nosec G304 -- caller explicitly chooses the output path.
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create vocabulary file %s: %w", filename, err)
 	}
 	defer func() { _ = file.Close() }()
 
 	for _, label := range index {
 		_, err := file.WriteString(label + "\n")
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to write vocabulary entry to %s: %w", filename, err)
 		}
 	}
 
@@ -186,7 +193,7 @@ func writeSparseVectorFile(
 ) error {
 	file, err := os.Create(filename) // #nosec G304 -- caller explicitly chooses the output path.
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create vector file %s: %w", filename, err)
 	}
 	defer func() { _ = file.Close() }()
 
@@ -229,8 +236,11 @@ func writeNormalizedSparseRow(
 	}
 
 	_, err := fmt.Fprintln(writer)
+	if err != nil {
+		return fmt.Errorf("failed to terminate embedding row: %w", err)
+	}
 
-	return err
+	return nil
 }
 
 func sparseRowNorm(values []int, threshold int) float64 {
@@ -248,13 +258,16 @@ func writeSparseRowValue(writer io.Writer, column int, value float64) error {
 	if column > 0 {
 		_, err := fmt.Fprint(writer, "\t")
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to write embedding value separator: %w", err)
 		}
 	}
 
 	_, err := fmt.Fprintf(writer, "%.6f", value)
+	if err != nil {
+		return fmt.Errorf("failed to write embedding value: %w", err)
+	}
 
-	return err
+	return nil
 }
 
 func writeSparseMetadataFile(
@@ -265,13 +278,13 @@ func writeSparseMetadataFile(
 ) error {
 	file, err := os.Create(filename) // #nosec G304 -- caller explicitly chooses the output path.
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create metadata file %s: %w", filename, err)
 	}
 	defer func() { _ = file.Close() }()
 
 	_, err = file.WriteString("Name\tDiagonal\n")
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to write metadata header to %s: %w", filename, err)
 	}
 
 	for row, label := range index {
@@ -279,7 +292,7 @@ func writeSparseMetadataFile(
 
 		_, err := fmt.Fprintf(file, "%s\t%.6f\n", label, diagonal)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to write metadata row to %s: %w", filename, err)
 		}
 	}
 

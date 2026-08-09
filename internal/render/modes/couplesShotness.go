@@ -12,6 +12,8 @@ import (
 	"github.com/cwbudde/hercules/internal/render/readers"
 )
 
+var errNoCouplingPairs = errors.New("no coupling pairs data available")
+
 // CouplesShotness visualizes dot-product similarity between aligned Shotness
 // entity co-occurrence profiles. The heatmap diagonal is each entity's squared
 // profile magnitude; ranked pairs contain only distinct entities.
@@ -129,7 +131,7 @@ func plotShotnessCouplingHeatmap(
 	optionValues ...graphics.Options,
 ) error {
 	if analysis.CouplingMatrix.Rows == 0 {
-		return errors.New("no coupling matrix data available")
+		return errNoCouplingMatrix
 	}
 
 	pngFile := filepath.Join(output, "shotness_coupling_heatmap.png")
@@ -169,7 +171,7 @@ func plotTopShotnessCouplingPairs(
 	}
 
 	if len(analysis.TopCoupling) == 0 {
-		return errors.New("no coupling pairs data available")
+		return errNoCouplingPairs
 	}
 
 	values, rankLabels, barLabels := shotnessCouplingBarData(analysis.TopCoupling)

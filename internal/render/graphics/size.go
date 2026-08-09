@@ -57,7 +57,7 @@ func GetPlotSizeInchesWithOptions(chartType ChartType, opts Options) (width, hei
 func parsePlotSizeFloats(sizeStr string) (width, height float64, err error) {
 	parts := strings.Split(strings.TrimSpace(sizeStr), ",")
 	if len(parts) != 2 {
-		return 0, 0, fmt.Errorf("invalid size format '%s': expected 'width,height' (e.g., '12,9')", sizeStr)
+		return 0, 0, fmt.Errorf("%w '%s': expected 'width,height' (e.g., '12,9')", errInvalidSizeFormat, sizeStr)
 	}
 
 	width, err = strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
@@ -71,11 +71,13 @@ func parsePlotSizeFloats(sizeStr string) (width, height float64, err error) {
 	}
 
 	if width <= 0 || height <= 0 {
-		return 0, 0, fmt.Errorf("dimensions must be positive: got width=%.1f, height=%.1f", width, height)
+		return 0, 0, fmt.Errorf("%w: got width=%.1f, height=%.1f", errNonPositiveDimensions, width, height)
 	}
 
 	if width > 50 || height > 50 {
-		return 0, 0, fmt.Errorf("dimensions too large: got width=%.1f, height=%.1f (max 50 inches)", width, height)
+		return 0, 0, fmt.Errorf(
+			"%w: got width=%.1f, height=%.1f (max 50 inches)", errDimensionsTooLarge, width, height,
+		)
 	}
 
 	return width, height, nil

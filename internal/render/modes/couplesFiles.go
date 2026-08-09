@@ -2,7 +2,6 @@ package modes
 
 import (
 	"container/heap"
-	"errors"
 	"fmt"
 	"image/color"
 	"path/filepath"
@@ -330,7 +329,7 @@ func plotCouplingHeatmap(
 	optionValues ...graphics.Options,
 ) error {
 	if analysis.CouplingMatrix.Rows == 0 {
-		return errors.New("no coupling matrix data available")
+		return errNoCouplingMatrix
 	}
 
 	outputFile := filepath.Join(output, "file_coupling_heatmap.png")

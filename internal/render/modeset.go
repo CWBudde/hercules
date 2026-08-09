@@ -1,51 +1,60 @@
 package render
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
 )
 
+var (
+	// errUnknownMode reports a --mode value that is not in validModeNames.
+	errUnknownMode = errors.New("unknown mode")
+	// errUnsupportedInputFormat reports an --input-format value that is
+	// neither auto, yaml, nor pb.
+	errUnsupportedInputFormat = errors.New("unsupported input format")
+)
+
 var validModeNames = map[string]struct{}{
-	"all":                     {},
-	"burndown":                {},
-	"burndown-file":           {},
-	"burndown-person":         {},
-	"burndown-project":        {},
-	"burndown-repository":     {},
-	"burndown-repos-combined": {},
-	"bus-factor":              {},
-	"couples":                 {},
-	"couples-files":           {},
-	"couples-people":          {},
-	"couples-shotness":        {},
-	"devs":                    {},
-	"devs-efforts":            {},
-	"devs-parallel":           {},
-	"hotspot-risk":            {},
-	"knowledge-diffusion":     {},
-	"languages":               {},
-	"old-vs-new":              {},
-	"overwrites-matrix":       {},
-	"ownership":               {},
-	"ownership-concentration": {},
-	"refactoring-proxy":       {},
-	"run-times":               {},
-	"sentiment":               {},
-	"shotness":                {},
-	"temporal-activity":       {},
+	ModeAll:                    {},
+	ModeBurndown:               {},
+	ModeBurndownFile:           {},
+	ModeBurndownPerson:         {},
+	ModeBurndownProject:        {},
+	ModeBurndownRepository:     {},
+	ModeBurndownReposCombined:  {},
+	ModeBusFactor:              {},
+	ModeCouples:                {},
+	ModeCouplesFiles:           {},
+	ModeCouplesPeople:          {},
+	ModeCouplesShotness:        {},
+	ModeDevs:                   {},
+	ModeDevsEfforts:            {},
+	ModeDevsParallel:           {},
+	ModeHotspotRisk:            {},
+	ModeKnowledgeDiffusion:     {},
+	ModeLanguages:              {},
+	ModeOldVsNew:               {},
+	ModeOverwritesMatrix:       {},
+	ModeOwnership:              {},
+	ModeOwnershipConcentration: {},
+	ModeRefactoringProxy:       {},
+	ModeRunTimes:               {},
+	ModeSentiment:              {},
+	ModeShotness:               {},
+	ModeTemporalActivity:       {},
 }
 
 var pythonAllModes = []string{
-	"burndown-project",
-	"overwrites-matrix",
-	"ownership",
-	"couples-files",
-	"couples-people",
-	"couples-shotness",
-	"shotness",
-	"devs",
-	"devs-efforts",
+	ModeBurndownProject,
+	ModeOverwritesMatrix,
+	ModeOwnership,
+	ModeCouplesFiles,
+	ModeCouplesPeople,
+	ModeCouplesShotness,
+	ModeShotness,
+	ModeDevs,
+	ModeDevsEfforts,
 }
 
 // ResolveModes validates and expands raw mode values (which may be repeated
@@ -65,16 +74,16 @@ func ResolveModes(rawModes []string) ([]string, error) {
 
 	for _, mode := range modes {
 		if !isValidMode(mode) {
-			return nil, fmt.Errorf("unknown mode: %s", mode)
+			return nil, fmt.Errorf("%w: %s", errUnknownMode, mode)
 		}
 
 		switch mode {
-		case "burndown":
+		case ModeBurndown:
 			// Python compatibility: burndown defaults to burndown-project
-			resolvedModes = append(resolvedModes, "burndown-project")
-		case "couples":
+			resolvedModes = append(resolvedModes, ModeBurndownProject)
+		case ModeCouples:
 			// Python compatibility: couples runs all coupling analyses
-			resolvedModes = append(resolvedModes, "couples-files", "couples-people", "couples-shotness")
+			resolvedModes = append(resolvedModes, ModeCouplesFiles, ModeCouplesPeople, ModeCouplesShotness)
 		default:
 			resolvedModes = append(resolvedModes, mode)
 		}
@@ -82,7 +91,7 @@ func ResolveModes(rawModes []string) ([]string, error) {
 
 	modes = resolvedModes
 
-	if contains(modes, "all") {
+	if contains(modes, ModeAll) {
 		// Match Python's "all" mode composition exactly
 		modes = append([]string{}, pythonAllModes...)
 	}
@@ -127,6 +136,6 @@ func NormalizeInputFormat(inputFormat string) (string, error) {
 	case "auto", "yaml", "pb":
 		return format, nil
 	default:
-		return "", fmt.Errorf("unsupported input format %q: expected auto, yaml, or pb", inputFormat)
+		return "", fmt.Errorf("%w %q: expected auto, yaml, or pb", errUnsupportedInputFormat, inputFormat)
 	}
 }

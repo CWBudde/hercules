@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -21,6 +22,22 @@ var rootCmd = &cobra.Command{
 	RunE:          runLaboursCommand,
 }
 
+// Theme names accepted by --theme and produced by the --style mapping below.
+// These values are the user-facing CLI contract (they name the built-in
+// graphics themes), so they must stay byte-identical.
+const (
+	themeDefault    = "default"
+	themeDark       = "dark"
+	themeMinimal    = "minimal"
+	themeVibrant    = "vibrant"
+	themeMatplotlib = "matplotlib"
+)
+
+// helpMaxRepos is hoisted out of the flag registration because it does not fit
+// on a single source line. The concatenation does not change the text.
+const helpMaxRepos = "Maximum repositories shown individually in burndown-repos-combined; " +
+	"the rest are aggregated into an \"Other\" band. 0 disables the limit."
+
 func Execute() error {
 	return rootCmd.Execute()
 }
@@ -32,6 +49,15 @@ func init() {
 }
 
 func initializeFlags() {
+	initializeInputOutputFlags()
+	initializePlotFlags()
+	initializeModeFlags()
+	initializeDetailFlags()
+	initializeThemeFlags()
+	initializeHerculesFlags()
+}
+
+func initializeInputOutputFlags() {
 	rootCmd.PersistentFlags().StringP(
 		"output", "o", "",
 		"Path to output file/directory; burndown-file and burndown-person use a file path "+
@@ -39,6 +65,9 @@ func initializeFlags() {
 	)
 	rootCmd.PersistentFlags().StringP("input", "i", "-", "Path to input file")
 	rootCmd.PersistentFlags().StringP("input-format", "f", "auto", "Input format")
+}
+
+func initializePlotFlags() {
 	rootCmd.PersistentFlags().Int("font-size", 12, "Size of labels and legend")
 	rootCmd.PersistentFlags().String("style", "ggplot", "Plot style to use")
 	rootCmd.PersistentFlags().String("backend", "", "Matplotlib backend")
@@ -47,6 +76,9 @@ func initializeFlags() {
 	rootCmd.PersistentFlags().Bool("no-burndown-title", false, "Suppress titles on burndown and ownership charts")
 	rootCmd.PersistentFlags().Bool("relative", false, "Occupy 100% height for every measurement")
 	rootCmd.PersistentFlags().String("tmpdir", "", "Temporary directory for intermediate files")
+}
+
+func initializeModeFlags() {
 	rootCmd.PersistentFlags().StringSliceP(
 		"modes", "m", []string{},
 		"What to plot, can be repeated; burndown-person fans out per contributor, "+
@@ -61,33 +93,72 @@ func initializeFlags() {
 	rootCmd.PersistentFlags().String("end-date", "", "End date for time-based plots")
 	rootCmd.PersistentFlags().Bool("disable-projector", false, "Do not run Tensorflow Projector")
 	rootCmd.PersistentFlags().Int("max-people", 20, "Maximum developers in matrix and people plots")
-	rootCmd.PersistentFlags().Int("max-repos", 25, "Maximum repositories shown individually in burndown-repos-combined; the rest are aggregated into an \"Other\" band. 0 disables the limit.")
-	rootCmd.PersistentFlags().Bool("order-ownership-by-time", false, "Sort developers in the ownership plot by their first appearance in the history.")
-	rootCmd.PersistentFlags().Int("temporal-legend-threshold", 32, "Maximum number of developers to show legend for in temporal activity charts. 0 disables the limit.")
-	rootCmd.PersistentFlags().Int("temporal-legend-single-col-threshold", 10, "Maximum number of developers for single-column legend in temporal activity charts.")
+	rootCmd.PersistentFlags().Int("max-repos", 25, helpMaxRepos)
+	rootCmd.PersistentFlags().Bool(
+		"order-ownership-by-time", false,
+		"Sort developers in the ownership plot by their first appearance in the history.",
+	)
+	rootCmd.PersistentFlags().Int(
+		"temporal-legend-threshold", 32,
+		"Maximum number of developers to show legend for in temporal activity charts. 0 disables the limit.",
+	)
+	rootCmd.PersistentFlags().Int(
+		"temporal-legend-single-col-threshold", 10,
+		"Maximum number of developers for single-column legend in temporal activity charts.",
+	)
 	rootCmd.PersistentFlags().Bool("sentiment", false, "Include sentiment analysis in the output (Python compatibility)")
-	rootCmd.PersistentFlags().Bool("sentiment-fallback", false, "Allow heuristic sentiment charts when collected sentiment data is missing")
-	rootCmd.PersistentFlags().Bool("devs-parallel-fallback", false, "Allow synthetic devs-parallel charts when people burndown data is missing")
+	rootCmd.PersistentFlags().Bool(
+		"sentiment-fallback", false,
+		"Allow heuristic sentiment charts when collected sentiment data is missing",
+	)
+	rootCmd.PersistentFlags().Bool(
+		"devs-parallel-fallback", false,
+		"Allow synthetic devs-parallel charts when people burndown data is missing",
+	)
+}
 
-	// Go-only auxiliary plots. Off by default so the rendered file set mirrors
-	// Python labours; enable to render the extra Go-specific charts.
-	rootCmd.PersistentFlags().Bool("run-times-detail", false, "Render the Go-only run-times breakdown chart (Python labours is text-only)")
-	rootCmd.PersistentFlags().Bool("devs-efforts-detail", false, "Also render the Go-only developer productivity ranking chart")
-	rootCmd.PersistentFlags().Bool("devs-parallel-detail", false, "Also render the Go-only devs-parallel concurrency timeline sibling chart")
-	rootCmd.PersistentFlags().Bool("knowledge-diffusion-detail", false, "Also render the Go-only knowledge-diffusion trend chart")
+// initializeDetailFlags registers the Go-only auxiliary plots. They are off by
+// default so the rendered file set mirrors Python labours; enable them to
+// render the extra Go-specific charts.
+func initializeDetailFlags() {
+	rootCmd.PersistentFlags().Bool(
+		"run-times-detail", false,
+		"Render the Go-only run-times breakdown chart (Python labours is text-only)",
+	)
+	rootCmd.PersistentFlags().Bool(
+		"devs-efforts-detail", false,
+		"Also render the Go-only developer productivity ranking chart",
+	)
+	rootCmd.PersistentFlags().Bool(
+		"devs-parallel-detail", false,
+		"Also render the Go-only devs-parallel concurrency timeline sibling chart",
+	)
+	rootCmd.PersistentFlags().Bool(
+		"knowledge-diffusion-detail", false,
+		"Also render the Go-only knowledge-diffusion trend chart",
+	)
+}
 
+func initializeThemeFlags() {
 	// Progress and output control flags
 	rootCmd.PersistentFlags().BoolP("quiet", "q", false, "Disable progress bars and reduce output")
 	rootCmd.PersistentFlags().Bool("verbose", false, "Enable verbose output with detailed progress information")
 
 	// Theme-related flags
-	rootCmd.PersistentFlags().String("theme", "default", "Theme to use for visualization (default, dark, minimal, vibrant, matplotlib)")
+	rootCmd.PersistentFlags().String(
+		"theme", themeDefault,
+		"Theme to use for visualization (default, dark, minimal, vibrant, matplotlib)",
+	)
 	rootCmd.PersistentFlags().Bool("list-themes", false, "List all available themes and exit")
 	rootCmd.PersistentFlags().String("export-theme", "", "Export a built-in theme to file for customization")
 	rootCmd.PersistentFlags().String("load-theme", "", "Load custom theme from file")
-	rootCmd.PersistentFlags().Bool("matplotlib-colors", false, "Force matplotlib color scheme for burndown charts (Red #d62728 bottom, Blue #1f77b4 top)")
+	rootCmd.PersistentFlags().Bool(
+		"matplotlib-colors", false,
+		"Force matplotlib color scheme for burndown charts (Red #d62728 bottom, Blue #1f77b4 top)",
+	)
+}
 
-	// Hercules integration flags
+func initializeHerculesFlags() {
 	rootCmd.PersistentFlags().String("hercules", "", "Path to hercules binary (empty for auto-detection)")
 	rootCmd.PersistentFlags().String("from-repo", "", "Analyze git repository directly using hercules")
 	rootCmd.PersistentFlags().String("hercules-flags", "", "Additional flags to pass to hercules")
@@ -136,7 +207,7 @@ func runLaboursCommand(cmd *cobra.Command, args []string) error {
 	rendererOptions.DevsParallelFallback = commandBoolFlag(cmd, "devs-parallel-fallback")
 
 	if repoPath := viper.GetString("from-repo"); repoPath != "" {
-		return handleHerculesIntegration(repoPath, rendererOptions)
+		return handleHerculesIntegration(cmd.Context(), repoPath, rendererOptions)
 	}
 	return renderLaboursInput(rendererOptions)
 }
@@ -181,7 +252,7 @@ func configureLaboursTheme() (string, error) {
 		)
 	}
 	if viper.GetBool("matplotlib-colors") {
-		themeName = "matplotlib"
+		themeName = themeMatplotlib
 		if !viper.GetBool("quiet") {
 			fmt.Printf("Using matplotlib color scheme (Red #d62728 bottom, Blue #1f77b4 top)\n")
 		}
@@ -207,7 +278,7 @@ func renderLaboursInput(rendererOptions render.Options) error {
 		return err
 	}
 	if viper.GetBool("sentiment") {
-		modes = append(modes, "sentiment")
+		modes = append(modes, render.ModeSentiment)
 		fmt.Println("Added sentiment analysis mode (--sentiment flag)")
 	}
 	reader, err := detectAndReadInput(input, inputFormat)
@@ -283,16 +354,18 @@ func handleExportTheme(themeName string) error {
 	return nil
 }
 
-func handleHerculesIntegration(repoPath string, rendererOptions ...render.Options) error {
+func handleHerculesIntegration(
+	ctx context.Context, repoPath string, rendererOptions ...render.Options,
+) error {
 	modes, err := resolveModes()
 	if err != nil {
 		return err
 	}
 	if len(modes) == 0 {
-		modes = []string{"burndown-project", "devs"} // default modes
+		modes = []string{render.ModeBurndownProject, render.ModeDevs} // default modes
 	}
 	if viper.GetBool("sentiment") {
-		modes = append(modes, "sentiment")
+		modes = append(modes, render.ModeSentiment)
 	}
 
 	analyses, err := requiredAnalysesForModes(modes)
@@ -312,7 +385,7 @@ func handleHerculesIntegration(repoPath string, rendererOptions ...render.Option
 		)
 	}
 
-	discoveredRepo, err := discoverRepository(repoPath)
+	discoveredRepo, err := discoverRepository(ctx, repoPath)
 	if err != nil {
 		return err
 	}
@@ -323,7 +396,7 @@ func handleHerculesIntegration(repoPath string, rendererOptions ...render.Option
 		fmt.Printf("Running Hercules once with analyses: %s\n", strings.Join(analyses, ", "))
 	}
 	return runHerculesAndVisualize(
-		herculesPath, discoveredRepo, modes, analyses, rendererOptions...,
+		ctx, herculesPath, discoveredRepo, modes, analyses, rendererOptions...,
 	)
 }
 
@@ -331,82 +404,82 @@ func handleHerculesIntegration(repoPath string, rendererOptions ...render.Option
 func mapStyleToTheme(style string) string {
 	styleToTheme := map[string]string{
 		// Core matplotlib built-in styles
-		"default":         "default", // matplotlib default
-		"classic":         "default", // classic matplotlib -> default
-		"ggplot":          "default", // ggplot is our default
-		"dark_background": "dark",    // dark background -> dark theme
-		"grayscale":       "minimal", // grayscale -> minimal
-		"bmh":             "vibrant", // Bayesian Methods for Hackers -> vibrant
-		"fivethirtyeight": "vibrant", // FiveThirtyEight -> vibrant
-		"fast":            "default", // fast style -> default
+		"default":         themeDefault, // matplotlib default
+		"classic":         themeDefault, // classic matplotlib -> default
+		"ggplot":          themeDefault, // ggplot is our default
+		"dark_background": themeDark,    // dark background -> dark theme
+		"grayscale":       themeMinimal, // grayscale -> minimal
+		"bmh":             themeVibrant, // Bayesian Methods for Hackers -> vibrant
+		"fivethirtyeight": themeVibrant, // FiveThirtyEight -> vibrant
+		"fast":            themeDefault, // fast style -> default
 
 		// Seaborn styles (original and v0.8+ variants)
-		"seaborn":            "minimal", // seaborn-like -> minimal
-		"seaborn-v0_8":       "minimal", // newer seaborn -> minimal
-		"seaborn-bright":     "vibrant", // seaborn bright -> vibrant
-		"seaborn-colorblind": "default", // seaborn colorblind -> default
-		"seaborn-dark":       "dark",    // seaborn dark -> dark
-		"seaborn-darkgrid":   "dark",    // seaborn dark grid -> dark
-		"seaborn-pastel":     "minimal", // seaborn pastel -> minimal
-		"seaborn-white":      "minimal", // seaborn white -> minimal
-		"seaborn-whitegrid":  "default", // seaborn white grid -> default
-		"seaborn-paper":      "minimal", // seaborn paper -> minimal
-		"seaborn-poster":     "vibrant", // seaborn poster -> vibrant
-		"seaborn-talk":       "default", // seaborn talk -> default
-		"seaborn-notebook":   "default", // seaborn notebook -> default
-		"seaborn-muted":      "minimal", // seaborn muted -> minimal
-		"seaborn-deep":       "dark",    // seaborn deep -> dark
-		"seaborn-ticks":      "default", // seaborn ticks -> default
+		"seaborn":            themeMinimal, // seaborn-like -> minimal
+		"seaborn-v0_8":       themeMinimal, // newer seaborn -> minimal
+		"seaborn-bright":     themeVibrant, // seaborn bright -> vibrant
+		"seaborn-colorblind": themeDefault, // seaborn colorblind -> default
+		"seaborn-dark":       themeDark,    // seaborn dark -> dark
+		"seaborn-darkgrid":   themeDark,    // seaborn dark grid -> dark
+		"seaborn-pastel":     themeMinimal, // seaborn pastel -> minimal
+		"seaborn-white":      themeMinimal, // seaborn white -> minimal
+		"seaborn-whitegrid":  themeDefault, // seaborn white grid -> default
+		"seaborn-paper":      themeMinimal, // seaborn paper -> minimal
+		"seaborn-poster":     themeVibrant, // seaborn poster -> vibrant
+		"seaborn-talk":       themeDefault, // seaborn talk -> default
+		"seaborn-notebook":   themeDefault, // seaborn notebook -> default
+		"seaborn-muted":      themeMinimal, // seaborn muted -> minimal
+		"seaborn-deep":       themeDark,    // seaborn deep -> dark
+		"seaborn-ticks":      themeDefault, // seaborn ticks -> default
 
 		// Tableau styles
-		"tableau-colorblind10": "default", // tableau -> default
-		"tab10":                "default", // tableau 10 colors -> default
-		"tab20":                "vibrant", // tableau 20 colors -> vibrant
-		"tab20b":               "vibrant", // tableau 20b -> vibrant
-		"tab20c":               "minimal", // tableau 20c -> minimal
+		"tableau-colorblind10": themeDefault, // tableau -> default
+		"tab10":                themeDefault, // tableau 10 colors -> default
+		"tab20":                themeVibrant, // tableau 20 colors -> vibrant
+		"tab20b":               themeVibrant, // tableau 20b -> vibrant
+		"tab20c":               themeMinimal, // tableau 20c -> minimal
 
 		// Solarized styles
-		"Solarize_Light2": "minimal", // Solarized light -> minimal
-		"solarized":       "minimal", // general solarized -> minimal
-		"solarized-light": "minimal", // solarized light -> minimal
-		"solarized-dark":  "dark",    // solarized dark -> dark
+		"Solarize_Light2": themeMinimal, // Solarized light -> minimal
+		"solarized":       themeMinimal, // general solarized -> minimal
+		"solarized-light": themeMinimal, // solarized light -> minimal
+		"solarized-dark":  themeDark,    // solarized dark -> dark
 
 		// Additional matplotlib styles
-		"cyberpunk": "dark",    // cyberpunk style -> dark
-		"science":   "minimal", // science style -> minimal
-		"ieee":      "minimal", // IEEE format -> minimal
-		"nature":    "default", // nature format -> default
-		"grid":      "default", // with grid -> default
-		"no-latex":  "default", // no LaTeX -> default
+		"cyberpunk": themeDark,    // cyberpunk style -> dark
+		"science":   themeMinimal, // science style -> minimal
+		"ieee":      themeMinimal, // IEEE format -> minimal
+		"nature":    themeDefault, // nature format -> default
+		"grid":      themeDefault, // with grid -> default
+		"no-latex":  themeDefault, // no LaTeX -> default
 
 		// Common style variants and aliases (case-insensitive)
-		"dark":       "dark",
-		"light":      "default",
-		"minimal":    "minimal",
-		"vibrant":    "vibrant",
-		"colorful":   "vibrant",
-		"monochrome": "minimal",
-		"black":      "dark",
-		"white":      "minimal",
-		"bright":     "vibrant",
-		"muted":      "minimal",
-		"pastel":     "minimal",
-		"deep":       "dark",
-		"paper":      "minimal",
-		"poster":     "vibrant",
-		"talk":       "default",
-		"notebook":   "default",
-		"whitegrid":  "default",
-		"darkgrid":   "dark",
-		"ticks":      "default",
+		"dark":       themeDark,
+		"light":      themeDefault,
+		"minimal":    themeMinimal,
+		"vibrant":    themeVibrant,
+		"colorful":   themeVibrant,
+		"monochrome": themeMinimal,
+		"black":      themeDark,
+		"white":      themeMinimal,
+		"bright":     themeVibrant,
+		"muted":      themeMinimal,
+		"pastel":     themeMinimal,
+		"deep":       themeDark,
+		"paper":      themeMinimal,
+		"poster":     themeVibrant,
+		"talk":       themeDefault,
+		"notebook":   themeDefault,
+		"whitegrid":  themeDefault,
+		"darkgrid":   themeDark,
+		"ticks":      themeDefault,
 
 		// Color scheme aliases
-		"blues":   "minimal",
-		"greens":  "minimal",
-		"greys":   "minimal",
-		"oranges": "vibrant",
-		"purples": "vibrant",
-		"reds":    "vibrant",
+		"blues":   themeMinimal,
+		"greens":  themeMinimal,
+		"greys":   themeMinimal,
+		"oranges": themeVibrant,
+		"purples": themeVibrant,
+		"reds":    themeVibrant,
 	}
 
 	return styleToTheme[strings.ToLower(style)]

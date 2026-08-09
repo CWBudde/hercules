@@ -182,18 +182,15 @@ func createStubRepository() (*git.Repository, error) {
 }
 
 func loadRepository(uri string) (*git.Repository, string, string) {
-	repository, repoURI, repoFeature, err := loadRepositoryWithError(
-		uri, "", true, "",
-	)
+	repository, repoURI, repoFeature, err := loadRepositoryWithError(uri)
 	if err != nil {
 		log.Panicf("failed to open %s: %v", uri, err)
 	}
 	return repository, repoURI, repoFeature
 }
 
-func loadRepositoryWithError(uri, cachePath string, disableStatus bool, sshIdentity string,
-) (*git.Repository, string, string, error) {
-	return loadRepositoryWithCachePolicy(uri, cachePath, disableStatus, sshIdentity, false)
+func loadRepositoryWithError(uri string) (*git.Repository, string, string, error) {
+	return loadRepositoryWithCachePolicy(uri, "", true, "", false)
 }
 
 func loadRepositoryWithCachePolicy(
@@ -218,9 +215,9 @@ func loadRepositoryWithCachePolicy(
 	}
 }
 
-func cloneRemoteRepository(uri, cachePath string, disableStatus bool, sshIdentity string,
-) (*git.Repository, string, error) {
-	return cloneRemoteRepositoryWithPolicy(uri, cachePath, disableStatus, sshIdentity, false)
+// cloneRemoteRepository clones uri into cachePath without progress or SSH auth.
+func cloneRemoteRepository(uri, cachePath string) (*git.Repository, string, error) {
+	return cloneRemoteRepositoryWithPolicy(uri, cachePath, true, "", false)
 }
 
 func cloneRemoteRepositoryWithPolicy(
@@ -1386,7 +1383,9 @@ func formatUsage(command *cobra.Command) error {
 	return err
 }
 
-func pipelineUsageFlags(showPipeline bool, leaves []hercules.LeafPipelineItem, plumbing []hercules.PipelineItem) map[string]bool {
+func pipelineUsageFlags(
+	showPipeline bool, leaves []hercules.LeafPipelineItem, plumbing []hercules.PipelineItem,
+) map[string]bool {
 	filter := map[string]bool{}
 	if !showPipeline {
 		return filter

@@ -200,18 +200,70 @@ func TestRunCombineOnlyRestrictsWhatIsRead(t *testing.T) {
 
 // TestRunCombineSkipsUnmergeableAnalyses covers the same input without --only: an analysis which
 // cannot be merged at all is a property of that analysis, not a defect in the file, so it must not
-// take every mergeable analysis down with it.
+// take every mergeable analysis down with it. Skipping quietly would be its own defect, so the
+// "it merged anyway" and "it told you" halves are pinned together.
 func TestRunCombineSkipsUnmergeableAnalyses(t *testing.T) {
 	input := writeCombineTestInputWithUnmergeable(t, "repository")
-	var output bytes.Buffer
+	var output, diagnostics bytes.Buffer
 
-	if err := runCombine(newCombineTestCommand(&output, ""), []string{input}); err != nil {
+	command := newCombineTestCommandWithStderr(&output, &diagnostics, "")
+	if err := runCombine(command, []string{input}); err != nil {
 		t.Fatalf("runCombine() failed over an unmergeable analysis: %v", err)
 	}
 
 	contents := unmarshalCombineOutput(t, &output)
 	if _, exists := contents[combineTestDevs]; !exists {
 		t.Fatalf("combined output lacks the mergeable analysis: %v", contents)
+	}
+	if _, exists := contents[combineTestUnmergeable]; exists {
+		t.Fatalf("combined output carries the unmergeable analysis: %v", contents)
+	}
+	if !strings.Contains(diagnostics.String(), combineTestUnmergeable) {
+		t.Fatalf("nothing warned that %s was dropped: %q", combineTestUnmergeable, diagnostics.String())
+	}
+}
+
+// TestRunCombineWarnsOncePerDroppedAnalysis pins PLAN.md T1.3(a). The org-wide merge names the same
+// handful of unmergeable leaves in every one of hundreds of inputs, and a per-file warning that long
+// scrolls past behind the progress bar indistinguishably from silence. One line per analysis, saying
+// what the user loses rather than which Go interface was missing.
+func TestRunCombineWarnsOncePerDroppedAnalysis(t *testing.T) {
+	inputs := []string{
+		writeCombineTestInputWithUnmergeable(t, "alpha"),
+		writeCombineTestInputWithUnmergeable(t, "beta"),
+	}
+	var output, diagnostics bytes.Buffer
+
+	command := newCombineTestCommandWithStderr(&output, &diagnostics, "")
+	if err := runCombine(command, inputs); err != nil {
+		t.Fatalf("runCombine() failed over an unmergeable analysis: %v", err)
+	}
+
+	warning := diagnostics.String()
+	if got := strings.Count(warning, combineTestUnmergeable); got != 1 {
+		t.Fatalf("%s named %d times, want once:\n%s", combineTestUnmergeable, got, warning)
+	}
+	if !strings.Contains(warning, "not in the combined output") {
+		t.Fatalf("warning never says the data is missing from the output:\n%s", warning)
+	}
+	if !strings.Contains(warning, "2 of 2 inputs") {
+		t.Fatalf("warning does not report both inputs:\n%s", warning)
+	}
+}
+
+// TestRunCombineDoesNotWarnWithoutDroppedAnalyses is the other half: a warning which appears when
+// nothing was dropped teaches the reader to ignore it.
+func TestRunCombineDoesNotWarnWithoutDroppedAnalyses(t *testing.T) {
+	input := writeCombineTestInput(t, "repository")
+	var output, diagnostics bytes.Buffer
+
+	command := newCombineTestCommandWithStderr(&output, &diagnostics, "")
+	if err := runCombine(command, []string{input}); err != nil {
+		t.Fatalf("runCombine() failed: %v", err)
+	}
+
+	if strings.Contains(diagnostics.String(), "Skipped:") {
+		t.Fatalf("clean input produced a skip warning:\n%s", diagnostics.String())
 	}
 }
 
@@ -594,6 +646,15 @@ func newCombineTestCommand(output io.Writer, only string) *cobra.Command {
 	return command
 }
 
+// newCombineTestCommandWithStderr is newCombineTestCommand for the tests which read the
+// diagnostics. It is a sibling rather than a third parameter so that the call sites which do not
+// care about stderr stay as short as they are.
+func newCombineTestCommandWithStderr(output, diagnostics io.Writer, only string) *cobra.Command {
+	command := newCombineTestCommand(output, only)
+	command.SetErr(diagnostics)
+	return command
+}
+
 func writeCombineTestInput(t *testing.T, repository string) string {
 	t.Helper()
 
@@ -620,9 +681,16 @@ func writeCombineTestInputWithUnmergeable(t *testing.T, repository string) strin
 			Version:    pb.SchemaVersion,
 			Repository: repository,
 			Commits:    1,
+			// A real run always dates its result, and merging two undated ones panics.
+			BeginUnixTime: combineTestBeginTime,
+			EndUnixTime:   combineTestBeginTime + 4*24*3600,
 		},
 		Contents: map[string][]byte{
-			combineTestDevs:        marshalCombineProto(t, &pb.DevsAnalysisResults{}),
+			// The tick size is what a real run writes and what merging two of these needs; without
+			// it the Devs merge divides by a zero tick.
+			combineTestDevs: marshalCombineProto(t, &pb.DevsAnalysisResults{
+				TickSize: int64(24 * time.Hour),
+			}),
 			combineTestUnmergeable: marshalCombineProto(t, &pb.FileHistoryResultMessage{}),
 		},
 	}

@@ -6,6 +6,12 @@ import (
 	"sort"
 )
 
+var (
+	errNegativeSparseDimensions = errors.New("negative sparse matrix dimensions")
+	errSparseCellOutOfRange     = errors.New("sparse matrix cell is out of range")
+	errSparseValueOverflow      = errors.New("sparse matrix value overflows int")
+)
+
 // SparseEntry is one non-zero cell in a SparseMatrix.
 type SparseEntry struct {
 	Row    int
@@ -29,7 +35,7 @@ type SparseMatrix struct {
 // summed and zero-valued results are omitted.
 func NewSparseMatrix(rows, columns int, entries []SparseEntry) (SparseMatrix, error) {
 	if rows < 0 || columns < 0 {
-		return SparseMatrix{}, fmt.Errorf("negative sparse matrix dimensions %dx%d", rows, columns)
+		return SparseMatrix{}, fmt.Errorf("%w %dx%d", errNegativeSparseDimensions, rows, columns)
 	}
 
 	sorted := append([]SparseEntry(nil), entries...)
@@ -69,8 +75,8 @@ func validateSparseEntries(rows, columns int, entries []SparseEntry) error {
 	for _, entry := range entries {
 		if entry.Row < 0 || entry.Row >= rows || entry.Column < 0 || entry.Column >= columns {
 			return fmt.Errorf(
-				"sparse matrix cell (%d, %d) is outside %dx%d",
-				entry.Row, entry.Column, rows, columns,
+				"%w: cell (%d, %d) is outside %dx%d",
+				errSparseCellOutOfRange, entry.Row, entry.Column, rows, columns,
 			)
 		}
 	}
@@ -89,7 +95,7 @@ func appendCanonicalSparseEntries(matrix *SparseMatrix, sorted []SparseEntry) er
 
 			value, err = addSparseValues(value, sorted[index].Value)
 			if err != nil {
-				return fmt.Errorf("sparse matrix cell (%d, %d) overflows int", entry.Row, entry.Column)
+				return fmt.Errorf("%w: cell (%d, %d)", errSparseValueOverflow, entry.Row, entry.Column)
 			}
 
 			index++
@@ -116,11 +122,11 @@ func addSparseValues(value, addend int) (int, error) {
 
 	minInt := -maxInt - 1
 	if addend > 0 && value > maxInt-addend {
-		return 0, errors.New("positive overflow")
+		return 0, fmt.Errorf("%w: positive", errSparseValueOverflow)
 	}
 
 	if addend < 0 && value < minInt-addend {
-		return 0, errors.New("negative overflow")
+		return 0, fmt.Errorf("%w: negative", errSparseValueOverflow)
 	}
 
 	return value + addend, nil

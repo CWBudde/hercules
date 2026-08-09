@@ -2,12 +2,15 @@ package readers
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"sort"
 	"strings"
 )
+
+var errUnsupportedFormat = errors.New("unsupported format")
 
 // DetectAndReadInput detects the format (if "auto"), creates the appropriate Reader, and reads the input.
 func DetectAndReadInput(input, format string) (Reader, error) {
@@ -92,7 +95,7 @@ func createReaderWithOptions(format string, quiet bool) (Reader, error) {
 	case "pb":
 		return &ProtobufReader{Quiet: quiet}, nil
 	default:
-		return nil, fmt.Errorf("unsupported format: %s", format)
+		return nil, fmt.Errorf("%w: %s", errUnsupportedFormat, format)
 	}
 }
 

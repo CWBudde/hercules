@@ -227,85 +227,6 @@ func (hra *HotspotRiskAnalysis) Configure(facts map[string]any) error {
 	return hra.configureHotspotTickSize(facts)
 }
 
-func (hra *HotspotRiskAnalysis) configureHotspotLimits(facts map[string]any) error {
-	if val, exists := facts[ConfigHotspotRiskTopN].(int); exists {
-		hra.TopN = val
-	}
-
-	if val, exists := facts[ConfigHotspotRiskWindow].(int); exists {
-		_, err := hotspotRiskWindowDuration(val)
-		if err != nil {
-			return err
-		}
-
-		hra.WindowDays = val
-	}
-
-	return nil
-}
-
-func (hra *HotspotRiskAnalysis) configureHotspotWeights(facts map[string]any) error {
-	if val, exists := facts[ConfigHotspotRiskWeightSize].(float32); exists {
-		err := hra.configureWeight(0, ConfigHotspotRiskWeightSize, val)
-		if err != nil {
-			return err
-		}
-	}
-
-	if val, exists := facts[ConfigHotspotRiskWeightChurn].(float32); exists {
-		err := hra.configureWeight(1, ConfigHotspotRiskWeightChurn, val)
-		if err != nil {
-			return err
-		}
-	}
-
-	if val, exists := facts[ConfigHotspotRiskWeightCoupling].(float32); exists {
-		err := hra.configureWeight(2, ConfigHotspotRiskWeightCoupling, val)
-		if err != nil {
-			return err
-		}
-	}
-
-	if val, exists := facts[ConfigHotspotRiskWeightOwnership].(float32); exists {
-		err := hra.configureWeight(3, ConfigHotspotRiskWeightOwnership, val)
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (hra *HotspotRiskAnalysis) configureHotspotTickSize(facts map[string]any) error {
-	if val, exists := facts[items.FactTickSize].(time.Duration); exists {
-		if val <= 0 {
-			return fmt.Errorf("%w: %s got %s", errHotspotRiskTickSize, items.FactTickSize, val)
-		}
-
-		hra.tickSize = val
-	}
-
-	return nil
-}
-
-func (hra *HotspotRiskAnalysis) configureWeight(index int, name string, weight float32) error {
-	err := validateHotspotRiskWeight(name, weight)
-	if err != nil {
-		return err
-	}
-
-	weights := []*float32{
-		&hra.WeightSize,
-		&hra.WeightChurn,
-		&hra.WeightCoupling,
-		&hra.WeightOwnership,
-	}
-	*weights[index] = weight
-	hra.weightsConfigured[index] = true
-
-	return nil
-}
-
 func validateHotspotRiskWeight(name string, weight float32) error {
 	if weight < 0 || math.IsNaN(float64(weight)) || math.IsInf(float64(weight), 0) {
 		return fmt.Errorf("%w: %s got %v", errHotspotRiskWeight, name, weight)
@@ -377,33 +298,6 @@ func (hra *HotspotRiskAnalysis) Initialize(repository *git.Repository) error {
 	hra.OneShotMergeProcessor.Initialize()
 
 	return nil
-}
-
-// effectiveTopN returns the number of files to report. It must be used everywhere the
-// report is truncated, because `hercules combine` summons this item through
-// core.Registry.Summon (reflect.New) and calls neither Configure nor Initialize: the
-// struct is zero-valued there, so a bare hra.TopN would truncate every merged result
-// to the empty list.
-func (hra *HotspotRiskAnalysis) effectiveTopN() int {
-	if hra.TopN <= 0 {
-		return DefaultTopN
-	}
-
-	return hra.TopN
-}
-
-func (hra *HotspotRiskAnalysis) applyDefaultWeights() {
-	weights := []*float32{
-		&hra.WeightSize,
-		&hra.WeightChurn,
-		&hra.WeightCoupling,
-		&hra.WeightOwnership,
-	}
-	for index, weight := range weights {
-		if !hra.weightsConfigured[index] && *weight == 0 {
-			*weight = DefaultWeight
-		}
-	}
 }
 
 // Consume processes the next commit.
@@ -698,6 +592,112 @@ func (hra *HotspotRiskAnalysis) MergeResults(
 		WindowDays: cr1.WindowDays,
 		TopN:       topN,
 		Weights:    weights,
+	}
+}
+
+func (hra *HotspotRiskAnalysis) configureHotspotLimits(facts map[string]any) error {
+	if val, exists := facts[ConfigHotspotRiskTopN].(int); exists {
+		hra.TopN = val
+	}
+
+	if val, exists := facts[ConfigHotspotRiskWindow].(int); exists {
+		_, err := hotspotRiskWindowDuration(val)
+		if err != nil {
+			return err
+		}
+
+		hra.WindowDays = val
+	}
+
+	return nil
+}
+
+func (hra *HotspotRiskAnalysis) configureHotspotWeights(facts map[string]any) error {
+	if val, exists := facts[ConfigHotspotRiskWeightSize].(float32); exists {
+		err := hra.configureWeight(0, ConfigHotspotRiskWeightSize, val)
+		if err != nil {
+			return err
+		}
+	}
+
+	if val, exists := facts[ConfigHotspotRiskWeightChurn].(float32); exists {
+		err := hra.configureWeight(1, ConfigHotspotRiskWeightChurn, val)
+		if err != nil {
+			return err
+		}
+	}
+
+	if val, exists := facts[ConfigHotspotRiskWeightCoupling].(float32); exists {
+		err := hra.configureWeight(2, ConfigHotspotRiskWeightCoupling, val)
+		if err != nil {
+			return err
+		}
+	}
+
+	if val, exists := facts[ConfigHotspotRiskWeightOwnership].(float32); exists {
+		err := hra.configureWeight(3, ConfigHotspotRiskWeightOwnership, val)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (hra *HotspotRiskAnalysis) configureHotspotTickSize(facts map[string]any) error {
+	if val, exists := facts[items.FactTickSize].(time.Duration); exists {
+		if val <= 0 {
+			return fmt.Errorf("%w: %s got %s", errHotspotRiskTickSize, items.FactTickSize, val)
+		}
+
+		hra.tickSize = val
+	}
+
+	return nil
+}
+
+func (hra *HotspotRiskAnalysis) configureWeight(index int, name string, weight float32) error {
+	err := validateHotspotRiskWeight(name, weight)
+	if err != nil {
+		return err
+	}
+
+	weights := []*float32{
+		&hra.WeightSize,
+		&hra.WeightChurn,
+		&hra.WeightCoupling,
+		&hra.WeightOwnership,
+	}
+	*weights[index] = weight
+	hra.weightsConfigured[index] = true
+
+	return nil
+}
+
+// effectiveTopN returns the number of files to report. It must be used everywhere the
+// report is truncated, because `hercules combine` summons this item through
+// core.Registry.Summon (reflect.New) and calls neither Configure nor Initialize: the
+// struct is zero-valued there, so a bare hra.TopN would truncate every merged result
+// to the empty list.
+func (hra *HotspotRiskAnalysis) effectiveTopN() int {
+	if hra.TopN <= 0 {
+		return DefaultTopN
+	}
+
+	return hra.TopN
+}
+
+func (hra *HotspotRiskAnalysis) applyDefaultWeights() {
+	weights := []*float32{
+		&hra.WeightSize,
+		&hra.WeightChurn,
+		&hra.WeightCoupling,
+		&hra.WeightOwnership,
+	}
+	for index, weight := range weights {
+		if !hra.weightsConfigured[index] && *weight == 0 {
+			*weight = DefaultWeight
+		}
 	}
 }
 

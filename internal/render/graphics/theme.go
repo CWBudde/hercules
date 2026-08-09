@@ -1,7 +1,6 @@
 package graphics
 
 import (
-	"errors"
 	"image/color"
 	"math"
 )
@@ -223,19 +222,19 @@ func (t *Theme) GetHeatColor(ratio float64) color.Color {
 // Validate checks if theme configuration is valid.
 func (t *Theme) Validate() error {
 	if len(t.ColorPalette) == 0 {
-		return errors.New("theme must have at least one color in palette")
+		return errThemeEmptyPalette
 	}
 
 	if t.Name == "" {
-		return errors.New("theme must have a name")
+		return errThemeMissingName
 	}
 
 	if t.Text.Size <= 0 {
-		return errors.New("text size must be positive")
+		return errThemeTextSize
 	}
 
 	if t.Chart.FillOpacity < 0 || t.Chart.FillOpacity > 1 {
-		return errors.New("fill opacity must be between 0 and 1")
+		return errThemeFillOpacity
 	}
 
 	return nil

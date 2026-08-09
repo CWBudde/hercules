@@ -12,7 +12,7 @@ const (
 	benchmarkOwnershipLinesPerFile = 1_000_000
 )
 
-//nolint:gochecknoglobals // A package-level sink prevents benchmark work from being optimized away.
+// A package-level sink prevents benchmark work from being optimized away.
 var benchmarkOwnershipSnapshot *ownershipTotals
 
 // BenchmarkOwnershipSnapshotsStableLargeFiles compares the incremental snapshot path with the

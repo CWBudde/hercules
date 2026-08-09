@@ -283,7 +283,7 @@ func requiredBinary(t *testing.T, environment string) string {
 
 func runCommand(t *testing.T, binary string, arguments ...string) commandResult {
 	t.Helper()
-	command := exec.Command(binary, arguments...)
+	command := exec.CommandContext(t.Context(), binary, arguments...)
 	command.Dir = repositoryPath()
 	var stdout, stderr bytes.Buffer
 	command.Stdout = &stdout

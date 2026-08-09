@@ -1,7 +1,6 @@
 package graphics
 
 import (
-	"errors"
 	"fmt"
 	"image/color"
 	"math"
@@ -155,13 +154,15 @@ func drawSubtitle(ax *core.Axes, subtitle string) {
 	})
 }
 
-func PlotTimeAreasMatplotlib(dates []time.Time, series []MatplotlibTimeAreaSeries, opts MatplotlibTimeAreaOptions) error {
+func PlotTimeAreasMatplotlib(
+	dates []time.Time, series []MatplotlibTimeAreaSeries, opts MatplotlibTimeAreaOptions,
+) error {
 	if len(dates) == 0 {
-		return errors.New("no dates to plot")
+		return errNoDatesToPlot
 	}
 
 	if len(series) == 0 {
-		return errors.New("no series to plot")
+		return errNoSeriesToPlot
 	}
 
 	width, height := pythonPlotPixelSize(defaultPlotWidth(opts.WidthInches), defaultPlotHeight(opts.HeightInches))
@@ -173,7 +174,7 @@ func PlotTimeAreasMatplotlib(dates []time.Time, series []MatplotlibTimeAreaSerie
 
 	ax := fig.AddSubplot(1, 1, 1)
 	if ax == nil {
-		return errors.New("failed to create axes")
+		return errCreateAxes
 	}
 
 	configureTimeAreaAxes(ax, dates, opts)
@@ -229,7 +230,8 @@ func prepareTimeAreaSeries(
 	for i, item := range series {
 		if len(item.Values) != pointCount {
 			return nil, nil, nil, fmt.Errorf(
-				"series %q has %d values for %d dates", item.Label, len(item.Values), pointCount,
+				"%w: series %q has %d values for %d dates",
+				errSeriesValueCountMismatch, item.Label, len(item.Values), pointCount,
 			)
 		}
 
@@ -289,7 +291,8 @@ func timeAreaBaseline(baselines [][]float64, index int, zero []float64) ([]float
 
 	if len(baselines[index]) != len(zero) {
 		return nil, fmt.Errorf(
-			"baseline %d has %d values for %d dates", index, len(baselines[index]), len(zero),
+			"%w: baseline %d has %d values for %d dates",
+			errBaselineValueCountMismatch, index, len(baselines[index]), len(zero),
 		)
 	}
 
@@ -353,7 +356,7 @@ func configureTimeAreaLegend(ax *core.Axes, opts MatplotlibTimeAreaOptions) {
 
 func PlotLineChartMatplotlib(series []MatplotlibLineSeries, opts MatplotlibLineOptions) error {
 	if len(series) == 0 {
-		return errors.New("no line data to plot")
+		return errNoLineDataToPlot
 	}
 
 	width, height := pythonPlotPixelSize(defaultPlotWidth(opts.WidthInches), defaultPlotHeight(opts.HeightInches))
@@ -365,7 +368,7 @@ func PlotLineChartMatplotlib(series []MatplotlibLineSeries, opts MatplotlibLineO
 
 	ax := fig.AddSubplot(1, 1, 1)
 	if ax == nil {
-		return errors.New("failed to create axes")
+		return errCreateAxes
 	}
 
 	ax.SetTitle(opts.Title)
@@ -397,7 +400,7 @@ func addMatplotlibLineSeries(ax *core.Axes, series []MatplotlibLineSeries) error
 		}
 
 		if len(item.X) != len(item.Y) {
-			return fmt.Errorf("line series %q x/y length mismatch", item.Name)
+			return fmt.Errorf("%w: line series %q", errLineSeriesLengthMismatch, item.Name)
 		}
 
 		c := item.Color
@@ -474,7 +477,7 @@ func PlotHeatmapMatplotlib(matrix [][]float64, rowLabels, colLabels []string, op
 
 	ax := gs.Cell(0, 0).AddAxes()
 	if ax == nil {
-		return errors.New("failed to create axes")
+		return errCreateAxes
 	}
 
 	ax.SetTitle(opts.Title)
@@ -495,7 +498,7 @@ func PlotHeatmapMatplotlib(matrix [][]float64, rowLabels, colLabels []string, op
 		Origin:   optional.Of(core.ImageOriginUpper),
 	})
 	if img == nil {
-		return errors.New("failed to create heatmap image")
+		return errCreateHeatmapImage
 	}
 
 	configureMatplotlibHeatmapTicks(ax, rowLabels, colLabels, opts)
@@ -551,11 +554,11 @@ func addMatplotlibHeatmapColorbar(fig *core.Figure, colormap string, vmin, vmax 
 
 func PlotBarChartMatplotlib(labels []string, values []float64, opts MatplotlibBarOptions) error {
 	if len(labels) == 0 || len(values) == 0 {
-		return errors.New("no bar data to plot")
+		return errNoBarDataToPlot
 	}
 
 	if len(labels) != len(values) {
-		return errors.New("bar labels and values length mismatch")
+		return errBarLabelValueCountMismatch
 	}
 
 	width, height := pythonPlotPixelSize(defaultPlotWidth(opts.WidthInches), defaultPlotHeight(opts.HeightInches))
@@ -569,7 +572,7 @@ func PlotBarChartMatplotlib(labels []string, values []float64, opts MatplotlibBa
 
 	ax := fig.AddSubplot(1, 1, 1)
 	if ax == nil {
-		return errors.New("failed to create axes")
+		return errCreateAxes
 	}
 
 	ax.SetTitle(opts.Title)
@@ -663,9 +666,11 @@ func saveMatplotlibBarFigure(fig *core.Figure, opts MatplotlibBarOptions, width,
 	return saveMatplotlibFigure(fig, opts.Output, width, height)
 }
 
-func PlotGroupedBarChartMatplotlib(labels []string, series []MatplotlibGroupedBarSeries, opts MatplotlibGroupedBarOptions) error {
+func PlotGroupedBarChartMatplotlib(
+	labels []string, series []MatplotlibGroupedBarSeries, opts MatplotlibGroupedBarOptions,
+) error {
 	if len(labels) == 0 || len(series) == 0 {
-		return errors.New("no grouped bar data to plot")
+		return errNoGroupedBarDataToPlot
 	}
 
 	width, height := pythonPlotPixelSize(defaultPlotWidth(opts.WidthInches), defaultPlotHeight(opts.HeightInches))
@@ -677,7 +682,7 @@ func PlotGroupedBarChartMatplotlib(labels []string, series []MatplotlibGroupedBa
 
 	ax := fig.AddSubplot(1, 1, 1)
 	if ax == nil {
-		return errors.New("failed to create axes")
+		return errCreateAxes
 	}
 
 	ax.SetTitle(opts.Title)
@@ -718,7 +723,10 @@ func addGroupedBarSeries(
 
 	for i, item := range series {
 		if len(item.Values) != len(labels) {
-			return 0, fmt.Errorf("bar series %q has %d values for %d labels", item.Name, len(item.Values), len(labels))
+			return 0, fmt.Errorf(
+				"%w: bar series %q has %d values for %d labels",
+				errBarSeriesValueCountMismatch, item.Name, len(item.Values), len(labels),
+			)
 		}
 
 		x := make([]float64, len(labels))
@@ -794,7 +802,7 @@ type MatplotlibScatterOptions struct {
 // reference line.
 func PlotScatterMatplotlib(series []MatplotlibScatterSeries, opts MatplotlibScatterOptions) error {
 	if len(series) == 0 {
-		return errors.New("no scatter data to plot")
+		return errNoScatterDataToPlot
 	}
 
 	width, height := pythonPlotPixelSize(defaultPlotWidth(opts.WidthInches), defaultPlotHeight(opts.HeightInches))
@@ -802,7 +810,7 @@ func PlotScatterMatplotlib(series []MatplotlibScatterSeries, opts MatplotlibScat
 
 	ax := fig.AddSubplot(1, 1, 1)
 	if ax == nil {
-		return errors.New("failed to create axes")
+		return errCreateAxes
 	}
 
 	ax.SetTitle(opts.Title)
@@ -905,9 +913,11 @@ func configureMatplotlibScatterXAxis(ax *core.Axes, opts MatplotlibScatterOption
 
 // PlotStackedBarChartMatplotlib renders categorical stacked bars (one stack per
 // label) using per-bar baselines, mirroring gonum's BarChart.StackOn chains.
-func PlotStackedBarChartMatplotlib(labels []string, series []MatplotlibGroupedBarSeries, opts MatplotlibGroupedBarOptions) error {
+func PlotStackedBarChartMatplotlib(
+	labels []string, series []MatplotlibGroupedBarSeries, opts MatplotlibGroupedBarOptions,
+) error {
 	if len(labels) == 0 || len(series) == 0 {
-		return errors.New("no stacked bar data to plot")
+		return errNoStackedBarDataToPlot
 	}
 
 	width, height := pythonPlotPixelSize(defaultPlotWidth(opts.WidthInches), defaultPlotHeight(opts.HeightInches))
@@ -915,7 +925,7 @@ func PlotStackedBarChartMatplotlib(labels []string, series []MatplotlibGroupedBa
 
 	ax := fig.AddSubplot(1, 1, 1)
 	if ax == nil {
-		return errors.New("failed to create axes")
+		return errCreateAxes
 	}
 
 	ax.SetTitle(opts.Title)
@@ -962,8 +972,8 @@ func addMatplotlibStackedBars(
 	for i, item := range series {
 		if len(item.Values) != labelCount {
 			return 0, fmt.Errorf(
-				"stacked bar series %q has %d values for %d labels",
-				item.Name, len(item.Values), labelCount,
+				"%w: stacked bar series %q has %d values for %d labels",
+				errBarSeriesValueCountMismatch, item.Name, len(item.Values), labelCount,
 			)
 		}
 
@@ -1003,11 +1013,11 @@ func PlotDevsEffortsMatplotlib(
 	opts MatplotlibDevsEffortsOptions,
 ) error {
 	if len(dates) < 2 {
-		return errors.New("not enough dates to plot devs-efforts time series")
+		return errNotEnoughDates
 	}
 
 	if len(cumLayers) == 0 {
-		return errors.New("no effort layers to plot")
+		return errNoEffortLayersToPlot
 	}
 
 	x := make([]float64, len(dates))
@@ -1020,7 +1030,7 @@ func PlotDevsEffortsMatplotlib(
 
 	ax := fig.AddSubplot(1, 1, 1)
 	if ax == nil {
-		return errors.New("failed to create axes")
+		return errCreateAxes
 	}
 
 	ax.SetTitle(opts.Title)
@@ -1128,9 +1138,11 @@ type MatplotlibParallelCoordinatesOptions struct {
 // PlotParallelCoordinatesMatplotlib renders the Python labours devs-parallel
 // chart: each developer is a cubic-spline curve flowing across the vertical
 // axes, drawn as short segments tinted along the viridis colormap.
-func PlotParallelCoordinatesMatplotlib(series []MatplotlibParallelCoordinatesSeries, opts MatplotlibParallelCoordinatesOptions) error {
+func PlotParallelCoordinatesMatplotlib(
+	series []MatplotlibParallelCoordinatesSeries, opts MatplotlibParallelCoordinatesOptions,
+) error {
 	if len(series) == 0 {
-		return errors.New("no series to plot")
+		return errNoSeriesToPlot
 	}
 
 	axesCount := opts.Axes
@@ -1143,7 +1155,7 @@ func PlotParallelCoordinatesMatplotlib(series []MatplotlibParallelCoordinatesSer
 
 	ax := fig.AddSubplot(1, 1, 1)
 	if ax == nil {
-		return errors.New("failed to create axes")
+		return errCreateAxes
 	}
 
 	ax.SetTitle(opts.Title)

@@ -83,32 +83,6 @@ func (b *CachedBlob) CacheWithLimit(maxBytes int64) error {
 	return nil
 }
 
-func (b *CachedBlob) validatedCacheSize(maxBytes int64) (int, error) {
-	if b.Size < 0 {
-		return 0, fmt.Errorf("%w for %s: %d", errInvalidBlobSize, b.Hash.String(), b.Size)
-	}
-
-	if maxBytes <= 0 {
-		maxBytes = DefaultBlobCacheMaxBlobSize
-	}
-
-	if b.Size > maxBytes {
-		return 0, fmt.Errorf(
-			"%w for %s: %d bytes exceeds %d",
-			ErrBlobTooLarge, b.Hash.String(), b.Size, maxBytes,
-		)
-	}
-
-	size := int(b.Size)
-	if int64(size) != b.Size {
-		return 0, fmt.Errorf(
-			"%w for %s: %d cannot fit in an int", errInvalidBlobSize, b.Hash, b.Size,
-		)
-	}
-
-	return size, nil
-}
-
 func readExactBlob(reader io.Reader, size int, hash plumbing.Hash) ([]byte, error) {
 	data := make([]byte, size)
 
@@ -168,6 +142,32 @@ func (b *CachedBlob) CountLines() (int, error) {
 	}
 
 	return lines, nil
+}
+
+func (b *CachedBlob) validatedCacheSize(maxBytes int64) (int, error) {
+	if b.Size < 0 {
+		return 0, fmt.Errorf("%w for %s: %d", errInvalidBlobSize, b.Hash.String(), b.Size)
+	}
+
+	if maxBytes <= 0 {
+		maxBytes = DefaultBlobCacheMaxBlobSize
+	}
+
+	if b.Size > maxBytes {
+		return 0, fmt.Errorf(
+			"%w for %s: %d bytes exceeds %d",
+			ErrBlobTooLarge, b.Hash.String(), b.Size, maxBytes,
+		)
+	}
+
+	size := int(b.Size)
+	if int64(size) != b.Size {
+		return 0, fmt.Errorf(
+			"%w for %s: %d cannot fit in an int", errInvalidBlobSize, b.Hash, b.Size,
+		)
+	}
+
+	return size, nil
 }
 
 // BlobCache loads the blobs which correspond to the changed files in a commit.

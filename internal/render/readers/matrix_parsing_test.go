@@ -259,11 +259,13 @@ func verifyCouplesFormatSelection(t *testing.T, data []byte) {
 	t.Log("    Couples analysis structure:")
 	if couplesData.GetFileCouples() != nil && couplesData.GetFileCouples().GetMatrix() != nil {
 		t.Logf("    - FileCouples: CompressedSparseRowMatrix (%dx%d)",
-			couplesData.GetFileCouples().GetMatrix().GetNumberOfRows(), couplesData.GetFileCouples().GetMatrix().GetNumberOfColumns())
+			couplesData.GetFileCouples().GetMatrix().GetNumberOfRows(),
+			couplesData.GetFileCouples().GetMatrix().GetNumberOfColumns())
 	}
 	if couplesData.GetPeopleCouples() != nil && couplesData.GetPeopleCouples().GetMatrix() != nil {
 		t.Logf("    - PeopleCouples: CompressedSparseRowMatrix (%dx%d)",
-			couplesData.GetPeopleCouples().GetMatrix().GetNumberOfRows(), couplesData.GetPeopleCouples().GetMatrix().GetNumberOfColumns())
+			couplesData.GetPeopleCouples().GetMatrix().GetNumberOfRows(),
+			couplesData.GetPeopleCouples().GetMatrix().GetNumberOfColumns())
 	}
 
 	// Python uses _parse_sparse_matrix() for both FileCouples and PeopleCouples

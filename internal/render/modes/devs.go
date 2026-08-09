@@ -16,6 +16,12 @@ import (
 	"github.com/cwbudde/hercules/internal/render/readers"
 )
 
+var (
+	errNoDeveloperTimeSeries = errors.New("no developer time series to plot")
+	errNoDeveloperStats      = errors.New("no developer stats to plot")
+	errNoDeveloperSeries     = errors.New("no developer series to plot")
+)
+
 // Python labours highlights per-developer summary stats with a green or red
 // background depending on whether the developer added or removed more lines
 // (`backgrounds = ("#C4FFDB", "#FFD0CD")` in `labours/modes/devs.py`). We mirror
@@ -141,7 +147,7 @@ func plotDevsPythonStyle(
 ) error {
 	rows, dates := buildDeveloperSeriesRows(timeSeries, startUnix, endUnix, maxPeople)
 	if len(rows) == 0 {
-		return errors.New("no developer time series to plot")
+		return errNoDeveloperTimeSeries
 	}
 
 	rowHeight := developerPlotRowHeight(rows)
@@ -280,7 +286,11 @@ func developerStatsHeader(
 	}
 }
 
-func buildDeveloperSeriesRows(timeSeries *readers.DeveloperTimeSeriesData, startUnix, endUnix int64, maxPeople int) ([]devSeriesRow, []time.Time) {
+func buildDeveloperSeriesRows(
+	timeSeries *readers.DeveloperTimeSeriesData,
+	startUnix, endUnix int64,
+	maxPeople int,
+) ([]devSeriesRow, []time.Time) {
 	start, _, size := timeSeriesCalendarRange(timeSeries, startUnix, endUnix, 0)
 	dates := developerSeriesDates(start, size)
 	rowsByDev := collectDeveloperSeriesRows(timeSeries, size)
@@ -410,7 +420,10 @@ func selectTopDevelopers(stats []readers.DeveloperStat, maxPeople int) []readers
 }
 
 // generateTimeSeriesWithProgress generates synthetic time series data with progress tracking.
-func generateTimeSeriesWithProgress(stats []readers.DeveloperStat, progEstimator *progress.ProgressEstimator) map[string][]float64 {
+func generateTimeSeriesWithProgress(
+	stats []readers.DeveloperStat,
+	progEstimator *progress.ProgressEstimator,
+) map[string][]float64 {
 	// Start detailed progress for time series generation
 	progEstimator.StartOperation("Generating time series", len(stats))
 
@@ -437,28 +450,13 @@ func generateTimeSeriesWithProgress(stats []readers.DeveloperStat, progEstimator
 	return devSeries
 }
 
-// plotDevs generates plots for developers' contributions.
-func plotDevs(
+// buildDevContributionSeries pads every developer's weekly series to a common
+// length and pairs it with the synthetic weekly date axis.
+func buildDevContributionSeries(
 	developerStats []readers.DeveloperStat,
 	devSeries map[string][]float64,
-	output string,
-	visuals graphics.Options,
-) error {
-	if len(developerStats) == 0 {
-		return errors.New("no developer stats to plot")
-	}
-
-	length := 0
-	for _, dev := range developerStats {
-		if len(devSeries[dev.Name]) > length {
-			length = len(devSeries[dev.Name])
-		}
-	}
-
-	if length == 0 {
-		return errors.New("no developer series to plot")
-	}
-
+	length int,
+) ([]time.Time, []graphics.MatplotlibTimeAreaSeries) {
 	dates := make([]time.Time, length)
 	for i := range dates {
 		dates[i] = time.Unix(0, 0).AddDate(0, 0, i*7)
@@ -467,6 +465,7 @@ func plotDevs(
 	colors := graphics.PythonLaboursColorPalette(len(developerStats))
 
 	series := make([]graphics.MatplotlibTimeAreaSeries, 0, len(developerStats))
+
 	for i, dev := range developerStats {
 		values := append([]float64(nil), devSeries[dev.Name]...)
 		if len(values) < length {
@@ -480,9 +479,36 @@ func plotDevs(
 		})
 	}
 
+	return dates, series
+}
+
+// plotDevs generates plots for developers' contributions.
+func plotDevs(
+	developerStats []readers.DeveloperStat,
+	devSeries map[string][]float64,
+	output string,
+	visuals graphics.Options,
+) error {
+	if len(developerStats) == 0 {
+		return errNoDeveloperStats
+	}
+
+	length := 0
+	for _, dev := range developerStats {
+		if len(devSeries[dev.Name]) > length {
+			length = len(devSeries[dev.Name])
+		}
+	}
+
+	if length == 0 {
+		return errNoDeveloperSeries
+	}
+
+	dates, series := buildDevContributionSeries(developerStats, devSeries, length)
+
 	err := graphics.PlotTimeAreasMatplotlib(dates, series, graphics.MatplotlibTimeAreaOptions{
 		Title:        "Developer Contributions Over Time",
-		XLabel:       "Time",
+		XLabel:       timeAxisLabel,
 		YLabel:       "Commits",
 		Output:       output,
 		WidthInches:  32,

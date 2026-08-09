@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"os"
 	"os/exec"
@@ -189,7 +190,7 @@ func TestDiscoverGitRepositorySupportsWorktreesAndBareRepositories(t *testing.T)
 	if err := os.MkdirAll(nested, 0o750); err != nil {
 		t.Fatalf("create nested repository directory: %v", err)
 	}
-	got, err := discoverGitRepository(nested)
+	got, err := discoverGitRepository(t.Context(), nested)
 	if err != nil {
 		t.Fatalf("discoverGitRepository(nested) unexpected error: %v", err)
 	}
@@ -199,7 +200,7 @@ func TestDiscoverGitRepositorySupportsWorktreesAndBareRepositories(t *testing.T)
 
 	linkedWorktree := filepath.Join(parent, "linked")
 	runTestGit(t, mainRepo, "worktree", "add", "-b", "linked-test", linkedWorktree)
-	got, err = discoverGitRepository(linkedWorktree)
+	got, err = discoverGitRepository(t.Context(), linkedWorktree)
 	if err != nil {
 		t.Fatalf("discoverGitRepository(worktree) unexpected error: %v", err)
 	}
@@ -209,7 +210,7 @@ func TestDiscoverGitRepositorySupportsWorktreesAndBareRepositories(t *testing.T)
 
 	bareRepo := filepath.Join(parent, "bare.git")
 	runTestGit(t, parent, "init", "--bare", bareRepo)
-	got, err = discoverGitRepository(bareRepo)
+	got, err = discoverGitRepository(t.Context(), bareRepo)
 	if err != nil {
 		t.Fatalf("discoverGitRepository(bare) unexpected error: %v", err)
 	}
@@ -275,14 +276,14 @@ func TestFromRepoRendersExactRequestedModeWithOneHerculesRun(t *testing.T) {
 				}
 				return "/resolved/hercules", nil
 			}
-			discoverRepository = func(path string) (string, error) {
+			discoverRepository = func(_ context.Context, path string) (string, error) {
 				if path != "requested-repository" {
 					t.Fatalf("discoverRepository() path = %q, want requested-repository", path)
 				}
 				return "/resolved/repository", nil
 			}
 			runRepositoryHercules = func(
-				herculesPath, repoPath string, analyses []string,
+				_ context.Context, herculesPath, repoPath string, analyses []string,
 			) (readers.Reader, error) {
 				herculesRuns++
 				if herculesPath != "/resolved/hercules" || repoPath != "/resolved/repository" {
@@ -298,7 +299,7 @@ func TestFromRepoRendersExactRequestedModeWithOneHerculesRun(t *testing.T) {
 				return render.Result{}
 			}
 
-			if err := handleHerculesIntegration("requested-repository"); err != nil {
+			if err := handleHerculesIntegration(t.Context(), "requested-repository"); err != nil {
 				t.Fatalf("handleHerculesIntegration() unexpected error: %v", err)
 			}
 			if herculesRuns != 1 {
@@ -326,7 +327,7 @@ func TestRunHerculesAndVisualizeReturnsAggregateRenderErrors(t *testing.T) {
 	viper.Set("output", t.TempDir())
 	defer viper.Set("output", previousOutput)
 
-	runRepositoryHercules = func(string, string, []string) (readers.Reader, error) {
+	runRepositoryHercules = func(context.Context, string, string, []string) (readers.Reader, error) {
 		return nil, nil
 	}
 	renderRepositoryModes = func(readers.Reader, []string, render.Options) render.Result {
@@ -337,6 +338,7 @@ func TestRunHerculesAndVisualizeReturnsAggregateRenderErrors(t *testing.T) {
 	}
 
 	err := runHerculesAndVisualize(
+		t.Context(),
 		"/resolved/hercules",
 		"/resolved/repository",
 		[]string{"temporal-activity", "bus-factor"},
@@ -358,7 +360,8 @@ func runTestGit(t *testing.T, directory string, arguments ...string) {
 	if err != nil {
 		t.Fatalf("find git executable: %v", err)
 	}
-	cmd := exec.Command(gitPath, arguments...) // #nosec G204 -- test executable is resolved with exec.LookPath.
+	// #nosec G204 -- test executable is resolved with exec.LookPath.
+	cmd := exec.CommandContext(t.Context(), gitPath, arguments...)
 	cmd.Dir = directory
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git %s: %v\n%s", strings.Join(arguments, " "), err, output)

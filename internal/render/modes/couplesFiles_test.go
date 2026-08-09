@@ -35,7 +35,9 @@ func TestPlotTopCouplingPairsSkipsWhenThereAreNoPairs(t *testing.T) {
 	}
 
 	outputFile := filepath.Join(output, "top_file_coupling_pairs.png")
-	if _, err := os.Stat(outputFile); !os.IsNotExist(err) {
+
+	_, err = os.Stat(outputFile)
+	if !os.IsNotExist(err) {
 		t.Fatalf("expected no plot file at %q, stat returned %v", outputFile, err)
 	}
 }

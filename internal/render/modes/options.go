@@ -27,7 +27,7 @@ type Options struct {
 
 func defaultOptions() Options {
 	return Options{
-		Resample:                   "year",
+		Resample:                   resampleYear,
 		MaxPeople:                  20,
 		MaxRepos:                   25,
 		TemporalLegendThreshold:    32,

@@ -20,6 +20,7 @@ package corpus
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -356,7 +357,7 @@ func measure(t *testing.T, hercules, repository string, flags []string, scope ma
 	t.Helper()
 
 	arguments := append(append([]string{}, flags...), repository)
-	command := exec.Command(hercules, arguments...)
+	command := exec.CommandContext(t.Context(), hercules, arguments...)
 
 	var stdout, stderr bytes.Buffer
 
@@ -647,21 +648,21 @@ func currentProvenance(t *testing.T) provenance {
 
 	repository := filepath.Dir(filepath.Dir(filepath.Dir(baselinePath())))
 	result := provenance{
-		Commit:      strings.TrimSpace(gitOutput(repository, "rev-parse", "HEAD")),
+		Commit:      strings.TrimSpace(gitOutput(t.Context(), repository, "rev-parse", "HEAD")),
 		WorkingTree: "clean",
 		Note: "Numbers are only comparable against this tree. Re-seed after any " +
 			"change to burndown or merge accounting.",
 	}
 
-	if status := strings.TrimSpace(gitOutput(repository, "status", "--short")); status != "" {
+	if status := strings.TrimSpace(gitOutput(t.Context(), repository, "status", "--short")); status != "" {
 		result.WorkingTree = status
 	}
 
 	return result
 }
 
-func gitOutput(repository string, arguments ...string) string {
-	command := exec.Command("git", arguments...)
+func gitOutput(ctx context.Context, repository string, arguments ...string) string {
+	command := exec.CommandContext(ctx, "git", arguments...)
 	command.Dir = repository
 
 	output, err := command.Output()

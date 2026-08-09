@@ -143,11 +143,8 @@ func TestResampleMatrix(t *testing.T) {
 		{120, 100, 85, 75, 65, 55},
 	}
 
-	startTime := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
-	endTime := time.Date(2024, 1, 6, 0, 0, 0, 0, time.UTC)
-
 	// Resample from daily to every 2 days (should result in 3 points)
-	resampled := mockResampleMatrix(testMatrix, startTime, endTime, "2day")
+	resampled := mockResampleMatrix(testMatrix)
 
 	if len(resampled) != len(testMatrix) {
 		t.Errorf("Expected %d rows after resampling, got %d", len(testMatrix), len(resampled))
@@ -159,7 +156,7 @@ func TestResampleMatrix(t *testing.T) {
 	}
 }
 
-func mockResampleMatrix(matrix [][]int, startTime, endTime time.Time, resample string) [][]int {
+func mockResampleMatrix(matrix [][]int) [][]int {
 	if len(matrix) == 0 {
 		return matrix
 	}

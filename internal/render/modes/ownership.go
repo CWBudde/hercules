@@ -32,6 +32,10 @@ var (
 	errNoOwnershipData = errors.New("no ownership burndown data found")
 	errNoOwnershipPlot = errors.New("no ownership burndown data to plot")
 	errOwnershipAxes   = errors.New("failed to create ownership axes")
+
+	errOwnershipPlotSize   = errors.New("invalid size")
+	errOwnershipPlotWidth  = errors.New("invalid plot width")
+	errOwnershipPlotHeight = errors.New("invalid plot height")
 )
 
 func OwnershipBurndown(reader readers.Reader, output string) error {
@@ -775,17 +779,17 @@ func ownershipPlotPixelSize(defaultWidth, defaultHeight float64, configuredSize 
 func parseOwnershipPlotSize(sizeStr string) (float64, float64, error) {
 	parts := strings.Split(sizeStr, ",")
 	if len(parts) != 2 {
-		return 0, 0, fmt.Errorf("invalid size %q: expected width,height", sizeStr)
+		return 0, 0, fmt.Errorf("%w %q: expected width,height", errOwnershipPlotSize, sizeStr)
 	}
 
 	width, err := strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
 	if err != nil || width <= 0 {
-		return 0, 0, fmt.Errorf("invalid plot width %q", parts[0])
+		return 0, 0, fmt.Errorf("%w %q", errOwnershipPlotWidth, parts[0])
 	}
 
 	height, err := strconv.ParseFloat(strings.TrimSpace(parts[1]), 64)
 	if err != nil || height <= 0 {
-		return 0, 0, fmt.Errorf("invalid plot height %q", parts[1])
+		return 0, 0, fmt.Errorf("%w %q", errOwnershipPlotHeight, parts[1])
 	}
 
 	return width, height, nil
@@ -810,7 +814,7 @@ func saveOwnershipMatplotlibFigure(fig *core.Figure, output string, width, heigh
 	}
 
 	switch strings.ToLower(filepath.Ext(output)) {
-	case ".svg":
+	case extensionSVG:
 		return saveOwnershipSVG(fig, output, config)
 	default:
 		return saveOwnershipPNG(fig, output, config, background)
@@ -966,7 +970,13 @@ func absDiffUint8(a, b uint8) uint8 {
 	return b - a
 }
 
-func saveOwnershipBurndownAsJSON(output string, names []string, people [][]float64, dateRange []time.Time, lastTime time.Time) error {
+func saveOwnershipBurndownAsJSON(
+	output string,
+	names []string,
+	people [][]float64,
+	dateRange []time.Time,
+	lastTime time.Time,
+) error {
 	data := struct {
 		Type      string      `json:"type"`
 		Names     []string    `json:"names"`

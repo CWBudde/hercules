@@ -224,7 +224,7 @@ func storeCommit(t *testing.T, repository *git.Repository, tree plumbing.Hash) *
 }
 
 func storeObject(t *testing.T, repository *git.Repository, encoder interface {
-	Encode(plumbing.EncodedObject) error
+	Encode(obj plumbing.EncodedObject) error
 },
 ) plumbing.Hash {
 	t.Helper()

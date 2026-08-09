@@ -85,7 +85,7 @@ func (tm *ThemeManager) LoadThemesFromDirectory(dirPath string) error {
 func (tm *ThemeManager) GetTheme(name string) (*Theme, error) {
 	theme, exists := tm.themes[name]
 	if !exists {
-		return nil, fmt.Errorf("theme '%s' not found", name)
+		return nil, fmt.Errorf("%w: theme '%s' not found", errThemeNotFound, name)
 	}
 
 	return &theme, nil

@@ -20,14 +20,25 @@ var (
 )
 
 // BurndownPerson generates burndown charts for individual people/developers.
-func BurndownPerson(reader readers.Reader, output string, relative bool, startDate, endDate *time.Time, resample string) error {
+func BurndownPerson(
+	reader readers.Reader,
+	output string,
+	relative bool,
+	startDate, endDate *time.Time,
+	resample string,
+) error {
 	opts := defaultOptions()
 	opts.Relative, opts.Resample = relative, resample
 
 	return BurndownPersonWithOptions(reader, output, startDate, endDate, opts)
 }
 
-func BurndownPersonWithOptions(reader readers.Reader, output string, startDate, endDate *time.Time, opts Options) error {
+func BurndownPersonWithOptions(
+	reader readers.Reader,
+	output string,
+	startDate, endDate *time.Time,
+	opts Options,
+) error {
 	peopleBurndowns, err := reader.GetPeopleBurndown()
 	if err != nil {
 		return fmt.Errorf("failed to get people burndown data: %w", err)
@@ -39,7 +50,7 @@ func BurndownPersonWithOptions(reader readers.Reader, output string, startDate, 
 	}
 
 	if opts.Resample == "" {
-		opts.Resample = "year"
+		opts.Resample = resampleYear
 	}
 
 	displayNames, outputFiles, err := personBurndownOutputPaths(peopleBurndowns, output)
@@ -47,9 +58,34 @@ func BurndownPersonWithOptions(reader readers.Reader, output string, startDate, 
 		return err
 	}
 
+	rendered, err := renderPeopleBurndowns(
+		peopleBurndowns, displayNames, outputFiles, header,
+		usePythonRenderer, startDate, endDate, opts,
+	)
+	if err != nil {
+		return err
+	}
+
+	if rendered == 0 && len(peopleBurndowns) > 0 {
+		return errNoPersonActivity
+	}
+
+	return nil
+}
+
+// renderPeopleBurndowns renders one chart per person and reports how many were
+// actually produced.
+func renderPeopleBurndowns(
+	people []readers.PeopleBurndown,
+	displayNames, outputFiles []string,
+	header burndown.BurndownHeader,
+	usePythonRenderer bool,
+	startDate, endDate *time.Time,
+	opts Options,
+) (int, error) {
 	rendered := 0
 
-	for index, person := range peopleBurndowns {
+	for index, person := range people {
 		err := renderPersonBurndown(
 			person, displayNames[index], outputFiles[index], header,
 			usePythonRenderer, startDate, endDate, opts,
@@ -71,17 +107,13 @@ func BurndownPersonWithOptions(reader readers.Reader, output string, startDate, 
 		}
 
 		if err != nil {
-			return err
+			return 0, err
 		}
 
 		rendered++
 	}
 
-	if rendered == 0 && len(peopleBurndowns) > 0 {
-		return errNoPersonActivity
-	}
-
-	return nil
+	return rendered, nil
 }
 
 func personBurndownHeader(

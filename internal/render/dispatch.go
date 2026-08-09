@@ -16,42 +16,46 @@ import (
 type modeHandler func(reader readers.Reader, output string, startTime, endTime *time.Time, opts modes.Options) error
 
 var modeHandlers = map[string]modeHandler{
-	"burndown-project":        burndownProject,
-	"burndown-file":           burndownFile,
-	"burndown-person":         burndownPerson,
-	"burndown-repository":     burndownRepository,
-	"burndown-repos-combined": burndownReposCombined,
-	"overwrites-matrix":       overwritesMatrix,
-	"ownership":               ownershipBurndown,
-	"couples-files":           couplesFiles,
-	"couples-people":          couplesPeople,
-	"couples-shotness":        couplesShotness,
-	"shotness":                shotness,
-	"devs":                    devs,
-	"devs-efforts":            devsEfforts,
-	"old-vs-new":              oldVsNew,
-	"languages":               languages,
-	"temporal-activity":       temporalActivity,
-	"devs-parallel":           devsParallel,
-	"run-times":               runTimes,
-	"bus-factor":              busFactor,
-	"ownership-concentration": ownershipConcentration,
-	"knowledge-diffusion":     knowledgeDiffusion,
-	"hotspot-risk":            hotspotRisk,
-	"sentiment":               sentiment,
-	"refactoring-proxy":       refactoringProxy,
+	ModeBurndownProject:        burndownProject,
+	ModeBurndownFile:           burndownFile,
+	ModeBurndownPerson:         burndownPerson,
+	ModeBurndownRepository:     burndownRepository,
+	ModeBurndownReposCombined:  burndownReposCombined,
+	ModeOverwritesMatrix:       overwritesMatrix,
+	ModeOwnership:              ownershipBurndown,
+	ModeCouplesFiles:           couplesFiles,
+	ModeCouplesPeople:          couplesPeople,
+	ModeCouplesShotness:        couplesShotness,
+	ModeShotness:               shotness,
+	ModeDevs:                   devs,
+	ModeDevsEfforts:            devsEfforts,
+	ModeOldVsNew:               oldVsNew,
+	ModeLanguages:              languages,
+	ModeTemporalActivity:       temporalActivity,
+	ModeDevsParallel:           devsParallel,
+	ModeRunTimes:               runTimes,
+	ModeBusFactor:              busFactor,
+	ModeOwnershipConcentration: ownershipConcentration,
+	ModeKnowledgeDiffusion:     knowledgeDiffusion,
+	ModeHotspotRisk:            hotspotRisk,
+	ModeSentiment:              sentiment,
+	ModeRefactoringProxy:       refactoringProxy,
 }
 
-func executeModes(modeNames []string, reader readers.Reader, output string, startTime, endTime *time.Time) Result {
+// executeModes renders modeNames with the default options, reporting failures
+// on stderr the way the CLI does.
+func executeModes(modeNames []string, reader readers.Reader, output string) {
 	opts := DefaultOptions()
-	opts.Output, opts.StartTime, opts.EndTime = output, startTime, endTime
+	opts.Output = output
 
 	renderer, err := NewRenderer(opts)
 	if err != nil {
-		return Result{OutputError: err}
+		fmt.Fprintf(os.Stderr, "Error creating renderer: %v\n", err)
+
+		return
 	}
 
-	return renderer.executeModes(modeNames, reader)
+	renderer.executeModes(modeNames, reader)
 }
 
 func (r *Renderer) executeModes(modeNames []string, reader readers.Reader) Result {
@@ -104,7 +108,7 @@ func runJSONMode(reader readers.Reader, mode string) (ModeResult, any) {
 	if _, ok := modeHandlers[mode]; !ok {
 		printModeUnavailable(mode)
 
-		return ModeResult{Mode: mode, Err: errors.New(modeUnavailableMessage(mode))},
+		return ModeResult{Mode: mode, Err: modeUnavailableError(mode)},
 			map[string]any{"error": "mode not implemented"}
 	}
 
@@ -177,7 +181,7 @@ func (r *Renderer) runSingleMode(
 	modeFunc, ok := modeHandlers[mode]
 	if !ok {
 		printModeUnavailable(mode)
-		return ModeResult{Mode: mode, Err: errors.New(modeUnavailableMessage(mode))}
+		return ModeResult{Mode: mode, Err: modeUnavailableError(mode)}
 	}
 
 	formattedOutput := r.planModeOutput(output, mode, modeCount)
@@ -190,12 +194,26 @@ func (r *Renderer) runSingleMode(
 	return ModeResult{Mode: mode}
 }
 
-func modeUnavailableMessage(mode string) string {
+// errModeNotImplemented reports a mode name that is valid but has no entry in
+// modeHandlers.
+var errModeNotImplemented = errors.New("mode not implemented yet")
+
+// modeUnavailableError explains why mode cannot be dispatched. errUnknownMode
+// is shared with ResolveModes so both entry points classify the same way.
+func modeUnavailableError(mode string) error {
 	if isValidMode(mode) {
-		return "Mode not implemented yet: " + mode
+		return fmt.Errorf("%w: %s", errModeNotImplemented, mode)
 	}
 
-	return "Unknown mode: " + mode
+	return fmt.Errorf("%w: %s", errUnknownMode, mode)
+}
+
+// modeUnavailableMessage renders modeUnavailableError for the console, where
+// the message starts a line and is therefore capitalized.
+func modeUnavailableMessage(mode string) string {
+	message := modeUnavailableError(mode).Error()
+
+	return strings.ToUpper(message[:1]) + message[1:]
 }
 
 func printModeUnavailable(mode string) {
@@ -221,7 +239,7 @@ func missingAnalysisWarning(mode string, err error) (string, bool) {
 		return "", false
 	}
 
-	if mode == "devs-parallel" {
+	if mode == ModeDevsParallel {
 		return devsParallelMissingAnalysisWarning(err), true
 	}
 
@@ -236,33 +254,36 @@ func standardMissingAnalysisWarnings() map[string]string {
 		burndownFiles  = "Burndown stats for files were not collected. Re-run hercules with --burndown --burndown-files."
 		burndownPeople = "Burndown stats for people were not collected. Re-run hercules with --burndown --burndown-people."
 		couples        = "Coupling stats were not collected. Re-run hercules with --couples."
-		shotness       = "Structural hotness stats were not collected. Re-run hercules with --shotness. Also check --languages - the output may be empty."
-		devs           = "Devs stats were not collected. Re-run hercules with --devs."
+		shotness       = "Structural hotness stats were not collected. Re-run hercules with --shotness. " +
+			"Also check --languages - the output may be empty."
+		devs = "Devs stats were not collected. Re-run hercules with --devs."
 	)
 
 	return map[string]string{
-		"burndown-project":        "project: " + burndown,
-		"burndown-file":           "files: " + burndownFiles,
-		"burndown-person":         "people: " + burndownPeople,
-		"ownership":               "ownership: " + burndownPeople,
-		"overwrites-matrix":       "overwrites_matrix: " + burndownPeople,
-		"burndown-repository":     "repositories: burndown data not available or repositories not tracked",
-		"burndown-repos-combined": "repositories-combined: burndown data not available or repositories not tracked",
-		"couples-files":           couples,
-		"couples-people":          couples,
-		"couples-shotness":        shotness,
-		"shotness":                shotness,
-		"sentiment":               "Sentiment stats were not collected. Re-run hercules with --sentiment.",
-		"devs":                    devs,
-		"devs-efforts":            devs,
-		"old-vs-new":              devs,
-		"languages":               devs,
-		"temporal-activity":       "Temporal activity stats were not collected. Re-run hercules with --temporal-activity.",
-		"bus-factor":              "Bus factor stats were not collected. Re-run hercules with --bus-factor.",
-		"ownership-concentration": "Ownership concentration stats were not collected. Re-run hercules with --ownership-concentration.",
-		"knowledge-diffusion":     "Knowledge diffusion stats were not collected. Re-run hercules with --knowledge-diffusion.",
-		"hotspot-risk":            "Hotspot risk scores were not collected. Re-run hercules with --hotspot-risk.",
-		"refactoring-proxy":       "Refactoring proxy data was not collected. Re-run hercules with --refactoring-proxy.",
+		ModeBurndownProject:       "project: " + burndown,
+		ModeBurndownFile:          "files: " + burndownFiles,
+		ModeBurndownPerson:        "people: " + burndownPeople,
+		ModeOwnership:             "ownership: " + burndownPeople,
+		ModeOverwritesMatrix:      "overwrites_matrix: " + burndownPeople,
+		ModeBurndownRepository:    "repositories: burndown data not available or repositories not tracked",
+		ModeBurndownReposCombined: "repositories-combined: burndown data not available or repositories not tracked",
+		ModeCouplesFiles:          couples,
+		ModeCouplesPeople:         couples,
+		ModeCouplesShotness:       shotness,
+		ModeShotness:              shotness,
+		ModeSentiment:             "Sentiment stats were not collected. Re-run hercules with --sentiment.",
+		ModeDevs:                  devs,
+		ModeDevsEfforts:           devs,
+		ModeOldVsNew:              devs,
+		ModeLanguages:             devs,
+		ModeTemporalActivity:      "Temporal activity stats were not collected. Re-run hercules with --temporal-activity.",
+		ModeBusFactor:             "Bus factor stats were not collected. Re-run hercules with --bus-factor.",
+		ModeOwnershipConcentration: "Ownership concentration stats were not collected. " +
+			"Re-run hercules with --ownership-concentration.",
+		ModeKnowledgeDiffusion: "Knowledge diffusion stats were not collected. " +
+			"Re-run hercules with --knowledge-diffusion.",
+		ModeHotspotRisk:      "Hotspot risk scores were not collected. Re-run hercules with --hotspot-risk.",
+		ModeRefactoringProxy: "Refactoring proxy data was not collected. Re-run hercules with --refactoring-proxy.",
 	}
 }
 
@@ -276,7 +297,8 @@ func devsParallelMissingAnalysisWarning(err error) string {
 		return "Devs stats were not collected. Re-run hercules with --devs."
 	}
 
-	return "devs-parallel: Burndown stats for people were not collected. Re-run hercules with --burndown --burndown-people."
+	return "devs-parallel: Burndown stats for people were not collected. " +
+		"Re-run hercules with --burndown --burndown-people."
 }
 
 func isMissingAnalysisError(err error) bool {
@@ -348,7 +370,11 @@ func languages(reader readers.Reader, output string, _, _ *time.Time, opts modes
 }
 
 func temporalActivity(reader readers.Reader, output string, startTime, endTime *time.Time, opts modes.Options) error {
-	return modes.TemporalActivity(reader, output, opts.TemporalLegendThreshold, opts.TemporalLegendSingleColumn, startTime, endTime)
+	return modes.TemporalActivity(
+		reader, output,
+		opts.TemporalLegendThreshold, opts.TemporalLegendSingleColumn,
+		startTime, endTime,
+	)
 }
 
 func devsParallel(reader readers.Reader, output string, _, _ *time.Time, opts modes.Options) error {
@@ -407,7 +433,7 @@ func (r *Renderer) runAllModes(reader readers.Reader, output string, startTime, 
 		modeFunc, ok := modeHandlers[modeName]
 		if !ok {
 			printModeUnavailable(modeName)
-			failures = append(failures, errors.New(modeUnavailableMessage(modeName)))
+			failures = append(failures, modeUnavailableError(modeName))
 
 			continue
 		}

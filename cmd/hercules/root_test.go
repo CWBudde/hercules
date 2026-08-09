@@ -63,7 +63,7 @@ func TestLoadRemoteRepositories(t *testing.T) {
 			endpoint.String(): origin.Storer,
 		}))
 
-		repo, repoURI, repoFeature, cloneErr := loadRepositoryWithError(test.uri, "", true, "")
+		repo, repoURI, repoFeature, cloneErr := loadRepositoryWithError(test.uri)
 		client.InstallProtocol(endpoint.Protocol, previous)
 
 		require.NoError(t, cloneErr, test.uri)
@@ -95,16 +95,14 @@ func TestRemoteCacheCreatesManagedDestination(t *testing.T) {
 	origin, head := createTestRepository(t)
 	cachePath := filepath.Join(t.TempDir(), "remote-cache")
 
-	repository, _, err := cloneRemoteRepository(
-		testRepositoryURI(t, origin), cachePath, true, "",
-	)
+	repository, _, err := cloneRemoteRepository(testRepositoryURI(t, origin), cachePath)
 
 	require.NoError(t, err)
 	requireRemoteCacheMarker(t, cachePath)
 	_, err = repository.CommitObject(head)
 	require.NoError(t, err)
 
-	reopened, _, feature, err := loadRepositoryWithError(cachePath, "", true, "")
+	reopened, _, feature, err := loadRepositoryWithError(cachePath)
 	require.NoError(t, err)
 	assert.Equal(t, core.FeatureGitCommits, feature)
 	_, err = reopened.CommitObject(head)
@@ -116,9 +114,7 @@ func TestRemoteCacheAcceptsExistingEmptyTarget(t *testing.T) {
 	cachePath := filepath.Join(t.TempDir(), "remote-cache")
 	require.NoError(t, os.Mkdir(cachePath, 0o755))
 
-	_, _, err := cloneRemoteRepository(
-		testRepositoryURI(t, origin), cachePath, true, "",
-	)
+	_, _, err := cloneRemoteRepository(testRepositoryURI(t, origin), cachePath)
 	if err != nil {
 		require.ErrorIs(t, err, errAtomicCacheReplacement)
 		entries, readErr := os.ReadDir(cachePath)
@@ -133,12 +129,12 @@ func TestRemoteCacheReplacementRequiresForceAndMarker(t *testing.T) {
 	origin, _ := createTestRepository(t)
 	uri := testRepositoryURI(t, origin)
 	cachePath := filepath.Join(t.TempDir(), "remote-cache")
-	_, _, err := cloneRemoteRepository(uri, cachePath, true, "")
+	_, _, err := cloneRemoteRepository(uri, cachePath)
 	require.NoError(t, err)
 	sentinelPath := filepath.Join(cachePath, "stale-sentinel")
 	require.NoError(t, os.WriteFile(sentinelPath, []byte("keep until replaced"), 0o600))
 
-	_, _, err = cloneRemoteRepository(uri, cachePath, true, "")
+	_, _, err = cloneRemoteRepository(uri, cachePath)
 	require.ErrorContains(t, err, "--force-cache-replace")
 	assert.FileExists(t, sentinelPath)
 
@@ -259,7 +255,7 @@ func TestLoadLocalRepository(t *testing.T) {
 	require.NoError(t, err)
 	root := worktree.Filesystem.Root()
 
-	repo, repoURI, repoFeature, err := loadRepositoryWithError(root, "", true, "")
+	repo, repoURI, repoFeature, err := loadRepositoryWithError(root)
 
 	require.NoError(t, err)
 	assert.Equal(t, root, repoURI)
@@ -274,7 +270,7 @@ func TestLoadFileRepository(t *testing.T) {
 	require.NoError(t, err)
 	uri := localFileURI(worktree.Filesystem.Root())
 
-	repo, repoURI, repoFeature, err := loadRepositoryWithError(uri, "", true, "")
+	repo, repoURI, repoFeature, err := loadRepositoryWithError(uri)
 
 	require.NoError(t, err)
 	assert.Equal(t, uri, repoURI)

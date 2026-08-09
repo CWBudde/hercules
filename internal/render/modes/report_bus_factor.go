@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/cwbudde/matplotlib-go/core"
 	"github.com/cwbudde/matplotlib-go/optional"
@@ -18,7 +19,7 @@ import (
 	"github.com/cwbudde/hercules/internal/render/readers"
 )
 
-func BusFactor(reader readers.Reader, output string) error {
+func BusFactor(reader readers.Reader, output string, startTime, endTime *time.Time) error {
 	busFactorReader, ok := reader.(readers.BusFactorReader)
 	if !ok {
 		return fmt.Errorf("%w: bus factor", readers.ErrAnalysisMissing)
@@ -33,12 +34,22 @@ func BusFactor(reader readers.Reader, output string) error {
 		return errNoBusFactorSnapshots
 	}
 
-	ticks := sortedIntKeys(data.Snapshots)
+	begin, _ := reader.GetHeader()
+	axis, dated := newTickAxis(begin, data.TickSize)
+
+	ticks := selectReportTicks(sortedIntKeys(data.Snapshots), axis, dated, startTime, endTime, "bus factor")
+	if len(ticks) == 0 {
+		return fmt.Errorf("%w: bus factor", errNoSnapshotsInRange)
+	}
+
+	// Under a date range the gauge and the subsystem summary read the last
+	// snapshot inside the range, not the last one in the file - a chart set that
+	// mixed the two would describe two different points in time.
 	latest := data.Snapshots[ticks[len(ticks)-1]]
 	_, _ = fmt.Fprintf(os.Stdout, "Bus factor: latest=%d, total lines=%d, threshold=%.2f\n",
 		latest.BusFactor, latest.TotalLines, data.Threshold)
 
-	err = plotBusFactorTimeline(data, ticks, output)
+	err = plotBusFactorTimeline(data, ticks, axis, dated, output)
 	if err != nil {
 		return err
 	}
@@ -51,18 +62,36 @@ func BusFactor(reader readers.Reader, output string) error {
 	return plotBusFactorSubsystemSummary(titleRepositoryName(reader.GetName()), data, output)
 }
 
-func plotBusFactorTimeline(data *readers.BusFactorData, ticks []int, output string) error {
-	series := make(xySeries, len(ticks))
+func plotBusFactorTimeline(
+	data *readers.BusFactorData,
+	ticks []int,
+	axis tickAxis,
+	dated bool,
+	output string,
+) error {
+	values := make([]float64, len(ticks))
 	for index, tick := range ticks {
-		series[index] = xyPoint{X: float64(tick), Y: float64(data.Snapshots[tick].BusFactor)}
+		values[index] = float64(data.Snapshots[tick].BusFactor)
+	}
+
+	timelineOutput := siblingOutputPath(output, "bus-factor.png", "timeline")
+
+	if dated {
+		return plotTimeSeries(
+			"Bus Factor Over Time",
+			"Bus Factor",
+			[]namedTimeSeries{{Name: "Bus factor", Dates: axis.datesOf(ticks), Values: values}},
+			timelineOutput,
+			"bus-factor-timeline.png",
+		)
 	}
 
 	return plotLineSeries(
 		"Bus Factor Over Time",
 		"Tick",
 		"Bus Factor",
-		[]namedSeries{{Name: "Bus factor", Points: series}},
-		siblingOutputPath(output, "bus-factor.png", "timeline"),
+		[]namedSeries{{Name: "Bus factor", Points: tickIndexSeries(ticks, values)}},
+		timelineOutput,
 		"bus-factor-timeline.png",
 	)
 }

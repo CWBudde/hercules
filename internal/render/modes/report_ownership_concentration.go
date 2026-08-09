@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"time"
 
 	"github.com/cwbudde/matplotlib-go/core"
 	"github.com/cwbudde/matplotlib-go/optional"
@@ -14,7 +15,14 @@ import (
 	"github.com/cwbudde/hercules/internal/render/readers"
 )
 
-func OwnershipConcentration(reader readers.Reader, output string) error {
+// The two concentration measures are labelled identically on the timeline and
+// on the subsystem bars, so they are named once.
+const (
+	giniSeriesLabel = "Gini"
+	hhiSeriesLabel  = "HHI"
+)
+
+func OwnershipConcentration(reader readers.Reader, output string, startTime, endTime *time.Time) error {
 	ownershipReader, ok := reader.(readers.OwnershipConcentrationReader)
 	if !ok {
 		return fmt.Errorf("%w: ownership concentration", readers.ErrAnalysisMissing)
@@ -29,8 +37,15 @@ func OwnershipConcentration(reader readers.Reader, output string) error {
 		return errNoOwnershipSnapshots
 	}
 
-	ticks := sortedIntKeys(data.Snapshots)
-	gini, hhi := ownershipConcentrationSeries(data, ticks)
+	begin, _ := reader.GetHeader()
+	axis, dated := newTickAxis(begin, data.TickSize)
+
+	ticks := selectReportTicks(
+		sortedIntKeys(data.Snapshots), axis, dated, startTime, endTime, "ownership concentration",
+	)
+	if len(ticks) == 0 {
+		return fmt.Errorf("%w: ownership concentration", errNoSnapshotsInRange)
+	}
 
 	latest := data.Snapshots[ticks[len(ticks)-1]]
 	fmt.Printf("Ownership concentration: latest gini=%.3f, hhi=%.3f, total lines=%d\n",
@@ -38,17 +53,7 @@ func OwnershipConcentration(reader readers.Reader, output string) error {
 
 	timelineOutput := siblingOutputPath(output, "ownership-concentration.png", "timeline")
 
-	err = plotLineSeries(
-		"Ownership Concentration Over Time",
-		"Tick",
-		"Concentration",
-		[]namedSeries{
-			{Name: "Gini", Points: gini},
-			{Name: "HHI", Points: hhi},
-		},
-		timelineOutput,
-		"ownership-concentration-timeline.png",
-	)
+	err = plotOwnershipConcentrationTimeline(data, ticks, axis, dated, timelineOutput)
 	if err != nil {
 		return err
 	}
@@ -69,21 +74,58 @@ func OwnershipConcentration(reader readers.Reader, output string) error {
 	return nil
 }
 
+// plotOwnershipConcentrationTimeline draws the Gini and HHI timelines, over real
+// dates where the input supports it and over bare tick indices otherwise.
+func plotOwnershipConcentrationTimeline(
+	data *readers.OwnershipConcentrationData,
+	ticks []int,
+	axis tickAxis,
+	dated bool,
+	output string,
+) error {
+	gini, hhi := ownershipConcentrationSeries(data, ticks)
+
+	if dated {
+		dates := axis.datesOf(ticks)
+
+		return plotTimeSeries(
+			"Ownership Concentration Over Time",
+			"Concentration",
+			[]namedTimeSeries{
+				{Name: giniSeriesLabel, Dates: dates, Values: gini},
+				{Name: hhiSeriesLabel, Dates: dates, Values: hhi},
+			},
+			output,
+			"ownership-concentration-timeline.png",
+		)
+	}
+
+	return plotLineSeries(
+		"Ownership Concentration Over Time",
+		"Tick",
+		"Concentration",
+		[]namedSeries{
+			{Name: giniSeriesLabel, Points: tickIndexSeries(ticks, gini)},
+			{Name: hhiSeriesLabel, Points: tickIndexSeries(ticks, hhi)},
+		},
+		output,
+		"ownership-concentration-timeline.png",
+	)
+}
+
 // ownershipConcentrationSeries turns the per-tick snapshots into the Gini and
-// HHI timelines, in the order given by ticks.
+// HHI values, in the order given by ticks.
 func ownershipConcentrationSeries(
 	data *readers.OwnershipConcentrationData,
 	ticks []int,
-) (gini, hhi xySeries) {
-	gini = make(xySeries, len(ticks))
+) (gini, hhi []float64) {
+	gini = make([]float64, len(ticks))
 
-	hhi = make(xySeries, len(ticks))
+	hhi = make([]float64, len(ticks))
 	for i, tick := range ticks {
 		snapshot := data.Snapshots[tick]
-		gini[i].X = float64(tick)
-		gini[i].Y = snapshot.Gini
-		hhi[i].X = float64(tick)
-		hhi[i].Y = snapshot.HHI
+		gini[i] = snapshot.Gini
+		hhi[i] = snapshot.HHI
 	}
 
 	return gini, hhi
@@ -192,10 +234,12 @@ func drawOwnershipSubsystemBars(axes *core.Axes, series ownershipSubsystemSeries
 	hhiColor := render.Color{R: 63.0 / 255, G: 81.0 / 255, B: 181.0 / 255, A: 0.8}
 
 	_, _ = axes.Bar(series.giniY, series.giniValues, core.BarOptions{
-		Color: optional.Of(giniColor), Width: optional.Of(barHeight), Orientation: optional.Of(orientation), Label: "Gini",
+		Color: optional.Of(giniColor), Width: optional.Of(barHeight),
+		Orientation: optional.Of(orientation), Label: giniSeriesLabel,
 	})
 	_, _ = axes.Bar(series.hhiY, series.hhiValues, core.BarOptions{
-		Color: optional.Of(hhiColor), Width: optional.Of(barHeight), Orientation: optional.Of(orientation), Label: "HHI",
+		Color: optional.Of(hhiColor), Width: optional.Of(barHeight),
+		Orientation: optional.Of(orientation), Label: hhiSeriesLabel,
 	})
 	drawOwnershipSubsystemLabels(axes, series)
 }

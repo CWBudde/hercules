@@ -326,7 +326,7 @@ Facts worth keeping:
   the user typed is the same failure mode as mislabelling an axis.
 - **Whole ticks are selected, never clipped**, matching `filterTemporalActivitiesByDateRange`. A
   partially counted tick would be a wrong data point rather than a coarse one. Under a range,
-  `busFactor`'s gauge and subsystem charts read the last snapshot *inside* the range, so the chart set
+  `busFactor`'s gauge and subsystem charts read the last snapshot _inside_ the range, so the chart set
   describes one point in time.
 - **`hotspotRisk` is excluded, and not by choice.** `readers.HotspotRiskData` is `{Files, WindowDays}`
   — a per-file ranking with no time axis at all; the churn window was applied during analysis and not
@@ -336,7 +336,7 @@ Facts worth keeping:
   only tick-indexed thing it carries; the distribution, silo and Lorenz charts are whole-history
   per-file totals.
 - **The date axis needed a formatter, not just dates.** matplotlib-go's `AutoDateFormatter` picks its
-  layout from the axis *span* while the locator places ticks by its own spacing, so a 2½-year history
+  layout from the axis _span_ while the locator places ticks by its own spacing, so a 2½-year history
   crossed into a year-only layout and rendered `2024 2024 2024 2025 2025 2025 2026`.
   `graphics.UseConciseDateAxis` switches to `ConciseDateFormatter`, which derives its level from tick
   spacing. This also fixes the already-shipped `refactoring-proxy` chart, which had the same axis.

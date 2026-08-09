@@ -96,6 +96,7 @@ var reportDefaultModes = []string{
 	reportAnalysisBusFactor,
 	reportAnalysisOwnershipConcentration,
 	reportAnalysisKnowledgeDiffusion,
+	reportAnalysisOnboarding,
 	reportAnalysisHotspotRisk,
 	reportAnalysisRefactoringProxy,
 }
@@ -122,6 +123,7 @@ var reportAllModes = []string{
 	reportAnalysisBusFactor,
 	reportAnalysisOwnershipConcentration,
 	reportAnalysisKnowledgeDiffusion,
+	reportAnalysisOnboarding,
 	reportAnalysisHotspotRisk,
 	reportAnalysisRefactoringProxy,
 }
@@ -148,6 +150,7 @@ var reportValidModes = map[string]struct{}{
 	reportAnalysisBusFactor:              {},
 	reportAnalysisOwnershipConcentration: {},
 	reportAnalysisKnowledgeDiffusion:     {},
+	reportAnalysisOnboarding:             {},
 	reportAnalysisHotspotRisk:            {},
 	reportAnalysisRefactoringProxy:       {},
 }

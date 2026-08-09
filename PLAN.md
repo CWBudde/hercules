@@ -4,9 +4,9 @@
 
 | phase                                                 | items                | state                                      |
 | ----------------------------------------------------- | -------------------- | ------------------------------------------ |
-| [Phase 1 — combine correctness](#phase-1)             | T1.1–T1.3 (M7/M6/M2) | T1.1, T1.2, T1.3(a) landed; T1.3(b) → T3.1 |
+| [Phase 1 — combine correctness](#phase-1)             | T1.1–T1.3 (M7/M6/M2) | **all landed** (T1.3(b) with T3.1)         |
 | [Phase 2 — rendering defects](#phase-2)               | T2.1–T2.3 (M4/M5/M3) | T2.1 + T2.2 landed; T2.3 open              |
-| [Phase 3 — unexposed analyses](#phase-3)              | T3.1–T3.3 (M1/M8/M9) | not started, largest new work              |
+| [Phase 3 — unexposed analyses](#phase-3)              | T3.1–T3.3 (M1/M8/M9) | T3.1 landed; T3.2 + T3.3 open              |
 | [Phase 4 — burndown residue (B1c/P5)](#phase-4)       | T4.1–T4.3            | **on hold — recommendation: do not start** |
 | [Phase 5 — recorded, deliberately not done](#phase-5) | —                    | reference only                             |
 
@@ -160,10 +160,13 @@ was printed **per input file**, so the org-wide merge buried five analyses under
 scrolling past behind the progress bar. Nothing tested it either, so it could have been deleted
 silently.
 
-Current non-mergeable set (all embed `core.NoopMerger`, none define `MergeResults`): `Onboarding`,
-`Shotness`, `CommitsStat` (`leaves/commits.go:22`), `FileHistoryAnalysis`
-(`leaves/file_history.go:24`), `ImportsPerDeveloper` (`leaves/imports_printer.go:31`). `CodeChurn`
-is the exception — real merge at `leaves/codechurn.go:413`.
+Current non-mergeable set (none defines `MergeResults`): `Shotness`, `CommitsStat`
+(`leaves/commits.go:22`), `FileHistoryAnalysis` (`leaves/file_history.go:24`), `ImportsPerDeveloper`
+(`leaves/imports_printer.go:31`). `CodeChurn` is the exception — real merge at
+`leaves/codechurn.go:413`. **`Onboarding` left this set on 2026-08-09** (T3.1).
+
+Note the embed is not the discriminator: `core.NoopMerger` supplies the _fork_ merger
+`Merge([]PipelineItem)`, which mergeable leaves keep too. What decides is `MergeResults`.
 
 - [x] **(a)** Say what was dropped, once, in the user's terms. `loadedMessage.skipped` now carries
       analysis **names**; `combineAccumulator` counts them per analysis against the input count; and
@@ -178,9 +181,15 @@ is the exception — real merge at `leaves/codechurn.go:413`.
       (a caller who asked for exactly that analysis wants the failure), and the exit code still
       ignores skips — a non-mergeable leaf is a property of the analysis, not a defect in the file.
 
-- [ ] **(b)** Reconcile `reportDefaultAnalysisFlags` (`report.go:52-65`) with `reportDefaultModes`
-      (`:84-101`) — today the former computes `onboarding` and the latter has no mode for it.
-      Land this together with T3.1.
+- [x] **(b)** Reconcile `reportDefaultAnalysisFlags` (`report.go:52-65`) with `reportDefaultModes`
+      (`:84-101`) — the former computed `onboarding` and the latter had no mode for it.
+      **Done 2026-08-09 with T3.1**, in the direction of adding the mode: `reportAnalysisOnboarding`
+      now appears in `reportDefaultModes`, `reportAllModes` and `reportValidModes`. No separate
+      `reportModeOnboarding` const — the file's idiom is to reuse the analysis const when the two
+      vocabularies spell the same, as `devs` and `temporal-activity` already do. Verified: a default
+      `hercules report` writes `charts/onboarding_*.png` into `manifest.json` and `index.html`.
+
+      Onboarding is also no longer in the non-mergeable set above — see T3.1.
 
 ---
 
@@ -322,15 +331,68 @@ What is missing: no `"onboarding"` key in `internal/render/dispatch.go:18-43`, n
 cmd/labours/ internal/render/` is empty — the charts only ever existed in the retired Python
 renderer.
 
-- [ ] `.pb` reader in `internal/render/readers/`.
-- [ ] `"onboarding"` mode handler in `internal/render/dispatch.go`.
-- [ ] Mode→analyses entry in `cmd/labours/helpers.go`.
-- [ ] Chart 1: ramp-up curve per join cohort (meaningful lines against days-since-join).
-- [ ] Chart 2: time-to-first-meaningful-commit distribution.
-- [ ] **Org-wide is blocked on T1.3** — `OnboardingAnalysis` embeds `core.NoopMerger` (`:87`) and
-      defines no `MergeResults`, so it fails the assertion at `cmd/hercules/combine.go:305` and is
-      dropped. Per repository it works today. Either write a `MergeResults` or ship per-repository
-      only, with T1.3(a) making the drop loud.
+- [x] `.pb` reader in `internal/render/readers/`. **Done 2026-08-09.**
+- [x] `"onboarding"` mode handler in `internal/render/dispatch.go`, plus every other table the
+      consistency tests enforce (`modenames`, `modeset`, `json`, `output`, `RENDERER_OUTPUTS.md`).
+      Deliberately **not** in `pythonAllModes` — that composition is frozen for Python parity.
+- [x] Mode→analyses entry in `cmd/labours/helpers.go`.
+- [x] Chart 1: cohort **heatmap** (`_rampup`). Not the line chart this item assumed — `README.md`
+      documents the retired Python renderer's output and ships `docs/onboarding_cohorts.png` as a
+      reference, so the parity-correct chart is a cohort × window heatmap, which also degrades far
+      better than ~60 overlaid cohort lines at org scale.
+- [x] Chart 2: time-to-first-meaningful-commit distribution (`_time-to-first`).
+- [x] Chart 3: per-author ramps (`_authors`), top 15 by largest-window meaningful lines.
+- [x] **Org-wide unblocked: `OnboardingAnalysis` is now mergeable.** (The `core.NoopMerger` embed
+      **stays** — it supplies the unrelated _fork_ merger `Merge([]PipelineItem)`; what was missing
+      was `MergeResults`. This item's diagnosis conflated the two.)
+
+### T3.1's merge, because the reason it needed a schema change is reusable
+
+Onboarding snapshots are anchored at **each repository's own** first commit by that author, so they
+cannot be summed: for somebody who joined via repository A in 2020 and first touched repository B in
+2023, a naive sum counts B's 2023 commits inside their 30-day ramp-up. Wrong chart, not rounding —
+and unfixable from the stored result, which keeps only window aggregates. Same wall as
+`SubsystemConcentration` in Phase 5; same remedy as the `HotspotRiskResults` changelog entry: **store
+what the merge needs.**
+
+`AuthorOnboardingData` gained `first_commit_unix` and a bounded `trail` (the author's commits within
+`trail_days = max(WindowDays)` of their own first commit), `OnboardingResults` gained `trail_days`.
+The merge takes the earliest anchor, concatenates and truncates the trails, then recomputes snapshots
+_and_ cohorts — cohorts cannot be merged even in principle, since re-anchoring moves an author
+between months.
+
+Facts from this work that stay load-bearing:
+
+- **Prefix exactness.** `orgJoin ≤ firstB` always, so `[orgJoin, orgJoin+N] ∩ commits(B)` is always a
+  _prefix_ of B's retained trail. `new_files` counts files not touched in an earlier retained commit,
+  so prefix sums reproduce distinct-file counts exactly. The bound is **tight** when the repository
+  is where the author joined and `N == max(WindowDays)`, so every retention and window predicate must
+  be **inclusive** — an exclusive `<` drops the boundary commit precisely where it matters most.
+- **Order independence.** A later merge only moves the anchor earlier, which shrinks the window's
+  upper end, so re-truncating at every pairwise step is exact and keeps trail growth bounded across a
+  231-repository reduce. `hercules combine` reduces pairwise and feeds `MergeResults` its own output
+  back, so the merged result must re-emit a valid trail — merged snapshots alone are not enough.
+- **`JoinCohort` is carried, never recomputed.** `docs/SCHEMAS.md` pins it to the month in the
+  commit's _own_ UTC offset; recomputing from unix seconds turns `2025-01-01T00:30+02:00` into
+  `2024-12`. Carrying the winning side's string preserves it and costs no schema field.
+- **`meaningful_lines` is its own trail field.** `Consume` uses two different predicates —
+  meaningful _lines_ accumulate per change entry over the threshold, meaningful _commits_ on the
+  commit total — so a single boolean cannot reconstruct the former.
+- **No path qualification, and that is a positive result.** The trail's file counters are computed
+  per repository and then summed, so repo A's `README.md` and repo B's `README.md` correctly count as
+  two files — T1.1's semantics for free, with no `QualifyPaths`.
+- **The snapshot path is shared.** `buildOnboardingSnapshots` was replaced by `snapshotsFromTrail`,
+  used by both `Finalize` and `MergeResults`, so "merge of one equals `Finalize`" holds by
+  construction. Pinned by `leaves/onboarding_test.go` being **151 insertions, 0 deletions** — the
+  pre-existing suite is byte-identical, which is what proves the refactor lossless.
+- Schema classified **compatible**, no `SchemaVersion` bump; the trail is **PB-only** (combine never
+  reads YAML). Older files are rejected _by the merge_ rather than silently naive-summed, per input,
+  so one stale file excludes itself instead of failing the run.
+
+Verified on `ewws-auth` + `ewws-files`: `combine` prints no `Skipped:` block, and of 5 authors present
+in both, the 2 whose join months differ come out **not** equal to the sum of their per-repository
+90-day snapshots, with the merged cohort equal to the earlier of the two. That asymmetry is the whole
+point — the 3 same-cohort authors do sum, exactly as they should.
 
 ### T3.2 — `knowledge-diffusion` has the silo data and sorts it alphabetically (M8) 🟡
 

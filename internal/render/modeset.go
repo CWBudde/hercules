@@ -35,6 +35,7 @@ var validModeNames = map[string]struct{}{
 	ModeKnowledgeDiffusion:     {},
 	ModeLanguages:              {},
 	ModeOldVsNew:               {},
+	ModeOnboarding:             {},
 	ModeOverwritesMatrix:       {},
 	ModeOwnership:              {},
 	ModeOwnershipConcentration: {},

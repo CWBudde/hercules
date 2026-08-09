@@ -40,6 +40,7 @@ var modeHandlers = map[string]modeHandler{
 	ModeHotspotRisk:            hotspotRisk,
 	ModeSentiment:              sentiment,
 	ModeRefactoringProxy:       refactoringProxy,
+	ModeOnboarding:             onboarding,
 }
 
 // executeModes renders modeNames with the default options, reporting failures
@@ -284,6 +285,12 @@ func standardMissingAnalysisWarnings() map[string]string {
 			"Re-run hercules with --knowledge-diffusion.",
 		ModeHotspotRisk:      "Hotspot risk scores were not collected. Re-run hercules with --hotspot-risk.",
 		ModeRefactoringProxy: "Refactoring proxy data was not collected. Re-run hercules with --refactoring-proxy.",
+		// Unlike the warnings above, this one names the input format too: the
+		// onboarding reader is protobuf-only, so a YAML input carrying a
+		// perfectly good Onboarding section still lands here, and "were not
+		// collected" on its own would misdiagnose that.
+		ModeOnboarding: "Onboarding stats were not collected, or the input is not protobuf. " +
+			"Re-run hercules with --onboarding --pb and read it with labours -f pb.",
 	}
 }
 
@@ -407,6 +414,10 @@ func sentiment(reader readers.Reader, output string, _, _ *time.Time, opts modes
 
 func refactoringProxy(reader readers.Reader, output string, _, _ *time.Time, _ modes.Options) error {
 	return modes.RefactoringProxy(reader, output)
+}
+
+func onboarding(reader readers.Reader, output string, _, _ *time.Time, _ modes.Options) error {
+	return modes.Onboarding(reader, output)
 }
 
 func runAllModes(reader readers.Reader, output string, startTime, endTime *time.Time) error {

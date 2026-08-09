@@ -229,6 +229,13 @@ var modeOutputConventions = map[string]outputConvention{
 		Description: "writes exactly the requested refactoring proxy chart file",
 		Assets:      []string{assetRequestedOutput},
 	},
+	ModeOnboarding: {
+		Kind:        outputCompanions,
+		Description: "writes cohort ramp-up, time-to-first-meaningful-commit, and per-author sibling charts",
+		Assets: []string{
+			"<base>_rampup<ext>", "<base>_time-to-first<ext>", "<base>_authors<ext>",
+		},
+	},
 }
 
 func planModeOutput(baseOutput, mode string, modeCount int) string {

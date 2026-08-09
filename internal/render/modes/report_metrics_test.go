@@ -108,6 +108,18 @@ func testReportMetricModesCreateOutputFiles(t *testing.T, ext string) {
 			},
 			extras: []string{"devs-efforts_productivity_ranking." + ext},
 		},
+		{
+			name: "onboarding",
+			run: func(output string) error {
+				return Onboarding(reader, output)
+			},
+			extras: []string{
+				"onboarding_rampup." + ext,
+				"onboarding_time-to-first." + ext,
+				"onboarding_authors." + ext,
+			},
+			noPrimary: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -509,4 +521,8 @@ func (r *reportMetricsReader) GetHotspotRisk() (*readers.HotspotRiskData, error)
 			{Path: "doc.md", RiskScore: 0.2, Size: 10, Churn: 1},
 		},
 	}, nil
+}
+
+func (r *reportMetricsReader) GetOnboarding() (*readers.OnboardingData, error) {
+	return onboardingTestData(), nil
 }

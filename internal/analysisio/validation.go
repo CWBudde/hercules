@@ -692,6 +692,8 @@ func ValidateAnalysisResults(results *pb.AnalysisResults, limits Limits) error {
 			message = &pb.HotspotRiskResults{}
 		case "RefactoringProxy":
 			message = &pb.RefactoringProxyResults{}
+		case "Onboarding":
+			message = &pb.OnboardingResults{}
 		case "CommitsStat":
 			message = &pb.CommitsAnalysisResults{}
 		case "FileHistoryAnalysis":

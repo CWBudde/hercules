@@ -615,8 +615,9 @@ YAML fields:
 
 - `onboarding.window_days`
 - `onboarding.meaningful_threshold`
+- `onboarding.trail_days`
 - `onboarding.authors.<author_id>`:
-  - `first_commit_tick`, `join_cohort`, `snapshots.<days>`
+  - `first_commit_tick`, `first_commit_unix`, `join_cohort`, `snapshots.<days>`
 - `onboarding.cohorts.<yyyy-mm>`:
   - `author_count`, `average_snapshots.<days>`
 - `onboarding.people` list
@@ -633,6 +634,46 @@ than selecting the next commit after the boundary. Tick size is retained as
 output metadata but does not round or widen onboarding windows, including when
 a tick is longer than the requested window.
 
+`first_commit_tick` is tick-indexed against that repository's own tick 0 and is
+derived from committer time, so it is not comparable across repositories.
+`first_commit_unix` is the author timestamp of the same commit in Unix seconds
+and is the axis `hercules combine` merges on.
+
+#### The trail (PB only)
+
+`AuthorOnboardingData.trail` is a bounded, ascending list of
+`OnboardingTrailEntry` records — the author's own commits within
+`trail_days = max(window_days)` of their first commit, which is exactly the set
+the snapshots are computed from. `trail_days` is stored explicitly rather than
+inferred, so a reader can verify a trail answers the windows asked of it; `0`
+means the file predates the trail.
+
+Each entry carries `unix_time` (author timestamp), `commits`, `new_files`,
+`lines`, `meaningful_commits`, `new_meaningful_files`, and `meaningful_lines`.
+`new_files` counts only files the author had not touched in an earlier retained
+commit, which makes prefix sums reproduce the distinct-file counts exactly.
+`meaningful_lines` is its own field rather than `lines` gated on a flag, because
+the two meaningful predicates differ: `meaningful_lines` accumulates per change
+entry whose own line count reaches the threshold, while `meaningful_commits`
+tests the commit total. Retention and window bounds are inclusive throughout,
+matching the snapshot contract above.
+
+The trail exists so that snapshots can be **re-anchored** when merging: an author
+who joined the organisation via repository A in 2020 and first touched repository
+B in 2023 must not have B's 2023 commits counted inside their 30-day ramp-up.
+`hercules combine` takes the minimum `first_commit_unix`, concatenates and sorts
+the trails, truncates inclusively at `first_commit_unix + trail_days * 24h`, and
+recomputes both snapshots and cohorts from the result. `join_cohort` is carried
+from the winning side's string rather than recomputed from `first_commit_unix`,
+which would lose the commit's UTC offset and can shift the month (ties on equal
+`first_commit_unix` take the lexicographically smaller cohort). Paths are never
+part of the trail, so no repository qualification is needed: the same path in two
+repositories is correctly counted as two files.
+
+**The trail is PB-only** — it is carried for `hercules combine`, which reads only
+protocol-buffer input, and is deliberately not part of the readable YAML report,
+where hundreds of entries per author would drown the human-facing content.
+
 Example:
 
 ```yaml
@@ -640,9 +681,11 @@ Onboarding:
   onboarding:
     window_days: [7, 30, 90]
     meaningful_threshold: 10
+    trail_days: 90
     authors:
       0:
         first_commit_tick: 12
+        first_commit_unix: 1735689600
         join_cohort: "2025-01"
         snapshots:
           7:

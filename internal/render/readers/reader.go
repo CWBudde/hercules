@@ -236,6 +236,63 @@ type RefactoringProxyData struct {
 	EndDate      int64
 }
 
+// OnboardingSnapshotData is one author's cumulative activity over the window
+// [first commit, first commit + DaysSinceJoin], inclusive at both ends.
+type OnboardingSnapshotData struct {
+	DaysSinceJoin     int
+	TotalCommits      int
+	TotalFiles        int
+	TotalLines        int
+	MeaningfulCommits int
+	MeaningfulFiles   int
+	MeaningfulLines   int
+}
+
+// OnboardingAverageSnapshotData is a cohort's per-author mean of
+// OnboardingSnapshotData at one window.
+type OnboardingAverageSnapshotData struct {
+	DaysSinceJoin        int
+	AvgTotalCommits      float64
+	AvgTotalFiles        float64
+	AvgTotalLines        float64
+	AvgMeaningfulCommits float64
+	AvgMeaningfulFiles   float64
+	AvgMeaningfulLines   float64
+}
+
+// OnboardingAuthorData is one author's ramp-up, keyed by window in days.
+// FirstCommitTick is tick-indexed against the analysed repository's own tick 0,
+// so it is not comparable across repositories.
+type OnboardingAuthorData struct {
+	FirstCommitTick int
+	// DaysToFirstMeaningfulCommit is the whole-day offset from the author's
+	// first commit to their first commit at or above the meaningfulness
+	// threshold. It is -1 when the retained activity trail holds no meaningful
+	// commit at all, which also covers results stored before the trail existed;
+	// charts render that as an explicit "no meaningful commit yet" bucket rather
+	// than as day zero.
+	DaysToFirstMeaningfulCommit int
+	JoinCohort                  string
+	Snapshots                   map[int]OnboardingSnapshotData
+}
+
+// OnboardingCohortData aggregates the authors whose first commit falls in the
+// same calendar month.
+type OnboardingCohortData struct {
+	Cohort           string
+	AuthorCount      int
+	AverageSnapshots map[int]OnboardingAverageSnapshotData
+}
+
+type OnboardingData struct {
+	Authors             map[int]OnboardingAuthorData
+	Cohorts             map[string]OnboardingCohortData
+	WindowDays          []int
+	MeaningfulThreshold int
+	People              []string
+	TickSize            int64
+}
+
 type RepositoryBurndownReader interface {
 	GetRepositoriesBurndown() ([]RepositoryBurndown, error)
 	GetRepositoryNames() ([]string, error)
@@ -267,6 +324,10 @@ type HotspotRiskReader interface {
 
 type RefactoringProxyReader interface {
 	GetRefactoringProxy() (*RefactoringProxyData, error)
+}
+
+type OnboardingReader interface {
+	GetOnboarding() (*OnboardingData, error)
 }
 
 type CommitsReader interface {

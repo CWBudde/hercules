@@ -691,6 +691,7 @@ The analysis produces two visualizations:
 
 ```
 hercules --onboarding [--onboarding-windows=7,30,90] [--onboarding-meaningful-threshold=10]
+labours -m onboarding
 ```
 
 The onboarding analysis tracks how quickly new contributors ramp up after their first commit.
@@ -699,12 +700,19 @@ configurable day windows. Cohorts use the local calendar month encoded in each a
 commit timestamp. Windows are exact elapsed 24-hour periods from that timestamp, include commits
 on the boundary, and never include a later commit merely because it shares a tick.
 
-An `onboarding` render mode is not yet implemented in the Go renderer, so consume the
-YAML/protobuf output directly. The retired Python renderer produced two visualizations
-from this data (shown below):
+Render it with `labours -m onboarding` (or let `hercules report` do it — the mode is in the
+default set). It writes three sibling charts:
 
-1. **Cohort heatmap** - average meaningful lines by join cohort and days since first commit.
-2. **Author ramps** - per-author meaningful-line trajectories for the top contributors in the view.
+1. **Cohort heatmap** (`_rampup`) - average meaningful lines by join cohort and days since first
+   commit, reproducing the retired Python renderer's chart (shown below).
+2. **Time to first meaningful commit** (`_time-to-first`) - distribution across authors, with an
+   explicit bucket for those who made none inside the largest window.
+3. **Author ramps** (`_authors`) - per-author meaningful-line trajectories for the top contributors
+   in the view.
+
+The analysis is mergeable, so these charts also work on the output of `hercules combine`. Because
+window snapshots are anchored at each author's _first_ commit, the merge re-anchors every author
+onto their earliest commit across all repositories rather than summing per-repository snapshots.
 
 <p align="center">
   <img src="docs/onboarding_cohorts.png" alt="Onboarding cohort heatmap" width="800">

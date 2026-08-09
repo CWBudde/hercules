@@ -353,6 +353,31 @@ message OnboardingAverageSnapshot {
     double avg_meaningful_lines = 7;
 }
 
+// One retained commit of an author's onboarding trail.
+//
+// The trail is the merge substrate: window snapshots are anchored at each repository's own
+// first commit by that author, so they cannot be summed across repositories. The trail keeps
+// the bounded set of commits the snapshots were computed from, which lets `hercules combine`
+// re-anchor on the organisation-wide first commit and recompute the windows exactly.
+message OnboardingTrailEntry {
+    // Author timestamp of the commit, in Unix seconds. Onboarding measures author time
+    // everywhere except first_commit_tick, which is committer-time derived.
+    int64 unix_time = 1;
+
+    int32 commits = 2;
+    // Files touched by this commit which the author had not touched in any earlier retained
+    // commit. Prefix sums of this counter reproduce the distinct-file count exactly.
+    int32 new_files = 3;
+    int32 lines = 4;
+
+    int32 meaningful_commits = 5;
+    int32 new_meaningful_files = 6;
+    // Lines of the change entries which are individually at or above the meaningful
+    // threshold. This is a different predicate from meaningful_commits, which tests the
+    // commit total, so the two cannot share a field.
+    int32 meaningful_lines = 7;
+}
+
 // Per-author onboarding progression data
 message AuthorOnboardingData {
     int32 first_commit_tick = 1;
@@ -360,6 +385,14 @@ message AuthorOnboardingData {
 
     // Snapshots at configured window milestones (keyed by days)
     map<int32, OnboardingSnapshot> snapshots = 3;
+
+    // Author timestamp of the author's first commit, in Unix seconds. The merge anchor;
+    // unlike first_commit_tick it is comparable across repositories.
+    int64 first_commit_unix = 4;
+
+    // Commits retained for the merge, ascending by unix_time. PB-only: the trail is not
+    // written to the YAML report.
+    repeated OnboardingTrailEntry trail = 5;
 }
 
 // Aggregated cohort statistics
@@ -388,6 +421,11 @@ message OnboardingResults {
 
     // Tick size as nanosecond count
     int64 tick_size = 6;
+
+    // Retention horizon of the per-author trails, in days from each author's own first
+    // commit. Stored explicitly rather than inferred from window_days so that the merge can
+    // verify a trail answers the windows asked of it; 0 means the file predates the trail.
+    int32 trail_days = 7;
 }
 
 // Per-file risk assessment

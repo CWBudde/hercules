@@ -42,6 +42,17 @@
           "type": "map",
           "key": "int32",
           "value": "OnboardingSnapshot"
+        },
+        {
+          "number": 4,
+          "name": "first_commit_unix",
+          "type": "int64"
+        },
+        {
+          "number": 5,
+          "name": "trail",
+          "type": "OnboardingTrailEntry",
+          "label": "repeated"
         }
       ]
     },
@@ -966,6 +977,11 @@
           "number": 6,
           "name": "tick_size",
           "type": "int64"
+        },
+        {
+          "number": 7,
+          "name": "trail_days",
+          "type": "int32"
         }
       ]
     },
@@ -1000,6 +1016,46 @@
         {
           "number": 6,
           "name": "meaningful_files",
+          "type": "int32"
+        },
+        {
+          "number": 7,
+          "name": "meaningful_lines",
+          "type": "int32"
+        }
+      ]
+    },
+    {
+      "name": "OnboardingTrailEntry",
+      "fields": [
+        {
+          "number": 1,
+          "name": "unix_time",
+          "type": "int64"
+        },
+        {
+          "number": 2,
+          "name": "commits",
+          "type": "int32"
+        },
+        {
+          "number": 3,
+          "name": "new_files",
+          "type": "int32"
+        },
+        {
+          "number": 4,
+          "name": "lines",
+          "type": "int32"
+        },
+        {
+          "number": 5,
+          "name": "meaningful_commits",
+          "type": "int32"
+        },
+        {
+          "number": 6,
+          "name": "new_meaningful_files",
           "type": "int32"
         },
         {

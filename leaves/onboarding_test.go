@@ -2,6 +2,8 @@ package leaves
 
 import (
 	"bytes"
+	"math/rand"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -521,4 +523,153 @@ func TestOnboardingAnalysis_Serialization(t *testing.T) {
 			assert.Len(t, deserializedAuthor.Snapshots, len(originalAuthor.Snapshots))
 		}
 	})
+}
+
+// randomOnboardingActivities builds one author's timeline out of random commits, sorted the way
+// finalizeAuthor sorts it. Timestamps are whole seconds, which is all git records.
+func randomOnboardingActivities(
+	random *rand.Rand, threshold int,
+) []*onboardingActivity {
+	files := []string{"a.go", "b.go", "c.go", "d.go", "e.go"}
+	start := time.Date(2025, time.February, 3, 9, 15, 0, 0, time.UTC)
+	activities := make([]*onboardingActivity, 0, 12)
+
+	for count := random.Intn(12) + 1; count > 0; count-- {
+		activity := &onboardingActivity{
+			Timestamp:       start.Add(time.Duration(random.Intn(120*24*3600)) * time.Second),
+			Files:           map[string]bool{},
+			MeaningfulFiles: map[string]bool{},
+			Commits:         1,
+		}
+
+		commitLines := 0
+
+		for touched := random.Intn(3) + 1; touched > 0; touched-- {
+			file := files[random.Intn(len(files))]
+			lines := random.Intn(30)
+			activity.Files[file] = true
+			activity.LinesAdded += lines
+			commitLines += lines
+
+			if lines >= threshold {
+				activity.MeaningfulFiles[file] = true
+				activity.MeaningfulLinesAdded += lines
+			}
+		}
+
+		if commitLines >= threshold {
+			activity.MeaningfulCommits++
+		}
+
+		activities = append(activities, activity)
+	}
+
+	sort.SliceStable(activities, func(i, j int) bool {
+		return activities[i].Timestamp.Before(activities[j].Timestamp)
+	})
+
+	return activities
+}
+
+// bruteForceOnboardingSnapshots recomputes the snapshots straight from the raw activities, with
+// real set unions rather than prefix sums. It is the independent reference the trail must match.
+func bruteForceOnboardingSnapshots(
+	activities []*onboardingActivity, windowDays []int,
+) map[int]*OnboardingSnapshot {
+	snapshots := map[int]*OnboardingSnapshot{}
+	anchor := activities[0].Timestamp
+
+	for _, days := range windowDays {
+		boundary := anchor.Add(time.Duration(days) * 24 * time.Hour)
+		snapshot := &OnboardingSnapshot{DaysSinceJoin: days}
+		files := map[string]bool{}
+		meaningfulFiles := map[string]bool{}
+
+		for _, activity := range activities {
+			if activity.Timestamp.After(boundary) {
+				break
+			}
+
+			snapshot.TotalCommits += activity.Commits
+			snapshot.TotalLines += activity.LinesAdded +
+				activity.LinesRemoved + activity.LinesChanged
+			snapshot.MeaningfulCommits += activity.MeaningfulCommits
+			snapshot.MeaningfulLines += activity.MeaningfulLinesAdded +
+				activity.MeaningfulLinesRemoved + activity.MeaningfulLinesChanged
+
+			for file := range activity.Files {
+				files[file] = true
+			}
+
+			for file := range activity.MeaningfulFiles {
+				meaningfulFiles[file] = true
+			}
+		}
+
+		snapshot.TotalFiles = len(files)
+		snapshot.MeaningfulFiles = len(meaningfulFiles)
+		snapshots[days] = snapshot
+	}
+
+	return snapshots
+}
+
+// TestOnboardingTrailReproducesSnapshotsExactly is the machine check of the prefix-exactness
+// argument the merge rests on: prefix-summing the trail's new-file counters must reproduce the
+// distinct-file counts a full set union computes, for every window and every history.
+func TestOnboardingTrailReproducesSnapshotsExactly(t *testing.T) {
+	const threshold = 10
+
+	windowDays := []int{1, 7, 30, 90}
+	random := rand.New(rand.NewSource(20260809)) //nolint:gosec // deterministic test fixture
+
+	for iteration := range 200 {
+		activities := randomOnboardingActivities(random, threshold)
+		anchorUnix := activities[0].Timestamp.Unix()
+		trail := buildOnboardingTrail(activities, onboardingTrailDays(windowDays))
+
+		assert.Equal(
+			t,
+			bruteForceOnboardingSnapshots(activities, windowDays),
+			snapshotsFromTrail(trail, anchorUnix, windowDays),
+			"iteration %d: the trail lost information the snapshots need", iteration,
+		)
+	}
+}
+
+// TestOnboardingTrailSurvivesProtobufRoundTrip guards the merge substrate on the wire: combine
+// only ever reads protocol buffers, so a dropped trail field would silently disable re-anchoring.
+func TestOnboardingTrailSurvivesProtobufRoundTrip(t *testing.T) {
+	oa := &OnboardingAnalysis{
+		WindowDays:          []int{7, 30},
+		MeaningfulThreshold: 10,
+		tickSize:            24 * time.Hour,
+		reversedPeopleDict:  []string{testAuthorZero},
+	}
+	require.NoError(t, oa.Initialize(test.Repository))
+
+	for _, deps := range []map[string]any{
+		makeTestDeps(0, 0, map[string]int{testFileOnePath: 20}),
+		makeTestDeps(0, 5, map[string]int{testFileOnePath: 3, testFileTwoPath: 15}),
+	} {
+		_, err := oa.Consume(deps)
+		require.NoError(t, err)
+	}
+
+	result, ok := oa.Finalize().(OnboardingResult)
+	require.True(t, ok)
+	require.Len(t, result.Authors[0].Trail, 2)
+
+	var buffer bytes.Buffer
+	require.NoError(t, oa.Serialize(result, true, &buffer))
+
+	restored, err := oa.Deserialize(buffer.Bytes())
+	require.NoError(t, err)
+
+	deserialized, ok := restored.(OnboardingResult)
+	require.True(t, ok)
+
+	assert.Equal(t, result.TrailDays, deserialized.TrailDays)
+	assert.Equal(t, result.Authors[0].FirstCommitUnix, deserialized.Authors[0].FirstCommitUnix)
+	assert.Equal(t, result.Authors[0].Trail, deserialized.Authors[0].Trail)
 }

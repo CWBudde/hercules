@@ -16,6 +16,22 @@ Each entry should include:
 
 ## Unreleased
 
+- PB and YAML: `OnboardingResults` gains `trail_days` (field 7, int32);
+  `AuthorOnboardingData` gains `first_commit_unix` (field 4, int64) and `trail` (field 5,
+  repeated `OnboardingTrailEntry`, a new message). The YAML output gains the matching
+  `trail_days` and per-author `first_commit_unix` keys but **not** the trail, which is
+  PB-only. Onboarding snapshots are anchored at each repository's own first commit by that
+  author, so they cannot be summed across repositories; the bounded trail keeps the commits
+  the snapshots were computed from, which lets `hercules combine` re-anchor on the
+  organisation-wide first commit and recompute the windows exactly. `Onboarding` is now
+  mergeable and no longer dropped by combine. Combining runs whose tick size, meaningful
+  threshold, or window days disagree is an error, as is combining a result written before
+  the trail existed.
+  Compatibility: compatible — the new fields are optional and all-zero decodes as "unset",
+  which is what every file written so far carries. No `SchemaVersion` bump.
+  User action: recompute stored Onboarding results before combining them; older files are
+  rejected by the merge (per input, so one stale file excludes itself rather than failing
+  the run) and older readers ignore the new fields.
 - PB and YAML: `HotspotRiskResults` gains `top_n` (field 3, int32) and `weight_size`,
   `weight_churn`, `weight_coupling`, `weight_ownership` (fields 4-7, float); the YAML output
   gains the matching `top_n` and `weights` keys. They record the configuration the run was

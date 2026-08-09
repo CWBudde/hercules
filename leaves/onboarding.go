@@ -54,13 +54,45 @@ type OnboardingSnapshot struct {
 	MeaningfulLines   int
 }
 
+// OnboardingTrailEntry is one retained commit of an author's onboarding trail.
+//
+// The trail is the substrate the merge needs: snapshots are anchored at each repository's own
+// first commit by that author and therefore cannot be summed across repositories. Keeping the
+// bounded set of commits the snapshots were computed from lets MergeResults re-anchor on the
+// organisation-wide first commit and recompute the windows exactly.
+type OnboardingTrailEntry struct {
+	// UnixTime is the author timestamp of the commit, in seconds.
+	UnixTime int64
+
+	Commits int
+	// NewFiles counts the files this commit touched which the author had not touched in any
+	// earlier retained commit, so that prefix sums reproduce the distinct-file count.
+	NewFiles int
+	Lines    int
+
+	MeaningfulCommits int
+	// NewMeaningfulFiles is the NewFiles equivalent over the meaningful file set.
+	NewMeaningfulFiles int
+	// MeaningfulLines sums the change entries which individually reach the threshold, which is
+	// a different predicate from MeaningfulCommits and cannot share a field with Lines.
+	MeaningfulLines int
+}
+
 // AuthorOnboardingData contains onboarding progression for one author.
 type AuthorOnboardingData struct {
 	FirstCommitTick int
+	// FirstCommitUnix is the author timestamp of the first commit, in seconds. Unlike
+	// FirstCommitTick — which is committer-time derived and indexed against this repository's
+	// own tick 0 — it is comparable across repositories, so it is the merge anchor.
+	FirstCommitUnix int64
 	JoinCohort      string // "YYYY-MM"
 
 	// Indexed by window days (e.g., 7, 30, 90)
 	Snapshots map[int]*OnboardingSnapshot
+
+	// Trail holds the commits within TrailDays of FirstCommitUnix, ascending. It is carried in
+	// the protocol-buffer output only, never in the human-readable YAML report.
+	Trail []OnboardingTrailEntry
 }
 
 // CohortStats contains aggregated statistics for a cohort.
@@ -78,12 +110,18 @@ type OnboardingResult struct {
 	Cohorts             map[string]*CohortStats
 	WindowDays          []int
 	MeaningfulThreshold int
-	reversedPeopleDict  []string
-	tickSize            time.Duration
+	// TrailDays is the retention horizon of the per-author trails, in days from each author's
+	// own first commit. Zero means the result predates the trail and cannot be merged.
+	TrailDays          int
+	reversedPeopleDict []string
+	tickSize           time.Duration
 }
 
 // OnboardingAnalysis measures how quickly new contributors ramp up.
 type OnboardingAnalysis struct {
+	// NoopMerger supplies Merge([]PipelineItem), the fork merger used when the pipeline branches.
+	// That is a different interface from MergeResults (see onboarding_merge.go), which combines
+	// two finished results, and both are needed.
 	core.NoopMerger
 	core.OneShotMergeProcessor
 
@@ -111,6 +149,13 @@ var (
 	errOnboardingTickSize       = errors.New("onboarding tick size must be positive")
 	errOnboardingWindow         = errors.New("onboarding window must be positive")
 	errOnboardingWindowTooLarge = errors.New("onboarding window is too large")
+
+	errOnboardingMismatchingTickSizes  = errors.New("onboarding tick sizes do not match")
+	errOnboardingMismatchingThresholds = errors.New("onboarding meaningful thresholds do not match")
+	errOnboardingMismatchingWindows    = errors.New("onboarding window days do not match")
+	errOnboardingMissingTrail          = errors.New(
+		"onboarding result carries no merge trail; recompute it before combining",
+	)
 )
 
 // Name of this PipelineItem. Uniquely identifies the type, used for mapping keys, etc.
@@ -318,47 +363,9 @@ func (oa *OnboardingAnalysis) Consume(deps map[string]any) (map[string]any, erro
 	return noDependencies(), nil
 }
 
-// cumulativeMetrics represents running totals across an author's timeline.
-
-type cumulativeMetrics struct {
-	commits           int
-	files             map[string]bool
-	lines             int
-	meaningfulCommits int
-	meaningfulFiles   map[string]bool
-	meaningfulLines   int
-}
-
-// newCumulativeMetrics creates an empty cumulative metrics tracker.
-func newCumulativeMetrics() *cumulativeMetrics {
-	return &cumulativeMetrics{
-		files:           map[string]bool{},
-		meaningfulFiles: map[string]bool{},
-	}
-}
-
-// accumulate adds tick metrics to cumulative totals.
-func (cm *cumulativeMetrics) accumulate(activity *onboardingActivity) {
-	cm.commits += activity.Commits
-	for file := range activity.Files {
-		cm.files[file] = true
-	}
-
-	cm.lines += activity.LinesAdded + activity.LinesRemoved + activity.LinesChanged
-
-	cm.meaningfulCommits += activity.MeaningfulCommits
-	for file := range activity.MeaningfulFiles {
-		cm.meaningfulFiles[file] = true
-	}
-
-	cm.meaningfulLines += activity.MeaningfulLinesAdded +
-		activity.MeaningfulLinesRemoved + activity.MeaningfulLinesChanged
-}
-
 // Finalize returns the result of the analysis.
 func (oa *OnboardingAnalysis) Finalize() any {
 	authors := make(map[int]*AuthorOnboardingData, len(oa.authorTimeline))
-	cohortGroups := map[string][]int{} // cohort -> author IDs
 
 	for authorID, activities := range oa.authorTimeline {
 		author := oa.finalizeAuthor(activities)
@@ -367,18 +374,9 @@ func (oa *OnboardingAnalysis) Finalize() any {
 		}
 
 		authors[authorID] = author
-		cohortGroups[author.JoinCohort] = append(cohortGroups[author.JoinCohort], authorID)
 	}
 
-	return oa.finalizeCohorts(authors, cohortGroups)
-}
-
-func onboardingSnapshot(days int, metrics *cumulativeMetrics) *OnboardingSnapshot {
-	return &OnboardingSnapshot{
-		DaysSinceJoin: days, TotalCommits: metrics.commits, TotalFiles: len(metrics.files),
-		TotalLines: metrics.lines, MeaningfulCommits: metrics.meaningfulCommits,
-		MeaningfulFiles: len(metrics.meaningfulFiles), MeaningfulLines: metrics.meaningfulLines,
-	}
+	return oa.finalizeCohorts(authors)
 }
 
 func averageOnboardingSnapshots(
@@ -426,6 +424,9 @@ func (oa *OnboardingAnalysis) Fork(n int) []core.PipelineItem {
 	return core.ForkSamePipelineItem(oa, n)
 }
 
+// writeOnboardingAuthors emits the per-author YAML block. The merge trail is deliberately left
+// out: it is a substrate of potentially hundreds of entries per author, `hercules combine` only
+// ever reads protocol buffers, and it would drown the readable report for no gain.
 func writeOnboardingAuthors(writer io.Writer, authors map[int]*AuthorOnboardingData) {
 	authorIDs := make([]int, 0, len(authors))
 	for id := range authors {
@@ -440,6 +441,7 @@ func writeOnboardingAuthors(writer io.Writer, authors map[int]*AuthorOnboardingD
 		author := authors[authorID]
 		_, _ = fmt.Fprintf(writer, "      %d:\n", int(protobufAuthorID(authorID)))
 		_, _ = fmt.Fprintf(writer, "        first_commit_tick: %d\n", author.FirstCommitTick)
+		_, _ = fmt.Fprintf(writer, "        first_commit_unix: %d\n", author.FirstCommitUnix)
 		_, _ = fmt.Fprintf(writer, "        join_cohort: %s\n", yaml.SafeString(author.JoinCohort))
 		_, _ = fmt.Fprintln(writer, "        snapshots:")
 		writeOnboardingSnapshots(writer, author.Snapshots)
@@ -496,28 +498,9 @@ func onboardingAuthorsToProto(
 ) (map[int32]*pb.AuthorOnboardingData, error) {
 	result := make(map[int32]*pb.AuthorOnboardingData, len(authors))
 	for authorID, author := range authors {
-		firstCommitTick, err := intToProtoInt32(author.FirstCommitTick, "onboarding first commit tick")
+		pbAuthor, err := onboardingAuthorToProto(author)
 		if err != nil {
 			return nil, err
-		}
-
-		pbAuthor := &pb.AuthorOnboardingData{
-			FirstCommitTick: firstCommitTick,
-			JoinCohort:      author.JoinCohort,
-			Snapshots:       make(map[int32]*pb.OnboardingSnapshot, len(author.Snapshots)),
-		}
-		for days, snap := range author.Snapshots {
-			pbDays, err := intToProtoInt32(days, "onboarding snapshot day")
-			if err != nil {
-				return nil, err
-			}
-
-			pbSnapshot, err := onboardingSnapshotToProto(snap)
-			if err != nil {
-				return nil, err
-			}
-
-			pbAuthor.Snapshots[pbDays] = pbSnapshot
 		}
 
 		pbAuthorID, err := intToProtoInt32(authorID, "onboarding author")
@@ -533,6 +516,102 @@ func onboardingAuthorsToProto(
 	}
 
 	return result, nil
+}
+
+func onboardingAuthorToProto(author *AuthorOnboardingData) (*pb.AuthorOnboardingData, error) {
+	firstCommitTick, err := intToProtoInt32(author.FirstCommitTick, "onboarding first commit tick")
+	if err != nil {
+		return nil, err
+	}
+
+	trail, err := onboardingTrailToProto(author.Trail)
+	if err != nil {
+		return nil, err
+	}
+
+	pbAuthor := &pb.AuthorOnboardingData{
+		FirstCommitTick: firstCommitTick,
+		FirstCommitUnix: author.FirstCommitUnix,
+		JoinCohort:      author.JoinCohort,
+		Snapshots:       make(map[int32]*pb.OnboardingSnapshot, len(author.Snapshots)),
+		Trail:           trail,
+	}
+
+	for days, snap := range author.Snapshots {
+		pbDays, err := intToProtoInt32(days, "onboarding snapshot day")
+		if err != nil {
+			return nil, err
+		}
+
+		pbSnapshot, err := onboardingSnapshotToProto(snap)
+		if err != nil {
+			return nil, err
+		}
+
+		pbAuthor.Snapshots[pbDays] = pbSnapshot
+	}
+
+	return pbAuthor, nil
+}
+
+func onboardingTrailToProto(trail []OnboardingTrailEntry) ([]*pb.OnboardingTrailEntry, error) {
+	if len(trail) == 0 {
+		return nil, nil
+	}
+
+	result := make([]*pb.OnboardingTrailEntry, len(trail))
+
+	for index, entry := range trail {
+		values := []int{
+			entry.Commits, entry.NewFiles, entry.Lines,
+			entry.MeaningfulCommits, entry.NewMeaningfulFiles, entry.MeaningfulLines,
+		}
+
+		converted := make([]int32, len(values))
+
+		for position, value := range values {
+			pbValue, err := intToProtoInt32(value, "onboarding trail value")
+			if err != nil {
+				return nil, err
+			}
+
+			converted[position] = pbValue
+		}
+
+		result[index] = &pb.OnboardingTrailEntry{
+			UnixTime: entry.UnixTime, Commits: converted[0], NewFiles: converted[1],
+			Lines: converted[2], MeaningfulCommits: converted[3],
+			NewMeaningfulFiles: converted[4], MeaningfulLines: converted[5],
+		}
+	}
+
+	return result, nil
+}
+
+func onboardingTrailFromProto(trail []*pb.OnboardingTrailEntry) []OnboardingTrailEntry {
+	if len(trail) == 0 {
+		return nil
+	}
+
+	result := make([]OnboardingTrailEntry, 0, len(trail))
+
+	for _, entry := range trail {
+		if entry == nil {
+			continue
+		}
+
+		result = append(result, OnboardingTrailEntry{
+			UnixTime:           entry.GetUnixTime(),
+			Commits:            int(entry.GetCommits()),
+			NewFiles:           int(entry.GetNewFiles()),
+			Lines:              int(entry.GetLines()),
+			MeaningfulCommits:  int(entry.GetMeaningfulCommits()),
+			NewMeaningfulFiles: int(entry.GetNewMeaningfulFiles()),
+			MeaningfulLines:    int(entry.GetMeaningfulLines()),
+		})
+	}
+
+	return result
 }
 
 func onboardingSnapshotToProto(snapshot *OnboardingSnapshot) (*pb.OnboardingSnapshot, error) {
@@ -636,6 +715,7 @@ func (oa *OnboardingAnalysis) Deserialize(pbmessage []byte) (any, error) {
 		Cohorts:             make(map[string]*CohortStats, len(message.GetCohorts())),
 		WindowDays:          make([]int, len(message.GetWindowDays())),
 		MeaningfulThreshold: int(message.GetMeaningfulThreshold()),
+		TrailDays:           int(message.GetTrailDays()),
 		reversedPeopleDict:  message.GetDevIndex(),
 		tickSize:            time.Duration(message.GetTickSize()),
 	}
@@ -673,42 +753,139 @@ func (oa *OnboardingAnalysis) finalizeAuthor(
 	sort.SliceStable(activities, func(i, j int) bool {
 		return activities[i].Timestamp.Before(activities[j].Timestamp)
 	})
+
 	firstActivity := activities[0]
+	anchorUnix := firstActivity.Timestamp.Unix()
+	trail := buildOnboardingTrail(activities, onboardingTrailDays(oa.WindowDays))
 
 	return &AuthorOnboardingData{
 		FirstCommitTick: firstActivity.Tick,
+		FirstCommitUnix: anchorUnix,
 		JoinCohort:      firstActivity.Timestamp.Format("2006-01"),
-		Snapshots:       oa.buildOnboardingSnapshots(activities),
+		Snapshots:       snapshotsFromTrail(trail, anchorUnix, oa.WindowDays),
+		Trail:           trail,
 	}
 }
 
-func (oa *OnboardingAnalysis) buildOnboardingSnapshots(
-	activities []*onboardingActivity,
+// onboardingTrailDays is the retention horizon of a trail: the widest window asked for, which is
+// the exact set of commits any of the snapshots can see.
+func onboardingTrailDays(windowDays []int) int {
+	trailDays := 0
+	for _, days := range windowDays {
+		if days > trailDays {
+			trailDays = days
+		}
+	}
+
+	return trailDays
+}
+
+// buildOnboardingTrail retains, in one pass, the author's commits within trailDays of their own
+// first commit. The activities must already be sorted ascending by timestamp.
+//
+// The file counters are recorded as "not seen in any earlier retained commit" rather than as raw
+// per-commit counts, which is what makes a prefix of the trail carry the exact distinct-file count
+// of that prefix.
+func buildOnboardingTrail(activities []*onboardingActivity, trailDays int) []OnboardingTrailEntry {
+	if len(activities) == 0 || trailDays <= 0 {
+		return nil
+	}
+
+	horizon, err := onboardingWindowBoundary(activities[0].Timestamp.Unix(), trailDays)
+	if err != nil {
+		return nil
+	}
+
+	seen := map[string]bool{}
+	seenMeaningful := map[string]bool{}
+	trail := make([]OnboardingTrailEntry, 0, len(activities))
+
+	for _, activity := range activities {
+		timestamp := activity.Timestamp.Unix()
+		if timestamp > horizon {
+			break
+		}
+
+		entry := OnboardingTrailEntry{
+			UnixTime: timestamp,
+			Commits:  activity.Commits,
+			Lines: activity.LinesAdded + activity.LinesRemoved +
+				activity.LinesChanged,
+			MeaningfulCommits: activity.MeaningfulCommits,
+			MeaningfulLines: activity.MeaningfulLinesAdded +
+				activity.MeaningfulLinesRemoved + activity.MeaningfulLinesChanged,
+		}
+
+		entry.NewFiles = countUnseenOnboardingFiles(seen, activity.Files)
+		entry.NewMeaningfulFiles = countUnseenOnboardingFiles(
+			seenMeaningful, activity.MeaningfulFiles,
+		)
+
+		trail = append(trail, entry)
+	}
+
+	return trail
+}
+
+// countUnseenOnboardingFiles counts the files of one commit which the running set has not seen
+// yet, and records them in it.
+func countUnseenOnboardingFiles(seen, files map[string]bool) int {
+	unseen := 0
+
+	for file := range files {
+		if !seen[file] {
+			seen[file] = true
+			unseen++
+		}
+	}
+
+	return unseen
+}
+
+// snapshotsFromTrail reduces a trail into one snapshot per window by prefix-summing it. The trail
+// must be ascending by UnixTime and anchored at or after anchorUnix; both Finalize and MergeResults
+// go through here, so a merge of a single result equals Finalize by construction.
+func snapshotsFromTrail(
+	trail []OnboardingTrailEntry, anchorUnix int64, windowDays []int,
 ) map[int]*OnboardingSnapshot {
 	snapshots := map[int]*OnboardingSnapshot{}
-	firstTimestamp := activities[0].Timestamp
 
-	for _, windowDays := range oa.WindowDays {
-		windowDuration, err := onboardingWindowDuration(windowDays)
+	for _, days := range windowDays {
+		boundary, err := onboardingWindowBoundary(anchorUnix, days)
 		if err != nil {
 			continue
 		}
 
-		boundary := firstTimestamp.Add(windowDuration)
-		cumulative := newCumulativeMetrics()
+		snapshot := &OnboardingSnapshot{DaysSinceJoin: days}
 
-		for _, activity := range activities {
-			if activity.Timestamp.After(boundary) {
+		for _, entry := range trail {
+			if entry.UnixTime > boundary {
 				break
 			}
 
-			cumulative.accumulate(activity)
+			snapshot.TotalCommits += entry.Commits
+			snapshot.TotalFiles += entry.NewFiles
+			snapshot.TotalLines += entry.Lines
+			snapshot.MeaningfulCommits += entry.MeaningfulCommits
+			snapshot.MeaningfulFiles += entry.NewMeaningfulFiles
+			snapshot.MeaningfulLines += entry.MeaningfulLines
 		}
 
-		snapshots[windowDays] = onboardingSnapshot(windowDays, cumulative)
+		snapshots[days] = snapshot
 	}
 
 	return snapshots
+}
+
+// onboardingWindowBoundary is the inclusive last second of a window of the given width. Commits at
+// exactly the boundary belong to the window, matching the contract in docs/SCHEMAS.md.
+func onboardingWindowBoundary(anchorUnix int64, days int) (int64, error) {
+	duration, err := onboardingWindowDuration(days)
+	if err != nil {
+		return 0, err
+	}
+
+	return anchorUnix + int64(duration/time.Second), nil
 }
 
 func onboardingWindowDuration(days int) (time.Duration, error) {
@@ -733,8 +910,31 @@ func onboardingWindowDuration(days int) (time.Duration, error) {
 // finalizeCohorts computes cohort aggregates and returns final result.
 func (oa *OnboardingAnalysis) finalizeCohorts(
 	authors map[int]*AuthorOnboardingData,
-	cohortGroups map[string][]int,
 ) OnboardingResult {
+	return OnboardingResult{
+		Authors:             authors,
+		Cohorts:             recomputeOnboardingCohorts(authors),
+		WindowDays:          oa.WindowDays,
+		MeaningfulThreshold: oa.MeaningfulThreshold,
+		TrailDays:           onboardingTrailDays(oa.WindowDays),
+		reversedPeopleDict:  oa.reversedPeopleDict,
+		tickSize:            oa.tickSize,
+	}
+}
+
+// recomputeOnboardingCohorts groups authors by their join cohort and averages their snapshots.
+//
+// Cohorts are always derived from the authors, never merged from two sets of cohorts: re-anchoring
+// an author on the organisation-wide first commit can move them into a different month, so both
+// the membership and the averages change.
+func recomputeOnboardingCohorts(
+	authors map[int]*AuthorOnboardingData,
+) map[string]*CohortStats {
+	cohortGroups := map[string][]int{}
+	for authorID, author := range authors {
+		cohortGroups[author.JoinCohort] = append(cohortGroups[author.JoinCohort], authorID)
+	}
+
 	cohorts := make(map[string]*CohortStats, len(cohortGroups))
 
 	for cohort, authorIDs := range cohortGroups {
@@ -742,22 +942,14 @@ func (oa *OnboardingAnalysis) finalizeCohorts(
 			continue
 		}
 
-		authorCount := len(authorIDs)
 		cohorts[cohort] = &CohortStats{
 			Cohort:           cohort,
-			AuthorCount:      authorCount,
+			AuthorCount:      len(authorIDs),
 			AverageSnapshots: averageOnboardingSnapshots(authors, authorIDs),
 		}
 	}
 
-	return OnboardingResult{
-		Authors:             authors,
-		Cohorts:             cohorts,
-		WindowDays:          oa.WindowDays,
-		MeaningfulThreshold: oa.MeaningfulThreshold,
-		reversedPeopleDict:  oa.reversedPeopleDict,
-		tickSize:            oa.tickSize,
-	}
+	return cohorts
 }
 
 // serializeText outputs YAML format.
@@ -772,6 +964,7 @@ func (oa *OnboardingAnalysis) serializeText(result *OnboardingResult, writer io.
 
 	_, _ = fmt.Fprintf(writer, "    window_days: [%s]\n", strings.Join(windowStrs, ", "))
 	_, _ = fmt.Fprintf(writer, "    meaningful_threshold: %d\n", result.MeaningfulThreshold)
+	_, _ = fmt.Fprintf(writer, "    trail_days: %d\n", result.TrailDays)
 	writeOnboardingAuthors(writer, result.Authors)
 	writeOnboardingCohorts(writer, result.Cohorts)
 
@@ -791,11 +984,17 @@ func (oa *OnboardingAnalysis) serializeBinary(result *OnboardingResult, writer i
 		return err
 	}
 
+	trailDays, err := intToProtoInt32(result.TrailDays, "onboarding trail days")
+	if err != nil {
+		return err
+	}
+
 	message := pb.OnboardingResults{
 		DevIndex:            result.reversedPeopleDict,
 		TickSize:            int64(result.tickSize),
 		WindowDays:          make([]int32, len(result.WindowDays)),
 		MeaningfulThreshold: meaningfulThreshold,
+		TrailDays:           trailDays,
 	}
 
 	for index, days := range result.WindowDays {
@@ -837,8 +1036,10 @@ func onboardingAuthorsFromProto(
 	for authorID, pbAuthor := range authors {
 		author := &AuthorOnboardingData{
 			FirstCommitTick: int(pbAuthor.GetFirstCommitTick()),
+			FirstCommitUnix: pbAuthor.GetFirstCommitUnix(),
 			JoinCohort:      pbAuthor.GetJoinCohort(),
 			Snapshots:       make(map[int]*OnboardingSnapshot, len(pbAuthor.GetSnapshots())),
+			Trail:           onboardingTrailFromProto(pbAuthor.GetTrail()),
 		}
 
 		for days, pbSnap := range pbAuthor.GetSnapshots() {

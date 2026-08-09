@@ -553,8 +553,10 @@ the last analysed commit's tree, and is zero when the path no longer exists ther
 count restricted to the window `recent_editors` uses. `ticks_since_last_edit` is the path's age —
 the last analysis tick minus the last tick any author edited it — and is stored relative rather
 than as an absolute tick because the merge does not rebase tick axes, so an absolute tick would be
-meaningless across repositories. The factors are stored raw and unweighted; the renderer
-normalises and scores them against the whole file set it was given.
+meaningless across repositories; merging instead rebases each input's ages onto the later of the
+two end times, so an age stays comparable across repositories whose histories stop at different
+times. The factors are stored raw and unweighted; the renderer normalises and scores them against
+the whole file set it was given.
 
 YAML fields:
 

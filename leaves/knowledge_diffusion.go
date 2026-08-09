@@ -3,7 +3,6 @@ package leaves
 import (
 	"fmt"
 	"io"
-	"maps"
 	"sort"
 	"time"
 
@@ -205,7 +204,10 @@ func (kd *KnowledgeDiffusionAnalysis) Consume(deps map[string]any) (map[string]a
 		action, _ := change.Action()
 		switch action {
 		case merkletrie.Delete:
-			// Deleted files: keep history but don't add new editors.
+			// Deleted files: keep history and count the removed lines, which are churn on that
+			// path like any other change, but do not credit the deleting author as an editor.
+			kd.recordChurn(change.From, lineStats, tick)
+
 			continue
 		case merkletrie.Insert:
 			kd.recordEdit(change.To.Name, author, tick)
@@ -391,7 +393,7 @@ func (kd *KnowledgeDiffusionAnalysis) QualifyPaths(result any, repository string
 
 // MergeResults combines two KnowledgeDiffusionResult-s together.
 func (kd *KnowledgeDiffusionAnalysis) MergeResults(
-	firstResult, secondResult any, _, _ *core.CommonAnalysisResult,
+	firstResult, secondResult any, firstCommon, secondCommon *core.CommonAnalysisResult,
 ) any {
 	kdr1, err := requiredResult[KnowledgeDiffusionResult](firstResult)
 	if err != nil {
@@ -411,17 +413,29 @@ func (kd *KnowledgeDiffusionAnalysis) MergeResults(
 		tickSize:           kdr1.tickSize,
 	}
 
+	// TicksSinceLastEdit is an age measured against each input's own last commit, and two
+	// repositories rarely stop at the same time. Without rebasing, a file last touched at the end
+	// of a repository abandoned in 2020 carries age 0 exactly like one touched today, and the two
+	// receive the same recency factor in an organisation-wide ranking. Rebase both sides onto the
+	// later of the two end times first.
+	firstOffset := knowledgeDiffusionAgeOffset(firstCommon, secondCommon, merged.tickSize)
+	secondOffset := knowledgeDiffusionAgeOffset(secondCommon, firstCommon, merged.tickSize)
+
 	// Merge files: union of authors per file.
-	maps.Copy(merged.Files, kdr1.Files)
+	for name, fileData := range kdr1.Files {
+		merged.Files[name] = withRebasedAge(fileData, firstOffset)
+	}
 
 	for name, fileData := range kdr2.Files {
+		rebased := withRebasedAge(fileData, secondOffset)
+
 		if existing, ok := merged.Files[name]; ok {
 			// Merge author sets: keep the one with more editors.
-			if fileData.UniqueEditorsCount > existing.UniqueEditorsCount {
-				merged.Files[name] = fileData
+			if rebased.UniqueEditorsCount > existing.UniqueEditorsCount {
+				merged.Files[name] = rebased
 			}
 		} else {
-			merged.Files[name] = fileData
+			merged.Files[name] = rebased
 		}
 	}
 
@@ -431,6 +445,40 @@ func (kd *KnowledgeDiffusionAnalysis) MergeResults(
 	}
 
 	return merged
+}
+
+// knowledgeDiffusionAgeOffset reports how many ticks one side's file ages must grow to be
+// measured against the later of the two end times. A later merge can only move that end time
+// further out, so applying this at every pairwise step composes across a reduce over N
+// repositories.
+//
+// It returns 0 when either side's metadata or the tick size is missing, which leaves the ages as
+// they were - measured against their own run, exactly as an unmerged result carries them.
+func knowledgeDiffusionAgeOffset(own, other *core.CommonAnalysisResult, tickSize time.Duration) int {
+	if own == nil || other == nil || tickSize <= 0 {
+		return 0
+	}
+
+	behind := other.EndTime - own.EndTime
+	if behind <= 0 {
+		return 0
+	}
+
+	return int(time.Duration(behind) * time.Second / tickSize)
+}
+
+// withRebasedAge returns the file with its age moved onto the merged end time. The record is
+// copied rather than mutated: the merge's inputs belong to the caller, and combine reduces
+// pairwise over results it may still hold.
+func withRebasedAge(file *KnowledgeDiffusionFileResult, offset int) *KnowledgeDiffusionFileResult {
+	if offset == 0 || file == nil {
+		return file
+	}
+
+	rebased := *file
+	rebased.TicksSinceLastEdit += offset
+
+	return &rebased
 }
 
 // churnTotals sums a file's lifetime churn and the part of it inside the recent window. The

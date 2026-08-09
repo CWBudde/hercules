@@ -23,8 +23,11 @@ Each entry should include:
   one editor, so the tie-break was the ordering. Ranking them by risk needs size, churn and
   recency, none of which this analysis collected. The factors are stored **raw**; the renderer
   normalises and scores them over the whole file set, so unlike `HotspotRiskResults` there is
-  nothing per-run-normalised to rescale at merge time. `KnowledgeDiffusion` now also requires
-  `DependencyCommit` and `DependencyLineStats`, and reads the last commit's tree for line counts.
+  nothing per-run-normalised to rescale at merge time. `KnowledgeDiffusion` now requires
+  `DependencyLineStats`, consumes the pipeline-injected `DependencyCommit`, and reads the last
+  commit's tree for line counts. Merging rebases each input's `ticks_since_last_edit` onto the
+  later of the two end times, so an age is comparable across repositories which stopped at
+  different times.
   Compatibility: compatible — the new fields are optional and all-zero decodes as "unset", which is
   what every file written so far carries. No `SchemaVersion` bump.
   User action: none required. A stored result written before this change still renders; its silo

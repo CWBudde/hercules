@@ -507,6 +507,18 @@ Decisions worth keeping:
 - **`lines == 0` is meaningful, not missing.** A file absent from the HEAD tree scores zero and drops
   out — a deleted file is not a silo risk. On `ewws-auth` that is 65 of 407 paths, and the counts for
   the rest match `git show HEAD:<path> | wc -l` exactly.
+- **`ticks_since_last_edit` is stored relative but rebased at the merge.** Relative storage is what
+  lets it survive a merge that does not rebase tick _axes_ — but relative to _what_ still matters:
+  two repositories rarely stop at the same time, so without a rebase a file last touched at the end
+  of a repository abandoned in 2020 carries age 0 exactly like one touched today, and the two get the
+  same recency factor org-wide. `MergeResults` now takes the later of the two `CommonAnalysisResult`
+  end times and grows the earlier side's ages by the difference. A later merge can only move that end
+  time further out, so applying it at every pairwise step composes across a reduce over N
+  repositories. Missing metadata or tick size leaves the ages alone. **Found in review.**
+- **A deletion is churn.** The `Delete` case still refuses to credit the deleting author as an
+  editor, but it now records the removed lines against `change.From`. Without that, a path deleted
+  and later recreated came out with a positive size and an understated lifetime churn, contradicting
+  the schema's own definition of churn as all added, removed and changed lines. **Found in review.**
 - **The fallback is the old ordering, and the title says which one was used.** A `.pb` written before
   this change carries no lines and no churn, so every score ties at zero; `rankedKnowledgeFiles`
   detects that and keeps the historical editors-ascending-then-path order rather than an arbitrary

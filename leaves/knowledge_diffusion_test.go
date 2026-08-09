@@ -406,6 +406,30 @@ func TestKnowledgeDiffusionFinalizeChurnAndAge(t *testing.T) {
 	assert.Zero(t, result.Files["other.go"].TicksSinceLastEdit)
 }
 
+func TestKnowledgeDiffusionCountsDeletionChurn(t *testing.T) {
+	kd := KnowledgeDiffusionAnalysis{}
+	assert.NoError(t, kd.Initialize(test.Repository))
+	kd.tickSize = 24 * time.Hour
+
+	insert := makeInsertChange("gone.go")
+	consumeKnowledgeDiffusion(t, &kd, knowledgeDiffusionDepsWithStats(
+		object.Changes{insert}, 0, 0,
+		map[object.ChangeEntry]items.LineStats{insert.To: {Added: 40}},
+	))
+
+	// The deletion removes the file's lines. That is churn on the path, but the deleting author
+	// is not one of its editors.
+	del := makeDeleteChange("gone.go")
+	consumeKnowledgeDiffusion(t, &kd, knowledgeDiffusionDepsWithStats(
+		object.Changes{del}, 1, 5,
+		map[object.ChangeEntry]items.LineStats{del.From: {Removed: 40}},
+	))
+
+	result := kd.Finalize().(KnowledgeDiffusionResult)
+	assert.Equal(t, 1, result.Files["gone.go"].UniqueEditorsCount)
+	assert.Equal(t, 80, result.Files["gone.go"].Churn)
+}
+
 func TestKnowledgeDiffusionSkipsBinaryChurn(t *testing.T) {
 	kd := KnowledgeDiffusionAnalysis{}
 	assert.NoError(t, kd.Initialize(test.Repository))
@@ -666,6 +690,58 @@ func TestKnowledgeDiffusionMergeCarriesRankingFactors(t *testing.T) {
 	assert.Equal(t, 30, onlyA.Lines)
 	assert.Equal(t, 40, onlyA.Churn)
 	assert.Equal(t, 3, onlyA.TicksSinceLastEdit)
+}
+
+// Two repositories rarely stop at the same time. Without rebasing, a file last touched at the end
+// of an abandoned repository would carry the same age - and the same recency factor - as one
+// touched on the last day of an active one.
+func TestKnowledgeDiffusionMergeRebasesAgesOntoTheLaterEndTime(t *testing.T) {
+	kd := KnowledgeDiffusionAnalysis{}
+	const day = 24 * time.Hour
+
+	abandoned := KnowledgeDiffusionResult{
+		Files:        map[string]*KnowledgeDiffusionFileResult{"old.go": {UniqueEditorsCount: 1}},
+		Distribution: map[int]int{1: 1},
+		WindowMonths: 6,
+		tickSize:     day,
+	}
+	active := KnowledgeDiffusionResult{
+		Files:        map[string]*KnowledgeDiffusionFileResult{"new.go": {UniqueEditorsCount: 1}},
+		Distribution: map[int]int{1: 1},
+		WindowMonths: 6,
+		tickSize:     day,
+	}
+
+	// The abandoned side stopped 100 days before the active one.
+	abandonedCommon := &core.CommonAnalysisResult{EndTime: 1_000_000_000}
+	activeCommon := &core.CommonAnalysisResult{EndTime: 1_000_000_000 + int64(100*day/time.Second)}
+
+	merged := kd.MergeResults(abandoned, active, abandonedCommon, activeCommon).(KnowledgeDiffusionResult)
+
+	assert.Equal(t, 100, merged.Files["old.go"].TicksSinceLastEdit)
+	assert.Zero(t, merged.Files["new.go"].TicksSinceLastEdit)
+	// The inputs belong to the caller and must not be mutated.
+	assert.Zero(t, abandoned.Files["old.go"].TicksSinceLastEdit)
+}
+
+func TestKnowledgeDiffusionMergeLeavesAgesAloneWithoutMetadata(t *testing.T) {
+	kd := KnowledgeDiffusionAnalysis{}
+
+	first := KnowledgeDiffusionResult{
+		Files:        map[string]*KnowledgeDiffusionFileResult{"a.go": {UniqueEditorsCount: 1, TicksSinceLastEdit: 7}},
+		Distribution: map[int]int{1: 1},
+		tickSize:     24 * time.Hour,
+	}
+	second := KnowledgeDiffusionResult{
+		Files:        map[string]*KnowledgeDiffusionFileResult{"b.go": {UniqueEditorsCount: 1, TicksSinceLastEdit: 3}},
+		Distribution: map[int]int{1: 1},
+		tickSize:     24 * time.Hour,
+	}
+
+	merged := kd.MergeResults(first, second, nil, nil).(KnowledgeDiffusionResult)
+
+	assert.Equal(t, 7, merged.Files["a.go"].TicksSinceLastEdit)
+	assert.Equal(t, 3, merged.Files["b.go"].TicksSinceLastEdit)
 }
 
 func TestKnowledgeDiffusionWindowTicks(t *testing.T) {

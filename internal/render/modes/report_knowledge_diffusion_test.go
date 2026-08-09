@@ -154,6 +154,13 @@ func TestPlotKnowledgeSilosRendersRankedData(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestRankedKnowledgeFilesHandlesEmptyInput(t *testing.T) {
+	ranked, wasRanked := rankedKnowledgeFiles(map[string]readers.KnowledgeDiffusionFile{}, 6, knowledgeSiloTestTickSize)
+
+	assert.Empty(t, ranked)
+	assert.False(t, wasRanked)
+}
+
 func TestKnowledgeSiloWindowTicks(t *testing.T) {
 	// 6 months x 30.44 days, matching the leaf's own conversion.
 	assert.InDelta(t, 182, knowledgeSiloWindowTicks(6, knowledgeSiloTestTickSize), 2)

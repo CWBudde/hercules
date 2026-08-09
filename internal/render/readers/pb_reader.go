@@ -500,6 +500,10 @@ func (r *ProtobufReader) GetKnowledgeDiffusion() (*KnowledgeDiffusionData, error
 			RecentEditors:         int(fileData.GetRecentEditorsCount()),
 			UniqueEditorsOverTime: convertInt32Int32Map(fileData.GetUniqueEditorsOverTime()),
 			Authors:               convertInt32Slice(fileData.GetAuthors()),
+			Lines:                 int(fileData.GetLines()),
+			Churn:                 int(fileData.GetChurn()),
+			RecentChurn:           int(fileData.GetRecentChurn()),
+			TicksSinceLastEdit:    int(fileData.GetTicksSinceLastEdit()),
 		}
 	}
 

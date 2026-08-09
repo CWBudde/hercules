@@ -312,6 +312,15 @@ message KnowledgeDiffusionFileData {
     int32 recent_editors_count = 3;
     // author indices who touched this file
     repeated int32 authors = 4;
+    // line count at HEAD; zero when the file no longer exists there or is binary
+    int32 lines = 5;
+    // lifetime count of text lines added, removed and changed
+    int32 churn = 6;
+    // the same count restricted to the recent window
+    int32 recent_churn = 7;
+    // ticks between the file's last edit and the analysis' last tick; relative rather than an
+    // absolute tick because the merge does not rebase tick axes
+    int32 ticks_since_last_edit = 8;
 }
 
 message KnowledgeDiffusionResults {

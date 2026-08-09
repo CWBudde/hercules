@@ -547,11 +547,21 @@ authors whose last edit tick is at or after `last_analysis_tick - window_ticks`,
 `window_ticks = floor(window_months * 30.44 days / tick_size)`. The distribution is a histogram
 from lifetime editor count to number of retained paths.
 
+Each path also carries the raw factors a silo ranking needs. `lines` is the path's line count in
+the last analysed commit's tree, and is zero when the path no longer exists there or is binary.
+`churn` is the lifetime count of text lines added, removed and changed; `recent_churn` is the same
+count restricted to the window `recent_editors` uses. `ticks_since_last_edit` is the path's age —
+the last analysis tick minus the last tick any author edited it — and is stored relative rather
+than as an absolute tick because the merge does not rebase tick axes, so an absolute tick would be
+meaningless across repositories. The factors are stored raw and unweighted; the renderer
+normalises and scores them against the whole file set it was given.
+
 YAML fields:
 
 - `knowledge_diffusion.window_months`
 - `knowledge_diffusion.files.<path>`:
   - `unique_editors`, `recent_editors`, `editors_over_time`
+  - `lines`, `churn`, `recent_churn`, `ticks_since_last_edit`
 - `knowledge_diffusion.distribution.<editor_count> = files_count`
 - `knowledge_diffusion.people` list
 - `knowledge_diffusion.tick_size` seconds
@@ -568,6 +578,10 @@ KnowledgeDiffusion:
       "main.go":
         unique_editors: 3
         recent_editors: 2
+        lines: 412
+        churn: 1830
+        recent_churn: 220
+        ticks_since_last_edit: 4
         editors_over_time: { 0: 1, 10: 3 }
     distribution:
       1: 5

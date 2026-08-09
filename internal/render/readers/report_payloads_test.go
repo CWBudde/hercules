@@ -209,6 +209,10 @@ func TestProtobufReader_CurrentHerculesReportPayloads(t *testing.T) {
 					UniqueEditorsOverTime: map[int32]int32{1: 1, 2: 2},
 					RecentEditorsCount:    1,
 					Authors:               []int32{0, 1},
+					Lines:                 412,
+					Churn:                 1830,
+					RecentChurn:           220,
+					TicksSinceLastEdit:    4,
 				},
 			},
 			Distribution: map[int32]int32{2: 1},
@@ -366,6 +370,10 @@ func TestProtobufReader_CurrentHerculesReportPayloads(t *testing.T) {
 	diffusion, err := reader.GetKnowledgeDiffusion()
 	require.NoError(t, err)
 	require.Equal(t, 2, diffusion.Files["main.go"].UniqueEditors)
+	require.Equal(t, 412, diffusion.Files["main.go"].Lines)
+	require.Equal(t, 1830, diffusion.Files["main.go"].Churn)
+	require.Equal(t, 220, diffusion.Files["main.go"].RecentChurn)
+	require.Equal(t, 4, diffusion.Files["main.go"].TicksSinceLastEdit)
 	require.Equal(t, 1, diffusion.Distribution[2])
 
 	hotspot, err := reader.GetHotspotRisk()

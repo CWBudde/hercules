@@ -6,7 +6,7 @@
 | ----------------------------------------------------- | -------------------- | ------------------------------------------ |
 | [Phase 1 — combine correctness](#phase-1)             | T1.1–T1.3 (M7/M6/M2) | **all landed** (T1.3(b) with T3.1)         |
 | [Phase 2 — rendering defects](#phase-2)               | T2.1–T2.3 (M4/M5/M3) | **all landed**                             |
-| [Phase 3 — unexposed analyses](#phase-3)              | T3.1–T3.3 (M1/M8/M9) | T3.1 landed; T3.2 + T3.3 open              |
+| [Phase 3 — unexposed analyses](#phase-3)              | T3.1–T3.3 (M1/M8/M9) | T3.1 + T3.2 landed; T3.3 open              |
 | [Phase 4 — burndown residue (B1c/P5)](#phase-4)       | T4.1–T4.3            | **on hold — recommendation: do not start** |
 | [Phase 5 — recorded, deliberately not done](#phase-5) | —                    | reference only                             |
 
@@ -465,17 +465,75 @@ in both, the 2 whose join months differ come out **not** equal to the sum of the
 90-day snapshots, with the merged cohort equal to the earlier of the two. That asymmetry is the whole
 point — the 3 same-cohort authors do sum, exactly as they should.
 
-### T3.2 — `knowledge-diffusion` has the silo data and sorts it alphabetically (M8) 🟡
+### T3.2 — `knowledge-diffusion` has the silo data and sorts it alphabetically (M8) 🟢 landed 2026-08-09
 
 `knowledge_diffusion_silos` looks like the actionable companion to the headline number (78 % of all
 files have exactly one editor) and is useless: at org-wide scale it lists `.claude/`, `.cursor/` and
 `.devcontainer/` config files in alphabetical order, every one with one editor.
 
-The inputs for a real ranking are already collected — lines per file and editor count, with the tick
-axis supplying recency and churn. Small, self-contained, high value.
+- [x] Rank by `lines × single-editor × recency × churn` instead of alphabetically, so the chart
+      answers _which_ silos are dangerous. **Done 2026-08-09.**
 
-- [ ] Rank by `lines × single-editor × recency × churn` instead of alphabetically, so the chart
-      answers _which_ silos are dangerous.
+**Correction to this item's own diagnosis: the inputs were _not_ already collected.** It claimed
+"lines per file and editor count, with the tick axis supplying recency and churn". Only the editor
+count existed. `KnowledgeDiffusionFileResult` carried `UniqueEditorsCount`, `UniqueEditorsOverTime`,
+`RecentEditorsCount` and `Authors` — no lines, no churn — and the per-file last-edit tick was
+computed in `Finalize` and then discarded. `UniqueEditorsOverTime` is keyed by _first_-edit ticks, so
+it is not a recency signal either. So this was not the small self-contained renderer change it was
+filed as: it needed a schema addition, on the `HotspotRiskResults`/`OnboardingResults` precedent.
+
+`KnowledgeDiffusionFileData` gained `lines`, `churn`, `recent_churn` and `ticks_since_last_edit`
+(`internal/pb/pb.proto` fields 5–8, compatible additions, **no `SchemaVersion` bump**). The leaf now
+requires `items.DependencyLineStats` and reads the last commit's tree for line counts, the way
+`HotspotRiskAnalysis` already does.
+
+Decisions worth keeping:
+
+- **The score lives in the renderer, not the leaf.** The leaf stores raw factors only.
+  `HotspotRisk` scores in `Finalize` against its own run's maxima, and that is exactly what made
+  merged scores incomparable and forced T1.2(c)'s rescaling pass. Normalising once, in
+  `rankedKnowledgeFiles`, over whatever file set the renderer was handed — one repository or a merge
+  of 231 — sidesteps that defect by construction. Verified on a two-repository combine: the smaller
+  repository's best file lands at rank 54 on the shared scale, not at rank 1 of its own.
+- **The chart ranks the _active_ silo** — big, churning, one editor, edited recently. That is the
+  bus-factor reading and it is what `RecentEditorsCount` already measures. The abandoned-silo reading
+  (sole owner gone, nobody has looked since) is a different chart; `recent_churn` is stored so it
+  stays cheap to add.
+- **The churn factor is lifetime churn, not `recent_churn`, and recency decays rather than cutting
+  off.** Both are about not producing a degenerate all-zero ranking: every file in the map has been
+  edited at least once, so lifetime churn is always positive, whereas a repository whose whole
+  history predates the window would score every file zero on windowed churn and fall straight back to
+  the alphabetical ordering this item exists to remove.
+- **`lines == 0` is meaningful, not missing.** A file absent from the HEAD tree scores zero and drops
+  out — a deleted file is not a silo risk. On `ewws-auth` that is 65 of 407 paths, and the counts for
+  the rest match `git show HEAD:<path> | wc -l` exactly.
+- **The fallback is the old ordering, and the title says which one was used.** A `.pb` written before
+  this change carries no lines and no churn, so every score ties at zero; `rankedKnowledgeFiles`
+  detects that and keeps the historical editors-ascending-then-path order rather than an arbitrary
+  one — the same discipline `newTickAxis` follows in T2.3. The title reads
+  `Knowledge Silos (ranked by risk)` or `(fewest editors first)` accordingly, because nobody looking
+  at the PNG later can otherwise tell the two apart.
+- **`core.DependencyCommit` must not be declared in `Requires()`.** It is injected by the pipeline
+  (`internal/core/pipeline_execution.go:198`) and nothing provides it, so declaring it fails
+  `TestRegisteredDefaultItemsConformToLifecycle` with `Unsatisfied dependency: [commit]`. Every other
+  leaf that reads it documents it in the `Consume` comment instead; this one now does too, and
+  `TestKnowledgeDiffusionMeta` asserts the absence.
+
+**Verified** on `ewws-auth` (`--diff-timeout=300000`, untruncated, 407 files). Before: the top of the
+chart was `.github/CODEOWNERS` (1 line), four workflow YAMLs that no longer exist at HEAD, `.netrc.enc`
+and `.yamlfmt`. After: `server/keycloak/mirror_test.go`, `server/bddtest/steps.go`,
+`server/openid/introspect.go` — 500–800-line single-owner source files touched within days. The
+pre-change `.pb` still renders, unchanged, under the fallback title.
+
+**One thing this did not fix, and it is real:** `MergeResults`' comment says "union of authors per
+file" and the code does not union — for a path in both sides it keeps the record with more editors
+and discards the other's `Authors`, `UniqueEditorsOverTime` and `RecentEditorsCount` wholesale. The
+new fields travel with the winning record, so the merge stays coherent, and after T1.1 qualification
+cross-repository collisions are rare. Pre-existing; worth its own item.
+
+**Cost:** `--knowledge-diffusion` now also pays for `LineStats` and a HEAD tree blob walk.
+`--hotspot-risk` already performs the identical walk separately; sharing it would need a new plumbing
+item and was not attempted.
 
 ### T3.3 — analyses with no mode at all (M9) 🟢
 

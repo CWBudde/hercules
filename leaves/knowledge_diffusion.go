@@ -31,6 +31,10 @@ type KnowledgeDiffusionAnalysis struct {
 
 	// fileAuthors: file -> author -> authorFileInfo (first/last tick).
 	fileAuthors map[string]map[int]*authorFileInfo
+	// fileChurn: file -> tick -> text lines added+removed+changed at that tick.
+	fileChurn map[string]map[int]int
+	// lastCommit is the most recently consumed commit; Finalize reads its tree for line counts.
+	lastCommit *object.Commit
 	// reversedPeopleDict references IdentityDetector.ReversedPeopleDict.
 	reversedPeopleDict []string
 	// tickSize references TicksSinceStart.TickSize.
@@ -62,6 +66,18 @@ type KnowledgeDiffusionFileResult struct {
 	RecentEditorsCount int
 	// Authors is the sorted list of author indices who touched this file.
 	Authors []int
+	// Lines is the file's line count at HEAD. It is zero when the file no longer exists there
+	// or is binary, which correctly ranks it out of a silo chart.
+	Lines int
+	// Churn is the lifetime count of text lines added, removed and changed.
+	Churn int
+	// RecentChurn is the same count restricted to the WindowMonths window.
+	RecentChurn int
+	// TicksSinceLastEdit is the file's age in ticks: the analysis' last tick minus the last tick
+	// any author edited this file. It is stored relative rather than as an absolute tick because
+	// MergeResults does not rebase tick axes, so an absolute tick is meaningless across
+	// repositories.
+	TicksSinceLastEdit int
 }
 
 // KnowledgeDiffusionResult is returned by KnowledgeDiffusionAnalysis.Finalize().
@@ -93,6 +109,7 @@ func (kd *KnowledgeDiffusionAnalysis) Requires() []string {
 	return []string{
 		identity.DependencyAuthor,
 		items.DependencyTreeChanges,
+		items.DependencyLineStats,
 		items.DependencyTick,
 	}
 }
@@ -150,6 +167,8 @@ func (kd *KnowledgeDiffusionAnalysis) Description() string {
 func (kd *KnowledgeDiffusionAnalysis) Initialize(repository *git.Repository) error {
 	kd.l = core.NewLogger()
 	kd.fileAuthors = map[string]map[int]*authorFileInfo{}
+	kd.fileChurn = map[string]map[int]int{}
+	kd.lastCommit = nil
 
 	kd.lastTick = -1
 	if kd.WindowMonths <= 0 {
@@ -160,7 +179,10 @@ func (kd *KnowledgeDiffusionAnalysis) Initialize(repository *git.Repository) err
 }
 
 // Consume runs this PipelineItem on the next commit data.
-// For each changed file, it records the author as an editor.
+// For each changed file, it records the author as an editor and the lines the change touched.
+//
+// Additionally, DependencyCommit is always present there and represents the analysed
+// *object.Commit. The last one seen is the tree Finalize counts lines against.
 func (kd *KnowledgeDiffusionAnalysis) Consume(deps map[string]any) (map[string]any, error) {
 	// A merge commit is replayed on every parent branch; its tree changes would otherwise be
 	// folded into the diffusion matrix once per parent.
@@ -169,7 +191,9 @@ func (kd *KnowledgeDiffusionAnalysis) Consume(deps map[string]any) (map[string]a
 	}
 
 	reader := factReader{facts: deps}
+	commit := readFact[*object.Commit](&reader, core.DependencyCommit)
 	changes := readFact[object.Changes](&reader, items.DependencyTreeChanges)
+	lineStats := readFact[map[object.ChangeEntry]items.LineStats](&reader, items.DependencyLineStats)
 	author := readFact[int](&reader, identity.DependencyAuthor)
 	tick := readFact[int](&reader, items.DependencyTick)
 
@@ -185,6 +209,7 @@ func (kd *KnowledgeDiffusionAnalysis) Consume(deps map[string]any) (map[string]a
 			continue
 		case merkletrie.Insert:
 			kd.recordEdit(change.To.Name, author, tick)
+			kd.recordChurn(change.To, lineStats, tick)
 		case merkletrie.Modify:
 			// Handle renames: carry history from old name to new name.
 			if change.From.Name != change.To.Name {
@@ -192,12 +217,16 @@ func (kd *KnowledgeDiffusionAnalysis) Consume(deps map[string]any) (map[string]a
 					kd.fileAuthors[change.To.Name] = old
 					delete(kd.fileAuthors, change.From.Name)
 				}
+
+				kd.transferChurn(change.From.Name, change.To.Name)
 			}
 
 			kd.recordEdit(change.To.Name, author, tick)
+			kd.recordChurn(change.To, lineStats, tick)
 		}
 	}
 
+	kd.lastCommit = commit
 	kd.lastTick = tick
 
 	return noDependencies(), nil
@@ -210,6 +239,7 @@ func (kd *KnowledgeDiffusionAnalysis) Finalize() any {
 	distribution := map[int]int{}
 	windowTicks := kd.windowTicks()
 	cutoffTick := kd.lastTick - windowTicks
+	headLines := kd.headLineCounts()
 
 	for fileName, authors := range kd.fileAuthors {
 		// Build unique editors over time from first-edit ticks.
@@ -228,8 +258,9 @@ func (kd *KnowledgeDiffusionAnalysis) Finalize() any {
 			editorsOverTime[tick] = count
 		}
 
-		// Count recent editors.
+		// Count recent editors and find the file's own last edit.
 		recentCount := 0
+		lastEditTick := 0
 
 		authorIndices := make([]int, 0, len(authors))
 		for authorID, info := range authors {
@@ -238,15 +269,23 @@ func (kd *KnowledgeDiffusionAnalysis) Finalize() any {
 			if info.LastTick >= cutoffTick {
 				recentCount++
 			}
+
+			lastEditTick = max(lastEditTick, info.LastTick)
 		}
 
 		sort.Ints(authorIndices)
+
+		churn, recentChurn := kd.churnTotals(fileName, cutoffTick)
 
 		result := &KnowledgeDiffusionFileResult{
 			UniqueEditorsCount:    len(authors),
 			UniqueEditorsOverTime: editorsOverTime,
 			RecentEditorsCount:    recentCount,
 			Authors:               authorIndices,
+			Lines:                 headLines[fileName],
+			Churn:                 churn,
+			RecentChurn:           recentChurn,
+			TicksSinceLastEdit:    max(0, kd.lastTick-lastEditTick),
 		}
 		files[fileName] = result
 		distribution[result.UniqueEditorsCount]++
@@ -310,6 +349,10 @@ func (kd *KnowledgeDiffusionAnalysis) Deserialize(pbmessage []byte) (any, error)
 			UniqueEditorsOverTime: editorsOverTime,
 			RecentEditorsCount:    int(pbFile.GetRecentEditorsCount()),
 			Authors:               authors,
+			Lines:                 int(pbFile.GetLines()),
+			Churn:                 int(pbFile.GetChurn()),
+			RecentChurn:           int(pbFile.GetRecentChurn()),
+			TicksSinceLastEdit:    int(pbFile.GetTicksSinceLastEdit()),
 		}
 	}
 
@@ -390,6 +433,22 @@ func (kd *KnowledgeDiffusionAnalysis) MergeResults(
 	return merged
 }
 
+// churnTotals sums a file's lifetime churn and the part of it inside the recent window. The
+// cutoff is the same one RecentEditorsCount uses, so the analysis has a single window concept.
+func (kd *KnowledgeDiffusionAnalysis) churnTotals(fileName string, cutoffTick int) (int, int) {
+	var lifetime, recent int
+
+	for tick, churn := range kd.fileChurn[fileName] {
+		lifetime += churn
+
+		if tick >= cutoffTick {
+			recent += churn
+		}
+	}
+
+	return lifetime, recent
+}
+
 // windowTicks converts the WindowMonths to ticks based on tickSize.
 func (kd *KnowledgeDiffusionAnalysis) windowTicks() int {
 	if kd.tickSize <= 0 {
@@ -421,6 +480,10 @@ func (kd *KnowledgeDiffusionAnalysis) serializeText(result *KnowledgeDiffusionRe
 		_, _ = fmt.Fprintf(writer, "      %s:\n", yaml.SafeString(name))
 		_, _ = fmt.Fprintf(writer, "        unique_editors: %d\n", fileData.UniqueEditorsCount)
 		_, _ = fmt.Fprintf(writer, "        recent_editors: %d\n", fileData.RecentEditorsCount)
+		_, _ = fmt.Fprintf(writer, "        lines: %d\n", fileData.Lines)
+		_, _ = fmt.Fprintf(writer, "        churn: %d\n", fileData.Churn)
+		_, _ = fmt.Fprintf(writer, "        recent_churn: %d\n", fileData.RecentChurn)
+		_, _ = fmt.Fprintf(writer, "        ticks_since_last_edit: %d\n", fileData.TicksSinceLastEdit)
 
 		// Timeline: sort ticks.
 		ticks := make([]int, 0, len(fileData.UniqueEditorsOverTime))
@@ -544,9 +607,33 @@ func knowledgeDiffusionFileToProto(fileData *KnowledgeDiffusionFileResult) (*pb.
 		return nil, err
 	}
 
+	lines, err := intToProtoInt32(fileData.Lines, "knowledge-diffusion lines")
+	if err != nil {
+		return nil, err
+	}
+
+	churn, err := intToProtoInt32(fileData.Churn, "knowledge-diffusion churn")
+	if err != nil {
+		return nil, err
+	}
+
+	recentChurn, err := intToProtoInt32(fileData.RecentChurn, "knowledge-diffusion recent churn")
+	if err != nil {
+		return nil, err
+	}
+
+	ticksSinceLastEdit, err := intToProtoInt32(
+		fileData.TicksSinceLastEdit, "knowledge-diffusion ticks since last edit",
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	return &pb.KnowledgeDiffusionFileData{
 		UniqueEditorsCount: uniqueEditors, RecentEditorsCount: recentEditors,
 		UniqueEditorsOverTime: editorsOverTime, Authors: authors,
+		Lines: lines, Churn: churn, RecentChurn: recentChurn,
+		TicksSinceLastEdit: ticksSinceLastEdit,
 	}, nil
 }
 
@@ -597,6 +684,97 @@ func (kd *KnowledgeDiffusionAnalysis) recordEdit(fileName string, author, tick i
 	} else {
 		info.LastTick = tick
 	}
+}
+
+// recordChurn accumulates the text lines a change touched. Binary changes are absent from
+// lineStats by construction (LinesStatsCalculator omits them) and are skipped, the same way
+// HotspotRiskAnalysis skips them.
+func (kd *KnowledgeDiffusionAnalysis) recordChurn(
+	entry object.ChangeEntry, lineStats map[object.ChangeEntry]items.LineStats, tick int,
+) {
+	stats, isText := lineStats[entry]
+	if !isText {
+		return
+	}
+
+	churn := kd.fileChurn[entry.Name]
+	if churn == nil {
+		churn = map[int]int{}
+		kd.fileChurn[entry.Name] = churn
+	}
+
+	churn[tick] += stats.Added + stats.Removed + stats.Changed
+}
+
+// transferChurn carries a renamed file's churn history to its new name, mirroring what the
+// caller does for fileAuthors.
+func (kd *KnowledgeDiffusionAnalysis) transferChurn(sourceName, targetName string) {
+	source, exists := kd.fileChurn[sourceName]
+	if !exists {
+		return
+	}
+
+	delete(kd.fileChurn, sourceName)
+
+	target := kd.fileChurn[targetName]
+	if target == nil {
+		kd.fileChurn[targetName] = source
+
+		return
+	}
+
+	for tick, churn := range source {
+		target[tick] += churn
+	}
+}
+
+// headLineCounts counts the lines of every file in the last consumed commit's tree. A file
+// which no longer exists there, or whose blob cannot be read, is simply absent and keeps a
+// zero line count.
+func (kd *KnowledgeDiffusionAnalysis) headLineCounts() map[string]int {
+	counts := map[string]int{}
+
+	if kd.lastCommit == nil {
+		return counts
+	}
+
+	tree, err := kd.lastCommit.Tree()
+	if err != nil {
+		kd.l.Errorf("Failed to get tree: %v", err)
+
+		return counts
+	}
+
+	err = tree.Files().ForEach(func(file *object.File) error {
+		if lines, ok := countBlobLines(file); ok {
+			counts[file.Name] = lines
+		}
+
+		return nil
+	})
+	if err != nil {
+		kd.l.Errorf("Failed to iterate files: %v", err)
+	}
+
+	return counts
+}
+
+// countBlobLines reports a blob's line count, or false when it has none: an unreadable blob, or
+// a binary one, which CountLines rejects.
+func countBlobLines(file *object.File) (int, bool) {
+	blob := items.CachedBlob{Blob: file.Blob}
+
+	err := blob.Cache()
+	if err != nil {
+		return 0, false
+	}
+
+	lines, err := blob.CountLines()
+	if err != nil {
+		return 0, false
+	}
+
+	return lines, true
 }
 
 var _ = core.RegisterPipelineItem(&KnowledgeDiffusionAnalysis{})

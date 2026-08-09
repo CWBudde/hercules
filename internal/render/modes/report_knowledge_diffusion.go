@@ -361,14 +361,18 @@ func knowledgeDistribution(data *readers.KnowledgeDiffusionData) ([]string, []in
 	return labels, values
 }
 
+// knowledgeSiloChartedFiles caps the silo chart. The figure grows in height with the bar count
+// (newKnowledgeSiloPlot), so this is a legibility limit, not a data limit.
+const knowledgeSiloChartedFiles = 30
+
 func plotKnowledgeSilos(repoName string, data *readers.KnowledgeDiffusionData, output string) error {
-	files := sortedKnowledgeFiles(data.Files)
+	files, ranked := rankedKnowledgeFiles(data.Files, data.WindowMonths, data.TickSize)
 	if len(files) == 0 {
 		return nil
 	}
 
-	if len(files) > 30 {
-		files = files[:30]
+	if len(files) > knowledgeSiloChartedFiles {
+		files = files[:knowledgeSiloChartedFiles]
 	}
 
 	labels := make([]string, len(files))
@@ -381,7 +385,9 @@ func plotKnowledgeSilos(repoName string, data *readers.KnowledgeDiffusionData, o
 		recentValues[i] = float64(file.RecentEditors)
 	}
 
-	return plotKnowledgeSilosMatplotlib(repoName, labels, uniqueValues, recentValues, data.WindowMonths, output)
+	return plotKnowledgeSilosMatplotlib(
+		repoName, labels, uniqueValues, recentValues, data.WindowMonths, ranked, output,
+	)
 }
 
 func plotKnowledgeSilosMatplotlib(
@@ -389,6 +395,7 @@ func plotKnowledgeSilosMatplotlib(
 	labels []string,
 	uniqueValues, recentValues floatSeries,
 	windowMonths int,
+	ranked bool,
 	output string,
 ) error {
 	output, err := resolveReportOutput(output, "knowledge-diffusion-silos.png")
@@ -398,7 +405,7 @@ func plotKnowledgeSilosMatplotlib(
 
 	series := buildKnowledgeSiloSeries(labels, uniqueValues, recentValues)
 
-	plot, err := newKnowledgeSiloPlot(repoName, len(labels))
+	plot, err := newKnowledgeSiloPlot(repoName, len(labels), ranked)
 	if err != nil {
 		return err
 	}
@@ -460,7 +467,7 @@ func buildKnowledgeSiloSeries(
 	return series
 }
 
-func newKnowledgeSiloPlot(repoName string, fileCount int) (knowledgeSiloPlot, error) {
+func newKnowledgeSiloPlot(repoName string, fileCount int, ranked bool) (knowledgeSiloPlot, error) {
 	heightInches := math.Max(5, float64(fileCount)*0.35+2)
 	width := 14 * 100
 	height := int(heightInches * 100)
@@ -472,18 +479,26 @@ func newKnowledgeSiloPlot(repoName string, fileCount int) (knowledgeSiloPlot, er
 	}
 
 	axes := grid[0][0]
-	axes.SetTitle(knowledgeSiloTitle(repoName))
+	axes.SetTitle(knowledgeSiloTitle(repoName, ranked))
 	axes.SetXLabel("Number of Editors")
 
 	return knowledgeSiloPlot{figure: figure, axes: axes, width: width, height: height}, nil
 }
 
-func knowledgeSiloTitle(repoName string) string {
-	if repoName == "" {
-		return "Knowledge Silos"
+// knowledgeSiloTitle names the selection rule in the title, not only in the docs: the chart shows
+// a prefix of the files, and which prefix depends on whether the input carries the ranking
+// factors. Somebody looking at the PNG later has no other way to tell the two apart.
+func knowledgeSiloTitle(repoName string, ranked bool) string {
+	title := "Knowledge Silos"
+	if repoName != "" {
+		title = repoName + " - " + title
 	}
 
-	return repoName + " - Knowledge Silos"
+	if ranked {
+		return title + " (ranked by risk)"
+	}
+
+	return title + " (fewest editors first)"
 }
 
 func drawKnowledgeSiloBars(axes *core.Axes, series knowledgeSiloSeries, windowMonths int) {
@@ -615,27 +630,142 @@ type knowledgeFileSummary struct {
 	Path          string
 	UniqueEditors int
 	RecentEditors int
+	Lines         int
+	Churn         int
+	Age           int
+	SiloRisk      float64
 }
 
-func sortedKnowledgeFiles(files map[string]readers.KnowledgeDiffusionFile) []knowledgeFileSummary {
+// knowledgeSiloDays is the average month the leaf uses to convert WindowMonths into ticks
+// (leaves/knowledge_diffusion.go windowTicks). The renderer has to reproduce it to express a
+// file's age as a fraction of the same window.
+const knowledgeSiloMonthDays = 30.44
+
+// rankedKnowledgeFiles orders files by how much their sole ownership costs: large, churning,
+// single-editor and recently touched first.
+//
+// The score is a product of four factors, each in (0,1]:
+//
+//	size    = log(lines+1) / log(maxLines+1)      heavy-tailed, so logarithmic
+//	churn   = log(churn+1) / log(maxChurn+1)      lifetime, not windowed - see below
+//	silo    = 1 / uniqueEditors                   1.0 for a true silo, 0.5 for two editors
+//	recency = 1 / (1 + age/windowTicks)           1.0 today, 0.5 one window ago, never 0
+//
+// Two choices in that formula are about not producing a degenerate all-zero ranking. The churn
+// factor is the *lifetime* count rather than RecentChurn, because every file here has been
+// edited at least once, so it is always positive - a repository whose whole history predates the
+// window would otherwise score every file zero and fall straight back to the alphabetical
+// ordering this ranking exists to replace. "Recently touched" is carried by the recency factor,
+// which decays rather than cutting off for the same reason.
+//
+// Scoring happens here rather than in the leaf on purpose: normalising against a single run's
+// maxima is what made merged hotspot-risk scores incomparable (PLAN.md T1.2c). The leaf stores
+// the raw factors and this function normalises once, over whatever file set it was handed -
+// one repository or a merge of 231.
+// The bool reports whether the files could actually be ranked; false means the fallback
+// ordering was used.
+func rankedKnowledgeFiles(
+	files map[string]readers.KnowledgeDiffusionFile, windowMonths int, tickSize int64,
+) ([]knowledgeFileSummary, bool) {
 	result := make([]knowledgeFileSummary, 0, len(files))
 	for path, file := range files {
 		result = append(result, knowledgeFileSummary{
 			Path:          path,
 			UniqueEditors: file.UniqueEditors,
 			RecentEditors: file.RecentEditors,
+			Lines:         file.Lines,
+			Churn:         file.Churn,
+			Age:           file.TicksSinceLastEdit,
 		})
 	}
 
+	scoreKnowledgeSiloRisk(result, knowledgeSiloWindowTicks(windowMonths, tickSize))
+
+	if knowledgeSiloRiskIsUniform(result) {
+		// Nothing to rank: a result written before the leaf collected these factors carries no
+		// lines and no churn. Keep the historical ordering so such a file renders exactly the
+		// chart it always did, rather than an arbitrary one.
+		sortKnowledgeFilesByEditors(result)
+
+		return result, false
+	}
+
 	sort.Slice(result, func(i, j int) bool {
-		if result[i].UniqueEditors == result[j].UniqueEditors {
+		if result[i].SiloRisk == result[j].SiloRisk {
 			return result[i].Path < result[j].Path
 		}
 
-		return result[i].UniqueEditors < result[j].UniqueEditors
+		return result[i].SiloRisk > result[j].SiloRisk
 	})
 
-	return result
+	return result, true
+}
+
+// knowledgeSiloWindowTicks converts the recent-editor window into ticks, reproducing the leaf's
+// conversion. It returns 0 when the tick size is unknown, which makes the recency factor a
+// neutral 1 instead of a division by zero.
+func knowledgeSiloWindowTicks(windowMonths int, tickSize int64) float64 {
+	if windowMonths <= 0 || tickSize <= 0 {
+		return 0
+	}
+
+	window := float64(windowMonths) * knowledgeSiloMonthDays * float64(24*time.Hour)
+
+	return math.Floor(window / float64(tickSize))
+}
+
+func scoreKnowledgeSiloRisk(files []knowledgeFileSummary, windowTicks float64) {
+	var maxLines, maxChurn float64
+
+	for _, file := range files {
+		maxLines = math.Max(maxLines, float64(file.Lines))
+		maxChurn = math.Max(maxChurn, float64(file.Churn))
+	}
+
+	for i := range files {
+		sizeFactor := normalizedLogFactor(files[i].Lines, maxLines)
+		churnFactor := normalizedLogFactor(files[i].Churn, maxChurn)
+		siloFactor := 1 / float64(max(1, files[i].UniqueEditors))
+		recencyFactor := 1.0
+
+		if windowTicks > 0 {
+			recencyFactor = 1 / (1 + float64(max(0, files[i].Age))/windowTicks)
+		}
+
+		files[i].SiloRisk = sizeFactor * churnFactor * siloFactor * recencyFactor
+	}
+}
+
+// normalizedLogFactor scales a heavy-tailed count into [0,1], the same way the hotspot-risk
+// analysis does (leaves/hotspot_risk.go). It is duplicated rather than shared because the
+// renderer must not import the analysis packages - that would link go-git and tree-sitter into
+// the labours binary.
+func normalizedLogFactor(value int, maximum float64) float64 {
+	if value <= 0 || maximum <= 0 {
+		return 0
+	}
+
+	return math.Log(float64(value)+1) / math.Log(maximum+1)
+}
+
+func knowledgeSiloRiskIsUniform(files []knowledgeFileSummary) bool {
+	for _, file := range files {
+		if file.SiloRisk != files[0].SiloRisk {
+			return false
+		}
+	}
+
+	return true
+}
+
+func sortKnowledgeFilesByEditors(files []knowledgeFileSummary) {
+	sort.Slice(files, func(i, j int) bool {
+		if files[i].UniqueEditors == files[j].UniqueEditors {
+			return files[i].Path < files[j].Path
+		}
+
+		return files[i].UniqueEditors < files[j].UniqueEditors
+	})
 }
 
 func truncateKnowledgeSiloLabel(path string) string {

@@ -193,6 +193,14 @@ type KnowledgeDiffusionFile struct {
 	RecentEditors         int
 	UniqueEditorsOverTime map[int]int
 	Authors               []int
+	// Lines is the file's line count at HEAD; zero when it no longer exists there or is binary.
+	Lines int
+	// Churn is the lifetime count of text lines added, removed and changed.
+	Churn int
+	// RecentChurn is the same count restricted to the WindowMonths window.
+	RecentChurn int
+	// TicksSinceLastEdit is the file's age in ticks at the end of the analysis.
+	TicksSinceLastEdit int
 }
 
 type KnowledgeDiffusionData struct {

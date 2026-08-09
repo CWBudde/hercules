@@ -789,6 +789,26 @@
           "name": "authors",
           "type": "int32",
           "label": "repeated"
+        },
+        {
+          "number": 5,
+          "name": "lines",
+          "type": "int32"
+        },
+        {
+          "number": 6,
+          "name": "churn",
+          "type": "int32"
+        },
+        {
+          "number": 7,
+          "name": "recent_churn",
+          "type": "int32"
+        },
+        {
+          "number": 8,
+          "name": "ticks_since_last_edit",
+          "type": "int32"
         }
       ]
     },

@@ -16,6 +16,23 @@ Each entry should include:
 
 ## Unreleased
 
+- PB and YAML: `KnowledgeDiffusionFileData` gains `lines` (field 5), `churn` (field 6),
+  `recent_churn` (field 7) and `ticks_since_last_edit` (field 8), all `int32`; the YAML output
+  gains the matching per-file keys. The silo chart ranked its files by editor count tie-broken
+  alphabetically, which at organisation scale is no ranking at all — almost every file has exactly
+  one editor, so the tie-break was the ordering. Ranking them by risk needs size, churn and
+  recency, none of which this analysis collected. The factors are stored **raw**; the renderer
+  normalises and scores them over the whole file set, so unlike `HotspotRiskResults` there is
+  nothing per-run-normalised to rescale at merge time. `KnowledgeDiffusion` now requires
+  `DependencyLineStats`, consumes the pipeline-injected `DependencyCommit`, and reads the last
+  commit's tree for line counts. Merging rebases each input's `ticks_since_last_edit` onto the
+  later of the two end times, so an age is comparable across repositories which stopped at
+  different times.
+  Compatibility: compatible — the new fields are optional and all-zero decodes as "unset", which is
+  what every file written so far carries. No `SchemaVersion` bump.
+  User action: none required. A stored result written before this change still renders; its silo
+  chart keeps the old editor-count-then-path ordering, because the renderer falls back to it when
+  every risk score ties at zero. Recompute to get the ranking.
 - PB and YAML: `OnboardingResults` gains `trail_days` (field 7, int32);
   `AuthorOnboardingData` gains `first_commit_unix` (field 4, int64) and `trail` (field 5,
   repeated `OnboardingTrailEntry`, a new message). The YAML output gains the matching

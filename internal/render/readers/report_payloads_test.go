@@ -5,11 +5,13 @@ import (
 	"os"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/stretchr/testify/require"
 
 	"github.com/cwbudde/hercules/internal/pb"
+	"github.com/cwbudde/hercules/internal/tickgrid"
 )
 
 const (
@@ -848,4 +850,51 @@ func requireShotnessCooccurrenceMatchesAlignedProfileDotProducts(
 			require.Equalf(t, expected, matrix[i][j], "cooccurrence[%d][%d]", i, j)
 		}
 	}
+}
+
+// TestProtobufReader_RefactoringProxyTimestampsUseTheExactTickGrid pins the two
+// halves of the tick-timestamp reconstruction.
+//
+// The analysis stores tick indices, so the reader has to rebuild the instants.
+// A day-truncated step collapses every sub-day tick size to one day, and
+// anchoring on the header's begin time puts every tick at the first commit's
+// time of day - which is enough to drop the last tick from a date range that
+// ends at midnight.
+func TestProtobufReader_RefactoringProxyTimestampsUseTheExactTickGrid(t *testing.T) {
+	const halfDay = int64(12 * time.Hour)
+
+	// 2023-11-14T22:13:20Z: deliberately not on a tick boundary.
+	const begin = int64(1700000000)
+
+	reader := &ProtobufReader{}
+	payload := &pb.AnalysisResults{
+		Header: &pb.Metadata{Version: pb.SchemaVersion, Repository: "repo", BeginUnixTime: begin},
+		Contents: map[string][]byte{
+			"RefactoringProxy": marshalProto(t, &pb.RefactoringProxyResults{
+				Ticks:         []int32{0, 1, 2},
+				RenameRatios:  []float32{0.1, 0.2, 0.3},
+				IsRefactoring: []bool{false, false, true},
+				TotalChanges:  []int32{1, 2, 3},
+				Threshold:     0.3,
+				TickSize:      halfDay,
+			}),
+		},
+	}
+	require.NoError(t, reader.Read(bytes.NewReader(marshalProto(t, payload))))
+
+	data, err := reader.GetRefactoringProxy()
+	require.NoError(t, err)
+	require.Len(t, data.Ticks, 3)
+
+	// A half-day tick must advance by half a day, not by the day tickSizeDays
+	// rounds it up to.
+	require.Equal(t, halfDay/int64(time.Second), data.Ticks[1].Timestamp-data.Ticks[0].Timestamp)
+	require.Equal(t, halfDay/int64(time.Second), data.Ticks[2].Timestamp-data.Ticks[1].Timestamp)
+
+	// Tick 0 sits on the floored boundary at or before the first commit, so it
+	// lands on a whole multiple of the tick size rather than at 22:13:20.
+	first := data.Ticks[0].Timestamp
+	require.LessOrEqual(t, first, begin)
+	require.Greater(t, first, begin-halfDay/int64(time.Second))
+	require.Equal(t, tickgrid.FloorTime(time.Unix(begin, 0).UTC(), time.Duration(halfDay)).Unix(), first)
 }

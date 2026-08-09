@@ -61,8 +61,13 @@ func OwnershipConcentration(reader readers.Reader, output string, startTime, end
 	if len(data.SubsystemGini) > 0 {
 		subsystemOutput := siblingOutputPath(output, "ownership-concentration.png", "subsystems")
 
+		// As with bus factor, SubsystemGini/SubsystemHHI are single whole-analysis
+		// readings with no per-tick breakdown, so this chart cannot follow the
+		// requested range and says as much.
+		scope := reportRangeScope(startTime, endTime, "ownership concentration subsystem summary")
+
 		err := plotOwnershipSubsystemsBar(
-			titleRepositoryName(reader.GetName()), data.SubsystemGini, data.SubsystemHHI, subsystemOutput,
+			titleRepositoryName(reader.GetName()), scope, data.SubsystemGini, data.SubsystemHHI, subsystemOutput,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to plot subsystem ownership concentration: %w", err)
@@ -134,7 +139,9 @@ func ownershipConcentrationSeries(
 // plotOwnershipSubsystemsBar mirrors Python labours' ownership_concentration
 // _plot_subsystems: a grouped *horizontal* bar chart with two series (Gini and
 // HHI) per subsystem, subsystems sorted alphabetically (not by value).
-func plotOwnershipSubsystemsBar(repoName string, giniByDir, hhiByDir map[string]float64, output string) error {
+func plotOwnershipSubsystemsBar(
+	repoName, scope string, giniByDir, hhiByDir map[string]float64, output string,
+) error {
 	output, err := resolveReportOutput(output, "ownership-concentration-subsystems.png")
 	if err != nil {
 		return err
@@ -142,7 +149,7 @@ func plotOwnershipSubsystemsBar(repoName string, giniByDir, hhiByDir map[string]
 
 	series := newOwnershipSubsystemSeries(giniByDir, hhiByDir)
 
-	plot, err := newOwnershipSubsystemPlot(repoName, len(series.directories))
+	plot, err := newOwnershipSubsystemPlot(repoName, scope, len(series.directories))
 	if err != nil {
 		return err
 	}
@@ -200,7 +207,7 @@ func newOwnershipSubsystemSeries(
 	return series
 }
 
-func newOwnershipSubsystemPlot(repoName string, subsystemCount int) (ownershipSubsystemPlot, error) {
+func newOwnershipSubsystemPlot(repoName, scope string, subsystemCount int) (ownershipSubsystemPlot, error) {
 	heightInches := math.Max(4, float64(subsystemCount)*0.5+2)
 	width := graphics.InchesToPixels(12)
 	height := graphics.InchesToPixels(heightInches)
@@ -212,19 +219,19 @@ func newOwnershipSubsystemPlot(repoName string, subsystemCount int) (ownershipSu
 	}
 
 	axes := grid[0][0]
-	axes.SetTitle(ownershipSubsystemTitle(repoName))
+	axes.SetTitle(ownershipSubsystemTitle(repoName, scope))
 	axes.SetXLabel("Concentration Index")
 
 	return ownershipSubsystemPlot{figure: figure, axes: axes, width: width, height: height}, nil
 }
 
-func ownershipSubsystemTitle(repoName string) string {
+func ownershipSubsystemTitle(repoName, scope string) string {
 	const title = "Ownership Concentration by Subsystem"
 	if repoName == "" {
-		return title
+		return title + scope
 	}
 
-	return fmt.Sprintf("%s - %s", repoName, title)
+	return fmt.Sprintf("%s - %s%s", repoName, title, scope)
 }
 
 func drawOwnershipSubsystemBars(axes *core.Axes, series ownershipSubsystemSeries) {

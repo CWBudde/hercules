@@ -6,22 +6,23 @@ import (
 	"os"
 	"time"
 
-	"github.com/cwbudde/hercules/internal/render/burndown"
+	"github.com/cwbudde/hercules/internal/tickgrid"
 )
-
-// nanosecondsPerSecond converts the int64 nanosecond tick sizes the reader
-// structs carry (pb.proto stores Go's time.Duration verbatim) into the seconds
-// the burndown date helpers work in.
-const nanosecondsPerSecond = float64(time.Second)
 
 // tickAxis maps tick indices onto real dates.
 //
 // Tick 0 does **not** start at the header's begin time. GetHeader reports the
 // raw committer timestamp of the first analysed commit, while ticks are floored
-// onto a UTC-anchored grid of tick-size multiples (internal/plumbing/ticks.go,
-// FloorTime). The two differ by up to one full tick, so anchoring on the begin
-// time directly - as report_temporal_activity.go used to - shifts every point
-// late by that much and can push a filter boundary onto the wrong tick.
+// onto a grid of tick-size multiples (internal/plumbing/ticks.go, FloorTime).
+// The two differ by up to one full tick, so anchoring on the begin time
+// directly - as report_temporal_activity.go used to - shifts every point late by
+// that much and can push a filter boundary onto the wrong tick.
+//
+// The grid is the pipeline's own, via tickgrid.FloorTime. Flooring on the Unix
+// epoch instead - which is what the burndown date helpers do - agrees only when
+// the tick size divides the offset between Go's zero time and the epoch. That
+// holds for the 24h default and its divisors, and fails for a 5-, 7- or 36-hour
+// tick, where every date would come out shifted.
 type tickAxis struct {
 	// start is the instant tick 0 begins, in UTC.
 	start time.Time
@@ -38,11 +39,11 @@ func newTickAxis(beginUnix, tickSizeNanos int64) (tickAxis, bool) {
 		return tickAxis{}, false
 	}
 
-	tickSizeSeconds := float64(tickSizeNanos) / nanosecondsPerSecond
+	step := time.Duration(tickSizeNanos)
 
 	return tickAxis{
-		start: burndown.FloorDateTime(time.Unix(beginUnix, 0).UTC(), tickSizeSeconds),
-		step:  time.Duration(tickSizeNanos),
+		start: tickgrid.FloorTime(time.Unix(beginUnix, 0).UTC(), step),
+		step:  step,
 	}, true
 }
 
@@ -96,19 +97,14 @@ func (r tickRange) contains(tick int) bool {
 }
 
 // tickRangeFor converts a requested date range into an inclusive tick window.
-// Either boundary may be nil, in which case that end is left open. It reports
-// false when no boundary was requested at all, so callers skip filtering
-// entirely rather than walking their data to no effect.
+// Either boundary may be nil, in which case that end is left open - two nil
+// boundaries therefore yield a window containing everything.
 //
 // Whole ticks are selected, never clipped: a tick that merely overlaps the
 // requested range is kept in full. That matches how temporal-activity has always
 // filtered, and a partially counted tick would be a silently wrong data point
 // rather than a coarse one.
-func tickRangeFor(axis tickAxis, startTime, endTime *time.Time) (tickRange, bool) {
-	if startTime == nil && endTime == nil {
-		return tickRange{}, false
-	}
-
+func tickRangeFor(axis tickAxis, startTime, endTime *time.Time) tickRange {
 	window := tickRange{first: math.MinInt, last: math.MaxInt}
 	if startTime != nil {
 		window.first = axis.tickOf(*startTime)
@@ -118,7 +114,7 @@ func tickRangeFor(axis tickAxis, startTime, endTime *time.Time) (tickRange, bool
 		window.last = axis.tickOf(*endTime)
 	}
 
-	return window, true
+	return window
 }
 
 // ticksInRange keeps the sorted tick indices that fall inside the window.
@@ -132,6 +128,27 @@ func ticksInRange(ticks []int, window tickRange) []int {
 	}
 
 	return kept
+}
+
+// reportRangeScope returns a title suffix for a chart that cannot follow a
+// requested date range, and warns once that it does not.
+//
+// Some results carry a whole-analysis aggregate with no per-tick breakdown -
+// the subsystem maps on bus factor and ownership concentration are both a single
+// final-state reading. Rendering those unchanged next to a range-scoped timeline
+// produces a chart set describing two different periods, with nothing on the
+// image saying so, which is why the scope goes into the title and not only onto
+// stderr.
+func reportRangeScope(startTime, endTime *time.Time, chart string) string {
+	if startTime == nil && endTime == nil {
+		return ""
+	}
+
+	fmt.Fprintf(os.Stderr,
+		"Warning: the %s covers the whole history - the analysis records no per-tick "+
+			"breakdown for it, so --start-date/--end-date cannot be applied\n", chart)
+
+	return " [whole history]"
 }
 
 // tickIndexSeries pairs tick indices with their values for the fallback axis,
@@ -172,10 +189,5 @@ func selectReportTicks(
 		return ticks
 	}
 
-	window, requested := tickRangeFor(axis, startTime, endTime)
-	if !requested {
-		return ticks
-	}
-
-	return ticksInRange(ticks, window)
+	return ticksInRange(ticks, tickRangeFor(axis, startTime, endTime))
 }

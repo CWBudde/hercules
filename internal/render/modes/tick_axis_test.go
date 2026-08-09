@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cwbudde/hercules/internal/plumbing"
 	"github.com/cwbudde/hercules/internal/render/readers"
 )
 
@@ -33,6 +34,35 @@ func TestTickAxisAnchorsOnTheFlooredTickBoundary(t *testing.T) {
 
 	if got := axis.dateOf(0); got.After(midTickBegin) {
 		t.Fatalf("tick 0 at %s starts after the first commit at %s", got, midTickBegin)
+	}
+}
+
+// TestTickAxisUsesThePipelineTickGrid pins the axis to the grid that minted the
+// tick indices in the first place.
+//
+// time.Time.Round measures from Go's zero time, so the pipeline's grid is
+// anchored on year 1, while flooring on the Unix epoch anchors on 1970. The two
+// agree only when the tick size divides the offset between them - true for the
+// 24h default and its divisors, false for 5 hours, where they sit 3 hours apart
+// and every date on the chart would be shifted by that much.
+func TestTickAxisUsesThePipelineTickGrid(t *testing.T) {
+	const oddTick = 5 * time.Hour
+
+	axis, ok := newTickAxis(midTickBegin.Unix(), int64(oddTick))
+	if !ok {
+		t.Fatal("newTickAxis() rejected a valid header")
+	}
+
+	want := plumbing.FloorTime(midTickBegin.UTC(), oddTick)
+	if got := axis.dateOf(0); !got.Equal(want) {
+		t.Fatalf("dateOf(0) = %s, want the pipeline's boundary %s", got, want)
+	}
+
+	// Guard against the test passing because both sides are the same wrong thing:
+	// on this tick size the epoch-anchored grid must actually differ.
+	epochFloor := time.Unix((midTickBegin.Unix()/int64(oddTick.Seconds()))*int64(oddTick.Seconds()), 0).UTC()
+	if epochFloor.Equal(want) {
+		t.Fatal("the fixture no longer distinguishes the two grids")
 	}
 }
 
@@ -131,6 +161,28 @@ func TestSelectReportTicksWarnsWhenTicksCannotBeDated(t *testing.T) {
 
 	if !strings.Contains(stderr, "bus factor") || !strings.Contains(stderr, "--start-date") {
 		t.Fatalf("expected a warning naming the chart and the flag, got %q", stderr)
+	}
+}
+
+func TestReportRangeScopeLabelsWhatItCannotFilter(t *testing.T) {
+	if got := reportRangeScope(nil, nil, "test"); got != "" {
+		t.Fatalf("no range requested must leave the title alone, got %q", got)
+	}
+
+	start := midTickBegin
+
+	var scope string
+
+	stderr := captureStderr(t, func() {
+		scope = reportRangeScope(&start, nil, "bus factor subsystem summary")
+	})
+
+	if scope == "" {
+		t.Fatal("a chart that cannot follow the range must say so in its title")
+	}
+
+	if !strings.Contains(stderr, "bus factor subsystem summary") {
+		t.Fatalf("expected a warning naming the chart, got %q", stderr)
 	}
 }
 

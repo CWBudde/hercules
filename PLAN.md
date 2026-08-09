@@ -307,12 +307,22 @@ so the three sites are `modes/report_bus_factor.go`, `report_ownership_concentra
 **Correction to this item's diagnosis: `date = begin + tick × tickSize` is wrong by up to one tick.**
 `GetHeader()` returns `Metadata.begin_unix_time`, the raw committer timestamp of the first analysed
 commit (`internal/core/pipeline_execution.go:66-72`), while tick 0 begins at
-`FloorTime(firstCommit, TickSize)` — a UTC-anchored multiple of the tick size
+`FloorTime(firstCommit, TickSize)` — a multiple of the tick size
 (`internal/plumbing/ticks.go:167-176`). The two differ by anything from zero to a full tick. The
-shared `tickAxis` (`modes/tick_axis.go`) anchors on `burndown.FloorDateTime` instead, reusing the
-parity-tested floor rather than adding a fourth hand-rolled one, and
+shared `tickAxis` (`modes/tick_axis.go`) floors the anchor, and
 `TestTickAxisAnchorsOnTheFlooredTickBoundary` uses a deliberately mid-tick begin time so the naive
 formula fails it.
+
+**And it must be the pipeline's grid, not an epoch-anchored one.** `time.Time.Round` measures from
+Go's zero time, so `plumbing.FloorTime` is anchored on year 1, while the burndown date helpers floor
+on the Unix epoch. The two agree only when the tick size divides the offset between them — true for
+the 24h default and its divisors, false for a 5-, 7- or 36-hour `--tick-size`, where the grids sit
+hours apart and every rendered date would be shifted. The rule now lives in **`internal/tickgrid`**,
+a leaf package both sides import: `plumbing.FloorTime` delegates to it and the renderer uses it
+directly. The indirection earns its keep — importing `internal/plumbing` from the renderer would link
+go-git, tree-sitter and enry into the 22 MB `labours` binary for three lines (measured: the leaf
+package costs 104 bytes). `TestTickAxisUsesThePipelineTickGrid` pins the axis against
+`plumbing.FloorTime` on a 5-hour tick and fails if the grids drift apart again.
 
 Facts worth keeping:
 
@@ -332,6 +342,18 @@ Facts worth keeping:
   — a per-file ranking with no time axis at all; the churn window was applied during analysis and not
   retained. Honouring a date range there needs new fields in `HotspotRiskResults`, i.e. a schema
   change, not a renderer change. The `_, _ *time.Time` stays with a comment saying so.
+- **`refactoring-proxy`'s tick timestamps were reconstructed twice wrong**, which the filtering work
+  exposed. `pb_reader.go` built them as `headerBegin + tickIndex × tickSizeDays × 86400`, where
+  `tickSizeDays` is an integer division that collapses any sub-day tick size to one day, and the
+  anchor is the first commit's timestamp rather than the tick-0 boundary. So `--tick-size=12` spaced
+  ticks a full day apart, and on the **default** tick every timestamp carried the first commit's time
+  of day — enough for an `--end-date` at midnight to drop that day's tick. Now built from the exact
+  nanosecond tick size on the floored anchor; the axis this chart got in T2.1 was affected too.
+- **Two charts cannot follow a date range and now say so.** `SubsystemBusFactor` and
+  `SubsystemGini`/`SubsystemHHI` are single whole-analysis maps with no per-tick breakdown, so under a
+  range they would silently describe a different period from the timeline beside them. They carry a
+  `[whole history]` title suffix and warn. The scope goes in the **title**, not only on stderr —
+  nobody looking at the PNG later sees the stderr.
 - **`knowledgeDiffusion` honours the range on its trend chart only** — `UniqueEditorsOverTime` is the
   only tick-indexed thing it carries; the distribution, silo and Lorenz charts are whole-history
   per-file totals.

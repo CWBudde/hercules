@@ -10,6 +10,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 
 	"github.com/cwbudde/hercules/internal/core"
+	"github.com/cwbudde/hercules/internal/tickgrid"
 )
 
 // TicksSinceStart provides relative tick information for every commit.
@@ -217,14 +218,12 @@ func (ticks *TicksSinceStart) Fork(n int) []core.PipelineItem {
 }
 
 // FloorTime is the missing implementation of time.Time.Floor() - round to the nearest less than or equal.
+//
+// The implementation lives in internal/tickgrid so that the renderer can floor
+// on the identical grid without linking the analysis pipeline. This wrapper
+// stays because it is the name the leaves call.
 func FloorTime(t time.Time, d time.Duration) time.Time {
-	// We have check if the regular rounding resulted in Floor() + d.
-	result := t.Round(d)
-	if result.After(t) {
-		result = result.Add(-d)
-	}
-
-	return result
+	return tickgrid.FloorTime(t, d)
 }
 
 var _ = core.RegisterPipelineItem(&TicksSinceStart{})

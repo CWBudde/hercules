@@ -512,12 +512,11 @@ func filterTemporalActivitiesByDateRange(
 }
 
 type temporalFilterRange struct {
-	// axis dates the ticks. It is anchored on the floored tick-0 boundary, not
-	// on repositoryStart - see tickAxis.
-	axis            tickAxis
-	repositoryStart time.Time
-	start           time.Time
-	end             time.Time
+	// axis dates the ticks. It is anchored on the floored tick-0 boundary rather
+	// than on the header's begin time - see tickAxis.
+	axis  tickAxis
+	start time.Time
+	end   time.Time
 }
 
 func temporalActivityFilterRange(
@@ -532,17 +531,16 @@ func temporalActivityFilterRange(
 		return temporalFilterRange{}, false
 	}
 
-	// The repository bounds stay on the raw header times: they decide whether
-	// the user asked for a narrower window than the data covers, which is a
-	// question about wall-clock instants rather than about tick boundaries.
+	// The repository bounds stay on the raw header times: they only decide
+	// whether the user asked for a narrower window than the data covers, which is
+	// a question about wall-clock instants rather than about tick boundaries.
 	repositoryStart := time.Unix(headerStart, 0)
 	repositoryEnd := time.Unix(headerEnd, 0)
 
 	filterRange := temporalFilterRange{
-		axis:            axis,
-		repositoryStart: repositoryStart,
-		start:           temporalFilterBoundary(startTime, repositoryStart),
-		end:             temporalFilterBoundary(endTime, repositoryEnd),
+		axis:  axis,
+		start: temporalFilterBoundary(startTime, repositoryStart),
+		end:   temporalFilterBoundary(endTime, repositoryEnd),
 	}
 	if !filterRange.start.After(repositoryStart) && !filterRange.end.Before(repositoryEnd) {
 		return temporalFilterRange{}, false

@@ -18,7 +18,7 @@ import (
 func TestD5bBarNotMattedOverWhite(t *testing.T) {
 	dir := t.TempDir()
 	out := filepath.Join(dir, "ownership-concentration.png")
-	err := plotOwnershipSubsystemsBar("repro",
+	err := plotOwnershipSubsystemsBar("repro", "",
 		map[string]float64{"alpha": 0.9}, map[string]float64{"alpha": 0.8}, out)
 	if err != nil {
 		t.Fatalf("plot: %v", err)

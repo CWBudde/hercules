@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/cwbudde/hercules/internal/render/burndown"
 	"github.com/cwbudde/hercules/internal/render/readers"
@@ -51,7 +52,7 @@ func testReportMetricModesCreateOutputFiles(t *testing.T, ext string) {
 		{
 			name: "bus-factor",
 			run: func(output string) error {
-				return BusFactor(reader, output)
+				return BusFactor(reader, output, nil, nil)
 			},
 			extras:    []string{"bus-factor_timeline." + ext, "bus-factor_gauge." + ext, "bus-factor_subsystems." + ext},
 			noPrimary: true,
@@ -59,7 +60,7 @@ func testReportMetricModesCreateOutputFiles(t *testing.T, ext string) {
 		{
 			name: "ownership-concentration",
 			run: func(output string) error {
-				return OwnershipConcentration(reader, output)
+				return OwnershipConcentration(reader, output, nil, nil)
 			},
 			extras:    []string{"ownership-concentration_timeline." + ext, "ownership-concentration_subsystems." + ext},
 			noPrimary: true,
@@ -67,7 +68,7 @@ func testReportMetricModesCreateOutputFiles(t *testing.T, ext string) {
 		{
 			name: "knowledge-diffusion",
 			run: func(output string) error {
-				return KnowledgeDiffusion(reader, output, false)
+				return KnowledgeDiffusion(reader, output, false, nil, nil)
 			},
 			extras: []string{
 				"knowledge-diffusion_distribution." + ext,
@@ -143,7 +144,7 @@ func testReportMetricModesCreateOutputFiles(t *testing.T, ext string) {
 func TestBusFactorSubsystemOutputPreservesTransparentBackground(t *testing.T) {
 	dir := t.TempDir()
 	output := filepath.Join(dir, "bus-factor.png")
-	err := BusFactor(&reportMetricsReader{}, output)
+	err := BusFactor(&reportMetricsReader{}, output, nil, nil)
 	if err != nil {
 		t.Fatalf("BusFactor() unexpected error: %v", err)
 	}
@@ -257,12 +258,24 @@ func TestBuildTemporalHourCommitSeriesPreservesDeveloperStacks(t *testing.T) {
 	}
 }
 
-func TestTemporalTickDaysPreservesSubdayTicks(t *testing.T) {
-	if got := temporalTickDays(temporalNanosecondsPerDay / 2); got != 0.5 {
-		t.Fatalf("half-day tick = %v days, want 0.5", got)
+// TestTemporalFilterPreservesSubdayTicks carries over what
+// TestTemporalTickDaysPreservesSubdayTicks used to assert: a sub-day tick size
+// must not collapse to whole days. tickAxis keeps the duration as given, so two
+// ticks fit in the day it now dates.
+func TestTemporalFilterPreservesSubdayTicks(t *testing.T) {
+	begin := time.Date(2024, time.May, 4, 0, 0, 0, 0, time.UTC)
+
+	axis, ok := newTickAxis(begin.Unix(), temporalNanosecondsPerDay/2)
+	if !ok {
+		t.Fatal("newTickAxis() rejected a half-day tick size")
 	}
-	if got := temporalTickDays(0); got != 1 {
-		t.Fatalf("non-positive tick = %v days, want 1", got)
+
+	if got := axis.tickOf(begin.Add(24 * time.Hour)); got != 2 {
+		t.Fatalf("a full day of half-day ticks = %d ticks, want 2", got)
+	}
+
+	if _, ok := newTickAxis(begin.Unix(), 0); ok {
+		t.Fatal("newTickAxis() accepted a non-positive tick size")
 	}
 }
 

@@ -5,7 +5,7 @@
 | phase                                                 | items                | state                                      |
 | ----------------------------------------------------- | -------------------- | ------------------------------------------ |
 | [Phase 1 — combine correctness](#phase-1)             | T1.1–T1.3 (M7/M6/M2) | **all landed** (T1.3(b) with T3.1)         |
-| [Phase 2 — rendering defects](#phase-2)               | T2.1–T2.3 (M4/M5/M3) | T2.1 + T2.2 landed; T2.3 open              |
+| [Phase 2 — rendering defects](#phase-2)               | T2.1–T2.3 (M4/M5/M3) | **all landed**                             |
 | [Phase 3 — unexposed analyses](#phase-3)              | T3.1–T3.3 (M1/M8/M9) | T3.1 landed; T3.2 + T3.3 open              |
 | [Phase 4 — burndown residue (B1c/P5)](#phase-4)       | T4.1–T4.3            | **on hold — recommendation: do not start** |
 | [Phase 5 — recorded, deliberately not done](#phase-5) | —                    | reference only                             |
@@ -197,8 +197,8 @@ Note the embed is not the discriminator: `core.NoopMerger` supplies the _fork_ m
 
 ## Phase 2 — rendering defects
 
-T2.1 and T2.2 were outright bugs and are fixed; T2.3 remains. All three reproduce on a **single**
-repository, so none is scope- or combine-dependent.
+All three were outright bugs and all three are fixed. Each reproduced on a **single** repository, so
+none was scope- or combine-dependent.
 
 ### T2.1 — `refactoring-proxy` renders one spike at year −242464 (M4) 🟢 landed 2026-08-08
 
@@ -273,7 +273,7 @@ this code and were equally broken. Verified on `ewws-auth`: all three year bands
 unreachable from `dispatch.go`, and `TestGenerateBurndownPlotRelative` tests that dead code. It
 nearly sent this fix to the wrong function. Delete it in its own pass.
 
-### T2.3 — three charts label an axis "Tick" while the data holds real dates (M3) 🟡
+### T2.3 — three charts label an axis "Tick" while the data holds real dates (M3) 🟢 landed 2026-08-09
 
 `oldVsNew` proves the renderer can do it: `internal/render/modes/oldVsNew.go:64` takes
 `reader.GetHeader()` (`internal/render/readers/pb_reader.go:73-79`, begin/end unix), then
@@ -291,15 +291,86 @@ The inputs are already there — `readers.BusFactorData.TickSize` (`readers/read
 `OwnershipConcentrationData.TickSize` (`:183-189`), `KnowledgeDiffusionData.TickSize` (`:198-204`),
 plus `reader.GetHeader()`. `date = begin + tick × tickSize` is the whole fix.
 
-- [ ] Convert the x axis in all three modes and relabel.
-- [ ] Same pass: `busFactor`, `ownershipConcentration`, `hotspotRisk` and `refactoringProxy` discard
-      the `startTime`/`endTime` dispatch parameters — note the `_, _ *time.Time` signatures at
-      `internal/render/dispatch.go:362`, `:366`, `:374`, `:382`, against `oldVsNew` at `:342` and
-      `temporalActivity` at `:349`. None of them can honour `--start-date`/`--end-date`.
+- [x] Convert the x axis in all three modes and relabel. **Done 2026-08-09.**
+- [x] Same pass: `busFactor`, `ownershipConcentration`, `hotspotRisk` and `refactoringProxy` discard
+      the `startTime`/`endTime` dispatch parameters. **Done for three of the four**; `hotspotRisk` is
+      a documented exclusion, see below.
 
 **Downstream value:** the bus-factor timeline is otherwise the best unused chart in the corpus
 (1 → 9 over five years, with a dip to 3 held from 2021-08 to 2024-04), and the tick axis is the only
 thing keeping it off a slide unexplained.
+
+**Note on this item's own line references:** `report_metrics.go` was split per metric in `d607afd`,
+so the three sites are `modes/report_bus_factor.go`, `report_ownership_concentration.go` and
+`report_knowledge_diffusion.go`.
+
+**Correction to this item's diagnosis: `date = begin + tick × tickSize` is wrong by up to one tick.**
+`GetHeader()` returns `Metadata.begin_unix_time`, the raw committer timestamp of the first analysed
+commit (`internal/core/pipeline_execution.go:66-72`), while tick 0 begins at
+`FloorTime(firstCommit, TickSize)` — a multiple of the tick size
+(`internal/plumbing/ticks.go:167-176`). The two differ by anything from zero to a full tick. The
+shared `tickAxis` (`modes/tick_axis.go`) floors the anchor, and
+`TestTickAxisAnchorsOnTheFlooredTickBoundary` uses a deliberately mid-tick begin time so the naive
+formula fails it.
+
+**And it must be the pipeline's grid, not an epoch-anchored one.** `time.Time.Round` measures from
+Go's zero time, so `plumbing.FloorTime` is anchored on year 1, while the burndown date helpers floor
+on the Unix epoch. The two agree only when the tick size divides the offset between them — true for
+the 24h default and its divisors, false for a 5-, 7- or 36-hour `--tick-size`, where the grids sit
+hours apart and every rendered date would be shifted. The rule now lives in **`internal/tickgrid`**,
+a leaf package both sides import: `plumbing.FloorTime` delegates to it and the renderer uses it
+directly. The indirection earns its keep — importing `internal/plumbing` from the renderer would link
+go-git, tree-sitter and enry into the 22 MB `labours` binary for three lines (measured: the leaf
+package costs 104 bytes). `TestTickAxisUsesThePipelineTickGrid` pins the axis against
+`plumbing.FloorTime` on a 5-hour tick and fails if the grids drift apart again.
+
+Facts worth keeping:
+
+- **The fallback is the tick axis, not epoch dates.** `newTickAxis` reports `false` when the header or
+  tick size is missing and the chart keeps plotting bare indices under the `"Tick"` label. Converting
+  regardless would anchor the series at 1970 — the same class of defect T2.1 fixed. Both halves are
+  pinned (`TestBusFactorTimelinePlotsRealDates` / `…FallsBackToTickIndices`), and the fact that the
+  pre-existing `report_metrics_test.go` fixtures — zero header, zero tick size — still pass is what
+  shows the fallback is reached.
+- **A date range that cannot be honoured warns instead of being ignored.** Silently dropping a flag
+  the user typed is the same failure mode as mislabelling an axis.
+- **Whole ticks are selected, never clipped**, matching `filterTemporalActivitiesByDateRange`. A
+  partially counted tick would be a wrong data point rather than a coarse one. Under a range,
+  `busFactor`'s gauge and subsystem charts read the last snapshot _inside_ the range, so the chart set
+  describes one point in time.
+- **`hotspotRisk` is excluded, and not by choice.** `readers.HotspotRiskData` is `{Files, WindowDays}`
+  — a per-file ranking with no time axis at all; the churn window was applied during analysis and not
+  retained. Honouring a date range there needs new fields in `HotspotRiskResults`, i.e. a schema
+  change, not a renderer change. The `_, _ *time.Time` stays with a comment saying so.
+- **`refactoring-proxy`'s tick timestamps were reconstructed twice wrong**, which the filtering work
+  exposed. `pb_reader.go` built them as `headerBegin + tickIndex × tickSizeDays × 86400`, where
+  `tickSizeDays` is an integer division that collapses any sub-day tick size to one day, and the
+  anchor is the first commit's timestamp rather than the tick-0 boundary. So `--tick-size=12` spaced
+  ticks a full day apart, and on the **default** tick every timestamp carried the first commit's time
+  of day — enough for an `--end-date` at midnight to drop that day's tick. Now built from the exact
+  nanosecond tick size on the floored anchor; the axis this chart got in T2.1 was affected too.
+- **Two charts cannot follow a date range and now say so.** `SubsystemBusFactor` and
+  `SubsystemGini`/`SubsystemHHI` are single whole-analysis maps with no per-tick breakdown, so under a
+  range they would silently describe a different period from the timeline beside them. They carry a
+  `[whole history]` title suffix and warn. The scope goes in the **title**, not only on stderr —
+  nobody looking at the PNG later sees the stderr.
+- **`knowledgeDiffusion` honours the range on its trend chart only** — `UniqueEditorsOverTime` is the
+  only tick-indexed thing it carries; the distribution, silo and Lorenz charts are whole-history
+  per-file totals.
+- **The date axis needed a formatter, not just dates.** matplotlib-go's `AutoDateFormatter` picks its
+  layout from the axis _span_ while the locator places ticks by its own spacing, so a 2½-year history
+  crossed into a year-only layout and rendered `2024 2024 2024 2025 2025 2025 2026`.
+  `graphics.UseConciseDateAxis` switches to `ConciseDateFormatter`, which derives its level from tick
+  spacing. This also fixes the already-shipped `refactoring-proxy` chart, which had the same axis.
+- **`temporalActivity` had the unfloored-anchor bug too** (`report_temporal_activity.go:530`) and now
+  shares `tickAxis`, so there is one anchor rule. Its `temporalTickDays` helper is gone;
+  `TestTemporalFilterPreservesSubdayTicks` carries over what its test asserted.
+
+**Verified** on `ewws-auth` (`--diff-timeout=300000`, untruncated): all three timelines plus
+`refactoring-proxy` render a `"Date"` axis reading `Apr / Jul / Oct / 2025 / …` across the
+repository's real 2024-04 → 2026-08 history, and `--start-date 2025-01-01 --end-date 2025-12-31`
+narrows every one of them to `Jan 2025 … Jan 2026`. `hercules report` still writes all the affected
+charts.
 
 ---
 
@@ -760,6 +831,13 @@ oversight.
   Making it additive means adding those distributions to both the result and `pb.proto` — worth
   doing only if a subsystem reading of a _combined_ run is actually wanted, and summing a directory
   named `src` across unrelated repositories is a questionable statistic in itself.
+- **`hotspot-risk` cannot honour `--start-date`/`--end-date`** and was left out of T2.3's filtering
+  pass for that reason. `HotspotRiskResults` carries a per-file ranking and a `WindowDays` scalar; the
+  churn window is applied during analysis and the timestamps behind it are dropped, so there is
+  nothing in the result to filter on. Making it possible means adding a time axis to the schema —
+  worth doing only if a date-scoped hotspot ranking is actually wanted, and note that the ranking is
+  normalised against the run's own maxima (T1.2c), so a filtered ranking would have to be rescored
+  rather than merely subset.
 - **Combined file burndown has never existed.** `BurndownAnalysis.MergeResults` merges
   `GlobalHistory`, people and repositories but never `FileHistories` — and **upstream does not
   either**. Per-repository `--burndown-files` works (305 files render from `meko-etl-tool` alone);

@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/cwbudde/matplotlib-go/core"
 	"github.com/cwbudde/matplotlib-go/optional"
@@ -18,7 +19,7 @@ import (
 	"github.com/cwbudde/hercules/internal/render/readers"
 )
 
-func BusFactor(reader readers.Reader, output string) error {
+func BusFactor(reader readers.Reader, output string, startTime, endTime *time.Time) error {
 	busFactorReader, ok := reader.(readers.BusFactorReader)
 	if !ok {
 		return fmt.Errorf("%w: bus factor", readers.ErrAnalysisMissing)
@@ -33,12 +34,21 @@ func BusFactor(reader readers.Reader, output string) error {
 		return errNoBusFactorSnapshots
 	}
 
-	ticks := sortedIntKeys(data.Snapshots)
+	begin, _ := reader.GetHeader()
+	axis, dated := newTickAxis(begin, data.TickSize)
+
+	ticks := selectReportTicks(sortedIntKeys(data.Snapshots), axis, dated, startTime, endTime, "bus factor")
+	if len(ticks) == 0 {
+		return fmt.Errorf("%w: bus factor", errNoSnapshotsInRange)
+	}
+
+	// Under a date range the gauge reads the last snapshot inside the range, not
+	// the last one in the file.
 	latest := data.Snapshots[ticks[len(ticks)-1]]
 	_, _ = fmt.Fprintf(os.Stdout, "Bus factor: latest=%d, total lines=%d, threshold=%.2f\n",
 		latest.BusFactor, latest.TotalLines, data.Threshold)
 
-	err = plotBusFactorTimeline(data, ticks, output)
+	err = plotBusFactorTimeline(data, ticks, axis, dated, output)
 	if err != nil {
 		return err
 	}
@@ -48,21 +58,45 @@ func BusFactor(reader readers.Reader, output string) error {
 		return fmt.Errorf("failed to plot bus factor gauge: %w", err)
 	}
 
-	return plotBusFactorSubsystemSummary(titleRepositoryName(reader.GetName()), data, output)
+	// The subsystem summary cannot follow: SubsystemBusFactor is one map for the
+	// whole analysis, with no per-tick breakdown to select from. Rather than let
+	// it pass for the requested window, it is labelled and announced as covering
+	// the full history.
+	scope := reportRangeScope(startTime, endTime, "bus factor subsystem summary")
+
+	return plotBusFactorSubsystemSummary(titleRepositoryName(reader.GetName()), data, scope, output)
 }
 
-func plotBusFactorTimeline(data *readers.BusFactorData, ticks []int, output string) error {
-	series := make(xySeries, len(ticks))
+func plotBusFactorTimeline(
+	data *readers.BusFactorData,
+	ticks []int,
+	axis tickAxis,
+	dated bool,
+	output string,
+) error {
+	values := make([]float64, len(ticks))
 	for index, tick := range ticks {
-		series[index] = xyPoint{X: float64(tick), Y: float64(data.Snapshots[tick].BusFactor)}
+		values[index] = float64(data.Snapshots[tick].BusFactor)
+	}
+
+	timelineOutput := siblingOutputPath(output, "bus-factor.png", "timeline")
+
+	if dated {
+		return plotTimeSeries(
+			"Bus Factor Over Time",
+			"Bus Factor",
+			[]namedTimeSeries{{Name: "Bus factor", Dates: axis.datesOf(ticks), Values: values}},
+			timelineOutput,
+			"bus-factor-timeline.png",
+		)
 	}
 
 	return plotLineSeries(
 		"Bus Factor Over Time",
 		"Tick",
 		"Bus Factor",
-		[]namedSeries{{Name: "Bus factor", Points: series}},
-		siblingOutputPath(output, "bus-factor.png", "timeline"),
+		[]namedSeries{{Name: "Bus factor", Points: tickIndexSeries(ticks, values)}},
+		timelineOutput,
 		"bus-factor-timeline.png",
 	)
 }
@@ -87,6 +121,7 @@ func plotBusFactorLatest(
 func plotBusFactorSubsystemSummary(
 	repoName string,
 	data *readers.BusFactorData,
+	scope string,
 	output string,
 ) error {
 	if len(data.SubsystemBusFactor) == 0 {
@@ -97,6 +132,7 @@ func plotBusFactorSubsystemSummary(
 
 	err := plotBusFactorSubsystemsMatplotlib(
 		repoName,
+		scope,
 		labels,
 		values,
 		float64(data.Threshold),
@@ -347,6 +383,7 @@ func drawMissingBusFactorOwnership(axes *core.Axes) {
 
 func plotBusFactorSubsystemsMatplotlib(
 	repoName string,
+	scope string,
 	labels []string,
 	values []int,
 	threshold float64,
@@ -365,7 +402,7 @@ func plotBusFactorSubsystemsMatplotlib(
 		return errBusFactorSubsystemAxes
 	}
 
-	configureBusFactorSubsystemAxes(ax, repoName, labels, values, threshold)
+	configureBusFactorSubsystemAxes(ax, repoName, scope, labels, values, threshold)
 
 	err = saveReportFigure(fig, output, width, height)
 	if err != nil { // TightLayout ~ Python tight_layout
@@ -380,14 +417,17 @@ func plotBusFactorSubsystemsMatplotlib(
 func configureBusFactorSubsystemAxes(
 	ax *core.Axes,
 	repoName string,
+	scope string,
 	labels []string,
 	values []int,
 	threshold float64,
 ) {
 	if repoName != "" {
-		ax.SetTitle(fmt.Sprintf("%s - Bus Factor by Subsystem (threshold: %.0f%%)", repoName, threshold*100))
+		ax.SetTitle(fmt.Sprintf(
+			"%s - Bus Factor by Subsystem (threshold: %.0f%%)%s", repoName, threshold*100, scope,
+		))
 	} else {
-		ax.SetTitle(fmt.Sprintf("Bus Factor by Subsystem (threshold: %.0f%%)", threshold*100))
+		ax.SetTitle(fmt.Sprintf("Bus Factor by Subsystem (threshold: %.0f%%)%s", threshold*100, scope))
 	}
 
 	ax.SetXLabel("Bus Factor")

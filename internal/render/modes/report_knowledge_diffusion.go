@@ -8,6 +8,7 @@ import (
 	"os"
 	"sort"
 	"strconv"
+	"time"
 
 	"github.com/cwbudde/matplotlib-go/core"
 	"github.com/cwbudde/matplotlib-go/optional"
@@ -19,7 +20,13 @@ import (
 	"github.com/cwbudde/hercules/internal/render/readers"
 )
 
-func KnowledgeDiffusion(reader readers.Reader, output string, detail bool) error {
+// KnowledgeDiffusion renders the diffusion charts.
+//
+// startTime/endTime reach only the trend chart. It is the sole output with a
+// time axis: UniqueEditorsOverTime is tick-indexed, while the distribution, silo
+// and Lorenz charts are whole-history totals per file, carrying no timestamps a
+// date range could be applied to.
+func KnowledgeDiffusion(reader readers.Reader, output string, detail bool, startTime, endTime *time.Time) error {
 	diffusionReader, ok := reader.(readers.KnowledgeDiffusionReader)
 	if !ok {
 		return fmt.Errorf("%w: knowledge diffusion", readers.ErrAnalysisMissing)
@@ -60,7 +67,13 @@ func KnowledgeDiffusion(reader readers.Reader, output string, detail bool) error
 	}
 
 	if detail {
-		err := plotKnowledgeTrend(data, siblingOutputPath(output, "knowledge-diffusion.png", "trend"))
+		begin, _ := reader.GetHeader()
+		axis, dated := newTickAxis(begin, data.TickSize)
+
+		err := plotKnowledgeTrend(
+			data, axis, dated, startTime, endTime,
+			siblingOutputPath(output, "knowledge-diffusion.png", "trend"),
+		)
 		if err != nil {
 			return err
 		}
@@ -547,7 +560,13 @@ func configureKnowledgeSiloLegend(axes *core.Axes) {
 
 // plotKnowledgeTrend renders a max-unique-editors-over-time chart. Go-only,
 // gated behind --knowledge-diffusion-detail.
-func plotKnowledgeTrend(data *readers.KnowledgeDiffusionData, output string) error {
+func plotKnowledgeTrend(
+	data *readers.KnowledgeDiffusionData,
+	axis tickAxis,
+	dated bool,
+	startTime, endTime *time.Time,
+	output string,
+) error {
 	trend := make(map[int]int)
 
 	for _, file := range data.Files {
@@ -562,19 +581,31 @@ func plotKnowledgeTrend(data *readers.KnowledgeDiffusionData, output string) err
 		return nil
 	}
 
-	ticks := sortedIntKeys(trend)
+	ticks := selectReportTicks(sortedIntKeys(trend), axis, dated, startTime, endTime, "knowledge diffusion")
+	if len(ticks) == 0 {
+		return fmt.Errorf("%w: knowledge diffusion trend", errNoSnapshotsInRange)
+	}
 
-	points := make(xySeries, len(ticks))
+	values := make([]float64, len(ticks))
 	for i, tick := range ticks {
-		points[i].X = float64(tick)
-		points[i].Y = float64(trend[tick])
+		values[i] = float64(trend[tick])
+	}
+
+	if dated {
+		return plotTimeSeries(
+			"Knowledge Diffusion Trend",
+			"Max Unique Editors",
+			[]namedTimeSeries{{Name: "Max editors", Dates: axis.datesOf(ticks), Values: values}},
+			output,
+			"knowledge-diffusion-trend.png",
+		)
 	}
 
 	return plotLineSeries(
 		"Knowledge Diffusion Trend",
 		"Tick",
 		"Max Unique Editors",
-		[]namedSeries{{Name: "Max editors", Points: points}},
+		[]namedSeries{{Name: "Max editors", Points: tickIndexSeries(ticks, values)}},
 		output,
 		"knowledge-diffusion-trend.png",
 	)

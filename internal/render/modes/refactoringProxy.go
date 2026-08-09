@@ -12,12 +12,13 @@ import (
 	"github.com/cwbudde/matplotlib-go/render"
 	"github.com/cwbudde/matplotlib-go/ticker"
 
+	"github.com/cwbudde/hercules/internal/render/graphics"
 	"github.com/cwbudde/hercules/internal/render/readers"
 )
 
 var errRefactoringProxyAxes = errors.New("failed to create refactoring proxy axes")
 
-func RefactoringProxy(reader readers.Reader, output string) error {
+func RefactoringProxy(reader readers.Reader, output string, startTime, endTime *time.Time) error {
 	proxyReader, ok := reader.(readers.RefactoringProxyReader)
 	if !ok {
 		return fmt.Errorf("%w: RefactoringProxy", readers.ErrAnalysisMissing)
@@ -32,7 +33,46 @@ func RefactoringProxy(reader readers.Reader, output string) error {
 		return fmt.Errorf("%w: RefactoringProxy", readers.ErrAnalysisMissing)
 	}
 
-	return plotRefactoringProxy(titleRepositoryName(reader.GetName()), data, output)
+	// Unlike the other timeline charts this one needs no tick axis: every tick
+	// carries its own unix timestamp, which is what made the T2.1 axis fix
+	// possible in the first place.
+	ranged := *data
+	ranged.Ticks = refactoringProxyTicksInRange(data.Ticks, startTime, endTime)
+
+	if len(ranged.Ticks) == 0 {
+		return fmt.Errorf("%w: refactoring proxy", errNoSnapshotsInRange)
+	}
+
+	return plotRefactoringProxy(titleRepositoryName(reader.GetName()), &ranged, output)
+}
+
+// refactoringProxyTicksInRange keeps the ticks whose timestamp falls inside the
+// requested window. Both boundaries are inclusive, matching the whole-tick
+// selection the tick-indexed charts do.
+func refactoringProxyTicksInRange(
+	ticks []readers.RefactoringProxyTick,
+	startTime, endTime *time.Time,
+) []readers.RefactoringProxyTick {
+	if startTime == nil && endTime == nil {
+		return ticks
+	}
+
+	kept := make([]readers.RefactoringProxyTick, 0, len(ticks))
+
+	for _, tick := range ticks {
+		stamp := time.Unix(tick.Timestamp, 0).UTC()
+		if startTime != nil && stamp.Before(*startTime) {
+			continue
+		}
+
+		if endTime != nil && stamp.After(*endTime) {
+			continue
+		}
+
+		kept = append(kept, tick)
+	}
+
+	return kept
 }
 
 func plotRefactoringProxy(repoName string, data *readers.RefactoringProxyData, output string) error {
@@ -129,6 +169,9 @@ func drawRefactoringProxySeries(
 
 func configureRefactoringProxyAxes(ax *core.Axes, repoName string, maxRate, threshold float64) {
 	ax.SetXLabel("Date")
+	// Same axis family as the other timelines, so it gets the same tick labels:
+	// the default formatter prints a bare year against sub-year tick spacing.
+	graphics.UseConciseDateAxis(ax)
 	ax.SetYLabel("Refactoring Rate (Renames/Moves per Commit)")
 
 	title := "Refactoring Proxy Timeline"

@@ -494,7 +494,7 @@ func filterTemporalActivitiesByDateRange(
 		return nil, false
 	}
 
-	startTick, endTick := temporalFilterTicks(filterRange, data.TickSize)
+	startTick, endTick := temporalFilterTicks(filterRange)
 	activities := temporalActivitiesInTickRange(data.Ticks, startTick, endTick)
 	_, _ = fmt.Fprintf(
 		os.Stdout,
@@ -512,9 +512,11 @@ func filterTemporalActivitiesByDateRange(
 }
 
 type temporalFilterRange struct {
-	repositoryStart time.Time
-	start           time.Time
-	end             time.Time
+	// axis dates the ticks. It is anchored on the floored tick-0 boundary rather
+	// than on the header's begin time - see tickAxis.
+	axis  tickAxis
+	start time.Time
+	end   time.Time
 }
 
 func temporalActivityFilterRange(
@@ -523,17 +525,22 @@ func temporalActivityFilterRange(
 	startTime, endTime *time.Time,
 ) (temporalFilterRange, bool) {
 	headerStart, headerEnd := reader.GetHeader()
-	if headerStart == 0 || data.TickSize <= 0 || len(data.Ticks) == 0 {
+
+	axis, dated := newTickAxis(headerStart, data.TickSize)
+	if !dated || len(data.Ticks) == 0 {
 		return temporalFilterRange{}, false
 	}
 
+	// The repository bounds stay on the raw header times: they only decide
+	// whether the user asked for a narrower window than the data covers, which is
+	// a question about wall-clock instants rather than about tick boundaries.
 	repositoryStart := time.Unix(headerStart, 0)
 	repositoryEnd := time.Unix(headerEnd, 0)
 
 	filterRange := temporalFilterRange{
-		repositoryStart: repositoryStart,
-		start:           temporalFilterBoundary(startTime, repositoryStart),
-		end:             temporalFilterBoundary(endTime, repositoryEnd),
+		axis:  axis,
+		start: temporalFilterBoundary(startTime, repositoryStart),
+		end:   temporalFilterBoundary(endTime, repositoryEnd),
 	}
 	if !filterRange.start.After(repositoryStart) && !filterRange.end.Before(repositoryEnd) {
 		return temporalFilterRange{}, false
@@ -550,21 +557,12 @@ func temporalFilterBoundary(boundary *time.Time, fallback time.Time) time.Time {
 	return fallback
 }
 
-func temporalFilterTicks(filterRange temporalFilterRange, tickSize int64) (int, int) {
-	tickDays := temporalTickDays(tickSize)
-	startTick := int(filterRange.start.Sub(filterRange.repositoryStart).Hours() / 24 / tickDays)
-	endTick := int(filterRange.end.Sub(filterRange.repositoryStart).Hours() / 24 / tickDays)
-
-	return startTick, endTick
-}
-
-func temporalTickDays(tickSize int64) float64 {
-	tickDays := float64(tickSize) / float64(temporalNanosecondsPerDay)
-	if tickDays <= 0 {
-		return 1
-	}
-
-	return tickDays
+// temporalFilterTicks converts the requested window into an inclusive tick
+// range. It used to divide by the repository's raw begin time, which is the
+// first commit's timestamp rather than the boundary tick 0 starts at, so a
+// boundary could land one tick off.
+func temporalFilterTicks(filterRange temporalFilterRange) (int, int) {
+	return filterRange.axis.tickOf(filterRange.start), filterRange.axis.tickOf(filterRange.end)
 }
 
 func temporalActivitiesInTickRange(

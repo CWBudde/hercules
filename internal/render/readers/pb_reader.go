@@ -6,6 +6,7 @@ import (
 	"io"
 	"maps"
 	"sort"
+	"time"
 
 	"github.com/gogo/protobuf/proto"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/cwbudde/hercules/internal/pb"
 	"github.com/cwbudde/hercules/internal/render/burndown"
 	"github.com/cwbudde/hercules/internal/render/progress"
+	"github.com/cwbudde/hercules/internal/tickgrid"
 )
 
 var (
@@ -557,6 +559,17 @@ func (r *ProtobufReader) GetRefactoringProxy() (*RefactoringProxyData, error) {
 		tickSizeDays = 1
 	}
 
+	// Tick timestamps are reconstructed, since the analysis stores tick indices.
+	// Both halves of the reconstruction matter. The step has to be the exact
+	// nanosecond tick size rather than tickSizeDays, which truncates: a 12-hour
+	// tick rounds to 0 and is then forced to 1, spacing every tick a full day
+	// apart. And the anchor has to be the floored tick-0 boundary rather than the
+	// header's begin time, which is the first commit's timestamp - anchoring
+	// there puts every tick at that commit's time of day, so a date range ending
+	// at midnight drops the last day's tick.
+	tickStep := time.Duration(proxyData.GetTickSize())
+	tickZero := tickgrid.FloorTime(time.Unix(start, 0).UTC(), tickStep).Unix()
+
 	ticks := make([]RefactoringProxyTick, 0, len(proxyData.GetTicks()))
 	for i, tickIndex := range proxyData.GetTicks() {
 		rate := float32(0)
@@ -575,8 +588,8 @@ func (r *ProtobufReader) GetRefactoringProxy() (*RefactoringProxyData, error) {
 		}
 
 		timestamp := start
-		if tickSizeDays > 0 {
-			timestamp = start + int64(tickIndex)*tickSizeDays*86400
+		if tickStep > 0 {
+			timestamp = tickZero + int64(tickIndex)*int64(tickStep/time.Second)
 		}
 
 		ticks = append(ticks, RefactoringProxyTick{

@@ -9,6 +9,7 @@ import (
 
 	matcolor "github.com/cwbudde/matplotlib-go/color"
 	"github.com/cwbudde/matplotlib-go/core"
+	"github.com/cwbudde/matplotlib-go/dates"
 	"github.com/cwbudde/matplotlib-go/optional"
 	"github.com/cwbudde/matplotlib-go/render"
 	"github.com/cwbudde/matplotlib-go/style"
@@ -102,8 +103,12 @@ type MatplotlibGroupedBarOptions struct {
 }
 
 type MatplotlibLineSeries struct {
-	Name   string
-	X      []float64
+	Name string
+	X    []float64
+	// Dates supersedes X when set. matplotlib-go's Plot/Scatter/FillBetween take
+	// their x values as any and switch the axis to date units for a []time.Time,
+	// so a date axis needs no separate plotting path - only this field.
+	Dates  []time.Time
 	Y      []float64
 	Color  color.Color
 	Marker bool
@@ -385,6 +390,10 @@ func PlotLineChartMatplotlib(series []MatplotlibLineSeries, opts MatplotlibLineO
 		return err
 	}
 
+	if lineSeriesAreDated(series) {
+		UseConciseDateAxis(ax)
+	}
+
 	if opts.Legend {
 		ax.AddLegend()
 	}
@@ -395,11 +404,16 @@ func PlotLineChartMatplotlib(series []MatplotlibLineSeries, opts MatplotlibLineO
 func addMatplotlibLineSeries(ax *core.Axes, series []MatplotlibLineSeries) error {
 	palette := PythonLaboursColorPalette(len(series))
 	for i, item := range series {
-		if len(item.X) == 0 || len(item.Y) == 0 {
+		xLength := len(item.X)
+		if len(item.Dates) > 0 {
+			xLength = len(item.Dates)
+		}
+
+		if xLength == 0 || len(item.Y) == 0 {
 			continue
 		}
 
-		if len(item.X) != len(item.Y) {
+		if xLength != len(item.Y) {
 			return fmt.Errorf("%w: line series %q", errLineSeriesLengthMismatch, item.Name)
 		}
 
@@ -417,22 +431,64 @@ func addMatplotlibLineSeries(ax *core.Axes, series []MatplotlibLineSeries) error
 
 func addMatplotlibLine(ax *core.Axes, item MatplotlibLineSeries, color render.Color) {
 	lineWidth := 2.0
+	x := lineSeriesXValues(item)
 
 	if item.Fill {
 		fillAlpha, fillEdge := 0.3, 0.0
 		zero := make([]float64, len(item.Y))
-		_, _ = ax.FillBetween(item.X, item.Y, zero, core.FillOptions{
+		_, _ = ax.FillBetween(x, item.Y, zero, core.FillOptions{
 			Color: optional.Of(color), Alpha: optional.Of(fillAlpha), EdgeWidth: optional.Of(fillEdge),
 		})
 	}
 
-	_, _ = ax.Plot(item.X, item.Y, core.PlotOptions{
+	_, _ = ax.Plot(x, item.Y, core.PlotOptions{
 		Color: optional.Of(color), LineWidth: optional.Of(lineWidth), Dashes: item.Dashes, Label: item.Name,
 	})
 	if item.Marker {
 		size := 24.0
-		_, _ = ax.Scatter(item.X, item.Y, core.ScatterOptions{Color: optional.Of(color), Size: optional.Of(size), Label: ""})
+		_, _ = ax.Scatter(x, item.Y, core.ScatterOptions{Color: optional.Of(color), Size: optional.Of(size), Label: ""})
 	}
+}
+
+// UseConciseDateAxis replaces the default date formatter on the x axis.
+//
+// AutoDateFormatter picks its layout from the axis *span* while the locator
+// picks tick positions from its own spacing, and the two disagree: a history of
+// two and a half years crosses the formatter's "two years" threshold into a
+// year-only layout, but still gets roughly nine ticks - so the axis reads
+// "2024 2024 2024 2025 2025 2025 2026". ConciseDateFormatter derives its level
+// from the tick spacing instead, and adds the month where the year alone cannot
+// tell two ticks apart.
+func UseConciseDateAxis(ax *core.Axes) {
+	if ax == nil || ax.XAxis == nil {
+		return
+	}
+
+	ax.XAxis.Formatter = dates.ConciseDateFormatter{Location: time.UTC}
+}
+
+// lineSeriesAreDated reports whether any series carries dates, which is what
+// switches the axis into date units.
+func lineSeriesAreDated(series []MatplotlibLineSeries) bool {
+	for _, item := range series {
+		if len(item.Dates) > 0 {
+			return true
+		}
+	}
+
+	return false
+}
+
+// lineSeriesXValues picks the x values to draw with. Every overlay on one axes
+// has to go through the same choice: mixing dates with raw floats stretches the
+// axis by five orders of magnitude and collapses the series into a spike, which
+// is the defect the refactoring-proxy chart was fixed for.
+func lineSeriesXValues(item MatplotlibLineSeries) any {
+	if len(item.Dates) > 0 {
+		return item.Dates
+	}
+
+	return item.X
 }
 
 // heatmapPaddingBaselineFontSize is the tick size the heatmap's fixed margins

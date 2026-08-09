@@ -392,18 +392,26 @@ func runTimes(reader readers.Reader, output string, _, _ *time.Time, opts modes.
 	return modes.RunTimesWithOptions(reader, output, opts)
 }
 
-func busFactor(reader readers.Reader, output string, _, _ *time.Time, _ modes.Options) error {
-	return modes.BusFactor(reader, output)
+func busFactor(reader readers.Reader, output string, startTime, endTime *time.Time, _ modes.Options) error {
+	return modes.BusFactor(reader, output, startTime, endTime)
 }
 
-func ownershipConcentration(reader readers.Reader, output string, _, _ *time.Time, _ modes.Options) error {
-	return modes.OwnershipConcentration(reader, output)
+func ownershipConcentration(
+	reader readers.Reader, output string, startTime, endTime *time.Time, _ modes.Options,
+) error {
+	return modes.OwnershipConcentration(reader, output, startTime, endTime)
 }
 
-func knowledgeDiffusion(reader readers.Reader, output string, _, _ *time.Time, opts modes.Options) error {
-	return modes.KnowledgeDiffusion(reader, output, opts.KnowledgeDiffusionDetail)
+func knowledgeDiffusion(
+	reader readers.Reader, output string, startTime, endTime *time.Time, opts modes.Options,
+) error {
+	return modes.KnowledgeDiffusion(reader, output, opts.KnowledgeDiffusionDetail, startTime, endTime)
 }
 
+// hotspotRisk discards the date range on purpose: HotspotRiskData is a per-file
+// ranking with no time axis at all. The churn window was applied during analysis
+// and not retained, so honouring --start-date/--end-date here would need new
+// fields in HotspotRiskResults rather than a change in the renderer.
 func hotspotRisk(reader readers.Reader, output string, _, _ *time.Time, _ modes.Options) error {
 	return modes.HotspotRisk(reader, output)
 }
@@ -412,8 +420,8 @@ func sentiment(reader readers.Reader, output string, _, _ *time.Time, opts modes
 	return modes.SentimentWithOptions(reader, output, opts)
 }
 
-func refactoringProxy(reader readers.Reader, output string, _, _ *time.Time, _ modes.Options) error {
-	return modes.RefactoringProxy(reader, output)
+func refactoringProxy(reader readers.Reader, output string, startTime, endTime *time.Time, _ modes.Options) error {
+	return modes.RefactoringProxy(reader, output, startTime, endTime)
 }
 
 func onboarding(reader readers.Reader, output string, _, _ *time.Time, _ modes.Options) error {

@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/cwbudde/matplotlib-go/backends"
 	_ "github.com/cwbudde/matplotlib-go/backends/agg"
@@ -27,6 +28,7 @@ var (
 	errNoTemporalActivityValues  = errors.New("no temporal activity values found")
 	errTemporalActivityAxes      = errors.New("failed to create temporal activity axes")
 	errNoBusFactorSnapshots      = errors.New("no bus factor snapshots found")
+	errNoSnapshotsInRange        = errors.New("no snapshots inside the requested date range")
 	errBusFactorGaugeAxes        = errors.New("failed to create bus factor gauge axes")
 	errOwnershipSubsystemAxes    = errors.New("failed to create ownership subsystem axes")
 	errKnowledgeDistributionAxes = errors.New("failed to create knowledge diffusion axes")
@@ -71,6 +73,15 @@ type floatSeries []float64
 type namedSeries struct {
 	Name   string
 	Points xySeries
+}
+
+// namedTimeSeries is namedSeries over a real date axis. It is a separate type
+// rather than an optional field on namedSeries so that a caller cannot half-fill
+// one and get a chart with two unit systems on one axis.
+type namedTimeSeries struct {
+	Name   string
+	Dates  []time.Time
+	Values []float64
 }
 
 // sampledTab20Colors returns n series colors spread across tab20.
@@ -265,6 +276,46 @@ func plotLineSeries(title, xLabel, yLabel string, series []namedSeries, output, 
 	return nil
 }
 
+// plotTimeSeries is plotLineSeries over a date axis. The x label is fixed:
+// every caller plots calendar time, and letting one of them pass "Tick" while
+// handing over dates is exactly the mislabelling this path exists to remove.
+func plotTimeSeries(title, yLabel string, series []namedTimeSeries, output, defaultOutput string) error {
+	output, err := resolveReportOutput(output, defaultOutput)
+	if err != nil {
+		return err
+	}
+
+	plotSeries := make([]graphics.MatplotlibLineSeries, len(series))
+	for i, item := range series {
+		plotSeries[i] = graphics.MatplotlibLineSeries{
+			Name:   item.Name,
+			Dates:  item.Dates,
+			Y:      item.Values,
+			Marker: true,
+		}
+	}
+
+	width, height := reportPlotInches(defaultOutput)
+
+	err = graphics.PlotLineChartMatplotlib(plotSeries, graphics.MatplotlibLineOptions{
+		Title:        title,
+		XLabel:       "Date",
+		YLabel:       yLabel,
+		Output:       output,
+		WidthInches:  width,
+		HeightInches: height,
+		ShowGrid:     true,
+		Legend:       true,
+	})
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Saved %s\n", output)
+
+	return nil
+}
+
 func resolveReportOutput(output, defaultOutput string) (string, error) {
 	if output == "" {
 		output = defaultOutput
@@ -292,6 +343,7 @@ var reportPlotSizesInches = map[string][2]float64{
 	"ownership-concentration-timeline.png": {14, 6},
 	"bus-factor-subsystems.png":            {12, 6},
 	"knowledge-diffusion.png":              {12, 6},
+	"knowledge-diffusion-trend.png":        {14, 6},
 	"knowledge-diffusion-lorenz.png":       {8, 8},
 	"knowledge-diffusion-silos.png":        {14, 12.5},
 	"hotspot-risk.png":                     {12, 8},

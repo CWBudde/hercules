@@ -199,3 +199,33 @@ func TestOnboardingAuthorLabelsFallBackForUnknownIdentities(t *testing.T) {
 	require.Equal(t, unknownContributorLabel, onboardingAuthorLabel(people, -1))
 	require.Equal(t, unknownContributorLabel, onboardingAuthorLabel(people, 262143))
 }
+
+// TestOnboardingBucketIndexWithoutWindowsUsesTheOpenEndedBin pins the empty-window
+// case against the labels it has to agree with: onboardingBucketLabels degrades to
+// ["0+d", "none"], so a real ramp-up must land in bin 0. Before the guard in
+// onboardingBucketIndex the loop simply never ran and every non-negative value fell
+// through to the sentinel, leaving "0+d" permanently empty.
+func TestOnboardingBucketIndexWithoutWindowsUsesTheOpenEndedBin(t *testing.T) {
+	labels := onboardingBucketLabels(nil)
+	require.Equal(t, []string{"0+d", "none"}, labels)
+
+	sentinel := len(labels) - 1
+
+	require.Equal(t, 0, onboardingBucketIndex(0, nil, sentinel))
+	require.Equal(t, 0, onboardingBucketIndex(120, nil, sentinel))
+	require.Equal(t, sentinel, onboardingBucketIndex(-1, nil, sentinel))
+}
+
+// TestOnboardingBucketIndexKeepsBeyondWindowWithTheSentinel guards the opposite
+// end: with windows configured, a value past the largest one cannot have come from
+// the trail, so it belongs with "none" rather than in the last day bucket.
+func TestOnboardingBucketIndexKeepsBeyondWindowWithTheSentinel(t *testing.T) {
+	windows := []int{7, 30, 90}
+	sentinel := len(onboardingBucketLabels(windows)) - 1
+
+	require.Equal(t, 0, onboardingBucketIndex(7, windows, sentinel))
+	require.Equal(t, 1, onboardingBucketIndex(8, windows, sentinel))
+	require.Equal(t, 2, onboardingBucketIndex(90, windows, sentinel))
+	require.Equal(t, sentinel, onboardingBucketIndex(91, windows, sentinel))
+	require.Equal(t, sentinel, onboardingBucketIndex(-1, windows, sentinel))
+}

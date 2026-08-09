@@ -378,6 +378,13 @@ func onboardingBucketIndex(days int, windows []int, sentinel int) int {
 		return sentinel
 	}
 
+	// Without windows the labels degrade to a single open-ended "0+d" bin, which
+	// every non-negative value belongs in. Falling through to the sentinel below
+	// would leave that bin permanently empty and file real ramp-ups under "none".
+	if len(windows) == 0 {
+		return 0
+	}
+
 	for i, window := range windows {
 		if days <= window {
 			return i

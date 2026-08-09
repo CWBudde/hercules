@@ -690,8 +690,8 @@ The analysis produces two visualizations:
 #### Onboarding ramp
 
 ```
-hercules --onboarding [--onboarding-windows=7,30,90] [--onboarding-meaningful-threshold=10]
-labours -m onboarding
+hercules --onboarding --pb [--onboarding-windows=7,30,90] [--onboarding-meaningful-threshold=10]
+labours -f pb -m onboarding
 ```
 
 The onboarding analysis tracks how quickly new contributors ramp up after their first commit.
@@ -700,8 +700,10 @@ configurable day windows. Cohorts use the local calendar month encoded in each a
 commit timestamp. Windows are exact elapsed 24-hour periods from that timestamp, include commits
 on the boundary, and never include a later commit merely because it shares a tick.
 
-Render it with `labours -m onboarding` (or let `hercules report` do it — the mode is in the
-default set). It writes three sibling charts:
+Render it with `labours -f pb -m onboarding` (or let `hercules report` do it — the mode is in
+the default set). Like every analysis added since the YAML reader was frozen, the onboarding
+renderer reads **protobuf only**, so pass `--pb` to `hercules` and `-f pb` to `labours`. It
+writes three sibling charts:
 
 1. **Cohort heatmap** (`_rampup`) - average meaningful lines by join cohort and days since first
    commit, reproducing the retired Python renderer's chart (shown below).

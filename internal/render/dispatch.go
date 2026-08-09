@@ -285,7 +285,12 @@ func standardMissingAnalysisWarnings() map[string]string {
 			"Re-run hercules with --knowledge-diffusion.",
 		ModeHotspotRisk:      "Hotspot risk scores were not collected. Re-run hercules with --hotspot-risk.",
 		ModeRefactoringProxy: "Refactoring proxy data was not collected. Re-run hercules with --refactoring-proxy.",
-		ModeOnboarding:       "Onboarding stats were not collected. Re-run hercules with --onboarding.",
+		// Unlike the warnings above, this one names the input format too: the
+		// onboarding reader is protobuf-only, so a YAML input carrying a
+		// perfectly good Onboarding section still lands here, and "were not
+		// collected" on its own would misdiagnose that.
+		ModeOnboarding: "Onboarding stats were not collected, or the input is not protobuf. " +
+			"Re-run hercules with --onboarding --pb and read it with labours -f pb.",
 	}
 }
 

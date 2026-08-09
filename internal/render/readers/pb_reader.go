@@ -596,6 +596,160 @@ func (r *ProtobufReader) GetRefactoringProxy() (*RefactoringProxyData, error) {
 	}, nil
 }
 
+// GetOnboarding retrieves per-author ramp-up snapshots and their join cohorts.
+func (r *ProtobufReader) GetOnboarding() (*OnboardingData, error) {
+	onboardingData, err := r.parseOnboardingResults()
+	if err != nil {
+		return nil, err
+	}
+
+	authors := make(map[int]OnboardingAuthorData, len(onboardingData.GetAuthors()))
+
+	for authorID, author := range onboardingData.GetAuthors() {
+		if author == nil {
+			continue
+		}
+
+		authors[int(authorID)] = OnboardingAuthorData{
+			FirstCommitTick:             int(author.GetFirstCommitTick()),
+			DaysToFirstMeaningfulCommit: daysToFirstMeaningfulCommit(author),
+			JoinCohort:                  author.GetJoinCohort(),
+			Snapshots:                   convertOnboardingSnapshots(author.GetSnapshots()),
+		}
+	}
+
+	cohorts := make(map[string]OnboardingCohortData, len(onboardingData.GetCohorts()))
+
+	for cohortName, cohort := range onboardingData.GetCohorts() {
+		if cohort == nil {
+			continue
+		}
+
+		cohorts[cohortName] = OnboardingCohortData{
+			Cohort:           cohort.GetCohort(),
+			AuthorCount:      int(cohort.GetAuthorCount()),
+			AverageSnapshots: convertOnboardingAverageSnapshots(cohort.GetAverageSnapshots()),
+		}
+	}
+
+	return &OnboardingData{
+		Authors:             authors,
+		Cohorts:             cohorts,
+		WindowDays:          convertInt32Slice(onboardingData.GetWindowDays()),
+		MeaningfulThreshold: int(onboardingData.GetMeaningfulThreshold()),
+		People:              append([]string(nil), onboardingData.GetDevIndex()...),
+		TickSize:            onboardingData.GetTickSize(),
+	}, nil
+}
+
+// onboardingNoMeaningfulCommit marks an author whose retained activity trail
+// contains no commit at or above the meaningfulness threshold. Results written
+// before the trail existed carry no trail at all and land here too.
+const onboardingNoMeaningfulCommit = -1
+
+// daysToFirstMeaningfulCommit derives the ramp-up delay from the retained
+// activity trail. The trail is stored sorted, but the earliest entry is taken
+// explicitly so the value does not depend on that.
+func daysToFirstMeaningfulCommit(author *pb.AuthorOnboardingData) int {
+	const secondsPerDay = 24 * 60 * 60
+
+	anchor := author.GetFirstCommitUnix()
+	firstMeaningful := int64(0)
+	found := false
+
+	for _, entry := range author.GetTrail() {
+		// The field means "how many", so only a positive count is meaningful.
+		// int32 admits negatives that no well-formed writer produces; testing
+		// != 0 would let one win the earliest-entry race below.
+		if entry == nil || entry.GetMeaningfulCommits() <= 0 {
+			continue
+		}
+
+		if !found || entry.GetUnixTime() < firstMeaningful {
+			firstMeaningful = entry.GetUnixTime()
+			found = true
+		}
+	}
+
+	if !found {
+		return onboardingNoMeaningfulCommit
+	}
+
+	if anchor == 0 {
+		anchor = earliestTrailTime(author.GetTrail())
+	}
+
+	if firstMeaningful < anchor {
+		return 0
+	}
+
+	return int((firstMeaningful - anchor) / secondsPerDay)
+}
+
+func earliestTrailTime(trail []*pb.OnboardingTrailEntry) int64 {
+	earliest := int64(0)
+	found := false
+
+	for _, entry := range trail {
+		if entry == nil {
+			continue
+		}
+
+		if !found || entry.GetUnixTime() < earliest {
+			earliest = entry.GetUnixTime()
+			found = true
+		}
+	}
+
+	return earliest
+}
+
+func convertOnboardingSnapshots(snapshots map[int32]*pb.OnboardingSnapshot) map[int]OnboardingSnapshotData {
+	result := make(map[int]OnboardingSnapshotData, len(snapshots))
+
+	for window, snapshot := range snapshots {
+		if snapshot == nil {
+			continue
+		}
+
+		result[int(window)] = OnboardingSnapshotData{
+			DaysSinceJoin:     int(snapshot.GetDaysSinceJoin()),
+			TotalCommits:      int(snapshot.GetTotalCommits()),
+			TotalFiles:        int(snapshot.GetTotalFiles()),
+			TotalLines:        int(snapshot.GetTotalLines()),
+			MeaningfulCommits: int(snapshot.GetMeaningfulCommits()),
+			MeaningfulFiles:   int(snapshot.GetMeaningfulFiles()),
+			MeaningfulLines:   int(snapshot.GetMeaningfulLines()),
+		}
+	}
+
+	return result
+}
+
+func convertOnboardingAverageSnapshots(
+	snapshots map[int32]*pb.OnboardingAverageSnapshot,
+) map[int]OnboardingAverageSnapshotData {
+	result := make(map[int]OnboardingAverageSnapshotData, len(snapshots))
+
+	for window, snapshot := range snapshots {
+		if snapshot == nil {
+			continue
+		}
+
+		result[int(window)] = OnboardingAverageSnapshotData{
+			DaysSinceJoin:        int(snapshot.GetDaysSinceJoin()),
+			AvgTotalCommits:      snapshot.GetAvgTotalCommits(),
+			AvgTotalFiles:        snapshot.GetAvgTotalFiles(),
+			AvgTotalLines:        snapshot.GetAvgTotalLines(),
+			AvgMeaningfulCommits: snapshot.GetAvgMeaningfulCommits(),
+			AvgMeaningfulFiles:   snapshot.GetAvgMeaningfulFiles(),
+			AvgMeaningfulLines:   snapshot.GetAvgMeaningfulLines(),
+		}
+	}
+
+	return result
+}
+
 // GetCommits retrieves commit statistics when Hercules was run with --commits-stat.
 func (r *ProtobufReader) GetCommits() (*CommitsData, error) {
 	commitsData, err := r.parseCommitsAnalysisResults()
@@ -1154,6 +1308,21 @@ func (r *ProtobufReader) parseRefactoringProxyResults() (*pb.RefactoringProxyRes
 	}
 
 	return &proxyData, nil
+}
+
+func (r *ProtobufReader) parseOnboardingResults() (*pb.OnboardingResults, error) {
+	if r.data == nil || r.data.Contents == nil {
+		return nil, fmt.Errorf("%w: Onboarding", ErrAnalysisMissing)
+	}
+
+	var onboardingData pb.OnboardingResults
+
+	err := r.unmarshalContent("Onboarding", &onboardingData)
+	if err != nil {
+		return nil, err
+	}
+
+	return &onboardingData, nil
 }
 
 func (r *ProtobufReader) parseCommitsAnalysisResults() (*pb.CommitsAnalysisResults, error) {

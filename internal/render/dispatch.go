@@ -40,6 +40,7 @@ var modeHandlers = map[string]modeHandler{
 	ModeHotspotRisk:            hotspotRisk,
 	ModeSentiment:              sentiment,
 	ModeRefactoringProxy:       refactoringProxy,
+	ModeOnboarding:             onboarding,
 }
 
 // executeModes renders modeNames with the default options, reporting failures
@@ -284,6 +285,7 @@ func standardMissingAnalysisWarnings() map[string]string {
 			"Re-run hercules with --knowledge-diffusion.",
 		ModeHotspotRisk:      "Hotspot risk scores were not collected. Re-run hercules with --hotspot-risk.",
 		ModeRefactoringProxy: "Refactoring proxy data was not collected. Re-run hercules with --refactoring-proxy.",
+		ModeOnboarding:       "Onboarding stats were not collected. Re-run hercules with --onboarding.",
 	}
 }
 
@@ -407,6 +409,10 @@ func sentiment(reader readers.Reader, output string, _, _ *time.Time, opts modes
 
 func refactoringProxy(reader readers.Reader, output string, _, _ *time.Time, _ modes.Options) error {
 	return modes.RefactoringProxy(reader, output)
+}
+
+func onboarding(reader readers.Reader, output string, _, _ *time.Time, _ modes.Options) error {
+	return modes.Onboarding(reader, output)
 }
 
 func runAllModes(reader readers.Reader, output string, startTime, endTime *time.Time) error {

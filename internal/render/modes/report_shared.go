@@ -280,26 +280,32 @@ func resolveReportOutput(output, defaultOutput string) (string, error) {
 	return output, nil
 }
 
+// reportPlotSizesInches holds the per-chart figure sizes. It used to be a
+// switch, which grew one branch per chart until the linter called it: a lookup
+// table says the same thing and stays flat as charts are added.
+var reportPlotSizesInches = map[string][2]float64{
+	"temporal-activity.png":                {16, 10},
+	"refactoring-proxy.png":                {16, 6},
+	"bus-factor.png":                       {14, 6},
+	"ownership-concentration.png":          {14, 6},
+	"bus-factor-timeline.png":              {14, 6},
+	"ownership-concentration-timeline.png": {14, 6},
+	"bus-factor-subsystems.png":            {12, 6},
+	"knowledge-diffusion.png":              {12, 6},
+	"knowledge-diffusion-lorenz.png":       {8, 8},
+	"knowledge-diffusion-silos.png":        {14, 12.5},
+	"hotspot-risk.png":                     {12, 8},
+	onboardingRampupOutput:                 {12, 6},
+	onboardingTimeToFirstOutput:            {12, 6},
+	onboardingAuthorsOutput:                {14, 8},
+}
+
 func reportPlotInches(defaultOutput string) (float64, float64) {
-	switch defaultOutput {
-	case "temporal-activity.png":
-		return 16, 10
-	case "refactoring-proxy.png":
-		return 16, 6
-	case "bus-factor.png", "ownership-concentration.png",
-		"bus-factor-timeline.png", "ownership-concentration-timeline.png":
-		return 14, 6
-	case "bus-factor-subsystems.png", "knowledge-diffusion.png":
-		return 12, 6
-	case "knowledge-diffusion-lorenz.png":
-		return 8, 8
-	case "knowledge-diffusion-silos.png":
-		return 14, 12.5
-	case "hotspot-risk.png":
-		return 12, 8
-	default:
-		return 16, 8
+	if size, ok := reportPlotSizesInches[defaultOutput]; ok {
+		return size[0], size[1]
 	}
+
+	return 16, 8
 }
 
 func reportPlotPixels(defaultOutput string) (int, int) {

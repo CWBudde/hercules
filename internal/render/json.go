@@ -53,6 +53,7 @@ var jsonModeExtractors = map[string]jsonModeExtractor{
 	ModeKnowledgeDiffusion:     extractKnowledgeDiffusionJSON,
 	ModeHotspotRisk:            extractHotspotRiskJSON,
 	ModeRefactoringProxy:       extractRefactoringProxyJSON,
+	ModeOnboarding:             extractOnboardingJSON,
 }
 
 // extractModeDataForJSON extracts raw reader data for JSON output without rendering plots.
@@ -256,6 +257,17 @@ func extractRefactoringProxyJSON(reader readers.Reader) (any, error) {
 	data, err := refactoringReader.GetRefactoringProxy()
 
 	return jsonField("refactoring_proxy", data, err)
+}
+
+func extractOnboardingJSON(reader readers.Reader) (any, error) {
+	onboardingReader, ok := reader.(readers.OnboardingReader)
+	if !ok {
+		return nil, fmt.Errorf("%w: onboarding", readers.ErrAnalysisMissing)
+	}
+
+	data, err := onboardingReader.GetOnboarding()
+
+	return jsonField("onboarding", data, err)
 }
 
 func jsonField(key string, value any, err error) (any, error) {

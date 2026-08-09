@@ -123,6 +123,7 @@ func TestRepositoryModeRequirementsCoverConcreteModes(t *testing.T) {
 		"hotspot-risk",
 		"sentiment",
 		"refactoring-proxy",
+		"onboarding",
 	}
 
 	if len(repositoryModeRequirements) != len(concreteModes) {

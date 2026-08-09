@@ -98,6 +98,7 @@ const (
 	analysisHotspotRisk            = "hotspot-risk"
 	analysisSentiment              = "sentiment"
 	analysisRefactoringProxy       = "refactoring-proxy"
+	analysisOnboarding             = "onboarding"
 )
 
 // unsupportedMultiRepositoryInput explains why the two multi-repository
@@ -139,6 +140,7 @@ var repositoryModeRequirements = map[string]repositoryModeRequirement{
 	render.ModeHotspotRisk:            {Analyses: []string{analysisHotspotRisk}},
 	render.ModeSentiment:              {Analyses: []string{analysisSentiment}},
 	render.ModeRefactoringProxy:       {Analyses: []string{analysisRefactoringProxy}},
+	render.ModeOnboarding:             {Analyses: []string{analysisOnboarding}},
 }
 
 var (

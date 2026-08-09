@@ -67,4 +67,6 @@ const (
 	ModeSentiment = "sentiment"
 	// ModeRefactoringProxy renders the refactoring proxy chart.
 	ModeRefactoringProxy = "refactoring-proxy"
+	// ModeOnboarding renders the developer onboarding ramp-up charts.
+	ModeOnboarding = "onboarding"
 )

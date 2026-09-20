@@ -217,6 +217,10 @@ func (v FileIdResolver) ScanFile(id FileId, callback func(line int, tick core.Ti
 		return false
 	}
 
+	if v.analyser.fileAllocator.Hibernated() {
+		panic("FileIdResolver.ScanFile() was called on a hibernated instance")
+	}
+
 	file.ForEach(func(line, value int) {
 		author, tick := unpackPersonWithTick(value)
 		callback(line, tick, author)

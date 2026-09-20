@@ -15,39 +15,42 @@ const (
 // A package-level sink prevents benchmark work from being optimized away.
 var benchmarkOwnershipSnapshot *ownershipTotals
 
-// BenchmarkOwnershipSnapshotsStableLargeFiles compares the incremental snapshot path with the
-// former full-rescan shape. Setup creates many large, stable files outside the timed section;
-// each timed incremental tick changes only two ownership runs and copies the author-sized output.
+// BenchmarkOwnershipSnapshotsStableLargeFiles compares the per-commit path, which rescans only
+// the files a commit touched, with the full rebuild a merge performs. Setup creates many large,
+// stable files outside the timed section; each timed commit moves one ownership boundary in one
+// file and copies the author-sized snapshot.
 func BenchmarkOwnershipSnapshotsStableLargeFiles(b *testing.B) {
 	for _, fileCount := range []int{1_000, 50_000} {
 		name := fmt.Sprintf("files=%d", fileCount)
 
-		b.Run("incremental/"+name, func(b *testing.B) {
-			accumulator := benchmarkSeedOwnership(b, fileCount)
+		b.Run("touched-files/"+name, func(b *testing.B) {
+			resolver, accumulator := benchmarkSeedOwnership(b, fileCount)
 			tick := 1
 
 			b.ReportAllocs()
 			b.ResetTimer()
 
 			for b.Loop() {
-				previousAuthor := core.AuthorId(0)
-				currentAuthor := core.AuthorId(1)
-				if tick%2 == 0 {
-					previousAuthor, currentAuthor = currentAuthor, previousAuthor
+				boundary := 1 + tick%(benchmarkOwnershipLinesPerFile-1)
+				resolver[1] = ownershipFile(
+					"file-1", benchmarkOwnershipLinesPerFile,
+					ownershipTestRun{0, 0, 0},
+					ownershipTestRun{boundary, 1, core.TickNumber(tick)},
+				)
+
+				changes := ownershipChanges(1)
+				changes.Resolver = resolver
+
+				err := accumulator.consume(tick, changes)
+				if err != nil {
+					b.Fatal(err)
 				}
 
-				_, snapshot := accumulator.consume(tick, core.LineHistoryChanges{
-					Changes: []core.LineHistoryChange{
-						ownershipChange(1, -1, previousAuthor, currentAuthor, core.TickNumber(tick)),
-						ownershipChange(1, 1, currentAuthor, currentAuthor, core.TickNumber(tick)),
-					},
-				})
-
-				benchmarkOwnershipSnapshot = snapshot
+				benchmarkOwnershipSnapshot = accumulator.snapshot()
 				tick++
 			}
 
-			b.ReportMetric(2, "changed-ownership-runs/op")
+			b.ReportMetric(1, "rescanned-files/op")
 			b.ReportMetric(benchmarkOwnershipAuthors, "snapshot-author-entries/op")
 			b.ReportMetric(float64(fileCount), "stable-live-files")
 			b.ReportMetric(
@@ -56,30 +59,22 @@ func BenchmarkOwnershipSnapshotsStableLargeFiles(b *testing.B) {
 			)
 		})
 
-		b.Run("full-rescan-reference/"+name, func(b *testing.B) {
-			accumulator := benchmarkSeedOwnership(b, fileCount)
+		b.Run("full-rebuild-reference/"+name, func(b *testing.B) {
+			_, accumulator := benchmarkSeedOwnership(b, fileCount)
 
 			b.ReportAllocs()
 			b.ResetTimer()
 
 			for b.Loop() {
-				totals := map[int]int64{}
-				var totalLines int64
-
-				for _, fileAuthors := range accumulator.fileLines {
-					for author, lines := range fileAuthors {
-						totals[author] += lines
-						totalLines += lines
-					}
+				err := accumulator.rebuild()
+				if err != nil {
+					b.Fatal(err)
 				}
 
-				benchmarkOwnershipSnapshot = &ownershipTotals{
-					TotalLines:  totalLines,
-					AuthorLines: totals,
-				}
+				benchmarkOwnershipSnapshot = accumulator.snapshot()
 			}
 
-			b.ReportMetric(float64(fileCount), "rescanned-ownership-runs/op")
+			b.ReportMetric(float64(fileCount), "rescanned-files/op")
 			b.ReportMetric(benchmarkOwnershipAuthors, "snapshot-author-entries/op")
 			b.ReportMetric(float64(fileCount), "stable-live-files")
 			b.ReportMetric(
@@ -90,25 +85,33 @@ func BenchmarkOwnershipSnapshotsStableLargeFiles(b *testing.B) {
 	}
 }
 
-func benchmarkSeedOwnership(b *testing.B, fileCount int) ownershipSnapshotAccumulator {
+func benchmarkSeedOwnership(
+	b *testing.B, fileCount int,
+) (ownershipTestResolver, ownershipSnapshotAccumulator) {
 	b.Helper()
 
-	changes := make([]core.LineHistoryChange, fileCount)
+	resolver := make(ownershipTestResolver, fileCount)
+	touched := make([]core.FileId, fileCount)
+
 	for file := range fileCount {
+		id := core.FileId(file + 1)
 		author := core.AuthorId(file % benchmarkOwnershipAuthors)
-		changes[file] = ownershipChange(
-			core.FileId(file+1),
-			benchmarkOwnershipLinesPerFile,
-			author,
-			author,
-			0,
+		resolver[id] = ownershipFile(
+			fmt.Sprintf("file-%d", id), benchmarkOwnershipLinesPerFile, ownershipTestRun{0, author, 0},
 		)
+		touched[file] = id
 	}
 
 	accumulator := ownershipSnapshotAccumulator{}
 	accumulator.reset()
 
-	accumulator.consume(0, core.LineHistoryChanges{Changes: changes})
+	changes := ownershipChanges(touched...)
+	changes.Resolver = resolver
 
-	return accumulator
+	err := accumulator.consume(0, changes)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	return resolver, accumulator
 }

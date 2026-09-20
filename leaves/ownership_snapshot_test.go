@@ -1,6 +1,7 @@
 package leaves
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -12,44 +13,91 @@ import (
 	"github.com/cwbudde/hercules/internal/test"
 )
 
-type ownershipTestResolver map[core.FileId]string
+// ownershipTestRun is one ownership run as a line-history tree reports it: the run starts at
+// start and is owned by author since tick.
+type ownershipTestRun struct {
+	start  int
+	author core.AuthorId
+	tick   core.TickNumber
+}
+
+// ownershipTestFile is one live file of the fake resolver. ScanFile emits its runs in order and
+// then the TreeEnd sentinel at length, exactly like File.ForEach does.
+type ownershipTestFile struct {
+	name   string
+	length int
+	runs   []ownershipTestRun
+}
+
+type ownershipTestResolver map[core.FileId]*ownershipTestFile
 
 func (resolver ownershipTestResolver) NameOf(id core.FileId) string {
-	return resolver[id]
+	if file := resolver[id]; file != nil {
+		return file.name
+	}
+
+	return ""
 }
 
 func (resolver ownershipTestResolver) MergedWith(id core.FileId) (core.FileId, string, bool) {
-	name, ok := resolver[id]
+	file, ok := resolver[id]
+	if !ok {
+		return id, "", false
+	}
 
-	return id, name, ok
+	return id, file.name, true
 }
 
 func (resolver ownershipTestResolver) ForEachFile(callback func(core.FileId, string)) bool {
-	panic("incremental ownership snapshots must not enumerate live files")
-}
-
-func (ownershipTestResolver) ScanFile(
-	core.FileId,
-	func(int, core.TickNumber, core.AuthorId),
-) bool {
-	panic("incremental ownership snapshots must not rescan live lines")
-}
-
-func ownershipChange(
-	fileID core.FileId,
-	delta int,
-	previousAuthor core.AuthorId,
-	currentAuthor core.AuthorId,
-	tick core.TickNumber,
-) core.LineHistoryChange {
-	return core.LineHistoryChange{
-		FileId:     fileID,
-		CurrTick:   tick,
-		PrevTick:   tick,
-		CurrAuthor: currentAuthor,
-		PrevAuthor: previousAuthor,
-		Delta:      delta,
+	ids := make([]core.FileId, 0, len(resolver))
+	for id := range resolver {
+		ids = append(ids, id)
 	}
+
+	slices.Sort(ids)
+
+	for _, id := range ids {
+		callback(id, resolver[id].name)
+	}
+
+	return true
+}
+
+func (resolver ownershipTestResolver) ScanFile(
+	id core.FileId,
+	callback func(int, core.TickNumber, core.AuthorId),
+) bool {
+	file := resolver[id]
+	if file == nil {
+		return false
+	}
+
+	for _, run := range file.runs {
+		callback(run.start, run.tick, run.author)
+	}
+
+	callback(file.length, linehistory.TreeMergeMark, -1)
+
+	return true
+}
+
+// ownershipFile describes a live file by its length and ownership runs.
+func ownershipFile(name string, length int, runs ...ownershipTestRun) *ownershipTestFile {
+	return &ownershipTestFile{name: name, length: length, runs: runs}
+}
+
+// ownershipTouch is the only thing the snapshotter reads from a change: which file it touched.
+func ownershipTouch(fileID core.FileId) core.LineHistoryChange {
+	return core.LineHistoryChange{FileId: fileID, Delta: 1}
+}
+
+func ownershipChanges(files ...core.FileId) core.LineHistoryChanges {
+	changes := make([]core.LineHistoryChange, len(files))
+	for index, file := range files {
+		changes[index] = ownershipTouch(file)
+	}
+
+	return core.LineHistoryChanges{Changes: changes}
 }
 
 func TestOwnershipSnapshotterMetaAndRegistration(t *testing.T) {
@@ -83,16 +131,16 @@ func consumeOwnershipAnalyses(
 	concentration *OwnershipConcentrationAnalysis,
 	tick int,
 	resolver core.FileIdResolver,
-	changes ...core.LineHistoryChange,
+	touched ...core.FileId,
 ) {
 	t.Helper()
 
+	changes := ownershipChanges(touched...)
+	changes.Resolver = resolver
+
 	dependencies := map[string]any{
-		linehistory.DependencyLineHistory: core.LineHistoryChanges{
-			Changes:  changes,
-			Resolver: resolver,
-		},
-		items.DependencyTick: tick,
+		linehistory.DependencyLineHistory: changes,
+		items.DependencyTick:              tick,
 	}
 
 	update, err := snapshotter.Consume(dependencies)
@@ -106,10 +154,12 @@ func consumeOwnershipAnalyses(
 }
 
 func TestOwnershipAnalysesSnapshotBeforeNextTick(t *testing.T) {
-	resolver := ownershipTestResolver{
-		1: "src/main.go",
-		2: "docs/guide.md",
-	}
+	const (
+		mainFile  core.FileId = 1
+		guideFile core.FileId = 2
+	)
+
+	resolver := ownershipTestResolver{}
 
 	busFactor := &BusFactorAnalysis{Threshold: 0.8}
 	concentration := &OwnershipConcentrationAnalysis{}
@@ -119,44 +169,44 @@ func TestOwnershipAnalysesSnapshotBeforeNextTick(t *testing.T) {
 	require.NoError(t, concentration.Initialize(test.Repository))
 
 	// Two commits in tick 0 establish 4 Alice lines and 1 Bob line.
-	consumeOwnershipAnalyses(
-		t, snapshotter, busFactor, concentration, 0, resolver,
-		ownershipChange(1, 4, 0, 0, 0),
-	)
-	consumeOwnershipAnalyses(
-		t, snapshotter, busFactor, concentration, 0, resolver,
-		ownershipChange(2, 1, 1, 1, 0),
-	)
+	resolver[mainFile] = ownershipFile("src/main.go", 4, ownershipTestRun{0, 0, 0})
+	consumeOwnershipAnalyses(t, snapshotter, busFactor, concentration, 0, resolver, mainFile)
 
-	// The first tick-1 commit transfers two lines from Alice to Bob and replaces them with
-	// three Bob lines. Tick 0 must be closed before these changes are applied.
-	consumeOwnershipAnalyses(
-		t, snapshotter, busFactor, concentration, 1, resolver,
-		ownershipChange(1, -2, 0, 1, 1),
-		ownershipChange(1, 3, 1, 1, 1),
+	resolver[guideFile] = ownershipFile("docs/guide.md", 1, ownershipTestRun{0, 1, 0})
+	consumeOwnershipAnalyses(t, snapshotter, busFactor, concentration, 0, resolver, guideFile)
+
+	// The first tick-1 commit replaces two of Alice's lines with three Bob lines. Tick 0 must be
+	// closed before the tree is re-read.
+	resolver[mainFile] = ownershipFile(
+		"src/main.go", 5, ownershipTestRun{0, 0, 0}, ownershipTestRun{2, 1, 1},
 	)
+	consumeOwnershipAnalyses(t, snapshotter, busFactor, concentration, 1, resolver, mainFile)
 
-	require.Contains(t, busFactor.snapshots, 0)
-	assert.Equal(t, int64(5), busFactor.snapshots[0].TotalLines)
-	assert.Equal(t, map[int]int64{0: 4, 1: 1}, busFactor.snapshots[0].AuthorLines)
-	assert.Equal(t, 1, busFactor.snapshots[0].BusFactor)
-
-	require.Contains(t, concentration.snapshots, 0)
-	assert.Equal(t, int64(5), concentration.snapshots[0].TotalLines)
-	assert.Equal(t, map[int]int64{0: 4, 1: 1}, concentration.snapshots[0].AuthorLines)
-	assert.InDelta(t, 0.3, concentration.snapshots[0].Gini, 1e-9)
-	assert.InDelta(t, 0.68, concentration.snapshots[0].HHI, 1e-9)
+	closed := snapshotter.ownership.closedSnapshots()
+	require.Contains(t, closed, 0)
+	assert.Equal(t, int64(5), closed[0].TotalLines)
+	assert.Equal(t, map[int]int64{0: 4, 1: 1}, closed[0].AuthorLines)
 
 	// A second commit in tick 1 grows the file. The immutable tick-0 snapshot must not move.
-	consumeOwnershipAnalyses(
-		t, snapshotter, busFactor, concentration, 1, resolver,
-		ownershipChange(1, 1, 1, 1, 1),
+	resolver[mainFile] = ownershipFile(
+		"src/main.go", 6, ownershipTestRun{0, 0, 0}, ownershipTestRun{2, 1, 1},
 	)
-	assert.Equal(t, map[int]int64{0: 4, 1: 1}, busFactor.snapshots[0].AuthorLines)
-	assert.Equal(t, map[int]int64{0: 4, 1: 1}, concentration.snapshots[0].AuthorLines)
+	consumeOwnershipAnalyses(t, snapshotter, busFactor, concentration, 1, resolver, mainFile)
+	assert.Equal(t, map[int]int64{0: 4, 1: 1}, closed[0].AuthorLines)
 
 	busResult := busFactor.Finalize().(BusFactorResult)
 	concentrationResult := concentration.Finalize().(OwnershipConcentrationResult)
+
+	require.Contains(t, busResult.Snapshots, 0)
+	assert.Equal(t, int64(5), busResult.Snapshots[0].TotalLines)
+	assert.Equal(t, map[int]int64{0: 4, 1: 1}, busResult.Snapshots[0].AuthorLines)
+	assert.Equal(t, 1, busResult.Snapshots[0].BusFactor)
+
+	require.Contains(t, concentrationResult.Snapshots, 0)
+	assert.Equal(t, int64(5), concentrationResult.Snapshots[0].TotalLines)
+	assert.Equal(t, map[int]int64{0: 4, 1: 1}, concentrationResult.Snapshots[0].AuthorLines)
+	assert.InDelta(t, 0.3, concentrationResult.Snapshots[0].Gini, 1e-9)
+	assert.InDelta(t, 0.68, concentrationResult.Snapshots[0].HHI, 1e-9)
 
 	require.Contains(t, busResult.Snapshots, 1)
 	assert.Equal(t, int64(7), busResult.Snapshots[1].TotalLines)
@@ -299,7 +349,7 @@ func TestOwnershipAnalysesEmptyAndSingleAuthorRepositories(t *testing.T) {
 	})
 
 	t.Run("single author final tick", func(t *testing.T) {
-		resolver := ownershipTestResolver{1: "main.go"}
+		resolver := ownershipTestResolver{1: ownershipFile("main.go", 3, ownershipTestRun{0, 0, 7})}
 		busFactor := &BusFactorAnalysis{Threshold: 0.8}
 		concentration := &OwnershipConcentrationAnalysis{}
 		snapshotter := &ownershipSnapshotter{}
@@ -307,10 +357,7 @@ func TestOwnershipAnalysesEmptyAndSingleAuthorRepositories(t *testing.T) {
 		require.NoError(t, busFactor.Initialize(test.Repository))
 		require.NoError(t, concentration.Initialize(test.Repository))
 
-		consumeOwnershipAnalyses(
-			t, snapshotter, busFactor, concentration, 7, resolver,
-			ownershipChange(1, 3, 0, 0, 7),
-		)
+		consumeOwnershipAnalyses(t, snapshotter, busFactor, concentration, 7, resolver, 1)
 
 		busResult := busFactor.Finalize().(BusFactorResult)
 		concentrationResult := concentration.Finalize().(OwnershipConcentrationResult)
@@ -328,41 +375,153 @@ func TestOwnershipAnalysesEmptyAndSingleAuthorRepositories(t *testing.T) {
 	})
 }
 
-// TestOwnershipSnapshotAccumulatorSurvivesDivergentRemoval pins PLAN.md B3: divergent branches
-// each remove the same lines from their own copy of a file and all of them feed this one
-// accumulator, so a total legitimately dips below zero until the branches merge. Aborting the run
-// over it killed --bus-factor and --ownership-concentration on ordinary histories.
-func TestOwnershipSnapshotAccumulatorSurvivesDivergentRemoval(t *testing.T) {
-	accumulator := ownershipSnapshotAccumulator{}
-	accumulator.reset()
+// TestScanFileOwnershipCountsRunsByLength pins the reading of ScanFile's output: callbacks are
+// run boundaries, so a run's length is the distance to the next one and belongs to the previous
+// callback's author, and the unmatched identity as well as the end sentinel own nothing.
+func TestScanFileOwnershipCountsRunsByLength(t *testing.T) {
+	resolver := ownershipTestResolver{1: ownershipFile(
+		"main.go", 9,
+		ownershipTestRun{0, 0, 0},
+		ownershipTestRun{3, 1, 1},
+		ownershipTestRun{5, core.AuthorMissing, 2},
+	)}
 
-	accumulator.consume(0, core.LineHistoryChanges{
-		Changes: []core.LineHistoryChange{ownershipChange(1, -1, 0, 1, 0)},
-	})
+	lines, live, err := scanFileOwnership(resolver, 1)
+	require.NoError(t, err)
+	assert.True(t, live)
+	assert.Equal(t, map[int]int64{0: 3, 1: 2}, lines)
 
-	require.NotNil(t, accumulator.divergence, "the dip must be recorded for the run's warning")
-	assert.Equal(t, int64(-1), accumulator.totalLines,
-		"internal totals stay signed so the compensating positive can still cancel them")
-
-	totals := accumulator.snapshot()
-	assert.Zero(t, totals.TotalLines, "snapshots must not hand a negative line count downstream")
-	assert.Empty(t, totals.AuthorLines, "an author left with nothing owns nothing")
+	_, live, err = scanFileOwnership(resolver, 2)
+	require.NoError(t, err)
+	assert.False(t, live, "an unknown id is a deleted file")
 }
 
-// TestOwnershipSnapshotAccumulatorCancelsDivergentRemoval is the other half: because the negative
-// is carried rather than clamped, the branch which duplicated the removal cancels out exactly.
-func TestOwnershipSnapshotAccumulatorCancelsDivergentRemoval(t *testing.T) {
-	accumulator := ownershipSnapshotAccumulator{}
-	accumulator.reset()
+// TestScanFileOwnershipRejectsUnresolvedMergeLines: a line still carrying TreeMergeMark decodes to
+// author 0, so counting it would credit somebody at random. The scan reports it instead.
+func TestScanFileOwnershipRejectsUnresolvedMergeLines(t *testing.T) {
+	resolver := ownershipTestResolver{1: ownershipFile(
+		"main.go", 4, ownershipTestRun{0, 0, linehistory.TreeMergeMark},
+	)}
 
-	accumulator.consume(0, core.LineHistoryChanges{
-		Changes: []core.LineHistoryChange{
-			ownershipChange(1, -10, 0, 1, 0),
-			ownershipChange(1, 30, 0, 1, 0),
-		},
+	_, _, err := scanFileOwnership(resolver, 1)
+	require.ErrorIs(t, err, errOwnershipUnresolvedMerge)
+
+	snapshotter := &ownershipSnapshotter{}
+	require.NoError(t, snapshotter.Initialize(test.Repository))
+
+	changes := ownershipChanges(1)
+	changes.Resolver = resolver
+	_, err = snapshotter.Consume(map[string]any{
+		linehistory.DependencyLineHistory: changes,
+		items.DependencyTick:              0,
 	})
+	require.ErrorIs(t, err, errOwnershipUnresolvedMerge)
+}
 
-	totals := accumulator.snapshot()
-	assert.Equal(t, int64(20), totals.TotalLines)
-	assert.Equal(t, map[int]int64{0: 20}, totals.AuthorLines)
+// TestOwnershipSnapshotterForkIsolatesBranches: a fork gets its own table, so a branch which
+// rewrites a file does not disturb its sibling's counts, and the closed snapshots are shared.
+func TestOwnershipSnapshotterForkIsolatesBranches(t *testing.T) {
+	resolver := ownershipTestResolver{1: ownershipFile("main.go", 10, ownershipTestRun{0, 0, 0})}
+	origin := &ownershipSnapshotter{}
+	require.NoError(t, origin.Initialize(test.Repository))
+
+	changes := ownershipChanges(1)
+	changes.Resolver = resolver
+	require.NoError(t, origin.ownership.consume(0, changes))
+
+	forks := origin.Fork(2)
+	require.Len(t, forks, 2)
+	left, ok := forks[0].(*ownershipSnapshotter)
+	require.True(t, ok)
+	assert.NotSame(t, origin, left)
+
+	// The left branch removes half of the file in tick 1; the origin does not see it.
+	branchResolver := ownershipTestResolver{1: ownershipFile("main.go", 5, ownershipTestRun{0, 0, 0})}
+	branchChanges := ownershipChanges(1)
+	branchChanges.Resolver = branchResolver
+	require.NoError(t, left.ownership.consume(1, branchChanges))
+
+	_, leftFinal := left.ownership.finalSnapshot()
+	_, originFinal := origin.ownership.finalSnapshot()
+	assert.Equal(t, int64(5), leftFinal.TotalLines)
+	assert.Equal(t, int64(10), originFinal.TotalLines)
+	assert.Equal(t, map[int]int64{0: 10}, origin.ownership.fileLines[1])
+
+	require.Contains(t, left.ownership.closedSnapshots(), 0)
+	assert.Equal(t, int64(10), left.ownership.closedSnapshots()[0].TotalLines)
+	assert.NotContains(t, origin.ownership.closedSnapshots(), 0)
+}
+
+// TestOwnershipSnapshotterMergeRebuildsFromTrees: after LineHistoryAnalyser.Merge() the trees
+// are the merged state and the table is not, so Merge() rebuilds the receiver and its siblings
+// from scratch - re-keyed ids leave, new files arrive.
+func TestOwnershipSnapshotterMergeRebuildsFromTrees(t *testing.T) {
+	before := ownershipTestResolver{
+		1: ownershipFile("a.go", 10, ownershipTestRun{0, 0, 0}),
+		2: ownershipFile("b.go", 4, ownershipTestRun{0, 1, 0}),
+	}
+	receiver := &ownershipSnapshotter{}
+	require.NoError(t, receiver.Initialize(test.Repository))
+
+	changes := ownershipChanges(1, 2)
+	changes.Resolver = before
+	require.NoError(t, receiver.ownership.consume(0, changes))
+
+	sibling, ok := receiver.Fork(1)[0].(*ownershipSnapshotter)
+	require.True(t, ok)
+
+	// The merge re-keyed b.go onto id 3, resolved two more lines of a.go to Bob and created c.go.
+	// Both branches now see the same merged trees, as synchronizeLineHistoryBranch guarantees.
+	after := ownershipTestResolver{
+		1: ownershipFile("a.go", 12, ownershipTestRun{0, 0, 0}, ownershipTestRun{10, 1, 3}),
+		3: ownershipFile("b.go", 4, ownershipTestRun{0, 1, 0}),
+		4: ownershipFile("c.go", 2, ownershipTestRun{0, 2, 3}),
+	}
+	receiver.ownership.resolver = after
+	sibling.ownership.resolver = after
+
+	receiver.Merge([]core.PipelineItem{sibling})
+
+	for _, branch := range []*ownershipSnapshotter{receiver, sibling} {
+		_, final := branch.ownership.finalSnapshot()
+		require.NotNil(t, final)
+		assert.Equal(t, int64(18), final.TotalLines)
+		assert.Equal(t, map[int]int64{0: 10, 1: 6, 2: 2}, final.AuthorLines)
+		assert.NotContains(t, branch.ownership.fileLines, core.FileId(2))
+		assert.Equal(t, map[string]map[int]int64{
+			"/": {0: 10, 1: 6, 2: 2},
+		}, branch.ownership.subsystemOwnership())
+	}
+}
+
+// TestOwnershipLeavesIgnoreReplicaState: a merge commit is replayed once per parent, and only the
+// first sighting runs on the branch which survives the merge. The leaves must keep that one.
+func TestOwnershipLeavesIgnoreReplicaState(t *testing.T) {
+	authoritative := &ownershipSnapshotAccumulator{}
+	replica := &ownershipSnapshotAccumulator{}
+	busFactor := &BusFactorAnalysis{}
+	concentration := &OwnershipConcentrationAnalysis{}
+	require.NoError(t, busFactor.Initialize(test.Repository))
+	require.NoError(t, concentration.Initialize(test.Repository))
+
+	_, err := busFactor.Consume(map[string]any{
+		dependencyOwnershipSnapshot: ownershipSnapshotUpdate{State: authoritative},
+	})
+	require.NoError(t, err)
+	_, err = concentration.Consume(map[string]any{
+		dependencyOwnershipSnapshot: ownershipSnapshotUpdate{State: authoritative},
+	})
+	require.NoError(t, err)
+
+	replicaDeps := map[string]any{
+		dependencyOwnershipSnapshot:   ownershipSnapshotUpdate{State: replica},
+		core.DependencyIsMergeReplica: true,
+	}
+	_, err = busFactor.Consume(replicaDeps)
+	require.NoError(t, err)
+	_, err = concentration.Consume(replicaDeps)
+	require.NoError(t, err)
+
+	assert.Same(t, authoritative, busFactor.ownership)
+	assert.Same(t, authoritative, concentration.ownership)
 }

@@ -221,9 +221,12 @@ type FileIdResolver interface {
 	// ForEachFile visits every live file. Implementations should use a stable file-ID order
 	// when their backing store does not otherwise define iteration order.
 	ForEachFile(callback func(id FileId, name string)) bool
-	// ScanFile visits every live line exactly once with a zero-based synthetic line index and
-	// its ownership. The index is stable for a resolver instance but is not a source position:
-	// replayed histories retain ownership counts even when their serialized format omits edits'
-	// original positions. It returns false when id does not identify a live file.
+	// ScanFile visits the ownership runs of a live file in line order: each callback carries the
+	// zero-based index of a run's first line and that run's owner, and the final callback is the
+	// end sentinel (the file's length, author -1). A run's length is therefore the distance to the
+	// next callback's index and belongs to the previous callback's author. The indices are stable
+	// for a resolver instance but are not source positions: replayed histories retain ownership
+	// counts even when their serialized format omits edits' original positions. It returns false
+	// when id does not identify a live file.
 	ScanFile(id FileId, callback func(line int, tick TickNumber, author AuthorId)) bool
 }

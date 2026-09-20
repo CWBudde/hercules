@@ -84,62 +84,25 @@ type namedTimeSeries struct {
 	Values []float64
 }
 
-// sampledTab20Colors returns n series colors spread across tab20.
+// sampledTab20Colors returns n series colors for a categorical chart.
 //
-// The spread is only usable while it stays injective: the step between
-// consecutive entries is len(palette)/(n-1), so once n exceeds the palette size
-// neighbouring series round onto the same entry. A combined run with 25
-// developers put the first two of them on tab20[0], stacked directly on top of
-// each other and indistinguishable. Beyond the palette size, cycle instead.
+// It is the render.Color view of graphics.DistinctSeriesColors: the spread
+// across tab20 while it stays injective, and a darkened pass over the palette
+// once there are more series than entries. A combined run with 25 developers
+// used to put the first two of them on tab20[0], stacked directly on top of
+// each other and indistinguishable.
 func sampledTab20Colors(n int) []render.Color {
-	if n <= 0 {
+	palette := graphics.DistinctSeriesColors(n)
+	if len(palette) == 0 {
 		return nil
 	}
 
-	palette := graphics.PythonLaboursColorPalette(20)
-	if n > len(palette) {
-		return cycledPaletteColors(palette, n)
-	}
-
-	colors := make([]render.Color, n)
-	for i := range colors {
-		index := 0
-		if n > 1 {
-			index = int(float64(i) * float64(len(palette)) / float64(n-1))
-			if index >= len(palette) {
-				index = len(palette) - 1
-			}
-		}
-
-		colors[i] = renderColor(palette[index])
+	colors := make([]render.Color, len(palette))
+	for i, paletteColor := range palette {
+		colors[i] = renderColor(paletteColor)
 	}
 
 	return colors
-}
-
-// cycledPaletteColors walks the palette in order and darkens it once per
-// completed pass, so a series that has to reuse an entry is still told apart
-// from the earlier series wearing it - and, more importantly, is never the same
-// color as the series stacked next to it.
-func cycledPaletteColors(palette []color.Color, n int) []render.Color {
-	colors := make([]render.Color, n)
-	for i := range colors {
-		colors[i] = darkenColor(renderColor(palette[i%len(palette)]), i/len(palette))
-	}
-
-	return colors
-}
-
-// darkenColor scales a color towards black by one step per pass, with a floor so
-// a third or fourth pass does not collapse everything into black.
-func darkenColor(c render.Color, passes int) render.Color {
-	if passes <= 0 {
-		return c
-	}
-
-	factor := math.Max(math.Pow(0.62, float64(passes)), 0.3)
-
-	return render.Color{R: c.R * factor, G: c.G * factor, B: c.B * factor, A: c.A}
 }
 
 func plotIntBars(title, xLabel, yLabel string, labels []string, values []int, output, defaultOutput string) error {

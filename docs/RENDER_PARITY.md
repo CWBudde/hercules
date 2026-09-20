@@ -124,6 +124,17 @@ Both Go modes normalise **before** stacking (`normalizedStackMatrix` in
 the flag, so these two pairs are expected to differ from the historical Python references
 and must not be "restored to parity".
 
+A third deviation concerns **series colors past the twentieth**. Python labours overrides
+`axes.prop_cycle` with `pyplot.cm.tab20.colors` and lets matplotlib cycle it modulo 20, so
+the 21st repository, developer or language is drawn in the exact color of the first. On a
+single repository that regime is never reached; on the org-wide MeKo run the combined
+repository chart stacks thirty-two bands and the legend stops naming anything. Charts whose
+series are **categorical** therefore use `graphics.DistinctSeriesColors`, which spreads
+across tab20 while that stays injective and then walks the palette again one shade darker
+per pass. Charts whose layers are **ordered age bands** — the project, per-repository and
+per-person burndowns — keep `PythonLaboursColorPalette` and stay pixel-comparable to the
+references. `graphics.Options.CategoricalLayers` selects between the two.
+
 ## How to re-run
 
 In this repository:

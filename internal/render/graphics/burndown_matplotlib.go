@@ -108,7 +108,7 @@ func PlotBurndownMatplotlibWithOptions(
 	}
 
 	matrix := data.Matrix
-	timeValues, renderColors, labels := prepareBurndownStackData(data)
+	timeValues, renderColors, labels := prepareBurndownStackData(data, opts.CategoricalLayers)
 	width, height := pythonPlotPixelSize(PythonPlotDefaultWidthInches, PythonPlotDefaultHeightInches, opts.Size)
 	background, foreground := LaboursPlotColors(opts.Background)
 	transparentBackground := background
@@ -127,11 +127,20 @@ func PlotBurndownMatplotlibWithOptions(
 	return saveMatplotlibFigureWithoutTightLayout(fig, output, width, height, transparentBackground)
 }
 
+// prepareBurndownStackData builds the stack's x values, colors and labels.
+// categoricalLayers picks the coloring: the combined repository chart stacks one
+// band per repository and needs every band to stay distinguishable, while an
+// age-band burndown keeps the Python palette (see DistinctSeriesColors).
 func prepareBurndownStackData(
 	data *burndown.ProcessedBurndown,
+	categoricalLayers bool,
 ) ([]float64, []render.Color, []string) {
 	timeValues := unixTimeValues(data.DateRange)
+
 	colors := PythonLaboursColorPalette(len(data.Matrix))
+	if categoricalLayers {
+		colors = DistinctSeriesColors(len(data.Matrix))
+	}
 
 	renderColors := make([]render.Color, len(colors))
 	for i, itemColor := range colors {

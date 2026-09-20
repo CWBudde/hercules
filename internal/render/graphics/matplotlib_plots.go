@@ -231,7 +231,7 @@ func prepareTimeAreaSeries(
 	matrix := make([][]float64, len(series))
 	labels := make([]string, len(series))
 
-	palette := PythonLaboursColorPalette(len(series))
+	palette := DistinctSeriesColors(len(series))
 	for i, item := range series {
 		if len(item.Values) != pointCount {
 			return nil, nil, nil, fmt.Errorf(
@@ -402,7 +402,7 @@ func PlotLineChartMatplotlib(series []MatplotlibLineSeries, opts MatplotlibLineO
 }
 
 func addMatplotlibLineSeries(ax *core.Axes, series []MatplotlibLineSeries) error {
-	palette := PythonLaboursColorPalette(len(series))
+	palette := DistinctSeriesColors(len(series))
 	for i, item := range series {
 		xLength := len(item.X)
 		if len(item.Dates) > 0 {
@@ -774,7 +774,7 @@ func addGroupedBarSeries(
 	series []MatplotlibGroupedBarSeries,
 	barWidth float64,
 ) (float64, error) {
-	palette := PythonLaboursColorPalette(len(series))
+	palette := DistinctSeriesColors(len(series))
 	maxValue := 0.0
 
 	for i, item := range series {
@@ -878,7 +878,7 @@ func addMatplotlibStackedBars(
 ) (float64, error) {
 	baseline := make([]float64, labelCount)
 
-	palette := PythonLaboursColorPalette(len(series))
+	palette := DistinctSeriesColors(len(series))
 	for i, item := range series {
 		if len(item.Values) != labelCount {
 			return 0, fmt.Errorf(
@@ -979,7 +979,7 @@ func PlotDevsEffortsMatplotlib(
 }
 
 func effortLayerColors(count int) []render.Color {
-	palette := tab20Palette()
+	palette := DistinctSeriesColors(count)
 
 	colors := make([]render.Color, count)
 	for i := range colors {

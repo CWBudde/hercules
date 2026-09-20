@@ -87,7 +87,7 @@ func addMatplotlibScatterSeries(
 	series []MatplotlibScatterSeries,
 	annotateLabels bool,
 ) {
-	palette := PythonLaboursColorPalette(len(series))
+	palette := DistinctSeriesColors(len(series))
 	for i, item := range series {
 		if len(item.Points) == 0 {
 			continue

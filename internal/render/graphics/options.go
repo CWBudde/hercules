@@ -9,6 +9,11 @@ type Options struct {
 	Background string
 	Size       string
 	HideTitle  bool
+
+	// CategoricalLayers marks a stacked chart whose layers are categories
+	// (repositories, people) rather than age bands, which selects the
+	// distinguishable color scheme; see DistinctSeriesColors.
+	CategoricalLayers bool
 }
 
 // DefaultOptions returns Python-compatible visual defaults.

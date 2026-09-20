@@ -138,7 +138,7 @@ func plotLanguageEvolutionWithOptions(
 		return err
 	}
 
-	colors := graphics.PythonLaboursColorPalette(len(data.Languages))
+	colors := graphics.DistinctSeriesColors(len(data.Languages))
 
 	series := make([]graphics.MatplotlibTimeAreaSeries, len(data.Languages))
 	for langIndex, lang := range data.Languages {

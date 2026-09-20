@@ -201,7 +201,7 @@ func buildDeveloperPlotLayers(
 	dates []time.Time,
 	rowHeight float64,
 ) ([]graphics.MatplotlibTimeAreaSeries, [][]float64, []graphics.MatplotlibTextLabel) {
-	colors := graphics.PythonLaboursColorPalette(len(rows))
+	colors := graphics.DistinctSeriesColors(len(rows))
 	series := make([]graphics.MatplotlibTimeAreaSeries, len(rows))
 	baselines := make([][]float64, len(rows))
 
@@ -462,7 +462,7 @@ func buildDevContributionSeries(
 		dates[i] = time.Unix(0, 0).AddDate(0, 0, i*7)
 	}
 
-	colors := graphics.PythonLaboursColorPalette(len(developerStats))
+	colors := graphics.DistinctSeriesColors(len(developerStats))
 
 	series := make([]graphics.MatplotlibTimeAreaSeries, 0, len(developerStats))
 

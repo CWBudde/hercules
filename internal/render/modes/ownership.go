@@ -555,7 +555,7 @@ func configureOwnershipPlot(plot ownershipPlot, repoName string, series ownershi
 }
 
 func ownershipColors(count int) []render.Color {
-	colors := graphics.PythonLaboursColorPalette(count)
+	colors := graphics.DistinctSeriesColors(count)
 
 	renderColors := make([]render.Color, len(colors))
 	for index, paletteColor := range colors {

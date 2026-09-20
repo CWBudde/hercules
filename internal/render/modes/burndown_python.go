@@ -357,6 +357,10 @@ func GenerateBurndownReposCombinedPython(
 func GenerateBurndownReposCombinedPythonWithOptions(reader readers.Reader, output string, opts Options) error {
 	fmt.Println("Running: burndown-repos-combined (Python-compatible)")
 
+	// One band per repository: these are categories, not age bands, so they get
+	// the color scheme that keeps the 21st band apart from the first.
+	opts.Graphics.CategoricalLayers = true
+
 	repositories, header, err := loadCombinedRepositoryBurndown(reader)
 	if err != nil {
 		return err

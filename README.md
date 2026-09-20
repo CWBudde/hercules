@@ -105,7 +105,7 @@ in-process.
 
 ### Build from source
 
-You need Go 1.26.5 or newer. The exact minimum is declared in [`go.mod`](go.mod).
+You need Go 1.26.6 or newer. The exact minimum is declared in [`go.mod`](go.mod).
 For development workflows that regenerate protobuf files or use repo recipes, install
 [`protoc`](https://github.com/google/protobuf/releases) and [`just`](https://github.com/casey/just).
 

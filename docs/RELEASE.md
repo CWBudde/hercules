@@ -17,7 +17,7 @@ The `just` default recipe is also supported for local release preparation:
 CGO_ENABLED=0 just
 ```
 
-The project requires Go 1.26.5 or newer, matching `go.mod`.
+The project requires Go 1.26.6 or newer, matching `go.mod`.
 
 ## Optional Build Tags
 

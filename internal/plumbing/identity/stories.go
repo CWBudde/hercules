@@ -222,7 +222,11 @@ func (*StoryDetector) ConfigureUpstream(map[string]any) error {
 // Initialize resets the temporary caches and prepares this PipelineItem for a series of Consume()
 // calls. The repository which is going to be analysed is supplied as an argument.
 func (detector *StoryDetector) Initialize(*git.Repository) error {
-	detector.l = core.NewLogger()
+	// Keep a logger installed by Configure(): the pipeline configures before it initializes.
+	if detector.l == nil {
+		detector.l = core.NewLogger()
+	}
+
 	return nil
 }
 

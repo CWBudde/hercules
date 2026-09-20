@@ -77,7 +77,11 @@ func (*LinesStatsCalculator) ConfigureUpstream(facts map[string]any) error {
 // Initialize resets the temporary caches and prepares this PipelineItem for a series of Consume()
 // calls. The repository which is going to be analysed is supplied as an argument.
 func (lsc *LinesStatsCalculator) Initialize(repository *git.Repository) error {
-	lsc.l = core.NewLogger()
+	// Keep a logger installed by Configure(): the pipeline configures before it initializes.
+	if lsc.l == nil {
+		lsc.l = core.NewLogger()
+	}
+
 	return nil
 }
 

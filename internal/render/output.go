@@ -118,8 +118,11 @@ var modeOutputConventions = map[string]outputConvention{
 	},
 	ModeCouplesFiles: {
 		Kind:        outputAssetDir,
-		Description: "writes TensorBoard-style file coupling projector assets into the requested directory",
-		Assets:      []string{"files_vocabulary.tsv", "files_vectors.tsv", "files_metadata.tsv"},
+		Description: "writes the file coupling heatmap and top-pairs charts into the requested directory",
+		Assets: []string{
+			"file_coupling_heatmap.png",
+			"top_file_coupling_pairs.png (only when coupled pairs exist)",
+		},
 	},
 	ModeCouplesPeople: {
 		Kind:        outputAssetDir,

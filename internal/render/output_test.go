@@ -5,6 +5,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/cwbudde/hercules/internal/render/graphics"
+	renderModes "github.com/cwbudde/hercules/internal/render/modes"
+	"github.com/cwbudde/hercules/internal/render/readers"
 )
 
 func TestDetectOutputFormatTreatsAggAsRenderingBackend(t *testing.T) {
@@ -249,5 +253,59 @@ func TestFileFanoutModesKeepRequestedBasename(t *testing.T) {
 				t.Fatalf("planModeOutput() = %q, want basename-preserving path %q", got, requested)
 			}
 		})
+	}
+}
+
+// couples-files renders the coupling heatmap and the top-pairs bar chart (see
+// modes/couplesFiles.go); it never wrote TensorBoard projector TSV files.
+func TestCouplesFilesOutputConventionNamesCouplingCharts(t *testing.T) {
+	assets := modeOutputConventions[ModeCouplesFiles].Assets
+	if len(assets) != 2 {
+		t.Fatalf("couples-files declares assets %q, want the heatmap and the top-pairs chart", assets)
+	}
+	if assets[0] != "file_coupling_heatmap.png" {
+		t.Errorf("couples-files first asset = %q, want file_coupling_heatmap.png", assets[0])
+	}
+	if !strings.HasPrefix(assets[1], "top_file_coupling_pairs.png") {
+		t.Errorf("couples-files second asset = %q, want top_file_coupling_pairs.png", assets[1])
+	}
+	for _, asset := range assets {
+		if strings.Contains(asset, ".tsv") {
+			t.Errorf("couples-files declares a TSV asset %q that the mode does not write", asset)
+		}
+	}
+}
+
+// shotnessStubReader supplies the records the shotness mode needs; the shared
+// stubReader reports the analysis as missing.
+type shotnessStubReader struct{ stubReader }
+
+func (shotnessStubReader) GetShotnessRecords() ([]readers.ShotnessRecord, error) {
+	return []readers.ShotnessRecord{
+		{Type: "function", Name: "Render", File: "render.go", Counters: map[int32]int32{0: 3, 1: 2}},
+		{Type: "function", Name: "Parse", File: "parse.go", Counters: map[int32]int32{0: 1}},
+	}, nil
+}
+
+// Every asset the manifest declares for shotness must actually land in the
+// requested directory.
+func TestShotnessWritesEveryDeclaredAsset(t *testing.T) {
+	dir := t.TempDir()
+
+	var err error
+	captureStdout(t, func() {
+		err = modeHandlers[ModeShotness](
+			shotnessStubReader{}, dir, nil, nil, renderModes.Options{Graphics: graphics.DefaultOptions()},
+		)
+	})
+	if err != nil {
+		t.Fatalf("shotness mode failed: %v", err)
+	}
+
+	for _, asset := range modeOutputConventions[ModeShotness].Assets {
+		_, statErr := os.Stat(filepath.Join(dir, asset))
+		if statErr != nil {
+			t.Errorf("shotness declares asset %q but did not write it: %v", asset, statErr)
+		}
 	}
 }

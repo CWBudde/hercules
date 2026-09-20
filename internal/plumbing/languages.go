@@ -67,7 +67,11 @@ func (*LanguagesDetection) ConfigureUpstream(facts map[string]any) error {
 // Initialize resets the temporary caches and prepares this PipelineItem for a series of Consume()
 // calls. The repository which is going to be analysed is supplied as an argument.
 func (langs *LanguagesDetection) Initialize(repository *git.Repository) error {
-	langs.l = core.NewLogger()
+	// Keep a logger installed by Configure(): the pipeline configures before it initializes.
+	if langs.l == nil {
+		langs.l = core.NewLogger()
+	}
+
 	return nil
 }
 

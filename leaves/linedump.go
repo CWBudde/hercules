@@ -122,7 +122,9 @@ func (analyser *LineDumper) Description() string {
 // Initialize resets the temporary caches and prepares this PipelineItem for a series of Consume()
 // calls. The repository which is going to be analysed is supplied as an argument.
 func (analyser *LineDumper) Initialize(*git.Repository) error {
-	analyser.l = core.NewLogger()
+	if analyser.l == nil {
+		analyser.l = core.NewLogger()
+	}
 
 	if analyser.peopleResolver == nil {
 		analyser.peopleResolver = core.NewIdentityResolver(nil, nil)

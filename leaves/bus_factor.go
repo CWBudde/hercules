@@ -165,7 +165,10 @@ func (bf *BusFactorAnalysis) Description() string {
 // Initialize resets the temporary caches and prepares this PipelineItem for a series of Consume()
 // calls. The repository which is going to be analysed is supplied as an argument.
 func (bf *BusFactorAnalysis) Initialize(repository *git.Repository) error {
-	bf.l = core.NewLogger()
+	if bf.l == nil {
+		bf.l = core.NewLogger()
+	}
+
 	bf.snapshots = map[int]*BusFactorSnapshot{}
 	bf.ownership = nil
 

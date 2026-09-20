@@ -283,7 +283,10 @@ func (oa *OnboardingAnalysis) Description() string {
 
 // Initialize resets the temporary caches and prepares this PipelineItem for a series of Consume() calls.
 func (oa *OnboardingAnalysis) Initialize(repository *git.Repository) error {
-	oa.l = core.NewLogger()
+	if oa.l == nil {
+		oa.l = core.NewLogger()
+	}
+
 	oa.authorTimeline = map[int][]*onboardingActivity{}
 	oa.OneShotMergeProcessor.Initialize()
 

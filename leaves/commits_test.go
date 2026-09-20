@@ -8,6 +8,8 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/gogo/protobuf/proto"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	yamlv2 "gopkg.in/yaml.v2"
 
 	"github.com/cwbudde/hercules/internal/core"
 	"github.com/cwbudde/hercules/internal/pb"
@@ -252,18 +254,18 @@ func TestCommitsSerialize(t *testing.T) {
       when: 1481563829
       author: 0
       files:
-       - name: .travis.yml
-         language: Yaml
+       - name: ".travis.yml"
+         language: "Yaml"
          stat: [12, 0, 0]
-       - name: analyser.go
-         language: Go
+       - name: "analyser.go"
+         language: "Go"
          stat: [628, 67, 9]
     - hash: c29112dbd697ad9b401333b80c18a63951bc18d9
       when: 1481563999
       author: 1
       files:
-       - name: cmd/hercules/main.go
-         language: Go
+       - name: "cmd/hercules/main.go"
+         language: "Go"
          stat: [1, 0, 0]
   people:
   - "one@srcd"
@@ -300,4 +302,45 @@ func TestCommitsSerialize(t *testing.T) {
 		Stats:    &pb.LineStats{Added: 1, Removed: 0, Changed: 0},
 		Language: "Go",
 	}, msg.GetCommits()[1].GetFiles()[0])
+}
+
+// File names and language names are free text. A colon-space or a leading special character in
+// an unquoted scalar changes the structure of the document, so both go out as quoted scalars.
+func TestCommitsSerializeTextQuotesFileNamesAndLanguages(t *testing.T) {
+	ca := CommitsAnalysis{}
+	res := CommitsResult{
+		Commits: []*CommitStat{{
+			Hash:   "cce947b98a050c6d356bc6ba95030254914027b1",
+			When:   1481563829,
+			Author: 0,
+			Files: []FileStat{{
+				LineStats: items.LineStats{Added: 1},
+				Name:      "a: b",
+				Language:  "C: like",
+			}},
+		}},
+		reversedPeopleDict: []string{testPersonOne},
+	}
+
+	buffer := &bytes.Buffer{}
+	require.NoError(t, ca.Serialize(res, false, buffer))
+	assert.Contains(t, buffer.String(), "       - name: \"a: b\"\n")
+	assert.Contains(t, buffer.String(), "         language: \"C: like\"\n")
+
+	var document struct {
+		Root struct {
+			Commits []struct {
+				Files []struct {
+					Name     string `yaml:"name"`
+					Language string `yaml:"language"`
+				} `yaml:"files"`
+			} `yaml:"commits"`
+		} `yaml:"root"`
+	}
+
+	require.NoError(t, yamlv2.Unmarshal([]byte("root:\n"+buffer.String()), &document))
+	require.Len(t, document.Root.Commits, 1)
+	require.Len(t, document.Root.Commits[0].Files, 1)
+	assert.Equal(t, "a: b", document.Root.Commits[0].Files[0].Name)
+	assert.Equal(t, "C: like", document.Root.Commits[0].Files[0].Language)
 }

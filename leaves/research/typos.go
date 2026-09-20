@@ -143,7 +143,10 @@ func (tdb *TyposDatasetBuilder) Description() string {
 // Initialize resets the temporary caches and prepares this PipelineItem for a series of Consume()
 // calls. The repository which is going to be analysed is supplied as an argument.
 func (tdb *TyposDatasetBuilder) Initialize(repository *git.Repository) error {
-	tdb.l = core.NewLogger()
+	if tdb.l == nil {
+		tdb.l = core.NewLogger()
+	}
+
 	if tdb.MaximumAllowedDistance <= 0 {
 		tdb.MaximumAllowedDistance = DefaultMaximumAllowedTypoDistance
 	}

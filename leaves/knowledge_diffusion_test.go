@@ -8,6 +8,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/cwbudde/hercules/internal/core"
 	items "github.com/cwbudde/hercules/internal/plumbing"
@@ -655,6 +656,73 @@ func TestKnowledgeDiffusionMergeResults(t *testing.T) {
 	assert.Equal(t, 1, merged.Distribution[1]) // only_r2.go
 	assert.Equal(t, 1, merged.Distribution[2]) // only_r1.go
 	assert.Equal(t, 1, merged.Distribution[3]) // shared.go
+}
+
+// hercules combine merges results from different repositories whose people dictionaries are not
+// aligned: the same developer sits at different indices on either side. Author lists have to be
+// translated into one merged dictionary, and stay sorted while doing so.
+func TestKnowledgeDiffusionMergeResultsReconcilesPeople(t *testing.T) {
+	kd := KnowledgeDiffusionAnalysis{}
+
+	r1 := KnowledgeDiffusionResult{
+		Files: map[string]*KnowledgeDiffusionFileResult{
+			"first.go": {UniqueEditorsCount: 1, Authors: []int{1}}, // Bob
+		},
+		Distribution:       map[int]int{1: 1},
+		WindowMonths:       6,
+		reversedPeopleDict: []string{testPersonAlice, testPersonBob},
+		tickSize:           24 * time.Hour,
+	}
+	r2 := KnowledgeDiffusionResult{
+		Files: map[string]*KnowledgeDiffusionFileResult{
+			"second.go": {UniqueEditorsCount: 2, Authors: []int{0, 2}},                  // Bob, Charlie
+			"third.go":  {UniqueEditorsCount: 2, Authors: []int{0, 1}},                  // Bob, Alice
+			"fourth.go": {UniqueEditorsCount: 2, Authors: []int{0, core.AuthorMissing}}, // Bob, unknown
+		},
+		Distribution:       map[int]int{2: 3},
+		WindowMonths:       6,
+		reversedPeopleDict: []string{testPersonBob, testPersonAlice, testPersonCharlie},
+		tickSize:           24 * time.Hour,
+	}
+
+	merged := kd.MergeResults(r1, r2, nil, nil).(KnowledgeDiffusionResult)
+
+	assert.Equal(t, []string{testPersonAlice, testPersonBob, testPersonCharlie}, merged.reversedPeopleDict)
+	require.Len(t, merged.Files, 4)
+	assert.Equal(t, []int{1}, merged.Files["first.go"].Authors, "Bob is index 1 in the merged dictionary")
+	assert.Equal(t, []int{1, 2}, merged.Files["second.go"].Authors, "Charlie is appended as index 2")
+	assert.Equal(t, []int{0, 1}, merged.Files["third.go"].Authors, "translated lists are re-sorted")
+	assert.Equal(t, []int{1, core.AuthorMissing}, merged.Files["fourth.go"].Authors,
+		"indices outside the dictionary stay put")
+
+	// The inputs belong to the caller and stay untouched.
+	assert.Equal(t, []int{0, 2}, r2.Files["second.go"].Authors)
+}
+
+// Two source records may resolve to one merged identity - an alias token shared through the
+// dictionaries joins them. A file's author list then names that person once.
+func TestKnowledgeDiffusionMergeResultsDeduplicatesJoinedAuthors(t *testing.T) {
+	kd := KnowledgeDiffusionAnalysis{}
+
+	r1 := KnowledgeDiffusionResult{
+		Files:              map[string]*KnowledgeDiffusionFileResult{},
+		Distribution:       map[int]int{},
+		WindowMonths:       6,
+		reversedPeopleDict: []string{testPersonAlice, "Bob|bob@example.com"},
+	}
+	r2 := KnowledgeDiffusionResult{
+		Files: map[string]*KnowledgeDiffusionFileResult{
+			"shared.go": {UniqueEditorsCount: 2, Authors: []int{0, 1}},
+		},
+		Distribution:       map[int]int{2: 1},
+		WindowMonths:       6,
+		reversedPeopleDict: []string{"bob@example.com", "Bob"},
+	}
+
+	merged := kd.MergeResults(r1, r2, nil, nil).(KnowledgeDiffusionResult)
+
+	assert.Equal(t, []string{testPersonAlice, "Bob|bob@example.com"}, merged.reversedPeopleDict)
+	assert.Equal(t, []int{1}, merged.Files["shared.go"].Authors)
 }
 
 func TestKnowledgeDiffusionMergeCarriesRankingFactors(t *testing.T) {

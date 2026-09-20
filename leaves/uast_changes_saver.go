@@ -104,7 +104,10 @@ func (*UASTChangesSaver) ConfigureUpstream(facts map[string]any) error {
 
 // Initialize resets the temporary caches and prepares this PipelineItem for a series of Consume() calls.
 func (saver *UASTChangesSaver) Initialize(repository *git.Repository) error {
-	saver.l = core.NewLogger()
+	if saver.l == nil {
+		saver.l = core.NewLogger()
+	}
+
 	saver.result = nil
 	saver.OneShotMergeProcessor.Initialize()
 

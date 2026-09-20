@@ -215,8 +215,8 @@ func (ca *CommitsAnalysis) serializeText(result *CommitsResult, writer io.Writer
 		_, _ = fmt.Fprintf(writer, "      files:\n")
 
 		for _, file := range sortedFileStats(commit.Files) {
-			_, _ = fmt.Fprintf(writer, "       - name: %s\n", file.Name)
-			_, _ = fmt.Fprintf(writer, "         language: %s\n", file.Language)
+			_, _ = fmt.Fprintf(writer, "       - name: %s\n", yaml.SafeString(file.Name))
+			_, _ = fmt.Fprintf(writer, "         language: %s\n", yaml.SafeString(file.Language))
 			_, _ = fmt.Fprintf(writer, "         stat: [%d, %d, %d]\n", file.Added, file.Changed, file.Removed)
 		}
 	}

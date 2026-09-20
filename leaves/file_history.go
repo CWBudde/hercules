@@ -95,7 +95,10 @@ func (*FileHistoryAnalysis) ConfigureUpstream(facts map[string]any) error {
 // Initialize resets the temporary caches and prepares this PipelineItem for a series of Consume()
 // calls. The repository which is going to be analysed is supplied as an argument.
 func (history *FileHistoryAnalysis) Initialize(repository *git.Repository) error {
-	history.l = core.NewLogger()
+	if history.l == nil {
+		history.l = core.NewLogger()
+	}
+
 	history.files = map[string]*FileHistory{}
 	history.lastCommit = nil
 	history.OneShotMergeProcessor.Initialize()

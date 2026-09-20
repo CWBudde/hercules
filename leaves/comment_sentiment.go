@@ -155,7 +155,10 @@ func (sent *CommentSentimentAnalysis) validate() {
 // Initialize resets the temporary caches and prepares this PipelineItem for a series of Consume()
 // calls. The repository which is going to be analysed is supplied as an argument.
 func (sent *CommentSentimentAnalysis) Initialize(repository *git.Repository) error {
-	sent.l = core.NewLogger()
+	if sent.l == nil {
+		sent.l = core.NewLogger()
+	}
+
 	sent.commentsByTick = map[int][]string{}
 	sent.extractor = ast_items.NewTreeSitterExtractor()
 	sent.validate()

@@ -111,7 +111,10 @@ func (*ImportsPerDeveloper) ConfigureUpstream(facts map[string]any) error {
 // Initialize resets the temporary caches and prepares this PipelineItem for a series of Consume()
 // calls. The repository which is going to be analysed is supplied as an argument.
 func (ipd *ImportsPerDeveloper) Initialize(repository *git.Repository) error {
-	ipd.l = core.NewLogger()
+	if ipd.l == nil {
+		ipd.l = core.NewLogger()
+	}
+
 	ipd.imports = ImportsMap{}
 	ipd.OneShotMergeProcessor.Initialize()
 
@@ -253,8 +256,19 @@ func (ipd *ImportsPerDeveloper) serializeText(result *ImportsPerDeveloperResult,
 			log.Panicf("Could not serialize %v: %v", imps, err)
 		}
 
-		_, _ = fmt.Fprintf(writer, "    %s: %s\n", yaml.SafeString(result.reversedPeopleDict[dev]), string(obj))
+		_, _ = fmt.Fprintf(writer, "    %s: %s\n", yaml.SafeString(importsAuthorName(result, dev)), string(obj))
 	}
+}
+
+// importsAuthorName resolves a developer index to its name. A result assembled outside the
+// pipeline may hold developer keys past the dictionary; those get a placeholder rather than
+// panicking the serializer.
+func importsAuthorName(result *ImportsPerDeveloperResult, dev int) string {
+	if dev < 0 || dev >= len(result.reversedPeopleDict) {
+		return fmt.Sprintf("author %d", dev)
+	}
+
+	return result.reversedPeopleDict[dev]
 }
 
 func (ipd *ImportsPerDeveloper) serializeBinary(result *ImportsPerDeveloperResult, writer io.Writer) error {

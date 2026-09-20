@@ -139,7 +139,10 @@ func (oc *OwnershipConcentrationAnalysis) Description() string {
 // Initialize resets the temporary caches and prepares this PipelineItem for a series of Consume()
 // calls. The repository which is going to be analysed is supplied as an argument.
 func (oc *OwnershipConcentrationAnalysis) Initialize(repository *git.Repository) error {
-	oc.l = core.NewLogger()
+	if oc.l == nil {
+		oc.l = core.NewLogger()
+	}
+
 	oc.snapshots = map[int]*OwnershipConcentrationSnapshot{}
 	oc.ownership = nil
 

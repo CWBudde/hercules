@@ -8,11 +8,57 @@ import (
 )
 
 // SafeString returns a string which is sufficiently quoted and escaped for YAML.
+//
+// The result is a double-quoted scalar. Backslash and double quote are escaped, and control
+// characters - which would otherwise end the scalar or be rejected by a parser - use the YAML
+// double-quoted escapes \n, \t, \r and \0, or the \xNN form for every other byte below 0x20
+// and for DEL. Bytes at 0x80 and above are parts of UTF-8 sequences and pass through unchanged.
 func SafeString(str string) string {
-	str = strings.ReplaceAll(str, "\\", "\\\\")
-	str = strings.ReplaceAll(str, "\"", "\\\"")
+	var builder strings.Builder
 
-	return "\"" + str + "\""
+	builder.Grow(len(str) + 2)
+	builder.WriteByte('"')
+
+	for i := range len(str) {
+		writeEscapedByte(&builder, str[i])
+	}
+
+	builder.WriteByte('"')
+
+	return builder.String()
+}
+
+func writeEscapedByte(builder *strings.Builder, b byte) {
+	const (
+		lastControlByte = 0x1f
+		deleteByte      = 0x7f
+		hexDigits       = "0123456789abcdef"
+	)
+
+	switch b {
+	case '\\':
+		builder.WriteString(`\\`)
+	case '"':
+		builder.WriteString(`\"`)
+	case '\n':
+		builder.WriteString(`\n`)
+	case '\t':
+		builder.WriteString(`\t`)
+	case '\r':
+		builder.WriteString(`\r`)
+	case 0:
+		builder.WriteString(`\0`)
+	default:
+		if b <= lastControlByte || b == deleteByte {
+			builder.WriteString(`\x`)
+			builder.WriteByte(hexDigits[b>>4])
+			builder.WriteByte(hexDigits[b&0x0f])
+
+			return
+		}
+
+		builder.WriteByte(b)
+	}
 }
 
 // PrintMatrix outputs a rectangular integer matrix in YAML text format.

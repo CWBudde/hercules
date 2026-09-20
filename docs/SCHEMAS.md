@@ -467,8 +467,8 @@ Example:
 ```yaml
 FileHistoryAnalysis:
   - "main.go":
-    commits: ["deadbeef","cafebabe"]
-    people: {0:[10,2,1],1:[3,0,0]}
+    commits: ["deadbeef", "cafebabe"]
+    people: { 0: [10, 2, 1], 1: [3, 0, 0] }
 ```
 
 ### Hotspot Risk (`--hotspot-risk`)

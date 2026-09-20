@@ -175,7 +175,8 @@ func TestBurndownFinalizeUsesTheLastAuthoritativeResolver(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	consume(authoritative, false,
+	consume(
+		authoritative, false,
 		core.LineHistoryChange{FileId: 7, CurrTick: 0, PrevTick: 0, Delta: 2},
 		core.LineHistoryChange{FileId: 8, CurrTick: 0, PrevTick: 0, Delta: 3},
 	)

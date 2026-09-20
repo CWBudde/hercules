@@ -1,6 +1,6 @@
 module github.com/cwbudde/hercules
 
-go 1.26.5
+go 1.26.6
 
 require (
 	github.com/Masterminds/sprig v0.0.0-20180725212158-77bb58b7f5e1
@@ -10,7 +10,7 @@ require (
 	github.com/cyraxred/go-billy-siva v0.5.1
 	github.com/fatih/camelcase v1.0.0
 	github.com/go-git/go-billy/v5 v5.9.1
-	github.com/go-git/go-git/v5 v5.19.1
+	github.com/go-git/go-git/v5 v5.19.2
 	github.com/gogo/protobuf v1.3.2
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/odvcencio/gotreesitter v0.15.3
@@ -22,8 +22,8 @@ require (
 	github.com/spf13/viper v1.21.0
 	github.com/src-d/enry/v2 v2.1.0
 	github.com/stretchr/testify v1.11.1
-	golang.org/x/sys v0.46.0
-	golang.org/x/term v0.44.0
+	golang.org/x/sys v0.47.0
+	golang.org/x/term v0.45.0
 	gopkg.in/cheggaaa/pb.v1 v1.0.20
 	gopkg.in/vmarkovtsev/BiDiSentiment.v1 v1.0.0-20180311115214-75f168ddf161
 	gopkg.in/yaml.v2 v2.4.0
@@ -75,10 +75,10 @@ require (
 	github.com/toqueteos/trie v1.0.0 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
-	golang.org/x/crypto v0.53.0 // indirect
+	golang.org/x/crypto v0.56.0 // indirect
 	golang.org/x/image v0.42.0 // indirect
-	golang.org/x/net v0.56.0 // indirect
-	golang.org/x/text v0.39.0 // indirect
+	golang.org/x/net v0.57.0 // indirect
+	golang.org/x/text v0.41.0 // indirect
 	gopkg.in/neurosnap/sentences.v1 v1.0.6 // indirect
 	gopkg.in/src-d/go-siva.v1 v1.7.0 // indirect
 	gopkg.in/toqueteos/substring.v1 v1.0.2 // indirect

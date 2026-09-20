@@ -248,51 +248,7 @@ func (kd *KnowledgeDiffusionAnalysis) Finalize() any {
 	headLines := kd.headLineCounts()
 
 	for fileName, authors := range kd.fileAuthors {
-		// Build unique editors over time from first-edit ticks.
-		firstTicks := make([]int, 0, len(authors))
-		for _, info := range authors {
-			firstTicks = append(firstTicks, info.FirstTick)
-		}
-
-		sort.Ints(firstTicks)
-
-		editorsOverTime := make(map[int]int, len(firstTicks))
-
-		count := 0
-		for _, tick := range firstTicks {
-			count++
-			editorsOverTime[tick] = count
-		}
-
-		// Count recent editors and find the file's own last edit.
-		recentCount := 0
-		lastEditTick := 0
-
-		authorIndices := make([]int, 0, len(authors))
-		for authorID, info := range authors {
-			authorIndices = append(authorIndices, authorID)
-
-			if info.LastTick >= cutoffTick {
-				recentCount++
-			}
-
-			lastEditTick = max(lastEditTick, info.LastTick)
-		}
-
-		sort.Ints(authorIndices)
-
-		churn, recentChurn := kd.churnTotals(fileName, cutoffTick)
-
-		result := &KnowledgeDiffusionFileResult{
-			UniqueEditorsCount:    len(authors),
-			UniqueEditorsOverTime: editorsOverTime,
-			RecentEditorsCount:    recentCount,
-			Authors:               authorIndices,
-			Lines:                 headLines[fileName],
-			Churn:                 churn,
-			RecentChurn:           recentChurn,
-			TicksSinceLastEdit:    max(0, kd.lastTick-lastEditTick),
-		}
+		result := kd.summarizeFile(fileName, authors, cutoffTick, headLines[fileName])
 		files[fileName] = result
 		distribution[result.UniqueEditorsCount]++
 	}
@@ -529,6 +485,57 @@ func mergedAuthorIndices(authors, identities []int) []int {
 	return merged
 }
 
+// summarizeFile condenses one file's per-author edit ticks into the reported result.
+func (kd *KnowledgeDiffusionAnalysis) summarizeFile(
+	fileName string, authors map[int]*authorFileInfo, cutoffTick, headLines int,
+) *KnowledgeDiffusionFileResult {
+	// Build unique editors over time from first-edit ticks.
+	firstTicks := make([]int, 0, len(authors))
+	for _, info := range authors {
+		firstTicks = append(firstTicks, info.FirstTick)
+	}
+
+	sort.Ints(firstTicks)
+
+	editorsOverTime := make(map[int]int, len(firstTicks))
+
+	count := 0
+	for _, tick := range firstTicks {
+		count++
+		editorsOverTime[tick] = count
+	}
+
+	// Count recent editors and find the file's own last edit.
+	recentCount := 0
+	lastEditTick := 0
+
+	authorIndices := make([]int, 0, len(authors))
+	for authorID, info := range authors {
+		authorIndices = append(authorIndices, authorID)
+
+		if info.LastTick >= cutoffTick {
+			recentCount++
+		}
+
+		lastEditTick = max(lastEditTick, info.LastTick)
+	}
+
+	sort.Ints(authorIndices)
+
+	churn, recentChurn := kd.churnTotals(fileName, cutoffTick)
+
+	return &KnowledgeDiffusionFileResult{
+		UniqueEditorsCount:    len(authors),
+		UniqueEditorsOverTime: editorsOverTime,
+		RecentEditorsCount:    recentCount,
+		Authors:               authorIndices,
+		Lines:                 headLines,
+		Churn:                 churn,
+		RecentChurn:           recentChurn,
+		TicksSinceLastEdit:    max(0, kd.lastTick-lastEditTick),
+	}
+}
+
 // churnTotals sums a file's lifetime churn and the part of it inside the recent window. The
 // cutoff is the same one RecentEditorsCount uses, so the analysis has a single window concept.
 func (kd *KnowledgeDiffusionAnalysis) churnTotals(fileName string, cutoffTick int) (int, int) {
@@ -572,34 +579,7 @@ func (kd *KnowledgeDiffusionAnalysis) serializeText(result *KnowledgeDiffusionRe
 	_, _ = fmt.Fprintln(writer, "    files:")
 
 	for _, name := range fileNames {
-		fileData := result.Files[name]
-		_, _ = fmt.Fprintf(writer, "      %s:\n", yaml.SafeString(name))
-		_, _ = fmt.Fprintf(writer, "        unique_editors: %d\n", fileData.UniqueEditorsCount)
-		_, _ = fmt.Fprintf(writer, "        recent_editors: %d\n", fileData.RecentEditorsCount)
-		_, _ = fmt.Fprintf(writer, "        lines: %d\n", fileData.Lines)
-		_, _ = fmt.Fprintf(writer, "        churn: %d\n", fileData.Churn)
-		_, _ = fmt.Fprintf(writer, "        recent_churn: %d\n", fileData.RecentChurn)
-		_, _ = fmt.Fprintf(writer, "        ticks_since_last_edit: %d\n", fileData.TicksSinceLastEdit)
-
-		// Timeline: sort ticks.
-		ticks := make([]int, 0, len(fileData.UniqueEditorsOverTime))
-		for tick := range fileData.UniqueEditorsOverTime {
-			ticks = append(ticks, tick)
-		}
-
-		sort.Ints(ticks)
-		// Serialize's legacy text path has no error channel.
-		_, _ = fmt.Fprint(writer, "        editors_over_time: {")
-
-		for i, tick := range ticks {
-			if i > 0 {
-				_, _ = fmt.Fprint(writer, ", ")
-			}
-
-			_, _ = fmt.Fprintf(writer, "%d: %d", tick, fileData.UniqueEditorsOverTime[tick])
-		}
-
-		_, _ = fmt.Fprintln(writer, "}")
+		serializeTextFile(name, result.Files[name], writer)
 	}
 
 	// Distribution histogram.
@@ -623,6 +603,37 @@ func (kd *KnowledgeDiffusionAnalysis) serializeText(result *KnowledgeDiffusionRe
 	}
 
 	_, _ = fmt.Fprintln(writer, "    tick_size:", int(result.tickSize.Seconds()))
+}
+
+// serializeTextFile writes one file's block of the legacy text report.
+func serializeTextFile(name string, fileData *KnowledgeDiffusionFileResult, writer io.Writer) {
+	_, _ = fmt.Fprintf(writer, "      %s:\n", yaml.SafeString(name))
+	_, _ = fmt.Fprintf(writer, "        unique_editors: %d\n", fileData.UniqueEditorsCount)
+	_, _ = fmt.Fprintf(writer, "        recent_editors: %d\n", fileData.RecentEditorsCount)
+	_, _ = fmt.Fprintf(writer, "        lines: %d\n", fileData.Lines)
+	_, _ = fmt.Fprintf(writer, "        churn: %d\n", fileData.Churn)
+	_, _ = fmt.Fprintf(writer, "        recent_churn: %d\n", fileData.RecentChurn)
+	_, _ = fmt.Fprintf(writer, "        ticks_since_last_edit: %d\n", fileData.TicksSinceLastEdit)
+
+	// Timeline: sort ticks.
+	ticks := make([]int, 0, len(fileData.UniqueEditorsOverTime))
+	for tick := range fileData.UniqueEditorsOverTime {
+		ticks = append(ticks, tick)
+	}
+
+	sort.Ints(ticks)
+	// Serialize's legacy text path has no error channel.
+	_, _ = fmt.Fprint(writer, "        editors_over_time: {")
+
+	for i, tick := range ticks {
+		if i > 0 {
+			_, _ = fmt.Fprint(writer, ", ")
+		}
+
+		_, _ = fmt.Fprintf(writer, "%d: %d", tick, fileData.UniqueEditorsOverTime[tick])
+	}
+
+	_, _ = fmt.Fprintln(writer, "}")
 }
 
 func (kd *KnowledgeDiffusionAnalysis) serializeBinary(result *KnowledgeDiffusionResult, writer io.Writer) error {

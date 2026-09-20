@@ -52,6 +52,8 @@ var (
 	ErrNoCommits = errors.New("no commits to analyze")
 	// ErrNoReferences indicates that a repository does not contain a usable commit reference.
 	ErrNoReferences = errors.New("repository has no commit references")
+	// ErrNoHeadReference indicates that the repository reported no HEAD reference and no error.
+	ErrNoHeadReference = errors.New("repository has no head reference")
 	// ErrInvalidCommit indicates that an explicit commit input contains a nil or zero-hash commit.
 	ErrInvalidCommit = errors.New("invalid commit")
 	// ErrDuplicateCommits indicates that an explicit commit input repeats a commit hash.
@@ -543,7 +545,7 @@ func (pipeline *Pipeline) Commits(firstParent bool) ([]*object.Commit, error) {
 		// the first parent matches the head
 		for commit := head; !errors.Is(err, io.EOF); commit, err = commit.Parents().Next() {
 			if err != nil {
-				panic(err)
+				return nil, errors.Wrap(err, "unable to iterate the first-parent commit history")
 			}
 
 			result = append(result, commit)
@@ -587,7 +589,7 @@ func (pipeline *Pipeline) HeadCommit() ([]*object.Commit, error) {
 	}
 
 	if head == nil {
-		return nil, errors.Wrap(err, "unable to find the head reference")
+		return nil, ErrNoHeadReference
 	}
 
 	commit, err := repository.CommitObject(head.Hash())

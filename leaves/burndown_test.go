@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path"
+	"strings"
 	"testing"
 	"time"
 
@@ -1609,4 +1610,28 @@ func TestBurndownHibernateBootDisk(t *testing.T) {
 	assert.NoError(t, bd.Boot())
 	assert.Empty(t, bd.hibernatedFileName)
 	assert.Equal(t, int64(100), bd.globalHistory[5].deltas[0])
+}
+
+// TestBurndownSerializeAlignsFileOwnershipWithFiles: files_ownership is a nameless list which
+// readers pair with the files block by position, so it has to be written in that block's order
+// and length. A file with ownership but no history (live, never edited in a counted way) and a
+// file with a history but no ownership entry both used to shift every later pair.
+func TestBurndownSerializeAlignsFileOwnershipWithFiles(t *testing.T) {
+	out := prepareBDForSerialization(t, 0, 1)
+	out.FileOwnership["zzz_live_without_history.go"] = map[int]int{0: 5}
+	delete(out.FileOwnership, testHerculesMainPath)
+
+	buffer := &bytes.Buffer{}
+	require.NoError(t, (&BurndownAnalysis{}).Serialize(out, false, buffer))
+
+	text := buffer.String()
+	start := strings.Index(text, "  files_ownership:\n")
+	end := strings.Index(text, "  people_sequence:\n")
+	require.Positive(t, start)
+	require.Greater(t, end, start)
+
+	assert.Equal(t, `    - 0: 293
+      1: 250
+    - {}
+`, text[start+len("  files_ownership:\n"):end])
 }

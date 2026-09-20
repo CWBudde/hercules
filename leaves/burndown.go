@@ -382,38 +382,6 @@ func consumeLineHistory(analyser *BurndownAnalysis, changes core.LineHistoryChan
 	analyser.fileResolver = analyser.finalResolver()
 }
 
-// finalResolver names files and reads pending merge deltas at Finalize(): the branch handed over
-// by the last non-replica commit, falling back to the registered one for a run which consumed
-// nothing.
-func (analyser *BurndownAnalysis) finalResolver() core.FileIdResolver {
-	if analyser.authoritativeResolver != nil {
-		return analyser.authoritativeResolver
-	}
-
-	return analyser.primaryResolver
-}
-
-// consumePendingLineHistory accounts for merge-resolution deltas that were still buffered when
-// the last commit was consumed. That happens when the analysed HEAD is itself a merge commit:
-// LineHistoryAnalyser.Merge() runs after the final Consume(), so there is no commit left to
-// carry its changes.
-func consumePendingLineHistory(analyser *BurndownAnalysis) {
-	resolver := analyser.finalResolver()
-	if resolver == nil {
-		return
-	}
-
-	pending := linehistory.PendingChanges(resolver)
-	if len(pending) == 0 {
-		return
-	}
-
-	consumeLineHistory(analyser, core.LineHistoryChanges{
-		Changes:  pending,
-		Resolver: resolver,
-	})
-}
-
 // burndownState holds the serializable state for hibernation.
 type burndownState struct {
 	GlobalHistory        map[int]map[int]int64
@@ -984,32 +952,6 @@ func (analyser *BurndownAnalysis) finalizePeopleMatrix(peopleNumber int) burndow
 	return result
 }
 
-func (analyser *BurndownAnalysis) collectFileOwnership(fileOwnership map[string]map[int]int) {
-	analyser.fileResolver.ForEachFile(func(fileId core.FileId, fileName string) {
-		previousLine := 0
-		previousAuthor := core.AuthorMissing
-		ownership := map[int]int{}
-
-		if analyser.fileResolver.ScanFile(fileId,
-			func(line int, tick core.TickNumber, author core.AuthorId) {
-				length := line - previousLine
-				if length > 0 {
-					ownership[previousAuthor] += length
-				}
-
-				previousLine = line
-
-				if author >= core.AuthorMissing {
-					previousAuthor = -1
-				} else {
-					previousAuthor = int(author)
-				}
-			}) {
-			fileOwnership[fileName] = ownership
-		}
-	})
-}
-
 func (analyser *BurndownAnalysis) updateGlobal(change core.LineHistoryChange) {
 	analyser.globalHistory.updateDelta(int(change.PrevTick), int(change.CurrTick), change.Delta)
 }
@@ -1272,10 +1214,19 @@ func writeBurndownFiles(writer io.Writer, result *BurndownResult) {
 		yaml.PrintMatrix(writer, result.FileHistories[key], 4, key, false)
 	}
 
+	// files_ownership is a nameless list which readers pair with the files block by position, so it
+	// is written in that block's order and length: one entry per file history, {} when a file has
+	// no ownership entry. FileOwnership keys without a history are not emitted here, exactly as the
+	// protobuf writer pairs them.
 	_, _ = fmt.Fprintln(writer, "  files_ownership:")
 
-	for _, key := range sortedKeys(result.FileOwnership) {
+	for _, key := range sortedKeys(result.FileHistories) {
 		owned := result.FileOwnership[key]
+		if len(owned) == 0 {
+			_, _ = fmt.Fprintln(writer, "    - {}")
+
+			continue
+		}
 
 		developers := make([]int, 0, len(owned))
 		for developer := range owned {

@@ -126,6 +126,36 @@ stderr tail, the numbers are not gated, and `UPDATE_CORPUS_BASELINE=1` refuses t
 write them. A deadline firing on a busy machine can therefore no longer be
 mistaken for a burndown regression — or be seeded into the baseline as one.
 
+## The corpus clones are pinned too
+
+`provenance` pins the hercules tree, but the corpus is a set of **live** repositories:
+`git pull` in one of them changes the history hercules replays, so its numbers stop being
+comparable even though neither the flags nor the tree moved. Every added commit adds matrix
+rows, and more rows means more negative cells — the suite then reports ordinary repository
+growth as a burndown regression. That happened on 2026-09-20: the whole corpus had been
+pulled for an unrelated org-wide run, `mekorp-backend` alone had gained 474 commits, and the
+project dimension came back "regressed" on almost every repository although the binary
+produced byte-identical matrices to the one the baseline was seeded with.
+
+`repo_heads` and `file_repo_heads` therefore record each clone's `HEAD` at seeding time:
+
+- head equal to the recorded one — measured and gated as before;
+- head different — that dimension is **not measured**, with a log line saying which two
+  commits are involved, because gating it would compare two different histories. A
+  repository whose two dimensions both drifted is reported as skipped;
+- no recorded head (a baseline seeded before this existed, or `git rev-parse` failing) —
+  measured and gated as before, with a log line saying drift cannot be detected.
+
+The two dimensions pin separately because a re-seed can accept one and reject the other: a
+run whose measurement truncates is neither seeded nor gated, so that dimension keeps its
+previous number, and that number was measured over the previous clone. One shared pin would
+declare it comparable to the new checkout — the exact false comparison pinning exists to
+prevent. A head is therefore written only for a dimension that actually produced an accepted
+measurement in that re-seed.
+
+A re-seed records the current heads, so the protection starts working after the next
+`just update-corpus-baseline`. Re-seed after pulling the corpus.
+
 ## Refreshing the baseline
 
 ```sh

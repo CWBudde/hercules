@@ -45,7 +45,10 @@ func applyPreset(flags *pflag.FlagSet) {
 		if flag.Changed {
 			continue
 		}
-		if err := flags.Set(flagName, value); err != nil {
+		// Set the value directly instead of through FlagSet.Set: the latter marks the flag as
+		// changed, and pipelineDeploymentList treats every changed analysis option (granularity,
+		// sampling, ...) as a request to run the analyses that own it.
+		if err := flag.Value.Set(value); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: preset %q: failed to set --%s=%s: %v\n",
 				presetName, flagName, value, err)
 		}

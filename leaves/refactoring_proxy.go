@@ -133,7 +133,10 @@ func (*RefactoringProxy) ConfigureUpstream(facts map[string]any) error {
 
 // Initialize resets caches.
 func (rp *RefactoringProxy) Initialize(repository *git.Repository) error {
-	rp.l = core.NewLogger()
+	if rp.l == nil {
+		rp.l = core.NewLogger()
+	}
+
 	rp.tickMetrics = map[int]*tickChangeMetrics{}
 	rp.OneShotMergeProcessor.Initialize()
 

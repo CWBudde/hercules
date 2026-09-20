@@ -217,6 +217,10 @@ func (v FileIdResolver) ScanFile(id FileId, callback func(line int, tick core.Ti
 		return false
 	}
 
+	if v.analyser.fileAllocator.Hibernated() {
+		panic("FileIdResolver.ScanFile() was called on a hibernated instance")
+	}
+
 	file.ForEach(func(line, value int) {
 		author, tick := unpackPersonWithTick(value)
 		callback(line, tick, author)
@@ -329,6 +333,11 @@ func (analyser *LineHistoryAnalyser) Configure(facts map[string]any) error {
 	}
 
 	if val, exists := facts[ConfigLinesExcludePaths].([]string); exists {
+		err := validateExcludePathPatterns(val)
+		if err != nil {
+			return err
+		}
+
 		analyser.ExcludePathPatterns = val
 	}
 
@@ -372,6 +381,7 @@ func (analyser *LineHistoryAnalyser) Initialize(repository *git.Repository) erro
 	analyser.mergePending = false
 	analyser.changes = nil
 	analyser.pendingChanges = nil
+	analyser.replicaChanges = nil
 	analyser.mergeCreatedFiles = nil
 
 	return nil
@@ -849,6 +859,20 @@ func (v FileIdResolver) abandonedNameOf(id FileId) string {
 	}
 
 	return v.analyser.fileAbandonedNamesOfParent[id]
+}
+
+// validateExcludePathPatterns rejects malformed glob patterns up front. isExcluded has to
+// discard path.Match's error per file, so a bad pattern would otherwise silently exclude
+// nothing.
+func validateExcludePathPatterns(patterns []string) error {
+	for _, pattern := range patterns {
+		_, err := path.Match(pattern, "")
+		if err != nil {
+			return fmt.Errorf("invalid --lines-exclude-paths pattern %q: %w", pattern, err)
+		}
+	}
+
+	return nil
 }
 
 // isExcluded reports whether a file change should be skipped because either

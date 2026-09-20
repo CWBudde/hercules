@@ -2,6 +2,7 @@ package linehistory
 
 import (
 	"os"
+	"path"
 	"path/filepath"
 	"testing"
 	"time"
@@ -608,4 +609,19 @@ func TestLinesDisposeRemovesHibernationFile(t *testing.T) {
 	assert.Empty(t, bd.hibernatedFileName)
 	_, err := os.Stat(hibernatedFileName)
 	require.ErrorIs(t, err, os.ErrNotExist)
+}
+
+func TestLinesInitializeResetsReplicaChanges(t *testing.T) {
+	bd := &LineHistoryAnalyser{}
+	bd.replicaChanges = []core.LineHistoryChange{{}}
+	require.NoError(t, bd.Initialize(test.Repository))
+	assert.Empty(t, bd.replicaChanges)
+}
+
+func TestLinesConfigureRejectsMalformedExcludePattern(t *testing.T) {
+	bd := &LineHistoryAnalyser{}
+	err := bd.Configure(map[string]any{ConfigLinesExcludePaths: []string{"vendor/["}})
+	require.ErrorIs(t, err, path.ErrBadPattern)
+	assert.ErrorContains(t, err, "vendor/[")
+	assert.Empty(t, bd.ExcludePathPatterns)
 }

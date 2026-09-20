@@ -230,7 +230,7 @@ func mergeItems(branches [][]PipelineItem) {
 
 // getMasterBranch returns the branch with the smallest index.
 func getMasterBranch(branches map[int][]PipelineItem) []PipelineItem {
-	minKey := 1 << 31
+	minKey := math.MaxInt
 	var minVal []PipelineItem
 
 	for key, val := range branches {

@@ -40,6 +40,10 @@ type LineDumper struct {
 
 	peopleResolver  core.IdentityResolver
 	primaryResolver core.FileIdResolver
+	// authoritativeResolver is the branch handed over by the last non-replica commit, whose files
+	// are HEAD's; primaryResolver wraps the pipeline's original instance and can stop tracking HEAD
+	// after a merge consumed on another branch (PLAN.md B14).
+	authoritativeResolver core.FileIdResolver
 
 	commits []LineDumperCommit
 
@@ -118,7 +122,9 @@ func (analyser *LineDumper) Description() string {
 // Initialize resets the temporary caches and prepares this PipelineItem for a series of Consume()
 // calls. The repository which is going to be analysed is supplied as an argument.
 func (analyser *LineDumper) Initialize(*git.Repository) error {
-	analyser.l = core.NewLogger()
+	if analyser.l == nil {
+		analyser.l = core.NewLogger()
+	}
 
 	if analyser.peopleResolver == nil {
 		analyser.peopleResolver = core.NewIdentityResolver(nil, nil)
@@ -151,6 +157,10 @@ func (analyser *LineDumper) Consume(deps map[string]any) (map[string]any, error)
 		analyser.primaryResolver = changes.Resolver
 	}
 
+	if !core.IsMergeReplica(deps) {
+		analyser.authoritativeResolver = changes.Resolver
+	}
+
 	if len(changes.Changes) == 0 {
 		return noDependencies(), nil
 	}
@@ -177,9 +187,16 @@ func (analyser *LineDumper) Finalize() any {
 
 	fileNames := map[core.FileId]string{}
 
-	analyser.primaryResolver.ForEachFile(func(id core.FileId, name string) {
-		fileNames[id] = name
-	})
+	resolver := analyser.authoritativeResolver
+	if resolver == nil {
+		resolver = analyser.primaryResolver
+	}
+
+	if resolver != nil {
+		resolver.ForEachFile(func(id core.FileId, name string) {
+			fileNames[id] = name
+		})
+	}
 
 	return LineDumperResult{
 		Commits:            analyser.commits,

@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/cwbudde/hercules/internal/core"
 	items "github.com/cwbudde/hercules/internal/plumbing"
@@ -62,6 +63,20 @@ func TestTemporalActivityInitialize(t *testing.T) {
 	assert.NoError(t, ta.Initialize(test.Repository))
 	assert.NotNil(t, ta.activities)
 	assert.NotNil(t, ta.ticks)
+}
+
+// The pipeline calls Configure, which installs core.ConfigLogger, before Initialize. Initialize
+// must reset the caches without replacing that logger.
+func TestTemporalActivityInitializePreservesLogger(t *testing.T) {
+	logger := core.NewLogger()
+	ta := TemporalActivityAnalysis{}
+	assert.NoError(t, ta.Configure(map[string]any{
+		core.ConfigLogger: logger,
+		identity.FactIdentityDetectorReversedPeopleDict: []string{testPersonAlice},
+	}))
+
+	assert.NoError(t, ta.Initialize(test.Repository))
+	assert.Same(t, logger, ta.l)
 }
 
 func TestTemporalActivityConsume(t *testing.T) {
@@ -638,4 +653,84 @@ func TestTemporalActivityMergeResults(t *testing.T) {
 	// Verify developer 2 (only in r2)
 	assert.Equal(t, r2.Activities[2].Weekdays.Commits, merged.Activities[2].Weekdays.Commits)
 	assert.Equal(t, r2.Activities[2].Weekdays.Lines, merged.Activities[2].Weekdays.Lines)
+}
+
+func temporalActivityFixture() *DeveloperTemporalActivity {
+	return &DeveloperTemporalActivity{
+		Weekdays: newTemporalDimension(7), Hours: newTemporalDimension(24),
+		Months: newTemporalDimension(12), Weeks: newTemporalDimension(53),
+	}
+}
+
+// hercules combine merges results from different repositories whose people dictionaries are not
+// aligned: the same developer sits at different indices on either side. The merge has to
+// translate both sides into one dictionary so that one person's activity adds up under one index.
+func TestTemporalActivityMergeResultsReconcilesPeople(t *testing.T) {
+	ta := TemporalActivityAnalysis{}
+
+	bobInFirst := temporalActivityFixture()
+	bobInFirst.Weekdays.Commits[1] = 3
+	bobInFirst.Weekdays.Lines[1] = 30
+
+	bobInSecond := temporalActivityFixture()
+	bobInSecond.Weekdays.Commits[1] = 4
+	bobInSecond.Weekdays.Lines[1] = 40
+	bobInSecond.Hours.Commits[9] = 1
+
+	charlie := temporalActivityFixture()
+	charlie.Months.Commits[5] = 2
+
+	unknown := temporalActivityFixture()
+	unknown.Weeks.Commits[10] = 1
+
+	r1 := TemporalActivityResult{
+		reversedPeopleDict: []string{testPersonAlice, testPersonBob},
+		tickSize:           24 * time.Hour,
+		Activities:         map[int]*DeveloperTemporalActivity{1: bobInFirst},
+		Ticks: map[int]map[int]*TemporalActivityTick{
+			0: {1: {Commits: 3, Lines: 30, Weekday: 1}},
+		},
+	}
+	r2 := TemporalActivityResult{
+		reversedPeopleDict: []string{testPersonBob, testPersonCharlie},
+		tickSize:           24 * time.Hour,
+		Activities: map[int]*DeveloperTemporalActivity{
+			0: bobInSecond, 1: charlie, core.AuthorMissing: unknown,
+		},
+		Ticks: map[int]map[int]*TemporalActivityTick{
+			0: {0: {Commits: 4, Lines: 40, Weekday: 1}},
+			3: {1: {Commits: 2, Lines: 5, Month: 5}, core.AuthorMissing: {Commits: 1, Lines: 1}},
+		},
+	}
+
+	merged := ta.MergeResults(r1, r2, &core.CommonAnalysisResult{}, &core.CommonAnalysisResult{}).(TemporalActivityResult)
+
+	assert.Equal(t, []string{testPersonAlice, testPersonBob, testPersonCharlie}, merged.reversedPeopleDict)
+	require.Len(t, merged.Activities, 3)
+
+	bob := merged.Activities[1]
+	require.NotNil(t, bob, "Bob is index 1 in the merged dictionary")
+	assert.Equal(t, 7, bob.Weekdays.Commits[1])
+	assert.Equal(t, 70, bob.Weekdays.Lines[1])
+	assert.Equal(t, 1, bob.Hours.Commits[9])
+
+	require.NotNil(t, merged.Activities[2], "Charlie is appended as index 2")
+	assert.Equal(t, 2, merged.Activities[2].Months.Commits[5])
+
+	require.NotNil(t, merged.Activities[core.AuthorMissing], "indices outside the dictionary stay put")
+	assert.Equal(t, 1, merged.Activities[core.AuthorMissing].Weeks.Commits[10])
+
+	require.Len(t, merged.Ticks[0], 1)
+	require.NotNil(t, merged.Ticks[0][1])
+	assert.Equal(t, 7, merged.Ticks[0][1].Commits)
+	assert.Equal(t, 70, merged.Ticks[0][1].Lines)
+
+	require.NotNil(t, merged.Ticks[3][2])
+	assert.Equal(t, 2, merged.Ticks[3][2].Commits)
+	require.NotNil(t, merged.Ticks[3][core.AuthorMissing])
+	assert.Equal(t, 1, merged.Ticks[3][core.AuthorMissing].Commits)
+
+	// The inputs belong to the caller and stay untouched.
+	assert.Equal(t, 4, r2.Activities[0].Weekdays.Commits[1])
+	assert.Equal(t, 4, r2.Ticks[0][0].Commits)
 }

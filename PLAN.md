@@ -9,6 +9,7 @@
 | [Phase 3 — unexposed analyses](#phase-3)              | T3.1–T3.3 (M1/M8/M9) | T3.1 + T3.2 landed; T3.3 open              |
 | [Phase 4 — burndown residue (B1c/P5)](#phase-4)       | T4.1–T4.3            | **on hold — recommendation: do not start** |
 | [Phase 5 — recorded, deliberately not done](#phase-5) | —                    | reference only                             |
+| [Phase 6 — review of 2026-09-20](#phase-6)            | R1–R14               | ownership + B14 fixed; rest recorded       |
 
 Everything else filed since the 0.2.0 regression sweep — B1–B13, B1c phases P0–P4 and P6, and the
 corpus regression suite — is **done**; see the [appendix](#appendix-a) for the one-line record.
@@ -173,13 +174,13 @@ Note the embed is not the discriminator: `core.NoopMerger` supplies the _fork_ m
       `printSkipped` renders one block:
 
       Skipped: 1 analysis cannot be merged, so its data is not in the combined output.
-        Onboarding - dropped from 2 of 2 inputs
+            Onboarding - dropped from 2 of 2 inputs
 
-      `printMessages`/`printSkipped` take an `io.Writer` (`cmd.ErrOrStderr()`) so the diagnostics are
-      testable at all — that is what the three new `cmd/hercules/combine_test.go` cases read.
-      Unchanged on purpose: the `--only` branch still fails hard with the literal interface name
-      (a caller who asked for exactly that analysis wants the failure), and the exit code still
-      ignores skips — a non-mergeable leaf is a property of the analysis, not a defect in the file.
+          `printMessages`/`printSkipped` take an `io.Writer` (`cmd.ErrOrStderr()`) so the diagnostics are
+          testable at all — that is what the three new `cmd/hercules/combine_test.go` cases read.
+          Unchanged on purpose: the `--only` branch still fails hard with the literal interface name
+          (a caller who asked for exactly that analysis wants the failure), and the exit code still
+          ignores skips — a non-mergeable leaf is a property of the analysis, not a defect in the file.
 
 - [x] **(b)** Reconcile `reportDefaultAnalysisFlags` (`report.go:52-65`) with `reportDefaultModes`
       (`:84-101`) — the former computed `onboarding` and the latter had no mode for it.
@@ -272,6 +273,12 @@ this code and were equally broken. Verified on `ewws-auth`: all three year bands
 `normalizeMatrix` (`modes/burndown.go`) and `PlotStackedBurndownMatplotlibWithOptions` are
 unreachable from `dispatch.go`, and `TestGenerateBurndownPlotRelative` tests that dead code. It
 nearly sent this fix to the wrong function. Delete it in its own pass.
+
+**Correction (review 2026-09-20):** only `modes.BurndownProject`, `modes.BurndownFile` and
+`generateBurndownPlot` are dead. `normalizeMatrix` and `PlotStackedBurndownMatplotlibWithOptions`
+are **live** via `burndownPerson.go:203 → generateBurndownPlotWithOptions → burndown.go:107,110`.
+`BurndownFile:25` also builds its path with `fmt.Sprintf("%s_%s.png", output, file.Filename)`
+without sanitising `/`. See R11.
 
 ### T2.3 — three charts label an axis "Tick" while the data holds real dates (M3) 🟢 landed 2026-08-09
 
@@ -537,11 +544,14 @@ and `.yamlfmt`. After: `server/keycloak/mirror_test.go`, `server/bddtest/steps.g
 `server/openid/introspect.go` — 500–800-line single-owner source files touched within days. The
 pre-change `.pb` still renders, unchanged, under the fallback title.
 
-**One thing this did not fix, and it is real:** `MergeResults`' comment says "union of authors per
+**One thing this did not fix, and it is real:** `MergeResults`' comment said "union of authors per
 file" and the code does not union — for a path in both sides it keeps the record with more editors
 and discards the other's `Authors`, `UniqueEditorsOverTime` and `RecentEditorsCount` wholesale. The
 new fields travel with the winning record, so the merge stays coherent, and after T1.1 qualification
-cross-repository collisions are rare. Pre-existing; worth its own item.
+cross-repository collisions are rare. Pre-existing; worth its own item — filed as R3. (The review of
+2026-09-20 fixed the related identity defect: `Authors` were raw indices into each side's own
+dictionary and the merge kept the first dictionary; they are translated through
+`join.PeopleIdentities` now, and the comment describes what the code does.)
 
 **Cost:** `--knowledge-diffusion` now also pays for `LineStats` and a HEAD tree blob walk.
 `--hotspot-risk` already performs the identical walk separately; sharing it would need a new plumbing
@@ -665,6 +675,15 @@ level of _who_, not just how much: bus factor, the ownership gauge, `code_owners
 anything built on them. B1c cannot be judged closed on negative-cell counts alone — **this
 comparison is the acceptance test that actually reflects what users see**, and it is cheap to run on
 any repository in the corpus.
+
+**Update 2026-09-20 — the bus factor and ownership concentration no longer inherit B1c.** Ownership
+is a present-state quantity and the per-branch line-history trees hold it exactly, so
+`leaves/ownership_snapshot.go` reads it off the trees per branch instead of summing deltas into one
+shared accumulator (see Phase 6, R1). On `meko-etl-tool` the final snapshot went from
+`TotalLines` 18 650 ≠ Σ `AuthorLines` 18 958 to 19 406 = 19 406, and Christian, Lukas N., Jonas K.,
+Lukas B., Sherly and Hannes now match `git blame` to within a few lines. The burndown **people
+matrices** (`code_ownership.svg`, `--burndown-people`) still carry the B1c residue; the table above
+remains their acceptance test.
 
 ### 4.3 The premise, measured — the double removal is real and is the right size
 
@@ -918,6 +937,249 @@ oversight.
 
 ---
 
+<a id="phase-6"></a>
+
+## Phase 6 — review of 2026-09-20
+
+Three parallel read-only reviews (core/plumbing/linehistory, leaves/pb/cmd, render/CLI/docs/CI) plus
+a measured investigation of the bus factor, prompted by doubts about the org-wide gauge in
+`ewws-statistics`. `go vet` clean, all tests green, one pre-existing `revive` file-length finding.
+R1 and R2 are the two defects that changed numbers users look at; both are fixed. R3–R14 are
+recorded with `file:line` and a failure scenario and are **not** scheduled.
+
+**Corpus evidence lives in the session scratchpad only** (`evidence/`): blame aggregations for
+`meko-etl-tool` and `mekorp-backend`, old/new `.pb` outputs and the JSON exports behind the tables
+below. Re-deriving them is one `git blame --line-porcelain` loop and one hercules run each.
+
+### R1 — the bus factor and ownership concentration were B1c-distorted 🟢 fixed
+
+`leaves/ownership_snapshot.go` summed `LineHistoryChange` deltas into one accumulator shared by
+every branch (`core.ForkSamePipelineItem`). Sibling branches each remove the same lines from their
+own copy of a file, so the shared sum removed them twice; the `snapshot()` clamp then made
+`TotalLines` (clamped signed sum) disagree with the positive `AuthorLines`. §4.2 had already
+measured the consequence (Ionut 2.6 % by blame, 40.8 % by hercules on `mekorp-webclient`) and
+filed it as B1c's cost.
+
+**It is not B1c's cost.** Ownership is a present-state quantity and the per-branch line-history
+trees hold it exactly — burndown needs _history_ (which band lines died from), which the trees
+cannot supply, hence §4's wall; ownership does not. `HotspotRisk` (`currentOwnershipByPath`) already
+read the trees. The snapshotter is now a real per-branch item: it rescans the files a commit
+touched (`ScanFile`), rebuilds from the merged trees after `LineHistoryAnalyser.Merge`, and keeps
+its lineage's end-of-tick series; the leaves take the state of the last authoritative (non-replica)
+commit. Negatives are impossible, the B3 clamps and warning are gone.
+
+| repository       | binary | `TotalLines` | Σ `AuthorLines` | Emil (hercules / blame)   | wall / RSS     |
+| ---------------- | ------ | -----------: | --------------: | ------------------------- | -------------- |
+| `meko-etl-tool`  | old    |       18 650 |          18 958 | 8 396 / 7 406 (+13 %)     | 58 s / 600 MB  |
+| `meko-etl-tool`  | new    |       19 406 |          19 406 | 7 879 / 7 406 (+6 %)      | 58 s / 600 MB  |
+| `mekorp-backend` | old    |    1 201 679 |       1 223 013 | 427 803 / 589 251 (−27 %) | 79 s / 1.14 GB |
+| `mekorp-backend` | new    |    1 308 346 |       1 308 346 | 510 339 / 589 251 (−13 %) | 84 s / 1.03 GB |
+
+Christian, Lukas N., Jonas K., Lukas B., Sherly and Hannes match blame to within a few lines on
+`meko-etl-tool`; Lukas N., Sebastian and Roman within 2 % on `mekorp-backend`. Facts worth keeping:
+
+- **`ScanFile` yields run boundaries, not lines.** Each callback is a run's first line and owner,
+  the last one the `TreeEnd` sentinel (author −1); a run's length is the distance to the next
+  boundary and belongs to the previous callback's author. Its doc comment claimed "every live
+  line exactly once" and now says this. An unresolved `TreeMergeMark` decodes to author 0; the
+  scan refuses it (`errOwnershipUnresolvedMerge`), unreachable by construction because a merge
+  replica emits no changes.
+- **The per-tick series follows one lineage.** Each branch closes its own ticks into its own
+  series; `Merge` keeps the surviving branch's. A shared tick counter would have produced a
+  timeline whose neighbouring points come from different branches.
+- **Cost is a non-issue:** +6.5 % wall, −9 % RSS on `mekorp-backend`; a merge costs one full scan
+  (5–10 ms on 5 000 files), a commit one scan per touched file.
+- **What still differs from blame is hercules' merge attribution, not the accounting.** On both
+  repositories the residual is a swap between two authors with the total intact (Emil −13 % /
+  Christian +2 % on `mekorp-backend`; Emil +6 % / Claus −29 % on `meko-etl-tool`). Both sides agree
+  on the total, so this is _who_ owns merged lines: `mergeLineValues` pairs parents by position
+  and lines a parent cannot supply go to the merge author. Open question, same tree as §4.5(a).
+- **Open question:** lines whose author matched no `--people-dict` entry (`AuthorMissing`) are
+  excluded from `TotalLines`, as before. Counting them (as an `<unmatched>` slice) would change
+  the denominator; decide deliberately, not by accident.
+
+### R2 — burndown's per-file outputs came from a frozen branch (B14) 🟢 fixed
+
+`leaves/burndown.go` set `fileResolver = changes.Resolver` during consume and reset it to
+`primaryResolver` after every commit. `primaryResolver` wraps the pipeline's _original_
+`LineHistoryAnalyser` (root branch 1). `planBuilder.mergeBranches` consumes a merge on the
+lowest-index parent **with exactly one child**, so branch 1 becomes a synchronized-and-frozen
+sibling as soon as main has been forked further. `finalizeFileHistory`, `collectFileOwnership` and
+`consumePendingLineHistory` then read a stale branch. `meko-etl-tool` (175 files at HEAD):
+`--burndown-files` emitted **305** histories of which **29** existed at HEAD, and `files_ownership`
+summed to **40 644** lines — the repository's size at an old merge (`2bc4ccd`: 40 817), not HEAD's
+19 555. Introduced with `9e570a3`; `linedump.go` had the same defect.
+
+Fixed by remembering the resolver of the last commit whose `core.DependencyIsMergeReplica` is
+false — the authoritative sighting of a merge runs on the branch whose trees survive it, and only
+that branch holds `pendingChanges`. Now 162 files, all at HEAD, ownership 19 406 = the bus-factor
+total. Same pass: the YAML `files_ownership` list (nameless, paired with `files` by position) was
+written from `FileOwnership`'s own keys, so a live file without a history (163 vs 162 entries)
+shifted every later pair; it is written in `files` order now, `{}` for a missing entry, matching
+the protobuf writer. **Corpus baseline:** the `file_repositories` dimension changes (fewer, correct
+matrices); re-seed after `just test-corpus` and record it here.
+
+### R3 — merge-order dependence in two leaves 🔴 open
+
+- `leaves/knowledge_diffusion.go` `MergeResults`: a path in both inputs keeps the record with the
+  larger `UniqueEditorsCount`, ties keep the first; `combine a b c` ≠ `combine b a c` for such a
+  path's `churn`/`lines`. Proper fix is a real union (authors, editors-over-time, churn sums).
+- `leaves/temporal_activity.go` `mergeTemporalTicks`: the first side to reach a `(tick, developer)`
+  pair donates `Weekday/Hour/Month/Week`; the other's are dropped, only `Commits`/`Lines` add.
+
+### R4 — `internal/burndown/matrices.go:128` carries the last sample forward 🔴 decision needed
+
+`burndownMatrixStream.advanceTo` clamps `tick = min(tick, lastTick)`, so once a source matrix is
+exhausted its last row repeats for every later row; upstream `addBurndownMatrix` wrote zeros past
+the end. On a 231-repository combine each repository's final line counts are carried to the global
+end time. The only test crossing the boundary (`matrices_test.go:617-680`) captured the _new_
+behaviour as golden. Decide which semantic is wanted, then pin it with a test that says so.
+
+### R5 — `line_history.go:1046-1049` drops a delta after the tree was mutated 🔴 open
+
+`updateChangeList` returns early on `delta > 0 && newAuthor != prevAuthor` after logging; the
+rbtree is already updated, so tree and emitted changes drift silently — the class of defect the
+balance check surfaces hundreds of commits later. Unreachable today (all positive callers pass
+`(time, time)`); should panic or grow an error channel in `Updater`.
+
+### R6 — `line_loader.go:776-784` gives loaded histories a year-1 header 🔴 open
+
+Synthetic commits carry a zero `Committer`, so `CommonAnalysisResult.BeginTime/EndTime` become
+`-62135596800` for any `.pb` produced from `--history-line-load`, and `MergeBurndownMatrices` sizes
+its matrix from it. `LineHistoryLoader.Merge` (`:305`) logs `Critical` and continues; mitigated
+because `buildCommits` emits a linear chain — say so in the comment.
+
+### R7 — CLI 🔴 open
+
+- Cobra errors are printed twice with the full usage (`cmd/hercules/root.go:611-620`, `:1494`);
+  exit code always 1.
+- `log.Fatalf` inside deployment (`root.go:1094`, `:1124`) skips the profile-stop `defer` and
+  `report`'s staging cleanup.
+- `combine.go:435-441`: a zero-commit first input loses its time window (the `CommitsNumber == 0`
+  replacement re-fires for the second input); `:242-244` stamps `QualifiedPaths: true` even when
+  every input's repository name was empty and nothing was qualified.
+- `--quiet` default derives from stdin (`root.go:1465`) while progress goes to stderr.
+
+### R8 — renderer 🔴 open
+
+- `run-times` is the only mode where a missing analysis is a hard failure (`dispatch.go`:
+  not in `standardMissingAnalysisWarnings`, errors do not wrap `readers.ErrAnalysisMissing`);
+  `hercules report --mode run-times` is rejected because `report.go:131-158` duplicates the mode
+  vocabulary with 24 literals against 25 modes — add the cross-check `cmd/labours/helpers_test.go:129`
+  already has.
+- `readers/yaml_reader.go` implements none of the optional reader interfaces, so YAML input is told
+  "Bus factor stats were not collected. Re-run hercules with --bus-factor" for eight analyses the
+  YAML contains. Either implement the readers or say "or the input is not protobuf" everywhere, as
+  `onboarding` does.
+- `--disable-projector` is honoured by `couples-people` and ignored by `couples-files`.
+- `report_temporal_activity.go:114-128` falls back to the unfiltered data when ticks are unusable,
+  silently — every other report warns (`tick_axis.go:163-186`).
+- `refactoringProxy.go:175` labels the axis "Renames/Moves per Commit" for a fraction of _changes_;
+  regions shade `>= threshold` while the leaf flags `> threshold`; `IsRefactoring` is read and unused.
+- README promises a `"type"` key in every JSON export; 16 of 25 extractors omit it, and
+  `modes_executed` counts modes that produced `{"error": …}`.
+- `burndown-person` prints "Running: burndown-project" once per person, ignoring `--quiet`
+  (`modes/burndown.go:39`). `cmd/labours/root.go:282` appends `sentiment` unconditionally, so
+  `--mode sentiment --sentiment` runs it twice; an unknown `--style` is silently ignored.
+- The bus-factor gauge pie (`modes/report_bus_factor.go:351-370`) labels slices with the full
+  identity string (`…|costa-kolini@users.noreply.github.com|emil.klahn@meko.de` without a
+  `--people-dict`), which runs off the figure, and prints a percentage on every slice, so the
+  sub-1 % owners pile their labels onto one spot. Label with the part before the first `|`, and
+  drop the percentage below ~2 %. Seen on `meko-etl-tool` via `hercules report`.
+
+### R9 — CI 🔴 open
+
+Every workflow sets `GOFLAGS=-mod=mod` and `just test` re-vendors first, so the committed `vendor/`
+is never built as committed; `just check-tidy` diffs `go.mod`/`go.sum` only. `-race` covers two
+named tests in `internal/render` and nothing in `modes`/`readers`/`graphics`.
+
+### R10 — duplicated helpers 🟡 open
+
+Sorted-key helpers exist six times (`codechurn.go:851,941`, `devs.go:451,462`, inline in
+`knowledge_diffusion.go:513`, `temporal_activity.go:558`, `onboarding.go:960`,
+`refactoring_proxy.go:350`); tick-size equality is re-implemented in six leaves with six sentinel
+errors; `maxInt`/`maxFloat32` (`codechurn.go:951,959`) duplicate the builtin; burndown merges
+`min(sampling, granularity)` where codechurn takes the max; `buildStagedReport` returns
+`(error, error)` (`report.go:220`).
+
+### R11 — dead code 🟡 open
+
+`modes.BurndownProject`, `modes.BurndownFile` (`BurndownFile:25` never sanitises `/` in the file
+name), `generateBurndownPlot` and `TestGenerateBurndownPlotRelative`;
+`readers.RefactoringProxyData.TickSizeDays/StartDate/EndDate` populated and never read;
+`temporalNanosecondsPerDay` used only by a test; `runTimes.go:25-28` carries a `//nolint:unused`
+for a function with two callers. `leaves/couples.go:368-375` is unreachable after
+`analysisio.ValidateCouplesResults` and would nil-deref `couples.l` under `combine` if reached.
+
+### R12 — `codechurn` summary 🟡 open
+
+`leaves/codechurn.go:288-317` declares `deletedBySelf`/`deletedByOthers`, never assigns them and
+prints both; the block writes to `os.Stderr` regardless of `--quiet`. `checkBalances`' once-only
+flag lives on a receiver `combine` re-summons per input, so the warning repeats per input.
+
+### R13 — test gaps 🟡 open
+
+`replicaChanges`/`foldMergeRemovals` are never exercised through `Consume` (the merge tests call
+`handleDeletion` directly); `imports_printer` has `Deserialize` but no `MergeResults`, so `combine`
+skips it silently; `linedump.go` has no test file; `LanguagesDetection.Fork` and the line-loader
+`Fork`/`Merge` are untested; `TestLinesMergeSiblingBufferSurvivesSynchronize` stays skipped (P4).
+
+### R14 — stale documentation 🟡 open
+
+`README.md` "Plotting" still shows `--style=white|black` and calls `--backend` "accepted for
+compatibility" although it selects the output format; `docs/SCHEMAS.md:562-569` omits that the
+knowledge-diffusion PB carries per-file `authors` while the YAML does not;
+`ewws-statistics/README.md:456` (other repository) still says `--bus-factor` and
+`--ownership-concentration` abort the run.
+
+### Fixed in the same pass (small, contained, each with a test)
+
+Commit series on `fix/exact-ownership-and-review`, after R1/R2:
+
+- **YAML section order was random.** `cmd/hercules/root.go` `pipelineDeploymentList` ranged over
+  the `cmdlineDeployed` map; two identical runs could emit the top-level blocks in different
+  orders. Sorted now (`TestPipelineDeploymentListIsSortedAndStable`). `root.go` sits at exactly
+  1 500 lines — the next line added there trips `revive`'s limit; split it before then.
+- **`--preset large-repo` deployed Burndown and CodeChurn on its own.** `applyPreset` used
+  `FlagSet.Set`, which marks the flag changed, and `pipelineDeploymentList` reads every changed
+  shared option (`granularity`, `sampling`) as a request for the analyses that own it. It sets
+  `flag.Value` directly now; values still reach the facts (`FlagConfiguration.Snapshot` reads the
+  bound pointers). Verified end to end with `--dry-run --dump-dag`: `--preset large-repo --couples`
+  deploys `Couples` only. Side effect: preset values no longer weigh in `flagSorter`'s ambiguity
+  resolution, which is arguably right.
+- **`MergeResults` ignored the second people dictionary** in `temporal_activity.go` and
+  `knowledge_diffusion.go` (raw indices added under the first dictionary; `Authors` copied
+  verbatim). Both go through `join.PeopleIdentities` now, like every other leaf; the
+  knowledge-diffusion comment says what the code does (keep the record with more editors — R3).
+- **`yaml.SafeString` escaped only `\` and `"`.** Control characters (`\n`, `\t`, `\r`, NUL,
+  `\xNN`) are escaped now; `commits.go` quoted neither `name:` nor `language:` (`a: b` was a
+  syntax error) and does now. The `TestCommitsSerialize` golden changed accordingly.
+- **`imports_printer` indexed the dictionary unguarded** in `serializeText`; a placeholder
+  `author N` replaces the panic. Its `Deserialize` was already protected by
+  `analysisio.ValidateParallelLengths` — pinned at the leaf now.
+- **`LineHistoryAnalyser.Initialize` did not reset `replicaChanges`**, so a second run on the
+  same item could fold a previous run's removals into its first merge.
+- **Bad `--lines-exclude-paths` globs were swallowed** (`path.Match` error ignored ⇒ nothing
+  excluded, silently). `Configure` rejects them with `path.ErrBadPattern` and the pattern name.
+- **Core error paths:** `HeadCommit` returned `(nil, nil)` via `errors.Wrap(nil)` (now
+  `ErrNoHeadReference`); `Commits(firstParent)` panicked on an iteration error (returns it);
+  `CollectAllDependencies` indexed an empty `Summon` result (panics with the item and the missing
+  dependency named); `getMasterBranch` used `1 << 31` for "max int".
+- **`Initialize` overwrote the logger `Configure` installed** in 27 items across `leaves/`,
+  `internal/plumbing/` and `internal/plumbing/identity/`; every one is guarded with
+  `if x.l == nil` now, matching `blob_cache.go` / `line_history.go`.
+- **`run-times` printed seconds as milliseconds** (1000× wrong): the pipeline stores seconds and
+  the renderer said `ms`. Renderer fields and labels say seconds; the protobuf field and the JSON
+  export (`runtime_stats`, raw map) are unchanged.
+- **Output manifest lied twice:** `couples-files` promised three TensorBoard TSVs it never writes
+  (it writes `file_coupling_heatmap.png` and `top_file_coupling_pairs.png`); `shotness` promised an
+  SVG it never wrote — it writes one now, like `couples-shotness`. `docs/RENDERER_OUTPUTS.md`
+  follows, and `TestShotnessWritesEveryDeclaredAsset` checks manifest against disk.
+- **`internal/tickgrid` had no tests**; `tickgrid_test.go` pins the year-1 anchor against
+  `time.Truncate` and the Unix-epoch grid for 5/7/24/36 h ticks.
+
+---
+
 <a id="appendix-a"></a>
 
 ## Appendix A — done, for cross-reference
@@ -962,25 +1224,26 @@ Facts from those phases that stay load-bearing:
 
 ### Bugs
 
-| item       | what it was                                                                                                                                                                                                                                                                                                | commits                         |
-| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
-| B1         | merge-resolution deltas discarded, project matrix corrupted                                                                                                                                                                                                                                                | `9e570a3`, `1be72df`            |
-| B1b        | file deletion inside a merge commit emitted nothing (B1 alone overshoots, B1b alone deepens the undercount — read together)                                                                                                                                                                                | `1abecda`, `9c010ef`            |
-| B1c (half) | `sortableChange.Less` was not a valid ordering (returned `true` on the first smaller byte without checking whether an earlier byte was already greater), so `matchExactRenames`' single merge scan turned R100 moves into delete+create. Same bug is in upstream, which is why B1c reproduces on `082bf15` | —                               |
-| B1d        | the merge commit was consumed by only one branch; merged lines now keep their real author. Does **not** absorb the residue — cell counts fell in three repositories but negative mass rose in two, which is B1d working                                                                                    | —                               |
-| B2         | person matrices have _always_ contained negatives; decided **(a) the accounting is wrong** — no negative cell recovers by the final row. Demoted to a warning behind `--strict-burndown-balances`; the defect itself is B1c, magnitude in §4.2                                                             | `ebc8ded`, `a7c8cba`, `0ea3cc0` |
-| B3         | `OwnershipSnapshot` underflow — a structural consequence of divergent branches sharing one accumulator; totals stay signed and only the metric snapshots clamp                                                                                                                                             | `fafb754`, `c04d08c`            |
-| B4         | `--only` filtered after the merge; an unmergeable analysis sank the whole combine. `RefactoringProxy` is now mergeable, with tick axes rebased                                                                                                                                                             | `2f57e3d`                       |
-| B5         | `HotspotRisk` merged to empty because `TopN` is 0 on the combine path                                                                                                                                                                                                                                      | —                               |
-| B6         | `--blob-cache-max-blob-size` was fail-closed; oversized blobs are now recorded as binary and warned about                                                                                                                                                                                                  | —                               |
-| B7         | `--lines-hibernation-disk` serialized an allocator that never hibernated                                                                                                                                                                                                                                   | —                               |
-| B8         | person burndown aborted on contributors with no activity                                                                                                                                                                                                                                                   | `c04d08c`                       |
-| B9         | YAML burndown serialization panicked on nil `PeopleMatrix`; the `--pb` path panicked too                                                                                                                                                                                                                   | —                               |
-| B10        | non-deterministic execution plan; a merge could be resolved against the wrong branch                                                                                                                                                                                                                       | `5937149`                       |
-| B11        | `changeHibernation` hibernated per branch index while `ForkSamePipelineItem` shares one instance, so a fork's idle side put its sibling's analyser to sleep mid-run                                                                                                                                        | `0dd3211`                       |
-| B12        | rename matching raced two non-equivalent greedy matchers and kept whichever finished first — before this, single-run measurements were not trustworthy                                                                                                                                                     | —                               |
-| B13        | combined bus factor and ownership reported **one repository**, not the corpus — both `MergeResults` picked the snapshot with the larger `TotalLines` instead of summing. Fixed 2026-08-01, details below                                                                                                   | —                               |
-| suite      | opt-in corpus regression test, baseline-relative                                                                                                                                                                                                                                                           | `b97f549`, `c329229`            |
+| item       | what it was                                                                                                                                                                                                                                                                                                                          | commits                         |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------- |
+| B1         | merge-resolution deltas discarded, project matrix corrupted                                                                                                                                                                                                                                                                          | `9e570a3`, `1be72df`            |
+| B1b        | file deletion inside a merge commit emitted nothing (B1 alone overshoots, B1b alone deepens the undercount — read together)                                                                                                                                                                                                          | `1abecda`, `9c010ef`            |
+| B1c (half) | `sortableChange.Less` was not a valid ordering (returned `true` on the first smaller byte without checking whether an earlier byte was already greater), so `matchExactRenames`' single merge scan turned R100 moves into delete+create. Same bug is in upstream, which is why B1c reproduces on `082bf15`                           | —                               |
+| B1d        | the merge commit was consumed by only one branch; merged lines now keep their real author. Does **not** absorb the residue — cell counts fell in three repositories but negative mass rose in two, which is B1d working                                                                                                              | —                               |
+| B2         | person matrices have _always_ contained negatives; decided **(a) the accounting is wrong** — no negative cell recovers by the final row. Demoted to a warning behind `--strict-burndown-balances`; the defect itself is B1c, magnitude in §4.2                                                                                       | `ebc8ded`, `a7c8cba`, `0ea3cc0` |
+| B3         | `OwnershipSnapshot` underflow — a structural consequence of divergent branches sharing one accumulator; totals stay signed and only the metric snapshots clamp. **Superseded 2026-09-20** — the accumulator is gone, ownership is read off the per-branch trees (Phase 6, R1)                                                        | `fafb754`, `c04d08c`            |
+| B4         | `--only` filtered after the merge; an unmergeable analysis sank the whole combine. `RefactoringProxy` is now mergeable, with tick axes rebased                                                                                                                                                                                       | `2f57e3d`                       |
+| B5         | `HotspotRisk` merged to empty because `TopN` is 0 on the combine path                                                                                                                                                                                                                                                                | —                               |
+| B6         | `--blob-cache-max-blob-size` was fail-closed; oversized blobs are now recorded as binary and warned about                                                                                                                                                                                                                            | —                               |
+| B7         | `--lines-hibernation-disk` serialized an allocator that never hibernated                                                                                                                                                                                                                                                             | —                               |
+| B8         | person burndown aborted on contributors with no activity                                                                                                                                                                                                                                                                             | `c04d08c`                       |
+| B9         | YAML burndown serialization panicked on nil `PeopleMatrix`; the `--pb` path panicked too                                                                                                                                                                                                                                             | —                               |
+| B10        | non-deterministic execution plan; a merge could be resolved against the wrong branch                                                                                                                                                                                                                                                 | `5937149`                       |
+| B11        | `changeHibernation` hibernated per branch index while `ForkSamePipelineItem` shares one instance, so a fork's idle side put its sibling's analyser to sleep mid-run                                                                                                                                                                  | `0dd3211`                       |
+| B12        | rename matching raced two non-equivalent greedy matchers and kept whichever finished first — before this, single-run measurements were not trustworthy                                                                                                                                                                               | —                               |
+| B13        | combined bus factor and ownership reported **one repository**, not the corpus — both `MergeResults` picked the snapshot with the larger `TotalLines` instead of summing. Fixed 2026-08-01, details below                                                                                                                             | —                               |
+| B14        | burndown named files and read per-file ownership and pending merge deltas through the pipeline's _original_ `LineHistoryAnalyser`, which stops tracking HEAD once the planner consumes a merge on another branch; `--burndown-files` on `meko-etl-tool` listed 305 files of which 29 existed at HEAD. Fixed 2026-09-20 (Phase 6, R2) | —                               |
+| suite      | opt-in corpus regression test, baseline-relative                                                                                                                                                                                                                                                                                     | `b97f549`, `c329229`            |
 
 **B13's fix, because its two decisions are reusable.** Both merges now sum, sharing
 `leaves/ownership_merge.go`: `mergeOwnershipTicks` rebases the two tick axes, translates author

@@ -29,12 +29,12 @@ var errOwnershipConcentrationMismatchingTickSizes = errors.New("mismatching tick
 // Gini = 0 means perfectly equal ownership, Gini = 1 means one person owns
 // everything. HHI ranges from 1/n (equal) to 1.0 (single author).
 //
-// It consumes LineHistoryChanges to track per-file, per-author alive-line
-// counts and snapshots concentration metrics at each tick.
+// It reads per-file, per-author alive-line counts off the shared ownership snapshot, which
+// derives them from the line-history trees, and records concentration metrics at each tick.
 type OwnershipConcentrationAnalysis struct {
 	core.NoopMerger
 
-	// ownership references the shared incremental alive-line ownership state.
+	// ownership references the alive-line ownership state of the branch that survives to HEAD.
 	ownership *ownershipSnapshotAccumulator
 	// peopleResolver resolves author IDs to names.
 	peopleResolver core.IdentityResolver
@@ -139,7 +139,10 @@ func (oc *OwnershipConcentrationAnalysis) Description() string {
 // Initialize resets the temporary caches and prepares this PipelineItem for a series of Consume()
 // calls. The repository which is going to be analysed is supplied as an argument.
 func (oc *OwnershipConcentrationAnalysis) Initialize(repository *git.Repository) error {
-	oc.l = core.NewLogger()
+	if oc.l == nil {
+		oc.l = core.NewLogger()
+	}
+
 	oc.snapshots = map[int]*OwnershipConcentrationSnapshot{}
 	oc.ownership = nil
 
@@ -147,6 +150,9 @@ func (oc *OwnershipConcentrationAnalysis) Initialize(repository *git.Repository)
 }
 
 // Consume runs this PipelineItem on the next commit data.
+//
+// A merge commit is replayed once per parent branch. Only the first, authoritative sighting runs
+// on the branch whose state survives the merge, so the replicas' state must not displace it.
 func (oc *OwnershipConcentrationAnalysis) Consume(deps map[string]any) (map[string]any, error) {
 	reader := factReader{facts: deps}
 	update := readFact[ownershipSnapshotUpdate](&reader, dependencyOwnershipSnapshot)
@@ -155,10 +161,8 @@ func (oc *OwnershipConcentrationAnalysis) Consume(deps map[string]any) (map[stri
 		return nil, reader.err
 	}
 
-	oc.ownership = update.State
-
-	if update.ClosedTotals != nil {
-		oc.takeSnapshot(update.ClosedTick, *update.ClosedTotals)
+	if !core.IsMergeReplica(deps) {
+		oc.ownership = update.State
 	}
 
 	return noDependencies(), nil
@@ -214,8 +218,15 @@ func computeHHI(authorLines map[int]int64, totalLines int64) float64 {
 }
 
 // Finalize returns the result of the analysis. Further Consume() calls are not expected.
+//
+// The per-tick snapshots come from the surviving branch's closed-tick series plus its final
+// state, so every point on the timeline is the exact state of one commit lineage.
 func (oc *OwnershipConcentrationAnalysis) Finalize() any {
 	if oc.ownership != nil {
+		for tick, totals := range oc.ownership.closedSnapshots() {
+			oc.takeSnapshot(tick, *totals)
+		}
+
 		if tick, totals := oc.ownership.finalSnapshot(); totals != nil {
 			oc.takeSnapshot(tick, *totals)
 		}

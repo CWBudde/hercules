@@ -170,13 +170,10 @@ func plotShotness(
 
 	width, height := graphics.GetPlotSizeInchesWithOptions(graphics.ChartTypeWide, visuals)
 
-	outputFile := filepath.Join(output, "shotness.png")
-
-	err := graphics.PlotBarChartMatplotlib(labels, values, graphics.MatplotlibBarOptions{
+	opts := graphics.MatplotlibBarOptions{
 		Title:        "Code Hotspots (Most Frequently Modified Structural Units)",
 		XLabel:       "Structural Units",
 		YLabel:       "Total Modifications",
-		Output:       outputFile,
 		WidthInches:  width,
 		HeightInches: height,
 		Color:        color.RGBA{R: 228, G: 87, B: 86, A: 255},
@@ -188,17 +185,43 @@ func plotShotness(
 		XMax:       float64(len(results)) + 0.60,
 		YMax:       maxValue * 1.05,
 		FontSize:   visuals.PlotFontSize(),
-	})
-	if err != nil {
-		return fmt.Errorf("failed to save shotness plot: %w", err)
 	}
 
-	fmt.Printf("Shotness chart saved to %s\n", outputFile)
+	outputs, err := saveShotnessCharts(labels, values, opts, output)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Shotness charts saved to %s and %s\n", outputs[0], outputs[1])
 
 	// Print text summary
 	printShotnessSummary(results)
 
 	return nil
+}
+
+// saveShotnessCharts writes the hotspot bar chart as PNG and SVG into output and
+// returns the written paths.
+func saveShotnessCharts(
+	labels []string,
+	values []float64,
+	opts graphics.MatplotlibBarOptions,
+	output string,
+) ([]string, error) {
+	outputs := []string{
+		filepath.Join(output, "shotness.png"),
+		filepath.Join(output, "shotness.svg"),
+	}
+	for _, outputFile := range outputs {
+		opts.Output = outputFile
+
+		err := graphics.PlotBarChartMatplotlib(labels, values, opts)
+		if err != nil {
+			return nil, fmt.Errorf("failed to save shotness plot: %w", err)
+		}
+	}
+
+	return outputs, nil
 }
 
 func compactPlotLabel(label string, limit int) string {

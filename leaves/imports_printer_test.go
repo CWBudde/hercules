@@ -6,9 +6,12 @@ import (
 	"time"
 
 	gitplumbing "github.com/go-git/go-git/v5/plumbing"
+	"github.com/gogo/protobuf/proto"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/cwbudde/hercules/internal/core"
+	"github.com/cwbudde/hercules/internal/pb"
 	"github.com/cwbudde/hercules/internal/plumbing"
 	"github.com/cwbudde/hercules/internal/plumbing/identity"
 	"github.com/cwbudde/hercules/internal/plumbing/imports"
@@ -145,4 +148,52 @@ func TestImportsPerDeveloperSerializeBinarySparseAuthorIndex(t *testing.T) {
 	back, err := ipd.Deserialize(buffer.Bytes())
 	assert.NoError(t, err)
 	assert.Contains(t, back.(ImportsPerDeveloperResult).Imports, 4)
+}
+
+// A protobuf produced by hercules pads author_index to cover every developer record, but a
+// foreign or corrupted one need not. Reading it must fail with a typed error (the shared
+// analysisio validator checks the parallel lengths) rather than let the text serializer index
+// past the dictionary later.
+func TestImportsPerDeveloperDeserializeRejectsDeveloperWithoutAuthor(t *testing.T) {
+	ipd := fixtureImportsPerDev(t)
+	message := pb.ImportsPerDeveloperResults{
+		AuthorIndex: []string{testPersonOne},
+		Imports: []*pb.ImportsPerDeveloper{
+			{Languages: map[string]*pb.ImportsPerLanguage{}},
+			{Languages: map[string]*pb.ImportsPerLanguage{
+				"Go": {Ticks: map[string]*pb.ImportsPerTick{
+					testSysImport: {Counts: map[int32]int64{1: 1}},
+				}},
+			}},
+		},
+		TickSize: int64(time.Hour),
+	}
+
+	serialized, err := proto.Marshal(&message)
+	require.NoError(t, err)
+
+	_, err = ipd.Deserialize(serialized)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrAnalysisMalformed)
+	assert.Contains(t, err.Error(), "import records has 2 entries but import authors has 1")
+}
+
+// A result whose developer keys reach past the dictionary - possible for a result assembled
+// elsewhere - must serialize with a placeholder name instead of panicking.
+func TestImportsPerDeveloperSerializeTextDeveloperWithoutAuthor(t *testing.T) {
+	ipd := fixtureImportsPerDev(t)
+	res := ImportsPerDeveloperResult{Imports: ImportsMap{
+		0: {"Go": {testSysImport: {1: 2}}},
+		4: {"Go": {"fmt": {1: 1}}},
+	}, reversedPeopleDict: []string{testPersonOne, testPersonTwo}}
+	buffer := &bytes.Buffer{}
+
+	require.NotPanics(t, func() {
+		assert.NoError(t, ipd.Serialize(res, false, buffer))
+	})
+	assert.Equal(t, `  tick_size: 0
+  imports:
+    "one": {"Go":{"sys":{"1":2}}}
+    "author 4": {"Go":{"fmt":{"1":1}}}
+`, buffer.String())
 }

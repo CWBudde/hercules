@@ -98,7 +98,10 @@ func (sent *CommentSentimentAnalysis) Configure(facts map[string]any) error {
 func (*CommentSentimentAnalysis) ConfigureUpstream(facts map[string]any) error { return nil }
 
 func (sent *CommentSentimentAnalysis) Initialize(repository *git.Repository) error {
-	sent.l = core.NewLogger()
+	if sent.l == nil {
+		sent.l = core.NewLogger()
+	}
+
 	return errTensorflowRequired
 }
 

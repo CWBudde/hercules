@@ -192,7 +192,15 @@ func (registry *PipelineItemRegistry) CollectAllDependencies(item PipelineItem) 
 		stack = stack[:len(stack)-1]
 
 		for _, reqID := range head.Requires() {
-			req := registry.Summon(reqID)[0]
+			providers := registry.Summon(reqID)
+			if len(providers) == 0 {
+				panic(fmt.Sprintf(
+					"pipeline item %s requires %q, which no registered item provides",
+					head.Name(), reqID,
+				))
+			}
+
+			req := providers[0]
 			if _, exists := deps[reqID]; !exists {
 				deps[reqID] = req
 				stack = append(stack, req)

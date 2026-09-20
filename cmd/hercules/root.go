@@ -17,6 +17,7 @@ import (
 	"regexp"
 	"runtime"
 	"runtime/pprof"
+	"slices"
 	"sort"
 	"strings"
 	"text/template"
@@ -1064,8 +1065,8 @@ func deployItemsToPipeline(pipeline *core.Pipeline, flags *pflag.FlagSet,
 
 func pipelineDeploymentList(flags *pflag.FlagSet) [][]string {
 	deployList := make([][]string, 0, len(cmdlineDeployed))
-	for name, valPtr := range cmdlineDeployed {
-		if *valPtr {
+	for _, name := range slices.Sorted(maps.Keys(cmdlineDeployed)) { // sorted: sets the section order
+		if *cmdlineDeployed[name] {
 			deployList = append(deployList, []string{name})
 		}
 	}

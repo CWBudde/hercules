@@ -152,7 +152,10 @@ func (devs *DevsAnalysis) Initialize(repository *git.Repository) error {
 		return errTickSizeUnspecified
 	}
 
-	devs.l = core.NewLogger()
+	if devs.l == nil {
+		devs.l = core.NewLogger()
+	}
+
 	devs.ticks = map[int]map[int]*DevTick{}
 	devs.OneShotMergeProcessor.Initialize()
 

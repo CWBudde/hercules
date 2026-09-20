@@ -91,7 +91,12 @@ type BurndownAnalysis struct {
 
 	peopleResolver  core.IdentityResolver
 	primaryResolver core.FileIdResolver
-	fileResolver    core.FileIdResolver
+	// authoritativeResolver is the line-history branch handed over by the last non-replica commit,
+	// the one whose files are HEAD's. primaryResolver wraps the pipeline's original instance, which
+	// stops tracking HEAD once the planner consumes a merge on another branch (PLAN.md B14), so it is
+	// only a fallback for a run which consumed nothing.
+	authoritativeResolver core.FileIdResolver
+	fileResolver          core.FileIdResolver
 
 	// HibernationToDisk saves hibernated data to disk rather than keeping in memory.
 	HibernationToDisk bool
@@ -261,6 +266,7 @@ func (analyser *BurndownAnalysis) Description() string {
 // Initialize resets the temporary caches and prepares this PipelineItem for a series of Consume()
 // calls. The repository which is going to be analysed is supplied as an argument.
 func (analyser *BurndownAnalysis) Initialize(repository *git.Repository) error {
+	analyser.authoritativeResolver = nil
 	analyser.Dispose()
 
 	if analyser.l == nil {
@@ -327,6 +333,12 @@ func (analyser *BurndownAnalysis) Consume(deps map[string]any) (map[string]any, 
 		return nil, err
 	}
 
+	// A merge commit is replayed once per parent; only the first, authoritative sighting runs on
+	// the branch whose trees survive the merge and describe HEAD afterwards.
+	if !core.IsMergeReplica(deps) {
+		analyser.authoritativeResolver = changes.Resolver
+	}
+
 	consumeLineHistory(analyser, changes)
 
 	return noDependencies(), nil
@@ -367,27 +379,7 @@ func consumeLineHistory(analyser *BurndownAnalysis, changes core.LineHistoryChan
 		analyser.updateChurnMatrix(change)
 	}
 
-	analyser.fileResolver = analyser.primaryResolver
-}
-
-// consumePendingLineHistory accounts for merge-resolution deltas that were still buffered when
-// the last commit was consumed. That happens when the analysed HEAD is itself a merge commit:
-// LineHistoryAnalyser.Merge() runs after the final Consume(), so there is no commit left to
-// carry its changes.
-func consumePendingLineHistory(analyser *BurndownAnalysis) {
-	if analyser.primaryResolver == nil {
-		return
-	}
-
-	pending := linehistory.PendingChanges(analyser.primaryResolver)
-	if len(pending) == 0 {
-		return
-	}
-
-	consumeLineHistory(analyser, core.LineHistoryChanges{
-		Changes:  pending,
-		Resolver: analyser.primaryResolver,
-	})
+	analyser.fileResolver = analyser.finalResolver()
 }
 
 // burndownState holds the serializable state for hibernation.
@@ -960,32 +952,6 @@ func (analyser *BurndownAnalysis) finalizePeopleMatrix(peopleNumber int) burndow
 	return result
 }
 
-func (analyser *BurndownAnalysis) collectFileOwnership(fileOwnership map[string]map[int]int) {
-	analyser.fileResolver.ForEachFile(func(fileId core.FileId, fileName string) {
-		previousLine := 0
-		previousAuthor := core.AuthorMissing
-		ownership := map[int]int{}
-
-		if analyser.fileResolver.ScanFile(fileId,
-			func(line int, tick core.TickNumber, author core.AuthorId) {
-				length := line - previousLine
-				if length > 0 {
-					ownership[previousAuthor] += length
-				}
-
-				previousLine = line
-
-				if author >= core.AuthorMissing {
-					previousAuthor = -1
-				} else {
-					previousAuthor = int(author)
-				}
-			}) {
-			fileOwnership[fileName] = ownership
-		}
-	})
-}
-
 func (analyser *BurndownAnalysis) updateGlobal(change core.LineHistoryChange) {
 	analyser.globalHistory.updateDelta(int(change.PrevTick), int(change.CurrTick), change.Delta)
 }
@@ -1248,10 +1214,19 @@ func writeBurndownFiles(writer io.Writer, result *BurndownResult) {
 		yaml.PrintMatrix(writer, result.FileHistories[key], 4, key, false)
 	}
 
+	// files_ownership is a nameless list which readers pair with the files block by position, so it
+	// is written in that block's order and length: one entry per file history, {} when a file has
+	// no ownership entry. FileOwnership keys without a history are not emitted here, exactly as the
+	// protobuf writer pairs them.
 	_, _ = fmt.Fprintln(writer, "  files_ownership:")
 
-	for _, key := range sortedKeys(result.FileOwnership) {
+	for _, key := range sortedKeys(result.FileHistories) {
 		owned := result.FileOwnership[key]
+		if len(owned) == 0 {
+			_, _ = fmt.Fprintln(writer, "    - {}")
+
+			continue
+		}
 
 		developers := make([]int, 0, len(owned))
 		for developer := range owned {

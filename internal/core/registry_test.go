@@ -1,6 +1,7 @@
 package core
 
 import (
+	"fmt"
 	"os"
 	"reflect"
 	"testing"
@@ -429,4 +430,18 @@ func TestRegistryPathMasquerade(t *testing.T) {
 	EnablePathFlagTypeMasquerade()
 	assert.Equal(t, "path", flag.Value.Type())
 	assert.Equal(t, "xxx", flag.Value.String())
+}
+
+func TestCollectAllDependenciesReportsUnprovidedRequirement(t *testing.T) {
+	registry := getRegistry()
+	item := &dummyPipelineItem4{}
+	registry.Register(item)
+
+	expected := fmt.Sprintf(
+		"pipeline item %s requires %q, which no registered item provides",
+		item.Name(), testDummyItemThree,
+	)
+	assert.PanicsWithValue(t, expected, func() {
+		registry.CollectAllDependencies(item)
+	})
 }

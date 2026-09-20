@@ -163,7 +163,7 @@ func TestBinaryTransitionsKeepBurndownAndChurnTotalsConsistent(t *testing.T) {
 }
 
 func TestBurndownRestoresFileHistoryAfterParallelBranchDeletion(t *testing.T) {
-	resolver := ownershipTestResolver{7: "file.txt"}
+	resolver := ownershipTestResolver{7: ownershipFile("file.txt", 0)}
 	burndown := &BurndownAnalysis{
 		TrackFiles:      true,
 		Granularity:     1,

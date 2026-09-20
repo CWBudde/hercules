@@ -16,6 +16,24 @@ Each entry should include:
 
 ## Unreleased
 
+- PB and YAML, documentation-only: `BusFactorAnalysisResults` and `OwnershipConcentrationResults`
+  keep their fields, but the numbers in them are now read off the line-history trees instead of
+  being summed from per-commit deltas in one accumulator shared by every branch. Sibling branches
+  each remove the same lines from their own copy of a file, so the shared sum removed them twice
+  and the clamp that hid the negative made `total_lines` disagree with the sum of `author_lines`
+  (PLAN.md B1c/B3; on `meko-etl-tool` 18 650 against 18 958, one author overstated by ~1 000 lines
+  against `git blame`). Every snapshot is now one branch's exact state, the final one is HEAD's,
+  and `total_lines` equals the sum of the per-author counts. The per-tick series follows the
+  branch lineage that survives each merge to HEAD.
+  Compatibility: documentation-only - no field changes, no `SchemaVersion` bump.
+  User action: recompute stored results; a combined `.pb` inherits the defect from its inputs.
+- PB and YAML, documentation-only: `BurndownAnalysisResults.files`, `files_ownership` and the
+  merge-resolution deltas accounted at Finalize are now resolved through the line-history branch of
+  the last authoritative commit (HEAD's) rather than the pipeline's original instance, which
+  stopped tracking HEAD once the main line had been forked further (PLAN.md B14). `--burndown-files`
+  on `meko-etl-tool` listed 305 files of which 29 existed at HEAD; it lists the live files now.
+  Compatibility: documentation-only. User action: recompute stored per-file burndown results.
+
 - PB and YAML: `KnowledgeDiffusionFileData` gains `lines` (field 5), `churn` (field 6),
   `recent_churn` (field 7) and `ticks_since_last_edit` (field 8), all `int32`; the YAML output
   gains the matching per-file keys. The silo chart ranked its files by editor count tie-broken

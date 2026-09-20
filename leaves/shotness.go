@@ -114,7 +114,10 @@ func (*ShotnessAnalysis) ConfigureUpstream(facts map[string]any) error {
 // Initialize resets the temporary caches and prepares this PipelineItem for a series of Consume()
 // calls. The repository which is going to be analysed is supplied as an argument.
 func (shotness *ShotnessAnalysis) Initialize(repository *git.Repository) error {
-	shotness.l = core.NewLogger()
+	if shotness.l == nil {
+		shotness.l = core.NewLogger()
+	}
+
 	shotness.nodes = map[string]*nodeShotness{}
 	shotness.files = map[string]map[string]*nodeShotness{}
 	shotness.extractor = ast_items.NewTreeSitterExtractor()

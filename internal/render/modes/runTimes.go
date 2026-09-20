@@ -106,9 +106,9 @@ func runtimeOutputPath(output string) string {
 
 // RuntimeMetric represents a single runtime measurement.
 type RuntimeMetric struct {
-	Operation  string
-	TimeMs     float64
-	Percentage float64
+	Operation   string
+	TimeSeconds float64
+	Percentage  float64
 }
 
 // RuntimeAnalysis represents the complete runtime analysis results.
@@ -120,13 +120,13 @@ type RuntimeAnalysis struct {
 
 // RuntimeStatistics provides summary statistics about runtime performance.
 type RuntimeStatistics struct {
-	TotalOperations int
-	TotalTimeMs     float64
-	AverageTime     float64
-	MaxTime         float64
-	MinTime         float64
-	SlowestOp       string
-	FastestOp       string
+	TotalOperations  int
+	TotalTimeSeconds float64
+	AverageTime      float64
+	MaxTime          float64
+	MinTime          float64
+	SlowestOp        string
+	FastestOp        string
 }
 
 // analyzeRuntimeStats performs analysis on runtime statistics.
@@ -151,9 +151,9 @@ func analyzeRuntimeStats(runtimeStats map[string]float64) RuntimeAnalysis {
 		}
 
 		metrics = append(metrics, RuntimeMetric{
-			Operation:  operation,
-			TimeMs:     time,
-			Percentage: percentage,
+			Operation:   operation,
+			TimeSeconds: time,
+			Percentage:  percentage,
 		})
 
 		// Track min/max
@@ -170,7 +170,7 @@ func analyzeRuntimeStats(runtimeStats map[string]float64) RuntimeAnalysis {
 
 	// Sort by time (descending)
 	sort.Slice(metrics, func(i, j int) bool {
-		return metrics[i].TimeMs > metrics[j].TimeMs
+		return metrics[i].TimeSeconds > metrics[j].TimeSeconds
 	})
 
 	// Calculate average
@@ -183,13 +183,13 @@ func analyzeRuntimeStats(runtimeStats map[string]float64) RuntimeAnalysis {
 		Metrics:   metrics,
 		TotalTime: totalTime,
 		Statistics: RuntimeStatistics{
-			TotalOperations: len(metrics),
-			TotalTimeMs:     totalTime,
-			AverageTime:     avgTime,
-			MaxTime:         maxTime,
-			MinTime:         minTime,
-			SlowestOp:       slowestOp,
-			FastestOp:       fastestOp,
+			TotalOperations:  len(metrics),
+			TotalTimeSeconds: totalTime,
+			AverageTime:      avgTime,
+			MaxTime:          maxTime,
+			MinTime:          minTime,
+			SlowestOp:        slowestOp,
+			FastestOp:        fastestOp,
 		},
 	}
 }
@@ -197,10 +197,10 @@ func analyzeRuntimeStats(runtimeStats map[string]float64) RuntimeAnalysis {
 func printRuntimeSummary(analysis RuntimeAnalysis) {
 	fmt.Printf("Runtime Analysis Summary:\n")
 	fmt.Printf("  Total operations: %d\n", analysis.Statistics.TotalOperations)
-	fmt.Printf("  Total runtime: %.2f ms\n", analysis.Statistics.TotalTimeMs)
-	fmt.Printf("  Average runtime per operation: %.2f ms\n", analysis.Statistics.AverageTime)
-	fmt.Printf("  Slowest operation: %s (%.2f ms)\n", analysis.Statistics.SlowestOp, analysis.Statistics.MaxTime)
-	fmt.Printf("  Fastest operation: %s (%.2f ms)\n", analysis.Statistics.FastestOp, analysis.Statistics.MinTime)
+	fmt.Printf("  Total runtime: %.2f s\n", analysis.Statistics.TotalTimeSeconds)
+	fmt.Printf("  Average runtime per operation: %.2f s\n", analysis.Statistics.AverageTime)
+	fmt.Printf("  Slowest operation: %s (%.2f s)\n", analysis.Statistics.SlowestOp, analysis.Statistics.MaxTime)
+	fmt.Printf("  Fastest operation: %s (%.2f s)\n", analysis.Statistics.FastestOp, analysis.Statistics.MinTime)
 }
 
 // plotRuntimeBreakdown creates a bar chart showing runtime for each operation.
@@ -217,7 +217,7 @@ func plotRuntimeBreakdown(analysis RuntimeAnalysis, output string, visuals graph
 	values := make([]float64, maxOps)
 	for i := range maxOps {
 		labels[i] = compactRuntimeLabel(analysis.Metrics[i].Operation, 12)
-		values[i] = analysis.Metrics[i].TimeMs
+		values[i] = analysis.Metrics[i].TimeSeconds
 	}
 
 	xMargin := 0.05 * (float64(maxOps) - 0.2)
@@ -227,7 +227,7 @@ func plotRuntimeBreakdown(analysis RuntimeAnalysis, output string, visuals graph
 	err := graphics.PlotBarChartMatplotlib(labels, values, graphics.MatplotlibBarOptions{
 		Title:        "Runtime Analysis Breakdown",
 		XLabel:       "Operations (by time)",
-		YLabel:       timeAxisLabel,
+		YLabel:       "Time (s)",
 		Output:       output,
 		WidthInches:  15.36,
 		HeightInches: 7.68,
@@ -300,10 +300,10 @@ func plotRuntimePieChart(analysis RuntimeAnalysis, output string) error {
 	// Print summary information
 	fmt.Printf("Runtime Analysis Summary:\n")
 	fmt.Printf("  Total operations: %d\n", analysis.Statistics.TotalOperations)
-	fmt.Printf("  Total runtime: %.2f ms\n", analysis.Statistics.TotalTimeMs)
-	fmt.Printf("  Average runtime per operation: %.2f ms\n", analysis.Statistics.AverageTime)
-	fmt.Printf("  Slowest operation: %s (%.2f ms)\n", analysis.Statistics.SlowestOp, analysis.Statistics.MaxTime)
-	fmt.Printf("  Fastest operation: %s (%.2f ms)\n", analysis.Statistics.FastestOp, analysis.Statistics.MinTime)
+	fmt.Printf("  Total runtime: %.2f s\n", analysis.Statistics.TotalTimeSeconds)
+	fmt.Printf("  Average runtime per operation: %.2f s\n", analysis.Statistics.AverageTime)
+	fmt.Printf("  Slowest operation: %s (%.2f s)\n", analysis.Statistics.SlowestOp, analysis.Statistics.MaxTime)
+	fmt.Printf("  Fastest operation: %s (%.2f s)\n", analysis.Statistics.FastestOp, analysis.Statistics.MinTime)
 
 	return nil
 }

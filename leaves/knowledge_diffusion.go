@@ -12,6 +12,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 
 	"github.com/cwbudde/hercules/internal/core"
+	"github.com/cwbudde/hercules/internal/join"
 	"github.com/cwbudde/hercules/internal/pb"
 	items "github.com/cwbudde/hercules/internal/plumbing"
 	"github.com/cwbudde/hercules/internal/plumbing/identity"
@@ -164,7 +165,10 @@ func (kd *KnowledgeDiffusionAnalysis) Description() string {
 
 // Initialize resets the temporary caches and prepares this PipelineItem for a series of Consume() calls.
 func (kd *KnowledgeDiffusionAnalysis) Initialize(repository *git.Repository) error {
-	kd.l = core.NewLogger()
+	if kd.l == nil {
+		kd.l = core.NewLogger()
+	}
+
 	kd.fileAuthors = map[string]map[int]*authorFileInfo{}
 	kd.fileChurn = map[string]map[int]int{}
 	kd.lastCommit = nil
@@ -392,6 +396,9 @@ func (kd *KnowledgeDiffusionAnalysis) QualifyPaths(result any, repository string
 }
 
 // MergeResults combines two KnowledgeDiffusionResult-s together.
+//
+// The two results may come from different repositories whose people dictionaries are not aligned,
+// so every file's author indices are translated into the joined dictionary.
 func (kd *KnowledgeDiffusionAnalysis) MergeResults(
 	firstResult, secondResult any, firstCommon, secondCommon *core.CommonAnalysisResult,
 ) any {
@@ -405,11 +412,13 @@ func (kd *KnowledgeDiffusionAnalysis) MergeResults(
 		return err
 	}
 
+	people, mergedPeopleDict := join.PeopleIdentities(kdr1.reversedPeopleDict, kdr2.reversedPeopleDict)
+
 	merged := KnowledgeDiffusionResult{
 		Files:              make(map[string]*KnowledgeDiffusionFileResult),
 		Distribution:       make(map[int]int),
 		WindowMonths:       kdr1.WindowMonths,
-		reversedPeopleDict: kdr1.reversedPeopleDict,
+		reversedPeopleDict: mergedPeopleDict,
 		tickSize:           kdr1.tickSize,
 	}
 
@@ -421,16 +430,18 @@ func (kd *KnowledgeDiffusionAnalysis) MergeResults(
 	firstOffset := knowledgeDiffusionAgeOffset(firstCommon, secondCommon, merged.tickSize)
 	secondOffset := knowledgeDiffusionAgeOffset(secondCommon, firstCommon, merged.tickSize)
 
-	// Merge files: union of authors per file.
+	// Merge files. A path present on both sides keeps the record with more unique editors; the
+	// author sets are not unioned, because the per-file counts and the editors-over-time series
+	// describe one repository's history and cannot be recombined from the other's.
 	for name, fileData := range kdr1.Files {
-		merged.Files[name] = withRebasedAge(fileData, firstOffset)
+		merged.Files[name] = withMergedAuthors(withRebasedAge(fileData, firstOffset), people.First)
 	}
 
 	for name, fileData := range kdr2.Files {
-		rebased := withRebasedAge(fileData, secondOffset)
+		rebased := withMergedAuthors(withRebasedAge(fileData, secondOffset), people.Second)
 
 		if existing, ok := merged.Files[name]; ok {
-			// Merge author sets: keep the one with more editors.
+			// Keep the record with more unique editors.
 			if rebased.UniqueEditorsCount > existing.UniqueEditorsCount {
 				merged.Files[name] = rebased
 			}
@@ -479,6 +490,43 @@ func withRebasedAge(file *KnowledgeDiffusionFileResult, offset int) *KnowledgeDi
 	rebased.TicksSinceLastEdit += offset
 
 	return &rebased
+}
+
+// withMergedAuthors returns the file with its author indices translated into the merged people
+// dictionary, sorted and deduplicated: two source records can resolve to one merged identity.
+// Like withRebasedAge it copies rather than mutates, because the inputs belong to the caller.
+func withMergedAuthors(
+	file *KnowledgeDiffusionFileResult, identities []int,
+) *KnowledgeDiffusionFileResult {
+	if file == nil || len(file.Authors) == 0 {
+		return file
+	}
+
+	translated := *file
+	translated.Authors = mergedAuthorIndices(file.Authors, identities)
+
+	return &translated
+}
+
+// mergedAuthorIndices maps author indices through identities (see mapOwnershipAuthor) and returns
+// them sorted with duplicates removed.
+func mergedAuthorIndices(authors, identities []int) []int {
+	seen := make(map[int]struct{}, len(authors))
+	merged := make([]int, 0, len(authors))
+
+	for _, sourceAuthor := range authors {
+		author := mapOwnershipAuthor(sourceAuthor, identities)
+		if _, duplicate := seen[author]; duplicate {
+			continue
+		}
+
+		seen[author] = struct{}{}
+		merged = append(merged, author)
+	}
+
+	sort.Ints(merged)
+
+	return merged
 }
 
 // churnTotals sums a file's lifetime churn and the part of it inside the recent window. The

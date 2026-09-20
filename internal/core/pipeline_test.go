@@ -1654,3 +1654,60 @@ func TestPipelineInitializeExtMergeTracksWithPreparePlan(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotNil(t, result)
 }
+
+// nilHeadStorage answers HEAD with neither a reference nor an error once armed.
+// go-git's Repository.Head passes that pair through unchanged, which is the case
+// HeadCommit has to turn into a real error instead of an empty result.
+type nilHeadStorage struct {
+	*memory.Storage
+
+	hideHead bool
+}
+
+func (s *nilHeadStorage) Reference(name plumbing.ReferenceName) (*plumbing.Reference, error) {
+	if s.hideHead && name == plumbing.HEAD {
+		return nil, nil
+	}
+
+	return s.Storage.Reference(name)
+}
+
+func TestPipelineHeadCommitRejectsMissingHeadWithoutError(t *testing.T) {
+	storage := &nilHeadStorage{Storage: memory.NewStorage()}
+	repository, err := git.Init(storage, nil)
+	require.NoError(t, err)
+	storage.hideHead = true
+
+	pipeline := NewPipeline(repository)
+	heads, err := pipeline.HeadCommit()
+	assert.Nil(t, heads)
+	require.ErrorIs(t, err, ErrNoHeadReference)
+
+	commits, err := pipeline.Commits(false)
+	assert.Nil(t, commits)
+	require.ErrorIs(t, err, ErrNoHeadReference)
+}
+
+func TestPipelineCommitsFirstParentReportsMissingParent(t *testing.T) {
+	storage := memory.NewStorage()
+	repository, err := git.Init(storage, nil)
+	require.NoError(t, err)
+
+	signature := object.Signature{Name: "hercules", Email: "hercules@example.com", When: time.Unix(0, 0)}
+	orphan := &object.Commit{
+		Author:       signature,
+		Committer:    signature,
+		Message:      "parent is missing from the object store",
+		ParentHashes: []plumbing.Hash{plumbing.NewHash("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef")},
+	}
+	encoded := storage.NewEncodedObject()
+	require.NoError(t, orphan.Encode(encoded))
+	hash, err := storage.SetEncodedObject(encoded)
+	require.NoError(t, err)
+	require.NoError(t, storage.SetReference(plumbing.NewHashReference(plumbing.Master, hash)))
+
+	pipeline := NewPipeline(repository)
+	commits, err := pipeline.Commits(true)
+	assert.Nil(t, commits)
+	require.ErrorIs(t, err, plumbing.ErrObjectNotFound)
+}

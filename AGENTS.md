@@ -6,10 +6,11 @@ This file provides guidance for AI Agents (Claude Code, Codex etc.) when working
 
 The Go-renderer integration (`labours-go` → in-repo `internal/render` + `cmd/labours`) and the
 carried-over roadmap work are complete, including the cross-repo follow-ups (`ewws-statistics`
-repointed, old `labours-go` archived, `matplotlib-go` bumped to `v0.3.2`). The former `PLAN.md`/
-`ROADMAP.md` history lives in git and the merged PRs. A few items remain intentionally deferred
-(native JSON export, code-review metrics, remote cloning, caching) — revisit only on a concrete
-trigger.
+repointed, old `labours-go` archived, `matplotlib-go` bumped; `go.mod` is authoritative for the
+version). The former `ROADMAP.md` history lives in git and the merged PRs; `PLAN.md` is the live
+record of open defects, deliberate non-fixes and the review of 2026-09-20. A few items remain
+intentionally deferred (native JSON export, code-review metrics, remote cloning, caching) — revisit
+only on a concrete trigger.
 
 ## Build and Development Commands
 

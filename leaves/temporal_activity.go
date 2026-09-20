@@ -11,6 +11,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 
 	"github.com/cwbudde/hercules/internal/core"
+	"github.com/cwbudde/hercules/internal/join"
 	"github.com/cwbudde/hercules/internal/pb"
 	items "github.com/cwbudde/hercules/internal/plumbing"
 	"github.com/cwbudde/hercules/internal/plumbing/identity"
@@ -151,7 +152,10 @@ func newTemporalDimension(size int) TemporalDimension {
 // Initialize resets the temporary caches and prepares this PipelineItem for a series of Consume()
 // calls. The repository which is going to be analysed is supplied as an argument.
 func (ta *TemporalActivityAnalysis) Initialize(repository *git.Repository) error {
-	ta.l = core.NewLogger()
+	if ta.l == nil {
+		ta.l = core.NewLogger()
+	}
+
 	ta.activities = map[int]*DeveloperTemporalActivity{}
 	ta.ticks = map[int]map[int]*TemporalActivityTick{}
 	ta.OneShotMergeProcessor.Initialize()
@@ -510,6 +514,9 @@ func temporalTickToProto(activity *TemporalActivityTick) (*pb.TemporalActivityTi
 var _ = core.RegisterPipelineItem(&TemporalActivityAnalysis{})
 
 // MergeResults combines two TemporalActivityResult-s together.
+//
+// The two results may come from different repositories whose people dictionaries are not aligned,
+// so developer indices are translated into the joined dictionary before their activity is added.
 func (ta *TemporalActivityAnalysis) MergeResults(
 	firstResult, secondResult any, _, _ *core.CommonAnalysisResult,
 ) any {
@@ -523,17 +530,19 @@ func (ta *TemporalActivityAnalysis) MergeResults(
 		return err
 	}
 
+	people, mergedPeopleDict := join.PeopleIdentities(tar1.reversedPeopleDict, tar2.reversedPeopleDict)
+
 	merged := TemporalActivityResult{
 		Activities:         make(map[int]*DeveloperTemporalActivity),
 		Ticks:              make(map[int]map[int]*TemporalActivityTick),
-		reversedPeopleDict: tar1.reversedPeopleDict, // Use first dict, should be same
+		reversedPeopleDict: mergedPeopleDict,
 		tickSize:           tar1.tickSize,
 	}
 
-	mergeTemporalActivities(merged.Activities, tar1.Activities)
-	mergeTemporalActivities(merged.Activities, tar2.Activities)
-	mergeTemporalTicks(merged.Ticks, tar1.Ticks)
-	mergeTemporalTicks(merged.Ticks, tar2.Ticks)
+	mergeTemporalActivities(merged.Activities, tar1.Activities, people.First)
+	mergeTemporalActivities(merged.Activities, tar2.Activities, people.Second)
+	mergeTemporalTicks(merged.Ticks, tar1.Ticks, people.First)
+	mergeTemporalTicks(merged.Ticks, tar2.Ticks, people.Second)
 
 	return merged
 }
@@ -634,10 +643,15 @@ func (ta *TemporalActivityAnalysis) serializeBinary(result *TemporalActivityResu
 	return nil
 }
 
+// mergeTemporalActivities adds one source's per-developer totals into target. identities maps
+// the source's developer indices into the merged people dictionary; see mapOwnershipAuthor for
+// how indices outside the source dictionary are treated.
 func mergeTemporalActivities(
-	target, source map[int]*DeveloperTemporalActivity,
+	target, source map[int]*DeveloperTemporalActivity, identities []int,
 ) {
-	for developer, sourceActivity := range source {
+	for sourceDeveloper, sourceActivity := range source {
+		developer := mapOwnershipAuthor(sourceDeveloper, identities)
+
 		activity := target[developer]
 		if activity == nil {
 			activity = &DeveloperTemporalActivity{
@@ -661,15 +675,19 @@ func addTemporalDimension(target *TemporalDimension, source TemporalDimension) {
 	}
 }
 
+// mergeTemporalTicks adds one source's per-tick, per-developer activity into target, translating
+// developer indices through identities the same way mergeTemporalActivities does.
 func mergeTemporalTicks(
-	target, source map[int]map[int]*TemporalActivityTick,
+	target, source map[int]map[int]*TemporalActivityTick, identities []int,
 ) {
 	for tick, developers := range source {
 		if target[tick] == nil {
 			target[tick] = make(map[int]*TemporalActivityTick)
 		}
 
-		for developer, activity := range developers {
+		for sourceDeveloper, activity := range developers {
+			developer := mapOwnershipAuthor(sourceDeveloper, identities)
+
 			existing := target[tick][developer]
 			if existing == nil {
 				activityCopy := *activity

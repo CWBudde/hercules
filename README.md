@@ -653,8 +653,11 @@ The [bus factor](https://en.wikipedia.org/wiki/Bus_factor) is the minimum number
 departure would leave the project without sufficient knowledge to maintain it. Hercules computes this
 over time by finding the smallest set of developers who collectively own at least 80% (configurable
 via `--bus-factor-threshold`) of the living code lines. Each occupied tick records ownership after
-that tick's last commit and before any later tick. Required coverage is rounded up to a whole line,
-so the configured threshold remains exact for small repositories.
+that tick's last commit and before any later tick. Ownership is read off the per-branch line
+history, so the final snapshot is the exact distribution at HEAD (what `git blame` aggregates to,
+up to hercules' own merge attribution) and the total always equals the sum of the per-author
+counts. Required coverage is rounded up to a whole line, so the configured threshold remains exact
+for small repositories.
 
 The analysis produces three visualizations:
 
@@ -678,7 +681,7 @@ quantify how concentrated or distributed code ownership is. Gini=0 means perfect
 ownership, Gini=1 means one person owns everything. HHI ranges from 1/n (equal) to 1.0
 (single author). Both metrics are tracked over time using the same line ownership data as
 the bus factor analysis. Their occupied-tick and final subsystem snapshots use the same
-incremental ownership accounting as Bus Factor.
+tree-derived, per-branch ownership as Bus Factor.
 
 The analysis produces two visualizations:
 

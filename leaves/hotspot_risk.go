@@ -268,7 +268,10 @@ func (hra *HotspotRiskAnalysis) Description() string {
 
 // Initialize prepares the analysis.
 func (hra *HotspotRiskAnalysis) Initialize(repository *git.Repository) error {
-	hra.l = core.NewLogger()
+	if hra.l == nil {
+		hra.l = core.NewLogger()
+	}
+
 	if hra.tickSize <= 0 {
 		return fmt.Errorf(
 			"%w: %s got %s", errHotspotRiskTickSize,

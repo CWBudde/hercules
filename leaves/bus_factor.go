@@ -36,15 +36,15 @@ var (
 // living lines. A low bus factor indicates high risk: few people understand
 // the codebase.
 //
-// It consumes LineHistoryChanges to track per-file, per-author alive-line
-// counts and snapshots the bus factor at each tick.
+// It reads per-file, per-author alive-line counts off the shared ownership snapshot, which
+// derives them from the line-history trees, and records the bus factor at each tick.
 type BusFactorAnalysis struct {
 	core.NoopMerger
 
 	// Threshold is the ownership fraction that must be covered (default 0.8 = 80%).
 	Threshold float32
 
-	// ownership references the shared incremental alive-line ownership state.
+	// ownership references the alive-line ownership state of the branch that survives to HEAD.
 	ownership *ownershipSnapshotAccumulator
 	// peopleResolver resolves author IDs to names.
 	peopleResolver core.IdentityResolver
@@ -165,7 +165,10 @@ func (bf *BusFactorAnalysis) Description() string {
 // Initialize resets the temporary caches and prepares this PipelineItem for a series of Consume()
 // calls. The repository which is going to be analysed is supplied as an argument.
 func (bf *BusFactorAnalysis) Initialize(repository *git.Repository) error {
-	bf.l = core.NewLogger()
+	if bf.l == nil {
+		bf.l = core.NewLogger()
+	}
+
 	bf.snapshots = map[int]*BusFactorSnapshot{}
 	bf.ownership = nil
 
@@ -177,7 +180,9 @@ func (bf *BusFactorAnalysis) Initialize(repository *git.Repository) error {
 }
 
 // Consume runs this PipelineItem on the next commit data.
-// It closes the previous tick before applying the first commit from a later tick.
+//
+// A merge commit is replayed once per parent branch. Only the first, authoritative sighting runs
+// on the branch whose state survives the merge, so the replicas' state must not displace it.
 func (bf *BusFactorAnalysis) Consume(deps map[string]any) (map[string]any, error) {
 	reader := factReader{facts: deps}
 	update := readFact[ownershipSnapshotUpdate](&reader, dependencyOwnershipSnapshot)
@@ -186,10 +191,8 @@ func (bf *BusFactorAnalysis) Consume(deps map[string]any) (map[string]any, error
 		return nil, reader.err
 	}
 
-	bf.ownership = update.State
-
-	if update.ClosedTotals != nil {
-		bf.takeSnapshot(update.ClosedTick, *update.ClosedTotals)
+	if !core.IsMergeReplica(deps) {
+		bf.ownership = update.State
 	}
 
 	return noDependencies(), nil
@@ -259,8 +262,15 @@ func busFactorTargetLines(totalLines int64, threshold float32) int64 {
 }
 
 // Finalize returns the result of the analysis. Further Consume() calls are not expected.
+//
+// The per-tick snapshots come from the surviving branch's closed-tick series plus its final
+// state, so every point on the timeline is the exact state of one commit lineage.
 func (bf *BusFactorAnalysis) Finalize() any {
 	if bf.ownership != nil {
+		for tick, totals := range bf.ownership.closedSnapshots() {
+			bf.takeSnapshot(tick, *totals)
+		}
+
 		if tick, totals := bf.ownership.finalSnapshot(); totals != nil {
 			bf.takeSnapshot(tick, *totals)
 		}

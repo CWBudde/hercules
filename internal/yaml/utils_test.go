@@ -58,3 +58,29 @@ func TestPrintMatrixNonEmptyUnaffected(t *testing.T) {
 	PrintMatrix(buffer, [][]int64{{1145, 0}, {464, 369}}, 2, "project", false)
 	assert.Equal(t, "  \"project\": |-\n    1145    0\n     464  369\n", buffer.String())
 }
+
+func TestSafeString(t *testing.T) {
+	tests := map[string]struct {
+		input    string
+		expected string
+	}{
+		"plain":           {input: "alice", expected: `"alice"`},
+		"empty":           {input: "", expected: `""`},
+		"backslash":       {input: `a\b`, expected: `"a\\b"`},
+		"double quote":    {input: `say "hi"`, expected: `"say \"hi\""`},
+		"newline":         {input: "a\nb", expected: `"a\nb"`},
+		"tab":             {input: "a\tb", expected: `"a\tb"`},
+		"carriage return": {input: "a\rb", expected: `"a\rb"`},
+		"nul":             {input: "a\x00b", expected: `"a\0b"`},
+		"control byte":    {input: "a\x01b\x1fc", expected: `"a\x01b\x1fc"`},
+		"delete":          {input: "a\x7fb", expected: `"a\x7fb"`},
+		"mixed":           {input: "path: \"x\"\n\\", expected: `"path: \"x\"\n\\"`},
+		"unicode kept":    {input: "Zoë Müller", expected: `"Zoë Müller"`},
+	}
+
+	for name, testCase := range tests {
+		t.Run(name, func(t *testing.T) {
+			assert.Equal(t, testCase.expected, SafeString(testCase.input))
+		})
+	}
+}

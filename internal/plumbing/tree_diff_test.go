@@ -576,3 +576,13 @@ func assertTreeDiffTransition(
 
 	assert.Equal(t, expectedState, state)
 }
+
+// The pipeline runs Configure() before Initialize(), so a logger installed through
+// core.ConfigLogger must survive Initialize().
+func TestTreeDiffInitializeKeepsConfiguredLogger(t *testing.T) {
+	td := &TreeDiff{}
+	logger := &recordingLogger{}
+	require.NoError(t, td.Configure(map[string]any{core.ConfigLogger: core.Logger(logger)}))
+	require.NoError(t, td.Initialize(test.Repository))
+	assert.Same(t, logger, td.l)
+}

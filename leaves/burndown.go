@@ -91,7 +91,12 @@ type BurndownAnalysis struct {
 
 	peopleResolver  core.IdentityResolver
 	primaryResolver core.FileIdResolver
-	fileResolver    core.FileIdResolver
+	// authoritativeResolver is the line-history branch handed over by the last non-replica commit,
+	// the one whose files are HEAD's. primaryResolver wraps the pipeline's original instance, which
+	// stops tracking HEAD once the planner consumes a merge on another branch (PLAN.md B14), so it is
+	// only a fallback for a run which consumed nothing.
+	authoritativeResolver core.FileIdResolver
+	fileResolver          core.FileIdResolver
 
 	// HibernationToDisk saves hibernated data to disk rather than keeping in memory.
 	HibernationToDisk bool
@@ -261,6 +266,7 @@ func (analyser *BurndownAnalysis) Description() string {
 // Initialize resets the temporary caches and prepares this PipelineItem for a series of Consume()
 // calls. The repository which is going to be analysed is supplied as an argument.
 func (analyser *BurndownAnalysis) Initialize(repository *git.Repository) error {
+	analyser.authoritativeResolver = nil
 	analyser.Dispose()
 
 	if analyser.l == nil {
@@ -327,6 +333,12 @@ func (analyser *BurndownAnalysis) Consume(deps map[string]any) (map[string]any, 
 		return nil, err
 	}
 
+	// A merge commit is replayed once per parent; only the first, authoritative sighting runs on
+	// the branch whose trees survive the merge and describe HEAD afterwards.
+	if !core.IsMergeReplica(deps) {
+		analyser.authoritativeResolver = changes.Resolver
+	}
+
 	consumeLineHistory(analyser, changes)
 
 	return noDependencies(), nil
@@ -367,7 +379,18 @@ func consumeLineHistory(analyser *BurndownAnalysis, changes core.LineHistoryChan
 		analyser.updateChurnMatrix(change)
 	}
 
-	analyser.fileResolver = analyser.primaryResolver
+	analyser.fileResolver = analyser.finalResolver()
+}
+
+// finalResolver names files and reads pending merge deltas at Finalize(): the branch handed over
+// by the last non-replica commit, falling back to the registered one for a run which consumed
+// nothing.
+func (analyser *BurndownAnalysis) finalResolver() core.FileIdResolver {
+	if analyser.authoritativeResolver != nil {
+		return analyser.authoritativeResolver
+	}
+
+	return analyser.primaryResolver
 }
 
 // consumePendingLineHistory accounts for merge-resolution deltas that were still buffered when
@@ -375,18 +398,19 @@ func consumeLineHistory(analyser *BurndownAnalysis, changes core.LineHistoryChan
 // LineHistoryAnalyser.Merge() runs after the final Consume(), so there is no commit left to
 // carry its changes.
 func consumePendingLineHistory(analyser *BurndownAnalysis) {
-	if analyser.primaryResolver == nil {
+	resolver := analyser.finalResolver()
+	if resolver == nil {
 		return
 	}
 
-	pending := linehistory.PendingChanges(analyser.primaryResolver)
+	pending := linehistory.PendingChanges(resolver)
 	if len(pending) == 0 {
 		return
 	}
 
 	consumeLineHistory(analyser, core.LineHistoryChanges{
 		Changes:  pending,
-		Resolver: analyser.primaryResolver,
+		Resolver: resolver,
 	})
 }
 

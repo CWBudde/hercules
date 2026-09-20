@@ -218,6 +218,13 @@ has no snapshots. For a threshold `t` and `L` living lines, the required coverag
 fractional line to truncation. Final subsystem values use the same ownership totals as the final
 global snapshot.
 
+Ownership is read off the line-history trees, not summed from per-commit deltas: every snapshot
+is the exact alive-line distribution of one branch at one commit, `total_lines` always equals the
+sum of the per-author counts, and the final snapshot describes HEAD. The per-tick series follows
+the branch lineage that survives each merge to HEAD, so a tick occupied only by a side branch
+which was later merged is described at the merge, not before it. Lines whose author no
+`--people-dict` entry matched are not counted.
+
 Example:
 
 ```yaml
@@ -746,8 +753,10 @@ PB: `OwnershipConcentrationResults`
 
 Tick and empty-repository semantics match Bus Factor: every occupied tick describes ownership
 after that tick's last commit and before any later tick, the final occupied tick is retained, and
-an input with no commits has no snapshots. Final subsystem Gini and HHI values are derived from the
-same per-file ownership totals as the final global snapshot.
+an input with no commits has no snapshots. The distributions are the same tree-derived, per-branch
+ownership the bus factor reads, so `total_lines` equals the sum of the per-author counts. Final
+subsystem Gini and HHI values are derived from the same per-file ownership totals as the final
+global snapshot.
 
 Example:
 

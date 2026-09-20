@@ -126,6 +126,28 @@ stderr tail, the numbers are not gated, and `UPDATE_CORPUS_BASELINE=1` refuses t
 write them. A deadline firing on a busy machine can therefore no longer be
 mistaken for a burndown regression — or be seeded into the baseline as one.
 
+## The corpus clones are pinned too
+
+`provenance` pins the hercules tree, but the corpus is a set of **live** repositories:
+`git pull` in one of them changes the history hercules replays, so its numbers stop being
+comparable even though neither the flags nor the tree moved. Every added commit adds matrix
+rows, and more rows means more negative cells — the suite then reports ordinary repository
+growth as a burndown regression. That happened on 2026-09-20: the whole corpus had been
+pulled for an unrelated org-wide run, `mekorp-backend` alone had gained 474 commits, and the
+project dimension came back "regressed" on almost every repository although the binary
+produced byte-identical matrices to the one the baseline was seeded with.
+
+`repo_heads` therefore records each clone's `HEAD` at seeding time:
+
+- head equal to the recorded one — measured and gated as before;
+- head different — the repository is **skipped** with a log line saying which two commits
+  are involved, because gating it would compare two different histories;
+- no recorded head (a baseline seeded before this existed, or `git rev-parse` failing) —
+  measured and gated as before, with a log line saying drift cannot be detected.
+
+A re-seed records the current heads, so the protection starts working after the next
+`just update-corpus-baseline`. Re-seed after pulling the corpus.
+
 ## Refreshing the baseline
 
 ```sh

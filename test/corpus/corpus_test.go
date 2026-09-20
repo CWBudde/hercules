@@ -166,6 +166,64 @@ type baseline struct {
 	Repositories     map[string]metrics `json:"repositories"`
 	FileFlags        []string           `json:"file_flags"`
 	FileRepositories map[string]metrics `json:"file_repositories"`
+	// RepoHeads pins the clone state each number was measured over. The corpus is a
+	// set of live repositories: pulling one changes the history hercules replays, so
+	// its numbers stop being comparable even though neither the flags nor the tree
+	// moved. Without this the suite silently compares a grown repository against the
+	// old measurement and reports the growth as a regression.
+	RepoHeads map[string]string `json:"repo_heads,omitempty"`
+}
+
+// headState says whether a committed number may be gated against a fresh measurement.
+type headState int
+
+const (
+	// headComparable means the clone is exactly the one the baseline was measured over.
+	headComparable headState = iota
+	// headUnpinned means the comparison cannot be judged: either the baseline predates
+	// head pinning or the current head could not be read. The suite keeps gating, which
+	// is the behaviour it had before pinning existed.
+	headUnpinned
+	// headDrifted means the clone moved since the baseline was seeded. Its numbers
+	// describe a different history and gating them is meaningless.
+	headDrifted
+)
+
+func (state headState) String() string {
+	switch state {
+	case headComparable:
+		return "comparable"
+	case headUnpinned:
+		return "unpinned"
+	case headDrifted:
+		return "drifted"
+	default:
+		return "unknown"
+	}
+}
+
+func classifyHead(recorded, actual string) headState {
+	if recorded == "" || actual == "" {
+		return headUnpinned
+	}
+
+	if recorded == actual {
+		return headComparable
+	}
+
+	return headDrifted
+}
+
+// repositoryHead returns the clone's HEAD commit, or "" when it cannot be read.
+func repositoryHead(t *testing.T, path string) string {
+	t.Helper()
+
+	head := strings.TrimSpace(gitOutput(t.Context(), path, "rev-parse", "HEAD"))
+	if head == "unknown" {
+		return ""
+	}
+
+	return head
 }
 
 type provenance struct {
@@ -195,6 +253,7 @@ func TestCorpusBurndownNegativity(t *testing.T) {
 	committed := readBaseline(t)
 	measured := map[string]metrics{}
 	fileMeasured := map[string]metrics{}
+	measuredHeads := map[string]string{}
 
 	for _, name := range corpusRepositories {
 		path := filepath.Join(corpus, name)
@@ -215,7 +274,29 @@ func TestCorpusBurndownNegativity(t *testing.T) {
 			continue
 		}
 
+		head := repositoryHead(t, path)
+		if updating {
+			measuredHeads[name] = head
+		}
+
 		t.Run(name, func(t *testing.T) {
+			switch state := classifyHead(committed.RepoHeads[name], head); {
+			case state == headDrifted && !updating:
+				t.Skipf(
+					"%s: the clone moved since the baseline was seeded "+
+						"(baseline %s, now %s); its numbers describe a different history. "+
+						"Re-seed with `just update-corpus-baseline`.",
+					name, short(committed.RepoHeads[name]), short(head),
+				)
+			case state == headUnpinned && !updating:
+				t.Logf(
+					"%s: the baseline records no clone state (now %s), so drift cannot be "+
+						"detected and a pulled repository reads as a regression. "+
+						"Re-seed to pin it.",
+					name, short(head),
+				)
+			}
+
 			if known || updating {
 				actual := measure(t, hercules, path, analysisFlags, projectScope)
 				t.Logf("%s: %s", name, describe(actual))
@@ -259,7 +340,7 @@ func TestCorpusBurndownNegativity(t *testing.T) {
 	}
 
 	if updating {
-		writeBaseline(t, committed, measured, fileMeasured)
+		writeBaseline(t, committed, measured, fileMeasured, measuredHeads)
 	}
 }
 
@@ -546,6 +627,10 @@ func readBaseline(t *testing.T) baseline {
 		committed.FileRepositories = map[string]metrics{}
 	}
 
+	if committed.RepoHeads == nil {
+		committed.RepoHeads = map[string]string{}
+	}
+
 	updating := os.Getenv(updateBaselineEnvironment) == "1"
 	committed.Repositories = checkFlags(
 		t, updating, "flags", committed.Flags, analysisFlags, committed.Repositories,
@@ -611,7 +696,10 @@ func checkFlags(
 
 // writeBaseline merges the freshly measured repositories into the committed
 // manifest, so refreshing a subset never drops the entries it did not run.
-func writeBaseline(t *testing.T, committed baseline, measured, fileMeasured map[string]metrics) {
+func writeBaseline(
+	t *testing.T, committed baseline, measured, fileMeasured map[string]metrics,
+	heads map[string]string,
+) {
 	t.Helper()
 
 	if len(measured) == 0 && len(fileMeasured) == 0 {
@@ -626,6 +714,18 @@ func writeBaseline(t *testing.T, committed baseline, measured, fileMeasured map[
 	maps.Copy(committed.Repositories, measured)
 
 	maps.Copy(committed.FileRepositories, fileMeasured)
+
+	if committed.RepoHeads == nil {
+		committed.RepoHeads = map[string]string{}
+	}
+
+	for name, head := range heads {
+		if head == "" {
+			continue
+		}
+
+		committed.RepoHeads[name] = head
+	}
 
 	content, err := json.MarshalIndent(committed, "", "  ")
 	if err != nil {
@@ -659,6 +759,19 @@ func currentProvenance(t *testing.T) provenance {
 	}
 
 	return result
+}
+
+// short abbreviates a commit hash for log lines, and names the empty one.
+func short(hash string) string {
+	if hash == "" {
+		return "unrecorded"
+	}
+
+	if len(hash) > 8 {
+		return hash[:8]
+	}
+
+	return hash
 }
 
 func gitOutput(ctx context.Context, repository string, arguments ...string) string {

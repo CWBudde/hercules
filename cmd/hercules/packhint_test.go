@@ -7,7 +7,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-git/go-billy/v5/osfs"
+	git "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/cache"
+	"github.com/go-git/go-git/v5/storage/filesystem"
+	"github.com/go-git/go-git/v5/storage/memory"
 )
 
 func writePack(t *testing.T, directory, name string) {
@@ -74,7 +79,7 @@ func TestAnnotateMissingObject(t *testing.T) {
 	writePack(t, packs, "loose-0123456789abcdef0123456789abcdef01234567.pack")
 
 	missing := plumbing.ErrObjectNotFound
-	annotated := annotateMissingObject(missing, repository)
+	annotated := annotateMissingObject(missing, nil, repository)
 
 	if !errors.Is(annotated, plumbing.ErrObjectNotFound) {
 		t.Error("annotation dropped the wrapped error")
@@ -85,7 +90,7 @@ func TestAnnotateMissingObject(t *testing.T) {
 	}
 
 	other := errors.New("some other failure")
-	annotatedOther := annotateMissingObject(other, repository)
+	annotatedOther := annotateMissingObject(other, nil, repository)
 
 	if !errors.Is(annotatedOther, other) {
 		t.Error("an unrelated error lost its identity")
@@ -95,7 +100,58 @@ func TestAnnotateMissingObject(t *testing.T) {
 		t.Error("an unrelated error was annotated")
 	}
 
-	if annotateMissingObject(nil, repository) != nil {
+	if annotateMissingObject(nil, nil, repository) != nil {
 		t.Error("nil was annotated")
+	}
+}
+
+// TestAnnotateMissingObjectUsesStoragePath pins the --cache-path case: the repository is opened
+// from the cache directory while the URI stays the remote address, so scanning the URI would miss
+// the very packs that make the clone unreadable.
+func TestAnnotateMissingObjectUsesStoragePath(t *testing.T) {
+	cachePath := t.TempDir()
+	packs := filepath.Join(cachePath, "objects", "pack")
+
+	err := os.MkdirAll(packs, 0o700)
+	if err != nil {
+		t.Fatalf("create pack directory: %v", err)
+	}
+
+	writePack(t, packs, "loose-0123456789abcdef0123456789abcdef01234567.pack")
+
+	storage := filesystem.NewStorage(osfs.New(cachePath), cache.NewObjectLRUDefault())
+
+	repository, err := git.Init(storage, nil)
+	if err != nil {
+		t.Fatalf("init cache repository: %v", err)
+	}
+
+	const uri = "https://example.test/repository.git"
+
+	annotated := annotateMissingObject(plumbing.ErrObjectNotFound, repository, uri)
+	if !strings.Contains(annotated.Error(), cachePath) {
+		t.Errorf("annotation does not name the cache directory: %q", annotated.Error())
+	}
+
+	if !strings.Contains(annotated.Error(), "git repack -A -d") {
+		t.Errorf("annotation carries no hint: %q", annotated.Error())
+	}
+}
+
+// TestObjectDirectoryFallsBackToURI covers the stores with no directory to scan.
+func TestObjectDirectoryFallsBackToURI(t *testing.T) {
+	const uri = "https://example.test/repository.git"
+
+	if directory := objectDirectory(nil, uri); directory != uri {
+		t.Errorf("objectDirectory(nil) = %q, want %q", directory, uri)
+	}
+
+	repository, err := git.Init(memory.NewStorage(), nil)
+	if err != nil {
+		t.Fatalf("init in-memory repository: %v", err)
+	}
+
+	if directory := objectDirectory(repository, uri); directory != uri {
+		t.Errorf("objectDirectory(memory) = %q, want %q", directory, uri)
 	}
 }

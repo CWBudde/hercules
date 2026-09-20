@@ -137,13 +137,21 @@ pulled for an unrelated org-wide run, `mekorp-backend` alone had gained 474 comm
 project dimension came back "regressed" on almost every repository although the binary
 produced byte-identical matrices to the one the baseline was seeded with.
 
-`repo_heads` therefore records each clone's `HEAD` at seeding time:
+`repo_heads` and `file_repo_heads` therefore record each clone's `HEAD` at seeding time:
 
 - head equal to the recorded one — measured and gated as before;
-- head different — the repository is **skipped** with a log line saying which two commits
-  are involved, because gating it would compare two different histories;
+- head different — that dimension is **not measured**, with a log line saying which two
+  commits are involved, because gating it would compare two different histories. A
+  repository whose two dimensions both drifted is reported as skipped;
 - no recorded head (a baseline seeded before this existed, or `git rev-parse` failing) —
   measured and gated as before, with a log line saying drift cannot be detected.
+
+The two dimensions pin separately because a re-seed can accept one and reject the other: a
+run whose measurement truncates is neither seeded nor gated, so that dimension keeps its
+previous number, and that number was measured over the previous clone. One shared pin would
+declare it comparable to the new checkout — the exact false comparison pinning exists to
+prevent. A head is therefore written only for a dimension that actually produced an accepted
+measurement in that re-seed.
 
 A re-seed records the current heads, so the protection starts working after the next
 `just update-corpus-baseline`. Re-seed after pulling the corpus.

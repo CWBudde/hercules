@@ -166,12 +166,19 @@ type baseline struct {
 	Repositories     map[string]metrics `json:"repositories"`
 	FileFlags        []string           `json:"file_flags"`
 	FileRepositories map[string]metrics `json:"file_repositories"`
-	// RepoHeads pins the clone state each number was measured over. The corpus is a
-	// set of live repositories: pulling one changes the history hercules replays, so
-	// its numbers stop being comparable even though neither the flags nor the tree
-	// moved. Without this the suite silently compares a grown repository against the
-	// old measurement and reports the growth as a regression.
-	RepoHeads map[string]string `json:"repo_heads,omitempty"`
+	// RepoHeads and FileRepoHeads pin the clone state each number was measured over.
+	// The corpus is a set of live repositories: pulling one changes the history
+	// hercules replays, so its numbers stop being comparable even though neither the
+	// flags nor the tree moved. Without this the suite silently compares a grown
+	// repository against the old measurement and reports the growth as a regression.
+	//
+	// The two dimensions pin separately because they can be seeded apart: a re-seed
+	// where one run truncates keeps that dimension's previous number, which was
+	// measured over the previous clone. One shared pin would then claim the stale
+	// number belongs to the new checkout — exactly the false comparison this exists
+	// to prevent.
+	RepoHeads     map[string]string `json:"repo_heads,omitempty"`
+	FileRepoHeads map[string]string `json:"file_repo_heads,omitempty"`
 }
 
 // headState says whether a committed number may be gated against a fresh measurement.
@@ -214,6 +221,43 @@ func classifyHead(recorded, actual string) headState {
 	return headDrifted
 }
 
+// gateDimension reports whether one dimension's committed number may be compared
+// against this clone, and says why not when it may not. Seeding always proceeds:
+// the point of a re-seed is to replace numbers that describe an older clone.
+func gateDimension(t *testing.T, name, dimension, recorded, head string, updating bool) bool {
+	t.Helper()
+
+	switch classifyHead(recorded, head) {
+	case headDrifted:
+		if updating {
+			return true
+		}
+
+		t.Logf(
+			"%s [%s]: the clone moved since this dimension was seeded (baseline %s, now %s); "+
+				"its numbers describe a different history, so the dimension is not measured. "+
+				"Re-seed with `just update-corpus-baseline`.",
+			name, dimension, short(recorded), short(head),
+		)
+
+		return false
+	case headUnpinned:
+		if !updating {
+			t.Logf(
+				"%s [%s]: the baseline records no clone state (now %s), so drift cannot be "+
+					"detected and a pulled repository reads as a regression. Re-seed to pin it.",
+				name, dimension, short(head),
+			)
+		}
+
+		return true
+	case headComparable:
+		return true
+	default:
+		return true
+	}
+}
+
 // repositoryHead returns the clone's HEAD commit, or "" when it cannot be read.
 func repositoryHead(t *testing.T, path string) string {
 	t.Helper()
@@ -254,6 +298,7 @@ func TestCorpusBurndownNegativity(t *testing.T) {
 	measured := map[string]metrics{}
 	fileMeasured := map[string]metrics{}
 	measuredHeads := map[string]string{}
+	fileMeasuredHeads := map[string]string{}
 
 	for _, name := range corpusRepositories {
 		path := filepath.Join(corpus, name)
@@ -275,38 +320,28 @@ func TestCorpusBurndownNegativity(t *testing.T) {
 		}
 
 		head := repositoryHead(t, path)
-		if updating {
-			measuredHeads[name] = head
-		}
 
 		t.Run(name, func(t *testing.T) {
-			switch state := classifyHead(committed.RepoHeads[name], head); {
-			case state == headDrifted && !updating:
-				t.Skipf(
-					"%s: the clone moved since the baseline was seeded "+
-						"(baseline %s, now %s); its numbers describe a different history. "+
-						"Re-seed with `just update-corpus-baseline`.",
-					name, short(committed.RepoHeads[name]), short(head),
-				)
-			case state == headUnpinned && !updating:
-				t.Logf(
-					"%s: the baseline records no clone state (now %s), so drift cannot be "+
-						"detected and a pulled repository reads as a regression. "+
-						"Re-seed to pin it.",
-					name, short(head),
+			ranProject := false
+
+			if known || updating {
+				ranProject = gateDimension(
+					t, name, projectScope.name, committed.RepoHeads[name], head, updating,
 				)
 			}
 
-			if known || updating {
+			if ranProject {
 				actual := measure(t, hercules, path, analysisFlags, projectScope)
 				t.Logf("%s: %s", name, describe(actual))
 
 				switch {
 				case actual.Truncated:
 					// measure already failed the subtest; refuse to seed or gate a
-					// number that only describes this machine.
+					// number that only describes this machine. The pin stays on the
+					// clone the kept number was measured over.
 				case updating:
 					measured[name] = actual
+					measuredHeads[name] = head
 				default:
 					compare(t, projectScope.name, expected, actual)
 				}
@@ -325,6 +360,16 @@ func TestCorpusBurndownNegativity(t *testing.T) {
 				return
 			}
 
+			if !gateDimension(
+				t, name, fileScope.name, committed.FileRepoHeads[name], head, updating,
+			) {
+				if !ranProject {
+					t.Skipf("%s: no dimension describes this clone; re-seed the baseline.", name)
+				}
+
+				return
+			}
+
 			fileActual := measure(t, hercules, path, fileAnalysisFlags, fileScope)
 			t.Logf("%s (files): %s", name, describe(fileActual))
 
@@ -333,6 +378,7 @@ func TestCorpusBurndownNegativity(t *testing.T) {
 				// As above: an invalid measurement is neither seeded nor gated.
 			case updating:
 				fileMeasured[name] = fileActual
+				fileMeasuredHeads[name] = head
 			default:
 				compare(t, fileScope.name, fileExpected, fileActual)
 			}
@@ -340,7 +386,7 @@ func TestCorpusBurndownNegativity(t *testing.T) {
 	}
 
 	if updating {
-		writeBaseline(t, committed, measured, fileMeasured, measuredHeads)
+		writeBaseline(t, committed, measured, fileMeasured, measuredHeads, fileMeasuredHeads)
 	}
 }
 
@@ -631,6 +677,10 @@ func readBaseline(t *testing.T) baseline {
 		committed.RepoHeads = map[string]string{}
 	}
 
+	if committed.FileRepoHeads == nil {
+		committed.FileRepoHeads = map[string]string{}
+	}
+
 	updating := os.Getenv(updateBaselineEnvironment) == "1"
 	committed.Repositories = checkFlags(
 		t, updating, "flags", committed.Flags, analysisFlags, committed.Repositories,
@@ -698,7 +748,7 @@ func checkFlags(
 // manifest, so refreshing a subset never drops the entries it did not run.
 func writeBaseline(
 	t *testing.T, committed baseline, measured, fileMeasured map[string]metrics,
-	heads map[string]string,
+	heads, fileHeads map[string]string,
 ) {
 	t.Helper()
 
@@ -715,17 +765,8 @@ func writeBaseline(
 
 	maps.Copy(committed.FileRepositories, fileMeasured)
 
-	if committed.RepoHeads == nil {
-		committed.RepoHeads = map[string]string{}
-	}
-
-	for name, head := range heads {
-		if head == "" {
-			continue
-		}
-
-		committed.RepoHeads[name] = head
-	}
+	committed.RepoHeads = mergeHeads(committed.RepoHeads, heads)
+	committed.FileRepoHeads = mergeHeads(committed.FileRepoHeads, fileHeads)
 
 	content, err := json.MarshalIndent(committed, "", "  ")
 	if err != nil {
@@ -741,6 +782,26 @@ func writeBaseline(
 		"refreshed %d project and %d per-file baseline entries in %s",
 		len(measured), len(fileMeasured), baselinePath(),
 	)
+}
+
+// mergeHeads folds the pins measured in this run into the committed ones. A
+// repository absent from measured keeps its old pin, because its number is the
+// old one too; an unreadable head records nothing rather than claiming the
+// number belongs to an unknown clone.
+func mergeHeads(committed, measured map[string]string) map[string]string {
+	if committed == nil {
+		committed = map[string]string{}
+	}
+
+	for name, head := range measured {
+		if head == "" {
+			continue
+		}
+
+		committed[name] = head
+	}
+
+	return committed
 }
 
 func currentProvenance(t *testing.T) provenance {

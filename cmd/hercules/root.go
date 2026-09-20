@@ -920,7 +920,7 @@ func loadRootCommits(
 	}
 	commits, err := selectRootCommits(pipeline, repository, repoURI, options, reporter)
 	if err != nil {
-		return fmt.Errorf("list commits: %w", annotateMissingObject(err, repoURI))
+		return fmt.Errorf("list commits: %w", annotateMissingObject(err, repository, repoURI))
 	}
 	options.facts[hercules.ConfigPipelineCommits] = commits
 	return nil

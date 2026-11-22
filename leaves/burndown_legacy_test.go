@@ -5714,3 +5714,22 @@ func TestLegacyBurndownResultGetters(t *testing.T) {
 	assert.Equal(t, br.tickSize, br.GetTickSize())
 	assert.Equal(t, br.GetIdentities(), br.reversedPeopleDict)
 }
+
+// TestLegacyBurndownGroupSparseHistoryFinerSampling is the regression test for the panic which
+// --legacy-burndown hit whenever --sampling was finer than --granularity ("index out of range
+// with length 0" in populateGroupedHistory).
+func TestLegacyBurndownGroupSparseHistoryFinerSampling(t *testing.T) {
+	bd := LegacyBurndownAnalysis{}
+	bd.Granularity = 7
+	bd.Sampling = 1
+	history := sparseHistory{}
+	history.updateDelta(0, 0, 10)
+	history.updateDelta(8, 8, 3)
+	history.updateDelta(0, 12, -2)
+
+	var result DenseHistory
+	assert.NotPanics(t, func() { result, _ = bd.groupSparseHistory(history, -1) })
+	require.Len(t, result, 13)
+	assert.Equal(t, []int64{10, 3}, result[8])
+	assert.Equal(t, []int64{8, 3}, result[12])
+}

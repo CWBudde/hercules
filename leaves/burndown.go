@@ -273,10 +273,6 @@ func (analyser *BurndownAnalysis) Initialize(repository *git.Repository) error {
 		analyser.l = core.NewLogger()
 	}
 
-	// Force the safer defaults; mismatched sampling/granularity caused crashes in burndown.
-	analyser.Granularity = DefaultBurndownGranularity
-
-	analyser.Sampling = DefaultBurndownGranularity
 	if analyser.Granularity <= 0 {
 		analyser.l.Warnf("adjusted the granularity to %d ticks\n",
 			DefaultBurndownGranularity)
@@ -1400,6 +1396,16 @@ func namedBurndownMatrices(
 func (analyser *BurndownAnalysis) groupSparseHistory(
 	history sparseHistory, lastTick int,
 ) (burndown.DenseHistory, int) {
+	return groupSparseHistory(history, lastTick, analyser.Sampling, analyser.Granularity)
+}
+
+// groupSparseHistory turns the sparse per-tick deltas into the dense [sample][band] matrix that
+// both burndown implementations report. It allocates one row per sample: there are at least as
+// many samples as bands because Initialize keeps sampling <= granularity, so allocating per band
+// (as an older version of this code did) left rows nil and panicked whenever the two differed.
+func groupSparseHistory(
+	history sparseHistory, lastTick, sampling, granularity int,
+) (burndown.DenseHistory, int) {
 	if len(history) == 0 {
 		panic("empty history")
 	}
@@ -1409,15 +1415,15 @@ func (analyser *BurndownAnalysis) groupSparseHistory(
 	// [y][x]
 	// y - sampling
 	// x - granularity
-	samples := lastTick/analyser.Sampling + 1
-	bands := lastTick/analyser.Granularity + 1
+	samples := lastTick/sampling + 1
+	bands := lastTick/granularity + 1
 
 	result := make(burndown.DenseHistory, samples)
 	for i := range samples {
 		result[i] = make([]int64, bands)
 	}
 
-	populateGroupedHistory(result, history, ticks, analyser.Sampling, analyser.Granularity)
+	populateGroupedHistory(result, history, ticks, sampling, granularity)
 
 	return result, lastTick
 }

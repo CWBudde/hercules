@@ -550,26 +550,7 @@ func (analyser *LegacyBurndownAnalysis) knownHistoryName(known map[string]bool) 
 func (analyser *LegacyBurndownAnalysis) groupSparseHistory(
 	history sparseHistory, lastTick int,
 ) (DenseHistory, int) {
-	if len(history) == 0 {
-		panic("empty history")
-	}
-
-	ticks, lastTick := prepareSparseHistoryTicks(history, lastTick)
-
-	// [y][x]
-	// y - sampling
-	// x - granularity
-	samples := lastTick/analyser.Sampling + 1
-	bands := lastTick/analyser.Granularity + 1
-
-	result := make(DenseHistory, samples)
-	for i := range bands {
-		result[i] = make([]int64, bands)
-	}
-
-	populateGroupedHistory(result, history, ticks, analyser.Sampling, analyser.Granularity)
-
-	return result, lastTick
+	return groupSparseHistory(history, lastTick, analyser.Sampling, analyser.Granularity)
 }
 
 var _ = core.RegisterPipelineItem(&LegacyBurndownAnalysis{})

@@ -6,7 +6,6 @@ import (
 	"maps"
 	"math"
 	"os"
-	"path"
 	"slices"
 	"sync/atomic"
 	"time"
@@ -298,7 +297,7 @@ func (analyser *LineHistoryAnalyser) ListConfigurationOptions() []core.Configura
 		}, {
 			Name: ConfigLinesExcludePaths,
 			Description: "Glob patterns of file paths to exclude from line history tracking (e.g. generated files). " +
-				"Repeat the flag or separate with commas.",
+				"Applies to --burndown and --legacy-burndown alike. Repeat the flag or separate with commas.",
 			Flag:    "lines-exclude-paths",
 			Type:    core.StringsConfigurationOption,
 			Default: []string{},
@@ -333,7 +332,7 @@ func (analyser *LineHistoryAnalyser) Configure(facts map[string]any) error {
 	}
 
 	if val, exists := facts[ConfigLinesExcludePaths].([]string); exists {
-		err := validateExcludePathPatterns(val)
+		err := ValidateExcludePathPatterns(val)
 		if err != nil {
 			return err
 		}
@@ -820,7 +819,7 @@ func (analyser *LineHistoryAnalyser) consumeTreeDiffs(
 	fileDiffs map[string]items.FileDiffData,
 ) error {
 	for _, change := range treeDiffs {
-		if analyser.isExcluded(change.From.Name, change.To.Name) {
+		if IsExcludedPath(analyser.ExcludePathPatterns, change.From.Name, change.To.Name) {
 			continue
 		}
 
@@ -859,40 +858,6 @@ func (v FileIdResolver) abandonedNameOf(id FileId) string {
 	}
 
 	return v.analyser.fileAbandonedNamesOfParent[id]
-}
-
-// validateExcludePathPatterns rejects malformed glob patterns up front. isExcluded has to
-// discard path.Match's error per file, so a bad pattern would otherwise silently exclude
-// nothing.
-func validateExcludePathPatterns(patterns []string) error {
-	for _, pattern := range patterns {
-		_, err := path.Match(pattern, "")
-		if err != nil {
-			return fmt.Errorf("invalid --lines-exclude-paths pattern %q: %w", pattern, err)
-		}
-	}
-
-	return nil
-}
-
-// isExcluded reports whether a file change should be skipped because either
-// the source or destination path matches one of ExcludePathPatterns.
-func (analyser *LineHistoryAnalyser) isExcluded(fromName, toName string) bool {
-	for _, pattern := range analyser.ExcludePathPatterns {
-		if fromName != "" {
-			if ok, _ := path.Match(pattern, fromName); ok {
-				return true
-			}
-		}
-
-		if toName != "" {
-			if ok, _ := path.Match(pattern, toName); ok {
-				return true
-			}
-		}
-	}
-
-	return false
 }
 
 func (analyser *LineHistoryAnalyser) findFileAndName(id FileId) (*File, string) {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -153,5 +154,41 @@ func TestObjectDirectoryFallsBackToURI(t *testing.T) {
 
 	if directory := objectDirectory(repository, uri); directory != uri {
 		t.Errorf("objectDirectory(memory) = %q, want %q", directory, uri)
+	}
+}
+
+// TestWarnUnreadablePacks pins the early warning: it names the pack and the fix before the
+// analysis runs, and stays silent for a repository that only has conventional packs.
+func TestWarnUnreadablePacks(t *testing.T) {
+	repository := t.TempDir()
+	packs := filepath.Join(repository, ".git", "objects", "pack")
+
+	err := os.MkdirAll(packs, 0o700)
+	if err != nil {
+		t.Fatalf("create pack directory: %v", err)
+	}
+
+	writePack(t, packs, "pack-0123456789abcdef0123456789abcdef01234567.pack")
+
+	var logged []string
+
+	logf := func(format string, args ...any) { logged = append(logged, fmt.Sprintf(format, args...)) }
+
+	if warnUnreadablePacks(nil, repository, logf) || len(logged) != 0 {
+		t.Fatalf("warned about a conventional pack: %v", logged)
+	}
+
+	writePack(t, packs, "loose-0123456789abcdef0123456789abcdef01234567.pack")
+
+	if !warnUnreadablePacks(nil, repository, logf) || len(logged) != 1 {
+		t.Fatalf("no warning for a loose pack: %v", logged)
+	}
+
+	for _, want := range []string{
+		"loose-0123456789abcdef0123456789abcdef01234567.pack", "git repack -A -d", "fresh clone",
+	} {
+		if !strings.Contains(logged[0], want) {
+			t.Errorf("warning lacks %q: %q", want, logged[0])
+		}
 	}
 }

@@ -9,14 +9,11 @@ import (
 	"io"
 	"log"
 	"maps"
-	"net/http"
-	httpPprof "net/http/pprof"
 	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
 	"runtime"
-	"runtime/pprof"
 	"slices"
 	"sort"
 	"strings"
@@ -753,6 +750,7 @@ func runRoot(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("open repository %s: %w", options.uri, err)
 	}
+	warnUnreadablePacks(repository, repoURI, log.Printf)
 	pipeline := newRootPipeline(repository, repoFeature)
 
 	reporter := &progressReporter{mode: options.progress, lastCommit: -1}
@@ -778,7 +776,7 @@ func runRoot(cmd *cobra.Command, args []string) error {
 
 	results, err := pipeline.RunPreparedPlan()
 	if err != nil {
-		return fmt.Errorf("run pipeline: %w", err)
+		return fmt.Errorf("run pipeline: %w", annotateMissingObject(err, repository, repoURI))
 	}
 	return writeRootResults(options, repoURI, deployedLeafs, results, reporter)
 }
@@ -790,51 +788,6 @@ func newRootPipeline(repository *git.Repository, repoFeature string) *core.Pipel
 	}
 	pipeline.SetFeaturesFromFlags()
 	return pipeline
-}
-
-func startRootProfile(enabled bool) (func(), error) {
-	if !enabled {
-		return func() {}, nil
-	}
-	profileFile, err := os.Create("hercules.pprof")
-	if err != nil {
-		return nil, fmt.Errorf("create CPU profile: %w", err)
-	}
-	if err := pprof.StartCPUProfile(profileFile); err != nil {
-		_ = profileFile.Close()
-		return nil, fmt.Errorf("start CPU profile: %w", err)
-	}
-
-	server := &http.Server{
-		Addr:              "localhost:6060",
-		Handler:           profilingHandler(),
-		ReadHeaderTimeout: 5 * time.Second,
-	}
-	go func() {
-		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Printf("profiling server: %v", err)
-		}
-	}()
-	return func() {
-		pprof.StopCPUProfile()
-		if err := profileFile.Close(); err != nil {
-			log.Printf("close CPU profile: %v", err)
-		}
-		if err := server.Close(); err != nil {
-			log.Printf("close profiling server: %v", err)
-		}
-	}, nil
-}
-
-func profilingHandler() http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/debug/pprof/", httpPprof.Index)
-	mux.HandleFunc("/debug/pprof/cmdline", httpPprof.Cmdline)
-	mux.HandleFunc("/debug/pprof/profile", httpPprof.Profile)
-	mux.HandleFunc("/debug/pprof/symbol", httpPprof.Symbol)
-	mux.HandleFunc("/debug/pprof/trace", httpPprof.Trace)
-
-	return mux
 }
 
 type progressReporter struct {

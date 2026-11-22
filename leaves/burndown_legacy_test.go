@@ -5714,3 +5714,81 @@ func TestLegacyBurndownResultGetters(t *testing.T) {
 	assert.Equal(t, br.tickSize, br.GetTickSize())
 	assert.Equal(t, br.GetIdentities(), br.reversedPeopleDict)
 }
+
+// TestLegacyBurndownGroupSparseHistoryFinerSampling is the regression test for the panic which
+// --legacy-burndown hit whenever --sampling was finer than --granularity ("index out of range
+// with length 0" in populateGroupedHistory).
+func TestLegacyBurndownGroupSparseHistoryFinerSampling(t *testing.T) {
+	bd := LegacyBurndownAnalysis{}
+	bd.Granularity = 7
+	bd.Sampling = 1
+	history := sparseHistory{}
+	history.updateDelta(0, 0, 10)
+	history.updateDelta(8, 8, 3)
+	history.updateDelta(0, 12, -2)
+
+	var result DenseHistory
+	assert.NotPanics(t, func() { result, _ = bd.groupSparseHistory(history, -1) })
+	require.Len(t, result, 13)
+	assert.Equal(t, []int64{10, 3}, result[8])
+	assert.Equal(t, []int64{8, 3}, result[12])
+}
+
+func TestLegacyBurndownConfigureExcludePaths(t *testing.T) {
+	bd := LegacyBurndownAnalysis{}
+	assert.NoError(t, bd.Configure(map[string]any{
+		linehistory.ConfigLinesExcludePaths: []string{"*.yml", "vendor/*"},
+	}))
+	assert.Equal(t, []string{"*.yml", "vendor/*"}, bd.ExcludePathPatterns)
+
+	bd = LegacyBurndownAnalysis{}
+	err := bd.Configure(map[string]any{linehistory.ConfigLinesExcludePaths: []string{"vendor/["}})
+	assert.ErrorContains(t, err, "invalid --lines-exclude-paths pattern")
+	assert.Empty(t, bd.ExcludePathPatterns)
+}
+
+// TestLegacyBurndownHonoursExcludePaths pins --lines-exclude-paths for --legacy-burndown: it
+// reads TreeChanges rather than LineHistory, so it once tracked excluded files regardless.
+func TestLegacyBurndownHonoursExcludePaths(t *testing.T) {
+	cache := map[plumbing.Hash]*items.CachedBlob{}
+	AddHash(t, cache, "291286b4ac41952cbd1389fda66420ec03c1a9fe")
+	AddHash(t, cache, "c29112dbd697ad9b401333b80c18a63951bc18d9")
+
+	treeTo, _ := test.Repository.TreeObject(plumbing.NewHash(
+		"994eac1cd07235bb9815e547a75c84265dea00f5",
+	))
+	insertion := func(name, hash string) *object.Change {
+		return &object.Change{To: object.ChangeEntry{
+			Name: name,
+			Tree: treeTo,
+			TreeEntry: object.TreeEntry{
+				Name: name, Mode: 0o100644, Hash: plumbing.NewHash(hash),
+			},
+		}}
+	}
+	changes := object.Changes{
+		insertion(testHerculesMainPath, "c29112dbd697ad9b401333b80c18a63951bc18d9"),
+		insertion(testTravisPath, "291286b4ac41952cbd1389fda66420ec03c1a9fe"),
+	}
+
+	deps := map[string]any{
+		identity.DependencyAuthor:   0,
+		items.DependencyTick:        0,
+		items.DependencyBlobCache:   cache,
+		items.DependencyTreeChanges: changes,
+		items.DependencyFileDiff:    map[string]items.FileDiffData{},
+	}
+
+	bd := LegacyBurndownAnalysis{Granularity: 30, Sampling: 30, PeopleNumber: 1, TrackFiles: true}
+	require.NoError(t, bd.Configure(map[string]any{
+		linehistory.ConfigLinesExcludePaths: []string{"*.yml"},
+	}))
+	require.NoError(t, bd.Initialize(test.Repository))
+	_, err := bd.Consume(deps)
+	require.NoError(t, err)
+
+	assert.Len(t, bd.files, 1)
+	assert.Contains(t, bd.files, testHerculesMainPath)
+	assert.NotContains(t, bd.fileHistories, testTravisPath)
+	assert.Equal(t, int64(207), bd.globalHistory[0].deltas[0])
+}

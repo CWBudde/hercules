@@ -119,8 +119,6 @@ func TestBurndownRegistration(t *testing.T) {
 }
 
 func TestBurndownInitialize(t *testing.T) {
-	// BurndownAnalysis.Initialize() now forces safer defaults to prevent crashes
-	// from mismatched sampling/granularity values.
 	bd := BurndownAnalysis{
 		Sampling:    -10,
 		Granularity: DefaultBurndownGranularity,
@@ -128,23 +126,101 @@ func TestBurndownInitialize(t *testing.T) {
 	logger := core.NewLogger()
 	bd.l = logger
 	assert.NoError(t, bd.Initialize(test.Repository))
-	// Initialize forces both to DefaultBurndownGranularity for safety
 	assert.Equal(t, DefaultBurndownGranularity, bd.Sampling)
 	assert.Equal(t, DefaultBurndownGranularity, bd.Granularity)
 	assert.Same(t, logger, bd.l)
 
-	// Even if we set different values, Initialize() forces defaults
+	// The default sampling may not exceed a user-supplied granularity.
 	bd.Sampling = 0
 	bd.Granularity = DefaultBurndownGranularity - 1
 	assert.NoError(t, bd.Initialize(test.Repository))
-	assert.Equal(t, DefaultBurndownGranularity, bd.Sampling)
-	assert.Equal(t, DefaultBurndownGranularity, bd.Granularity)
+	assert.Equal(t, DefaultBurndownGranularity-1, bd.Sampling)
+	assert.Equal(t, DefaultBurndownGranularity-1, bd.Granularity)
 
 	bd.Sampling = DefaultBurndownGranularity - 1
 	bd.Granularity = -10
 	assert.NoError(t, bd.Initialize(test.Repository))
-	assert.Equal(t, DefaultBurndownGranularity, bd.Sampling)
+	assert.Equal(t, DefaultBurndownGranularity-1, bd.Sampling)
 	assert.Equal(t, DefaultBurndownGranularity, bd.Granularity)
+}
+
+// TestBurndownInitializeHonoursUserValues guards against Initialize overriding valid user input:
+// an older version reset both values to 30 ticks unconditionally, which made --granularity and
+// --sampling silently ineffective for the default burndown.
+func TestBurndownInitializeHonoursUserValues(t *testing.T) {
+	for _, tc := range []struct{ granularity, sampling int }{
+		{1, 1},
+		{7, 1},
+		{30, 7},
+		{90, 30},
+	} {
+		bd := BurndownAnalysis{Granularity: tc.granularity, Sampling: tc.sampling}
+		require.NoError(t, bd.Initialize(test.Repository))
+		assert.Equal(t, tc.granularity, bd.Granularity)
+		assert.Equal(t, tc.sampling, bd.Sampling)
+	}
+}
+
+// TestGroupSparseHistoryMismatchedSamplingAndGranularity is the regression test for the crash
+// which once made Initialize force 30/30: rows were allocated per band instead of per sample,
+// so any sampling finer than the granularity left rows nil and panicked.
+func TestGroupSparseHistoryMismatchedSamplingAndGranularity(t *testing.T) {
+	history := sparseHistory{}
+	history.updateDelta(0, 0, 10)  // 10 lines born on tick 0
+	history.updateDelta(3, 3, 5)   // 5 lines born on tick 3
+	history.updateDelta(0, 9, -4)  // tick 9 deletes 4 lines born on tick 0
+	history.updateDelta(10, 10, 2) // 2 lines born on tick 10
+
+	daily, last := groupSparseHistory(history, -1, 1, 1)
+	assert.Equal(t, 10, last)
+	require.Len(t, daily, 11)
+	assert.Equal(t, []int64{10, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0}, daily[3])
+	assert.Equal(t, []int64{6, 0, 0, 5, 0, 0, 0, 0, 0, 0, 2}, daily[10])
+
+	weekly, _ := groupSparseHistory(history, -1, 1, 7)
+	require.Len(t, weekly, 11)
+	for _, row := range weekly {
+		require.Len(t, row, 2)
+	}
+	assert.Equal(t, []int64{15, 0}, weekly[8])
+	assert.Equal(t, []int64{11, 0}, weekly[9])
+	assert.Equal(t, []int64{11, 2}, weekly[10])
+
+	// Extending the history to a later tick repeats the last state.
+	extended, last := groupSparseHistory(history, 13, 2, 7)
+	assert.Equal(t, 13, last)
+	require.Len(t, extended, 7)
+	assert.Equal(t, []int64{11, 2}, extended[6])
+}
+
+// TestBurndownDailyGranularityTotalsMatchMonthly checks that a fine-grained run reports the
+// same alive lines as the default bands, just split differently.
+func TestBurndownDailyGranularityTotalsMatchMonthly(t *testing.T) {
+	history := sparseHistory{}
+	for tick := 0; tick < 95; tick += 3 {
+		history.updateDelta(tick, tick, 10)
+		if tick >= 30 {
+			history.updateDelta(tick-30, tick, -3)
+		}
+	}
+
+	monthly, _ := groupSparseHistory(history, -1, DefaultBurndownGranularity, DefaultBurndownGranularity)
+	daily, _ := groupSparseHistory(history, -1, 1, 1)
+
+	sum := func(row []int64) (total int64) {
+		for _, value := range row {
+			total += value
+		}
+		return total
+	}
+	assert.Equal(t, sum(monthly[len(monthly)-1]), sum(daily[len(daily)-1]))
+
+	// Every daily band folds into its monthly band.
+	folded := make([]int64, len(monthly[len(monthly)-1]))
+	for band, value := range daily[len(daily)-1] {
+		folded[band/DefaultBurndownGranularity] += value
+	}
+	assert.Equal(t, monthly[len(monthly)-1], folded)
 }
 
 func TestBurndownConsumeFinalize(t *testing.T) {

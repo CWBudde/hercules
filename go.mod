@@ -1,6 +1,6 @@
 module github.com/cwbudde/hercules
 
-go 1.26.6
+go 1.26.11
 
 require (
 	github.com/Masterminds/sprig v0.0.0-20180725212158-77bb58b7f5e1

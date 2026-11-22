@@ -753,6 +753,7 @@ func runRoot(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("open repository %s: %w", options.uri, err)
 	}
+	warnUnreadablePacks(repository, repoURI, log.Printf)
 	pipeline := newRootPipeline(repository, repoFeature)
 
 	reporter := &progressReporter{mode: options.progress, lastCommit: -1}
@@ -778,7 +779,7 @@ func runRoot(cmd *cobra.Command, args []string) error {
 
 	results, err := pipeline.RunPreparedPlan()
 	if err != nil {
-		return fmt.Errorf("run pipeline: %w", err)
+		return fmt.Errorf("run pipeline: %w", annotateMissingObject(err, repository, repoURI))
 	}
 	return writeRootResults(options, repoURI, deployedLeafs, results, reporter)
 }

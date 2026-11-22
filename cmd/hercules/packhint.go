@@ -45,7 +45,7 @@ func unreadablePackHint(repository string) string {
 			"go-git only reads pack-*.pack, so every object stored there is invisible to "+
 			"hercules although git itself finds it. Such packs are written by "+
 			"`git maintenance run --task=loose-objects`. Run `git repack -A -d` in the "+
-			"repository to fold them into a conventional pack",
+			"repository to fold them into a conventional pack, or analyse a fresh clone",
 		repository, len(names), strings.Join(listed, ", "), suffix,
 	)
 }
@@ -104,6 +104,24 @@ func objectDirectory(repository *git.Repository, uri string) string {
 	}
 
 	return uri
+}
+
+// warnUnreadablePacks logs the pack hint before the analysis starts and reports whether it did.
+//
+// The error annotation below only fires when a missing object aborts the run. Some lookups do not
+// abort: the blob cache substitutes an empty blob when the previous version of a changed file is
+// missing, so objects hidden in such packs can skew line counts without any error at all. Warning
+// up front makes that visible. It stays a warning rather than an error because the packs may only
+// hold objects that a conventional pack also contains.
+func warnUnreadablePacks(repository *git.Repository, uri string, logf func(string, ...any)) bool {
+	hint := unreadablePackHint(objectDirectory(repository, uri))
+	if hint == "" {
+		return false
+	}
+
+	logf("warning: %s; results may be incomplete or the run may fail with \"object not found\"", hint)
+
+	return true
 }
 
 // annotateMissingObject appends the pack hint to a missing-object failure.

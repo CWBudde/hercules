@@ -625,3 +625,13 @@ func TestLinesConfigureRejectsMalformedExcludePattern(t *testing.T) {
 	assert.ErrorContains(t, err, "vendor/[")
 	assert.Empty(t, bd.ExcludePathPatterns)
 }
+
+func TestIsExcludedPath(t *testing.T) {
+	patterns := []string{"*.pb.go", "vendor/*"}
+	assert.True(t, IsExcludedPath(patterns, "", "api.pb.go"))
+	assert.True(t, IsExcludedPath(patterns, "vendor/lib.go", ""))
+	assert.True(t, IsExcludedPath(patterns, "vendor/lib.go", "lib.go"), "a rename out of an excluded path")
+	assert.False(t, IsExcludedPath(patterns, "main.go", "main.go"))
+	assert.False(t, IsExcludedPath(patterns, "", ""))
+	assert.False(t, IsExcludedPath(nil, "api.pb.go", "api.pb.go"))
+}

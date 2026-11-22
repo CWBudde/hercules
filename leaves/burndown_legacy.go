@@ -55,6 +55,10 @@ type LegacyBurndownAnalysis struct {
 	// single warning. See ConfigBurndownStrictBalances.
 	StrictBalances bool
 
+	// ExcludePathPatterns are the --lines-exclude-paths globs (as per path.Match). Changes whose
+	// source or destination path matches one of them are not tracked, as in LineHistory.
+	ExcludePathPatterns []string
+
 	// balancesReported keeps the non-strict warning to one per analyser.
 	balancesReported bool
 
@@ -228,6 +232,18 @@ func (analyser *LegacyBurndownAnalysis) Configure(facts map[string]any) error {
 	assignFact(facts, ConfigLegacyBurndownHibernationDirectory, &analyser.HibernationDirectory)
 	assignFact(facts, ConfigLegacyBurndownDebug, &analyser.Debug)
 
+	// LegacyBurndown reads TreeChanges directly instead of LineHistory, so it has to apply the
+	// LineHistory path exclusion itself; otherwise --lines-exclude-paths would silently change
+	// nothing as soon as --legacy-burndown is chosen.
+	if patterns, exists := facts[linehistory.ConfigLinesExcludePaths].([]string); exists {
+		err := linehistory.ValidateExcludePathPatterns(patterns)
+		if err != nil {
+			return err
+		}
+
+		analyser.ExcludePathPatterns = patterns
+	}
+
 	return analyser.validateConfiguredPackedCapacity(facts)
 }
 
@@ -336,6 +352,10 @@ func (analyser *LegacyBurndownAnalysis) Consume(deps map[string]any) (map[string
 	}
 
 	for _, change := range treeDiffs {
+		if linehistory.IsExcludedPath(analyser.ExcludePathPatterns, change.From.Name, change.To.Name) {
+			continue
+		}
+
 		err := analyser.consumeLegacyTreeChange(change, author, cache, fileDiffs)
 		if err != nil {
 			return nil, err

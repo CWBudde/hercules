@@ -298,7 +298,7 @@ func (analyser *LineHistoryAnalyser) ListConfigurationOptions() []core.Configura
 		}, {
 			Name: ConfigLinesExcludePaths,
 			Description: "Glob patterns of file paths to exclude from line history tracking (e.g. generated files). " +
-				"Repeat the flag or separate with commas.",
+				"Applies to --burndown and --legacy-burndown alike. Repeat the flag or separate with commas.",
 			Flag:    "lines-exclude-paths",
 			Type:    core.StringsConfigurationOption,
 			Default: []string{},
@@ -865,6 +865,13 @@ func (v FileIdResolver) abandonedNameOf(id FileId) string {
 // discard path.Match's error per file, so a bad pattern would otherwise silently exclude
 // nothing.
 func validateExcludePathPatterns(patterns []string) error {
+	return ValidateExcludePathPatterns(patterns)
+}
+
+// ValidateExcludePathPatterns checks the --lines-exclude-paths globs. It is exported so that
+// LegacyBurndownAnalysis, which tracks lines itself instead of consuming LineHistory, applies
+// the same exclusion with the same validation.
+func ValidateExcludePathPatterns(patterns []string) error {
 	for _, pattern := range patterns {
 		_, err := path.Match(pattern, "")
 		if err != nil {
@@ -878,7 +885,15 @@ func validateExcludePathPatterns(patterns []string) error {
 // isExcluded reports whether a file change should be skipped because either
 // the source or destination path matches one of ExcludePathPatterns.
 func (analyser *LineHistoryAnalyser) isExcluded(fromName, toName string) bool {
-	for _, pattern := range analyser.ExcludePathPatterns {
+	return IsExcludedPath(analyser.ExcludePathPatterns, fromName, toName)
+}
+
+// IsExcludedPath reports whether a change from fromName to toName touches a path matched by one
+// of the patterns. Either side matching excludes the whole change, so a rename into or out of an
+// excluded path is skipped as well. Empty names (the missing side of an insertion or deletion)
+// never match.
+func IsExcludedPath(patterns []string, fromName, toName string) bool {
+	for _, pattern := range patterns {
 		if fromName != "" {
 			if ok, _ := path.Match(pattern, fromName); ok {
 				return true
